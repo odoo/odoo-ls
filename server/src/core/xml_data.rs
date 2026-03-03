@@ -13,7 +13,7 @@ pub enum OdooData {
 
 #[derive(Debug, Clone)]
 pub struct OdooDataRecord {
-    pub file_symbol: Weak<SymbolKey>,
+    pub symbol: Weak<SymbolKey>,
     pub model: (OYarn, Range<usize>),
     pub xml_id: Option<OYarn>,
     pub fields: Vec<OdooDataField>,
@@ -64,7 +64,7 @@ impl OdooData {
         let file_symbol: Weak<SymbolKey> = xml_symbol.into();
         match self {
             OdooData::RECORD(record) => {
-                record.file_symbol = file_symbol;
+                record.symbol = file_symbol;
             },
             OdooData::MENUITEM(menu_item) => {
                 menu_item.file_symbol = file_symbol;
@@ -102,7 +102,7 @@ impl OdooData {
     }
 
     pub fn get_xml_file_symbol(&self, symbol_table: &SymbolTable) -> Option<XmlFileKey> {
-        let file_symbol = self.get_file_symbol()?;
+        let file_symbol = self.get_file_symbol(symbol_table)?;
         let symbol = file_symbol.upgrade(symbol_table)?;
         if let SymbolKey::XmlFile(xml_file_key) = symbol {
             return Some(xml_file_key);
@@ -111,10 +111,33 @@ impl OdooData {
     }
 
     /* Warning: the returned symbol can of a different type than an XML_SYMBOL */
-    pub fn get_file_symbol(&self) -> Option<Weak<SymbolKey>> {
+    pub fn get_symbol(&self) -> Weak<SymbolKey> {
         match self {
             OdooData::RECORD(record) => {
-                Some(record.file_symbol)
+                record.symbol
+            },
+            OdooData::MENUITEM(menu_item) => {
+                menu_item.file_symbol
+            },
+            OdooData::TEMPLATE(template) => {
+                template.file_symbol
+            },
+            OdooData::DELETE(delete) => {
+                delete.file_symbol
+            },
+             OdooData::ASSET(asset) => {
+                asset.file_symbol
+            }
+        }
+    }
+
+    /* Warning: the returned symbol can of a different type than an XML_SYMBOL */
+    pub fn get_file_symbol(&self, symbol_table: &SymbolTable) -> Option<Weak<SymbolKey>> {
+        match self {
+            OdooData::RECORD(record) => {
+                let symbol = record.symbol.upgrade(symbol_table)?;
+                let file = symbol_table.get_file(symbol)?;
+                Some(file.into())
             },
             OdooData::MENUITEM(menu_item) => {
                 Some(menu_item.file_symbol)

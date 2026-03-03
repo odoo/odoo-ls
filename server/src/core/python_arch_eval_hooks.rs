@@ -597,7 +597,7 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
                         (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("environments")], vec![Sy!("Environment"), Sy!("ref")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
-        PythonArchEvalHooks::_validation_env_ref(&mut odoo.symbol_table, symbol);
+        PythonArchEvalHooks::validation_env_ref(&mut odoo.symbol_table, symbol);
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
                         tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Field"), Sy!("__init__")])),
@@ -1241,7 +1241,7 @@ impl PythonArchEvalHooks {
         diagnostics
     }
 
-    fn eval_env_ref(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, _scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
+    fn eval_env_ref(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let Some(context) = context else {return None};
         let in_validation = context.get(&S!("is_in_validation")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool();
@@ -1292,6 +1292,9 @@ impl PythonArchEvalHooks {
             return None;
         }
         let module_key = module.unwrap().upgrade(&st!())?;
+        if let Some(scope) = scope && let Some(file) = st!().get_file(scope) {
+            st!().add_dependency(file, module_key.into(), BuildSteps::VALIDATION, BuildSteps::ARCH);
+        }
         let Some(_symbol) = st!()[module_key].xml_id_locations.get(xml_id.as_str()) else {
             if in_validation {
                 /*if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05001, &[]) {
@@ -1310,7 +1313,7 @@ impl PythonArchEvalHooks {
         return None; //TODO implement returned value
     }
 
-    fn _validation_env_ref(symbol_table: &mut SymbolTable, func_sym: FunctionKey) -> Vec<Diagnostic> {
+    fn validation_env_ref(symbol_table: &mut SymbolTable, func_sym: FunctionKey) -> Vec<Diagnostic> {
         let diagnostics = vec![];
         symbol_table[func_sym].evaluations = vec![Evaluation {
             symbol: EvaluationSymbol::new_with_symbol(

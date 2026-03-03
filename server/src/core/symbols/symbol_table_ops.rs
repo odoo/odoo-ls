@@ -596,6 +596,12 @@ impl SymbolTable {
                 let func = &mut self[f];
                 func.model_dependencies.insert(model.clone());
             },
+            SymbolKey::XmlFile(x) => {
+                self[x].model_dependencies.insert(model.clone());
+            },
+            SymbolKey::CsvFile(c) => {
+                self[c].model_dependencies.insert(model.clone());
+            },
             _ => { return; }
         }
         model.borrow_mut().add_dependent(target);
@@ -1239,6 +1245,18 @@ impl SymbolTable {
             SymbolKey::Root(r) => iter.extend(self[r].module_symbols.values()),
             SymbolKey::DiskDir(d) => iter.extend(self[d].module_symbols.values()),
             _ => {}
+        }
+        iter
+    }
+
+    /* Return an iterator on all symbols of self and their sub-symbols recursively. only symbols in symbols and module_symbols will
+    * be returned.
+    */
+    pub fn all_symbols_recursive(&self, target: SymbolKey) -> Vec<SymbolKey> {
+        let mut iter = Vec::new();
+        for symbol in self.all_symbols(target) {
+            iter.push(symbol);
+            iter.extend(self.all_symbols_recursive(symbol));
         }
         iter
     }

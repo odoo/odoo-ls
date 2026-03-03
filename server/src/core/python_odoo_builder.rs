@@ -64,8 +64,7 @@ impl PythonOdooBuilder {
             set.insert(file);
             let range = st!()[self.symbol].range;
             st!().insert_xml_id(file, xml_id_model_name.clone(), OdooData::RECORD(OdooDataRecord {
-                // @arena: a class as "file" symbol?
-                file_symbol: sym.into(),
+                symbol: sym.into(),
                 model: (Sy!("ir.model"), std::ops::Range::<usize> {
                     start: 0,
                     end: 1,

@@ -1,4 +1,5 @@
 use crate::constants::OYarn;
+// use crate::core::csv_validation::CsvValidator;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
@@ -8,9 +9,10 @@ use crate::core::symbols::symbol_table::SymbolTable;
 use crate::core::symbols::symbol_keys::{ContainsKey, FunctionKey, ModuleKey, SymbolKey, Weak};
 use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
+use crate::features::references::ReferenceTarget;
 use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
 // use crate::features::document_symbols::DocumentSymbolFeature;
-// use crate::features::references::ReferenceFeature;
+// use crate::features::references::{ReferenceFeature, ReferenceTarget};
 // use crate::features::workspace_symbols::WorkspaceSymbolFeature;
 // use crate::features::declaration::DeclarationFeature;
 // use crate::features::completion::CompletionFeature;
@@ -139,7 +141,7 @@ pub struct SyncOdoo {
     pub encoding: PositionEncoding,
     pub opened_files: Vec<String>,
     pub symbol_table: SymbolTable,
-    pub evaluation_search: Option<SymbolKey>, //If set, any evaluation will be check against this value. If evaluation matches, location is kept in evaluation_locations
+    pub evaluation_search: Option<ReferenceTarget>, //If set, any evaluation will be check against this value. If evaluation matches, location is kept in evaluation_locations
     pub evaluation_locations: Vec<Location>,
     pub typeshed_weak_cache: TypeshedWeakReferences, //cache of weak references to important typeshed symbols, to avoid having to look for them in the graph for each evaluation
 
@@ -875,6 +877,13 @@ impl SyncOdoo {
                     SymbolKey::XmlFile(xml) => {
                         let mut validator = XmlValidator::new(entry.as_ref().unwrap(), xml);
                         validator.validate(session);
+                    },
+                    SymbolKey::CsvFile(csv) => {
+                        // @arena todo
+                        /*
+                        let mut validator = CsvValidator::new();
+                        validator.validate(session, csv);
+                        */
                     },
                     _ => {
                         let mut validator = PythonValidator::new(entry.unwrap(), sym_key);
@@ -1693,17 +1702,19 @@ impl Odoo {
                 if matches!(ast_type, AstType::Python) && file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
                     return Ok(None);
                 }
-                let location_fn = match (ast_type, is_declaration) {
-                    (AstType::Python, true) => DeclarationFeature::get_location,
-                    (AstType::Python, false) => DefinitionFeature::get_location,
-                    (AstType::Xml, true) => DeclarationFeature::get_location_xml,
-                    (AstType::Xml, false) => DefinitionFeature::get_location_xml,
-                    (AstType::Csv, true) => DeclarationFeature::get_location_csv,
-                    (AstType::Csv, false) => DefinitionFeature::get_location_csv,
-                };
-                return Ok(location_fn(session, &file_symbol, &file_info,
-                    params.text_document_position_params.position.line,
-                    params.text_document_position_params.position.character));
+                return match is_declaration {
+                    false => {
+                        Ok(DefinitionFeature::get_location(session, &file_symbol, &file_info,
+                            params.text_document_position_params.position.line,
+                            params.text_document_position_params.position.character))
+                    },
+                    true => {
+                        Ok(DeclarationFeature::get_location(session, &file_symbol, &file_info,
+                            params.text_document_position_params.position.line,
+                            params.text_document_position_params.position.character))
+                    }
+                }
+                    
             }
         }
         Ok(None)

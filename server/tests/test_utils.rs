@@ -2,7 +2,7 @@ use lsp_types::{Diagnostic, NumberOrString};
 use once_cell::sync::Lazy;
 use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet}, rc::Rc};
 
-use odoo_ls_server::{S, core::{file_mgr::FileInfo, symbols::symbol::Symbol}, features::ast_utils::AstUtils, threads::SessionInfo, utils::compare_semver};
+use odoo_ls_server::{S, core::{file_mgr::{AstType, FileInfo}, symbols::symbol::Symbol}, features::ast_utils::AstUtils, threads::SessionInfo, utils::compare_semver};
 
 
 /// Returns the correct class name for Partner/ResPartner depending on Odoo version
@@ -47,12 +47,12 @@ pub fn get_hover_markdown(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Sy
 /// Helper to get hover markdown string at a given (line, character)
 pub fn get_definition_locs(session: &mut SessionInfo, f_sym: &Rc<RefCell<Symbol>>, f_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Vec<lsp_types::LocationLink> {
     let locations = odoo_ls_server::features::definition::DefinitionFeature::get_location(
-        session,
-        f_sym,
-        f_info,
-        line,
-        character,
-    );
+                    session,
+                    f_sym,
+                    f_info,
+                    line,
+                    character,
+                );
     let locations = locations.map(|l| {
         match l {
             lsp_types::GotoDefinitionResponse::Link(locs) => locs,

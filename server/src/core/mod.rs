@@ -1,5 +1,7 @@
 pub mod config;
 pub mod csv_arch_builder;
+// @arena todo
+// pub mod csv_validation;
 pub mod diagnostics;
 pub mod evaluation;
 pub mod entry_point;

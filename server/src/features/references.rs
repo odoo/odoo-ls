@@ -1,18 +1,47 @@
 use std::rc::Weak;
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
-use lsp_types::{Location, Range};
+use lsp_types::Location;
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtIf, StmtMatch, StmtRaise, StmtReturn, StmtTry, StmtTypeAlias, StmtWith};
 use ruff_text_size::{Ranged, TextRange, TextSize};
+use tracing::error;
 use weak_table::PtrWeakHashSet;
 
-use crate::{S, Sy};
+use crate::core::file_mgr::AstType;
+use crate::core::symbols::module_symbol::ModuleSymbol;
+use crate::core::symbols::symbol_keys::SymbolKey;
+// use crate::features::references_csv::CsvAstReferenceVisitor;
+// use crate::features::references_xml::XmlAstReferenceVisitor;
+use crate::{S, Sy, oyarn};
 use crate::constants::OYarn;
 use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr};
 use crate::core::odoo::SyncOdoo;
-use crate::features::goto_utils::{GotoRequest, GotoSourceType, GotoUtils};
-use crate::{constants::SymType, core::{file_mgr::{FileInfo, FileMgr}, symbols::symbol::Symbol}, features::xml_ast_utils::{XmlAstResult, XmlAstUtils}, threads::SessionInfo, utils::PathSanitizer};
+// use crate::features::goto_utils::{GotoRequest, GotoSourceType, GotoUtils};
+use crate::{constants::SymType, core::{file_mgr::{FileInfo, FileMgr}}, threads::SessionInfo, utils::PathSanitizer};
 
+#[derive(Debug, Clone)]
+pub enum ReferenceTarget {
+    Symbol(SymbolKey), // @arena: should I be Weak instead?
+    String(String),
+}
+
+impl ReferenceTarget {
+    pub fn as_string(&self) -> Option<&String> {
+        match self {
+            ReferenceTarget::String(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn as_symbol(&self) -> Option<SymbolKey> {
+        match self {
+            ReferenceTarget::Symbol(s) => Some(*s),
+            _ => None,
+        }
+    }
+}
+
+/*
 pub struct ReferenceFeature {
 
 }
@@ -25,7 +54,18 @@ impl ReferenceFeature {
     pub fn get_references(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Vec<Location>> {
         //We want to search for references of the definition, and not the current symbol. Let's use definition feature for that
         SyncOdoo::process_rebuilds(session, false);
-        let def_sources = GotoUtils::get_symbols(session, GotoRequest::Definition, file_symbol, file_info, line, character);
+        let def_sources = match file_info.borrow().file_info_ast.borrow().ast_type {
+            AstType::Python => {
+                GotoUtils::get_symbols(session, GotoRequest::Definition, file_symbol, file_info, line, character)
+            },
+            AstType::Xml => {
+                GotoUtils::get_symbols_xml(session, file_symbol, file_info, line, character)
+            },
+            AstType::Csv => {
+                GotoUtils::get_symbols_csv(session, file_symbol, file_info, line, character)
+            }
+        };
+        
 
         let mut locations = Vec::new();
         for definition in def_sources.iter() {
@@ -37,17 +77,36 @@ impl ReferenceFeature {
 
                     //take arch and arch_eval dependents
                     if !file_symbol.borrow().dependents().is_empty() { // file could be out of workspace
-                        for dep in file_symbol.borrow().dependents()[0].iter().take(2) {
-                            if let Some(dep_set) = dep {
-                                for dep_symbol_rc in dep_set.iter() {
-                                    to_check.insert(dep_symbol_rc.clone());
+                        for dep in file_symbol.borrow().dependents().iter().take(2) {
+                            //dep.len()-1 here is to take only dependencies that are not validation (arch and arch_eval for arch, arch_eval for arch_eval)
+                            for dep in dep.iter().take(dep.len()) {
+                                if let Some(dep_set) = dep {
+                                    for dep_symbol_rc in dep_set.iter() {
+                                        to_check.insert(dep_symbol_rc.clone());
+                                    }
                                 }
                             }
                         }
                     }
-                    //If the symbol is a model, browse model dependents too
-                    if target_symbol.borrow().typ() == SymType::CLASS {
-                        if let Some(model_data) = target_symbol.borrow().as_class_sym()._model.as_ref() {
+                    //If the symbol is a model or a field, browse model dependents too
+                    let class_model_to_check = if target_symbol.borrow().typ() == SymType::CLASS {
+                        Some(target_symbol.clone())
+                    } else if target_symbol.borrow().is_field(session) {
+                        let class = target_symbol.borrow().get_in_parents(&vec![SymType::CLASS], true);
+                        if let Some(class) = class {
+                            if let Some(class) = class.upgrade() {
+                                Some(class)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    if let Some(class_model) = class_model_to_check {
+                        if let Some(model_data) = class_model.borrow().as_class_sym()._model.as_ref() {
                             if let Some(model) = session.sync_odoo.models.get(&model_data.name).cloned() {
                                 to_check.extend(model.borrow().dependents.clone());
                                 for symbol in model.borrow().all_symbols(session, None, false) {
@@ -67,7 +126,50 @@ impl ReferenceFeature {
                         let Some(dep_file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&file.borrow().paths()[0]) else {
                             continue;
                         };
-                        locations.extend(ReferenceFeature::references_in_file(session, &file, &dep_file_info, &target_symbol));
+                        let typ = file.borrow().typ().clone();
+                        match typ {
+                            SymType::FILE | SymType::PACKAGE(_) => {
+                                locations.extend(ReferenceFeature::references_in_file(session, &file, &dep_file_info, &ReferenceTarget::Symbol(target_symbol.clone())));
+                            },
+                            SymType::XML_FILE => {
+                                let data = dep_file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
+                                let document = roxmltree::Document::parse(&data);
+                                if let Ok(document) = document {
+                                    let root = document.root_element();
+                                    locations.extend(XmlAstReferenceVisitor::search_target(session, &file, root, &ReferenceTarget::Symbol(target_symbol.clone())));
+                                }
+                            },
+                            SymType::CSV_FILE => {
+                                if target_symbol.borrow().is_field(session) {
+                                    let data = dep_file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
+                                    let mut csv_reader = csv::ReaderBuilder::new().quoting(false).from_reader(data.as_bytes());
+                                    let model_class = target_symbol.borrow().get_in_parents(&vec![SymType::CLASS], true);
+                                    if let Some(model_class) = model_class {
+                                        if let Some(model_class) = model_class.upgrade() {
+                                            if let Some(model) = &model_class.borrow().as_class_sym()._model {
+                                                let model_name = model.name.clone();
+                                                locations.extend(CsvAstReferenceVisitor::search_target(session, &file, &mut csv_reader, Some(&model_name), &ReferenceTarget::Symbol(target_symbol.clone())));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    //add definition
+                    let sym_typ = target_symbol.borrow().typ().clone();
+                    if matches!(sym_typ, SymType::CLASS | SymType::FUNCTION | SymType::VARIABLE) {
+                        let file = target_symbol.borrow().get_file().unwrap().upgrade().unwrap();
+                        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&file.borrow().paths()[0]);
+                        if let Some(file_info) = file_info {
+                            let transformed_range = file_info.borrow().text_range_to_range(&target_symbol.borrow().range(), session.sync_odoo.encoding);
+                            let uri = FileMgr::pathname2uri(&file.borrow().paths().first().unwrap());
+                            locations.push(Location {
+                                uri: uri,
+                                range: transformed_range,
+                            });
+                        }
                     }
                 },
                 GotoSourceType::Module(m) => {
@@ -87,7 +189,64 @@ impl ReferenceFeature {
                 GotoSourceType::OdooData(data) => {
                     let xml_id = data.get_xml_id();
                     let Some(xml_id) = xml_id else {continue;};
-
+                    //we do not have any dependency for xml-id usage. So let's search in the current module and all modules that depend on it.
+                    let xml_id_file = data.get_file_symbol().unwrap().upgrade().unwrap();
+                    let current_module = xml_id_file.borrow().find_module().unwrap();
+                    let data_module_name = current_module.borrow().as_module_package().dir_name.clone();
+                    let mut files_to_process: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
+                    //TODO do not process all modules in the dep tree, but use dependencies on XML files when we will have them
+                    let mut modules_to_process: PtrWeakHashSet<Weak<RefCell<Symbol>>> = PtrWeakHashSet::new();
+                    modules_to_process.insert(current_module.clone());
+                    for (_module_name, module) in session.sync_odoo.modules.clone().iter() {
+                        let Some(module) = module.upgrade() else {continue;};
+                        if ModuleSymbol::is_in_deps(session, &module, current_module.borrow().name()) {
+                            for data in module.borrow().as_module_package().data_symbols.values().cloned() {
+                                files_to_process.insert(data);
+                            }
+                        }
+                    }
+                    //add python dependencies
+                    if !current_module.borrow().dependents().is_empty() { // file could be out of workspace
+                        for dep in current_module.borrow().dependents().iter().take(2) {
+                            //dep.len()-1 here is to take only dependencies that are not validation (arch and arch_eval for arch, arch_eval for arch_eval)
+                            for dep in dep.iter().take(dep.len()) {
+                                if let Some(dep_set) = dep {
+                                    for dep_symbol_rc in dep_set.iter() {
+                                        files_to_process.insert(dep_symbol_rc.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    for symbol in files_to_process {
+                        let file_s = symbol.borrow().get_file().unwrap().upgrade().unwrap();
+                        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&file_s.borrow().get_symbol_first_path());
+                        if let Some(file_info) = file_info {
+                            let full_xml_id = format!("{}.{}", data_module_name.clone(), xml_id.to_string());
+                            let sym_typ = symbol.borrow().typ().clone();
+                            match sym_typ {
+                                SymType::FILE | SymType::PACKAGE(_) => {
+                                    locations.extend(ReferenceFeature::references_in_file(session, &file_s, &file_info, &ReferenceTarget::String(full_xml_id)));
+                                },
+                                SymType::XML_FILE => {
+                                    let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
+                                    let document = roxmltree::Document::parse(&data);
+                                    if let Ok(document) = document {
+                                        let root = document.root_element();
+                                        locations.extend(XmlAstReferenceVisitor::search_target(session, &file_s, root, &ReferenceTarget::String(full_xml_id)));
+                                    }
+                                },
+                                SymType::CSV_FILE => {
+                                    //let model_name_pb = PathBuf::from(&file_s.borrow().paths()[0]);
+                                    //let model_name = Sy!(model_name_pb.file_stem().unwrap().to_str().unwrap().to_string());
+                                    let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
+                                    let mut csv_reader = csv::ReaderBuilder::new().quoting(false).from_reader(data.as_bytes());
+                                    locations.extend(CsvAstReferenceVisitor::search_target(session, &file_s, &mut csv_reader, None, &ReferenceTarget::String(full_xml_id)));
+                                },
+                                _ => {}
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -99,13 +258,16 @@ impl ReferenceFeature {
         }
     }
 
-    fn references_in_file(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, target_symbol_rc: &Rc<RefCell<Symbol>>) -> Vec<Location> {
+    fn references_in_file(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, reference_target: &ReferenceTarget) -> Vec<Location> {
         let file_info_ast = file_info.borrow().file_info_ast.clone();
+        if file_info_ast.borrow().get_stmts().is_none() { //filter modules with only manifest or file outside of workspace
+            return vec![];
+        }
         let mut visitor = ReferenceVisitor {
             sym_stack: vec![],
         };
         session.sync_odoo.evaluation_locations = vec![];
-        session.sync_odoo.evaluation_search = Some(target_symbol_rc.clone());
+        session.sync_odoo.evaluation_search = Some(reference_target.clone());
         visitor.browse_file(session, file_symbol, file_info_ast.borrow().get_stmts().as_ref().unwrap());
         session.sync_odoo.evaluation_search = None;
         std::mem::take(&mut session.sync_odoo.evaluation_locations)
@@ -195,7 +357,7 @@ impl ReferenceVisitor {
         for stmt in vec_ast.iter() {
             match stmt {
                 Stmt::FunctionDef(f) => {
-                    let sym = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&OYarn::from(f.name.to_string()), &f.range);
+                    let sym = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&OYarn::from(f.name.to_string()), &f.range).as_ref().cloned();
                     if let Some(sym) = sym {
                         self.sym_stack.push(sym);
                         self.visit_vec_stmt(session, &f.body);
@@ -264,6 +426,10 @@ impl ReferenceVisitor {
         let Some(eval_search) = session.sync_odoo.evaluation_search.clone() else {
             return;
         };
+        let eval_search_sym = match eval_search {
+            ReferenceTarget::Symbol(s) => s,
+            _ => return,
+        };
         for alias in name_aliases.iter() {
             if alias.name.id == "*" {
                 continue;
@@ -280,7 +446,7 @@ impl ReferenceVisitor {
                     match eval_sym {
                         EvaluationSymbolPtr::WEAK(w) => {
                             if let Some(symbol) = w.weak.upgrade() {
-                                if Rc::ptr_eq(&symbol, &eval_search) {
+                                if Rc::ptr_eq(&symbol, &eval_search_sym) {
                                     let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &file_symbol.borrow().paths()[0], &alias.range);
                                     session.sync_odoo.evaluation_locations.push(Location {
                                         uri: FileMgr::pathname2uri(&file_symbol.borrow().paths()[0]),
@@ -381,3 +547,4 @@ impl ReferenceVisitor {
         self.visit_vec_stmt(session, &node.body);
     }
 }
+ */
