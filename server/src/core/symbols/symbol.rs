@@ -1754,7 +1754,7 @@ impl Symbol {
         }
     }
 
-    /// @arena-next
+    /// @arena: moved to symbol table (free function)
     /// @arena: adapt fifoweakset
     pub fn invalidate(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>, step: &BuildSteps) {
         //signals that a change occurred to this symbol. "step" indicates which level of change occurred.

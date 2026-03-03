@@ -439,6 +439,32 @@ impl SymbolView<'_> {
             _ => {None}
         }
     }
+
+    pub fn has_modules(&self) -> bool {
+        match self {
+            Self::Root(_) | Self::Namespace(_) | Self::Package(_) | Self::DiskDir(_) => true,
+            _ => {false}
+        }
+    }
+    // @arena: it would be simpler to return a Vec<SymbolKey> instead
+    pub fn all_module_symbol(&self) -> Box<dyn Iterator<Item = &SymbolKey> + '_> {
+        match self {
+            Self::Root(r) => Box::new(r.module_symbols.values()),
+            Self::Namespace(n) => {
+                Box::new(n.directories.iter().flat_map(|x| x.module_symbols.values()))
+            },
+            Self::DiskDir(d) => Box::new(d.module_symbols.values()),
+            Self::Package(PackageSymbol::Module(m)) => Box::new(m.module_symbols.values()),
+            Self::Package(PackageSymbol::PythonPackage(p)) => Box::new(p.module_symbols.values()),
+            Self::File(_) => panic!("No module symbol on File"),
+            Self::Compiled(_) => panic!("No module symbol on Compiled"),
+            Self::Class(_c) => panic!("No module symbol on Class"),
+            Self::Function(_) => panic!("No module symbol on Function"),
+            Self::Variable(_) => panic!("No module symbol on Variable"),
+            Self::XmlFileSymbol(_) => panic!("No module symbol on XmlFileSymbol"),
+            Self::CsvFileSymbol(_) => panic!("No module symbol on CsvFileSymbol"),
+        }
+    }
 }
 
 
@@ -660,6 +686,7 @@ impl SymbolTable {
     // @arena: compare with get_in_parents, and chose an approach (trust the key or not)
     // Consider just calling get_in_parents
     /// @arena: this should return a ModuleKey (after spliting it from PackageKey)
+    /// @arena: maybe this only gets called with class key (change signature if so)
     pub fn find_module(&self, key: SymbolKey) -> Option<SymbolKey> {
         let symbol = self.get_symbol_view(key)?;
         if let SymbolView::Package(PackageSymbol::Module(_)) = symbol {
@@ -1999,6 +2026,85 @@ pub fn is_specific_field(session: &mut SessionInfo, target: SymbolKey, field_nam
         }
     }
     false
+}
+
+// @arena: original function calls dependents() before each loop over dependencies
+// Here we clone it once (to free the borrow) and use it for all the loops.
+// This assumes the result of dependents() would not change between calls.
+pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildSteps) {
+    macro_rules! st { () => { session.sync_odoo.symbol_table } }  
+    //signals that a change occurred to this symbol. "step" indicates which level of change occurred.
+    //It will trigger rebuild on all dependencies
+    let mut vec_to_invalidate = VecDeque::from([symbol]);
+    while let Some(ref_to_inv) = vec_to_invalidate.pop_front() {
+        let sym_to_inv = get_sym!(st!(), ref_to_inv);
+        let sym_to_inv_type = sym_to_inv.typ();
+        let dependents = sym_to_inv.dependents().clone();
+        if matches!(sym_to_inv_type, SymType::FILE | SymType::PACKAGE(_) | SymType::XML_FILE | SymType::CSV_FILE) {
+            if *step == BuildSteps::ARCH && dependents.len() > 0 {
+                for (index, hashset) in dependents[BuildSteps::ARCH as usize].iter().enumerate() {
+                    let Some(hashset) = hashset else {
+                        continue;
+                    };
+                    for &sym in hashset {
+                        if !st!().is_symbol_in_parents(sym, ref_to_inv) {
+                            if index == BuildSteps::ARCH as usize {
+                                session.sync_odoo.add_to_rebuild_arch(sym);
+                            } else if index == BuildSteps::ARCH_EVAL as usize {
+                                session.sync_odoo.add_to_rebuild_arch_eval(sym);
+                            } else if index == BuildSteps::VALIDATION as usize {
+                                // @arena: todo: check if this mutates the dependents of sym_to_inv
+                                st!().invalidate_sub_functions(sym);
+                                session.sync_odoo.add_to_validations(sym);
+                            }
+                        }
+                    }
+                }
+            }
+            if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL].contains(step) && dependents.len() > 1 {
+                for (index, hashset) in dependents[BuildSteps::ARCH_EVAL as usize].iter().enumerate() {
+                    let Some(hashset) = hashset else {
+                        continue;
+                    };
+                    for &sym in hashset {
+                        if !st!().is_symbol_in_parents(sym, ref_to_inv) {
+                            if index + 1 == BuildSteps::ARCH_EVAL as usize {
+                                session.sync_odoo.add_to_rebuild_arch_eval(sym);
+                            } else if index + 1 == BuildSteps::VALIDATION as usize {
+                                st!().invalidate_sub_functions(sym);
+                                session.sync_odoo.add_to_validations(sym);
+                            }
+                        }
+                    }
+                }
+                for class in st!().iter_classes(ref_to_inv) {
+                    let class_sym = st!().classes.get(class).expect("valid key");
+                    if let Some(model_data) = &class_sym._model {
+                        let model = session.sync_odoo.models.get(&model_data.name).cloned();
+                        if let Some(model) = model {
+                            let from_module = st!().find_module(class.into());
+                            // @arena: todo: check if this mutates the dependents of sym_to_inv
+                            model.borrow().add_dependents_to_validation(session, from_module);
+                        }
+                    }
+                }
+            }
+        }
+        if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::VALIDATION].contains(step) && dependents.len() > 2 {
+            for &sym in dependents[BuildSteps::VALIDATION as usize].iter().flatten().flatten() {
+                if !st!().is_symbol_in_parents(sym, ref_to_inv) {
+                    st!().invalidate_sub_functions(sym);
+                    session.sync_odoo.add_to_validations(sym);
+                }
+            }
+        }
+        let sym_to_inv = get_sym!(st!(), ref_to_inv);
+        if sym_to_inv.has_modules() {
+            for &sym in sym_to_inv.all_module_symbol() {
+                vec_to_invalidate.push_back(sym);
+            }
+        }
+    }
 }
 
 

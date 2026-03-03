@@ -801,7 +801,8 @@ impl SyncOdoo {
         true
     }
 
-    pub fn add_to_rebuild_arch(&mut self, symbol: Rc<RefCell<Symbol>>) {
+    // @arena todo
+    pub fn add_to_rebuild_arch(&mut self, symbol: SymbolKey) {
         if DEBUG_THREADS {
             trace!("ADDED TO ARCH - {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
         }
@@ -815,7 +816,8 @@ impl SyncOdoo {
         }
     }
 
-    pub fn add_to_rebuild_arch_eval(&mut self, symbol: Rc<RefCell<Symbol>>) {
+    // @arena todo
+    pub fn add_to_rebuild_arch_eval(&mut self, symbol: SymbolKey) {
         if DEBUG_THREADS {
             trace!("ADDED TO EVAL - {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
         }

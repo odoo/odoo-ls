@@ -60,7 +60,6 @@ RefCell to FileInfo, EntryPoint
         - solution would be to mutate it and remove. But needs &mut access.
             - good use of RefCell in this case?
 
-- get_member symbol
 
 
 ## Strategy
