@@ -76,7 +76,7 @@ pub struct SyncOdoo {
     pub stdlib_dir: String,
     pub progress_token: i32,
     file_mgr: Rc<RefCell<FileMgr>>,
-    pub modules: HashMap<OYarn, SymbolKey>,
+    pub modules: HashMap<OYarn, SymbolKey>, // former weakmap
     pub models: HashMap<OYarn, Rc<RefCell<Model>>>,
     pub interrupt_rebuild: Arc<AtomicBool>,
     pub terminate_rebuild: Arc<AtomicBool>,
@@ -1202,7 +1202,7 @@ impl SyncOdoo {
         }
         let module = module.unwrap();
         let module = module.borrow();
-        module.as_module_package().get_xml_id(&oyarn!("{}", id_split.last().unwrap()))
+        crate::core::symbols::module_symbol::ModuleSymbol::get_xml_id(module.as_module_package(), &oyarn!("{}", id_split.last().unwrap()))
     }
 
 }

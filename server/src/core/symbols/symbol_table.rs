@@ -17,7 +17,7 @@ function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol,
 namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol,
 root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex,
 SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol,
-xml_file_symbol::XmlFileSymbol }}, threads::SessionInfo, utils::{PathSanitizer,
+xml_file_symbol::XmlFileSymbol }, xml_data::OdooData}, threads::SessionInfo, utils::{PathSanitizer,
 compare_semver}};
 
 new_key_type! { pub struct RootKey; }
@@ -462,6 +462,17 @@ impl SymbolView<'_> {
             Self::Variable(_) => panic!("No module symbol on Variable"),
             Self::XmlFileSymbol(_) => panic!("No module symbol on XmlFileSymbol"),
             Self::CsvFileSymbol(_) => panic!("No module symbol on CsvFileSymbol"),
+        }
+    }
+
+    pub fn get_xml_id(&self, xml_id: &OYarn) -> Option<Vec<OdooData>> {
+        match self {
+            Self::XmlFileSymbol(xml_file) => xml_file.xml_ids.get(xml_id).cloned(),
+            Self::Package(PackageSymbol::Module(module)) => module.xml_ids.get(xml_id).cloned(),
+            Self::Package(PackageSymbol::PythonPackage(package)) => package.xml_ids.get(xml_id).cloned(),
+            Self::File(file) => file.xml_ids.get(xml_id).cloned(),
+            Self::CsvFileSymbol(file) => file.xml_ids.get(xml_id).cloned(),
+            _ => None,
         }
     }
 }

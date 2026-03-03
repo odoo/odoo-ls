@@ -111,6 +111,13 @@ impl PackageSymbol {
         }
     }
 
+    pub fn as_module_package(&self) -> &ModuleSymbol {
+        match self {
+            PackageSymbol::Module(m) => m,
+            _ => panic!("Not a module package"),
+        }
+    }
+
     pub fn as_python_package_mut(&mut self) -> &mut PythonPackageSymbol {
         match self {
             PackageSymbol::PythonPackage(p) => p,

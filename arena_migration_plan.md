@@ -173,50 +173,9 @@ struct Semver{(u16, u16, u16)};
 implement partialeq against (u16, u16, u16) and (u16, u16)
 use Semver to store version in SyncOdoo.
 
-## Symbol Method Migration Order
 
-### Phase 1 — Leaf methods (no unmigrated dependencies, ready now)
+## Next big steps
 
-| Method | Signature | Destination | Notes |
-|--------|-----------|-------------|-------|
-| `body_range` | `&self` → `&TextRange` | SymbolView | Simple accessor, panics on non-code variants |
-| `iter_symbols` | `&self` → iterator | SymbolView | Returns iterator over symbols HashMap |
-| `iter_inner_functions` | `&self` → `Vec<…>` | SymbolView/SymbolTable | Recursive traversal collecting FUNCTIONs |
-| `iter_classes` | `&self` → `Vec<…>` | SymbolView/SymbolTable | Recursive traversal collecting CLASSes |
-| `all_symbols` | `&self` → `impl Iterator` | SymbolView/SymbolTable | Delegates to `iter_symbols` |
-| `add_model_dependencies` | `&mut self` | SymbolTable | Adds model to variant's model_dependencies set |
-| `remove_symbol` | `&mut self`, takes symbol | SymbolTable | Pattern-matches on variant, removes from containers |
-| `insert_dependencies` | static, takes file + deps | SymbolTable | Wrapper around `add_dependency` (already migrated) |
-| `get_tree_and_entry` | `&self` | SymbolTable | Walks parent chain (parent/typ/name already available) |
-
-### Phase 2 — Depends only on Phase 1
-
-| Method | Depends on | Destination | Notes |
-|--------|------------|-------------|-------|
-| `invalidate_sub_functions` | `iter_inner_functions` | SymbolTable | Clears evaluations on inner functions |
-| `get_local_tree` | `get_tree_and_entry` | SymbolTable | Strips entry point prefix |
-| `match_tree_from_any_entry` | `get_tree_and_entry` | SymbolTable | Also iterates EntryPointMgr from session |
-| `get_scope_symbol` | `body_range`, `range` (on SymbolView) | SymbolTable | Recursive scope-by-offset lookup |
-
-### Phase 3 — Member resolution (mutually recursive pairs, convert together)
-
-| Method | Depends on | Notes |
-|--------|------------|-------|
-| `get_member_symbol` | `_get_member_symbol_helper` | Thin entry point, inits visited set |
-| `_get_member_symbol_helper` | `get_member_symbol` (recursive), + migrated: `get_module_symbol`, `get_sub_symbol`, `find_module` | Complex class/model hierarchy traversal |
-| `all_members` | `_all_members` | Inits result map, delegates |
-| `_all_members` | `all_symbols` (Phase 1), `_all_members` (recursive), `get_tree` (migrated) | Recursive member collection through bases + comodels |
-
-### Phase 4 — Evaluation chain
-
-| Method | Depends on | Notes |
-|--------|------------|-------|
-| `next_refs` | `get_member_symbol` (Phase 3) | Descriptor protocol, evaluations access |
-| `follow_ref` | `next_refs` | Work-queue based eval following, large method |
-
-### Phase 5 — Invalidation / unload (top of the dependency tree)
-
-| Method | Depends on | Notes |
-|--------|------------|-------|
-| `invalidate` | `invalidate_sub_functions` (Phase 2), `iter_classes` (Phase 1), + migrated: `is_symbol_in_parents`, `find_module` | BFS over dependents, mutates session rebuild queues |
-| `unload` | `all_symbols` (Phase 1), `remove_symbol` (Phase 1), `invalidate` (this phase) | DFS unload + invalidate |
+### split package and module
+    - PyPackageKey and ModuleKey
+    - store ModuleKey's in sync_odoo.modules, update everywhere that takes a PackageKey
