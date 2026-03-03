@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::vec;
 use anyhow::Error;
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use ruff_python_ast::{Alias, AnyRootNodeRef, CmpOp, Expr, ExprNamed, ExprTuple, FStringPart, Identifier, Pattern, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtMatch, StmtTry, StmtWhile, StmtWith};
+use ruff_python_ast::{Alias, AnyRootNodeRef, CmpOp, Expr, ExprNamed, ExprTuple, FStringPart, Identifier, Parameters, Pattern, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtMatch, StmtTry, StmtWhile, StmtWith};
 use lsp_types::Diagnostic;
 use tracing::{trace, warn};
 use weak_table::traits::WeakElement;
@@ -456,12 +456,16 @@ impl PythonArchBuilder {
                 expr_slice.lower.as_ref().map(|lower_expr| self.visit_expr(session, &lower_expr));
             },
             // Expressions that cannot contained a named expressions are not traversed
-            Expr::Lambda(_todo_lambda_expr) => {
-                // Lambdas can have named expressions, but it is not a common use
-                // Like lambda vals: vals[(x := 0): x + 3]
-                // However x is only in scope in the lambda expression only
-                // It needs adding a new function, ast_indexes, then add the variable inside
-                // I deem it currently unnecessary
+            Expr::Lambda(lambda_expr) => {
+                let sym = self.sym_stack.last().unwrap().borrow_mut().add_new_function(
+                    session, &S!("<lambda>"), &lambda_expr.range, &lambda_expr.body.range().start()
+                );
+                if let Some(parameters) = &lambda_expr.parameters {
+                    PythonArchBuilder::handle_func_args(&sym, session, &parameters);
+                }
+                self.sym_stack.push(sym.clone());
+                self.visit_expr(session, &lambda_expr.body);
+                self.sym_stack.pop();
             },
             Expr::Generator(_todo_expr_generator) => {
                 // generators are lazily evaluated,
@@ -661,6 +665,67 @@ impl PythonArchBuilder {
         }
     }
 
+    fn handle_func_args(fun_sym: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, parameters: &Parameters) {
+        for arg in parameters.posonlyargs.iter() {
+            let param = fun_sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.parameter.name.id), &arg.range);
+            param.borrow_mut().as_variable_mut().is_parameter = true;
+            let mut default = None;
+            if arg.default.is_some() {
+                default = Some(Evaluation::new_none()); //TODO evaluate default? actually only used to know if there is a default or not
+            }
+            fun_sym.borrow_mut().as_func_mut().args.push(Argument {
+                symbol: Rc::downgrade(&param),
+                default_value: default,
+                arg_type: ArgumentType::POS_ONLY,
+                annotation: arg.parameter.annotation.clone(),
+            });
+        }
+        for arg in parameters.args.iter() {
+            let param = fun_sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.parameter.name.id), &arg.range);
+            param.borrow_mut().as_variable_mut().is_parameter = true;
+            let mut default = None;
+            if arg.default.is_some() {
+                default = Some(Evaluation::new_none()); //TODO evaluate default? actually only used to know if there is a default or not
+            }
+            fun_sym.borrow_mut().as_func_mut().args.push(Argument {
+                symbol: Rc::downgrade(&param),
+                default_value: default,
+                arg_type: ArgumentType::ARG,
+                annotation: arg.parameter.annotation.clone(),
+            });
+        }
+        if let Some(arg) = &parameters.vararg {
+            let param = fun_sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.name.id), &arg.range);
+            param.borrow_mut().as_variable_mut().is_parameter = true;
+            fun_sym.borrow_mut().as_func_mut().args.push(Argument {
+                symbol: Rc::downgrade(&param),
+                default_value: None,
+                arg_type: ArgumentType::VARARG,
+                annotation: arg.annotation.clone(),
+            });
+        }
+        for arg in parameters.kwonlyargs.iter() {
+            let param = fun_sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.parameter.name.id), &arg.range);
+            param.borrow_mut().as_variable_mut().is_parameter = true;
+            fun_sym.borrow_mut().as_func_mut().args.push(Argument {
+                symbol: Rc::downgrade(&param),
+                default_value: arg.default.as_ref().map(|_default| Evaluation::new_none()),
+                arg_type: ArgumentType::KWORD_ONLY,
+                annotation: arg.parameter.annotation.clone(),
+            });
+        }
+        if let Some(arg) = &parameters.kwarg {
+            let param = fun_sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.name.id), &arg.range);
+            param.borrow_mut().as_variable_mut().is_parameter = true;
+            fun_sym.borrow_mut().as_func_mut().args.push(Argument {
+                symbol: Rc::downgrade(&param),
+                default_value: None,
+                arg_type: ArgumentType::KWARG,
+                annotation: arg.annotation.clone(),
+            });
+        }
+    }
+
     fn visit_func_def(&mut self, session: &mut SessionInfo, func_def: &StmtFunctionDef) -> Result<(), Error> {
         if func_def.body.is_empty() {
             return Ok(()) //if body is empty, it usually means that the ast of the class is invalid. Skip it
@@ -706,64 +771,7 @@ impl PythonArchBuilder {
         }
         drop(sym_bw);
         //add params
-        for arg in func_def.parameters.posonlyargs.iter() {
-            let param = sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.parameter.name.id), &arg.range);
-            param.borrow_mut().as_variable_mut().is_parameter = true;
-            let mut default = None;
-            if arg.default.is_some() {
-                default = Some(Evaluation::new_none()); //TODO evaluate default? actually only used to know if there is a default or not
-            }
-            sym.borrow_mut().as_func_mut().args.push(Argument {
-                symbol: Rc::downgrade(&param),
-                default_value: default,
-                arg_type: ArgumentType::POS_ONLY,
-                annotation: arg.parameter.annotation.clone(),
-            });
-        }
-        for arg in func_def.parameters.args.iter() {
-            let param = sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.parameter.name.id), &arg.range);
-            param.borrow_mut().as_variable_mut().is_parameter = true;
-            let mut default = None;
-            if arg.default.is_some() {
-                default = Some(Evaluation::new_none()); //TODO evaluate default? actually only used to know if there is a default or not
-            }
-            sym.borrow_mut().as_func_mut().args.push(Argument {
-                symbol: Rc::downgrade(&param),
-                default_value: default,
-                arg_type: ArgumentType::ARG,
-                annotation: arg.parameter.annotation.clone(),
-            });
-        }
-        if let Some(arg) = &func_def.parameters.vararg {
-            let param = sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.name.id), &arg.range);
-            param.borrow_mut().as_variable_mut().is_parameter = true;
-            sym.borrow_mut().as_func_mut().args.push(Argument {
-                symbol: Rc::downgrade(&param),
-                default_value: None,
-                arg_type: ArgumentType::VARARG,
-                annotation: arg.annotation.clone(),
-            });
-        }
-        for arg in func_def.parameters.kwonlyargs.iter() {
-            let param = sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.parameter.name.id), &arg.range);
-            param.borrow_mut().as_variable_mut().is_parameter = true;
-            sym.borrow_mut().as_func_mut().args.push(Argument {
-                symbol: Rc::downgrade(&param),
-                default_value: arg.default.as_ref().map(|_default| Evaluation::new_none()),
-                arg_type: ArgumentType::KWORD_ONLY,
-                annotation: arg.parameter.annotation.clone(),
-            });
-        }
-        if let Some(arg) = &func_def.parameters.kwarg {
-            let param = sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.name.id), &arg.range);
-            param.borrow_mut().as_variable_mut().is_parameter = true;
-            sym.borrow_mut().as_func_mut().args.push(Argument {
-                symbol: Rc::downgrade(&param),
-                default_value: None,
-                arg_type: ArgumentType::KWARG,
-                annotation: arg.annotation.clone(),
-            });
-        }
+        PythonArchBuilder::handle_func_args(&sym, session, &func_def.parameters);
         let mut add_noqa = false;
         if let Some(noqa_bloc) = self.file_info.as_ref().unwrap().borrow().noqas_blocs.get(&func_def.range.start().to_u32()) {
             session.noqas_stack.push(noqa_bloc.clone());

@@ -314,12 +314,26 @@ impl PythonArchEval {
                 expr_slice.lower.as_ref().map(|lower_expr| self.visit_expr(session, &lower_expr));
             },
             // Expressions that cannot contained a named expressions are not traversed
-            Expr::Lambda(_todo_lambda_expr) => {
+            Expr::Lambda(lambda_expr) => {
                 // Lambdas can have named expressions, but it is not a common use
                 // Like lambda vals: vals[(x := 0): x + 3]
                 // However x is only in scope in the lambda expression only
                 // It needs adding a new function, ast_indexes, then add the variable inside
                 // I deem it currently unnecessary
+                let variable: Option<Rc<RefCell<Symbol>>> = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&Sy!("<lambda>"), &lambda_expr.range);
+                let Some(lambda_fn_sym) = variable else {
+                    return; // can be not found if AST is incomplete
+                };
+                lambda_fn_sym.borrow_mut().as_func_mut().arch_eval_status = BuildStatus::IN_PROGRESS;
+                self.sym_stack.push(lambda_fn_sym.clone());
+                self.visit_expr(session, &lambda_expr.body);
+                let mut deps = vec![vec![], vec![]];
+                let (eval, diags) = Evaluation::eval_from_ast(session, &lambda_expr.body, lambda_fn_sym.clone(), &lambda_expr.body.range().start(), false, &mut deps);
+                self.diagnostics.extend(diags);
+                Symbol::insert_dependencies(&self.file, &mut deps, self.current_step);
+                FunctionSymbol::add_return_evaluations(lambda_fn_sym.clone(), session, eval);
+                self.sym_stack.pop();
+                lambda_fn_sym.borrow_mut().as_func_mut().arch_eval_status = BuildStatus::DONE;
             },
             Expr::Generator(_todo_expr_generator) => {
                 // generators are lazily evaluated,

@@ -1,4 +1,4 @@
-// Test the hover feature by calling get_hover on various symbols in the test addons.
+﻿// Test the hover feature by calling get_hover on various symbols in the test addons.
 
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::utils::{PathSanitizer, ToFilePath};
@@ -394,4 +394,62 @@ fn test_model_subscription() {
         "Resolving a subscript of a model should include the model symbol itself.
         Expected to find BaseTestModel symbol among resolved symbols of `partner = self.search([], limit=2)[-1:]`"
     )
+}
+
+#[test]
+/// Test that lambda parameters properly shadow outer-scope names.
+/// `lambda_scope = lambda basic_var: basic_var` – `basic_var` in the lambda body
+/// should resolve to the lambda parameter (untyped), NOT to the outer `basic_var = 42`
+/// which has type `int`. This directly validates the lambda scoping added in the last commit.
+fn test_lambda_parameter_scoping() {
+    let (mut odoo, config) = setup::setup::setup_server(true);
+    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
+    assert!(PathBuf::from(&test_file).exists(), "Test file does not exist: {}", test_file);
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
+
+    let file_mgr = session.sync_odoo.get_file_mgr();
+    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(
+        &mut session,
+        &PathBuf::from(&test_file)
+    ) else {
+        panic!("Failed to get file symbol");
+    };
+
+    // Baseline: the outer `basic_var = 42` at line 50, col 0 should show type `int`.
+    let outer_hover = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 50, 0)
+        .unwrap_or_default();
+    assert!(
+        outer_hover.contains("int"),
+        "Outer basic_var should have type int, got: {outer_hover}"
+    );
+
+    // `lambda_scope = lambda basic_var: basic_var` is at line 63.
+    // col 22 = start of the parameter `basic_var`
+    // col 33 = start of `basic_var` in the lambda body
+    //
+    // The parameter shadows the outer variable: neither position should resolve
+    // to the outer `basic_var: int`.
+    let param_hover = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 63, 22)
+        .unwrap_or_default();
+    assert!(
+        param_hover.contains("basic_var"),
+        "Hover on lambda parameter should show 'basic_var', got: {param_hover}"
+    );
+    assert!(
+        !param_hover.contains("int"),
+        "Lambda parameter 'basic_var' should NOT carry outer type 'int', got: {param_hover}"
+    );
+
+    let body_hover = test_utils::get_hover_markdown(&mut session, &file_symbol, &file_info, 63, 33)
+        .unwrap_or_default();
+    assert!(
+        body_hover.contains("basic_var"),
+        "Hover on lambda body should show 'basic_var', got: {body_hover}"
+    );
+    assert!(
+        !body_hover.contains("int"),
+        "Lambda body 'basic_var' should resolve to the lambda parameter, not the outer int variable, got: {body_hover}"
+    );
 }

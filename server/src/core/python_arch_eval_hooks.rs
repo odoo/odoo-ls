@@ -73,7 +73,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         let values: Vec<ruff_python_ast::Expr> = Vec::new();
         let mut id = symbol.borrow_mut();
         let range = id.range().clone();
-        id.set_evaluations(vec![Evaluation::new_list(odoo.sync_odoo, values, range)]);
+        id.set_evaluations(vec![Evaluation::new_list(odoo.sync_odoo, Some(values), range)]);
     }},
     /*PythonArchEvalFileHook {file_tree: vec![Sy!("odoo"), Sy!("models")],
                         content_tree: vec![Sy!("BaseModel"), Sy!("search_count")],
