@@ -1,6 +1,6 @@
 use itertools::Itertools;
 use itertools::FoldWhile::{Continue, Done};
-use ruff_python_ast::{Arguments, Expr, ExprCall, Identifier, Number, Parameter, UnaryOp};
+use ruff_python_ast::{Arguments, Expr, ExprCall, FStringPart, Identifier, Number, Operator, Parameter, UnaryOp};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::{Diagnostic, Location, Position, Range};
 use std::cmp::{max, min};
@@ -258,7 +258,7 @@ impl AnalyzeAstResult {
 
 impl Evaluation {
 
-    pub fn new_list(odoo: &mut SyncOdoo, values: Vec<Expr>, range: TextRange) -> Evaluation {
+    pub fn new_list(odoo: &mut SyncOdoo, values: Option<Vec<Expr>>, range: TextRange) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
@@ -269,12 +269,12 @@ impl Evaluation {
                 }),
                 get_symbol_hook: None
             },
-            value: Some(EvaluationValue::LIST(values)),
+            value: values.map(EvaluationValue::LIST),
             range: Some(range),
         }
     }
 
-    pub fn new_tuple(odoo: &mut SyncOdoo, values: Vec<Expr>, range: TextRange) -> Evaluation {
+    pub fn new_tuple(odoo: &mut SyncOdoo, values: Option<Vec<Expr>>, range: TextRange) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
@@ -285,12 +285,12 @@ impl Evaluation {
                 }),
                 get_symbol_hook: None
             },
-            value: Some(EvaluationValue::TUPLE(values)),
+            value: values.map(EvaluationValue::TUPLE),
             range: Some(range)
         }
     }
 
-    pub fn new_dict(odoo: &mut SyncOdoo, values: Vec<(Expr, Expr)>, range: TextRange) -> Evaluation {
+    pub fn new_dict(odoo: &mut SyncOdoo, values: Option<Vec<(Expr, Expr)>>, range: TextRange) -> Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
@@ -301,7 +301,7 @@ impl Evaluation {
                 }),
                 get_symbol_hook: None
             },
-            value: Some(EvaluationValue::DICT(values)),
+            value: values.map(EvaluationValue::DICT),
             range: Some(range)
         }
     }
@@ -508,7 +508,6 @@ impl Evaluation {
     }
 
     /// Create an evaluation that is evaluating to the given symbol
-    /// @arena: consider taking impl Into<Weak<SymbolKey>> instead of Weak<SymbolKey> directly, to avoid the need of calling .into() everywhere
     pub fn eval_from_symbol(symbol_table: &SymbolTable, symbol: impl Into<Weak<SymbolKey>>, instance: Option<bool>) -> Evaluation {
         let symbol: Weak<SymbolKey> = symbol.into();
         if symbol.is_expired(symbol_table) {
@@ -660,6 +659,15 @@ impl Evaluation {
         let mut diagnostics = vec![];
         let module = st!().find_module(parent);
         let mut found_one_reference = false;
+
+        let parent_file_or_func = st!().parent_file_or_function(parent).unwrap();
+        let is_in_validation = match parent_file_or_func.typ() {
+            SymType::FILE | SymType::PACKAGE(_) | SymType::FUNCTION => {
+                st!().build_status(parent_file_or_func, BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
+            },
+            _ => {false}
+        };
+
         let odoo = &mut session.sync_odoo;
 
         match ast {
@@ -682,51 +690,107 @@ impl Evaluation {
                 evals.push(Evaluation::new_constant(odoo, ast.expr().clone(), expr.range));
             }
             ExprOrIdent::Expr(Expr::List(expr)) => {
+                let mut all_values = true;
                 let mut values: Vec<ruff_python_ast::Expr> = Vec::new();
                 for e in expr.elts.iter() {
-                    if e.is_literal_expr() {
+                    if is_in_validation || session.sync_odoo.evaluation_search.is_some() {
+                        let (_, diags) = Evaluation::eval_from_ast(session, e, parent, max_infer, false, required_dependencies);
+                        if is_in_validation {
+                            diagnostics.extend(diags);
+                        }
+                    }
+                    if all_values && e.is_literal_expr() {
                         values.push(e.clone());
                     } else {
-                        values = Vec::new(); break;
+                        values = Vec::new();
+                        all_values = false;
+                        if !is_in_validation && session.sync_odoo.evaluation_search.is_none() {
+                            break;
+                        }
                     }
                 }
-                evals.push(Evaluation::new_list(odoo, values, expr.range));
+                evals.push(Evaluation::new_list(session.sync_odoo, Some(values), expr.range));
             },
             ExprOrIdent::Expr(Expr::Tuple(expr)) => {
+                let mut all_values = true;
                 let mut values: Vec<ruff_python_ast::Expr> = Vec::new();
                 for e in expr.elts.iter() {
-                    if e.is_literal_expr() {
+                    if is_in_validation || session.sync_odoo.evaluation_search.is_some() {
+                        let (_, diags) = Evaluation::eval_from_ast(session, e, parent, max_infer, false, required_dependencies);
+                        if is_in_validation {
+                            diagnostics.extend(diags);
+                        }
+                    }
+                    if all_values && e.is_literal_expr() {
                         values.push(e.clone());
                     } else {
-                        values = Vec::new(); break;
+                        values = Vec::new();
+                        all_values = false;
+                        if !is_in_validation && session.sync_odoo.evaluation_search.is_none() {
+                            break;
+                        }
                     }
                 }
-                evals.push(Evaluation::new_tuple(odoo, values, expr.range));
+                evals.push(Evaluation::new_tuple(session.sync_odoo, Some(values), expr.range));
             },
             ExprOrIdent::Expr(Expr::Set(expr)) => {
-                evals.push(Evaluation::new_set(odoo, expr.range))
+                evals.push(Evaluation::new_set(odoo, expr.range));
+                if is_in_validation || session.sync_odoo.evaluation_search.is_some() {
+                    for set_item in expr.elts.iter() {
+                        let (_, diags) = Evaluation::eval_from_ast(session, set_item, parent, max_infer, false, required_dependencies);
+                        if is_in_validation {
+                            diagnostics.extend(diags);
+                        }
+                    }
+                }
             },
             ExprOrIdent::Expr(Expr::Dict(expr)) => {
+                let mut all_values = true;
                 let mut values: Vec<(ruff_python_ast::Expr, ruff_python_ast::Expr)> = Vec::new();
-                for (index, e) in expr.iter_keys().enumerate() {
-                    let dict_value = &expr.items.get(index).unwrap().value;
-                    match e {
+                for dict_item in expr.iter() {
+                    let dict_value = &dict_item.value;
+                    if is_in_validation || session.sync_odoo.evaluation_search.is_some() {
+                        let (_, diags) = Evaluation::eval_from_ast(session, &dict_value, parent, max_infer, false, required_dependencies);
+                        if is_in_validation {
+                            diagnostics.extend(diags);
+                        }
+                    }
+                    match dict_item.key.as_ref() {
                         Some(key) => {
-                            if key.is_literal_expr() && dict_value.is_literal_expr() {
+                            if is_in_validation || session.sync_odoo.evaluation_search.is_some() {
+                                let (_, diags) = Evaluation::eval_from_ast(session, key, parent, max_infer, false, required_dependencies);
+                                if is_in_validation {
+                                    diagnostics.extend(diags);
+                                }
+                            }
+                            if all_values && key.is_literal_expr() && dict_value.is_literal_expr() {
                                 values.push((key.clone(), dict_value.clone()));
                             } else {
-                                values.clear(); break;
+                                all_values = false;
+                                if !is_in_validation && session.sync_odoo.evaluation_search.is_none() {
+                                    break;
+                                }
                             }
                         },
                         None => {
                             // do not handle dict unpacking
-                            values.clear(); break;
+                            all_values = false;
+                            if !is_in_validation && session.sync_odoo.evaluation_search.is_none() {
+                                break;
+                            }
                         }
                     }
                 }
-                evals.push(Evaluation::new_dict(odoo, values, expr.range));
+                evals.push(Evaluation::new_dict(session.sync_odoo, Some(values), expr.range));
             },
             ExprOrIdent::Expr(Expr::Call(expr)) => {
+                // Check argument expressions for references and diagnostics
+                if is_in_validation || odoo.evaluation_search.is_some() {
+                    for param in expr.arguments.args.iter().chain(expr.arguments.keywords.iter().map(|k| &k.value)) {
+                        let (_, diags) = Evaluation::eval_from_ast(session, &param, parent, max_infer, false, required_dependencies);
+                        diagnostics.extend(diags);
+                    }
+                }
                 let (base_evals, diags) = Evaluation::eval_from_ast(session, &expr.func, parent, max_infer, false, required_dependencies);
                 diagnostics.extend(diags);
                 //TODO actually we only evaluate if there is only one function behind the evaluation.
@@ -760,15 +824,6 @@ impl Evaluation {
                     let base_sym_weak_eval_base = base_eval.symbol.get_symbol_weak_transformed(session, context, &mut diagnostics, None);
                     SymbolTable::follow_ref(&base_sym_weak_eval_base, session, context, true, false, None, None)
                 }).flatten().collect();
-
-                let parent_file_or_func = st!().parent_file_or_function(parent).unwrap();
-                let is_in_validation = match parent_file_or_func {
-                    SymbolKey::File(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::Function(_) => {
-                        // parent_file_or_func.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
-                        st!().build_status(parent_file_or_func, BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
-                    },
-                    _ => {false}
-                };
 
                 let mut call_argument_diagnostics = Vec::new();
                 for base_eval_ptr in base_eval_ptrs.iter() {
@@ -889,14 +944,20 @@ impl Evaluation {
                                 if let Some(&SymbolKey::Function(init)) = init.0.first() {
                                     SyncOdoo::ensure_func_evaluations(session, init);
                                     let init_eval = &st!()[init].evaluations;
-                                    //init will always return an instance of the class, so we are not searching the method to check its return type, but rather to check if there is 
+                                    //init will always return an instance of the class, so we are not searching the method to check its return type, but rather to check if there is
                                     //an hook on it. Hooks, can be used to use parameters for context (see relational fields for example).
                                     if init_eval.len() == 1 && init_eval[0].symbol.get_symbol_hook.is_some() {
                                         context.as_mut().unwrap().insert(S!("constructing_class"), ContextValue::SYMBOL(base_sym.into()));
                                         context.as_mut().unwrap().insert(S!("parameters"), ContextValue::ARGUMENTS(expr.arguments.clone()));
                                         found_hook = true;
                                         let init_eval_sym = init_eval[0].symbol.clone();
+                                        // We disable evaluation search during the get_symbol call to avoid duplicating references.
+                                        // The references visitor and analyze_ast should visit the whole AST.
+                                        // So any call in the hooks that calls analyze_ast will not contaminate the evaluation search.
+                                        let cache_eval_search = session.sync_odoo.evaluation_search.clone();
+                                        session.sync_odoo.evaluation_search = None;
                                         let init_result = init_eval_sym.get_symbol_as_weak(session, context, &mut diagnostics, Some(st!().get_file(parent).unwrap()));
+                                        session.sync_odoo.evaluation_search = cache_eval_search;
                                         context.as_mut().unwrap().remove(&S!("parameters"));
                                         context.as_mut().unwrap().remove(&S!("constructing_class"));
                                         evals.push(Evaluation {
@@ -1057,7 +1118,7 @@ impl Evaluation {
                 let (inferred_syms, name) = match ast {
                     ExprOrIdent::Expr(Expr::Name(expr))  =>  {
                         let name = expr.id.to_string();
-                        (SymbolTable::infer_name(odoo, parent, &name, Some( max_infer.to_u32())), name)
+                        (SymbolTable::infer_name(odoo, parent, &name, Some(max_infer.to_u32())), name)
                     },
                     ExprOrIdent::Expr(Expr::Named(expr))  => {
                         match *expr.target {
@@ -1169,13 +1230,6 @@ impl Evaluation {
                         };
                         for get_item_eval in evaluations.clone() {
                             if let Some(hook) = get_item_eval.symbol.get_symbol_hook.as_ref() {
-                                let parent_file_or_func = st!().parent_file_or_function(parent).unwrap();
-                                let is_in_validation = match parent_file_or_func {
-                                    SymbolKey::File(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::Function(_) => {
-                                        st!().build_status(parent_file_or_func, BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
-                                    },
-                                    _ => {false}
-                                };
                                 if let Some(value) = &value.0 {
                                     context.as_mut().unwrap().insert(S!("args"), ContextValue::STRING(value.clone()));
                                 }
@@ -1216,9 +1270,11 @@ impl Evaluation {
                 }
             },
             ExprOrIdent::Expr(Expr::BinOp(operator)) => {
-                if odoo.evaluation_search.is_some() {
-                    Evaluation::eval_from_ast(session, &operator.left, parent.clone(), max_infer, false, required_dependencies);
-                    Evaluation::eval_from_ast(session, &operator.right, parent.clone(), max_infer, false, required_dependencies);
+                if is_in_validation || odoo.evaluation_search.is_some() {
+                    let (_, diags) = Evaluation::eval_from_ast(session, &operator.left, parent, max_infer, false, required_dependencies);
+                    diagnostics.extend(diags);
+                    let (_, diags) = Evaluation::eval_from_ast(session, &operator.right, parent, max_infer, false, required_dependencies);
+                    diagnostics.extend(diags);
                 }
             },
             ExprOrIdent::Expr(Expr::If(if_expr)) => {
@@ -1250,8 +1306,11 @@ impl Evaluation {
                             value: None,
                             range: Some(unary_operator.range()),
                         });
-                        if odoo.evaluation_search.is_some() { //Still evaluate if we are searching for something
-                            Evaluation::eval_from_ast(session, &unary_operator.operand, parent.clone(), max_infer, for_annotation, required_dependencies);
+                        if is_in_validation || odoo.evaluation_search.is_some() { //Still evaluate if we are searching for something
+                            let (_, diags) = Evaluation::eval_from_ast(session, &unary_operator.operand, parent, max_infer, for_annotation, required_dependencies);
+                            if is_in_validation {
+                                diagnostics.extend(diags);
+                            }
                         }
                         break 'u_op_block
                     },
@@ -1282,8 +1341,7 @@ impl Evaluation {
                     }
                 }
             },
-            ExprOrIdent::Expr(Expr::FString(_f_string_expr)) => {
-                // TODO: Validate expression maybe?
+            ExprOrIdent::Expr(Expr::FString(f_string_expr)) => {
                 evals.push(
                     Evaluation {
                         symbol: EvaluationSymbol {
@@ -1299,8 +1357,161 @@ impl Evaluation {
                         range: None,
                     }
                 );
-            }
-            _ => {}
+                if is_in_validation || odoo.evaluation_search.is_some() {
+                    let exprs = f_string_expr
+                    .value
+                    .iter()
+                    .filter_map(|part|if let FStringPart::FString(expr) = part {Some(expr)} else {None})
+                    .flat_map(|expr| expr.elements.interpolations())
+                    .map(|i| &i.expression);
+                    for expr in exprs {
+                        let (_, diags) = Evaluation::eval_from_ast(session, expr, parent, max_infer, false, required_dependencies);
+                        if is_in_validation {
+                            diagnostics.extend(diags);
+                        }
+                    }
+                }
+            },
+            ExprOrIdent::Expr(Expr::TString(t_string_expr)) => {
+                if is_in_validation || odoo.evaluation_search.is_some() {
+                    let exprs = t_string_expr
+                    .value
+                    .iter()
+                    .flat_map(|expr| expr.elements.interpolations())
+                    .map(|i| &i.expression);
+                    for expr in exprs {
+                        let (_, diags) = Evaluation::eval_from_ast(session, expr, parent, max_infer, false, required_dependencies);
+                        if is_in_validation {
+                            diagnostics.extend(diags);
+                        }
+                    }
+                }
+            },
+            ExprOrIdent::Expr(Expr::BoolOp(bool_op_expr)) => {
+                if is_in_validation || odoo.evaluation_search.is_some() {
+                    for value in bool_op_expr.values.iter() {
+                        let (_, diags) = Evaluation::eval_from_ast(session, value, parent, max_infer, false, required_dependencies);
+                        if is_in_validation {
+                            diagnostics.extend(diags);
+                        }
+                    }
+                }
+            },
+            ExprOrIdent::Expr(Expr::Compare(compare_expr)) => {
+                if is_in_validation || odoo.evaluation_search.is_some() {
+                    let (_, diags) = Evaluation::eval_from_ast(session, &compare_expr.left, parent, max_infer, false, required_dependencies);
+                        if is_in_validation {
+                            diagnostics.extend(diags);
+                        }
+                    for value in compare_expr.comparators.iter() {
+                        let (_, diags) = Evaluation::eval_from_ast(session, value, parent, max_infer, false, required_dependencies);
+                        if is_in_validation {
+                            diagnostics.extend(diags);
+                        }
+                    }
+                }
+            },
+            ExprOrIdent::Expr(Expr::Lambda(lambda_expr)) => {
+                let lambda_sym = st!().get_positioned_symbol(parent, &Sy!("<lambda>"), &lambda_expr.range);
+                if let Some(lambda_sym) = lambda_sym {
+                    if is_in_validation || session.sync_odoo.evaluation_search.is_some() {
+                        if is_in_validation {
+                            st!().set_build_status(lambda_sym, BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
+                        }
+                        let (_, diags) = Evaluation::eval_from_ast(session, &lambda_expr.body, lambda_sym, &lambda_expr.body.range().start(), false, required_dependencies);
+                        if is_in_validation {
+                            st!().set_build_status(lambda_sym, BuildSteps::VALIDATION, BuildStatus::DONE);
+                            diagnostics.extend(diags);
+                        }
+                    }
+                    evals.push(Evaluation::eval_from_symbol(&st!(), lambda_sym, None));
+                };
+            },
+            ExprOrIdent::Expr(Expr::Yield(yield_expr)) => {
+                if let Some(ref expr) = yield_expr.value && (is_in_validation || odoo.evaluation_search.is_some()) {
+                    let (_, diags) = Evaluation::eval_from_ast(session, expr, parent, max_infer, false, required_dependencies);
+                        if is_in_validation {
+                            diagnostics.extend(diags);
+                        }
+                }
+            },
+            ExprOrIdent::Expr(Expr::YieldFrom(yield_from_expr)) =>{
+                if is_in_validation || odoo.evaluation_search.is_some() {
+                    let (_, diags) = Evaluation::eval_from_ast(session, &yield_from_expr.value, parent, max_infer, false, required_dependencies);
+                        if is_in_validation {
+                            diagnostics.extend(diags);
+                        }
+                }},
+            ExprOrIdent::Expr(Expr::Await(await_expr)) =>{
+                let (evaluations, diags) = Evaluation::eval_from_ast(session, &await_expr.value, parent, max_infer, false, required_dependencies);
+                diagnostics.extend(diags);
+                evals.extend(evaluations.into_iter());
+            },
+            ExprOrIdent::Expr(Expr::Slice(slice_expr)) => {
+                if is_in_validation || odoo.evaluation_search.is_some() {
+                    if let Some(ref lower_expr) = slice_expr.lower {
+                        let (_, diags) = Evaluation::eval_from_ast(session, lower_expr, parent, max_infer, false, required_dependencies);
+                        if is_in_validation {
+                            diagnostics.extend(diags);
+                        }
+                    }
+                    if let Some(ref upper_expr) = slice_expr.upper {
+                        let (_, diags) = Evaluation::eval_from_ast(session, upper_expr, parent, max_infer, false, required_dependencies);
+                        if is_in_validation {
+                            diagnostics.extend(diags);
+                        }
+                    }
+                    if let Some(ref step_expr) = slice_expr.step {
+                        let (_, diags) = Evaluation::eval_from_ast(session, step_expr, parent, max_infer, false, required_dependencies);
+                        if is_in_validation {
+                            diagnostics.extend(diags);
+                        }
+                    }
+                }
+            },
+            // Todo: process comprehensions
+            ExprOrIdent::Expr(Expr::ListComp(list_comp_expr)) => {
+                evals.push(Evaluation::new_list(odoo, None, list_comp_expr.range));
+                if is_in_validation || odoo.evaluation_search.is_some() {
+                    let (_, diags) = Evaluation::eval_from_ast(session, &list_comp_expr.elt, parent, max_infer, false, required_dependencies);
+                    if is_in_validation {
+                        diagnostics.extend(diags);
+                    }
+                }
+            },
+            ExprOrIdent::Expr(Expr::SetComp(set_comp_expr)) => {
+                evals.push(Evaluation::new_set(odoo, set_comp_expr.range));
+                if is_in_validation || odoo.evaluation_search.is_some() {
+                    let (_, diags) = Evaluation::eval_from_ast(session, &set_comp_expr.elt, parent, max_infer, false, required_dependencies);
+                    if is_in_validation {
+                        diagnostics.extend(diags);
+                    }
+                }
+            },
+            ExprOrIdent::Expr(Expr::Generator(generator_expr)) => {
+                if is_in_validation || odoo.evaluation_search.is_some() {
+                    let (_, diags) = Evaluation::eval_from_ast(session, &generator_expr.elt, parent, max_infer, false, required_dependencies);
+                    if is_in_validation {
+                        diagnostics.extend(diags);
+                    }
+                }
+            },
+            ExprOrIdent::Expr(Expr::DictComp(dict_comp_expr)) => {
+                evals.push(Evaluation::new_dict(odoo, None, dict_comp_expr.range));
+                if is_in_validation || odoo.evaluation_search.is_some() {
+                    let (_, diags) = Evaluation::eval_from_ast(session, &dict_comp_expr.key, parent, max_infer, false, required_dependencies);
+                    if is_in_validation {
+                        diagnostics.extend(diags);
+                    }
+                    let (_, diags) = Evaluation::eval_from_ast(session, &dict_comp_expr.value, parent, max_infer, false, required_dependencies);
+                    if is_in_validation {
+                        diagnostics.extend(diags);
+                    }
+                }
+            },
+            // Nothing to do here
+            ExprOrIdent::Expr(Expr::Starred(_starred_expr)) => {},
+            ExprOrIdent::Expr(Expr::IpyEscapeCommand(_ipy_escape_command_expr)) =>{},
         }
         if let Some(evaluation_search) = session.sync_odoo.evaluation_search.as_ref() {
             for eval in evals.iter() {

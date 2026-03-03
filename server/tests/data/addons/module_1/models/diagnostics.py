@@ -110,6 +110,12 @@ class ModelWithDiagnostics(models.Model):
     def _inverse_1(self):
         pass
 
+    def method_in_lambda(self):
+        f = lambda: self.env["non.existent.model"]  # OLS03002
+
+    def method_in_listcomp(self):
+        g = [self.env["non.existent.model"] for _ in []]  # OLS03002
+
 class SameNameModel(models.Model):
     _name = "module_1.same_name_model" # OLS03020
     _description = "Model with same name as another model"
@@ -125,3 +131,18 @@ class ModelWithM2OReference(models.Model):
 
     model = fields.Char('Related Document Model')
     res_id = fields.Many2oneReference('Related Document ID', model_field='model')
+
+class ModelWithDiagnostics2(models.Model):
+    _inherit = "module_1.diagnostics_model"
+
+    def diagnostics_in_exprs(self):
+        print(self.env["non.existent.model"])  # OLS03002
+        print(sep=self.env["non.existent.model"])  # OLS03002
+        [self.env["non.existent.model"]]  # OLS03002
+        (self.env["non.existent.model"],)  # OLS03002
+        {self.env["non.existent.model"]}  # OLS03002
+        {0: self.env["non.existent.model"]}  # OLS03002
+        f"{self.env["non.existent.model"]}"  # OLS03002
+        False or self.env["non.existent.model"]  # OLS03002
+        () + self.env["non.existent.model"]  # OLS03002
+        not self.env["non.existent.model"]  # OLS03002

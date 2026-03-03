@@ -36,21 +36,46 @@ fn test_references() {
     assert_in_result(&mut references, "module_1/models/diagnostics.py", 22, 34);
     assert_in_result(&mut references, "module_2/models/base_test_models.py", 5, 15);
     assert!(references.len() == 0, "Some references were not expected: {}",
-        references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line, r.range.start.character)).collect::<Vec<String>>().join(", ")
+        references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
     );
 
     // reference of an attribute
     let mut references = get_references(&mut session, &test_file, Position::new(9, 8));
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 37, 18);
     assert!(references.len() == 0, "Some references were not expected: {}",
-        references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line, r.range.start.character)).collect::<Vec<String>>().join(", ")
+        references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
     );
 
-    //reference of a simple variable
+    //reference of a simple variable, including usages inside newly-handled constructs
     let mut references = get_references(&mut session, &test_file, Position::new(50, 4));
+    // usage in models.py import
     assert_in_result(&mut references, "module_1/models/models.py", 1, 30);
+    // usage inside lambda body
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 51, 23);
+    // usage inside f-string
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 52, 24);
+    // usage inside bool operation
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 53, 13);
+    // usage inside compare expression
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 54, 14);
+    // usage inside list comprehension element
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 55, 16);
+    // usage inside dict comprehension key
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 56, 16);
+    // usage inside list literal element
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 57, 12);
+    // usage inside tuple literal element
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 58, 13);
+    // usage inside set literal element
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 59, 11);
+    // usage inside dict literal value
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 60, 15);
+    // usage as a call argument
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 61, 17);
+    // usage as left-hand side of a binary operation
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 62, 12);
     assert!(references.len() == 0, "Some references were not expected: {}",
-        references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line, r.range.start.character)).collect::<Vec<String>>().join(", ")
+        references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
     );
 
     //reference of a module name in the manifest
@@ -65,17 +90,11 @@ fn test_references() {
 }
 
 fn assert_in_result(references: &mut Vec<Location>, end_path: &str, line: u32, character: u32) {
-    let mut index = None;
-    for (i, r) in references.iter().enumerate() {
-        if r.uri.as_str().ends_with(end_path) && r.range.start.line == line && r.range.start.character == character {
-            index = Some(i);
-        }
-    }
-    if let Some(i) = index {
-        references.remove(i);
-    } else {
-        assert!(false, "Expected reference not found: {}:{}:{}", end_path, line, character);
-    }
+    let before_len = references.len();
+    references.retain(|r| !(r.uri.as_str().ends_with(end_path) && r.range.start.line == line && r.range.start.character == character));
+    let after_len = references.len();
+    assert!(before_len > after_len, "Expected reference not found: {}:{}:{}", end_path, line + 1, character + 1);
+    assert!(before_len == after_len + 1, "Duplicated reference found: {}:{}:{}", end_path, line + 1, character + 1);
 }
 
 fn get_references(session: &mut SessionInfo, path: &String, position: Position)-> Vec<Location> {

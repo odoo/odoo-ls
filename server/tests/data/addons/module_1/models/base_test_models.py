@@ -49,3 +49,16 @@ class NoBaseModel(models.Model):
     _inherit = "module_1.no_base_model"
 
 basic_var = 42
+lambda_ref = lambda x: basic_var
+fstring_ref = f"value: {basic_var}"
+boolop_ref = basic_var and 1
+compare_ref = basic_var > 0
+listcomp_ref = [basic_var for _ in []]
+dictcomp_ref = {basic_var: 1 for _ in []}
+list_ref = [basic_var, 1]
+tuple_ref = (basic_var, 1)
+set_ref = {basic_var}
+dict_ref = {1: basic_var}
+call_ref = print(basic_var)
+binop_ref = basic_var + 1
+lambda_scope = lambda basic_var: basic_var

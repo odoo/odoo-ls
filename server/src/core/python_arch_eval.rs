@@ -239,6 +239,7 @@ impl PythonArchEval {
     }
 
     fn visit_expr(&mut self, session: &mut SessionInfo, expr: &Expr){
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         match expr {
             Expr::Named(named_expr) => {
                 self.visit_named_expr(session, &named_expr);
@@ -333,12 +334,26 @@ impl PythonArchEval {
                 expr_slice.lower.as_ref().map(|lower_expr| self.visit_expr(session, &lower_expr));
             },
             // Expressions that cannot contained a named expressions are not traversed
-            Expr::Lambda(_todo_lambda_expr) => {
+            Expr::Lambda(lambda_expr) => {
                 // Lambdas can have named expressions, but it is not a common use
                 // Like lambda vals: vals[(x := 0): x + 3]
                 // However x is only in scope in the lambda expression only
                 // It needs adding a new function, ast_indexes, then add the variable inside
                 // I deem it currently unnecessary
+                let Some(lambda_sym) = st!().get_positioned_symbol(*self.sym_stack.last().unwrap(), &Sy!("<lambda>"), &lambda_expr.range) else {
+                    return; // can be not found if AST is incomplete
+                };
+                let function_key = lambda_sym.unwrap_function_key();
+                st!()[function_key].arch_eval_status = BuildStatus::IN_PROGRESS;
+                self.sym_stack.push(lambda_sym);
+                self.visit_expr(session, &lambda_expr.body);
+                let mut deps = vec![vec![], vec![]];
+                let (eval, diags) = Evaluation::eval_from_ast(session, &lambda_expr.body, lambda_sym, &lambda_expr.body.range().start(), false, &mut deps);
+                self.diagnostics.extend(diags);
+                st!().insert_dependencies(self.file, &mut deps, self.current_step);
+                FunctionSymbol::add_return_evaluations(function_key, session, eval);
+                self.sym_stack.pop();
+                st!()[function_key].arch_eval_status = BuildStatus::DONE;
             },
             Expr::Generator(_todo_expr_generator) => {
                 // generators are lazily evaluated,

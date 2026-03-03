@@ -73,7 +73,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                         func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SymbolKey, symbol: SymbolKey| {
         let values: Vec<ruff_python_ast::Expr> = Vec::new();
         let range = odoo.symbol_table.range(symbol).clone();
-        let evaluations = vec![Evaluation::new_list(odoo, values, range)];
+        let evaluations = vec![Evaluation::new_list(odoo, Some(values), range)];
         odoo.symbol_table.set_evaluations(symbol, evaluations);
     }},
     /*PythonArchEvalFileHook {file_tree: vec![Sy!("odoo"), Sy!("models")],
