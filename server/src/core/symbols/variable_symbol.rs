@@ -3,8 +3,6 @@ use ruff_text_size::TextRange;
 use crate::{S, constants::OYarn, core::{evaluation::{ContextValue, Evaluation}, symbols::symbol_table::{SymbolKey, VariableKey, follow_ref, get_sym}}, oyarn, threads::SessionInfo};
 use std::collections::HashMap;
 
-use super::symbol::Symbol;
-
 #[derive(Debug)]
 pub struct VariableSymbol {
     pub name: OYarn,

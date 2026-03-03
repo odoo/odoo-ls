@@ -1266,12 +1266,8 @@ pub fn match_tree_from_any_entry(session: &SessionInfo, symbol_key: SymbolKey, t
     false
 }
 
-pub fn is_inheriting_from_field(session: &SessionInfo, symbol_key: SymbolKey) -> bool {
-    // if not class return false
-    if !matches!(symbol_key, SymbolKey::Class(_)) {
-        return false;
-    }
-    let tree = flatten_tree(&get_main_entry_tree(session, symbol_key));
+pub fn is_inheriting_from_field(session: &SessionInfo, class_key: ClassKey) -> bool {
+    let tree = flatten_tree(&get_main_entry_tree(session, class_key.into()));
     if compare_semver(&session.sync_odoo.full_version, "18.0") <= Ordering::Equal {
         // @arena: originally:
         // if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
@@ -1296,9 +1292,9 @@ pub fn is_inheriting_from_field(session: &SessionInfo, symbol_key: SymbolKey) ->
     }
     // Follow class inheritance
     let symbol_table = &session.sync_odoo.symbol_table;
-    let symbol = symbol_table.get_symbol_view(symbol_key).expect("valid key");
+    let class_symbol = symbol_table.classes.get(class_key).expect("valid key");
     // @arena: ClassSymbol.bases are weak refs
-    for &base_key in symbol.as_class_sym().bases.iter().filter(|&&k| symbol_table.contains_key(k)) {
+    for &base_key in class_symbol.bases.iter().filter(|&&k| symbol_table.classes.contains_key(k)) {
         if is_inheriting_from_field(session, base_key) {
             return true;
         }
@@ -1318,13 +1314,13 @@ pub fn is_field_class(session: &SessionInfo, symbol_key: SymbolKey) -> bool {
     if let Some(is_field_class) = *cache.borrow() {
         return is_field_class;
     } 
-    let result = is_field_class_uncached(session, symbol_key);
+    let result = is_field_class_uncached(session, class_key);
     cache.borrow_mut().replace(result);
     result
 }
 
-fn is_field_class_uncached(session: &SessionInfo, symbol_key: SymbolKey) -> bool {
-    let tree = &get_main_entry_tree(session, symbol_key);
+fn is_field_class_uncached(session: &SessionInfo, class_key: ClassKey) -> bool {
+    let tree = &get_main_entry_tree(session, class_key.into());
     if compare_semver(session.sync_odoo.full_version.as_str(), "18.1.0") >= Ordering::Equal {
         if tree.0.len() == 3 && tree.1.len() == 1 && tree.0[0] == "odoo" && tree.0[1] == "orm" && (
                 tree.0[2] == "fields_misc" && tree.1[0] == "Boolean" ||
@@ -1359,7 +1355,7 @@ fn is_field_class_uncached(session: &SessionInfo, symbol_key: SymbolKey) -> bool
             }
         }
     }
-    if is_inheriting_from_field(session, symbol_key) {
+    if is_inheriting_from_field(session, class_key) {
         return true;
     }
     false
@@ -1515,13 +1511,13 @@ fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut H
                 }
             }
             let bases = st!().classes[c].bases.iter()
-                .filter(|&&base| st!().contains_key(base))
+                .filter(|&&base| st!().classes.contains_key(base))
                 .copied()
                 .collect::<Vec<_>>();
             for base in bases {
                 //no comodel as we will search for co-model from original class (what about overrided _name?)
                 //TODO what about base of co-models classes?
-                _all_members(base, session, result, false, only_fields, only_methods, from_module, acc, false);
+                _all_members(base.into(), session, result, false, only_fields, only_methods, from_module, acc, false);
             }
         },
         SymbolKey::Function(_) => {
@@ -1664,13 +1660,13 @@ fn _get_member_symbol_helper(
     }
     if result.is_empty() { // if we already have something, do not go up in bases
         let class_sym = &st!().classes[c];
-        let bases = class_sym.bases.iter().filter(|&&base| st!().contains_key(base)).copied().collect::<Vec<_>>();
+        let bases = class_sym.bases.iter().filter(|&&base| st!().classes.contains_key(base)).copied().collect::<Vec<_>>();
         for base in bases {
-            if visited_classes.contains(&base){
+            if visited_classes.contains(&base.into()){
                 continue;
             }
-            visited_classes.insert(base);
-            let (s, s_diagnostic) = get_member_symbol(session, base, name, from_module, prevent_comodel, only_fields, only_methods, all, false);
+            visited_classes.insert(base.into());
+            let (s, s_diagnostic) = get_member_symbol(session, base.into(), name, from_module, prevent_comodel, only_fields, only_methods, all, false);
                 diagnostics.extend(s_diagnostic);
             if !s.is_empty() {
                 if all {

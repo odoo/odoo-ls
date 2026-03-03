@@ -1,16 +1,13 @@
 use ruff_text_size::{TextRange, TextSize};
 use std::collections::{HashMap, HashSet};
-use std::rc::{Rc, Weak};
 use std::cell::RefCell;
-use weak_table::PtrWeakHashSet;
 
 use crate::constants::OYarn;
 use crate::core::file_mgr::NoqaInfo;
 use crate::core::model::ModelData;
 use crate::oyarn;
-use crate::core::symbols::symbol_table::SymbolKey;
+use crate::core::symbols::symbol_table::{ClassKey, SymbolKey, SymbolTable};
 
-use super::symbol::Symbol;
 use super::symbol_mgr::{SectionRange, SymbolMgr};
 
 
@@ -19,7 +16,7 @@ pub struct ClassSymbol {
     pub name: OYarn,
     pub is_external: bool,
     pub doc_string: Option<String>,
-    pub bases: Vec<SymbolKey>, // formely Vec<Weak<RefCell<Symbol>>> 
+    pub bases: Vec<ClassKey>, // formely Vec<Weak<RefCell<Symbol>>> 
     // pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<SymbolKey>,
     pub range: TextRange,
@@ -50,29 +47,28 @@ impl ClassSymbol {
             bases: vec![],
             _model: None,
             noqas: NoqaInfo::None,
-            _is_field_class: Rc::new(RefCell::new(None)),
+            _is_field_class: RefCell::new(None),
         };
         res._init_symbol_mgr();
         res
     }
 
-    pub fn inherits(&self, base: &Rc<RefCell<Symbol>>, checked: &mut Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>) -> bool {
+    // @arena: search stop when a visited class is encountered, instead of just skipping it. Bug?
+    pub fn inherits(symbol_table: &SymbolTable, class_key: ClassKey, base: ClassKey, checked: &mut Option<HashSet<ClassKey>>) -> bool {
         if checked.is_none() {
-            *checked = Some(PtrWeakHashSet::new());
+            *checked = Some(HashSet::new());
         }
-        for base_weak in self.bases.iter() {
-            let b = match base_weak.upgrade(){
-                Some(b) => b,
-                None => continue
-            };
-            if Rc::ptr_eq(&b, base) {
+        let class_symbol = symbol_table.classes.get(class_key).expect("valid key"); // former self on method
+        for &b in class_symbol.bases.iter().filter(|&&k| symbol_table.classes.contains_key(k)) {
+            if b == base {
                 return true;
             }
-            if checked.as_ref().unwrap().contains(&b) {
+            let checked_mut = checked.as_mut().unwrap();
+            if checked_mut.contains(&b) {
                 return false;
             }
-            checked.as_mut().unwrap().insert(b.clone());
-            if b.borrow().as_class_sym().inherits(base, checked) {
+            checked_mut.insert(b);
+            if ClassSymbol::inherits(symbol_table, b, base, checked) {
                 return true;
             }
         }

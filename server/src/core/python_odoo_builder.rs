@@ -41,9 +41,11 @@ impl PythonOdooBuilder {
     pub fn load(&mut self, session: &mut SessionInfo) -> Vec<Diagnostic> {
         let mut diagnostics: Vec<Diagnostic> =  vec![];
         let sym = self.symbol.clone();
+        // @arena: extrac class key here
         if sym.borrow().typ() != SymType::CLASS {
             return diagnostics;
         }
+        // @arena: call this with class key
         if !self.is_symbol_model(session, &mut diagnostics) {
             return diagnostics;
         }
@@ -353,6 +355,8 @@ impl PythonOdooBuilder {
     }
 
     /* true if the symbol inherits from BaseModel, Model, TransientModel, or CachedModel. symbol must be the data of rc_symbol and must be a Class */
+    /// @arena-todo
+    /// take ClassKey as target
     fn is_symbol_model(&self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) -> bool {
         let symbol = &self.symbol.clone();
         if symbol.borrow().as_class_sym().bases.is_empty() || symbol.borrow().find_module().is_none(){
@@ -369,7 +373,7 @@ impl PythonOdooBuilder {
             // base_model_syms empty so sym cannot be a model, otherwise we would have found it earlier
             return false;
         }
-        if !symbol.borrow().as_class_sym().inherits(&base_model_syms[0], &mut None) {
+        if !crate::core::symbols::class_symbol::ClassSymbol::inherits(symbol.borrow().as_class_sym(), &base_model_syms[0], &mut None) {
             return false;
         }
         // Check if we have a _register = False
