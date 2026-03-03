@@ -1,9 +1,9 @@
-use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
+use weak_table::PtrWeakHashSet;
 
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_table::SymbolKey, xml_data::OdooData}, oyarn};
-use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::{Rc, Weak}};
+use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::Weak};
 
-use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
+use super::symbol_mgr::{SectionRange, SymbolMgr};
 
 #[derive(Debug)]
 pub struct FileSymbol {

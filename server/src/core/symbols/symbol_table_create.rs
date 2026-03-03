@@ -4,14 +4,13 @@ use std::path::PathBuf;
 
 use ruff_text_size::{TextRange, TextSize};
 
-use crate::constants::{SymType, tree};
+use crate::constants::tree;
 use crate::core::file_mgr::FileMgr;
 use crate::core::symbols::class_symbol::ClassSymbol;
 use crate::core::symbols::csv_file_symbol::CsvFileSymbol;
 use crate::core::symbols::dependency_mgr::Dependencies;
 use crate::core::symbols::file_symbol::FileSymbol;
 use crate::core::symbols::function_symbol::FunctionSymbol;
-use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::core::symbols::root_symbol::RootSymbol;
 use crate::core::symbols::xml_file_symbol::XmlFileSymbol;
 use crate::{constants::OYarn, core::symbols::{

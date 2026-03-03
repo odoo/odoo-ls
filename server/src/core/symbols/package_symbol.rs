@@ -1,9 +1,9 @@
-use weak_table::{PtrWeakHashSet, PtrWeakKeyHashMap};
+use weak_table::PtrWeakHashSet;
 
-use crate::{S, constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{dependency_mgr::{Buildable, Dependencies}, symbol_table::SymbolKey}, xml_data::OdooData}, oyarn, threads::SessionInfo};
-use std::{cell::RefCell, collections::{HashMap, HashSet}, path::PathBuf, rc::{Rc, Weak}};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{dependency_mgr::{Buildable, Dependencies}, symbol_table::SymbolKey}, xml_data::OdooData}, oyarn, threads::SessionInfo};
+use std::{cell::RefCell, collections::{HashMap, HashSet}, path::PathBuf, rc::Weak};
 
-use super::{module_symbol::ModuleSymbol, symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
+use super::{module_symbol::ModuleSymbol, symbol_mgr::{SectionRange, SymbolMgr}};
 
 #[derive(Debug)]
 pub enum PackageSymbol {
@@ -53,12 +53,13 @@ impl PackageSymbol {
             PackageSymbol::Module(m) => {m.i_ext = ext},
         }
     }
-    pub fn dependencies(&self) -> &Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
-        match self {
-            PackageSymbol::Module(m) => m.dependencies(),
-            PackageSymbol::PythonPackage(p) => &p.dependencies()
-        }
-    }
+    // @arena dead code
+    // pub fn dependencies(&self) -> &Vec<Vec<Option<PtrWeakHashSet<Weak<RefCell<Symbol>>>>>> {
+    //     match self {
+    //         PackageSymbol::Module(m) => m.dependencies(),
+    //         PackageSymbol::PythonPackage(p) => &p.dependencies()
+    //     }
+    // }
     pub fn dependencies_as_mut(&mut self) -> &mut Vec<Vec<Option<HashSet<SymbolKey>>>> {
         match self {
             PackageSymbol::Module(m) => &mut m.dependencies,

@@ -1,10 +1,8 @@
-use weak_table::PtrWeakHashSet;
 
-use std::{cell::RefCell, collections::{HashMap, HashSet}, path::PathBuf, rc::{Rc, Weak}};
+use std::{collections::{HashMap, HashSet}, path::PathBuf};
 
 use crate::{constants::OYarn, core::symbols::symbol_table::SymbolKey, oyarn};
 
-use super::symbol::Symbol;
 
 
 #[derive(Debug)]

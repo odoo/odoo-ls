@@ -2641,7 +2641,7 @@ impl Symbol {
         results
     }
 
-    /// @arena-next
+    /// @arena: moved to symbol_table (free function)
     //infer a name, given a position
     pub fn infer_name(odoo: &mut SyncOdoo, on_symbol: &Rc<RefCell<Symbol>>, name: &String, position: Option<u32>) -> ContentSymbols {
         let on_symbol = on_symbol.borrow();

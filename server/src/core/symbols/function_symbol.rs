@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::{Rc, Weak}};
 
 use lsp_types::Diagnostic;
-use ruff_python_ast::{AtomicNodeIndex, Expr, ExprCall};
+use ruff_python_ast::{AtomicNodeIndex, Expr};
 use ruff_text_size::{TextRange, TextSize};
 use weak_table::PtrWeakHashSet;
 

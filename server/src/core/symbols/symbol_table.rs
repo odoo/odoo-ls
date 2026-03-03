@@ -1230,6 +1230,30 @@ impl SymbolTable {
     }
 }
 
+//infer a name, given a position
+pub fn infer_name(odoo: &SyncOdoo, on_symbol_key: SymbolKey, name: &String, position: Option<u32>) -> ContentSymbols {
+    let symbol_table = &odoo.symbol_table;
+    let results = symbol_table.get_content_symbol(on_symbol_key, name, position.unwrap_or(u32::MAX));
+    if !results.symbols.is_empty() {
+        return results;
+    }
+    let on_symbol = symbol_table.get_symbol_view(on_symbol_key).expect("valid key");
+    if !matches!(&on_symbol.typ(), SymType::FILE | SymType::PACKAGE(_) | SymType::ROOT) {
+        let mut parent = on_symbol.parent().unwrap();
+        while let SymbolKey::Class(c) = parent {
+            let class_sym = symbol_table.classes.get(c).expect("valid key");
+            parent = class_sym.parent.unwrap();
+        }
+        // A function can reference another name from the full outer scope so no position is needed
+        infer_name(odoo, parent, name, None)
+    } else if on_symbol.name() != "builtins" || on_symbol.typ() != SymType::FILE {
+        let builtins = odoo.get_symbol("", &(vec![Sy!("builtins")], vec![]), u32::MAX)[0];
+        infer_name(odoo, builtins, name, None)
+    } else {
+        ContentSymbols::default()
+    }
+}
+
 // @arena: make this a method of SyncOdoo?
 pub fn get_main_entry_tree(session: &SessionInfo, symbol_key: SymbolKey) -> Tree {
     let symbol_table = &session.sync_odoo.symbol_table;
