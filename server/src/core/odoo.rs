@@ -87,7 +87,7 @@ pub struct SyncOdoo {
     rebuild_arch_eval: FifoPtrWeakHashSet<RefCell<Symbol>>,
     rebuild_validation: FifoPtrWeakHashSet<RefCell<Symbol>>,
     pub state_init: InitState,
-    pub must_reload_paths: Vec<(Weak<RefCell<Symbol>>, String)>,
+    pub must_reload_paths: Vec<(SymbolKey, String)>, // formerly Weak refs
     pub load_odoo_addons: bool, //indicate if we want to load odoo addons or not
     pub need_rebuild: bool, //if true, the next process_rebuilds will drop everything and rebuild everything
     pub import_cache: Option<ImportCache>,

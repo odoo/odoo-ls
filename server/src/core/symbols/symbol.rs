@@ -1834,6 +1834,7 @@ impl Symbol {
     }
 
     //unload a symbol and subsymbols.
+    // arena: moved to symbol_table_create (free function)
     pub fn unload(session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>) {
         /* Unload the symbol and its children. Mark all dependents symbols as 'to_revalidate' */
         let mut vec_to_unload: VecDeque<Rc<RefCell<Symbol>>> = VecDeque::from([symbol.clone()]);
@@ -2088,6 +2089,7 @@ impl Symbol {
         None
     }
 
+    // @arena: moved to symbol_table_create
     pub fn remove_symbol(&mut self, symbol: Rc<RefCell<Symbol>>) {
         if symbol.borrow().is_file_content() {
             match self {

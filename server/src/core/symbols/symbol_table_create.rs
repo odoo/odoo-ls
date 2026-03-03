@@ -1,10 +1,11 @@
 //! Symbol creation methods 
  
+use std::collections::VecDeque;
 use std::path::PathBuf;
 
 use ruff_text_size::{TextRange, TextSize};
 
-use crate::constants::tree;
+use crate::constants::{BuildSteps, DEBUG_MEMORY, SymType, tree};
 use crate::core::file_mgr::FileMgr;
 use crate::core::symbols::class_symbol::ClassSymbol;
 use crate::core::symbols::csv_file_symbol::CsvFileSymbol;
@@ -17,7 +18,8 @@ use crate::{constants::OYarn, core::symbols::{
     compiled_symbol::CompiledSymbol, disk_dir_symbol::DiskDirSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, symbol_mgr::SymbolMgr, variable_symbol::VariableSymbol
 }, threads::SessionInfo, utils::PathSanitizer};
 
-use crate::core::symbols::symbol_table::{ClassKey, CsvFileKey, FileKey, FunctionKey, PackageKey, RootKey, SymbolKey, SymbolTable, VariableKey, XmlFileKey, get_main_entry_tree};
+use crate::core::symbols::symbol_table::{ClassKey, CsvFileKey, FileKey, FunctionKey, PackageKey, RootKey, SymbolKey, SymbolTable, VariableKey, XmlFileKey, get_main_entry_tree, get_sym, invalidate};
+use tracing::info;
 
 
 impl SymbolTable {
@@ -319,8 +321,6 @@ impl SymbolTable {
             SymbolKey::CsvFile(c) => { self.csv_files[c].parent = new_parent; }
         };
     }
-        
-
 }
 
 // @arena: associated function in SymbolTable?
@@ -381,4 +381,74 @@ pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: Symbo
         }
     }
     None
+}
+
+//unload a symbol and subsymbols.
+// @arena:  removes the entry from the symbol table
+// remove_symbol only removes the symbol from its parent, and some extra clean up in case
+// of data files. Consider moving the clean up to here. Or to split the remove
+// from parent + cleanup in separate functions per key type, that would mirror the add_* methods.
+pub fn unload(session: &mut SessionInfo, symbol: SymbolKey) {
+    macro_rules! st { () => { session.sync_odoo.symbol_table } }  
+    /* Unload the symbol and its children. Mark all dependents symbols as 'to_revalidate' */
+    let mut vec_to_unload = VecDeque::from([symbol]);
+    while !vec_to_unload.is_empty() {
+        let ref_to_unload = *vec_to_unload.front().unwrap();
+        let sym_ref = get_sym!(st!(), ref_to_unload);
+        // Unload children first
+        let mut found_one = false;
+        for sym in sym_ref.all_symbols() {
+            found_one = true;
+            vec_to_unload.push_front(sym);
+        }
+        if found_one {
+            continue;
+        }
+        vec_to_unload.pop_front();
+        if DEBUG_MEMORY && (sym_ref.typ() == SymType::FILE || matches!(sym_ref.typ(), SymType::PACKAGE(_))) {
+            info!("Unloading symbol {:?} at {:?}", sym_ref.name(), sym_ref.paths());
+        }
+        let module = st!().find_module(ref_to_unload);
+        //unload symbol
+        let parent = *sym_ref.parent().as_ref().unwrap();
+        st!().remove_symbol(ref_to_unload);
+        if matches!(ref_to_unload, SymbolKey::File(_) | SymbolKey::Package(_) | SymbolKey::XmlFile(_) | SymbolKey::CsvFile(_)) {
+            invalidate(session, ref_to_unload, &BuildSteps::ARCH);
+        }
+        //check if we should not reimport automatically
+        match ref_to_unload {
+            SymbolKey::Package(p) => {
+                let package = &st!().packages[p];
+                if let PackageSymbol::PythonPackage(pp) = package && pp.self_import {
+                    session.sync_odoo.must_reload_paths.push((parent, pp.path.clone()));
+                }
+            }
+            SymbolKey::File(f) => {
+                let file = &st!().files[f];
+                if file.self_import {
+                    session.sync_odoo.must_reload_paths.push((parent, file.path.clone()));
+                }
+            }
+            _ => {}
+        }
+        match ref_to_unload {
+            SymbolKey::Package(p) => {
+                let package = &st!().packages[p];
+                if let PackageSymbol::Module(m) = package {
+                    session.sync_odoo.modules.remove(m.dir_name.as_str());
+                }
+            }
+            SymbolKey::Class(c) => {
+                let class = &st!().classes[c];
+                if let Some(model_data) = class._model.as_ref() {
+                    let model = session.sync_odoo.models.get(&model_data.name).cloned();
+                    if let Some(model) = model {
+                        model.borrow_mut().remove_symbol(session, c,  module);
+                    }
+                }
+            }
+            _ => {}
+        }
+        st!().remove(ref_to_unload);
+    }
 }

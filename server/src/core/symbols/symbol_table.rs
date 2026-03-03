@@ -6,8 +6,7 @@ use ruff_text_size::TextRange;
 use slotmap::{SlotMap, new_key_type};
 use tracing::trace;
 
-use crate::{S, Sy, constants::{BuildStatus, BuildSteps, OYarn, PackageType,
-SymType, Tree, flatten_tree}, core::{diagnostics::{DiagnosticCode,
+use crate::{S, Sy, constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree}, core::{diagnostics::{DiagnosticCode,
 create_diagnostic}, entry_point::EntryPoint, evaluation::{Context, ContextValue,
 Evaluation, EvaluationSymbolPtr}, model::Model, odoo::SyncOdoo,
 python_validator::PythonValidator, symbols::{ class_symbol::ClassSymbol,
@@ -520,6 +519,22 @@ impl SymbolTable {
         }
     }
 
+    pub fn remove(&mut self, key: SymbolKey) {
+        match key {
+            SymbolKey::Root(k) => { self.roots.remove(k); }
+            SymbolKey::DiskDir(k) => { self.disk_dirs.remove(k); }
+            SymbolKey::Namespace(k) => { self.namespaces.remove(k); }
+            SymbolKey::Package(k) => { self.packages.remove(k); }
+            SymbolKey::File(k) => { self.files.remove(k); }
+            SymbolKey::Compiled(k) => { self.compiled.remove(k); }
+            SymbolKey::Class(k) => { self.classes.remove(k); }
+            SymbolKey::Function(k) => { self.functions.remove(k); }
+            SymbolKey::Variable(k) => { self.variables.remove(k); }
+            SymbolKey::XmlFile(k) => { self.xml_files.remove(k); }
+            SymbolKey::CsvFile(k) => { self.csv_files.remove(k); }
+        }
+    }
+
     // pub fn insert_variable(&mut self, symbol: VariableSymbol) -> SymbolKey {
     //     let key = self.variables.insert(symbol);
     //     SymbolKey::Variable(key)
@@ -686,7 +701,7 @@ impl SymbolTable {
     // @arena: compare with get_in_parents, and chose an approach (trust the key or not)
     // Consider just calling get_in_parents
     /// @arena: this should return a ModuleKey (after spliting it from PackageKey)
-    /// @arena: maybe this only gets called with class key (change signature if so)
+    /// @arena: maybe this only gets called with class key (change signature if so) -> NO!
     pub fn find_module(&self, key: SymbolKey) -> Option<SymbolKey> {
         let symbol = self.get_symbol_view(key)?;
         if let SymbolView::Package(PackageSymbol::Module(_)) = symbol {
