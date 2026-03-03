@@ -8,5 +8,8 @@ pub mod goto_utils;
 pub mod hover;
 pub mod node_index_ast;
 pub mod references;
+pub mod references_csv;
+pub mod references_xml;
+pub mod csv_ast_utils;
 pub mod workspace_symbols;
 pub mod xml_ast_utils;

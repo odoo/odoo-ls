@@ -213,7 +213,7 @@ impl XmlArchBuilder {
             return true;
         }
         let mut data = OdooDataRecord {
-            file_symbol: Rc::downgrade(&self.xml_symbol),
+            symbol: Rc::downgrade(&self.xml_symbol),
             model: (oyarn!("{}", node.attribute("model").unwrap()), node.attribute_node("model").unwrap().range()),
             xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
             fields: vec![],

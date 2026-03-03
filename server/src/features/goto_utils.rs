@@ -1,9 +1,10 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
-use lsp_types::{LocationLink, Range, request::GotoDeclarationResponse};
+use lsp_types::{LocationLink, Range};
 use ruff_python_ast::{Expr, ExprCall};
+use tracing::error;
 
-use crate::{S, constants::{PackageType, SymType}, core::{evaluation::{Evaluation, EvaluationValue, ExprOrIdent}, file_mgr::{FileInfo, FileMgr}, odoo::SyncOdoo, python_odoo_builder::MAGIC_FIELDS, symbols::symbol::Symbol, xml_data::{OdooData, OdooDataRecord}}, features::{ast_utils::AstUtils, features_utils::FeaturesUtils, xml_ast_utils::{XmlAstResult, XmlAstUtils}}, oyarn, threads::SessionInfo, utils::PathSanitizer};
+use crate::{S, Sy, constants::{PackageType, SymType, OYarn}, core::{evaluation::{Evaluation, EvaluationValue, ExprOrIdent}, file_mgr::{FileInfo, FileMgr}, odoo::SyncOdoo, python_odoo_builder::MAGIC_FIELDS, symbols::symbol::Symbol, xml_data::OdooData}, features::{ast_utils::AstUtils, csv_ast_utils::CsvAstUtils, features_utils::FeaturesUtils, xml_ast_utils::{XmlAstResult, XmlAstUtils}}, oyarn, threads::SessionInfo, utils::PathSanitizer};
 
 pub enum GotoRequest {
     Definition,
@@ -294,7 +295,7 @@ impl GotoUtils {
                         }
                     },
                     XmlAstResult::XML_DATA(record) => {
-                        let xml_file = record.file_symbol.upgrade().unwrap();
+                        let xml_file = record.symbol.upgrade().unwrap();
                         let full_path = xml_file.borrow().paths()[0].clone();
                         GotoSource {
                             source: GotoSourceType::OdooData(OdooData::RECORD(record)),
@@ -304,6 +305,21 @@ impl GotoUtils {
                 });
             }
         }
+        sources
+    }
+
+    pub fn get_symbols_csv(session: &mut SessionInfo,
+        file_symbol: &Rc<RefCell<Symbol>>,
+        file_info: &Rc<RefCell<FileInfo>>,
+        line: u32,
+        character: u32
+    ) -> Vec<GotoSource> {
+        let model_name_pb = PathBuf::from(&file_symbol.borrow().paths()[0]);
+        let model_name = Sy!(model_name_pb.file_stem().unwrap().to_str().unwrap().to_string());
+        let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
+        let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
+        let mut csv_reader = csv::ReaderBuilder::new().quoting(false).from_reader(data.as_bytes());
+        let sources = CsvAstUtils::get_symbols(session, file_symbol, &mut csv_reader, &model_name, offset);
         sources
     }
 
@@ -351,7 +367,7 @@ impl GotoUtils {
                             SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file.borrow().as_package().i_ext())).sanitize(),
                             _ => path.clone()
                         };
-                        let symbol_range = match file.borrow().typ() {
+                        let symbol_range = match xml_id.get_symbol().upgrade().unwrap().borrow().typ() {
                             SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
                             _ => session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, &xml_id.get_range()),
                         };
