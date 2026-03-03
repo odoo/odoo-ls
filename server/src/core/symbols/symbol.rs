@@ -2839,6 +2839,7 @@ impl Symbol {
         false
     }
 
+    // @arena: moved to symbol_table (free function)
     pub fn is_specific_field_class(&self, session: &mut SessionInfo, field_names: &[&str]) -> bool {
         let tree = flatten_tree(&self.get_main_entry_tree(session));
         return self.is_field_class(session) && field_names.iter().any(|&name| {
@@ -2846,6 +2847,7 @@ impl Symbol {
         })
     }
 
+    // @arena: moved to symbol_table (free function)
     pub fn is_specific_field(&self, session: &mut SessionInfo, field_names: &[&str]) -> bool {
         match self.typ() {
             SymType::VARIABLE => {

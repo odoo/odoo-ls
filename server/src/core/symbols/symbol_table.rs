@@ -1949,6 +1949,34 @@ pub fn follow_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, c
     results
 }
 
+// @arena: might panic on last().unwrap()
+pub fn is_specific_field_class(session: &SessionInfo, target: SymbolKey, field_names: &[&str]) -> bool {
+    let tree = flatten_tree(&get_main_entry_tree(session, target));
+    return is_field_class(session, target) && field_names.iter().any(|&name| {
+        tree.last().unwrap() == name
+    })
+}
+
+pub fn is_specific_field(session: &mut SessionInfo, target: SymbolKey, field_names: &[&str]) -> bool {
+    macro_rules! st { () => { session.sync_odoo.symbol_table } }  
+    let SymbolKey::Variable(v) = target else {
+        return false;
+    };
+    let evaluations = st!().variables.get(v).expect("valid key").evaluations.clone();
+    for eval in evaluations.iter() {
+        let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
+        let eval_weaks = follow_ref(&symbol, session, &mut None, true, false, None, None);
+        for eval_weak in eval_weaks.iter() {
+            if let Some(symbol) = st!().upgrade_weak(eval_weak) {
+                if is_specific_field_class(session, symbol, field_names){
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 
 /**
  * @arena
