@@ -4,6 +4,8 @@ use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::utils::{PathSanitizer, ToFilePath};
 use odoo_ls_server::Sy;
 use odoo_ls_server::constants::OYarn;
+use ruff_text_size::{TextRange, TextSize};
+use tracing::error;
 use std::env;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -253,6 +255,93 @@ fn test_definition() {
     assert_eq!(phone_code_locs[0].target_uri.to_file_path().unwrap().sanitize(), phone_code_file);
     // check that one of the phone_code_locs is the same as the phone_code field
     assert!(phone_code_locs.iter().any(|loc| loc.target_range == file_mgr.borrow().text_range_to_range(&mut session, &phone_code_file, phone_code_field_sym.borrow().range())), "Expected phone_code to be at the same location as the field");
+}
+
+#[test]
+fn test_definition_csv() {
+    // Setup server and session with test addons
+    let odoo_path = env::var("COMMUNITY_PATH").unwrap();
+    let odoo_path = PathBuf::from(odoo_path).sanitize();
+    let odoo_path = odoo_path.as_str();
+
+    let (mut odoo, config) = setup::setup::setup_server(true);
+    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let module_csv_test_file = test_addons_path.join("module_csv").join("data").join("res.country.state.csv").sanitize();
+
+    // Ensure the test file exists
+    assert!(PathBuf::from(&module_csv_test_file).exists(), "Test file does not exist: {}", module_csv_test_file);
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
+
+    // Get file symbol and file info
+    let file_mgr = session.sync_odoo.get_file_mgr();
+    let mcsv_tf_file_info = file_mgr.borrow().get_file_info(&module_csv_test_file).unwrap();
+    // Use get_file_info().symbol instead of get_file_symbol
+    let Some(mcsv_tf_file_symbol) = SyncOdoo::get_symbol_of_opened_file(
+        &mut session,
+        &PathBuf::from(&module_csv_test_file)
+    ) else {
+        panic!("Failed to get file symbol");
+    };
+
+    // Test definition for country_id header
+    let res_country_file = session.sync_odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("base"), Sy!("models"), Sy!("res_country")], vec![]), u32::MAX);
+    assert!(res_country_file.len() == 1);
+    let res_country_file = res_country_file[0].clone();
+    let country_id_loc = test_utils::get_definition_locs(&mut session, &mcsv_tf_file_symbol, &mcsv_tf_file_info, 0, 8);
+    assert_eq!(country_id_loc.len(), 1, "Expected 1 location for header 'country_id_loc'");
+    assert_eq!(country_id_loc[0].target_uri.to_file_path().unwrap().sanitize(), res_country_file.borrow().get_symbol_first_path(), "Expected location to be in res_country.py file");
+    let country_id_sym = res_country_file.borrow().get_symbol(&(vec![], vec![Sy!("ResCountryState"), Sy!("country_id")]), u32::MAX);
+    assert_eq!(country_id_sym.len(), 1, "Expected 1 symbol for country_id_sym");
+    assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &res_country_file.borrow().get_symbol_first_path(), country_id_sym[0].borrow().range()), country_id_loc[0].target_range, "Expected country_id to be at the same location as the compute argument");
+
+    // Test definition for code header (id part)
+    let ir_model_file = session.sync_odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("base"), Sy!("models"), Sy!("ir_model")], vec![]), u32::MAX);
+    assert!(ir_model_file.len() == 1);
+    let ir_model_file = ir_model_file[0].clone();
+    let country_id_id_loc = test_utils::get_definition_locs(&mut session, &mcsv_tf_file_symbol, &mcsv_tf_file_info, 0, 19);
+    assert!(country_id_id_loc.len() >= 1, "Expected at least 1 location for header 'country_id_id_loc'");
+    let mut found_base = false;
+    for loc in country_id_id_loc.iter() {
+        if loc.target_uri.to_file_path().unwrap().sanitize() == ir_model_file.borrow().get_symbol_first_path() {
+            found_base = true;
+            let base_sym = ir_model_file.borrow().get_symbol(&(vec![], vec![Sy!("Base")]), u32::MAX);
+            assert_eq!(base_sym.len(), 1, "Expected 1 symbol for Base id field");
+            assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &ir_model_file.borrow().get_symbol_first_path(), base_sym[0].borrow().range()), loc.target_range, "Expected the location of Base class");
+        }
+    }
+    assert!(found_base, "Expected to find a location for country_id:id that lead to Base (as id is magic field)");
+
+    // Test definition for record state_au_1000
+    let state_loc = test_utils::get_definition_locs(&mut session, &mcsv_tf_file_symbol, &mcsv_tf_file_info, 1, 5);
+    assert_eq!(state_loc.len(), 1, "Expected 1 location for record field 'state_au_1000'");
+    assert_eq!(state_loc[0].target_uri.to_file_path().unwrap().sanitize(), module_csv_test_file, "Expected location to be in same file");
+    assert_eq!(lsp_types::Range{start: lsp_types::Position { line: 1, character: 0 }, end: lsp_types::Position { line: 1, character: 13 }}, state_loc[0].target_range, "Expected code to be at the same location as the compute argument");
+
+    // Test definition for base.au record field
+    let base = session.sync_odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("base")], vec![]), u32::MAX);
+    assert!(base.len() == 1);
+    let base_path = base[0].borrow().paths()[0].clone();
+    let res_country_data_path = PathBuf::from(base_path).join("data").join("res_country_data.xml").sanitize();
+    let res_country_file = base[0].borrow().as_module_package().data_symbols.get(&res_country_data_path).cloned();
+    assert!(res_country_file.is_some());
+    let res_country_file = res_country_file.unwrap();
+    let base_au = test_utils::get_definition_locs(&mut session, &mcsv_tf_file_symbol, &mcsv_tf_file_info, 1, 22);
+    assert!(base_au.len() >= 1, "Expected 1 location for record field 'base_au'");
+    assert_eq!(base_au[0].target_uri.to_file_path().unwrap().sanitize(), res_country_file.borrow().get_symbol_first_path(), "Expected location to be at least in res_country_data.xml file");
+    let xml_id_data = res_country_file.borrow().as_xml_file_sym().xml_ids.get(&Sy!("au")).cloned();
+    assert!(xml_id_data.is_some(), "Expected 1 symbol for xml_id_data");
+    let xml_id_vec = xml_id_data.unwrap();
+    assert!(xml_id_vec.len() == 1, "Expected 1 symbol for xml_id_data");
+    let xml_id = xml_id_vec[0].clone();
+    let mut found_one = false;
+    for definition in base_au.iter() {
+        if definition.target_uri.to_file_path().unwrap().sanitize() == xml_id.get_file_symbol().unwrap().upgrade().unwrap().borrow().get_symbol_first_path() {
+            let range = session.sync_odoo.get_file_mgr().borrow().std_range_to_range(&mut session, &xml_id.get_file_symbol().unwrap().upgrade().unwrap().borrow().get_symbol_first_path(), &xml_id.get_range());
+            assert!(definition.target_range == range, "Expected base.au to be at the same location as the xml_id symbol");
+            found_one = true;
+        }
+    }
+    assert!(found_one);
 }
 
 #[test]

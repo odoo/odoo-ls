@@ -66,7 +66,7 @@ impl PythonOdooBuilder {
             drop(module); //in case of file being same than module
             let mut file = file.borrow_mut();
             file.insert_xml_id(xml_id_model_name.clone(), OdooData::RECORD(OdooDataRecord {
-                file_symbol: Rc::downgrade(&sym),
+                symbol: Rc::downgrade(&sym),
                 model: (Sy!("ir.model"), std::ops::Range::<usize> {
                     start: 0,
                     end: 1,
