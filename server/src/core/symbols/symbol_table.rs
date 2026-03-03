@@ -1483,6 +1483,8 @@ fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut H
                 // no recursion because it is handled in all_symbols_inherits
                 let (model_symbols, model_inherits_symbols) = model.borrow().all_symbols_inherits(session, from_module);
                 for (model_key, dependency) in model_symbols {
+                    // @arena todo: adapt code below to knowing it's a class
+                    let model_key = SymbolKey::from(model_key);
                     if dependency.is_some() || symbol_key == model_key {
                         continue;
                     }
@@ -1497,6 +1499,8 @@ fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut H
                     }
                 }
                 for (model_key, dependency) in model_inherits_symbols {
+                    // @arena todo: adapt code below to knowing it's a class
+                    let model_key = SymbolKey::from(model_key);
                     if dependency.is_some() || symbol_key == model_key {
                         continue;
                     }
@@ -1551,7 +1555,7 @@ pub fn get_member_symbol(
     all: bool,
     is_super: bool
 ) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
-    let mut visited_classes: HashSet<SymbolKey> = HashSet::new();
+    let mut visited_classes: HashSet<ClassKey> = HashSet::new();
     return _get_member_symbol_helper(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super, &mut visited_classes);
 }
 
@@ -1565,7 +1569,7 @@ fn _get_member_symbol_helper(
     only_methods: bool,
     all: bool,
     is_super: bool,
-    visited_classes: &mut HashSet<SymbolKey>
+    visited_classes: &mut HashSet<ClassKey>
 ) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
     macro_rules! st {                                                                                        
         () => { session.sync_odoo.symbol_table }
@@ -1622,11 +1626,11 @@ fn _get_member_symbol_helper(
             if let Some(from_module) = from_module {
                 let model_symbols = Model::get_full_model_symbols(model.clone(), session, from_module);
                 for model_symbol in model_symbols {
-                    if target == model_symbol || visited_classes.contains(&model_symbol) {
+                    if target == model_symbol.into() || visited_classes.contains(&model_symbol) {
                         continue;
                     }
                     visited_classes.insert(model_symbol);
-                    let (attributs, att_diagnostic) = _get_member_symbol_helper(session, model_symbol, name, None, true, only_fields, only_methods, all, false, visited_classes);
+                    let (attributs, att_diagnostic) = _get_member_symbol_helper(session, model_symbol.into(), name, None, true, only_fields, only_methods, all, false, visited_classes);
                     diagnostics.extend(att_diagnostic);
                     if all {
                         extend_result(attributs, &mut result, &mut visited_symbols);
@@ -1640,11 +1644,11 @@ fn _get_member_symbol_helper(
                     //only fields are visible on inherits, not methods
                     let model_symbols = Model::get_full_model_symbols(model_inherits_symbol, session, from_module);
                     for model_symbol in model_symbols {
-                        if target == model_symbol || visited_classes.contains(&model_symbol) {
+                        if target == model_symbol.into() || visited_classes.contains(&model_symbol) {
                             continue;
                         }
                         visited_classes.insert(model_symbol);
-                        let (attributs, att_diagnostic) = _get_member_symbol_helper(session, model_symbol, name, None, true, true, only_methods, all, false, visited_classes);
+                        let (attributs, att_diagnostic) = _get_member_symbol_helper(session, model_symbol.into(), name, None, true, true, only_methods, all, false, visited_classes);
                         diagnostics.extend(att_diagnostic);
                         if all {
                             extend_result(attributs, &mut result, &mut visited_symbols);
@@ -1662,10 +1666,10 @@ fn _get_member_symbol_helper(
         let class_sym = &st!().classes[c];
         let bases = class_sym.bases.iter().filter(|&&base| st!().classes.contains_key(base)).copied().collect::<Vec<_>>();
         for base in bases {
-            if visited_classes.contains(&base.into()){
+            if visited_classes.contains(&base){
                 continue;
             }
-            visited_classes.insert(base.into());
+            visited_classes.insert(base);
             let (s, s_diagnostic) = get_member_symbol(session, base.into(), name, from_module, prevent_comodel, only_fields, only_methods, all, false);
                 diagnostics.extend(s_diagnostic);
             if !s.is_empty() {

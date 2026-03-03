@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use crate::constants::BuildStatus;
 use crate::constants::BuildSteps;
 use crate::constants::OYarn;
+use crate::core::symbols::symbol_table::ClassKey;
 use crate::core::symbols::symbol_table::SymbolKey;
 use crate::core::symbols::symbol_table::SymbolTable;
 use crate::core::symbols::symbol_table::get_sym;
@@ -72,12 +73,12 @@ impl ModelData {
 pub struct Model {
     name: OYarn,
     /// @arena: always classes: consider changing to ClassKey
-    symbols: HashSet<SymbolKey>, // formerly PtrWeakHashSet<Weak<RefCell<Symbol>>>
+    symbols: HashSet<ClassKey>, // formerly PtrWeakHashSet<Weak<RefCell<Symbol>>>
     pub dependents: HashSet<SymbolKey>, // formerly PtrWeakHashSet<Weak<RefCell<Symbol>>>
 }
 
 impl Model {
-    pub fn new(name: OYarn, symbol: SymbolKey) -> Self {
+    pub fn new(name: OYarn, symbol: ClassKey) -> Self {
         let mut res = Self {
             name,
             symbols: HashSet::new(),
@@ -87,26 +88,26 @@ impl Model {
         res
     }
 
-    pub fn add_symbol(&mut self, session: &mut SessionInfo, symbol: SymbolKey) {
+    pub fn add_symbol(&mut self, session: &mut SessionInfo, symbol: ClassKey) {
         if self.symbols.contains(&symbol) {
             return;
         }
         self.symbols.insert(symbol);
-        let from_module = session.sync_odoo.symbol_table.find_module(symbol);
+        let from_module = session.sync_odoo.symbol_table.find_module(symbol.into());
         self.add_dependents_to_validation(session, from_module);
     }
 
-    pub fn remove_symbol(&mut self, session: &mut SessionInfo, symbol: SymbolKey, from_module: Option<SymbolKey>) {
+    pub fn remove_symbol(&mut self, session: &mut SessionInfo, symbol: ClassKey, from_module: Option<SymbolKey>) {
         self.symbols.remove(&symbol);
         self.add_dependents_to_validation(session, from_module);
     }
 
     /// @arena: done
-    pub fn get_symbols(&self, symbol_table: &SymbolTable, from_module: Option<SymbolKey>) -> Vec<SymbolKey> {
+    pub fn get_symbols(&self, symbol_table: &SymbolTable, from_module: Option<SymbolKey>) -> Vec<ClassKey> {
         let mut symbol = Vec::new();
         // @arena obs: possible stale keys
-        for &s in self.symbols.iter().filter(|&&k| symbol_table.contains_key(k)) {
-            let module = symbol_table.find_module(s).expect("Unreachable: Model should be declared in a module");
+        for &s in self.symbols.iter().filter(|&&k| symbol_table.classes.contains_key(k)) {
+            let module = symbol_table.find_module(s.into()).expect("Unreachable: Model should be declared in a module");
             let module_sym = symbol_table.get_symbol_view(module).expect("valid key from find_module");
             if from_module.is_none() || ModuleSymbol::is_in_deps(symbol_table, from_module.unwrap(), &module_sym.as_module_package().dir_name) {
                 symbol.push(s);
@@ -116,14 +117,13 @@ impl Model {
     }
 
     /// @arena: done
-    pub fn get_main_symbols(&self, session: &SessionInfo, from_module: Option<SymbolKey>) -> Vec<SymbolKey> {
+    pub fn get_main_symbols(&self, session: &SessionInfo, from_module: Option<SymbolKey>) -> Vec<ClassKey> {
         let st = &session.sync_odoo.symbol_table;
-        let mut res: Vec<SymbolKey> = vec![];
-        for &key in self.symbols.iter().filter(|&&k| st.contains_key(k)) {
-            let sym  = get_sym!(st, key);
-            let model = sym.as_class_sym()._model.as_ref().unwrap();
+        let mut res = vec![];
+        for &key in self.symbols.iter().filter(|&&k| st.classes.contains_key(k)) {
+            let model = st.classes[key]._model.as_ref().unwrap();
             if !model.inherit.contains(&model.name) {
-                let module = st.find_module(key);
+                let module = st.find_module(key.into());
                 if from_module.is_none() || module.is_none() {
                     res.push(key);
                 } else {
@@ -140,11 +140,10 @@ impl Model {
 
     pub fn model_in_deps(&self, session: &mut SessionInfo, from_module: SymbolKey) -> bool {
         let st = &session.sync_odoo.symbol_table;
-        for &key in self.symbols.iter().filter(|&&k| st.contains_key(k)) {
-            let sym = get_sym!(st, key);
-            let model = sym.as_class_sym()._model.as_ref().unwrap();
+        for &key in self.symbols.iter().filter(|&&k| st.classes.contains_key(k)) {
+            let model = st.classes[key]._model.as_ref().unwrap();
             if !model.inherit.contains(&model.name) {
-                let module = st.find_module(key).unwrap(); // @arena: same as original code (unwrap)
+                let module = st.find_module(key.into()).unwrap(); // @arena: same as original code (unwrap)
                 let module_sym =  get_sym!(st, module);
                 let dir_name = &module_sym.as_module_package().dir_name;
                 if ModuleSymbol::is_in_deps(st, from_module, dir_name) {
@@ -157,7 +156,7 @@ impl Model {
 
     /// @arena: formerly returned PtrWeakHashSet<Weak<RefCell<Symbol>>>
     /// @arena: done
-    pub fn get_full_model_symbols(model_rc: Rc<RefCell<Model>>, session: &SessionInfo, from_module: SymbolKey) -> HashSet<SymbolKey> {
+    pub fn get_full_model_symbols(model_rc: Rc<RefCell<Model>>, session: &SessionInfo, from_module: SymbolKey) -> HashSet<ClassKey> {
         let st = &session.sync_odoo.symbol_table;
         let mut symbol_set  = HashSet::new();
         let mut already_in = HashSet::new();
@@ -165,9 +164,8 @@ impl Model {
         while let Some(current_model_rc) = queue.pop_front(){
             let current_model = current_model_rc.borrow();
             let symbols = current_model.get_symbols(st, Some(from_module));
-            for symbol_key in symbols.iter() {
-                let sym = get_sym!(st, *symbol_key);
-                let Some(model_data) = &sym.as_class_sym()._model else {continue};
+            for &key in symbols.iter() {
+                let Some(model_data) = &st.classes.get(key).expect("valid key from get_symbols")._model else {continue};
                 for inherit in model_data.inherit.iter() {
                     if let Some(model) = session.sync_odoo.models.get(inherit).cloned() {
                         if !already_in.contains(&model.borrow().name) {
@@ -189,13 +187,14 @@ impl Model {
         let mut already_in = HashSet::new();
         let symbols = self.get_symbols(st, Some(from_module));
         for symbol_key in symbols {
-            if let Some(model_data) = &get_sym!(st, symbol_key).as_class_sym()._model {
-                for (model_name, _field) in model_data.inherits.iter() {
-                    if let Some(model) = session.sync_odoo.models.get(model_name).cloned() {
-                        if !already_in.contains(&model.borrow().name) {
-                            res.push(model.clone());
-                            already_in.insert(model.borrow().name.clone());
-                        }
+            let Some(model_data) = &st.classes.get(symbol_key).expect("valid key from get_symbols")._model else {
+                continue;
+            };
+            for (model_name, _field) in model_data.inherits.iter() {
+                if let Some(model) = session.sync_odoo.models.get(model_name).cloned() {
+                    if !already_in.contains(&model.borrow().name) {
+                        res.push(model.clone());
+                        already_in.insert(model.borrow().name.clone());
                     }
                 }
             }
@@ -204,7 +203,7 @@ impl Model {
     }
 
     pub fn has_symbols(&mut self, symbol_table: &SymbolTable) -> bool {
-        self.symbols.retain(|&k| symbol_table.contains_key(k));
+        self.symbols.retain(|&k| symbol_table.classes.contains_key(k));
         !self.symbols.is_empty()
     }
 
@@ -213,16 +212,16 @@ impl Model {
         if with_inheritance is true, it will also return symbols from inherited models (NOT Base classes).
     */
     /// @arena: done
-    pub fn all_symbols(&self, session: &SessionInfo, from_module: Option<SymbolKey>, with_inheritance: bool) -> Vec<(SymbolKey, Option<OYarn>)> {
+    pub fn all_symbols(&self, session: &SessionInfo, from_module: Option<SymbolKey>, with_inheritance: bool) -> Vec<(ClassKey, Option<OYarn>)> {
         self.all_symbols_helper(session, from_module, with_inheritance, &mut HashSet::new())
     }
 
-    fn all_symbols_helper(&self, session: &SessionInfo, from_module: Option<SymbolKey>, with_inheritance: bool, seen_inherited_models: &mut HashSet<OYarn>) -> Vec<(SymbolKey, Option<OYarn>)> {
+    fn all_symbols_helper(&self, session: &SessionInfo, from_module: Option<SymbolKey>, with_inheritance: bool, seen_inherited_models: &mut HashSet<OYarn>) -> Vec<(ClassKey, Option<OYarn>)> {
         let st = &session.sync_odoo.symbol_table;
         let mut symbols = Vec::new();
-        for &s in self.symbols.iter().filter(|&&k| st.contains_key(k)) { // filter stale keys
+        for &s in self.symbols.iter().filter(|&&k| st.classes.contains_key(k)) { // filter stale keys
             if let Some(from_module) = from_module {
-                let module = st.find_module(s);
+                let module = st.find_module(s.into());
                 if let Some(module) = module {
                     let module_sym = get_sym!(st, module);
                     let dir_name = &module_sym.as_module_package().dir_name;
@@ -240,8 +239,7 @@ impl Model {
             if !with_inheritance {
                 continue;
             }
-            let sym = get_sym!(st, s);
-            let inherited_models = &sym.as_class_sym()._model.as_ref().unwrap().inherit;
+            let inherited_models = &st.classes[s]._model.as_ref().unwrap().inherit;
             for inherited_model in inherited_models.iter() {
                 if !seen_inherited_models.contains(inherited_model) {
                     seen_inherited_models.insert(inherited_model.clone());
@@ -254,13 +252,13 @@ impl Model {
         symbols
     }
 
-    pub fn all_symbols_inherits(&self, session: &SessionInfo, from_module: Option<SymbolKey>) -> (Vec<(SymbolKey, Option<OYarn>)>, Vec<(SymbolKey, Option<OYarn>)>) {
+    pub fn all_symbols_inherits(&self, session: &SessionInfo, from_module: Option<SymbolKey>) -> (Vec<(ClassKey, Option<OYarn>)>, Vec<(ClassKey, Option<OYarn>)>) {
         let mut visited_models = HashSet::new();
         self.all_inherits_helper(session, from_module, &mut visited_models)
     }
 
     /// @arena: code repetition with all_symbols_helper 
-    fn all_inherits_helper(&self, session: &SessionInfo, from_module: Option<SymbolKey>, visited_models: &mut HashSet<OYarn>) -> (Vec<(SymbolKey, Option<OYarn>)>, Vec<(SymbolKey, Option<OYarn>)>) {
+    fn all_inherits_helper(&self, session: &SessionInfo, from_module: Option<SymbolKey>, visited_models: &mut HashSet<OYarn>) -> (Vec<(ClassKey, Option<OYarn>)>, Vec<(ClassKey, Option<OYarn>)>) {
         if visited_models.contains(&self.name) {
             return (Vec::new(), Vec::new());
         }
@@ -268,9 +266,9 @@ impl Model {
         let st = &session.sync_odoo.symbol_table;
         let mut symbols = Vec::new();
         let mut inherits_symbols = Vec::new();
-        for &s in self.symbols.iter().filter(|&&k| st.contains_key(k)) {
+        for &s in self.symbols.iter().filter(|&&k| st.classes.contains_key(k)) {
             if let Some(from_module) = from_module {
-                let module = st.find_module(s);
+                let module = st.find_module(s.into());
                 if let Some(module) = module {
                     let module_sym = get_sym!(st, module);
                     let dir_name = &module_sym.as_module_package().dir_name;
@@ -288,8 +286,7 @@ impl Model {
             // First get results from normal inherit
             // To make sure we visit all of inherit before inherits, since it is DFS
             // Only inherits in the tree that are not already visited will be processed in the next iteration
-            let sym = get_sym!(st, s);
-            let model_data = sym.as_class_sym()._model.as_ref().unwrap();
+            let model_data = st.classes[s]._model.as_ref().unwrap();
             for inherited_model in &model_data.inherit {
                 if let Some(model) = session.sync_odoo.models.get(inherited_model).cloned() {
                     let (main_result, inherits_result) = model.borrow().all_inherits_helper(session, from_module, visited_models);

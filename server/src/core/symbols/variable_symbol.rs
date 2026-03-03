@@ -1,6 +1,6 @@
 use ruff_text_size::TextRange;
 
-use crate::{S, constants::OYarn, core::{evaluation::{ContextValue, Evaluation}, symbols::symbol_table::{SymbolKey, VariableKey, follow_ref, get_sym}}, oyarn, threads::SessionInfo};
+use crate::{S, constants::OYarn, core::{evaluation::{ContextValue, Evaluation}, symbols::symbol_table::{ClassKey, SymbolKey, VariableKey, follow_ref, get_sym}}, oyarn, threads::SessionInfo};
 use std::collections::HashMap;
 
 #[derive(Debug)]
@@ -56,7 +56,7 @@ impl VariableSymbol {
     // }
 
     /* If this variable has been evaluated to a relational field, return the main symbol of the comodel */
-    pub fn get_relational_model(target: VariableKey, session: &mut SessionInfo, from_module: Option<SymbolKey>) -> Vec<SymbolKey> {
+    pub fn get_relational_model(target: VariableKey, session: &mut SessionInfo, from_module: Option<SymbolKey>) -> Vec<ClassKey> {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }  
         let variable_symbol = st!().variables.get(target).expect("valid key"); // former method taking self
         let evaluations = variable_symbol.evaluations.clone();
@@ -80,8 +80,8 @@ impl VariableSymbol {
                             continue;
                         };
                         return model.borrow().get_main_symbols(session, from_module);
-                    } else if matches!(symbol, SymbolKey::Class(_)) { // Already evaluated from descriptor in follow_ref
-                        return vec![symbol];
+                    } else if let SymbolKey::Class(c) = symbol { // Already evaluated from descriptor in follow_ref
+                        return vec![c];
                     }
                 }
             }
