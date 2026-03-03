@@ -1,4 +1,4 @@
-use std::{cell::RefCell, cmp, collections::HashMap, path::PathBuf, rc::{Rc, Weak}, u32};
+use std::{cell::RefCell, cmp, collections::{HashMap, HashSet}, path::PathBuf, rc::{Rc, Weak}, u32};
 
 use tracing::{error, info, warn};
 use weak_table::PtrWeakHashSet;
@@ -382,7 +382,7 @@ pub struct EntryPoint {
     pub addon_to_odoo_path: Option<String>, //contains the odoo path if this is an addon entry point
     pub addon_to_odoo_tree: Option<Vec<OYarn>>, //contains the odoo tree if this is an addon entry point
     pub root: SymbolKey,
-    pub not_found_symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    pub not_found_symbols: HashSet<SymbolKey>, // former PtrWeakHashSet
     pub not_found_symbols_for_models: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub to_delete: bool,
     pub data_symbols: HashMap<String, SymbolKey>, //key is path, weak to Rc that is hold by the module symbol

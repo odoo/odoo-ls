@@ -289,39 +289,24 @@ impl ModuleSymbol {
 
     /* ensure that all modules indicates in the module dependencies are well loaded.
     Returns list of diagnostics to publish in manifest file */
-    fn _load_depends(symbol_rc: Rc<RefCell<Symbol>>, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) -> (Vec<Diagnostic>, Vec<OYarn>) {
-        symbol_rc.borrow_mut().as_module_package_mut().all_depends.clear();
-        let all_depends = symbol_rc.borrow_mut().as_module_package().depends.iter().map(|(depend, _)| depend.clone()).collect::<Vec<_>>();
-        symbol_rc.borrow_mut().as_module_package_mut().all_depends.extend(all_depends);
+    // @arena: extend a map with a vector??
+    fn _load_depends(symbol_key: PackageKey, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) -> (Vec<Diagnostic>, Vec<OYarn>) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }  
+        let symbol = st!().packages.get_mut(symbol_key).expect("valid key");
+        let module = symbol.as_module_package_mut();
+        let name = module.name.clone();
+        let all_depends = module.depends.iter().map(|(depend, _)| depend.clone()).collect::<Vec<_>>();
+        module.all_depends.clear();
+        module.all_depends.extend(all_depends);
         let mut diagnostics: Vec<Diagnostic> = vec![];
         let mut loaded: Vec<OYarn> = vec![];
-        let dependencies = symbol_rc.borrow().as_module_package().depends.clone();
+        let dependencies = module.depends.clone();
         for (depend, range) in dependencies.iter() {
-            //TODO: raise an error on dependency cycle
-            if !session.sync_odoo.modules.contains_key(depend) {
-                let mut symbol = symbol_rc.borrow_mut();
-                let module = find_module(session, odoo_addons.clone(), depend);
-                if module.is_none() {
-                    symbol.get_entry().unwrap().borrow_mut().not_found_symbols.insert(symbol.weak_self().as_ref().unwrap().upgrade().expect("The symbol must be in the tree"));
-                    symbol.not_found_paths_mut().push((BuildSteps::ARCH, vec![Sy!("odoo"), Sy!("addons"), depend.clone()]));
-                    if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS04010, &[&symbol.name(), &depend]) {
-                        diagnostics.push(Diagnostic {
-                            range: FileMgr::textRange_to_temporary_Range(range),
-                            ..diagnostic_base.clone()
-                        });
-                    }
-                } else {
-                    loaded.push(depend.clone());
-                    let module = module.unwrap();
-                    let mut module = (*module).borrow_mut();
-                    symbol.as_module_package_mut().all_depends.extend(module.as_module_package().all_depends.clone());
-                    symbol.add_dependency(&mut module, BuildSteps::ARCH, BuildSteps::ARCH);
-                }
-            } else {
-                let module = session.sync_odoo.modules.get(depend).unwrap().upgrade().unwrap();
-                SyncOdoo::build_now(session, &module, BuildSteps::ARCH);
-                let name = symbol_rc.borrow().name().clone();
-                if module.borrow().as_module_package().all_depends.contains(&name){
+            if let Some(&dependency) = session.sync_odoo.modules.get(depend) {
+                // Dependency already in modules
+                SyncOdoo::build_now(session, dependency.into(), BuildSteps::ARCH);
+                let dep_module = st!().packages[dependency].as_module_package();
+                if dep_module.all_depends.contains(&name){
                     if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS04012, &[depend]) {
                         diagnostics.push(Diagnostic {
                             range: FileMgr::textRange_to_temporary_Range(range),
@@ -329,12 +314,35 @@ impl ModuleSymbol {
                         });
                     }
                 }
-                let mut module = (*module).borrow_mut();
-                symbol_rc.borrow_mut().as_module_package_mut().all_depends.extend(module.as_module_package().all_depends.clone());
-                symbol_rc.borrow_mut().add_dependency(&mut module, BuildSteps::ARCH, BuildSteps::ARCH)
+                ModuleSymbol::_extend_dependencies(&mut st!(), symbol_key, dependency);
+                 // @arena: todo: find_module
+            } else if let Some(dependency) = find_module(session, odoo_addons.clone(), depend) {
+                // Dependency just added to modules ("find"_module actually creates it)
+                loaded.push(depend.clone());
+                ModuleSymbol::_extend_dependencies(&mut st!(), symbol_key, dependency);
+            } else {
+                // Dependency not found nor created
+                let entry = st!().get_entry(symbol_key.into()).unwrap();
+                entry.borrow_mut().not_found_symbols.insert(symbol_key.into());
+                st!().packages[symbol_key].as_module_package_mut().not_found_paths.push((BuildSteps::ARCH, vec![Sy!("odoo"), Sy!("addons"), depend.clone()]));
+                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS04010, &[&name, &depend]) {
+                    diagnostics.push(Diagnostic {
+                        range: FileMgr::textRange_to_temporary_Range(range),
+                        ..diagnostic_base.clone()
+                    });
+                }
             }
+
         }
         (diagnostics, loaded)
+    }
+
+    fn _extend_dependencies(symbol_table: &mut SymbolTable, symbol_key: PackageKey, dependency: PackageKey) {
+        let dep_module = symbol_table.packages[dependency].as_module_package();
+        let dep_module_dependencies = dep_module.all_depends.clone();
+        let module = symbol_table.packages[symbol_key].as_module_package_mut();
+        module.all_depends.extend(dep_module_dependencies);
+        symbol_table.add_dependency(symbol_key.into(), dependency.into(), BuildSteps::ARCH, BuildSteps::ARCH);
     }
 
     fn check_data(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo) -> Vec<Diagnostic> {

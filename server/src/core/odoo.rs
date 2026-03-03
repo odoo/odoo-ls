@@ -3,7 +3,7 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
 use crate::core::module_load_order::sort_by_load_order;
-use crate::core::symbols::symbol_table::{SymbolKey, SymbolTable};
+use crate::core::symbols::symbol_table::{PackageKey, SymbolKey, SymbolTable};
 use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
 use crate::fifo_ptr_weak_hash_set::FifoPtrWeakHashSet;
@@ -76,7 +76,7 @@ pub struct SyncOdoo {
     pub stdlib_dir: String,
     pub progress_token: i32,
     file_mgr: Rc<RefCell<FileMgr>>,
-    pub modules: HashMap<OYarn, SymbolKey>, // former map of weak refs. Should use ModuleKey instead.
+    pub modules: HashMap<OYarn, PackageKey>, // former map of weak refs. Should use ModuleKey instead.
     pub models: HashMap<OYarn, Rc<RefCell<Model>>>,
     pub interrupt_rebuild: Arc<AtomicBool>,
     pub terminate_rebuild: Arc<AtomicBool>,

@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use ruff_text_size::{TextRange, TextSize};
 use ruff_python_ast::{Alias, AtomicNodeIndex, Identifier};
+use crate::core::symbols::symbol_table::{PackageKey, SymbolKey};
 use crate::{constants::*, oyarn, Sy, S};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::threads::SessionInfo;
@@ -230,7 +231,8 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
     return result;
 }
 
-pub fn find_module(session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>, name: &OYarn) -> Option<Rc<RefCell<Symbol>>> {
+// @arena-next
+pub fn find_module(session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>, name: &OYarn) -> Option<PackageKey> {
     let paths = (*odoo_addons).borrow().paths().clone();
     for path in paths.iter() {
         let full_path = Path::new(path.as_str()).join(name.as_str());

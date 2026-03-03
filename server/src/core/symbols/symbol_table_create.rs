@@ -94,13 +94,13 @@ impl SymbolTable {
     }
 
     // @arena: not a method! (takes SessionInfo as arg)
-    pub fn add_new_module_package(session: &mut SessionInfo, parent: SymbolKey, name: &str, path: &PathBuf) -> Option<SymbolKey> {
+    pub fn add_new_module_package(session: &mut SessionInfo, parent: SymbolKey, name: &str, path: &PathBuf) -> Option<PackageKey> {
         let is_external = session.sync_odoo.symbol_table.parent_is_external(parent);
         let module = PackageSymbol::new_module_package(session, name, path, parent, is_external)?;
         let symbol_table = &mut session.sync_odoo.symbol_table;
         let module_key = symbol_table.packages.insert(module);
         symbol_table.register_in_parent(parent, module_key.into(), name, &path.sanitize());
-        Some(module_key.into())
+        Some(module_key)
     }
 
     // ====== Helpers for symbol creation ======
@@ -341,10 +341,11 @@ pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: Symbo
         let module = SymbolTable::add_new_module_package(session, parent, &name, path);
         let symbol_table = &mut session.sync_odoo.symbol_table;
         if let Some(module) = module {
-            let module_symbol = symbol_table.get_symbol_view(module).unwrap();
-            let dir_name = module_symbol.as_module_package().dir_name.clone();
+            // let module_symbol = symbol_table.get_symbol_view(module).unwrap();
+            let module_symbol = symbol_table.packages[module].as_module_package();
+            let dir_name = module_symbol.dir_name.clone();
             session.sync_odoo.modules.insert(dir_name, module);
-            return Some(module);
+            return Some(module.into());
         } else if require_module {
             return None;
         } else {
