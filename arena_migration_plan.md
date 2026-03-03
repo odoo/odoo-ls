@@ -179,3 +179,5 @@ use Semver to store version in SyncOdoo.
 ### split package and module
     - PyPackageKey and ModuleKey
     - store ModuleKey's in sync_odoo.modules, update everywhere that takes a PackageKey
+
+### remove option from parent
