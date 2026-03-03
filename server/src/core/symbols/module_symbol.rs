@@ -9,6 +9,7 @@ use std::ffi::OsStr;
 use crate::core::csv_arch_builder::CsvArchBuilder;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::symbols::symbol_table::{PackageKey, SymbolKey, SymbolTable};
+use crate::core::symbols::symbol_table_create::create_from_path;
 use crate::core::xml_arch_builder::XmlArchBuilder;
 use crate::core::xml_data::OdooData;
 use crate::{constants::*, oyarn, Sy};
@@ -441,14 +442,15 @@ impl ModuleSymbol {
         }
     }
 
-    fn _load_arch(symbol: Rc<RefCell<Symbol>>, session: &mut SessionInfo) -> Vec<Diagnostic> {
-        let root_path = (*symbol).borrow().as_module_package().root_path.clone();
+    fn _load_arch(module_key: PackageKey, session: &mut SessionInfo) -> Vec<Diagnostic> {
+        let symbol_table = &session.sync_odoo.symbol_table;
+        let module_symbol = symbol_table.packages.get(module_key).expect("valid key").as_module_package();
+        let root_path = module_symbol.root_path.clone();
         let tests_path = PathBuf::from(root_path).join("tests");
         if tests_path.exists() {
-            let rc_symbol = Symbol::create_from_path(session, &tests_path, symbol, false);
-            if rc_symbol.is_some() && rc_symbol.as_ref().unwrap().borrow().typ() != SymType::NAMESPACE {
-                let rc_symbol = rc_symbol.unwrap();
-                session.sync_odoo.add_to_rebuild_arch(rc_symbol);
+            let symbol = create_from_path(session, &tests_path, module_key.into(), false);
+            if let Some(sym) = symbol && !matches!(sym, SymbolKey::Namespace(_)) {
+                session.sync_odoo.add_to_rebuild_arch(sym);
             }
         }
         vec![]

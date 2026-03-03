@@ -76,7 +76,7 @@ pub struct SyncOdoo {
     pub stdlib_dir: String,
     pub progress_token: i32,
     file_mgr: Rc<RefCell<FileMgr>>,
-    pub modules: HashMap<OYarn, SymbolKey>, // former weakmap
+    pub modules: HashMap<OYarn, SymbolKey>, // former map of weak refs. Should use ModuleKey instead.
     pub models: HashMap<OYarn, Rc<RefCell<Model>>>,
     pub interrupt_rebuild: Arc<AtomicBool>,
     pub terminate_rebuild: Arc<AtomicBool>,
