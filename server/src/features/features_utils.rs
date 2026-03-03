@@ -174,7 +174,8 @@ impl FeaturesUtils {
                 parent_object = None;
                 for s in symbols.iter() {
                     if s.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) && s.borrow().typ() == SymType::VARIABLE{
-                        let models = s.borrow().as_variable().get_relational_model(session, from_module.clone());
+                        // @arena-todo
+                        let models = crate::core::symbols::variable_symbol::VariableSymbol::get_relational_model(s.borrow().as_variable(), session, from_module.clone());
                         if models.len() == 1 {
                             parent_object = Some(models[0].clone());
                             break;

@@ -150,6 +150,7 @@ impl ContextValue {
         }
     }
 
+    // @arena: this should probably just return the reference (&string) instead of cloning the string
     pub fn as_string(&self) -> String {
         match self {
             ContextValue::STRING(s) => s.clone(),
@@ -1688,7 +1689,7 @@ impl Evaluation {
                             for s in symbols.iter() {
                                 if s.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) {
                                     if s.borrow().typ() == SymType::VARIABLE {
-                                        let models = s.borrow().as_variable().get_relational_model(session, from_module.clone());
+                                        let models = super::symbols::variable_symbol::VariableSymbol::get_relational_model(s.borrow().as_variable(), session, from_module.clone());
                                         //only handle it if there is only one main symbol for this model
                                         if models.len() == 1 {
                                             obj = Some(models[0].clone());

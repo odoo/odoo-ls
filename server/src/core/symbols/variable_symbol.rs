@@ -1,7 +1,7 @@
 use ruff_text_size::TextRange;
 
-use crate::{S, constants::{OYarn, SymType}, core::{evaluation::{ContextValue, Evaluation}, symbols::symbol_table::SymbolKey}, oyarn, threads::SessionInfo};
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use crate::{S, constants::OYarn, core::{evaluation::{ContextValue, Evaluation}, symbols::symbol_table::{SymbolKey, VariableKey, follow_ref, get_sym}}, oyarn, threads::SessionInfo};
+use std::collections::HashMap;
 
 use super::symbol::Symbol;
 
@@ -58,20 +58,23 @@ impl VariableSymbol {
     // }
 
     /* If this variable has been evaluated to a relational field, return the main symbol of the comodel */
-    pub fn get_relational_model(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Symbol>>> {
-        for eval in self.evaluations.iter() {
+    pub fn get_relational_model(target: VariableKey, session: &mut SessionInfo, from_module: Option<SymbolKey>) -> Vec<SymbolKey> {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }  
+        let variable_symbol = st!().variables.get(target).expect("valid key"); // former method taking self
+        let evaluations = variable_symbol.evaluations.clone();
+        for eval in evaluations.iter() {
             let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
             let mut context = None;
-            if let Some(parent) = self.parent.as_ref() {
+            if let Some(parent) = st!().variables[target].parent {
                 // To be able to follow related fields, we need to have the base_attr set in order to find the __get__ hook in next_refs
                 // we update the context here for the case where we are coming from a decorator for example.
                 context = Some(HashMap::new());
-                context.as_mut().unwrap().insert(S!("base_attr"), ContextValue::SYMBOL(parent.clone()));
+                context.as_mut().unwrap().insert(S!("base_attr"), ContextValue::SYMBOL(parent));
             }
-            let eval_weaks = Symbol::follow_ref(&symbol, session, &mut context, false, false, None, None);
+            let eval_weaks = follow_ref(&symbol, session, &mut context, false, false, None, None);
             for eval_weak in eval_weaks.iter() {
-                if let Some(symbol) = eval_weak.upgrade_weak() {
-                    if ["Many2one", "One2many", "Many2many"].contains(&symbol.borrow().name().as_str()) {
+                if let Some(symbol) = st!().upgrade_weak(eval_weak) {
+                    if ["Many2one", "One2many", "Many2many"].contains(&get_sym!(st!(), symbol).name().as_str()) {
                         let Some(comodel) = eval_weak.as_weak().context.get("comodel_name") else {
                             continue;
                         };
@@ -79,7 +82,7 @@ impl VariableSymbol {
                             continue;
                         };
                         return model.borrow().get_main_symbols(session, from_module);
-                    } else if symbol.borrow().typ() == SymType::CLASS { // Already evaluated from descriptor in follow_ref
+                    } else if matches!(symbol, SymbolKey::Class(_)) { // Already evaluated from descriptor in follow_ref
                         return vec![symbol];
                     }
                 }

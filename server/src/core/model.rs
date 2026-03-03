@@ -116,7 +116,7 @@ impl Model {
     }
 
     /// @arena: done
-    pub fn get_main_symbols(&self, session: &mut SessionInfo, from_module: Option<SymbolKey>) -> Vec<SymbolKey> {
+    pub fn get_main_symbols(&self, session: &SessionInfo, from_module: Option<SymbolKey>) -> Vec<SymbolKey> {
         let st = &session.sync_odoo.symbol_table;
         let mut res: Vec<SymbolKey> = vec![];
         for &key in self.symbols.iter().filter(|&&k| st.contains_key(k)) {
