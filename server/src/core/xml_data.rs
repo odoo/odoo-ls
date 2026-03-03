@@ -13,7 +13,7 @@ pub enum OdooData {
 
 #[derive(Debug, Clone)]
 pub struct OdooDataRecord {
-    pub file_symbol: Weak<RefCell<Symbol>>,
+    pub symbol: Weak<RefCell<Symbol>>,
     pub model: (OYarn, Range<usize>),
     pub xml_id: Option<OYarn>,
     pub fields: Vec<OdooDataField>,
@@ -56,7 +56,7 @@ impl OdooData {
     pub fn set_file_symbol(&mut self, xml_symbol: &Rc<RefCell<Symbol>>) {
         match self {
             OdooData::RECORD(record) => {
-                record.file_symbol = Rc::downgrade(xml_symbol);
+                record.symbol = Rc::downgrade(xml_symbol);
             },
             OdooData::MENUITEM(menu_item) => {
                 menu_item.file_symbol = Rc::downgrade(xml_symbol);
@@ -99,10 +99,32 @@ impl OdooData {
     }
 
     /* Warning: the returned symbol can of a different type than an XML_SYMBOL */
+    pub fn get_symbol(&self) -> Weak<RefCell<Symbol>> {
+        match self {
+            OdooData::RECORD(record) => {
+                record.symbol.clone()
+            },
+            OdooData::MENUITEM(menu_item) => {
+                menu_item.file_symbol.clone()
+            },
+            OdooData::TEMPLATE(template) => {
+                template.file_symbol.clone()
+            },
+            OdooData::DELETE(delete) => {
+                delete.file_symbol.clone()
+            }
+        }
+    }
+
+    /* Warning: the returned symbol can of a different type than an XML_SYMBOL */
     pub fn get_file_symbol(&self) -> Option<Weak<RefCell<Symbol>>> {
         match self {
             OdooData::RECORD(record) => {
-                Some(record.file_symbol.clone())
+                if let Some(upgraded) = record.symbol.upgrade() {
+                    return upgraded.borrow().get_file();
+                } else {
+                    return None;
+                }
             },
             OdooData::MENUITEM(menu_item) => {
                 Some(menu_item.file_symbol.clone())

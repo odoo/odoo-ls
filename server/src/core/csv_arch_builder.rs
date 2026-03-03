@@ -4,7 +4,7 @@ use csv::StringRecord;
 use lsp_types::Diagnostic;
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::xml_data::{OdooData, OdooDataField, OdooDataRecord}, oyarn, threads::SessionInfo, Sy};
+use crate::{Sy, constants::{BuildStatus, BuildSteps, OYarn}, core::xml_data::{OdooData, OdooDataField, OdooDataRecord}, features::csv_ast_utils::CsvAstUtils, oyarn, threads::SessionInfo};
 
 use super::{symbols::{symbol::Symbol}};
 
@@ -30,11 +30,11 @@ impl CsvArchBuilder {
         {
             let mut csv_sym = csv_symbol.borrow_mut();
             let csv = csv_sym.as_csv_file_sym_mut();
-            let mut rdr = csv::Reader::from_reader(content.as_bytes());
+            let mut rdr = csv::ReaderBuilder::new().quoting(false).from_reader(content.as_bytes());
             if rdr.has_headers() {
                 if let Ok(header) = rdr.headers() {
                     for h in header.iter() {
-                        csv.headers.push(oyarn!("{}", h));
+                        csv.headers.push(oyarn!("{}", CsvAstUtils::remove_quotes(h)));
                     }
                 }
             }
@@ -65,6 +65,7 @@ impl CsvArchBuilder {
             }
         }
         csv_symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
+        session.sync_odoo.add_to_validations(csv_symbol.clone());
         diagnostics
     }
 
@@ -81,7 +82,7 @@ impl CsvArchBuilder {
             let end = start + field.len() as u64;
             let field_name = headers.get(idx).unwrap().clone();
             if field_name == "id" {
-                xml_id = Some(oyarn!("{}", field));
+                xml_id = Some(oyarn!("{}", CsvAstUtils::remove_quotes(field)));
             }
             fields.push(
                 OdooDataField {
@@ -90,7 +91,7 @@ impl CsvArchBuilder {
                         start: start as usize,
                         end: end as usize,
                     },
-                    text: Some(field.to_string()),
+                    text: Some(CsvAstUtils::remove_quotes(field)),
                     text_range: Some(core::ops::Range {
                         start: start as usize,
                         end: end as usize,
@@ -103,7 +104,7 @@ impl CsvArchBuilder {
             idx +=1 ;
         }
         Some(OdooDataRecord {
-            file_symbol: file_symbol,
+            symbol: file_symbol,
             fields: fields,
             model: (model_name, core::ops::Range {
                 start: 0 as usize,
