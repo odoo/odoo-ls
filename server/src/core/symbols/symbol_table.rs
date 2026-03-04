@@ -2176,3 +2176,6 @@ pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildStep
         Self { key }
     }
 }
+
+//  implement  also a Strong<> variant. Slotmap operations with a Strong would panic (with expect message), and
+//  the programmer would skip the check.
