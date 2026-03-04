@@ -1002,6 +1002,7 @@ impl SymbolTable {
 
     /// Return true if a previous implementation has the @overload decorator or has it itself
     /// @arena: formerly a method in FunctionSymbol
+    /// @arena: move back to FunctionSymbol, as assoc function
     pub fn is_func_overloaded(&self, key: FunctionKey) -> bool {
         let func = self.functions.get(key).expect("valid key");
         if func.is_overloaded {

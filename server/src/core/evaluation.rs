@@ -10,7 +10,8 @@ use std::i32;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
-use crate::core::symbols::symbol_table::{FunctionKey, SymbolKey, SymbolTable, follow_ref, get_member_symbol, get_sym, infer_name, match_tree_from_any_entry, upgrade_weak};
+use crate::core::symbols::symbol_table::{FunctionKey, SymbolKey, SymbolTable, follow_ref, get_member_symbol, get_sym, infer_name, is_specific_field, match_tree_from_any_entry, upgrade_weak};
+use crate::core::symbols::variable_symbol::VariableSymbol;
 use crate::{constants::*, Sy};
 use crate::core::odoo::SyncOdoo;
 use crate::threads::SessionInfo;
@@ -910,7 +911,7 @@ impl Evaluation {
                                     }
                                 }
                                 //1: find __init__ method
-                                let init = get_member_symbol(session, base_sym, &S!("__init__"), module.clone(), true, false, false, false, false);
+                                let init = get_member_symbol(session, base_sym, &S!("__init__"), module, true, false, false, false, false);
                                 let mut found_hook = false;
                                 if let Some(&init) = init.0.first() {
                                     let init_file = st!().get_file(init).unwrap();
@@ -1012,7 +1013,7 @@ impl Evaluation {
                         if is_in_validation {
                             let on_instance = base_sym_weak_eval.context.get(&S!("is_attr_of_instance")).map(|v| v.as_bool());
                             call_argument_diagnostics.last_mut().unwrap().extend(Evaluation::validate_call_arguments(session,
-                                &st!().functions[f], // @arena: this will have borrow conflicts. Either pass key or clone the symbol
+                                f,
                                 expr,
                                 call_parent,
                                 module,
@@ -1050,7 +1051,7 @@ impl Evaluation {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 for base_eval in base_evals.iter() {
-                    let base_ref = base_eval.symbol.get_symbol(session, context, &mut diagnostics, Some(parent.clone()));
+                    let base_ref = base_eval.symbol.get_symbol(session, context, &mut diagnostics, Some(parent));
                     if st!().is_expired_if_weak(&base_ref ) {
                         return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                     }
@@ -1171,7 +1172,7 @@ impl Evaluation {
                 if eval_left.is_empty() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base = &eval_left[0].symbol.get_symbol(session, context, &mut diagnostics, Some(parent.clone()));
+                let base = &eval_left[0].symbol.get_symbol(session, context, &mut diagnostics, Some(parent));
                 if st!().is_expired_if_weak(base) {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
@@ -1317,7 +1318,7 @@ impl Evaluation {
                     for base_eval_ptr in base_eval_ptrs.iter() {
                         let EvaluationSymbolPtr::WEAK(base_sym_weak_eval) = base_eval_ptr else {continue};
                         let Some(base_sym) = upgrade_weak!(st!(), base_sym_weak_eval.weak) else {continue};
-                        let (operator_functions, diags) = get_member_symbol(session, base_sym, &S!(method), module.clone(), true, false, true, false, false);
+                        let (operator_functions, diags) = get_member_symbol(session, base_sym, &S!(method), module, true, false, true, false, false);
                         diagnostics.extend(diags);
                         for operator_function in operator_functions.into_iter() {
                             for eval in get_sym!(st!(), operator_function).evaluations().unwrap_or(&vec![]).clone() {
@@ -1362,8 +1363,10 @@ impl Evaluation {
      * parameters:
      * object_instance: None if called on nothing, true on an instance, false on a class
      */
-    fn validate_call_arguments(session: &mut SessionInfo, function: &FunctionSymbol, expr_call: &ExprCall, on_object: Weak<RefCell<Symbol>>, from_module: Option<Rc<RefCell<Symbol>>>, object_instance: Option<bool>) -> Vec<Diagnostic> {
-        if function.is_overloaded() || function.is_property {
+    fn validate_call_arguments(session: &mut SessionInfo, function_key: FunctionKey, expr_call: &ExprCall, on_object: SymbolKey, from_module: Option<SymbolKey>, object_instance: Option<bool>) -> Vec<Diagnostic> {
+        let symbol_table = &session.sync_odoo.symbol_table;
+        let function = symbol_table.functions.get(function_key).expect("valid key");
+        if symbol_table.is_func_overloaded(function_key) || function.is_property {
             return vec![];
         }
         let mut diagnostics = vec![];
@@ -1446,12 +1449,13 @@ impl Evaluation {
             if let Some(arg_identifier) = &arg.arg { //if None, arg is a dictionary of keywords, like in self.func(a, b, **any_kwargs)
                 let mut found_one = false;
                 for func_arg in function.args.iter().skip(to_skip as usize) {
-                    if func_arg.symbol.upgrade().unwrap().borrow().name().to_string() == arg_identifier.id {
-                        diagnostics.extend(Evaluation::validate_func_arg(session, func_arg, &arg.value, on_object.clone(), from_module.clone()));
+                    let func_arg_name = symbol_table.get_symbol_view(func_arg.symbol).unwrap().name();
+                    if func_arg_name.to_string() == arg_identifier.id {
+                        diagnostics.extend(Evaluation::validate_func_arg(session, func_arg, &arg.value, on_object, from_module));
                         if func_arg.arg_type == ArgumentType::ARG {
                             found_pos_arg_with_kw += 1;
                         } else if func_arg.arg_type == ArgumentType::KWORD_ONLY {
-                            kword_only_args.retain(|x| !Weak::ptr_eq(&x.symbol, &func_arg.symbol));
+                            kword_only_args.retain(|x| &x.symbol != &func_arg.symbol);
                         }
                         found_one = true;
                         break;
@@ -1479,10 +1483,12 @@ impl Evaluation {
             }
             return diagnostics;
         }
+        let symbol_table = &session.sync_odoo.symbol_table;
         let mut kword_only_arg_missing = vec![]; // missing kword_only args without default value
         for kword_only_arg in kword_only_args.iter() {
             if kword_only_arg.default_value.is_none() {
-                kword_only_arg_missing.push(kword_only_arg.symbol.upgrade().unwrap().borrow().name().clone());
+                let name = symbol_table.get_symbol_view(kword_only_arg.symbol).unwrap().name().as_str();
+                kword_only_arg_missing.push(name);
             }
         }
         if !kword_only_arg_missing.is_empty() {
@@ -1630,98 +1636,98 @@ impl Evaluation {
         diagnostics
     }
 
-    fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: Weak<RefCell<Symbol>>, from_module: Option<Rc<RefCell<Symbol>>>, elt1: &Expr, elt2: &Expr, _elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
+    // @arena: on_object is weak
+    fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: SymbolKey, from_module: Option<SymbolKey>, elt1: &Expr, elt2: &Expr, _elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         //parameter 1
-        if let Some(on_object) = on_object.upgrade() { //if weak is not set, we didn't manage to evalue base object. Do not validate in this case
-            match elt1 {
-                Expr::StringLiteral(s) => {
-                    let value = s.value.to_string();
-                    let split_expr = value.split(".");
-                    let mut obj = Some(on_object);
-                    let mut date_mode = false;
-                    'split_name: for name in split_expr {
-                        if date_mode {
-                            if !["year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"].contains(&name) {
-                                if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03012, &[]) {
-                                    diagnostics.push(Diagnostic {
-                                        range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
-                                        ..diagnostic_base
-                                    });
-                                }
-                            }
-                            date_mode = false;
-                            continue;
-                        }
-                        if obj.is_none() {
-                            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03013, &[]) {
-                                diagnostics.push(Diagnostic {
-                                    range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
-                                    ..diagnostic_base
-                                });
-                            }
-                            break;
-                        }
-                        if let Some(object) = &obj {
-                            let (symbols, _diagnostics) = object.borrow().get_member_symbol(session,
-                                &name.to_string(),
-                                from_module.clone(),
-                                false,
-                                true,
-                                false,
-                                true,
-                                false);
-                            if symbols.is_empty() {
-                                if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03011, &[&name, &object.borrow().name()]) {
-                                    diagnostics.push(Diagnostic {
-                                        range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
-                                        ..diagnostic_base
-                                    });
-                                }
-                                break;
-                            }
-                            obj = None;
-                            for s in symbols.iter() {
-                                if s.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) {
-                                    if s.borrow().typ() == SymType::VARIABLE {
-                                        let models = super::symbols::variable_symbol::VariableSymbol::get_relational_model(s.borrow().as_variable(), session, from_module.clone());
-                                        //only handle it if there is only one main symbol for this model
-                                        if models.len() == 1 {
-                                            obj = Some(models[0].clone());
-                                        }
-                                    }
-                                }
-                                if s.borrow().is_specific_field(session, &["Properties"]) {
-                                    //TODO handle properties field
-                                    //property field, not handled for now. Skip the parsing to not generate diagnostics
-                                    break 'split_name
-                                }
-                                if s.borrow().is_specific_field(session, &["Date"]) {
-                                    date_mode = true;
-                                }
-                            }
+        let Some(on_object) = upgrade_weak!(st!(), on_object) else { return }; //if weak is not set, we didn't manage to evalue base object. Do not validate in this case
+        if let Expr::StringLiteral(s) = elt1 {
+            let value = s.value.to_string();
+            let split_expr = value.split(".");
+            let mut obj = Some(on_object);
+            let mut date_mode = false;
+            'split_name: for name in split_expr {
+                if date_mode {
+                    if !["year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"].contains(&name) {
+                        if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03012, &[]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
+                                ..diagnostic_base
+                            });
                         }
                     }
-                },
-                _ => {}
-            }
-            //parameter 2
-            match elt2 {
-                Expr::StringLiteral(s) => {
-                    match s.value.to_str() {
-                        "=" | "!=" | ">" | ">=" | "<" | "<=" | "=?" | "=like" | "like" | "not like" | "ilike" |
-                        "not ilike" | "=ilike" | "in" | "not in" | "child_of" | "parent_of" | "any" | "not any" => {},
-                        _ => {
-                            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03009, &[]) {
-                                diagnostics.push(Diagnostic {
-                                    range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
-                                    ..diagnostic_base.clone()
-                                });
+                    date_mode = false;
+                    continue;
+                }
+                if obj.is_none() {
+                    if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03013, &[]) {
+                        diagnostics.push(Diagnostic {
+                            range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
+                            ..diagnostic_base
+                        });
+                    }
+                    break;
+                }
+                if let Some(object) = obj {
+                    let (symbols, _diagnostics) = get_member_symbol(session,
+                        object,
+                        &name.to_string(),
+                        from_module.clone(),
+                        false,
+                        true,
+                        false,
+                        true,
+                        false);
+                    if symbols.is_empty() {
+                        if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03011, &[&name, &get_sym!(st!(), object).name()]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
+                                ..diagnostic_base
+                            });
+                        }
+                        break;
+                    }
+                    obj = None;
+                    for s in symbols {
+                        if is_specific_field(session, s, &["Many2one", "One2many", "Many2many"]) {
+                            // if s.borrow().typ() == SymType::VARIABLE {
+                            if let SymbolKey::Variable(v) = s {
+                                let models = VariableSymbol::get_relational_model(v, session, from_module);
+                                //only handle it if there is only one main symbol for this model
+                                if models.len() == 1 {
+                                    obj = Some(models[0].into());
+                                }
                             }
                         }
+                        if is_specific_field(session, s, &["Properties"]) {
+                            //TODO handle properties field
+                            //property field, not handled for now. Skip the parsing to not generate diagnostics
+                            break 'split_name
+                        }
+                        if is_specific_field(session, s, &["Date"]) {
+                            date_mode = true;
+                        }
                     }
-                },
-                _ => {}
+                }
             }
+        }
+        //parameter 2
+        match elt2 {
+            Expr::StringLiteral(s) => {
+                match s.value.to_str() {
+                    "=" | "!=" | ">" | ">=" | "<" | "<=" | "=?" | "=like" | "like" | "not like" | "ilike" |
+                    "not ilike" | "=ilike" | "in" | "not in" | "child_of" | "parent_of" | "any" | "not any" => {},
+                    _ => {
+                        if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03009, &[]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
+                                ..diagnostic_base.clone()
+                            });
+                        }
+                    }
+                }
+            },
+            _ => {}
         }
     }
 
@@ -1782,7 +1788,7 @@ impl EvaluationSymbol {
 
     /* Execute the hook, then use context to return an EvaluationSymbolWeak if possible, else return an empty one */
     /// @arena: todo
-    pub fn get_symbol_as_weak(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolWeak {
+    pub fn get_symbol_as_weak(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> EvaluationSymbolWeak {
         let eval = EvaluationSymbol::get_symbol(&self, session, context, diagnostics, scope);
         match eval {
             EvaluationSymbolPtr::WEAK(w) => {
