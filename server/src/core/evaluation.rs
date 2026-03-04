@@ -1438,7 +1438,7 @@ impl Evaluation {
             }
             if function_arg.unwrap().arg_type != ArgumentType::VARARG {
                 //positional or arg
-                diagnostics.extend(Evaluation::validate_func_arg(session, function_arg.unwrap(), arg, on_object.clone(), from_module.clone()));
+                diagnostics.extend(Evaluation::validate_func_arg(session, function_arg.unwrap().symbol, arg, on_object.clone(), from_module.clone()));
             }
             arg_index += 1;
         }
@@ -1451,7 +1451,7 @@ impl Evaluation {
                 for func_arg in function.args.iter().skip(to_skip as usize) {
                     let func_arg_name = symbol_table.get_symbol_view(func_arg.symbol).unwrap().name();
                     if func_arg_name.to_string() == arg_identifier.id {
-                        diagnostics.extend(Evaluation::validate_func_arg(session, func_arg, &arg.value, on_object, from_module));
+                        diagnostics.extend(Evaluation::validate_func_arg(session, func_arg.symbol, &arg.value, on_object, from_module));
                         if func_arg.arg_type == ArgumentType::ARG {
                             found_pos_arg_with_kw += 1;
                         } else if func_arg.arg_type == ArgumentType::KWORD_ONLY {
@@ -1551,7 +1551,8 @@ impl Evaluation {
         filtered_diagnostics
     }
 
-    fn validate_domain(session: &mut SessionInfo, on_object: Weak<RefCell<Symbol>>, from_module: Option<Rc<RefCell<Symbol>>>, value: &Expr) -> Vec<Diagnostic> {
+    // @arena: on_object is weak
+    fn validate_domain(session: &mut SessionInfo, on_object: SymbolKey, from_module: Option<SymbolKey>, value: &Expr) -> Vec<Diagnostic> {
         let mut diagnostics = vec![];
         if value.is_literal_expr() || matches!(value, Expr::Tuple(_)) {
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03006, &[]) {
@@ -1581,7 +1582,7 @@ impl Evaluation {
                             });
                         }
                     } else {
-                        Evaluation::validate_tuple_search_domain(session, on_object.clone(), from_module.clone(), &t.elts[0], &t.elts[1], &t.elts[2], &mut diagnostics);
+                        Evaluation::validate_tuple_search_domain(session, on_object, from_module, &t.elts[0], &t.elts[1], &t.elts[2], &mut diagnostics);
                     }
                 },
                 Expr::List(l) => {
@@ -1594,7 +1595,7 @@ impl Evaluation {
                             });
                         }
                     } else {
-                        Evaluation::validate_tuple_search_domain(session, on_object.clone(), from_module.clone(), &l.elts[0], &l.elts[1], &l.elts[2], &mut diagnostics);
+                        Evaluation::validate_tuple_search_domain(session, on_object, from_module, &l.elts[0], &l.elts[1], &l.elts[2], &mut diagnostics);
                     }
                 },
                 Expr::StringLiteral(s) => {
@@ -1672,7 +1673,7 @@ impl Evaluation {
                     let (symbols, _diagnostics) = get_member_symbol(session,
                         object,
                         &name.to_string(),
-                        from_module.clone(),
+                        from_module,
                         false,
                         true,
                         false,
@@ -1731,16 +1732,14 @@ impl Evaluation {
         }
     }
 
-    fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg: &Argument, arg: &Expr, on_object: Weak<RefCell<Symbol>>, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Diagnostic> {
+    // @arena: on_object is weak
+    fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg_sym: SymbolKey, arg: &Expr, on_object: SymbolKey, from_module: Option<SymbolKey>) -> Vec<Diagnostic> {
+        let st = &session.sync_odoo.symbol_table;
         let mut diagnostics = vec![];
-        if let Some(symbol) = function_arg.symbol.upgrade() {
-            if symbol.borrow().evaluations().unwrap_or(&vec![]).len() == 1 {
-                match symbol.borrow().evaluations().unwrap()[0].symbol.sym.clone() {
-                    EvaluationSymbolPtr::DOMAIN => {
-                        diagnostics.extend(Evaluation::validate_domain(session, on_object, from_module, arg));
-                    },
-                    _ => {}
-                }
+        let Some(symbol) = st.get_symbol_view(function_arg_sym) else { return diagnostics };
+        if let Some(evaluations) = symbol.evaluations() && evaluations.len() == 1 {
+            if let EvaluationSymbolPtr::DOMAIN = evaluations[0].symbol.sym {
+                diagnostics.extend(Evaluation::validate_domain(session, on_object, from_module, arg));
             }
         }
         diagnostics
