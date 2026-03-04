@@ -1364,12 +1364,13 @@ impl Evaluation {
      * object_instance: None if called on nothing, true on an instance, false on a class
      */
     fn validate_call_arguments(session: &mut SessionInfo, function_key: FunctionKey, expr_call: &ExprCall, on_object: SymbolKey, from_module: Option<SymbolKey>, object_instance: Option<bool>) -> Vec<Diagnostic> {
-        let symbol_table = &session.sync_odoo.symbol_table;
-        let function = symbol_table.functions.get(function_key).expect("valid key");
-        if symbol_table.is_func_overloaded(function_key) || function.is_property {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let function = st!().functions.get(function_key).expect("valid key");
+        if st!().is_func_overloaded(function_key) || function.is_property {
             return vec![];
         }
         let mut diagnostics = vec![];
+        let function_name = function.name.clone();
         //validate pos args first
         let mut arg_index = 0;
         let mut number_pos_arg = 0;
@@ -1387,7 +1388,7 @@ impl Evaluation {
                     vararg_index = index as i32;
                 },
                 ArgumentType::KWORD_ONLY => {
-                    kword_only_args.push(arg);
+                    kword_only_args.push(arg.clone());
                 },
                 ArgumentType::KWARG => {
                     kwarg_index = index as i32;
@@ -1409,7 +1410,7 @@ impl Evaluation {
                     }
                 }
                 if !pos_arg {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01007, &[&function.name, &0.to_string(), &1.to_string()]) {
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01007, &[&function_name, &0.to_string(), &1.to_string()]) {
                         diagnostics.push(Diagnostic {
                             range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
                             ..diagnostic
@@ -1426,9 +1427,10 @@ impl Evaluation {
                 return diagnostics;
             }
             //match arg with argument from function
+            let function = &st!().functions[function_key];
             let function_arg = function.args.get(min(arg_index, vararg_index) as usize);
             if function_arg.is_none() || function_arg.unwrap().arg_type == ArgumentType::KWORD_ONLY || function_arg.unwrap().arg_type == ArgumentType::KWARG {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01007, &[&function.name, &number_pos_arg.to_string(), &(arg_index + 1).to_string()]) {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01007, &[&function_name, &number_pos_arg.to_string(), &(arg_index + 1).to_string()]) {
                     diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
                         ..diagnostic
@@ -1438,7 +1440,7 @@ impl Evaluation {
             }
             if function_arg.unwrap().arg_type != ArgumentType::VARARG {
                 //positional or arg
-                diagnostics.extend(Evaluation::validate_func_arg(session, function_arg.unwrap().symbol, arg, on_object.clone(), from_module.clone()));
+                diagnostics.extend(Evaluation::validate_func_arg(session, &function_arg.unwrap().clone(), arg, on_object, from_module));
             }
             arg_index += 1;
         }
@@ -1448,10 +1450,11 @@ impl Evaluation {
         for arg in expr_call.arguments.keywords.iter() {
             if let Some(arg_identifier) = &arg.arg { //if None, arg is a dictionary of keywords, like in self.func(a, b, **any_kwargs)
                 let mut found_one = false;
-                for func_arg in function.args.iter().skip(to_skip as usize) {
-                    let func_arg_name = symbol_table.get_symbol_view(func_arg.symbol).unwrap().name();
-                    if func_arg_name.to_string() == arg_identifier.id {
-                        diagnostics.extend(Evaluation::validate_func_arg(session, func_arg.symbol, &arg.value, on_object, from_module));
+                let function = &st!().functions[function_key];
+                for func_arg in function.args.iter().skip(to_skip as usize).cloned() {
+                    let func_arg_name  = st!().get_symbol_view(func_arg.symbol).unwrap().name().to_string();
+                    if func_arg_name == arg_identifier.id {
+                        diagnostics.extend(Evaluation::validate_func_arg(session, &func_arg, &arg.value, on_object, from_module));
                         if func_arg.arg_type == ArgumentType::ARG {
                             found_pos_arg_with_kw += 1;
                         } else if func_arg.arg_type == ArgumentType::KWORD_ONLY {
@@ -1462,7 +1465,7 @@ impl Evaluation {
                     }
                 }
                 if !found_one && kwarg_index == i32::MAX {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01008, &[&function.name, &arg_identifier.id]) {
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01008, &[&function_name, &arg_identifier.id]) {
                         diagnostics.push(Diagnostic {
                             range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
                             ..diagnostic
@@ -1475,7 +1478,7 @@ impl Evaluation {
             }
         }
         if found_pos_arg_with_kw < number_pos_arg {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01007, &[&function.name, &number_pos_arg.to_string(), &arg_index.to_string()]) {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01007, &[&function_name, &number_pos_arg.to_string(), &arg_index.to_string()]) {
                 diagnostics.push(Diagnostic {
                     range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
                     ..diagnostic
@@ -1483,11 +1486,10 @@ impl Evaluation {
             }
             return diagnostics;
         }
-        let symbol_table = &session.sync_odoo.symbol_table;
         let mut kword_only_arg_missing = vec![]; // missing kword_only args without default value
         for kword_only_arg in kword_only_args.iter() {
             if kword_only_arg.default_value.is_none() {
-                let name = symbol_table.get_symbol_view(kword_only_arg.symbol).unwrap().name().as_str();
+                let name = st!().get_symbol_view(kword_only_arg.symbol).unwrap().name().clone();
                 kword_only_arg_missing.push(name);
             }
         }
@@ -1733,10 +1735,10 @@ impl Evaluation {
     }
 
     // @arena: on_object is weak
-    fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg_sym: SymbolKey, arg: &Expr, on_object: SymbolKey, from_module: Option<SymbolKey>) -> Vec<Diagnostic> {
+    fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg: &Argument, arg: &Expr, on_object: SymbolKey, from_module: Option<SymbolKey>) -> Vec<Diagnostic> {
         let st = &session.sync_odoo.symbol_table;
         let mut diagnostics = vec![];
-        let Some(symbol) = st.get_symbol_view(function_arg_sym) else { return diagnostics };
+        let Some(symbol) = st.get_symbol_view(function_arg.symbol) else { return diagnostics };
         if let Some(evaluations) = symbol.evaluations() && evaluations.len() == 1 {
             if let EvaluationSymbolPtr::DOMAIN = evaluations[0].symbol.sym {
                 diagnostics.extend(Evaluation::validate_domain(session, on_object, from_module, arg));
