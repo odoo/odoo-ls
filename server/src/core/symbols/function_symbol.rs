@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::{Rc, Weak}};
+use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::Weak};
 
 use lsp_types::Diagnostic;
 use ruff_python_ast::{AtomicNodeIndex, Expr};
