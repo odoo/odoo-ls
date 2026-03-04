@@ -3,7 +3,7 @@ use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet, VecDeque
 use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
 use ruff_python_ast::ExprCall;
 use ruff_text_size::TextRange;
-use slotmap::{SlotMap, new_key_type};
+use slotmap::{Key, SlotMap, new_key_type};
 use tracing::trace;
 
 use crate::{S, Sy, constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree}, core::{diagnostics::{DiagnosticCode,
@@ -72,6 +72,12 @@ impl_from_key! {
     Variable(VariableKey),
     XmlFile(XmlFileKey),
     CsvFile(CsvFileKey),
+}
+
+impl SymbolKey {
+    pub fn null() -> Self {
+        RootKey::null().into()
+    }
 }
 
 #[derive(Debug)]
