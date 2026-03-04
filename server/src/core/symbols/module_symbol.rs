@@ -140,14 +140,15 @@ impl ModuleSymbol {
     //     section_vec.push(content);
     // }
 
-    pub fn load_module_info(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) {
-        let (mut diagnostics, _loaded) = ModuleSymbol::_load_depends(symbol.clone(), session, odoo_addons);
-        diagnostics.extend(ModuleSymbol::check_data(&symbol, session));
-        if !symbol.borrow().as_module_package().loaded {
-            diagnostics.append(&mut ModuleSymbol::_load_arch(symbol.clone(), session));
+    pub fn load_module_info(module_key: PackageKey, session: &mut SessionInfo, odoo_addons: SymbolKey) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }  
+        let (mut diagnostics, _loaded) = ModuleSymbol::_load_depends(module_key, session, odoo_addons);
+        diagnostics.extend(ModuleSymbol::check_data(module_key, session));
+        let module = st!().packages.get(module_key).expect("valid key").as_module_package();
+        if !module.loaded {
+            diagnostics.append(&mut ModuleSymbol::_load_arch(module_key, session));
         }
-        let mut _symbol = symbol.borrow_mut();
-        let module = _symbol.as_module_package_mut();
+        let module = st!().packages[module_key].as_module_package_mut();
         module.loaded = true;
         let manifest_path = PathBuf::from(module.root_path.clone()).join("__manifest__.py");
         let manifest_file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize()).expect("file not found in cache").clone();
@@ -290,7 +291,7 @@ impl ModuleSymbol {
     /* ensure that all modules indicates in the module dependencies are well loaded.
     Returns list of diagnostics to publish in manifest file */
     // @arena: extend a map with a vector??
-    fn _load_depends(symbol_key: PackageKey, session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>) -> (Vec<Diagnostic>, Vec<OYarn>) {
+    fn _load_depends(symbol_key: PackageKey, session: &mut SessionInfo, odoo_addons: SymbolKey) -> (Vec<Diagnostic>, Vec<OYarn>) {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }  
         let symbol = st!().packages.get_mut(symbol_key).expect("valid key");
         let module = symbol.as_module_package_mut();
@@ -316,7 +317,7 @@ impl ModuleSymbol {
                 }
                 ModuleSymbol::_extend_dependencies(&mut st!(), symbol_key, dependency);
                  // @arena: todo: find_module
-            } else if let Some(dependency) = find_module(session, odoo_addons.clone(), depend) {
+            } else if let Some(dependency) = find_module(session, odoo_addons, depend) {
                 // Dependency just added to modules ("find"_module actually creates it)
                 loaded.push(depend.clone());
                 ModuleSymbol::_extend_dependencies(&mut st!(), symbol_key, dependency);
@@ -345,15 +346,18 @@ impl ModuleSymbol {
         symbol_table.add_dependency(symbol_key.into(), dependency.into(), BuildSteps::ARCH, BuildSteps::ARCH);
     }
 
-    fn check_data(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo) -> Vec<Diagnostic> {
+    fn check_data(module_key: PackageKey, session: &mut SessionInfo) -> Vec<Diagnostic> {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }  
         let mut diagnostics = vec![];
-        let data_paths = symbol.borrow().as_module_package().data.clone();
+        let module = st!().packages.get(module_key).expect("valid key").as_module_package();
+        let module_path = module.path.clone();
+        let data_paths = module.data.clone();
         for (data_url, data_range) in data_paths.iter() {
             //check if the file exists
-            let path = PathBuf::from(symbol.borrow().paths()[0].clone()).join(data_url);
+            let path = PathBuf::from(module_path.clone()).join(data_url);
             if !path.exists() {
-                symbol.borrow_mut().as_module_package_mut().not_found_data.insert(path.sanitize(), BuildSteps::ARCH);
-                symbol.borrow().get_entry().unwrap().borrow_mut().not_found_symbols.insert(symbol.clone());
+                st!().packages[module_key].as_module_package_mut().not_found_data.insert(path.sanitize(), BuildSteps::ARCH);
+                st!().get_entry(module_key.into()).unwrap().borrow_mut().not_found_symbols.insert(module_key.into());
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05049, &[&path.sanitize()]) {
                     diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(data_range.start().to_u32(), 0), Position::new(data_range.end().to_u32(), 0)),
@@ -372,12 +376,16 @@ impl ModuleSymbol {
         diagnostics
     }
 
-    pub fn validate_manifest(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo){
-        let data_paths = symbol.borrow().as_module_package().data.clone();
+    pub fn validate_manifest(module_key: PackageKey, session: &mut SessionInfo){
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }  
+        let module = st!().packages.get(module_key).expect("valid key").as_module_package();
+        let module_path = module.path.clone();
+        let data_paths = module.data.clone();
+        let root_path = module.root_path.clone();
         let mut diagnostics = vec![];
         for (data_url, data_range) in data_paths.iter() {
             // validate csv file names, check that their models exist
-            let path = PathBuf::from(symbol.borrow().paths()[0].clone()).join(data_url);
+            let path = PathBuf::from(module_path.clone()).join(data_url);
             if path.extension().unwrap_or_default() != "csv" || !path.exists(){
                 continue;
             }
@@ -385,7 +393,7 @@ impl ModuleSymbol {
                 continue;
             };
             let maybe_model = session.sync_odoo.models.get(&model_name).cloned();
-            let model_exists = maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols()).unwrap_or(false);
+            let model_exists = maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols(&st!())).unwrap_or(false);
             if !model_exists {
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[&model_name]) {
                     diagnostics.push(Diagnostic {
@@ -393,11 +401,11 @@ impl ModuleSymbol {
                         ..diagnostic.clone()
                     });
                 }
-                symbol.borrow_mut().as_module_package_mut().not_found_models.insert(model_name.clone(), BuildSteps::VALIDATION);
-                session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(symbol.clone());
+                st!().packages[module_key].as_module_package_mut().not_found_models.insert(model_name.clone(), BuildSteps::VALIDATION);
+                session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(module_key.into());
             }
         }
-        let manifest_path = PathBuf::from(symbol.borrow().as_module_package().root_path.clone()).join("__manifest__.py");
+        let manifest_path = PathBuf::from(root_path).join("__manifest__.py");
         let manifest_file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize()).expect("file not found in cache").clone();
         let mut manifest_file_info = (*manifest_file_info).borrow_mut();
         manifest_file_info.replace_diagnostics(crate::constants::BuildSteps::VALIDATION, diagnostics);

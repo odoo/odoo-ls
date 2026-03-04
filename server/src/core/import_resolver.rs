@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use ruff_text_size::{TextRange, TextSize};
 use ruff_python_ast::{Alias, AtomicNodeIndex, Identifier};
 use crate::core::symbols::symbol_table::{PackageKey, SymbolKey};
+use crate::core::symbols::symbol_table_create::create_from_path;
 use crate::{constants::*, oyarn, Sy, S};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::threads::SessionInfo;
@@ -231,20 +232,26 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
     return result;
 }
 
-// @arena-next
-pub fn find_module(session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>, name: &OYarn) -> Option<PackageKey> {
-    let paths = (*odoo_addons).borrow().paths().clone();
+// @arena: actually CREATES a module
+pub fn find_module(session: &mut SessionInfo, odoo_addons: SymbolKey, name: &OYarn) -> Option<PackageKey> {
+    let st = &session.sync_odoo.symbol_table;
+    let paths = st.get_symbol_view(odoo_addons).expect("valid key").paths().clone();
     for path in paths.iter() {
         let full_path = Path::new(path.as_str()).join(name.as_str());
         if !is_dir_cs(full_path.sanitize()) {
             continue;
         }
-        let Some(module_symbol) = Symbol::create_from_path(session, &full_path, odoo_addons.clone(), true) else {
+        let Some(module_symbol) = create_from_path(session, &full_path, odoo_addons, true) else {
             continue;
         };
-        session.sync_odoo.modules.insert(name.clone(), Rc::downgrade(&module_symbol));
-        SyncOdoo::build_now(session, &module_symbol, BuildSteps::ARCH);
-        return Some(module_symbol.clone());
+        // @arena: not in original code
+        // todo: factor out the part of create_from_path that creates a module symbol and use it here instead
+        let SymbolKey::Package(p) = module_symbol else {
+            panic!("Should have created a module package symbol for path {}", full_path.display());
+        };
+        session.sync_odoo.modules.insert(name.clone(), p);
+        SyncOdoo::build_now(session, module_symbol, BuildSteps::ARCH);
+        return Some(p);
     }
     None
 }
