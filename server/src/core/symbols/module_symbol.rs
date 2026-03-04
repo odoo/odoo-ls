@@ -17,12 +17,11 @@ use crate::core::file_mgr::{FileInfo, FileMgr, NoqaInfo};
 use crate::core::import_resolver::find_module;
 use crate::core::model::Model;
 use crate::core::odoo::SyncOdoo;
-use crate::core::symbols::symbol::Symbol;
 use crate::core::symbols::symbol_mgr::SymbolMgr;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer as _;
 use std::path::PathBuf;
-use std::rc::{Rc, Weak};
+use std::rc::Weak;
 use std::cell::RefCell;
 
 use super::symbol_mgr::SectionRange;
@@ -412,17 +411,20 @@ impl ModuleSymbol {
         manifest_file_info.publish_diagnostics(session);
     }
 
-    pub fn load_data(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo) {
-        let data_paths = symbol.borrow().as_module_package().data.clone();
+    pub fn load_data(symbol_key: PackageKey, session: &mut SessionInfo) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }  
+        let module = st!().packages.get(symbol_key).expect("valid key").as_module_package();
+        let module_path = module.path.clone();
+        let data_paths = module.data.clone();
         for (data_url, _data_range) in data_paths.iter() {
             //load data from file
-            let path = PathBuf::from(symbol.borrow().paths()[0].clone()).join(data_url);
+            let path = PathBuf::from(module_path.clone()).join(data_url);
             let (_, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), None, None, false); //create ast if not in cache
             let mut file_info = file_info.borrow_mut();
             let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
             if file_name.ends_with(".xml") {
-                let xml_sym = symbol.borrow_mut().add_new_xml_file(session, &file_name, &path.sanitize());
-                symbol.borrow_mut().add_dependency(&mut xml_sym.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
+                let xml_sym = st!().add_new_xml_file(symbol_key, &file_name, &path.sanitize());
+                st!().add_dependency(symbol_key.into(), xml_sym.into(), BuildSteps::ARCH, BuildSteps::ARCH);
                 if file_info.file_info_ast.borrow().text_document.as_ref().is_none() {
                     //TODO do we want to add a diagnostic here?
                     continue;
@@ -443,8 +445,8 @@ impl ModuleSymbol {
                     continue
                 }
             } else if file_name.ends_with(".csv") {
-                let csv_sym = symbol.borrow_mut().add_new_csv_file(session, &file_name, &path.sanitize());
-                symbol.borrow_mut().add_dependency(&mut csv_sym.borrow_mut(), BuildSteps::ARCH, BuildSteps::ARCH);
+                let csv_sym = st!().add_new_csv_file(symbol_key, &file_name, &path.sanitize());
+                st!().add_dependency(symbol_key.into(), csv_sym.into(), BuildSteps::ARCH, BuildSteps::ARCH);
                 if file_info.file_info_ast.borrow().text_document.as_ref().is_none() {
                     //TODO do we want to add a diagnostic here?
                     continue;

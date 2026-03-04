@@ -11,7 +11,7 @@ use std::i32;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
-use crate::core::symbols::symbol_table::{RootKey, SymbolKey, SymbolTable};
+use crate::core::symbols::symbol_table::{FunctionKey, RootKey, SymbolKey, SymbolTable, follow_ref};
 use crate::{constants::*, Sy};
 use crate::core::odoo::SyncOdoo;
 use crate::threads::SessionInfo;
@@ -450,15 +450,15 @@ impl Evaluation {
     }
     ///return the evaluation but valid outside of the given function scope
     // @arena: depends on follow_ref
-    pub fn get_eval_out_of_function_scope(&self, session: &mut SessionInfo, function: &Rc<RefCell<Symbol>>) -> Vec<Evaluation> {
+    pub fn get_eval_out_of_function_scope(&self, session: &mut SessionInfo, function: FunctionKey) -> Vec<Evaluation> {
         let mut res = vec![];
         match self.symbol.sym {
             EvaluationSymbolPtr::WEAK(_) => {
                 //take the weak by get_symbol instead of the match
-                let symbol_eval = self.symbol.get_symbol(session, &mut None, &mut vec![], Some(function.clone()));
-                let out_of_scope = Symbol::follow_ref(&symbol_eval, session, &mut None, false, false, None, Some(function.clone()));
+                let symbol_eval = self.symbol.get_symbol(session, &mut None, &mut vec![], Some(function.into()));
+                let out_of_scope = follow_ref(&symbol_eval, session, &mut None, false, false, None, Some(function.into()));
                 for sym in out_of_scope {
-                    if !sym.is_expired_if_weak() {
+                    if !session.sync_odoo.symbol_table.is_expired_if_weak(&sym) {
                         res.push(Evaluation {
                             symbol: EvaluationSymbol {
                                 sym: sym,

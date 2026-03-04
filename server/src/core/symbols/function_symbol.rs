@@ -5,9 +5,9 @@ use ruff_python_ast::{AtomicNodeIndex, Expr};
 use ruff_text_size::{TextRange, TextSize};
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{evaluation::{Context, Evaluation}, file_mgr::NoqaInfo, model::Model, symbols::symbol_table::SymbolKey}, oyarn, threads::SessionInfo};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{evaluation::{Context, Evaluation}, file_mgr::NoqaInfo, model::Model, symbols::symbol_table::{FunctionKey, SymbolKey}}, oyarn, threads::SessionInfo};
 
-use super::{symbol::Symbol, symbol_mgr::{SectionRange, SymbolMgr}};
+use super::{symbol_mgr::{SectionRange, SymbolMgr}};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ArgumentType {
@@ -111,12 +111,13 @@ impl FunctionSymbol {
     /*
     Add evaluations to possible return type of this function
      */
-    pub fn add_return_evaluations(function: Rc<RefCell<Symbol>>, session: &mut SessionInfo, evals: Vec<Evaluation>) {
+    pub fn add_return_evaluations(function: FunctionKey, session: &mut SessionInfo, evals: Vec<Evaluation>) {
         for new_eval in evals {
-            let out_scope = new_eval.get_eval_out_of_function_scope(session, &function);
+            let out_scope = new_eval.get_eval_out_of_function_scope(session, function);
+            let function_symbol = session.sync_odoo.symbol_table.functions.get_mut(function).expect("valid key");
             for new_eval in out_scope {
-                if !function.borrow().as_func().evaluations.contains(&new_eval) {
-                    function.borrow_mut().as_func_mut().evaluations.push(new_eval);
+                if !function_symbol.evaluations.contains(&new_eval) {
+                    function_symbol.evaluations.push(new_eval);
                 }
             }
         }

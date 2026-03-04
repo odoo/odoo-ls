@@ -4,9 +4,8 @@ use csv::StringRecord;
 use lsp_types::Diagnostic;
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::xml_data::{OdooData, OdooDataField, OdooDataRecord}, oyarn, threads::SessionInfo, Sy};
+use crate::{Sy, constants::{BuildStatus, BuildSteps, OYarn}, core::{symbols::symbol_table::CsvFileKey, xml_data::{OdooData, OdooDataField, OdooDataRecord}}, oyarn, threads::SessionInfo};
 
-use super::{symbols::{symbol::Symbol}};
 
 pub struct CsvArchBuilder {
 }
@@ -18,7 +17,9 @@ impl CsvArchBuilder {
         }
     }
 
-    pub fn load_csv(&mut self, session: &mut SessionInfo, csv_symbol: Rc<RefCell<Symbol>>, content: &String) -> Vec<Diagnostic> {
+    // @arena-next
+    // @arena Vec<Diagnostic> is not used by caller?
+    pub fn load_csv(&mut self, session: &mut SessionInfo, csv_symbol: CsvFileKey, content: &String) -> Vec<Diagnostic> {
         let diagnostics = vec![];
         csv_symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
         let model_name_pb = PathBuf::from(&csv_symbol.borrow().paths()[0]);

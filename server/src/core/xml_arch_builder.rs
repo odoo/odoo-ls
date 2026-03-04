@@ -5,7 +5,7 @@ use roxmltree::{Attribute, Node};
 use tracing::warn;
 use weak_table::PtrWeakHashSet;
 
-use crate::core::{diagnostics::{create_diagnostic, DiagnosticCode}, odoo::SyncOdoo};
+use crate::core::{diagnostics::{DiagnosticCode, create_diagnostic}, odoo::SyncOdoo, symbols::symbol_table::XmlFileKey};
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{entry_point::EntryPointType, xml_data::OdooData}, threads::SessionInfo, Sy};
 
 use super::{file_mgr::FileInfo, symbols::{symbol::Symbol}};
@@ -15,18 +15,19 @@ Struct made to load RelaxNG Odoo schemas and add hooks and specific OdooLS behav
 */
 pub struct XmlArchBuilder {
     pub is_in_main_ep: bool,
-    pub xml_symbol: Rc<RefCell<Symbol>>,
+    pub xml_symbol: XmlFileKey,
 }
 
 impl XmlArchBuilder {
 
-    pub fn new(xml_symbol: Rc<RefCell<Symbol>>) -> Self {
+    pub fn new(xml_symbol: XmlFileKey) -> Self {
         Self {
             is_in_main_ep: false,
             xml_symbol
         }
     }
 
+    // @arena-next
     pub fn load_arch(&mut self, session: &mut SessionInfo, file_info: &mut FileInfo, node: &Node) {
         let mut diagnostics = vec![];
         self.xml_symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);

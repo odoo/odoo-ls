@@ -2,9 +2,7 @@ use weak_table::PtrWeakHashSet;
 
 use crate::core::symbols::dependency_mgr::Buildable;
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_table::SymbolKey, xml_data::OdooData}, oyarn};
-use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::{Rc, Weak}};
-
-use super::{symbol::Symbol, symbol_mgr::SectionRange};
+use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::Weak};
 
 #[derive(Debug)]
 pub struct CsvFileSymbol {
@@ -29,10 +27,10 @@ pub struct CsvFileSymbol {
 
     // @arena: dead code
     //Trait SymbolMgr
-    pub sections: Vec<SectionRange>,
-    pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
+    // pub sections: Vec<SectionRange>,
+    // pub symbols: HashMap<OYarn, HashMap<u32, Vec<Rc<RefCell<Symbol>>>>>,
     //--- dynamics variables
-    pub ext_symbols: HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>>,
+    // pub ext_symbols: HashMap<OYarn, Vec<Rc<RefCell<Symbol>>>>,
 }
 
 impl CsvFileSymbol {
@@ -53,9 +51,9 @@ impl CsvFileSymbol {
             headers: Vec::new(),
             xml_ids: HashMap::new(),
             self_import: false,
-            sections: vec![],
-            symbols: HashMap::new(),
-            ext_symbols: HashMap::new(),
+            // sections: vec![],
+            // symbols: HashMap::new(),
+            // ext_symbols: HashMap::new(),
             model_dependencies: PtrWeakHashSet::new(),
             dependencies: vec![],
             dependents: vec![],
@@ -66,11 +64,11 @@ impl CsvFileSymbol {
     }
 
     // @arena: dead code
-    pub fn add_symbol(&mut self, content: &Rc<RefCell<Symbol>>, section: u32) {
-        let sections = self.symbols.entry(content.borrow().name().clone()).or_insert_with(|| HashMap::new());
-        let section_vec = sections.entry(section).or_insert_with(|| vec![]);
-        section_vec.push(content.clone());
-    }
+    // pub fn add_symbol(&mut self, content: &Rc<RefCell<Symbol>>, section: u32) {
+    //     let sections = self.symbols.entry(content.borrow().name().clone()).or_insert_with(|| HashMap::new());
+    //     let section_vec = sections.entry(section).or_insert_with(|| vec![]);
+    //     section_vec.push(content.clone());
+    // }
 
 }
 

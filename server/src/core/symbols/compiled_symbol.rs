@@ -1,10 +1,7 @@
-use std::{cell::RefCell, collections::HashMap, rc::Weak};
+use std::collections::HashMap;
 
-use weak_table::PtrWeakHashSet;
 
 use crate::{constants::OYarn, core::symbols::symbol_table::SymbolKey, oyarn};
-
-use super::symbol::Symbol;
 
 #[derive(Debug)]
 pub struct CompiledSymbol {
@@ -14,7 +11,7 @@ pub struct CompiledSymbol {
     // pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<SymbolKey>,
     pub module_symbols: HashMap<OYarn, SymbolKey>,
-    pub ext_symbols: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>,
+    // pub ext_symbols: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>,
 }
 
 impl CompiledSymbol {
@@ -26,7 +23,7 @@ impl CompiledSymbol {
             // weak_self: None,
             path: path.to_string(),
             module_symbols: HashMap::new(),
-            ext_symbols: HashMap::new(),
+            // ext_symbols: HashMap::new(),
             parent: Some(parent),
         }
     }
