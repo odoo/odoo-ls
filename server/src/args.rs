@@ -18,7 +18,7 @@ pub struct Cli {
 
     /// Tracked folders (parse mode required). Diagnostics will only be raised if they are in a file inside one of these directories.
     /// By default populated with all Odoo directories + addon paths.
-    /// These act as workspace folders when processing config files in parse mode.
+    /// These act as workspace folders when processing config files in parse mode, and thus are required in CLI mode
     #[arg(short, long)]
     pub tracked_folders: Option<Vec<String>>,
 
