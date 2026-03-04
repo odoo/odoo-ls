@@ -3,12 +3,9 @@ use itertools::FoldWhile::{Continue, Done};
 use ruff_python_ast::{Arguments, Expr, ExprCall, Identifier, Number, Operator, Parameter, UnaryOp};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::{Diagnostic, Position, Range};
-use weak_table::traits::WeakElement;
 use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
 use std::i32;
-use std::rc::{Rc, Weak};
-use std::cell::RefCell;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::symbols::symbol_table::{FunctionKey, SymbolKey, SymbolTable, follow_ref, get_member_symbol, get_sym, infer_name, is_specific_field, match_tree_from_any_entry, upgrade_weak};
 use crate::core::symbols::variable_symbol::VariableSymbol;
@@ -19,7 +16,7 @@ use crate::S;
 
 use super::file_mgr::FileMgr;
 use super::python_validator::PythonValidator;
-use super::symbols::function_symbol::{Argument, ArgumentType, FunctionSymbol};
+use super::symbols::function_symbol::{Argument, ArgumentType};
 use super::symbols::symbol_mgr::SectionIndex;
 
 
@@ -802,7 +799,7 @@ impl Evaluation {
                     call_argument_diagnostics.push(Vec::new()); //one list per evaluation
                     let EvaluationSymbolPtr::WEAK(base_sym_weak_eval) = base_eval_ptr else {continue};
                     let Some(base_sym) = upgrade_weak!(st!(), base_sym_weak_eval.weak) else {continue};
-                    if let SymbolKey::Class(c) = base_sym {
+                    if let SymbolKey::Class(_) = base_sym {
                         if base_sym_weak_eval.instance.unwrap_or(false) {
                             //TODO handle call on class instance
                         } else {
@@ -915,7 +912,8 @@ impl Evaluation {
                                 let mut found_hook = false;
                                 if let Some(&init) = init.0.first() {
                                     let init_file = st!().get_file(init).unwrap();
-                                    let init_evaluations = get_sym!(st!(), init).evaluations();
+                                    let init_sym = get_sym!(st!(), init);
+                                    let init_evaluations = init_sym.evaluations();
 
                                     if init_evaluations.is_some()
                                     && init_evaluations.unwrap().len() == 0
@@ -927,7 +925,6 @@ impl Evaluation {
                                         let mut v = PythonValidator::new(st!().get_entry(init).unwrap(), init);
                                         v.validate(session);
                                     }
-                                    // @arena: I expect a borrow checker issue here, and the solution in to clone the eval before calling get_symbol_as_weak on it
                                     if let Some(init_eval) = get_sym!(st!(), init).evaluations() {
                                         //init will always return an instance of the class, so we are not searching the method to check its return type, but rather to check if there is 
                                         //an hook on it. Hooks, can be used to use parameters for context (see relational fields for example).
@@ -935,7 +932,8 @@ impl Evaluation {
                                             context.as_mut().unwrap().insert(S!("constructing_class"), ContextValue::SYMBOL(base_sym));
                                             context.as_mut().unwrap().insert(S!("parameters"), ContextValue::ARGUMENTS(expr.arguments.clone()));
                                             found_hook = true;
-                                            let init_result = init_eval[0].symbol.get_symbol_as_weak(session, context, &mut diagnostics, Some(st!().get_file(parent).unwrap()));
+                                            let init_eval_sym = init_eval[0].symbol.clone();
+                                            let init_result = init_eval_sym.get_symbol_as_weak(session, context, &mut diagnostics, Some(st!().get_file(parent).unwrap()));
                                             context.as_mut().unwrap().remove(&S!("parameters"));
                                             context.as_mut().unwrap().remove(&S!("constructing_class"));
                                             evals.push(Evaluation {
@@ -1024,7 +1022,7 @@ impl Evaluation {
                         context.as_mut().unwrap().insert(S!("parameters"), ContextValue::ARGUMENTS(expr.arguments.clone()));
                         context.as_mut().unwrap().insert(S!("is_in_validation"), ContextValue::BOOLEAN(is_in_validation));
                         let evaluations = &st!().functions[f].evaluations;
-                        for eval in evaluations.iter() {
+                        for eval in evaluations.clone() {
                             // @arena: this will conflict. copy eval before
                             let eval_ptr = eval.symbol.get_symbol_weak_transformed(session, context, &mut diagnostics, Some(st!().get_file(parent).unwrap()));
                             evals.push(Evaluation{
@@ -1222,7 +1220,7 @@ impl Evaluation {
                         let Some(evaluations) = get_item.evaluations() else {
                             continue;
                         };
-                        for get_item_eval in evaluations {
+                        for get_item_eval in evaluations.clone() {
                             if let Some(hook) = get_item_eval.symbol.get_symbol_hook.as_ref() {
                                 let parent_file_or_func = st!().parent_file_or_function(parent).unwrap();
                                 let is_in_validation = match parent_file_or_func {
@@ -1750,7 +1748,7 @@ impl Evaluation {
 
 impl EvaluationSymbol {
 
-    pub fn new_with_symbol(symbol: Weak<RefCell<Symbol>>, instance: Option<bool>, context: Context, get_symbol_hook: Option<GetSymbolHook>) -> Self {
+    pub fn new_with_symbol(symbol: SymbolKey, instance: Option<bool>, context: Context, get_symbol_hook: Option<GetSymbolHook>) -> Self {
         Self { sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: symbol, context, instance: instance, is_super: false}), get_symbol_hook }
     }
 
@@ -1795,25 +1793,25 @@ impl EvaluationSymbol {
             EvaluationSymbolPtr::WEAK(w) => {
                 w
             },
-            EvaluationSymbolPtr::ANY => EvaluationSymbolWeak{weak: Weak::new(), context: HashMap::new(), instance: Some(false), is_super: false},
-            EvaluationSymbolPtr::ARG(_) => EvaluationSymbolWeak{weak: Weak::new(), context: HashMap::new(), instance: Some(false), is_super: false},
-            EvaluationSymbolPtr::NONE => EvaluationSymbolWeak{weak: Weak::new(), context: HashMap::new(), instance: Some(false), is_super: false},
-            EvaluationSymbolPtr::UNBOUND(_) => EvaluationSymbolWeak{weak: Weak::new(), context: HashMap::new(), instance: Some(false), is_super: false},
-            EvaluationSymbolPtr::DOMAIN => EvaluationSymbolWeak{weak: Weak::new(), context: HashMap::new(), instance: Some(false), is_super: false},
+            EvaluationSymbolPtr::ANY
+            | EvaluationSymbolPtr::ARG(_)
+            | EvaluationSymbolPtr::NONE
+            | EvaluationSymbolPtr::UNBOUND(_)
+            | EvaluationSymbolPtr::DOMAIN => EvaluationSymbolWeak{ weak: SymbolKey::null(), context: HashMap::new(), instance: Some(false), is_super: false },
             EvaluationSymbolPtr::SELF => {
                 let class = context.as_ref().
                 and_then(|context| context.get(&S!("parent_for")).or(context.get(&S!("base_attr"))))
                 .unwrap_or(&ContextValue::BOOLEAN(false));
                 match class {
-                    ContextValue::SYMBOL(s) => EvaluationSymbolWeak{weak: s.clone(), context: HashMap::new(), instance: Some(true), is_super: false},
-                    _ => EvaluationSymbolWeak{weak: Weak::new(), context: HashMap::new(), instance: Some(false), is_super: false}
+                    ContextValue::SYMBOL(s) => EvaluationSymbolWeak{weak: *s, context: HashMap::new(), instance: Some(true), is_super: false},
+                    _ => EvaluationSymbolWeak{weak: SymbolKey::null(), context: HashMap::new(), instance: Some(false), is_super: false}
                 }
             }
         }
     }
 
     /* Execute Hook, then return the effective EvaluationSymbolPtr, but transformed as EvaluationSmbolWeak if possible */
-    pub fn get_symbol_weak_transformed(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<Rc<RefCell<Symbol>>>) -> EvaluationSymbolPtr {
+    pub fn get_symbol_weak_transformed(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> EvaluationSymbolPtr {
         let eval = EvaluationSymbol::get_symbol(&self, session, context, diagnostics, scope);
         match eval {
             EvaluationSymbolPtr::WEAK(_) => {
@@ -1828,7 +1826,7 @@ impl EvaluationSymbol {
                 let class = context.as_ref().and_then(|context| context.get(&S!("base_call"))).unwrap_or(&ContextValue::BOOLEAN(false));
                 match class {
                     ContextValue::SYMBOL(s) => EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: s.clone(), context: HashMap::new(), instance: Some(true), is_super: false}),
-                    _ => EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Weak::new(), context: HashMap::new(), instance: Some(false), is_super: false})
+                    _ => EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: SymbolKey::null(), context: HashMap::new(), instance: Some(false), is_super: false})
                 }
             }
         }
