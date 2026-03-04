@@ -94,7 +94,7 @@ pub struct DiagnosticFilter {
 /// Serialize the schema as Vec<String> and adds the default
 fn regex_vec_schema(generator: &mut SchemaGenerator) -> Schema {
     let mut schema = <Vec<String>>::json_schema(generator);
-    schema.insert("default".into(), serde_json::json!([]));
+    schema.insert(DEFAULT_PROFILE_NAME.to_string(), serde_json::json!([]));
     schema
 }
 
@@ -649,7 +649,7 @@ fn transform_defaults(schema: &mut Schema) {
         match val {
             Value::Object(map) => {
                 for (k, v) in map.iter_mut() {
-                    if k == "default" {
+                    if k == DEFAULT_PROFILE_NAME {
                         if let Value::Object(def_map) = v {
                             if def_map.contains_key("info") && def_map.contains_key("sources") && def_map.contains_key("value")
                             {
@@ -677,7 +677,7 @@ fn transform_defaults(schema: &mut Schema) {
 impl Default for ConfigEntryRaw {
     fn default() -> Self {
         Self {
-            name: default_profile_name(),
+            name: DEFAULT_PROFILE_NAME.to_string(),
             extends: None,
             odoo_path: None,
             addons_merge: None,
@@ -744,7 +744,7 @@ pub struct ConfigEntry {
 impl Default for ConfigEntry {
     fn default() -> Self {
         Self {
-            name: default_profile_name(),
+            name: DEFAULT_PROFILE_NAME.to_string(),
             odoo_path: None,
             addons_paths: HashSet::new(),
             python_path: S!(get_python_command().unwrap_or_default()),
@@ -771,8 +771,11 @@ impl ConfigEntry {
 pub type ConfigNew = HashMap<String, ConfigEntry>;
 
 
-pub fn default_profile_name() -> String {
-    "default".to_string()
+pub const DEFAULT_PROFILE_NAME: &str = "default";
+
+/// Thin wrapper used by serde's `#[serde(default = "default_profile_name")]` attribute.
+fn default_profile_name() -> String {
+    DEFAULT_PROFILE_NAME.to_string()
 }
 
 fn fill_or_canonicalize<F>(
@@ -1158,7 +1161,7 @@ fn load_config_from_workspace(
     let mut current_dir = ws_path_pb.clone();
     let mut visited_dirs = HashSet::new();
     let mut merged_config: HashMap<String, ConfigEntryRaw> = HashMap::new();
-    merged_config.insert("default".to_string(), ConfigEntryRaw::new());
+    merged_config.insert(DEFAULT_PROFILE_NAME.to_string(), ConfigEntryRaw::new());
 
     loop {
         if !visited_dirs.insert(current_dir.clone()) {
