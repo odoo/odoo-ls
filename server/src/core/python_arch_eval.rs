@@ -16,7 +16,7 @@ use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::symbol::Symbol;
 use crate::core::evaluation::Evaluation;
 use crate::core::python_utils;
-use crate::features::ast_utils::AstUtils;
+// use crate::features::ast_utils::AstUtils;
 use crate::threads::SessionInfo;
 use crate::S;
 
@@ -30,6 +30,18 @@ use super::python_odoo_builder::PythonOdooBuilder;
 use super::python_utils::{Assign, AssignTargetType};
 use super::symbols::function_symbol::FunctionSymbol;
 
+// @arena: temporary copy to avoid importing AstUtils
+pub fn flatten_expr(expr: &Expr) -> String {
+    match expr {
+        Expr::Name(n) => {
+            n.id.to_string()
+        },
+        Expr::Attribute(a) => {
+            flatten_expr(&a.value) + &a.attr
+        },
+        _ => {S!("//Unhandled//")}
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct PythonArchEval {

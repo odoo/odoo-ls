@@ -11,7 +11,7 @@ use std::i32;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
-use crate::core::symbols::symbol_table::{FunctionKey, RootKey, SymbolKey, SymbolTable, follow_ref};
+use crate::core::symbols::symbol_table::{FunctionKey, RootKey, SymbolKey, SymbolTable, follow_ref, upgrade_weak};
 use crate::{constants::*, Sy};
 use crate::core::odoo::SyncOdoo;
 use crate::threads::SessionInfo;
@@ -20,7 +20,6 @@ use crate::S;
 use super::file_mgr::FileMgr;
 use super::python_validator::PythonValidator;
 use super::symbols::function_symbol::{Argument, ArgumentType, FunctionSymbol};
-use super::symbols::symbol::Symbol;
 use super::symbols::symbol_mgr::SectionIndex;
 
 
@@ -477,36 +476,25 @@ impl Evaluation {
         res
     }
 
-    // @arena: depends on follow_ref
     pub fn follow_ref_and_get_value(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>) -> Option<EvaluationValue> {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         if self.value.is_some() {
-            Some(self.value.as_ref().unwrap().clone())
-        } else {
-            let eval_symbol = self.symbol.get_symbol(session, &mut None, diagnostics, None);
-            if eval_symbol.is_expired_if_weak() {
-                return None;
-            }
-            let evals = Symbol::follow_ref(&eval_symbol, session, context, false, true, None, None);
-            if evals.len() == 1 {
-                let eval = &evals[0];
-                match eval {
-                    EvaluationSymbolPtr::WEAK(w) => {
-                        let eval_sym = w.weak.upgrade();
-                        if let Some(eval_sym) = eval_sym {
-                            if eval_sym.borrow().evaluations().is_some() && eval_sym.borrow().evaluations().unwrap().len() == 1 {
-                                let eval_borrowed = eval_sym.borrow();
-                                let eval = &eval_borrowed.evaluations().unwrap()[0];
-                                if eval.value.is_some() {
-                                    return Some(eval.value.as_ref().unwrap().clone());
-                                }
-                            }
-                        }
-                    },
-                    _ => {}
-                }
-            }
-            None
+            return Some(self.value.as_ref().unwrap().clone())
         }
+        let eval_symbol = self.symbol.get_symbol(session, &mut None, diagnostics, None);
+        if st!().is_expired_if_weak(&eval_symbol) {
+            return None;
+        }
+        let evals = follow_ref(&eval_symbol, session, context, false, true, None, None);
+        if evals.len() != 1 { return None; }
+        let eval = &evals[0];
+        let EvaluationSymbolPtr::WEAK(w) = eval else { return None; };
+        let eval_sym = st!().get_symbol_view(w.weak)?;
+        let evals = eval_sym.evaluations()?;
+        if evals.len() == 1 {
+            return evals[0].value.clone();
+        };
+        None
     }
 
     ///Return a list of evaluations of the symbol that hold these sections.
@@ -1855,12 +1843,12 @@ impl EvaluationSymbol {
 impl EvaluationSymbolPtr {
 
     // @arena: moved to symbol_table
-    pub fn is_expired_if_weak(&self) -> bool {
-        match self {
-            EvaluationSymbolPtr::WEAK(w) => w.weak.is_expired(),
-            _ => false
-        }
-    }
+    // pub fn is_expired_if_weak(&self) -> bool {
+    //     match self {
+    //         EvaluationSymbolPtr::WEAK(w) => w.weak.is_expired(),
+    //         _ => false
+    //     }
+    // }
 
     // @arena: moved to symbol_table
     pub fn upgrade_weak(&self) -> Option<Rc<RefCell<Symbol>>> {

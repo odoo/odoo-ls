@@ -96,7 +96,14 @@ macro_rules! get_sym {
         $st.get_symbol_view($key).expect("valid key (formerly Rc)")          
     };          
 }
+
+macro_rules! upgrade_weak {                                                                     
+    ($st:expr, $key:expr) => {                                                                  
+        if $st.contains_key($key) { Some($key) } else { None }
+    };          
+}
 pub(crate) use get_sym;
+pub(crate) use upgrade_weak;
 
 impl SymbolView<'_> {
     pub fn parent(&self) -> Option<SymbolKey> {
