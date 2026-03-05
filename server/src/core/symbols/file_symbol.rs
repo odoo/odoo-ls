@@ -22,6 +22,7 @@ pub struct FileSymbol {
     pub (super) in_workspace: bool,
     pub self_import: bool,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
+    // @arena: should use WeakSet instead?
     pub dependencies: Vec<Vec<Option<HashSet<SymbolKey>>>>,
     pub dependents: Vec<Vec<Option<HashSet<SymbolKey>>>>,
     pub processed_text_hash: u64,
