@@ -7,7 +7,7 @@ use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
 use std::i32;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
-use crate::core::symbols::symbol_table::{FunctionKey, SymbolKey, SymbolTable, follow_ref, get_member_symbol, get_sym, infer_name, is_specific_field, match_tree_from_any_entry, upgrade_weak};
+use crate::core::symbols::symbol_table::{FunctionKey, SymbolKey, SymbolTable, WeakKey, follow_ref, get_member_symbol, get_sym, infer_name, is_specific_field, match_tree_from_any_entry};
 use crate::core::symbols::variable_symbol::VariableSymbol;
 use crate::{constants::*, Sy};
 use crate::core::odoo::SyncOdoo;
@@ -117,8 +117,8 @@ impl ExprOrIdent<'_> {
 pub enum ContextValue {
     BOOLEAN(bool),
     STRING(String),
-    MODULE(SymbolKey),
-    SYMBOL(SymbolKey),
+    MODULE(WeakKey),
+    SYMBOL(WeakKey),
     ARGUMENTS(Arguments),
     RANGE(TextRange)
 }
@@ -154,14 +154,14 @@ impl ContextValue {
         }
     }
 
-    pub fn as_module(&self) -> SymbolKey {
+    pub fn as_module(&self) -> WeakKey {
         match self {
             ContextValue::MODULE(m) => *m,
             _ => panic!("Not a module")
         }
     }
 
-    pub fn as_symbol(&self) -> SymbolKey {
+    pub fn as_symbol(&self) -> WeakKey {
         match self {
             ContextValue::SYMBOL(s) => *s,
             _ => panic!("Not a symbol")
@@ -215,7 +215,7 @@ impl PartialEq for GetSymbolHook {
 
 #[derive(Debug, Clone)]
 pub struct EvaluationSymbolWeak {
-    pub weak: SymbolKey,
+    pub weak: WeakKey,
     pub context: Context,
     pub instance: Option<bool>,
     pub is_super: bool,
@@ -231,9 +231,9 @@ impl PartialEq for EvaluationSymbolWeak {
 }
 
 impl EvaluationSymbolWeak {
-    pub fn new(weak: SymbolKey, instance: Option<bool>, is_super: bool) -> Self {
+    pub fn new(key: SymbolKey, instance: Option<bool>, is_super: bool) -> Self {
         EvaluationSymbolWeak {
-            weak,
+            weak: key.into(),
             context: HashMap::new(),
             instance,
             is_super
@@ -281,7 +281,7 @@ impl Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: *odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("list")]), u32::MAX).last().expect("builtins list not found"),
+                    weak: odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("list")]), u32::MAX).last().copied().expect("builtins list not found").into(),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -297,7 +297,7 @@ impl Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: *odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("tuple")]), u32::MAX).last().expect("builtins list not found"),
+                    weak: odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("tuple")]), u32::MAX).last().copied().expect("builtins list not found").into(),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -313,7 +313,7 @@ impl Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: *odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("dict")]), u32::MAX).last().expect("builtins list not found"),
+                    weak: odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("dict")]), u32::MAX).last().copied().expect("builtins list not found").into(),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -329,7 +329,7 @@ impl Evaluation {
         Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                    weak: *odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("set")]), u32::MAX).last().expect("builtins set not found"),
+                    weak: odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("set")]), u32::MAX).last().copied().expect("builtins set not found").into(),
                     context: HashMap::new(),
                     instance: Some(true),
                     is_super: false,
@@ -383,9 +383,9 @@ impl Evaluation {
         };
         let symbol;
         if !values.is_none_literal_expr() {
-            symbol = *odoo.get_symbol("", &tree_value, u32::MAX).last().expect("builtins class not found");
+            symbol = odoo.get_symbol("", &tree_value, u32::MAX).last().copied().expect("builtins class not found").into();
         } else {
-            symbol = SymbolKey::null();
+            symbol = WeakKey::null();
         }
         Evaluation {
             symbol: EvaluationSymbol {
@@ -486,7 +486,7 @@ impl Evaluation {
         if evals.len() != 1 { return None; }
         let eval = &evals[0];
         let EvaluationSymbolPtr::WEAK(w) = eval else { return None; };
-        let eval_sym = st!().get_symbol_view(w.weak)?;
+        let eval_sym = st!().get_from_weak(w.weak)?;
         let evals = eval_sym.evaluations()?;
         if evals.len() == 1 {
             return evals[0].value.clone();
@@ -528,14 +528,14 @@ impl Evaluation {
             } else if matches!(symbol.typ(), SymType::CLASS) {
                 is_instance = Some(false);
             }
-            res.push(Evaluation::eval_from_symbol(symbol_table, sym_key, is_instance));
+            res.push(Evaluation::eval_from_symbol(symbol_table, sym_key.into(), is_instance));
         }
         res
     }
 
     /// Create an evaluation that is evaluating to the given symbol
-    pub fn eval_from_symbol(symbol_table: &SymbolTable, symbol: SymbolKey, instance: Option<bool>) -> Evaluation {
-        if !symbol_table.contains_key(symbol) {
+    pub fn eval_from_symbol(symbol_table: &SymbolTable, symbol: WeakKey, instance: Option<bool>) -> Evaluation {
+        if symbol.is_expired(symbol_table) {
             return Evaluation::new_none();
         }
         Evaluation {
@@ -576,7 +576,7 @@ impl Evaluation {
     pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: SymbolKey, max_infer: &TextSize, for_annotation: bool, required_dependencies: &mut Vec<Vec<SymbolKey>>) -> (Vec<Evaluation>, Vec<Diagnostic>) {
         let from_module;
         if let Some(module) = session.sync_odoo.symbol_table.find_module(parent) {
-            from_module = ContextValue::MODULE(module);
+            from_module = ContextValue::MODULE(module.into());
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }
@@ -592,7 +592,7 @@ impl Evaluation {
     pub fn expr_to_str(session: &mut SessionInfo, ast: &Expr, parent: SymbolKey, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diagnostic>) -> (Option<String>, Vec<Diagnostic>) {
         let from_module;
         if let Some(module) = session.sync_odoo.symbol_table.find_module(parent) {
-            from_module = ContextValue::MODULE(module);
+            from_module = ContextValue::MODULE(module.into());
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }
@@ -625,7 +625,7 @@ impl Evaluation {
     pub fn expr_to_bool(session: &mut SessionInfo, ast: &Expr, parent: SymbolKey, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diagnostic>) -> (Option<bool>, Vec<Diagnostic>) {
         let from_module;
         if let Some(module) = session.sync_odoo.symbol_table.find_module(parent) {
-            from_module = ContextValue::MODULE(module);
+            from_module = ContextValue::MODULE(module.into());
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }
@@ -798,7 +798,7 @@ impl Evaluation {
                 for base_eval_ptr in base_eval_ptrs.iter() {
                     call_argument_diagnostics.push(Vec::new()); //one list per evaluation
                     let EvaluationSymbolPtr::WEAK(base_sym_weak_eval) = base_eval_ptr else {continue};
-                    let Some(base_sym) = upgrade_weak!(st!(), base_sym_weak_eval.weak) else {continue};
+                    let Some(base_sym) = st!().upgrade(base_sym_weak_eval.weak) else {continue};
                     if let SymbolKey::Class(_) = base_sym {
                         if base_sym_weak_eval.instance.unwrap_or(false) {
                             //TODO handle call on class instance
@@ -812,7 +812,7 @@ impl Evaluation {
                                         return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                                     }
                                     let class_sym_weak_eval= class_eval[0].symbol.get_symbol_as_weak(session, context, &mut diagnostics, None);
-                                    let res = upgrade_weak!(st!(), class_sym_weak_eval.weak).and_then(|class_sym|{
+                                    let res = st!().upgrade(class_sym_weak_eval.weak).and_then(|class_sym|{
                                         let class_sym_weak_eval = &follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
                                             class_sym, None, false
                                         )), session, &mut None, false, false, None, None)[0];
@@ -879,7 +879,7 @@ impl Evaluation {
                                                     instance = None;
                                                 }
                                             }
-                                            Some((parent_class, instance))
+                                            Some((parent_class.into(), instance))
                                         }
                                     }
                                 };
@@ -929,7 +929,7 @@ impl Evaluation {
                                         //init will always return an instance of the class, so we are not searching the method to check its return type, but rather to check if there is 
                                         //an hook on it. Hooks, can be used to use parameters for context (see relational fields for example).
                                         if init_eval.len() == 1 && init_eval[0].symbol.get_symbol_hook.is_some() {
-                                            context.as_mut().unwrap().insert(S!("constructing_class"), ContextValue::SYMBOL(base_sym));
+                                            context.as_mut().unwrap().insert(S!("constructing_class"), ContextValue::SYMBOL(base_sym.into()));
                                             context.as_mut().unwrap().insert(S!("parameters"), ContextValue::ARGUMENTS(expr.arguments.clone()));
                                             found_hook = true;
                                             let init_eval_sym = init_eval[0].symbol.clone();
@@ -1006,7 +1006,7 @@ impl Evaluation {
                         }
                         let call_parent = match base_sym_weak_eval.context.get(&S!("base_attr")) {
                             Some(ContextValue::SYMBOL(s)) => *s,
-                            _ => SymbolKey::null(),
+                            _ => WeakKey::null(),
                         };
                         if is_in_validation {
                             let on_instance = base_sym_weak_eval.context.get(&S!("is_attr_of_instance")).map(|v| v.as_bool());
@@ -1090,10 +1090,10 @@ impl Evaluation {
                                         }
                                         _ => None
                                     };
-                                    let mut eval = Evaluation::eval_from_symbol(&st!(), attribute, instance);
+                                    let mut eval = Evaluation::eval_from_symbol(&st!(), attribute.into(), instance);
                                     match eval.symbol.sym {
                                         EvaluationSymbolPtr::WEAK(ref mut weak) => {
-                                            weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(base_loc));
+                                            weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(base_loc.into()));
                                             weak.context.insert(S!("is_attr_of_instance"), ContextValue::BOOLEAN(is_instance));
                                         },
                                         _ => {}
@@ -1157,7 +1157,7 @@ impl Evaluation {
                         }
                         _ => None
                     };
-                    evals.push(Evaluation::eval_from_symbol(&st!(), inferred_sym, instance));
+                    evals.push(Evaluation::eval_from_symbol(&st!(), inferred_sym.into(), instance));
                 }
                 if !inferred_syms.always_defined{
                     evals.push(Evaluation::new_unbound(name));
@@ -1239,7 +1239,7 @@ impl Evaluation {
                                 if let Some(hook_result) = hook_result {
                                     match hook_result {
                                         EvaluationSymbolPtr::WEAK(ref weak) => {
-                                            if st!().contains_key(weak.weak) {
+                                            if !weak.weak.is_expired(&st!()) {
                                                 evals.push(Evaluation::eval_from_ptr(&hook_result));
                                             }
                                         },
@@ -1257,7 +1257,7 @@ impl Evaluation {
                                 // For example for models, since you get the same type of recordset when subscripted
                                 evals.push(Evaluation{
                                     symbol: EvaluationSymbol {
-                                        sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: base, context: HashMap::new(), instance: Some(true), is_super: false}),
+                                        sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: base.into(), context: HashMap::new(), instance: Some(true), is_super: false}),
                                         get_symbol_hook: None,
                                     },
                                     value: None,
@@ -1295,7 +1295,7 @@ impl Evaluation {
                         evals.push(Evaluation {
                             symbol: EvaluationSymbol {
                                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                                    weak: *odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("bool")]), u32::MAX).last().expect("builtins class not found"),
+                                    weak: odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("bool")]), u32::MAX).last().copied().expect("builtins class not found").into(),
                                     context: HashMap::new(),
                                     instance: Some(true),
                                     is_super: false,
@@ -1315,7 +1315,7 @@ impl Evaluation {
                     let base_eval_ptrs = follow_ref(&base_sym_weak_eval, session, context, true, false, None, None);
                     for base_eval_ptr in base_eval_ptrs.iter() {
                         let EvaluationSymbolPtr::WEAK(base_sym_weak_eval) = base_eval_ptr else {continue};
-                        let Some(base_sym) = upgrade_weak!(st!(), base_sym_weak_eval.weak) else {continue};
+                        let Some(base_sym) = st!().upgrade(base_sym_weak_eval.weak) else {continue};
                         let (operator_functions, diags) = get_member_symbol(session, base_sym, &S!(method), module, true, false, true, false, false);
                         diagnostics.extend(diags);
                         for operator_function in operator_functions.into_iter() {
@@ -1340,7 +1340,7 @@ impl Evaluation {
                     Evaluation {
                         symbol: EvaluationSymbol {
                             sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
-                                weak: *odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("str")]), u32::MAX).last().expect("builtins class not found"),
+                                weak: odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("str")]), u32::MAX).last().copied().expect("builtins class not found").into(),
                                 context: HashMap::new(),
                                 instance: Some(true),
                                 is_super: false,
@@ -1361,7 +1361,7 @@ impl Evaluation {
      * parameters:
      * object_instance: None if called on nothing, true on an instance, false on a class
      */
-    fn validate_call_arguments(session: &mut SessionInfo, function_key: FunctionKey, expr_call: &ExprCall, on_object: SymbolKey, from_module: Option<SymbolKey>, object_instance: Option<bool>) -> Vec<Diagnostic> {
+    fn validate_call_arguments(session: &mut SessionInfo, function_key: FunctionKey, expr_call: &ExprCall, on_object: WeakKey, from_module: Option<SymbolKey>, object_instance: Option<bool>) -> Vec<Diagnostic> {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let function = st!().functions.get(function_key).expect("valid key");
         if st!().is_func_overloaded(function_key) || function.is_property {
@@ -1552,7 +1552,7 @@ impl Evaluation {
     }
 
     // @arena: on_object is weak
-    fn validate_domain(session: &mut SessionInfo, on_object: SymbolKey, from_module: Option<SymbolKey>, value: &Expr) -> Vec<Diagnostic> {
+    fn validate_domain(session: &mut SessionInfo, on_object: WeakKey, from_module: Option<SymbolKey>, value: &Expr) -> Vec<Diagnostic> {
         let mut diagnostics = vec![];
         if value.is_literal_expr() || matches!(value, Expr::Tuple(_)) {
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03006, &[]) {
@@ -1638,10 +1638,10 @@ impl Evaluation {
     }
 
     // @arena: on_object is weak
-    fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: SymbolKey, from_module: Option<SymbolKey>, elt1: &Expr, elt2: &Expr, _elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
+    fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: WeakKey, from_module: Option<SymbolKey>, elt1: &Expr, elt2: &Expr, _elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         //parameter 1
-        let Some(on_object) = upgrade_weak!(st!(), on_object) else { return }; //if weak is not set, we didn't manage to evalue base object. Do not validate in this case
+        let Some(on_object) = st!().upgrade(on_object) else { return }; //if weak is not set, we didn't manage to evalue base object. Do not validate in this case
         if let Expr::StringLiteral(s) = elt1 {
             let value = s.value.to_string();
             let split_expr = value.split(".");
@@ -1733,7 +1733,7 @@ impl Evaluation {
     }
 
     // @arena: on_object is weak
-    fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg: &Argument, arg: &Expr, on_object: SymbolKey, from_module: Option<SymbolKey>) -> Vec<Diagnostic> {
+    fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg: &Argument, arg: &Expr, on_object: WeakKey, from_module: Option<SymbolKey>) -> Vec<Diagnostic> {
         let st = &session.sync_odoo.symbol_table;
         let mut diagnostics = vec![];
         let Some(symbol) = st.get_symbol_view(function_arg.symbol) else { return diagnostics };
@@ -1749,7 +1749,7 @@ impl Evaluation {
 impl EvaluationSymbol {
 
     pub fn new_with_symbol(symbol: SymbolKey, instance: Option<bool>, context: Context, get_symbol_hook: Option<GetSymbolHook>) -> Self {
-        Self { sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: symbol, context, instance: instance, is_super: false}), get_symbol_hook }
+        Self { sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: symbol.into(), context, instance: instance, is_super: false}), get_symbol_hook }
     }
 
     pub fn new_self(get_symbol_hook: Option<GetSymbolHook>) -> EvaluationSymbol {
@@ -1797,14 +1797,14 @@ impl EvaluationSymbol {
             | EvaluationSymbolPtr::ARG(_)
             | EvaluationSymbolPtr::NONE
             | EvaluationSymbolPtr::UNBOUND(_)
-            | EvaluationSymbolPtr::DOMAIN => EvaluationSymbolWeak{ weak: SymbolKey::null(), context: HashMap::new(), instance: Some(false), is_super: false },
+            | EvaluationSymbolPtr::DOMAIN => EvaluationSymbolWeak{ weak: WeakKey::null(), context: HashMap::new(), instance: Some(false), is_super: false },
             EvaluationSymbolPtr::SELF => {
                 let class = context.as_ref().
                 and_then(|context| context.get(&S!("parent_for")).or(context.get(&S!("base_attr"))))
                 .unwrap_or(&ContextValue::BOOLEAN(false));
                 match class {
                     ContextValue::SYMBOL(s) => EvaluationSymbolWeak{weak: *s, context: HashMap::new(), instance: Some(true), is_super: false},
-                    _ => EvaluationSymbolWeak{weak: SymbolKey::null(), context: HashMap::new(), instance: Some(false), is_super: false}
+                    _ => EvaluationSymbolWeak{weak: WeakKey::null(), context: HashMap::new(), instance: Some(false), is_super: false}
                 }
             }
         }
@@ -1826,7 +1826,7 @@ impl EvaluationSymbol {
                 let class = context.as_ref().and_then(|context| context.get(&S!("base_call"))).unwrap_or(&ContextValue::BOOLEAN(false));
                 match class {
                     ContextValue::SYMBOL(s) => EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: s.clone(), context: HashMap::new(), instance: Some(true), is_super: false}),
-                    _ => EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: SymbolKey::null(), context: HashMap::new(), instance: Some(false), is_super: false})
+                    _ => EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: WeakKey::null(), context: HashMap::new(), instance: Some(false), is_super: false})
                 }
             }
         }

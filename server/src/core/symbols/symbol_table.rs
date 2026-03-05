@@ -74,12 +74,6 @@ impl_from_key! {
     CsvFile(CsvFileKey),
 }
 
-impl SymbolKey {
-    pub fn null() -> Self {
-        RootKey::null().into()
-    }
-}
-
 #[derive(Debug)]
 pub enum SymbolView<'a> {
     Root(&'a RootSymbol),
@@ -103,13 +97,7 @@ macro_rules! get_sym {
     };          
 }
 
-macro_rules! upgrade_weak {                                                                     
-    ($st:expr, $key:expr) => {                                                                  
-        if $st.contains_key($key) { Some($key) } else { None }
-    };          
-}
 pub(crate) use get_sym;
-pub(crate) use upgrade_weak;
 
 impl SymbolView<'_> {
     pub fn parent(&self) -> Option<SymbolKey> {
@@ -1282,16 +1270,18 @@ impl SymbolTable {
         res
     }
 
+    // @arena: originally method on EvaluationSymbolPtr
     pub fn upgrade_weak(&self, eval_ptr: &EvaluationSymbolPtr) -> Option<SymbolKey> {
         match eval_ptr {
-            EvaluationSymbolPtr::WEAK(w) if self.contains_key(w.weak) => Some(w.weak),
+            EvaluationSymbolPtr::WEAK(w) => self.upgrade(w.weak),
             _ => None,
         }
     }
     
+    // @arena: originally method on EvaluationSymbolPtr
     pub fn is_expired_if_weak(&self, eval_ptr: &EvaluationSymbolPtr) -> bool {
         match eval_ptr {
-            EvaluationSymbolPtr::WEAK(w) => !self.contains_key(w.weak),
+            EvaluationSymbolPtr::WEAK(w) => w.weak.is_expired(&self),
             _ => false,
         }
     }
@@ -1789,14 +1779,12 @@ fn next_refs_class(session: &mut SessionInfo, class_key: ClassKey, context: &mut
             base_attr = context.get("base_attr");
         }
     }
-    // let symbol = &*key.borrow();
     let Some(base_attr) = base_attr else {
         return res;
     };
-    let base_attr = base_attr.as_symbol(); // weak ref
-    if !st!().contains_key(base_attr) {
+    let Some(base_attr) = base_attr.as_symbol().upgrade(&st!()) else {
         return res;
-    }
+    };
     if !matches!(base_attr, SymbolKey::Class(_)) {
         return res;
     }
@@ -1829,14 +1817,16 @@ fn next_refs_class(session: &mut SessionInfo, class_key: ClassKey, context: &mut
     for get_method_eval in evaluations.iter() {
         context.as_mut().unwrap().extend(symbol_context.clone().into_iter());
         let get_result = get_method_eval.symbol.get_symbol_as_weak(session, context, &mut vec![], None);
-        if st!().contains_key(get_result.weak) {
+        if !get_result.weak.is_expired(&st!()) {
             let mut eval = Evaluation::eval_from_symbol(&st!(), get_result.weak, get_result.instance);
             match eval.symbol.get_mut_symbol_ptr() {
                 EvaluationSymbolPtr::WEAK(weak) => {
-                    if weak.weak == class_key.into() {
-                        continue;
+                    if let Some(eval_sym) = weak.weak.upgrade(&st!()) {
+                        if eval_sym == class_key.into() {
+                            continue;
+                        }
                     }
-                    weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(base_attr));
+                    weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(base_attr.into()));
                     res.push(eval.symbol.get_symbol_ptr().clone());
                 },
                 _ => {}
@@ -1915,7 +1905,7 @@ pub fn follow_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, c
         // Non-weak evaluations are final
         return default_result
     };
-    let symbol_key = if st!().contains_key(w.weak) { w.weak } else {
+    let Some(symbol_key) = w.weak.upgrade(&st!()) else {
         return default_result;
     };
     let symbol = get_sym!(st!(), symbol_key);
@@ -1951,18 +1941,16 @@ pub fn follow_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, c
             results.push(current_eval);
             continue;
         };
-        if !st!().contains_key(next_ref_weak.weak) {
+        let Some(sym_key) = next_ref_weak.weak.upgrade(&st!()) else {
             // Discard evaluation to expired reference
             continue;
         };
-        let sym_key = next_ref_weak.weak;
         // Avoid cycles
         if visited.contains(&sym_key) {
             continue;
         }
         visited.insert(sym_key);
         let next_ref_weak_instance = next_ref_weak.instance.clone();
-        // let sym_type = sym_key.borrow().typ();
         match sym_key {
             SymbolKey::Variable(v) => {
                 // let sym = sym_key.borrow();
@@ -2026,9 +2014,8 @@ pub fn follow_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, c
         results.retain(|r| {
             match r {
                 EvaluationSymbolPtr::WEAK(weak) => {
-                    let key = weak.weak;
-                    if st!().contains_key(key) {
-                        stop_on_tree_syms.iter().any(|s| *s == key)
+                    if let Some(key) = weak.weak.upgrade(&st!()) {
+                        stop_on_tree_syms.iter().any(|&s| s == key)
                     } else {
                         false
                     }
@@ -2158,12 +2145,16 @@ pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildStep
  * iterating on it to upgrade them
  */
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug, Clone, Copy)]
  pub struct WeakKey {
     key: SymbolKey,
  }
  
  impl WeakKey {
+    pub fn null() -> Self {
+        Self { key: RootKey::null().into() }
+
+    }
     pub fn upgrade(&self, symbol_table: &SymbolTable) -> Option<SymbolKey> {
         if symbol_table.contains_key(self.key) {
             Some(self.key)
@@ -2171,10 +2162,13 @@ pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildStep
             None
         }
     }
+    pub fn is_expired(&self, symbol_table: &SymbolTable) -> bool {
+        !symbol_table.contains_key(self.key)
+    }
  }
 
  impl SymbolTable {
-    pub fn upgrade(&self, weak_key: &WeakKey) -> Option<SymbolKey> {
+    pub fn upgrade(&self, weak_key: WeakKey) -> Option<SymbolKey> {
         weak_key.upgrade(self)
     }
 

@@ -67,7 +67,7 @@ impl VariableSymbol {
                 // To be able to follow related fields, we need to have the base_attr set in order to find the __get__ hook in next_refs
                 // we update the context here for the case where we are coming from a decorator for example.
                 context = Some(HashMap::new());
-                context.as_mut().unwrap().insert(S!("base_attr"), ContextValue::SYMBOL(parent));
+                context.as_mut().unwrap().insert(S!("base_attr"), ContextValue::SYMBOL(parent.into()));
             }
             let eval_weaks = follow_ref(&symbol, session, &mut context, false, false, None, None);
             for eval_weak in eval_weaks.iter() {
