@@ -293,6 +293,7 @@ impl SyncOdoo {
         error!("End of initialization. Time taken by ARCH: {} ms", TIME_ARCH.load(std::sync::atomic::Ordering::SeqCst));
         error!("End of initialization. Time taken by ARCH_EVAL: {} ms", TIME_ARCH_EVAL.load(std::sync::atomic::Ordering::SeqCst));
         error!("End of initialization. Time taken by VALIDATION: {} ms", TIME_VALIDATION.load(std::sync::atomic::Ordering::SeqCst));
+        error!("End of initialization. Time taken by FILE update: {} ms", TIME_FILE.load(std::sync::atomic::Ordering::SeqCst));
     }
 
     pub fn find_stdlib_entry_point(&self) -> Rc<RefCell<EntryPoint>> {

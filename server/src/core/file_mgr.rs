@@ -116,6 +116,7 @@ impl FileInfo {
         }
     }
     pub fn update(&mut self, session: &mut SessionInfo, path: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, is_external: bool, force: bool, is_untitled: bool) -> bool {
+        let start = std::time::Instant::now();
         // update the file info with the given information.
         // path: indicates the path of the file
         // content: if content is given, it will be used to update the ast and text_rope, if not, the loading will be from the disk
@@ -155,6 +156,8 @@ impl FileInfo {
             }
         } else if is_untitled {
             session.log_message(MessageType::ERROR, format!("Attempt to update untitled file {}, without changes", path));
+        let elapsed = start.elapsed();
+        TIME_FILE.fetch_add(elapsed.as_millis() as usize, Ordering::SeqCst);
             return false;
         } else {
             match fs::read_to_string(path) {
@@ -163,6 +166,8 @@ impl FileInfo {
                 },
                 Err(e) => {
                     session.log_message(MessageType::ERROR, format!("Failed to read file {}, with error {}", path, e));
+        let elapsed = start.elapsed();
+        TIME_FILE.fetch_add(elapsed.as_millis() as usize, Ordering::SeqCst);
                     return false;
                 },
             };
@@ -172,9 +177,13 @@ impl FileInfo {
         let old_hash = self.file_info_ast.borrow().text_hash;
         self.file_info_ast.borrow_mut().text_hash = hasher.finish();
         if old_hash == self.file_info_ast.borrow().text_hash {
+        let elapsed = start.elapsed();
+        TIME_FILE.fetch_add(elapsed.as_millis() as usize, Ordering::SeqCst);
             return false;
         }
         self._build_ast(session, is_external);
+        let elapsed = start.elapsed();
+        TIME_FILE.fetch_add(elapsed.as_millis() as usize, Ordering::SeqCst);
         true
     }
 

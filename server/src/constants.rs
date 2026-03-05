@@ -17,6 +17,7 @@ pub const DEBUG_BORROW_GUARDS: bool = false;
 
 pub type Tree = (Vec<OYarn>, Vec<OYarn>);
 pub static TIME_ARCH: AtomicUsize = AtomicUsize::new(0);
+pub static TIME_FILE: AtomicUsize = AtomicUsize::new(0);
 pub static TIME_ARCH_EVAL: AtomicUsize = AtomicUsize::new(0);
 pub static TIME_VALIDATION: AtomicUsize = AtomicUsize::new(0);
 
