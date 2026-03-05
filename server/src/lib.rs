@@ -10,3 +10,4 @@ pub mod server;
 pub mod tasks;
 pub mod utils;
 pub mod crash_buffer;
+pub mod weak_hash_set;

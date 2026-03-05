@@ -13,6 +13,7 @@ use crate::core::symbols::symbol_table::SymbolKey;
 use crate::core::symbols::symbol_table::SymbolTable;
 use crate::core::symbols::symbol_table::get_sym;
 use crate::threads::SessionInfo;
+use crate::weak_hash_set::WeakSet;
 
 use super::symbols::module_symbol::ModuleSymbol;
 
@@ -73,16 +74,16 @@ impl ModelData {
 pub struct Model {
     name: OYarn,
     /// @arena: always classes: consider changing to ClassKey
-    symbols: HashSet<ClassKey>, // formerly PtrWeakHashSet<Weak<RefCell<Symbol>>>
-    pub dependents: HashSet<SymbolKey>, // formerly PtrWeakHashSet<Weak<RefCell<Symbol>>>
+    symbols: WeakSet<ClassKey>, // formerly PtrWeakHashSet<Weak<RefCell<Symbol>>>
+    pub dependents: WeakSet<SymbolKey>, // formerly PtrWeakHashSet<Weak<RefCell<Symbol>>>
 }
 
 impl Model {
     pub fn new(name: OYarn, symbol: ClassKey) -> Self {
         let mut res = Self {
             name,
-            symbols: HashSet::new(),
-            dependents: HashSet::new(),
+            symbols: WeakSet::new(),
+            dependents: WeakSet::new(),
         };
         res.symbols.insert(symbol);
         res
@@ -106,7 +107,7 @@ impl Model {
     pub fn get_symbols(&self, symbol_table: &SymbolTable, from_module: Option<SymbolKey>) -> Vec<ClassKey> {
         let mut symbol = Vec::new();
         // @arena obs: possible stale keys
-        for &s in self.symbols.iter().filter(|&&k| symbol_table.classes.contains_key(k)) {
+        for s in self.symbols.iter_valid(|&k| symbol_table.classes.contains_key(k)) {
             let module = symbol_table.find_module(s.into()).expect("Unreachable: Model should be declared in a module");
             let module_sym = symbol_table.get_symbol_view(module).expect("valid key from find_module");
             if from_module.is_none() || ModuleSymbol::is_in_deps(symbol_table, from_module.unwrap(), &module_sym.as_module_package().dir_name) {
@@ -120,7 +121,7 @@ impl Model {
     pub fn get_main_symbols(&self, session: &SessionInfo, from_module: Option<SymbolKey>) -> Vec<ClassKey> {
         let st = &session.sync_odoo.symbol_table;
         let mut res = vec![];
-        for &key in self.symbols.iter().filter(|&&k| st.classes.contains_key(k)) {
+        for key in self.symbols.iter_valid(|&k| st.classes.contains_key(k)) {
             let model = st.classes[key]._model.as_ref().unwrap();
             if !model.inherit.contains(&model.name) {
                 let module = st.find_module(key.into());
@@ -140,7 +141,7 @@ impl Model {
 
     pub fn model_in_deps(&self, session: &mut SessionInfo, from_module: SymbolKey) -> bool {
         let st = &session.sync_odoo.symbol_table;
-        for &key in self.symbols.iter().filter(|&&k| st.classes.contains_key(k)) {
+        for key in self.symbols.iter_valid(|&k| st.classes.contains_key(k)) {
             let model = st.classes[key]._model.as_ref().unwrap();
             if !model.inherit.contains(&model.name) {
                 let module = st.find_module(key.into()).unwrap(); // @arena: same as original code (unwrap)
@@ -203,7 +204,7 @@ impl Model {
     }
 
     pub fn has_symbols(&mut self, symbol_table: &SymbolTable) -> bool {
-        self.symbols.retain(|&k| symbol_table.classes.contains_key(k));
+        self.symbols.clear_invalid(|&k| symbol_table.classes.contains_key(k));
         !self.symbols.is_empty()
     }
 
@@ -219,7 +220,7 @@ impl Model {
     fn all_symbols_helper(&self, session: &SessionInfo, from_module: Option<SymbolKey>, with_inheritance: bool, seen_inherited_models: &mut HashSet<OYarn>) -> Vec<(ClassKey, Option<OYarn>)> {
         let st = &session.sync_odoo.symbol_table;
         let mut symbols = Vec::new();
-        for &s in self.symbols.iter().filter(|&&k| st.classes.contains_key(k)) { // filter stale keys
+        for s in self.symbols.iter_valid(|&k| st.classes.contains_key(k)) { // filter stale keys
             if let Some(from_module) = from_module {
                 let module = st.find_module(s.into());
                 if let Some(module) = module {
@@ -266,7 +267,7 @@ impl Model {
         let st = &session.sync_odoo.symbol_table;
         let mut symbols = Vec::new();
         let mut inherits_symbols = Vec::new();
-        for &s in self.symbols.iter().filter(|&&k| st.classes.contains_key(k)) {
+        for s in self.symbols.iter_valid(|&k| st.classes.contains_key(k)) {
             if let Some(from_module) = from_module {
                 let module = st.find_module(s.into());
                 if let Some(module) = module {
@@ -314,8 +315,7 @@ impl Model {
     /// @arena: done
     pub fn add_dependents_to_validation(&self, session: &mut SessionInfo, module_change: Option<SymbolKey>) {
         let st = &session.sync_odoo.symbol_table;
-        let deps = self.dependents.iter().filter(|&&k| st.contains_key(k)).copied().collect::<Vec<_>>();
-        for &dep in deps.iter() {
+        for dep in self.dependents.iter_valid(|&k| st.contains_key(k)) {
             let st = &mut session.sync_odoo.symbol_table;
             st.invalidate_sub_functions(dep);
             let module = st.find_module(dep);
