@@ -8,7 +8,7 @@ use lsp_types::Diagnostic;
 use tracing::{trace, warn};
 use weak_table::traits::WeakElement;
 
-use crate::constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, DEBUG_STEPS, DEBUG_STEPS_ONLY_INTERNAL};
+use crate::constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DEBUG_STEPS_ONLY_INTERNAL, OYarn, PackageType, SymType, TIME_ARCH};
 use crate::core::python_utils;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::symbols::symbol::Symbol;
@@ -55,6 +55,7 @@ impl PythonArchBuilder {
     }
 
     pub fn load_arch(&mut self, session: &mut SessionInfo) {
+        let start = std::time::Instant::now();
         let symbol = &self.sym_stack[0];
         if [SymType::NAMESPACE, SymType::ROOT, SymType::COMPILED, SymType::VARIABLE, SymType::CLASS].contains(&symbol.borrow().typ()) {
             return; // nothing to extract
@@ -163,6 +164,8 @@ impl PythonArchBuilder {
         PythonArchBuilderHooks::on_done(session, &self.sym_stack[0]);
         let mut symbol = self.sym_stack[0].borrow_mut();
         symbol.set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
+        let duration = start.elapsed();
+        TIME_ARCH.fetch_add(duration.as_millis() as usize, std::sync::atomic::Ordering::SeqCst);
     }
 
     fn create_local_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: u32, _range: &TextRange) -> Result<(), Error> {

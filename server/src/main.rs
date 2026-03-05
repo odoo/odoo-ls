@@ -7,7 +7,7 @@ use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_panic::panic_hook;
 use tracing_subscriber::{fmt, FmtSubscriber, layer::SubscriberExt};
 
-use std::{env, path::PathBuf, process};
+use std::{env, path::PathBuf, process, sync::atomic::AtomicUsize};
 
 #[cfg(debug_assertions)]
 use odoo_ls_server::allocator::TrackingAllocator;

@@ -72,6 +72,7 @@ impl PythonValidator {
 
     /* Validate the symbol. The dependencies must be done before any validation. */
     pub fn validate(&mut self, session: &mut SessionInfo) {
+        let start = std::time::Instant::now();
         self.file = self.sym_stack[0].borrow().get_file().unwrap().upgrade().unwrap();
         let symbol = self.sym_stack[0].borrow();
         self.current_module = symbol.find_module();
@@ -217,6 +218,8 @@ impl PythonValidator {
                 }
             }
         }
+        let duration = start.elapsed();
+        TIME_VALIDATION.fetch_add(duration.as_millis() as usize, std::sync::atomic::Ordering::SeqCst);
     }
 
     fn validate_body(&mut self, session: &mut SessionInfo, vec_ast: &Vec<Stmt>) {

@@ -290,6 +290,9 @@ impl SyncOdoo {
         }
         session.send_notification("$Odoo/loadingStatusUpdate", "stop");
         session.log_message(MessageType::INFO, format!("End of initialization. Time taken: {} ms", start_time.elapsed().as_millis()));
+        error!("End of initialization. Time taken by ARCH: {} ms", TIME_ARCH.load(std::sync::atomic::Ordering::SeqCst));
+        error!("End of initialization. Time taken by ARCH_EVAL: {} ms", TIME_ARCH_EVAL.load(std::sync::atomic::Ordering::SeqCst));
+        error!("End of initialization. Time taken by VALIDATION: {} ms", TIME_VALIDATION.load(std::sync::atomic::Ordering::SeqCst));
     }
 
     pub fn find_stdlib_entry_point(&self) -> Rc<RefCell<EntryPoint>> {

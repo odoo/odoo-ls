@@ -56,6 +56,7 @@ impl PythonArchEval {
     }
 
     pub fn eval_arch(&mut self, session: &mut SessionInfo) {
+        let start = std::time::Instant::now();
         let symbol = self.sym_stack[0].clone();
         if [SymType::NAMESPACE, SymType::ROOT, SymType::COMPILED, SymType::VARIABLE, SymType::CLASS].contains(&symbol.borrow().typ()) {
             return; // nothing to evaluate
@@ -147,6 +148,8 @@ impl PythonArchEval {
                 session.sync_odoo.add_to_validations(self.sym_stack[0].clone());
             }
         }
+        let duration = start.elapsed();
+        TIME_ARCH_EVAL.fetch_add(duration.as_millis() as usize, std::sync::atomic::Ordering::SeqCst);
     }
 
     fn visit_stmt(&mut self, session: &mut SessionInfo, stmt: &Stmt) {

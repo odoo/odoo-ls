@@ -16,6 +16,9 @@ pub const DEBUG_REBUILD_NOW: bool = false;
 pub const DEBUG_BORROW_GUARDS: bool = false;
 
 pub type Tree = (Vec<OYarn>, Vec<OYarn>);
+pub static TIME_ARCH: AtomicUsize = AtomicUsize::new(0);
+pub static TIME_ARCH_EVAL: AtomicUsize = AtomicUsize::new(0);
+pub static TIME_VALIDATION: AtomicUsize = AtomicUsize::new(0);
 
 //type DebugYarn = String;
 
@@ -127,7 +130,7 @@ pub const BUILT_IN_LIBS: &[&str]  = &["string", "re", "difflib", "textwrap", "un
 
 pub const CONFIG_WIKI_URL: &str = "https://github.com/odoo/odoo-ls/wiki/3.-Configuration-files";
 
-use std::sync::LazyLock;
+use std::sync::{LazyLock, atomic::AtomicUsize};
 
 /// True if the minor part of EXTENSION_VERSION is even, false otherwise.
 pub static IS_RELEASE: LazyLock<bool> = LazyLock::new(|| {
