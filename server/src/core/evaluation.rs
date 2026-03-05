@@ -117,8 +117,8 @@ impl ExprOrIdent<'_> {
 pub enum ContextValue {
     BOOLEAN(bool),
     STRING(String),
-    MODULE(WeakKey),
-    SYMBOL(WeakKey),
+    MODULE(WeakKey<SymbolKey>),
+    SYMBOL(WeakKey<SymbolKey>),
     ARGUMENTS(Arguments),
     RANGE(TextRange)
 }
@@ -154,14 +154,14 @@ impl ContextValue {
         }
     }
 
-    pub fn as_module(&self) -> WeakKey {
+    pub fn as_module(&self) -> WeakKey<SymbolKey> {
         match self {
             ContextValue::MODULE(m) => *m,
             _ => panic!("Not a module")
         }
     }
 
-    pub fn as_symbol(&self) -> WeakKey {
+    pub fn as_symbol(&self) -> WeakKey<SymbolKey> {
         match self {
             ContextValue::SYMBOL(s) => *s,
             _ => panic!("Not a symbol")
@@ -215,7 +215,7 @@ impl PartialEq for GetSymbolHook {
 
 #[derive(Debug, Clone)]
 pub struct EvaluationSymbolWeak {
-    pub weak: WeakKey,
+    pub weak: WeakKey<SymbolKey>,
     pub context: Context,
     pub instance: Option<bool>,
     pub is_super: bool,
@@ -534,7 +534,7 @@ impl Evaluation {
     }
 
     /// Create an evaluation that is evaluating to the given symbol
-    pub fn eval_from_symbol(symbol_table: &SymbolTable, symbol: WeakKey, instance: Option<bool>) -> Evaluation {
+    pub fn eval_from_symbol(symbol_table: &SymbolTable, symbol: WeakKey<SymbolKey>, instance: Option<bool>) -> Evaluation {
         if symbol.is_expired(symbol_table) {
             return Evaluation::new_none();
         }
@@ -1361,7 +1361,7 @@ impl Evaluation {
      * parameters:
      * object_instance: None if called on nothing, true on an instance, false on a class
      */
-    fn validate_call_arguments(session: &mut SessionInfo, function_key: FunctionKey, expr_call: &ExprCall, on_object: WeakKey, from_module: Option<SymbolKey>, object_instance: Option<bool>) -> Vec<Diagnostic> {
+    fn validate_call_arguments(session: &mut SessionInfo, function_key: FunctionKey, expr_call: &ExprCall, on_object: WeakKey<SymbolKey>, from_module: Option<SymbolKey>, object_instance: Option<bool>) -> Vec<Diagnostic> {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let function = st!().functions.get(function_key).expect("valid key");
         if st!().is_func_overloaded(function_key) || function.is_property {
@@ -1552,7 +1552,7 @@ impl Evaluation {
     }
 
     // @arena: on_object is weak
-    fn validate_domain(session: &mut SessionInfo, on_object: WeakKey, from_module: Option<SymbolKey>, value: &Expr) -> Vec<Diagnostic> {
+    fn validate_domain(session: &mut SessionInfo, on_object: WeakKey<SymbolKey>, from_module: Option<SymbolKey>, value: &Expr) -> Vec<Diagnostic> {
         let mut diagnostics = vec![];
         if value.is_literal_expr() || matches!(value, Expr::Tuple(_)) {
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03006, &[]) {
@@ -1638,7 +1638,7 @@ impl Evaluation {
     }
 
     // @arena: on_object is weak
-    fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: WeakKey, from_module: Option<SymbolKey>, elt1: &Expr, elt2: &Expr, _elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
+    fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: WeakKey<SymbolKey>, from_module: Option<SymbolKey>, elt1: &Expr, elt2: &Expr, _elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         //parameter 1
         let Some(on_object) = st!().upgrade(on_object) else { return }; //if weak is not set, we didn't manage to evalue base object. Do not validate in this case
@@ -1733,7 +1733,7 @@ impl Evaluation {
     }
 
     // @arena: on_object is weak
-    fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg: &Argument, arg: &Expr, on_object: WeakKey, from_module: Option<SymbolKey>) -> Vec<Diagnostic> {
+    fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg: &Argument, arg: &Expr, on_object: WeakKey<SymbolKey>, from_module: Option<SymbolKey>) -> Vec<Diagnostic> {
         let st = &session.sync_odoo.symbol_table;
         let mut diagnostics = vec![];
         let Some(symbol) = st.get_symbol_view(function_arg.symbol) else { return diagnostics };

@@ -515,21 +515,7 @@ impl SymbolTable {
         }
     }
 
-    pub fn contains_key(&self, key: SymbolKey) -> bool {
-        match key {
-            SymbolKey::Root(k) => self.roots.contains_key(k),
-            SymbolKey::DiskDir(k) => self.disk_dirs.contains_key(k),
-            SymbolKey::Namespace(k) => self.namespaces.contains_key(k),
-            SymbolKey::Package(k) => self.packages.contains_key(k),
-            SymbolKey::File(k) => self.files.contains_key(k),
-            SymbolKey::Compiled(k) => self.compiled.contains_key(k),
-            SymbolKey::Class(k) => self.classes.contains_key(k),
-            SymbolKey::Function(k) => self.functions.contains_key(k),
-            SymbolKey::Variable(k) => self.variables.contains_key(k),
-            SymbolKey::XmlFile(k) => self.xml_files.contains_key(k),
-            SymbolKey::CsvFile(k) => self.csv_files.contains_key(k),
-        }
-    }
+
 
     pub fn remove(&mut self, key: SymbolKey) {
         match key {
@@ -1281,7 +1267,7 @@ impl SymbolTable {
     // @arena: originally method on EvaluationSymbolPtr
     pub fn is_expired_if_weak(&self, eval_ptr: &EvaluationSymbolPtr) -> bool {
         match eval_ptr {
-            EvaluationSymbolPtr::WEAK(w) => w.weak.is_expired(&self),
+            EvaluationSymbolPtr::WEAK(w) => w.weak.is_expired(self),
             _ => false,
         }
     }
@@ -1375,7 +1361,7 @@ pub fn is_inheriting_from_field(session: &SessionInfo, class_key: ClassKey) -> b
     let symbol_table = &session.sync_odoo.symbol_table;
     let class_symbol = symbol_table.classes.get(class_key).expect("valid key");
     // @arena: ClassSymbol.bases are weak refs
-    for &base_key in class_symbol.bases.iter().filter(|&&k| symbol_table.classes.contains_key(k)) {
+    for base_key in class_symbol.bases.iter().filter_map(|w| w.upgrade(symbol_table)) {
         if is_inheriting_from_field(session, base_key) {
             return true;
         }
@@ -1596,8 +1582,7 @@ fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut H
                 }
             }
             let bases = st!().classes[c].bases.iter()
-                .filter(|&&base| st!().classes.contains_key(base))
-                .copied()
+                .filter_map(|base| base.upgrade(&st!()))
                 .collect::<Vec<_>>();
             for base in bases {
                 //no comodel as we will search for co-model from original class (what about overrided _name?)
@@ -1745,7 +1730,7 @@ fn _get_member_symbol_helper(
     }
     if result.is_empty() { // if we already have something, do not go up in bases
         let class_sym = &st!().classes[c];
-        let bases = class_sym.bases.iter().filter(|&&base| st!().classes.contains_key(base)).copied().collect::<Vec<_>>();
+        let bases = class_sym.bases.iter().filter_map(|w| w.upgrade(&st!())).collect::<Vec<_>>();
         for base in bases {
             if visited_classes.contains(&base){
                 continue;
@@ -2146,33 +2131,36 @@ pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildStep
  */
 
 #[derive(PartialEq, Debug, Clone, Copy)]
- pub struct WeakKey {
-    key: SymbolKey,
+ pub struct WeakKey<K: Copy> {
+    key: K,
  }
  
- impl WeakKey {
-    pub fn null() -> Self {
-        Self { key: RootKey::null().into() }
-
-    }
-    pub fn upgrade(&self, symbol_table: &SymbolTable) -> Option<SymbolKey> {
-        if symbol_table.contains_key(self.key) {
+ impl<K: Copy> WeakKey<K> {
+    pub fn upgrade(&self, table: &impl ContainsKey<K>) -> Option<K> {
+        if table.contains_key(self.key) {
             Some(self.key)
         } else {
             None
         }
     }
-    pub fn is_expired(&self, symbol_table: &SymbolTable) -> bool {
-        !symbol_table.contains_key(self.key)
+    pub fn is_expired(&self, table: &impl ContainsKey<K>) -> bool {
+        !table.contains_key(self.key)
     }
  }
 
+ impl WeakKey<SymbolKey> {
+    pub fn null() -> Self {
+        Self { key: RootKey::null().into() }
+    }
+
+ }
+
  impl SymbolTable {
-    pub fn upgrade(&self, weak_key: WeakKey) -> Option<SymbolKey> {
+    pub fn upgrade(&self, weak_key: WeakKey<SymbolKey>) -> Option<SymbolKey> {
         weak_key.upgrade(self)
     }
 
-    pub fn get_from_weak(&self, weak_key: WeakKey) -> Option<SymbolView> {
+    pub fn get_from_weak(&self, weak_key: WeakKey<SymbolKey>) -> Option<SymbolView> {
         if let Some(key) = weak_key.upgrade(self) {
             self.get_symbol_view(key)
         } else {
@@ -2181,9 +2169,37 @@ pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildStep
     }
  }
 
- impl From<SymbolKey> for WeakKey {
-    fn from(key: SymbolKey) -> Self {
+ impl<K: Copy> From<K> for WeakKey<K> {
+    fn from(key: K) -> Self {
         Self { key }
+    }
+}
+
+pub trait ContainsKey<K> {
+    fn contains_key(&self, key: K) -> bool;
+}
+
+impl ContainsKey<ClassKey> for SymbolTable {
+    fn contains_key(&self, key: ClassKey) -> bool {
+        self.classes.contains_key(key)
+    }
+}
+
+impl ContainsKey<SymbolKey> for SymbolTable {
+    fn contains_key(&self, key: SymbolKey) -> bool {
+        match key {
+            SymbolKey::Root(k) => self.roots.contains_key(k),
+            SymbolKey::DiskDir(k) => self.disk_dirs.contains_key(k),
+            SymbolKey::Namespace(k) => self.namespaces.contains_key(k),
+            SymbolKey::Package(k) => self.packages.contains_key(k),
+            SymbolKey::File(k) => self.files.contains_key(k),
+            SymbolKey::Compiled(k) => self.compiled.contains_key(k),
+            SymbolKey::Class(k) => self.classes.contains_key(k),
+            SymbolKey::Function(k) => self.functions.contains_key(k),
+            SymbolKey::Variable(k) => self.variables.contains_key(k),
+            SymbolKey::XmlFile(k) => self.xml_files.contains_key(k),
+            SymbolKey::CsvFile(k) => self.csv_files.contains_key(k),
+        }
     }
 }
 

@@ -6,7 +6,7 @@ use crate::constants::OYarn;
 use crate::core::file_mgr::NoqaInfo;
 use crate::core::model::ModelData;
 use crate::oyarn;
-use crate::core::symbols::symbol_table::{ClassKey, SymbolKey, SymbolTable};
+use crate::core::symbols::symbol_table::{ClassKey, SymbolKey, SymbolTable, WeakKey};
 
 use super::symbol_mgr::{SectionRange, SymbolMgr};
 
@@ -16,7 +16,7 @@ pub struct ClassSymbol {
     pub name: OYarn,
     pub is_external: bool,
     pub doc_string: Option<String>,
-    pub bases: Vec<ClassKey>, // formely Vec<Weak<RefCell<Symbol>>> 
+    pub bases: Vec<WeakKey<ClassKey>>, // formely Vec<Weak<RefCell<Symbol>>> 
     // pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<SymbolKey>,
     pub range: TextRange,
@@ -59,7 +59,7 @@ impl ClassSymbol {
             *checked = Some(HashSet::new());
         }
         let class_symbol = symbol_table.classes.get(class_key).expect("valid key"); // former self on method
-        for &b in class_symbol.bases.iter().filter(|&&k| symbol_table.classes.contains_key(k)) {
+        for b in class_symbol.bases.iter().filter_map(|w| w.upgrade(symbol_table)) {
             if b == base {
                 return true;
             }
