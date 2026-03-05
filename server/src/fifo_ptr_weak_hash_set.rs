@@ -7,6 +7,7 @@ pub struct FifoPtrWeakHashSet<T> {
     queue: VecDeque<Weak<T>>,
 }
 
+// @arena-next
 impl<T> FifoPtrWeakHashSet<T>
 {
     pub fn new() -> Self {

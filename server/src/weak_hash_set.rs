@@ -12,8 +12,8 @@ impl<K: Eq + Hash + Copy> WeakSet<K> {
         }
     }
 
-    pub fn insert(&mut self, key: K) {
-        self.set.borrow_mut().insert(key);
+    pub fn insert(&mut self, key: K) -> bool {
+        self.set.borrow_mut().insert(key)
     }
 
     pub fn contains(&self, key: &K) -> bool {

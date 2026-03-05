@@ -2155,7 +2155,7 @@ pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildStep
 
  }
 
- impl SymbolTable {
+impl SymbolTable {
     pub fn upgrade(&self, weak_key: Weak<SymbolKey>) -> Option<SymbolKey> {
         weak_key.upgrade(self)
     }
@@ -2167,9 +2167,9 @@ pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildStep
             None
         }
     }
- }
+}
 
- impl<K: Copy> From<K> for Weak<K> {
+impl<K: Copy> From<K> for Weak<K> {
     fn from(key: K) -> Self {
         Self { key }
     }

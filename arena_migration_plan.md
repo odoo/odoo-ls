@@ -181,3 +181,15 @@ use Semver to store version in SyncOdoo.
     - store ModuleKey's in sync_odoo.modules, update everywhere that takes a PackageKey
 
 ### remove option from parent
+
+### remove SymbolView
+Then SymbolView is just an intermediary you could eliminate. The callers
+  either:
+
+  1. Already know the concrete type — they have a ClassKey and access
+  st.classes[key] directly. No SymbolView needed.
+  2. Have a SymbolKey and need a shared field — direct accessor like
+  st.name(key) handles it without SymbolView.
+  3. Have a SymbolKey and need to branch on type — they're already matching on
+  the SymbolKey enum variants, so they can get the typed key and access the
+  slotmap directly.

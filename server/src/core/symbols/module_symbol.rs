@@ -26,6 +26,7 @@ use std::cell::RefCell;
 
 use super::symbol_mgr::SectionRange;
 use super::xml_file_symbol::XmlFileSymbol;
+use crate::core::symbols::symbol_table::ContainsKey;
 
 
 #[derive(Debug)]
@@ -43,6 +44,7 @@ pub struct ModuleSymbol {
     data: Vec<(String, TextRange)>, // TODO
     pub module_symbols: HashMap<OYarn, SymbolKey>,
     /// formerly a map of weak sets
+    /// @arena-next: use WeakSet here
     pub xml_id_locations: HashMap<OYarn,HashSet<SymbolKey>>, //contains all xml_file_symbols that contains the xml_id. Needed because it can be in another module.
     pub xml_ids: HashMap<OYarn, Vec<OdooData>>, //used for dynamic XML_ID records, like ir.models. normal ids are in their XmlFile
     pub arch_status: BuildStatus,

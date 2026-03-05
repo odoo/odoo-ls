@@ -385,6 +385,7 @@ pub struct EntryPoint {
     pub not_found_symbols: HashSet<SymbolKey>, // former PtrWeakHashSet
     pub not_found_symbols_for_models: HashSet<SymbolKey>, // formerly PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub to_delete: bool,
+    // @arena-next: use Weak here
     pub data_symbols: HashMap<String, SymbolKey>, //key is path, weak to Rc that is hold by the module symbol
 }
 impl EntryPoint {
