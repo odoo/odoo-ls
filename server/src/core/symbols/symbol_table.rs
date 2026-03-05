@@ -2158,6 +2158,7 @@ pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildStep
  * iterating on it to upgrade them
  */
 
+#[derive(PartialEq)]
  pub struct WeakKey {
     key: SymbolKey,
  }
@@ -2175,6 +2176,14 @@ pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildStep
  impl SymbolTable {
     pub fn upgrade(&self, weak_key: &WeakKey) -> Option<SymbolKey> {
         weak_key.upgrade(self)
+    }
+
+    pub fn get_from_weak(&self, weak_key: WeakKey) -> Option<SymbolView> {
+        if let Some(key) = weak_key.upgrade(self) {
+            self.get_symbol_view(key)
+        } else {
+            None
+        }
     }
  }
 
