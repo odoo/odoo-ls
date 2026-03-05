@@ -2131,11 +2131,11 @@ pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildStep
  */
 
 #[derive(PartialEq, Debug, Clone, Copy)]
- pub struct WeakKey<K: Copy> {
+ pub struct Weak<K: Copy> {
     key: K,
  }
  
- impl<K: Copy> WeakKey<K> {
+ impl<K: Copy> Weak<K> {
     pub fn upgrade(&self, table: &impl ContainsKey<K>) -> Option<K> {
         if table.contains_key(self.key) {
             Some(self.key)
@@ -2148,7 +2148,7 @@ pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildStep
     }
  }
 
- impl WeakKey<SymbolKey> {
+ impl Weak<SymbolKey> {
     pub fn null() -> Self {
         Self { key: RootKey::null().into() }
     }
@@ -2156,11 +2156,11 @@ pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildStep
  }
 
  impl SymbolTable {
-    pub fn upgrade(&self, weak_key: WeakKey<SymbolKey>) -> Option<SymbolKey> {
+    pub fn upgrade(&self, weak_key: Weak<SymbolKey>) -> Option<SymbolKey> {
         weak_key.upgrade(self)
     }
 
-    pub fn get_from_weak(&self, weak_key: WeakKey<SymbolKey>) -> Option<SymbolView> {
+    pub fn get_from_weak(&self, weak_key: Weak<SymbolKey>) -> Option<SymbolView> {
         if let Some(key) = weak_key.upgrade(self) {
             self.get_symbol_view(key)
         } else {
@@ -2169,7 +2169,7 @@ pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildStep
     }
  }
 
- impl<K: Copy> From<K> for WeakKey<K> {
+ impl<K: Copy> From<K> for Weak<K> {
     fn from(key: K) -> Self {
         Self { key }
     }

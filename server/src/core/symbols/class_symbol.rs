@@ -6,7 +6,7 @@ use crate::constants::OYarn;
 use crate::core::file_mgr::NoqaInfo;
 use crate::core::model::ModelData;
 use crate::oyarn;
-use crate::core::symbols::symbol_table::{ClassKey, SymbolKey, SymbolTable, WeakKey};
+use crate::core::symbols::symbol_table::{ClassKey, SymbolKey, SymbolTable, Weak};
 
 use super::symbol_mgr::{SectionRange, SymbolMgr};
 
@@ -16,7 +16,7 @@ pub struct ClassSymbol {
     pub name: OYarn,
     pub is_external: bool,
     pub doc_string: Option<String>,
-    pub bases: Vec<WeakKey<ClassKey>>, // formely Vec<Weak<RefCell<Symbol>>> 
+    pub bases: Vec<Weak<ClassKey>>, // formely Vec<Weak<RefCell<Symbol>>> 
     // pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<SymbolKey>,
     pub range: TextRange,
