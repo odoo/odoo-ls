@@ -6,7 +6,7 @@ use crate::core::module_load_order::sort_by_load_order;
 use crate::core::symbols::symbol_table::{PackageKey, SymbolKey, SymbolTable};
 use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
-use crate::fifo_ptr_weak_hash_set::FifoPtrWeakHashSet;
+use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
 use crate::threads::SessionInfo;
 use std::collections::HashMap;
 use std::cell::RefCell;
@@ -83,9 +83,9 @@ pub struct SyncOdoo {
     pub current_request_id: Option<RequestId>,
     pub running_request_ids: Arc<Mutex<Vec<RequestId>>>, //Arc to Server mutex for cancellation support
     pub watched_file_updates: u32,
-    rebuild_arch: FifoPtrWeakHashSet<RefCell<Symbol>>,
-    rebuild_arch_eval: FifoPtrWeakHashSet<RefCell<Symbol>>,
-    rebuild_validation: FifoPtrWeakHashSet<RefCell<Symbol>>,
+    rebuild_arch: FifoWeakHashSet<RefCell<Symbol>>,
+    rebuild_arch_eval: FifoWeakHashSet<RefCell<Symbol>>,
+    rebuild_validation: FifoWeakHashSet<RefCell<Symbol>>,
     pub state_init: InitState,
     pub must_reload_paths: Vec<(SymbolKey, String)>, // formerly Weak refs
     pub load_odoo_addons: bool, //indicate if we want to load odoo addons or not
@@ -130,9 +130,9 @@ impl SyncOdoo {
             current_request_id: None,
             running_request_ids: Arc::new(Mutex::new(vec![])),
             watched_file_updates: 0,
-            rebuild_arch: FifoPtrWeakHashSet::new(),
-            rebuild_arch_eval: FifoPtrWeakHashSet::new(),
-            rebuild_validation: FifoPtrWeakHashSet::new(),
+            rebuild_arch: FifoWeakHashSet::new(),
+            rebuild_arch_eval: FifoWeakHashSet::new(),
+            rebuild_validation: FifoWeakHashSet::new(),
             state_init: InitState::NOT_READY,
             must_reload_paths: vec![],
             load_odoo_addons: true,
@@ -161,9 +161,9 @@ impl SyncOdoo {
         session.sync_odoo.stdlib_dir = SyncOdoo::default_stdlib();
         session.sync_odoo.modules = HashMap::new();
         session.sync_odoo.models = HashMap::new();
-        session.sync_odoo.rebuild_arch = FifoPtrWeakHashSet::new();
-        session.sync_odoo.rebuild_arch_eval = FifoPtrWeakHashSet::new();
-        session.sync_odoo.rebuild_validation = FifoPtrWeakHashSet::new();
+        session.sync_odoo.rebuild_arch = FifoWeakHashSet::new();
+        session.sync_odoo.rebuild_arch_eval = FifoWeakHashSet::new();
+        session.sync_odoo.rebuild_validation = FifoWeakHashSet::new();
         session.sync_odoo.state_init = InitState::NOT_READY;
         session.sync_odoo.load_odoo_addons = true;
         session.sync_odoo.need_rebuild = false;
