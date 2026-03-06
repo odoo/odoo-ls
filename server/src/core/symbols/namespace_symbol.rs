@@ -1,7 +1,7 @@
 
 use std::{collections::{HashMap, HashSet}, path::PathBuf};
 
-use crate::{constants::OYarn, core::symbols::symbol_table::SymbolKey, oyarn};
+use crate::{constants::OYarn, core::symbols::symbol_table::SymbolKey, oyarn, weak_hash_set::WeakSet};
 
 
 
@@ -19,8 +19,9 @@ pub struct NamespaceSymbol {
     // pub weak_self: Option<Weak<RefCell<Symbol>>>,
     pub parent: Option<SymbolKey>,
     pub(super) in_workspace: bool,
-    pub dependencies: Vec<Vec<Option<HashSet<SymbolKey>>>>,
-    pub dependents: Vec<Vec<Option<HashSet<SymbolKey>>>>,
+    pub dependencies: Vec<Vec<Option<WeakSet<SymbolKey>>>>,
+    pub dependents: Vec<Vec<Option<WeakSet<SymbolKey>>>>,
+    // @arena-todo: check if dead code. if not, use WeakSet instead
     pub ext_symbols: HashMap<OYarn, HashSet<SymbolKey>>,
 }
 

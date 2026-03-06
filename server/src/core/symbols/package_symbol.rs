@@ -1,6 +1,6 @@
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{dependency_mgr::{Buildable, Dependencies}, symbol_table::SymbolKey}, xml_data::OdooData}, oyarn, threads::SessionInfo};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{dependency_mgr::{Buildable, Dependencies}, symbol_table::SymbolKey}, xml_data::OdooData}, oyarn, threads::SessionInfo, weak_hash_set::WeakSet};
 use std::{cell::RefCell, collections::{HashMap, HashSet}, path::PathBuf, rc::Weak};
 
 use super::{module_symbol::ModuleSymbol, symbol_mgr::{SectionRange, SymbolMgr}};
@@ -60,19 +60,19 @@ impl PackageSymbol {
     //         PackageSymbol::PythonPackage(p) => &p.dependencies()
     //     }
     // }
-    pub fn dependencies_as_mut(&mut self) -> &mut Vec<Vec<Option<HashSet<SymbolKey>>>> {
+    pub fn dependencies_as_mut(&mut self) -> &mut Vec<Vec<Option<WeakSet<SymbolKey>>>> {
         match self {
             PackageSymbol::Module(m) => &mut m.dependencies,
             PackageSymbol::PythonPackage(p) => &mut p.dependencies,
         }
     }
-    pub fn dependents(&self) -> &Vec<Vec<Option<HashSet<SymbolKey>>>> {
+    pub fn dependents(&self) -> &Vec<Vec<Option<WeakSet<SymbolKey>>>> {
         match self {
             PackageSymbol::Module(m) => m.dependents(),
             PackageSymbol::PythonPackage(p) => &p.dependents()
         }
     }
-    pub fn dependents_as_mut(&mut self) -> &mut Vec<Vec<Option<HashSet<SymbolKey>>>> {
+    pub fn dependents_as_mut(&mut self) -> &mut Vec<Vec<Option<WeakSet<SymbolKey>>>> {
         match self {
             PackageSymbol::Module(m) => &mut m.dependents,
             PackageSymbol::PythonPackage(p) => &mut p.dependents,
@@ -158,8 +158,8 @@ pub struct PythonPackageSymbol {
     pub xml_ids: HashMap<OYarn, Vec<OdooData>>, //used for dynamic XML_ID records, like ir.models
     pub module_symbols: HashMap<OYarn, SymbolKey>,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
-    pub dependencies: Vec<Vec<Option<HashSet<SymbolKey>>>>,
-    pub dependents: Vec<Vec<Option<HashSet<SymbolKey>>>>,
+    pub dependencies: Vec<Vec<Option<WeakSet<SymbolKey>>>>,
+    pub dependents: Vec<Vec<Option<WeakSet<SymbolKey>>>>,
     pub processed_text_hash: u64,
     pub noqas: NoqaInfo,
 

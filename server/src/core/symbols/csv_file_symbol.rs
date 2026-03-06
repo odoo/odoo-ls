@@ -1,8 +1,9 @@
 use weak_table::PtrWeakHashSet;
 
 use crate::core::symbols::dependency_mgr::Buildable;
+use crate::weak_hash_set::WeakSet;
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_table::SymbolKey, xml_data::OdooData}, oyarn};
-use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::Weak};
+use std::{cell::RefCell, collections::HashMap, rc::Weak};
 
 #[derive(Debug)]
 pub struct CsvFileSymbol {
@@ -20,8 +21,8 @@ pub struct CsvFileSymbol {
     pub headers: Vec<OYarn>,
     pub self_import: bool,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
-    pub dependencies: Vec<Vec<Option<HashSet<SymbolKey>>>>,
-    pub dependents: Vec<Vec<Option<HashSet<SymbolKey>>>>,
+    pub dependencies: Vec<Vec<Option<WeakSet<SymbolKey>>>>,
+    pub dependents: Vec<Vec<Option<WeakSet<SymbolKey>>>>,
     pub processed_text_hash: u64,
     pub noqas: NoqaInfo,
 

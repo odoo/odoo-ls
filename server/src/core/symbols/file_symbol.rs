@@ -1,7 +1,7 @@
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_table::SymbolKey, xml_data::OdooData}, oyarn};
-use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::Weak};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_table::SymbolKey, xml_data::OdooData}, oyarn, weak_hash_set::WeakSet};
+use std::{cell::RefCell, collections::HashMap, rc::Weak};
 
 use super::symbol_mgr::{SectionRange, SymbolMgr};
 
@@ -22,9 +22,8 @@ pub struct FileSymbol {
     pub (super) in_workspace: bool,
     pub self_import: bool,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
-    // @arena: should use WeakSet instead?
-    pub dependencies: Vec<Vec<Option<HashSet<SymbolKey>>>>,
-    pub dependents: Vec<Vec<Option<HashSet<SymbolKey>>>>,
+    pub dependencies: Vec<Vec<Option<WeakSet<SymbolKey>>>>,
+    pub dependents: Vec<Vec<Option<WeakSet<SymbolKey>>>>,
     pub processed_text_hash: u64,
     pub noqas: NoqaInfo,
 

@@ -12,6 +12,7 @@ use crate::core::symbols::symbol_table::{PackageKey, SymbolKey, SymbolTable};
 use crate::core::symbols::symbol_table_create::create_from_path;
 use crate::core::xml_arch_builder::XmlArchBuilder;
 use crate::core::xml_data::OdooData;
+use crate::weak_hash_set::WeakSet;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::file_mgr::{FileInfo, FileMgr, NoqaInfo};
 use crate::core::import_resolver::find_module;
@@ -57,8 +58,8 @@ pub struct ModuleSymbol {
     pub not_found_models: HashMap<OYarn, BuildSteps>,
     pub in_workspace: bool,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
-    pub dependencies: Vec<Vec<Option<HashSet<SymbolKey>>>>,
-    pub dependents: Vec<Vec<Option<HashSet<SymbolKey>>>>,
+    pub dependencies: Vec<Vec<Option<WeakSet<SymbolKey>>>>,
+    pub dependents: Vec<Vec<Option<WeakSet<SymbolKey>>>>,
     pub processed_text_hash: u64,
     pub noqas: NoqaInfo,
 

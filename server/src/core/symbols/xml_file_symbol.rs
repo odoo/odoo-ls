@@ -4,9 +4,9 @@ use weak_table::PtrWeakHashSet;
 
 use crate::core::symbols::symbol_table::SymbolKey;
 use crate::core::symbols::dependency_mgr::Buildable;
+use crate::weak_hash_set::WeakSet;
 use crate::{core::diagnostics::DiagnosticCode, threads::SessionInfo};
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::{FileInfo, NoqaInfo}, model::Model, xml_data::OdooData}, oyarn};
-use std::collections::HashSet;
 use std::{cell::RefCell, collections::HashMap, rc::Weak};
 
 #[derive(Debug)]
@@ -24,8 +24,8 @@ pub struct XmlFileSymbol {
     pub (super) in_workspace: bool,
     pub self_import: bool,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
-    pub dependencies: Vec<Vec<Option<HashSet<SymbolKey>>>>,
-    pub dependents: Vec<Vec<Option<HashSet<SymbolKey>>>>,
+    pub dependencies: Vec<Vec<Option<WeakSet<SymbolKey>>>>,
+    pub dependents: Vec<Vec<Option<WeakSet<SymbolKey>>>>,
     pub processed_text_hash: u64,
     pub noqas: NoqaInfo,
 

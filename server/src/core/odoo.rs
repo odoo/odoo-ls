@@ -882,7 +882,7 @@ impl SyncOdoo {
     }
 
     // @arena-next
-    pub fn build_now_dependencies(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, step: BuildSteps) {
+    pub fn build_now_dependencies(session: &mut SessionInfo, symbol: SymbolKey, step: BuildSteps) {
         let symbol = symbol.borrow();
         match symbol.typ() {
             SymType::ROOT | SymType::NAMESPACE | SymType::DISK_DIR | SymType::COMPILED | SymType::CLASS | SymType::VARIABLE | SymType::FUNCTION => return,
