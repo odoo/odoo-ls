@@ -3,7 +3,7 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
 use crate::core::module_load_order::sort_by_load_order;
-use crate::core::symbols::symbol_table::{PackageKey, SymbolKey, SymbolTable};
+use crate::core::symbols::symbol_table::{ContainsKey, PackageKey, SymbolKey, SymbolTable};
 use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
 use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
@@ -83,9 +83,9 @@ pub struct SyncOdoo {
     pub current_request_id: Option<RequestId>,
     pub running_request_ids: Arc<Mutex<Vec<RequestId>>>, //Arc to Server mutex for cancellation support
     pub watched_file_updates: u32,
-    rebuild_arch: FifoWeakHashSet<RefCell<Symbol>>,
-    rebuild_arch_eval: FifoWeakHashSet<RefCell<Symbol>>,
-    rebuild_validation: FifoWeakHashSet<RefCell<Symbol>>,
+    rebuild_arch: FifoWeakHashSet<SymbolKey>,
+    rebuild_arch_eval: FifoWeakHashSet<SymbolKey>,
+    rebuild_validation: FifoWeakHashSet<SymbolKey>,
     pub state_init: InitState,
     pub must_reload_paths: Vec<(SymbolKey, String)>, // formerly Weak refs
     pub load_odoo_addons: bool, //indicate if we want to load odoo addons or not
@@ -568,65 +568,57 @@ impl SyncOdoo {
         return self.entry_point_mgr.borrow().main_entry_point.as_ref().expect("Unable to find main entry point").clone()
     }
 
-    fn pop_item(&mut self, step: BuildSteps) -> Option<Rc<RefCell<Symbol>>> {
-        let mut arc_sym: Option<Rc<RefCell<Symbol>>> = None;
+    fn pop_item(&mut self, step: BuildSteps) -> Option<SymbolKey> {
         //Part 1: Find the symbol with a unmutable set
-        {
-            let set =  match step {
-                BuildSteps::ARCH_EVAL => &self.rebuild_arch_eval,
-                BuildSteps::VALIDATION => &self.rebuild_validation,
-                _ => &self.rebuild_arch
-            };
-            let mut selected_sym: Option<Rc<RefCell<Symbol>>> = None;
-            let mut selected_count: u32 = 999999999;
-            let mut current_count: u32;
-            for sym in set.iter() {
-                current_count = 0;
-                let file = sym.borrow().get_file().unwrap().upgrade().unwrap();
-                let file = file.borrow();
-                let all_dep = file.get_all_dependencies(step);
-                if let Some(all_dep) = all_dep {
-                    for (index, dep_set) in all_dep.iter().enumerate() {
-                        if let Some(dep_set) = dep_set {
-                            let index_set =  match index {
+        let set =  match step {
+            BuildSteps::ARCH_EVAL => &self.rebuild_arch_eval,
+            BuildSteps::VALIDATION => &self.rebuild_validation,
+            _ => &self.rebuild_arch
+        };
+        let mut selected_sym: Option<SymbolKey> = None;
+        let mut selected_count: u32 = 999999999;
+        let mut current_count: u32;
+        for sym in set.iter_valid(|&k| self.symbol_table.contains_key(k)) {
+            current_count = 0;
+            let file = self.symbol_table.get_file(sym).unwrap();
+            let file = self.symbol_table.get_symbol_view(file).unwrap();
+            let all_dep = file.get_all_dependencies(step);
+            if let Some(all_dep) = all_dep {
+                for (index, dep_set) in all_dep.iter().enumerate() {
+                    if let Some(dep_set) = dep_set {
+                         let index_set =  match index {
                                 x if x == BuildSteps::ARCH as usize => &self.rebuild_arch,
                                 x if x == BuildSteps::ARCH_EVAL as usize => &self.rebuild_arch_eval,
                                 x if x == BuildSteps::VALIDATION as usize => &self.rebuild_validation,
                                 _ => continue,
                             };
-                            current_count +=
-                                dep_set.iter().filter(|dep| index_set.contains(dep)).count() as u32;
-                        }
-                    }
-                }
-                if current_count < selected_count {
-                    selected_sym = Some(sym.clone());
-                    selected_count = current_count;
-                    if current_count == 0 {
-                        break;
+                        current_count +=
+                            dep_set.iter().filter(|dep| index_set.contains(dep)).count() as u32;
                     }
                 }
             }
-            if selected_sym.is_some() {
-                arc_sym = selected_sym.map(|x| x.clone());
+            if current_count < selected_count {
+                selected_sym = Some(sym);
+                selected_count = current_count;
+                if current_count == 0 {
+                    break;
+                }
             }
         }
-        {
-            let set =  match step {
-                BuildSteps::ARCH_EVAL => &mut self.rebuild_arch_eval,
-                BuildSteps::VALIDATION => &mut self.rebuild_validation,
-                _ => &mut self.rebuild_arch
-            };
-            if arc_sym.is_none() {
-                set.clear(); //remove any potential dead weak ref
-                return None;
-            }
-            let arc_sym_unwrapped = arc_sym.unwrap();
-            if !set.remove(&arc_sym_unwrapped) {
-                panic!("Unable to remove selected symbol from rebuild set")
-            }
-            return Some(arc_sym_unwrapped);
+        let set =  match step {
+            BuildSteps::ARCH_EVAL => &mut self.rebuild_arch_eval,
+            BuildSteps::VALIDATION => &mut self.rebuild_validation,
+            _ => &mut self.rebuild_arch
+        };
+        if selected_sym.is_none() {
+            set.clear(); //remove any potential dead weak ref
+            return None;
         }
+        let selected_sym_unwrapped = selected_sym.unwrap();
+        if !set.remove(&selected_sym_unwrapped) {
+            panic!("Unable to remove selected symbol from rebuild set")
+        }
+        return Some(selected_sym_unwrapped);
     }
 
     fn add_from_self_reload(session: &mut SessionInfo) {
