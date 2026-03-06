@@ -10,6 +10,7 @@ use tracing::{debug, trace, warn};
 
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
+use crate::core::symbols::symbol_table::SymbolKey;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
@@ -46,19 +47,20 @@ pub fn flatten_expr(expr: &Expr) -> String {
 #[derive(Debug, Clone)]
 pub struct PythonArchEval {
     entry_point: Rc<RefCell<EntryPoint>>,
-    file: Rc<RefCell<Symbol>>,
+    file: SymbolKey,
     file_mode: bool,
     current_step: BuildSteps,
-    sym_stack: Vec<Rc<RefCell<Symbol>>>,
+    sym_stack: Vec<SymbolKey>,
     diagnostics: Vec<Diagnostic>,
     safe_import: Vec<bool>,
 }
 
 impl PythonArchEval {
-    pub fn new(entry_point: Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>) -> PythonArchEval {
+    // @arena-todo
+    pub fn new(entry_point: Rc<RefCell<EntryPoint>>, symbol: SymbolKey) -> PythonArchEval {
         PythonArchEval {
             entry_point,
-            file: symbol.clone(), //dummy, evaluated in eval_arch
+            file: symbol, //dummy, evaluated in eval_arch
             file_mode: false, //dummy, evaluated in eval_arch
             current_step: BuildSteps::ARCH, //dummy, evaluated in eval_arch
             sym_stack: vec![symbol],

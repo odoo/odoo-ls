@@ -834,43 +834,43 @@ impl SyncOdoo {
      */
     // @arena-next
     pub fn build_now(session: &mut SessionInfo, symbol: SymbolKey, step: BuildSteps) -> bool {
-        if DEBUG_BORROW_GUARDS {
-            //Symbol must be borrowable in this function
-            symbol.borrow_mut();
-        }
-        match symbol.borrow().typ() {
-            SymType::ROOT | SymType::NAMESPACE | SymType::DISK_DIR | SymType::COMPILED | SymType::CLASS | SymType::VARIABLE => return false,
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        match symbol {
+            SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::DiskDir(_) | SymbolKey::Compiled(_) | SymbolKey::Class(_) | SymbolKey::Variable(_)  => return false,
             _ => {}
         }
         if DEBUG_REBUILD_NOW {
-            if symbol.borrow().build_status(step) == BuildStatus::INVALID {
-                panic!("Trying to build an invalid symbol: {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
+            let sym = get_sym!(st!(), symbol);
+            if st!().build_status(symbol, step) == BuildStatus::INVALID {
+                panic!("Trying to build an invalid symbol: {}", sym.paths().first().unwrap_or(&sym.name().to_string()));
             }
-            if symbol.borrow().build_status(step) == BuildStatus::IN_PROGRESS && !session.sync_odoo.is_in_rebuild(&symbol, step) {
-                error!("Trying to build a symbol that is NOT in the queue: {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
+            if st!().build_status(symbol, step) == BuildStatus::IN_PROGRESS && !session.sync_odoo.is_in_rebuild(symbol, step) {
+                error!("Trying to build a symbol that is NOT in the queue: {}", sym.paths().first().unwrap_or(&sym.name().to_string()));
             }
         }
-        if symbol.borrow().build_status(step) == BuildStatus::PENDING && symbol.borrow().previous_step_done(step) {
+        if st!().build_status(symbol, step) == BuildStatus::PENDING && st!().previous_step_done(symbol, step) {
             SyncOdoo::build_now_dependencies(session, symbol, step);
-            let entry_point = symbol.borrow().get_entry().unwrap();
-            session.sync_odoo.remove_from_rebuild(&symbol, step);
+            let entry_point = st!().get_entry(symbol).unwrap();
+            session.sync_odoo.remove_from_rebuild(symbol, step);
             if step == BuildSteps::ARCH {
-                let mut builder = PythonArchBuilder::new(entry_point, symbol.clone());
+                let mut builder = PythonArchBuilder::new(entry_point, symbol);
                 builder.load_arch(session);
                 return true;
             } else if step == BuildSteps::ARCH_EVAL {
                 if DEBUG_REBUILD_NOW {
-                    if symbol.borrow().build_status(BuildSteps::ARCH) != BuildStatus::DONE {
-                        panic!("An evaluation has been requested on a non-arched symbol: {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
+                    if st!().build_status(symbol, BuildSteps::ARCH) != BuildStatus::DONE {
+                        let sym = get_sym!(st!(), symbol);
+                        panic!("An evaluation has been requested on a non-arched symbol: {}", sym.paths().first().unwrap_or(&sym.name().to_string()));
                     }
                 }
-                let mut builder = PythonArchEval::new(entry_point, symbol.clone());
+                let mut builder = PythonArchEval::new(entry_point, symbol);
                 builder.eval_arch(session);
                 return true;
             } else if step == BuildSteps::VALIDATION {
                 if DEBUG_REBUILD_NOW {
-                    if symbol.borrow().build_status(BuildSteps::ARCH) != BuildStatus::DONE || symbol.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
-                        panic!("An evaluation has been requested on a non-arched symbol: {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
+                    if st!().build_status(symbol, BuildSteps::ARCH) != BuildStatus::DONE || st!().build_status(symbol, BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
+                        let sym = get_sym!(st!(), symbol);
+                        panic!("An evaluation has been requested on a non-arched symbol: {}", sym.paths().first().unwrap_or(&sym.name().to_string()));
                     }
                 }
                 let mut validator = PythonValidator::new(entry_point, symbol.clone());

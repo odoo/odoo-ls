@@ -1164,6 +1164,18 @@ impl SymbolTable {
         }
     }
 
+    pub fn previous_step_done(&self, target: SymbolKey, step: BuildSteps) -> bool {
+        if step == BuildSteps::SYNTAX {
+            panic!("Can't check previous step for syntax step")
+        }
+        for i in 0 .. step as usize {
+            if self.build_status(target, BuildSteps::from(i as i32)) != BuildStatus::DONE {
+                return false;
+            }
+        }
+        true
+    }
+
     pub fn invalidate_sub_functions(&mut self, target: SymbolKey) {
         if matches!(target, SymbolKey::File(_) | SymbolKey::Package(_)) {
             for func_key in self.iter_inner_functions(target) {

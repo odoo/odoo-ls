@@ -14,6 +14,7 @@ use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::symbols::symbol::Symbol;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
+use crate::core::symbols::symbol_table::SymbolKey;
 use crate::threads::SessionInfo;
 use crate::{oyarn, S};
 
@@ -31,20 +32,22 @@ use super::symbols::symbol_mgr::SectionIndex;
 #[derive(Debug)]
 pub struct PythonArchBuilder {
     entry_point: Rc<RefCell<EntryPoint>>,
-    file: Rc<RefCell<Symbol>>,
+    // @arena: "file" could be a function. Consider renaming this.
+    file: SymbolKey,
     file_mode: bool,
     current_step: BuildSteps,
-    sym_stack: Vec<Rc<RefCell<Symbol>>>,
+    sym_stack: Vec<SymbolKey>,
     __all_symbols_to_add: Vec<(String, TextRange)>,
     diagnostics: Vec<Diagnostic>,
     file_info: Option<Rc<RefCell<FileInfo>>>,
 }
 
 impl PythonArchBuilder {
-    pub fn new(entry_point: Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>) -> PythonArchBuilder {
+    // @arena-todo
+    pub fn new(entry_point: Rc<RefCell<EntryPoint>>, symbol: SymbolKey) -> PythonArchBuilder {
         PythonArchBuilder {
             entry_point: entry_point,
-            file: symbol.clone(), //dummy, evaluated in load_arch
+            file: symbol, //dummy, evaluated in load_arch
             file_mode: false, //dummy, evaluated in load_arch
             current_step: BuildSteps::ARCH, //dummy, evaluated in load_arch
             sym_stack: vec![symbol],
