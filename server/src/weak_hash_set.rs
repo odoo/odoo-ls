@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashSet, hash::Hash};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct WeakSet<K: Eq + Hash + Copy> {
     set: RefCell<HashSet<K>>,                                            
 }

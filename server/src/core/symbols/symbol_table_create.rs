@@ -20,6 +20,7 @@ use crate::{constants::OYarn, core::symbols::{
 
 use crate::core::symbols::symbol_table::{ClassKey, CsvFileKey, FileKey, FunctionKey, PackageKey, RootKey, SymbolKey, SymbolTable, VariableKey, XmlFileKey, get_main_entry_tree, get_sym, invalidate};
 use tracing::info;
+use crate::core::symbols::symbol_table::ContainsKey;
 
 
 impl SymbolTable {
@@ -222,7 +223,7 @@ impl SymbolTable {
     /// parent is a module package
     fn register_data_file(&mut self, parent: PackageKey, path: &str, data_file: SymbolKey) {
         let entry = self.get_entry(parent.into()).unwrap();
-        entry.borrow_mut().data_symbols.insert(path.to_string(), data_file);
+        entry.borrow_mut().data_symbols.insert(path.to_string(), data_file.into());
 
         let package = &mut self.packages[parent];
         package.as_module_package_mut().data_symbols.insert(path.to_string(), data_file);

@@ -6,7 +6,6 @@ pub struct FifoWeakHashSet<T: Copy + Eq + Hash> {
     queue: VecDeque<T>,
 }
 
-// @arena-next
 impl<T: Copy + Eq + Hash> FifoWeakHashSet<T> {
     pub fn new() -> Self {
         Self {

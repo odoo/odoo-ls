@@ -1,9 +1,9 @@
-use std::{cell::RefCell, cmp, collections::{HashMap, HashSet}, path::PathBuf, rc::{Rc, Weak}, u32};
+use std::{cell::RefCell, cmp, collections::{HashMap, HashSet}, path::PathBuf, rc::{Rc}, u32};
 
 use tracing::{error, info, warn};
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree}, core::symbols::symbol_table::SymbolKey, threads::SessionInfo, utils::PathSanitizer, warn_or_panic};
+use crate::{constants::{BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree}, core::symbols::symbol_table::{SymbolKey, Weak}, threads::SessionInfo, utils::PathSanitizer, warn_or_panic, weak_hash_set::WeakSet};
 
 use super::{odoo::SyncOdoo, symbols::symbol::Symbol};
 
@@ -382,11 +382,11 @@ pub struct EntryPoint {
     pub addon_to_odoo_path: Option<String>, //contains the odoo path if this is an addon entry point
     pub addon_to_odoo_tree: Option<Vec<OYarn>>, //contains the odoo tree if this is an addon entry point
     pub root: SymbolKey,
-    pub not_found_symbols: HashSet<SymbolKey>, // former PtrWeakHashSet
-    pub not_found_symbols_for_models: HashSet<SymbolKey>, // formerly PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    pub not_found_symbols: WeakSet<SymbolKey>, // former PtrWeakHashSet
+    pub not_found_symbols_for_models: WeakSet<SymbolKey>, // formerly PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub to_delete: bool,
     // @arena-next: use Weak here
-    pub data_symbols: HashMap<String, SymbolKey>, //key is path, weak to Rc that is hold by the module symbol
+    pub data_symbols: HashMap<String, Weak<SymbolKey>>, //key is path, weak to Rc that is hold by the module symbol
 }
 impl EntryPoint {
     pub fn new(path: String, tree: Vec<OYarn>, typ:EntryPointType, addon_to_odoo_path: Option<String>, addon_to_odoo_tree: Option<Vec<OYarn>>) -> Rc<RefCell<Self>> {
@@ -397,8 +397,8 @@ impl EntryPoint {
             typ,
             addon_to_odoo_path,
             addon_to_odoo_tree,
-            not_found_symbols: PtrWeakHashSet::new(),
-            not_found_symbols_for_models: PtrWeakHashSet::new(),
+            not_found_symbols: WeakSet::new(),
+            not_found_symbols_for_models: WeakSet::new(),
             root: root.clone(),
             to_delete: false,
             data_symbols: HashMap::new(),

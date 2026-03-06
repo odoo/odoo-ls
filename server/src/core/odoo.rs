@@ -832,7 +832,6 @@ impl SyncOdoo {
     /* Ask for an immediate rebuild of the given symbol if possible.
     return true if a rebuild has been done
      */
-    // @arena-next
     pub fn build_now(session: &mut SessionInfo, symbol: SymbolKey, step: BuildSteps) -> bool {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         match symbol {
