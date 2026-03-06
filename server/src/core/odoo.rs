@@ -832,6 +832,7 @@ impl SyncOdoo {
     /* Ask for an immediate rebuild of the given symbol if possible.
     return true if a rebuild has been done
      */
+    // @arena-next
     pub fn build_now(session: &mut SessionInfo, symbol: SymbolKey, step: BuildSteps) -> bool {
         if DEBUG_BORROW_GUARDS {
             //Symbol must be borrowable in this function
@@ -880,6 +881,7 @@ impl SyncOdoo {
         false
     }
 
+    // @arena-next
     pub fn build_now_dependencies(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, step: BuildSteps) {
         let symbol = symbol.borrow();
         match symbol.typ() {
@@ -909,37 +911,37 @@ impl SyncOdoo {
         }
     }
 
-    pub fn remove_from_rebuild(&mut self, symbol: &Rc<RefCell<Symbol>>, step: BuildSteps) {
+    pub fn remove_from_rebuild(&mut self, symbol: SymbolKey, step: BuildSteps) {
         if step == BuildSteps::ARCH {
-            self.rebuild_arch.remove(symbol);
+            self.rebuild_arch.remove(&symbol);
         } else if step == BuildSteps::ARCH_EVAL {
-            self.rebuild_arch_eval.remove(symbol);
+            self.rebuild_arch_eval.remove(&symbol);
         } else if step == BuildSteps::VALIDATION {
-            self.rebuild_validation.remove(symbol);
+            self.rebuild_validation.remove(&symbol);
         }
     }
 
-    pub fn remove_from_rebuild_arch(&mut self, symbol: &Rc<RefCell<Symbol>>) {
-        self.rebuild_arch.remove(symbol);
+    pub fn remove_from_rebuild_arch(&mut self, symbol: SymbolKey) {
+        self.rebuild_arch.remove(&symbol);
     }
 
-    pub fn remove_from_rebuild_arch_eval(&mut self, symbol: &Rc<RefCell<Symbol>>) {
-        self.rebuild_arch_eval.remove(symbol);
+    pub fn remove_from_rebuild_arch_eval(&mut self, symbol: SymbolKey) {
+        self.rebuild_arch_eval.remove(&symbol);
     }
 
-    pub fn remove_from_rebuild_validation(&mut self, symbol: &Rc<RefCell<Symbol>>) {
-        self.rebuild_validation.remove(symbol);
+    pub fn remove_from_rebuild_validation(&mut self, symbol: SymbolKey) {
+        self.rebuild_validation.remove(&symbol);
     }
 
-    pub fn is_in_rebuild(&self, symbol: &Rc<RefCell<Symbol>>, step: BuildSteps) -> bool {
+    pub fn is_in_rebuild(&self, symbol: SymbolKey, step: BuildSteps) -> bool {
         if step == BuildSteps::ARCH {
-            return self.rebuild_arch.contains(symbol);
+            return self.rebuild_arch.contains(&symbol);
         }
         if step == BuildSteps::ARCH_EVAL {
-            return self.rebuild_arch_eval.contains(symbol);
+            return self.rebuild_arch_eval.contains(&symbol);
         }
         if step == BuildSteps::VALIDATION {
-            return self.rebuild_validation.contains(symbol);
+            return self.rebuild_validation.contains(&symbol);
         }
         false
     }
