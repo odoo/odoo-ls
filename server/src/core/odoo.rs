@@ -3,7 +3,7 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
 use crate::core::module_load_order::sort_by_load_order;
-use crate::core::symbols::symbol_table::{ContainsKey, PackageKey, SymbolKey, SymbolTable};
+use crate::core::symbols::symbol_table::{ContainsKey, PackageKey, SymbolKey, SymbolTable, get_sym};
 use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
 use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
@@ -793,42 +793,38 @@ impl SyncOdoo {
         true
     }
 
-    // @arena todo
     pub fn add_to_rebuild_arch(&mut self, symbol: SymbolKey) {
         if DEBUG_THREADS {
-            trace!("ADDED TO ARCH - {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
+            let sym = get_sym!(self.symbol_table, symbol);
+            trace!("ADDED TO ARCH - {}", sym.paths().first().unwrap_or(&sym.name().to_string()));
         }
-        if symbol.borrow().build_status(BuildSteps::ARCH) != BuildStatus::IN_PROGRESS {
-            let sym_clone = symbol.clone();
-            let mut sym_borrowed = sym_clone.borrow_mut();
-            sym_borrowed.set_build_status(BuildSteps::ARCH, BuildStatus::PENDING);
-            sym_borrowed.set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
-            sym_borrowed.set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
+        if self.symbol_table.build_status(symbol, BuildSteps::ARCH) != BuildStatus::IN_PROGRESS {
+            self.symbol_table.set_build_status(symbol, BuildSteps::ARCH, BuildStatus::PENDING);
+            self.symbol_table.set_build_status(symbol, BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
+            self.symbol_table.set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::PENDING);
             self.rebuild_arch.insert(symbol);
         }
     }
 
-    // @arena todo
     pub fn add_to_rebuild_arch_eval(&mut self, symbol: SymbolKey) {
         if DEBUG_THREADS {
-            trace!("ADDED TO EVAL - {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
+            let sym = get_sym!(self.symbol_table, symbol);
+            trace!("ADDED TO EVAL - {}", sym.paths().first().unwrap_or(&sym.name().to_string()));
         }
-        if symbol.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS {
-            let sym_clone = symbol.clone();
-            let mut sym_borrowed = sym_clone.borrow_mut();
-            sym_borrowed.set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
-            sym_borrowed.set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
+        if self.symbol_table.build_status(symbol, BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS {
+            self.symbol_table.set_build_status(symbol, BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
+            self.symbol_table.set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::PENDING);
             self.rebuild_arch_eval.insert(symbol);
         }
     }
 
-    /// @arena-todo
     pub fn add_to_validations(&mut self, symbol: SymbolKey) {
         if DEBUG_THREADS {
-            trace!("ADDED TO VALIDATION - {}", symbol.borrow().paths().first().unwrap_or(&symbol.borrow().name().to_string()));
+            let sym = get_sym!(self.symbol_table, symbol);
+            trace!("ADDED TO VALIDATION - {}", sym.paths().first().unwrap_or(&sym.name().to_string()));
         }
-        if symbol.borrow().build_status(BuildSteps::VALIDATION) != BuildStatus::IN_PROGRESS {
-            symbol.borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
+        if self.symbol_table.build_status(symbol, BuildSteps::VALIDATION) != BuildStatus::IN_PROGRESS {
+            self.symbol_table.set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::PENDING);
             self.rebuild_validation.insert(symbol);
         }
     }
