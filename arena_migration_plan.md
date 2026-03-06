@@ -10,9 +10,9 @@ TO DECIDE: start with a fresh code (copy paste cli parts) of comment out every t
     - then make incremental changes migration to arena, commiting along the way
 
 ### 1.2 Migrate to SymbolTable
-[ ] symbol_table module
-[ ] adapt Symbol variants definitions
-[ ] change symbol creation/lookup methods
+[x] symbol_table module
+[x] adapt Symbol variants definitions
+[x] change symbol creation/lookup methods
     - move to SymbolTable:
         - creation (add_new_variable, etc)
         - navigation (get_ree, get_file...)
@@ -27,7 +27,7 @@ TO DECIDE: start with a fresh code (copy paste cli parts) of comment out every t
 ### 1.3 left for later:
 [ ] split PackageSymbol slotmap into 2 different ones
 
-- do we need self_key?
+- do we need self_key? (no!)
 
 
 ## 2nd phase: server + features, 
@@ -46,16 +46,14 @@ RefCell to FileInfo, EntryPoint
     - each empty map (the vast majoritiy of them) wastes 24 bytes (so 48 per symbol)
 - moved dependency-related methods from variants to a new Depencency trait, to remove code duplication (6 variants)
 
-- to decide: evaluations on secondary map?
+- to decide: evaluations on secondary map? (no)
 - to decide: store entry point in a slotmap, sibling to symbol table under sync_odoo?
     - EntryPointMgr, which owns EntryPoints, is already a child of sync_odoo
 
 
 ## Current changes
--> a typ() method on SymbolKey enum could be handy (even though we could pattern match on the key)
-        -> missing package inner type...
 
--idea: WeakKeysSet type: replicate PtrWeakSet. Offer an iter method that filters out stale keys
+-idea (implemented): WeakKeysSet type: replicate PtrWeakSet. Offer an iter method that filters out stale keys
     - problem: stale keys accumulate
         - solution would be to mutate it and remove. But needs &mut access.
             - good use of RefCell in this case?
@@ -144,14 +142,14 @@ repeated logic before and inside the loop, handling the root case differently (w
     }
 ```
 
-### i_ext in PythonPackage
+### i_ext in PythonPackage (done)
 
 It could by a `&'static str`, set at construction (it never changes)
 The setter is only used right after its creation.
 And the Module variant never gets set to other than ""
 
 ### session everywhere
-Many methods take session, while all they need is sync_odoo
+Many methods take session, while all they need is sync_odoo (not sure of this)
 
 ### &PathBuf x &Path
 Consider using &Path (the equivalent of &str) instead of the former
@@ -170,7 +168,8 @@ pub ext_symbols: Hash
 
 ### compare versions
 struct Semver{(u16, u16, u16)};
-implement partialeq against (u16, u16, u16) and (u16, u16)
+implement Semver from (u16,) , (u16, u16) and (u16, u16, u16)
+implement partialeq against (u16, u16, u16) and (u16, u16) and (u16,)
 use Semver to store version in SyncOdoo.
 
 
