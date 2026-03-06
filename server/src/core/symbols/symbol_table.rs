@@ -1083,12 +1083,12 @@ impl SymbolTable {
 
         // register `depends_on` as a dependency of `target`
         self.dependencies_mut(target)[step_i][level_i]
-            .get_or_insert_with(HashSet::new)
+            .get_or_insert_with(WeakSet::new)
             .insert(dependency);
 
         // register `target` as a dependent of `depends_on`
         self.dependents_as_mut(dependency)[level_i][step_i - level_i]
-            .get_or_insert_with(HashSet::new)
+            .get_or_insert_with(WeakSet::new)
             .insert(target);
     }
 
@@ -2070,7 +2070,7 @@ pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildStep
                     let Some(hashset) = hashset else {
                         continue;
                     };
-                    for &sym in hashset {
+                    for sym in hashset.iter_valid(|&k| st!().contains_key(k)) {
                         if !st!().is_symbol_in_parents(sym, ref_to_inv) {
                             if index == BuildSteps::ARCH as usize {
                                 session.sync_odoo.add_to_rebuild_arch(sym);
@@ -2090,7 +2090,7 @@ pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildStep
                     let Some(hashset) = hashset else {
                         continue;
                     };
-                    for &sym in hashset {
+                    for sym in hashset.iter_valid(|&k| st!().contains_key(k)) {
                         if !st!().is_symbol_in_parents(sym, ref_to_inv) {
                             if index + 1 == BuildSteps::ARCH_EVAL as usize {
                                 session.sync_odoo.add_to_rebuild_arch_eval(sym);
@@ -2115,7 +2115,9 @@ pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildStep
             }
         }
         if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::VALIDATION].contains(step) && dependents.len() > 2 {
-            for &sym in dependents[BuildSteps::VALIDATION as usize].iter().flatten().flatten() {
+            for sym in dependents[BuildSteps::VALIDATION as usize].iter().flatten()
+                    .flat_map(|s| s.iter_valid(|&k| st!().contains_key(k)))
+                    .collect::<Vec<_>>() {
                 if !st!().is_symbol_in_parents(sym, ref_to_inv) {
                     st!().invalidate_sub_functions(sym);
                     session.sync_odoo.add_to_validations(sym);
