@@ -2,16 +2,20 @@ use std::collections::{HashMap, HashSet};
 
 use ruff_text_size::TextRange;
 
-use crate::{constants::{OYarn, PackageType, SymType}, core::symbols::{package_symbol::PackageSymbol, symbol_mgr::SymbolMgr, symbol_table::{SymbolKey, SymbolTable}, variable_symbol::VariableSymbol}};
+use crate::{constants::{OYarn, PackageType, SymType}, core::symbols::{package_symbol::PackageSymbol, symbol_mgr::SymbolMgr, symbol_table::{SymbolKey, SymbolTable}, variable_symbol::VariableSymbol}, weak_hash_set::WeakSet};
+use crate::core::symbols::symbol_table::ContainsKey;
 
 /// section index → [variable keys]                                                                  
 type SectionSymbols = HashMap<u32, Vec<SymbolKey>>;                                                  
 /// name → section symbols
 type NamedSectionSymbols = HashMap<OYarn, SectionSymbols>;                                           
 /// target/host → named section symbols
+/// @arena: former PtrWeakHasMap
 type DeclExtSymbols = HashMap<SymbolKey, NamedSectionSymbols>;
 /// name → set of owner keys
-type ExtSymbolOwners = HashMap<OYarn, HashSet<SymbolKey>>;
+// @arena: before when a symbol was unloaded, this whole thing went away with it.
+// Now it stays here. We should probably remove the entry on unload.
+type ExtSymbolOwners = HashMap<OYarn, WeakSet<SymbolKey>>;
 
 #[derive(Debug)]
 pub struct ExtSymbolStore {
@@ -34,7 +38,7 @@ impl ExtSymbolStore {
     pub fn add(&mut self, target: SymbolKey, owner: SymbolKey, name: OYarn, section: u32, variable: SymbolKey) {
         self.owners
             .entry(target).or_default()
-            .entry(name.clone()).or_default()
+            .entry(name.clone()).or_insert_with(WeakSet::new)
             .insert(owner);
 
         self.declarations
@@ -116,7 +120,7 @@ impl SymbolTable {
         }
     }
 
-        // @arena: This used to be a method in each Symbol variant
+    // @arena: This used to be a method in each Symbol variant
     pub fn get_ext_symbol(&self, target: SymbolKey, name: &str) -> Vec<SymbolKey> {
         let Some(ext_symbols) = self.ext_symbols.owners.get(&target) else {
             return vec![];
@@ -124,12 +128,7 @@ impl SymbolTable {
 
         let mut result = vec![];
         if let Some(owners) = ext_symbols.get(name) {
-            for &owner in owners {
-                if !self.contains_key(owner) {
-                    // @arena: Equivalent of iterating on a PtrWeakHashSet, which cleans up expired weaks
-                    // todo: remove key from ExtSymbolStore
-                    continue;
-                }
+            for owner in owners.iter_valid(|&k| self.contains_key(k)) {
                 result.extend(self.ext_symbols.get(owner, target, name));
             }
         }

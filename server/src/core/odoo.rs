@@ -593,6 +593,7 @@ impl SyncOdoo {
                                 _ => continue,
                             };
                         current_count +=
+                            // @arena-next: fix this
                             dep_set.iter().filter(|dep| index_set.contains(dep)).count() as u32;
                     }
                 }
