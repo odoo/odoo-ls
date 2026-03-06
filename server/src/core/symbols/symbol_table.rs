@@ -18,7 +18,7 @@ namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol,
 root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex,
 SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol,
 xml_file_symbol::XmlFileSymbol }, xml_data::OdooData}, threads::SessionInfo, utils::{PathSanitizer,
-compare_semver}};
+compare_semver}, weak_hash_set::WeakSet};
 
 new_key_type! { pub struct RootKey; }
 new_key_type! { pub struct DiskDirKey; }
@@ -342,7 +342,7 @@ impl SymbolView<'_> {
         }
     }
 
-    pub fn dependents(&self) -> &Vec<Vec<Option<HashSet<SymbolKey>>>> {
+    pub fn dependents(&self) -> &Vec<Vec<Option<WeakSet<SymbolKey>>>> {
         match self {
             Self::Root(_) => panic!("No dependencies on Root"),
             Self::Namespace(n) => n.dependents(),
@@ -358,7 +358,7 @@ impl SymbolView<'_> {
         }
     }
     
-    pub fn get_all_dependencies(&self, step: BuildSteps) -> Option<&Vec<Option<HashSet<SymbolKey>>>> {
+    pub fn get_all_dependencies(&self, step: BuildSteps) -> Option<&Vec<Option<WeakSet<SymbolKey>>>> {
         if step == BuildSteps::SYNTAX {
             panic!("Can't get dependencies for syntax step")
         }
@@ -1031,7 +1031,7 @@ impl SymbolTable {
     // ======== Dependencies management
 
     // @arena: consider using get_unchecked_mut for verified keys (in private methods)
-    fn dependencies_mut(&mut self, valid_key: SymbolKey) -> &mut Vec<Vec<Option<HashSet<SymbolKey>>>> {
+    fn dependencies_mut(&mut self, valid_key: SymbolKey) -> &mut Vec<Vec<Option<WeakSet<SymbolKey>>>> {
         match valid_key {
             SymbolKey::File(k) => &mut self.files[k].dependencies,
             SymbolKey::Namespace(k) => &mut self.namespaces[k].dependencies,
@@ -1047,7 +1047,7 @@ impl SymbolTable {
         }
     }
 
-    fn dependents_as_mut(&mut self, valid_key: SymbolKey) -> &mut Vec<Vec<Option<HashSet<SymbolKey>>>> {
+    fn dependents_as_mut(&mut self, valid_key: SymbolKey) -> &mut Vec<Vec<Option<WeakSet<SymbolKey>>>> {
         match valid_key {
             SymbolKey::Namespace(n) => &mut self.namespaces[n].dependents,
             SymbolKey::File(f) => &mut self.files[f].dependents,

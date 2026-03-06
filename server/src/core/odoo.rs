@@ -881,17 +881,21 @@ impl SyncOdoo {
         false
     }
 
-    // @arena-next
+    // @arena: before: build_now called directly in the inner loop (no build_queue), while the symbol was borrowed.
+    // after: collect deps in a build queue (release the borrow), and build them.
+    // This is equivalent, as the previous borrow efectively froze the depencies sets during the whole outer loop.
     pub fn build_now_dependencies(session: &mut SessionInfo, symbol: SymbolKey, step: BuildSteps) {
-        let symbol = symbol.borrow();
-        match symbol.typ() {
-            SymType::ROOT | SymType::NAMESPACE | SymType::DISK_DIR | SymType::COMPILED | SymType::CLASS | SymType::VARIABLE | SymType::FUNCTION => return,
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        match symbol {
+            SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::DiskDir(_) | SymbolKey::Compiled(_) | SymbolKey::Class(_) | SymbolKey::Variable(_) | SymbolKey::Function(_) => return,
             _ => {}
         }
         for step_to_build in 0..2 {
             let step_to_build = BuildSteps::from(step_to_build);
-            let all_dep = symbol.get_all_dependencies(step_to_build);
+            let symbol_view = get_sym!(st!(), symbol);
+            let all_dep = symbol_view.get_all_dependencies(step_to_build);
             if let Some(all_dep) = all_dep {
+                let mut build_queue = vec![];
                 for (index, dep_set) in all_dep.iter().enumerate() {
                     let dep_step = match index {
                         0 => BuildSteps::ARCH,
@@ -899,10 +903,13 @@ impl SyncOdoo {
                         _ => panic!("Unexpected step index"),
                     };
                     if let Some(dep_set) = dep_set {
-                        for dep in dep_set.iter() {
-                            SyncOdoo::build_now(session, &dep, dep_step);
+                        for dep in dep_set.iter_valid(|&k| st!().contains_key(k)) {
+                            build_queue.push((dep, dep_step));
                         }
                     }
+                }
+                for (dep, dep_step) in build_queue {
+                    SyncOdoo::build_now(session, dep, dep_step);
                 }
             }
             if step_to_build == step {
