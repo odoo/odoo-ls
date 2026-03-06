@@ -49,6 +49,18 @@ impl ExtSymbolStore {
             .push(variable);
     }
 
+    pub fn remove(&mut self, key: SymbolKey) {
+        // As target
+        self.owners.remove(&key);
+        // As owner
+        self.declarations.remove(&key);
+        // As target in declarations
+        for decl in self.declarations.values_mut() {
+            decl.remove(&key);
+        }
+        // owner in target's owners handled by the weakset
+    }
+
     // @arena: former get_decl_ext_symbol
     // Gets the symbol (`name`) injected by `owner` into `target`
     pub fn get(&self, owner: SymbolKey, target: SymbolKey, name: &str) -> Vec<SymbolKey> {

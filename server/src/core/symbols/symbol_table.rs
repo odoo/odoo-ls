@@ -518,6 +518,7 @@ impl SymbolTable {
 
 
     pub fn remove(&mut self, key: SymbolKey) {
+        self.ext_symbols.remove(key);
         match key {
             SymbolKey::Root(k) => { self.roots.remove(k); }
             SymbolKey::DiskDir(k) => { self.disk_dirs.remove(k); }
