@@ -2052,53 +2052,61 @@ pub fn is_specific_field(session: &mut SessionInfo, target: SymbolKey, field_nam
     false
 }
 
-// @arena: original function calls dependents() before each loop over dependencies
-// Here we clone it once (to free the borrow) and use it for all the loops.
-// This assumes the result of dependents() would not change between calls.
 pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildSteps) {
     macro_rules! st { () => { session.sync_odoo.symbol_table } }  
     //signals that a change occurred to this symbol. "step" indicates which level of change occurred.
     //It will trigger rebuild on all dependencies
     let mut vec_to_invalidate = VecDeque::from([symbol]);
     while let Some(ref_to_inv) = vec_to_invalidate.pop_front() {
-        let sym_to_inv = get_sym!(st!(), ref_to_inv);
-        let sym_to_inv_type = sym_to_inv.typ();
-        let dependents = sym_to_inv.dependents().clone();
+        let ref_to_inv_view = get_sym!(st!(), ref_to_inv);
+        let sym_to_inv_type = ref_to_inv_view.typ();
+        let dependents_len = ref_to_inv_view.dependents().len();
         if matches!(sym_to_inv_type, SymType::FILE | SymType::PACKAGE(_) | SymType::XML_FILE | SymType::CSV_FILE) {
-            if *step == BuildSteps::ARCH && dependents.len() > 0 {
-                for (index, hashset) in dependents[BuildSteps::ARCH as usize].iter().enumerate() {
+            if *step == BuildSteps::ARCH && dependents_len > 0 {
+                let sym_to_inv = get_sym!(st!(), ref_to_inv);
+                let arch_dependents = &sym_to_inv.dependents()[BuildSteps::ARCH as usize];
+                let mut build_queue = vec![];
+                for (index, hashset) in arch_dependents.iter().enumerate() {
                     let Some(hashset) = hashset else {
                         continue;
                     };
                     for sym in hashset.iter_valid(|&k| st!().contains_key(k)) {
                         if !st!().is_symbol_in_parents(sym, ref_to_inv) {
-                            if index == BuildSteps::ARCH as usize {
-                                session.sync_odoo.add_to_rebuild_arch(sym);
-                            } else if index == BuildSteps::ARCH_EVAL as usize {
-                                session.sync_odoo.add_to_rebuild_arch_eval(sym);
-                            } else if index == BuildSteps::VALIDATION as usize {
-                                // @arena: todo: check if this mutates the dependents of sym_to_inv
-                                st!().invalidate_sub_functions(sym);
-                                session.sync_odoo.add_to_validations(sym);
-                            }
+                            build_queue.push((index, sym));
                         }
                     }
                 }
+                for (index, sym) in build_queue {
+                    if index == BuildSteps::ARCH as usize {
+                        session.sync_odoo.add_to_rebuild_arch(sym);
+                    } else if index == BuildSteps::ARCH_EVAL as usize {
+                        session.sync_odoo.add_to_rebuild_arch_eval(sym);
+                    } else if index == BuildSteps::VALIDATION as usize {
+                        st!().invalidate_sub_functions(sym);
+                        session.sync_odoo.add_to_validations(sym);
+                    }
+                }
             }
-            if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL].contains(step) && dependents.len() > 1 {
-                for (index, hashset) in dependents[BuildSteps::ARCH_EVAL as usize].iter().enumerate() {
+            if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL].contains(step) && dependents_len > 1 {
+                let sym_to_inv = get_sym!(st!(), ref_to_inv);
+                let arch_eval_dependents = &sym_to_inv.dependents()[BuildSteps::ARCH_EVAL as usize];
+                let mut build_queue = vec![];
+                for (index, hashset) in arch_eval_dependents.iter().enumerate() {
                     let Some(hashset) = hashset else {
                         continue;
                     };
                     for sym in hashset.iter_valid(|&k| st!().contains_key(k)) {
                         if !st!().is_symbol_in_parents(sym, ref_to_inv) {
-                            if index + 1 == BuildSteps::ARCH_EVAL as usize {
-                                session.sync_odoo.add_to_rebuild_arch_eval(sym);
-                            } else if index + 1 == BuildSteps::VALIDATION as usize {
-                                st!().invalidate_sub_functions(sym);
-                                session.sync_odoo.add_to_validations(sym);
-                            }
+                            build_queue.push((index, sym));
                         }
+                    }
+                }
+                for (index, sym) in build_queue {
+                    if index + 1 == BuildSteps::ARCH_EVAL as usize {
+                        session.sync_odoo.add_to_rebuild_arch_eval(sym);
+                    } else if index + 1 == BuildSteps::VALIDATION as usize {
+                        st!().invalidate_sub_functions(sym);
+                        session.sync_odoo.add_to_validations(sym);
                     }
                 }
                 for class in st!().iter_classes(ref_to_inv) {
@@ -2114,8 +2122,10 @@ pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildStep
                 }
             }
         }
-        if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::VALIDATION].contains(step) && dependents.len() > 2 {
-            for sym in dependents[BuildSteps::VALIDATION as usize].iter().flatten()
+        if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::VALIDATION].contains(step) && dependents_len > 2 {
+            let sym_to_inv = get_sym!(st!(), ref_to_inv);
+            let validation_dependents = &sym_to_inv.dependents()[BuildSteps::VALIDATION as usize];
+            for sym in validation_dependents.iter().flatten()
                     .flat_map(|s| s.iter_valid(|&k| st!().contains_key(k)))
                     .collect::<Vec<_>>() {
                 if !st!().is_symbol_in_parents(sym, ref_to_inv) {
