@@ -21,7 +21,29 @@ pub struct OdooDataRecord {
     pub range: Range<usize>,
 }
 
-#[derive(Debug, Clone)]
+impl PartialEq for OdooDataRecord {
+    fn eq(&self, other: &Self) -> bool {
+        Weak::ptr_eq(&self.file_symbol, &other.file_symbol)
+            && self.model == other.model
+            && self.xml_id == other.xml_id
+            && self.fields == other.fields
+            && self.range == other.range
+    }
+}
+
+impl Eq for OdooDataRecord {}
+
+impl std::hash::Hash for OdooDataRecord {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.file_symbol.as_ptr().hash(state);
+        self.model.hash(state);
+        self.xml_id.hash(state);
+        self.fields.hash(state);
+        self.range.hash(state);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct OdooDataField {
     pub name: OYarn,
     pub range: Range<usize>,

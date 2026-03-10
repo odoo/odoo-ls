@@ -1,10 +1,22 @@
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
 
 use lsp_types::{Diagnostic, Position, Range};
 use roxmltree::Node;
 
-use crate::{Sy, constants::OYarn, core::{diagnostics::{DiagnosticCode, create_diagnostic}, odoo::SyncOdoo, xml_data::{OdooData, OdooDataField, OdooDataRecord, XmlDataAsset, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo};
-
+use crate::{
+    Sy,
+    constants::OYarn,
+    core::{
+        diagnostics::{DiagnosticCode, create_diagnostic},
+        model::Model,
+        odoo::SyncOdoo,
+        xml_data::{
+            OdooData, OdooDataField, OdooDataRecord, XmlDataAsset, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate
+        },
+    },
+    oyarn,
+    threads::SessionInfo,
+};
 use super::xml_arch_builder::XmlArchBuilder;
 
 /* Contains the RelaxNG Validation part of the XmlArchBuilder */
@@ -232,9 +244,95 @@ impl XmlArchBuilder {
                 }
             }
         }
+        self.register_ir_model_record(session, &data);
+        self.register_ir_model_fields_record(session, &data);
         let data = OdooData::RECORD(data);
         self.on_operation_creation(session, found_id, node, data, diagnostics);
         true
+    }
+
+    fn register_ir_model_fields_record(&self, session: &mut SessionInfo, data: &OdooDataRecord) {
+        if data.model.0.as_str() != "ir.model.fields" {
+            return;
+        }
+
+        let model_name_str: String = if let Some(f) =
+            data.fields.iter().find(|f| f.name.as_str() == "model")
+        {
+            let Some(t) = f.text.as_deref() else {
+                return;
+            };
+            t.to_string()
+        } else if let Some(f) = data.fields.iter().find(|f| f.name.as_str() == "model_id") {
+            let Some((ref_key, ref_range)) = f.ref_key.as_ref() else {
+                return;
+            };
+            let xml_ids =
+                SyncOdoo::get_xml_ids(session, &self.xml_symbol, ref_key, ref_range, &mut vec![]);
+            let model_name_option = xml_ids.iter().find_map(|xml_data| {
+                let OdooData::RECORD(r) = xml_data else {
+                    return None;
+                };
+                if r.model.0.as_str() != "ir.model" {
+                    return None;
+                }
+                if let Some(name) = r
+                    .fields
+                    .iter()
+                    .find(|f| f.name.as_str() == "model")
+                    .and_then(|model_field| model_field.text.as_deref())
+                {
+                    return Some(name.to_string());
+                }
+                None
+            });
+            match model_name_option {
+                Some(model_name) => model_name,
+                None => return,
+            }
+        } else {
+            return;
+        };
+        let model_name_yarn = Sy!(model_name_str);
+        let xml_sym = self.xml_symbol.clone();
+        if let Some(model) = session.sync_odoo.models.get(&model_name_yarn).cloned() {
+            model
+                .borrow_mut()
+                .add_model_field(session, xml_sym, data.clone());
+        }
+    }
+
+    fn register_ir_model_record(&self, session: &mut SessionInfo, data: &OdooDataRecord) {
+        if data.model.0.as_str() != "ir.model" {
+            return;
+        }
+        let Some(model_field) = data.fields.iter().find(|f| f.name.as_str() == "model") else {
+            return;
+        };
+        let Some(model_name) = model_field.text.as_deref() else {
+            return;
+        };
+        let model_name_yarn = oyarn!("{}", model_name);
+        let xml_sym = self.xml_symbol.clone();
+        match session.sync_odoo.models.get(&model_name_yarn).cloned() {
+            Some(model) => {
+                model
+                    .borrow_mut()
+                    .add_xml_symbol(session, xml_sym, data.clone());
+            }
+            None => {
+                let new_model = Model::new_from_xml(model_name_yarn.clone(), xml_sym, data.clone());
+                session
+                    .sync_odoo
+                    .models
+                    .insert(model_name_yarn.clone(), Rc::new(RefCell::new(new_model)));
+            }
+        }
+        session
+            .sync_odoo
+            .get_main_entry()
+            .borrow_mut()
+            .search_rebuild_for_models(session, model_name_yarn);
     }
 
     fn load_field(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> Option<OdooDataField> {

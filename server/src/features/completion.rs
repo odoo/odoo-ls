@@ -919,7 +919,7 @@ fn complete_name(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>, offset: 
     let symbols = Symbol::get_all_inferred_names(&scope, name, offset as u32);
     Some(CompletionResponse::List(CompletionList {
         is_incomplete: false,
-        items: symbols.into_iter().map(|(_symbol_name, symbols)| {
+        items: symbols.into_iter().filter_map(|(_symbol_name, symbols)| {
             build_completion_item_from_symbol(session, symbols, HashMap::new())
         }).collect::<Vec<_>>(),
     }))
@@ -1065,7 +1065,9 @@ fn add_nested_field_names(
                         let mut found_one = false;
                         for (final_sym, dep) in symbols.iter() { //search for at least one that is a field
                             if dep.is_none() && (specific_field_type.is_none() || final_sym.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many", specific_field_type.as_ref().unwrap().as_str()])){
-                                items.push(build_completion_item_from_symbol(session, vec![final_sym.clone()], HashMap::new()));
+                                if let Some(item) = build_completion_item_from_symbol(session, vec![final_sym.clone()], HashMap::new()) {
+                                    items.push(item);
+                                }
                                 found_one = true;
                                 continue;
                             }
@@ -1131,14 +1133,16 @@ fn add_model_attributes(
         }
         if _symbol_name.starts_with(attribute_name) {
             let context_of_symbol = HashMap::from([(S!("base_attr"), ContextValue::SYMBOL(Rc::downgrade(&parent_sym)))]);
-            items.push(build_completion_item_from_symbol(session, vec![final_sym.clone()], context_of_symbol));
+            if let Some(item) = build_completion_item_from_symbol(session, vec![final_sym.clone()], context_of_symbol) {
+                items.push(item);
+            }
         }
     }
 }
 
-fn build_completion_item_from_symbol(session: &mut SessionInfo, symbols: Vec<Rc<RefCell<Symbol>>>, context_of_symbol: Context) -> CompletionItem {
+fn build_completion_item_from_symbol(session: &mut SessionInfo, symbols: Vec<Rc<RefCell<Symbol>>>, context_of_symbol: Context) -> Option<CompletionItem> {
     if symbols.is_empty() {
-        return CompletionItem::default();
+        return None;
     }
     //TODO use dependency to show it? or to filter depending of configuration
     let typ = symbols.iter().flat_map(|symbol|
@@ -1160,7 +1164,16 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbols: Vec<Rc<
         _ => Some(format!("{} types", type_details.len())),
     };
 
-    CompletionItem {
+    let value = FeaturesUtils::build_markdown_description(session, None, None, &symbols.iter().map(|symbol|
+        Evaluation {
+            symbol: EvaluationSymbol::new_with_symbol(Rc::downgrade(symbol), None,
+                context_of_symbol.clone(),
+                None),
+            value: None,
+            range: None
+        }).collect::<Vec<_>>(),
+        &None, None)?;
+    Some(CompletionItem {
         label: symbols[0].borrow().name().to_string(),
         label_details: Some(CompletionItemLabelDetails {
             detail: None,
@@ -1172,18 +1185,10 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbols: Vec<Rc<
         documentation: Some(
             lsp_types::Documentation::MarkupContent(MarkupContent {
                 kind: lsp_types::MarkupKind::Markdown,
-                value: FeaturesUtils::build_markdown_description(session, None, None, &symbols.iter().map(|symbol|
-                    Evaluation {
-                        symbol: EvaluationSymbol::new_with_symbol(Rc::downgrade(symbol), None,
-                            context_of_symbol.clone(),
-                            None),
-                        value: None,
-                        range: None
-                    }).collect::<Vec<_>>(),
-                    &None, None)
+                value
             })),
         ..Default::default()
-    }
+    })
 }
 
 fn get_sort_text_for_symbol(sym: &Rc<RefCell<Symbol>>/*, cl: Option<Rc<RefCell<Symbol>>>, cl_to_complete: Option<Rc<RefCell<Symbol>>>*/) -> String {

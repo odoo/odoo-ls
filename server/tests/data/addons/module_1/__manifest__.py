@@ -12,6 +12,7 @@ This is the description of the module 1
     """,
     'category': 'Accounting/Accounting',
     'depends' : [],
+    'data': ['records/test_records.xml'],
     'installable': True,
     'application': True,
     'license': 'LGPL-3',

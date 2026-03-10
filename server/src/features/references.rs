@@ -44,7 +44,7 @@ impl ReferenceFeature {
                             }
                         }
                     },
-                    XmlAstResult::XML_DATA(xml_file_symbol, range) => {
+                    XmlAstResult::XML_DATA(xml_file_symbol, odoo_data_record) => {
                         for path in xml_file_symbol.borrow().paths().iter() {
                             let full_path = match xml_file_symbol.borrow().typ() {
                                 SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", xml_file_symbol.borrow().as_package().i_ext())).sanitize(),
@@ -52,7 +52,7 @@ impl ReferenceFeature {
                             };
                             let range = match xml_file_symbol.borrow().typ() {
                                 SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
-                                _ => session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, &range),
+                                _ => session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, &odoo_data_record.range),
                             };
                             links.push(Location{uri: FileMgr::pathname2uri(&full_path), range: range});
                         }

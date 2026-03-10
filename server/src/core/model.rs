@@ -5,12 +5,14 @@ use std::rc::Rc;
 use std::rc::Weak;
 use lsp_types::MessageType;
 use weak_table::PtrWeakHashSet;
+use weak_table::PtrWeakKeyHashMap;
 use std::collections::HashSet;
 
 use crate::constants::BuildStatus;
 use crate::constants::BuildSteps;
 use crate::constants::OYarn;
 use crate::constants::SymType;
+use crate::core::xml_data::OdooDataRecord;
 use crate::threads::SessionInfo;
 
 use super::symbols::module_symbol::ModuleSymbol;
@@ -73,6 +75,10 @@ impl ModelData {
 pub struct Model {
     name: OYarn,
     symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    // One XML file can have multiple records that define models or fields
+    // xml symbols and model fields are thus maps from xml file symbol to a list of records
+    xml_symbols: PtrWeakKeyHashMap<Weak<RefCell<Symbol>>, HashSet<OdooDataRecord>>,
+    model_fields: PtrWeakKeyHashMap<Weak<RefCell<Symbol>>, HashSet<OdooDataRecord>>,
     pub dependents: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
 }
 
@@ -81,10 +87,28 @@ impl Model {
         let mut res = Self {
             name,
             symbols: PtrWeakHashSet::new(),
+            xml_symbols: PtrWeakKeyHashMap::new(),
+            model_fields: PtrWeakKeyHashMap::new(),
             dependents: PtrWeakHashSet::new(),
         };
         res.symbols.insert(symbol);
         res
+    }
+
+    pub fn new_from_xml(name: OYarn, xml_file_symbol: Rc<RefCell<Symbol>>, record: OdooDataRecord) -> Self {
+        let mut res = Self {
+            name,
+            symbols: PtrWeakHashSet::new(),
+            xml_symbols: PtrWeakKeyHashMap::new(),
+            model_fields: PtrWeakKeyHashMap::new(),
+            dependents: PtrWeakHashSet::new(),
+        };
+        res.xml_symbols.insert(xml_file_symbol, HashSet::from([record]));
+        res
+    }
+
+    pub fn name(&self) -> &OYarn {
+        &self.name
     }
 
     pub fn add_symbol(&mut self, session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>) {
@@ -94,6 +118,78 @@ impl Model {
         self.symbols.insert(symbol.clone());
         let from_module = symbol.borrow().find_module();
         self.add_dependents_to_validation(session, from_module);
+    }
+
+    fn add_xml_ref(collection: &mut PtrWeakKeyHashMap<Weak<RefCell<Symbol>>, HashSet<OdooDataRecord>>, symbol: &Rc<RefCell<Symbol>>, record: OdooDataRecord) -> bool {
+        if let Some(records) = collection.get_mut(symbol) {
+            records.insert(record)
+        } else {
+            collection.insert(symbol.clone(), HashSet::from([record]));
+            true
+        }
+    }
+
+    pub fn add_xml_symbol(&mut self, session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>, record: OdooDataRecord) {
+        if Self::add_xml_ref(&mut self.xml_symbols, &symbol, record) {
+            self.add_dependents_to_validation(session, symbol.borrow().find_module());
+        }
+    }
+
+    pub fn add_model_field(&mut self, session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>, record: OdooDataRecord) {
+        if Self::add_xml_ref(&mut self.model_fields, &symbol, record) {
+            self.add_dependents_to_validation(session, symbol.borrow().find_module());
+        }
+    }
+
+
+    pub fn get_model_field_records(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<(Rc<RefCell<Symbol>>, OdooDataRecord)> {
+        let mut result = Vec::new();
+        for (s, records) in self.model_fields.iter() {
+            let module = s.borrow().find_module();
+            if let Some(module) = module {
+                if from_module.is_none() || ModuleSymbol::is_in_deps(session, from_module.as_ref().unwrap(), &module.borrow().as_module_package().dir_name) {
+                    for r in records.iter() {
+                        result.push((s.clone(), r.clone()));
+                    }
+                }
+            }
+        }
+        result
+    }
+
+
+    pub fn get_model_field_record_by_name(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>, field_name: &str) -> Vec<(Rc<RefCell<Symbol>>, OdooDataRecord)> {
+        self.get_model_field_records(session, from_module).into_iter().filter(|(_, r)| {
+            r.fields.iter().any(|f| f.name.as_str() == "name" && f.text.as_deref() == Some(field_name))
+        }).collect()
+    }
+
+    pub fn get_xml_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Symbol>>> {
+        let mut result = Vec::new();
+        for (s, _records) in self.xml_symbols.iter() {
+            let module = s.borrow().find_module();
+            if let Some(module) = module {
+                if from_module.is_none() || ModuleSymbol::is_in_deps(session, from_module.as_ref().unwrap(), &module.borrow().as_module_package().dir_name) {
+                    result.push(s);
+                }
+            }
+        }
+        result
+    }
+
+    pub fn get_xml_symbol_records(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<(Rc<RefCell<Symbol>>, OdooDataRecord)> {
+        let mut result = Vec::new();
+        for (s, record) in self.xml_symbols.iter() {
+            let module = s.borrow().find_module();
+            if let Some(module) = module {
+                if from_module.is_none() || ModuleSymbol::is_in_deps(session, from_module.as_ref().unwrap(), &module.borrow().as_module_package().dir_name) {
+                    for r in record.iter() {
+                        result.push((s.clone(), r.clone()));
+                    }
+                }
+            }
+        }
+        result
     }
 
     pub fn remove_symbol(&mut self, session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, from_module: Option<Rc<RefCell<Symbol>>>) {
@@ -130,13 +226,22 @@ impl Model {
     }
 
     pub fn model_in_deps(&self, session: &mut SessionInfo, from_module: &Rc<RefCell<Symbol>>) -> bool {
-        for sym in self.symbols.iter() {
-            if !sym.borrow().as_class_sym()._model.as_ref().unwrap().inherit.contains(&sym.borrow().as_class_sym()._model.as_ref().unwrap().name) {
-                let dir_name = sym.borrow().find_module().unwrap().borrow().as_module_package().dir_name.clone();
+        let sym_module_check = |session: &mut SessionInfo<'_>, sym: &Rc<RefCell<Symbol>>| {
+            if let Some(module) = sym.borrow().find_module() {
+                let dir_name = module.borrow().as_module_package().dir_name.clone();
                 if ModuleSymbol::is_in_deps(session, from_module, &dir_name) {
                     return true;
                 }
             }
+            false
+        };
+        if self.symbols.iter().any(|sym|
+            !sym.borrow().as_class_sym()._model.as_ref().unwrap().inherit.contains(&sym.borrow().as_class_sym()._model.as_ref().unwrap().name)
+            && sym_module_check(session, &sym)) {
+            return true;
+         }
+        if self.xml_symbols.iter().any(|(sym, _record)| sym_module_check(session, &sym)) {
+            return true;
         }
         false
     }
@@ -188,7 +293,9 @@ impl Model {
 
     pub fn has_symbols(&mut self) -> bool {
         self.symbols.remove_expired();
-        !self.symbols.is_empty()
+        self.xml_symbols.remove_expired();
+        self.model_fields.remove_expired();
+        !self.symbols.is_empty() || !self.xml_symbols.is_empty()
     }
 
     /* Return all symbols that build this model.

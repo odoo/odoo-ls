@@ -69,6 +69,7 @@ impl DefinitionFeature {
         let from_module = file_symbol.borrow().find_module();
         let classes = model.borrow().get_symbols(session, from_module.clone());
         let len_classes = classes.len();
+        let origin_selection_range = eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), &r));
         for class_symbol_rc in classes {
             let class_symbol = class_symbol_rc.borrow();
             if let (Some(eval_range), Some(class_file)) = (eval.range, class_symbol.get_file().and_then(|file_sym_weak| file_sym_weak.upgrade())) {
@@ -81,12 +82,27 @@ impl DefinitionFeature {
                 let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &class_symbol.range());
                 model_found = true;
                 links.push(LocationLink{
-                    origin_selection_range: eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), &r)),
+                    origin_selection_range: origin_selection_range.clone(),
                     target_uri: FileMgr::pathname2uri(&path),
                     target_selection_range: range,
                     target_range: range,
                 });
             }
+        }
+        for (xml_file_sym_rc, record) in model.borrow().get_xml_symbol_records(session, from_module.clone()){
+            if xml_file_sym_rc.borrow().typ() != SymType::XML_FILE {
+                continue; // Should not happen, but just in case
+            }
+            let path = xml_file_sym_rc.borrow().get_symbol_first_path();
+            let range = session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, &record.range);
+            model_found = true;
+            links.push(LocationLink{
+                origin_selection_range: origin_selection_range.clone(),
+                target_uri: FileMgr::pathname2uri(&path),
+                target_selection_range: range,
+                target_range: range,
+            });
+
         }
         model_found
     }
@@ -354,31 +370,29 @@ impl DefinitionFeature {
                             }
                         }
                     },
-                    XmlAstResult::XML_DATA(xml_file_symbol, range) => {
-                        let file = xml_file_symbol.borrow().get_file(); //in case of XML_DATA coming from a python class
-                        if let Some(file) = file {
-                            if let Some(file) = file.upgrade() {
-                                for path in file.borrow().paths().iter() {
-                                    let full_path = match file.borrow().typ() {
-                                        SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file.borrow().as_package().i_ext())).sanitize(),
-                                        _ => path.clone()
-                                    };
-                                    let range = match file.borrow().typ() {
-                                        SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
-                                        _ => session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, &range),
-                                    };
-                                    let link_range = if link_range.is_some() {
-                                        Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), link_range.as_ref().unwrap()))
-                                    } else {
-                                        None
-                                    };
-                                    links.push(LocationLink{
-                                        origin_selection_range: link_range,
-                                        target_uri: FileMgr::pathname2uri(&full_path),
-                                        target_range: range,
-                                        target_selection_range: range
-                                    });
-                                }
+                    XmlAstResult::XML_DATA(xml_file_symbol, odoo_data_record) => {
+                        let maybe_file = xml_file_symbol.borrow().get_file().and_then(|file| file.upgrade()); //in case of XML_DATA coming from a python class
+                        if let Some(file) = maybe_file {
+                            for path in file.borrow().paths().iter() {
+                                let full_path = match file.borrow().typ() {
+                                    SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file.borrow().as_package().i_ext())).sanitize(),
+                                    _ => path.clone()
+                                };
+                                let range = match xml_file_symbol.borrow().typ() {
+                                    SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
+                                    _ => session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, &odoo_data_record.range),
+                                };
+                                let link_range = if link_range.is_some() {
+                                    Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), link_range.as_ref().unwrap()))
+                                } else {
+                                    None
+                                };
+                                links.push(LocationLink{
+                                    origin_selection_range: link_range,
+                                    target_uri: FileMgr::pathname2uri(&full_path),
+                                    target_range: range,
+                                    target_selection_range: range
+                                });
                             }
                         }
                     }

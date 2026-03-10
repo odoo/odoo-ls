@@ -43,7 +43,7 @@ impl XmlValidator {
                 self.validate_xml_id(session, &module, xml_id, &mut diagnostics, &mut dependencies, &mut model_dependencies, &mut missing_model_dependencies);
             }
         }
-        for dep in dependencies.iter_mut() {
+        for dep in dependencies.iter_mut().filter(|dep_sym| !Rc::ptr_eq(*dep_sym, &self.xml_symbol)) {
             self.xml_symbol.borrow_mut().add_dependency(&mut dep.borrow_mut(), BuildSteps::VALIDATION, BuildSteps::ARCH_EVAL);
         }
         for model in model_dependencies.iter() {
@@ -71,61 +71,132 @@ impl XmlValidator {
         }
     }
     fn validate_record(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, xml_data_record: &OdooDataRecord, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>, missing_model_dependencies: &mut HashSet<OYarn>) {
-        let maybe_model = session.sync_odoo.models.get(&xml_data_record.model.0).cloned();
+        let (model_name, model_range) = &xml_data_record.model;
+        let maybe_model = session.sync_odoo.models.get(model_name).cloned();
         let model_exists = maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols()).unwrap_or(false);
         if !model_exists {
-            missing_model_dependencies.insert(xml_data_record.model.0.clone());
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[&xml_data_record.model.0]) {
+            missing_model_dependencies.insert(model_name.clone());
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[model_name]) {
                 diagnostics.push(Diagnostic {
-                    range: Range { start: Position::new(xml_data_record.model.1.start.try_into().unwrap(), 0), end: Position::new(xml_data_record.model.1.end.try_into().unwrap(), 0) },
+                    range: Range { start: Position::new(model_range.start.try_into().unwrap(), 0), end: Position::new(model_range.end.try_into().unwrap(), 0) },
                     ..diagnostic.clone()
                 });
             }
-            info!("Model '{}' does not exist", xml_data_record.model.0);
+            info!("Model '{}' does not exist", model_name);
             return;
         }
         let Some(model) = maybe_model else {unreachable!();};
-        let has_symbols_in_deps = !model.borrow().get_main_symbols(session, Some(module.clone())).is_empty();
+        let main_symbols = model.borrow().get_main_symbols(session, Some(module.clone()));
+        let xml_syms = model.borrow().get_xml_symbols(session, Some(module.clone()));
+        let has_symbols_in_deps = !main_symbols.is_empty() || !xml_syms.is_empty();
         if !has_symbols_in_deps {
-            missing_model_dependencies.insert(xml_data_record.model.0.clone());
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05055, &[&xml_data_record.model.0, module.borrow().name()]) {
+            missing_model_dependencies.insert(model_name.clone());
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05055, &[model_name, module.borrow().name()]) {
                 diagnostics.push(Diagnostic {
-                    range: Range { start: Position::new(xml_data_record.model.1.start.try_into().unwrap(), 0), end: Position::new(xml_data_record.model.1.end.try_into().unwrap(), 0) },
+                    range: Range { start: Position::new(model_range.start.try_into().unwrap(), 0), end: Position::new(model_range.end.try_into().unwrap(), 0) },
                     ..diagnostic.clone()
                 });
             }
-            info!("Model '{}' has no symbols in module '{}'", xml_data_record.model.0, module.borrow().name());
+            info!("Model '{}' has no symbols in module '{}'", model_name, module.borrow().name());
             return;
         }
         model_dependencies.push(model.clone());
-        let main_symbols = model.borrow().get_main_symbols(session, Some(module.clone()));
-        for main_sym in main_symbols.iter() {
-            dependencies.push(main_sym.borrow().get_file().unwrap().upgrade().unwrap());
-        }
-        let Some(main_symbol) = main_symbols.get(0) else { return; };
-        let all_fields = Symbol::all_fields(main_symbol, session, Some(module.clone()));
-        self.validate_fields(session, xml_data_record, &all_fields, diagnostics, missing_model_dependencies);
+        dependencies.extend(
+            main_symbols
+            .iter()
+            .chain(xml_syms.iter())
+            .map(|s|
+                s.borrow().get_file().unwrap().upgrade().unwrap()
+            )
+        );
+        let all_fields = main_symbols
+            .first()
+            .map(|s| Symbol::all_fields(s, session, Some(module.clone())))
+            .unwrap_or_default();
+        let xml_field_records =
+            self.collect_xml_field_records(session, xml_data_record, Some(module.clone()));
+        self.validate_fields(
+            session,
+            xml_data_record,
+            &all_fields,
+            &xml_field_records,
+            diagnostics,
+            missing_model_dependencies,
+        );
     }
 
-    fn validate_fields(&self, session: &mut SessionInfo, xml_data_record: &OdooDataRecord, all_fields: &HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>>, diagnostics: &mut Vec<Diagnostic>, missing_model_dependencies: &mut HashSet<OYarn>) {
-        //Compute mandatory fields
-        let mut mandatory_fields: Vec<String> = vec![];
+    fn collect_xml_field_records(
+        &self,
+        session: &mut SessionInfo,
+        xml_data_record: &OdooDataRecord,
+        from_module: Option<Rc<RefCell<Symbol>>>,
+    ) -> HashMap<String, Vec<OdooDataRecord>> {
+        let mut map: HashMap<String, Vec<OdooDataRecord>> = HashMap::new();
+        if let Some(model) = session
+            .sync_odoo
+            .models
+            .get(&xml_data_record.model.0)
+            .cloned()
+        {
+            for (_, field_record) in
+                model.borrow().get_model_field_records(session, from_module)
+            {
+                if let Some(name) = field_record
+                    .fields
+                    .iter()
+                    .find(|f| f.name.as_str() == "name")
+                    .and_then(|f| f.text.as_deref())
+                {
+                    map.entry(name.to_string()).or_default().push(field_record);
+                }
+            }
+        }
+        map
+    }
+
+    fn validate_fields(
+        &self,
+        session: &mut SessionInfo,
+        xml_data_record: &OdooDataRecord,
+        all_fields: &HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>>,
+        xml_field_records: &HashMap<String, Vec<OdooDataRecord>>,
+        diagnostics: &mut Vec<Diagnostic>,
+        missing_model_dependencies: &mut HashSet<OYarn>,
+    ) {
+        //Compute mandatory fields from Python-defined fields
+        let mut mandatory_fields: HashSet<String> = HashSet::new();
         for (field_name, field_sym) in all_fields.iter() {
-            for (fs, deps) in field_sym.iter() {
-                if deps.is_none() {
-                    let has_required = fs.borrow().evaluations().unwrap_or(&vec![]).iter()
-                    .any(|eval|
-                        eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, None)
-                        .context.get("required").unwrap_or(&ContextValue::BOOLEAN(false)).as_bool()
-                    );
-                    let has_default = fs.borrow().evaluations().unwrap_or(&vec![]).iter()
-                    .any(|eval|
-                        eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, None)
-                        .context.contains_key("default")
-                    );
-                    if has_required && !has_default {
-                        mandatory_fields.push(field_name.to_string());
-                    }
+            for fs in field_sym.iter().filter_map(|(fs, deps)| if deps.is_none() { Some(fs) } else { None }) {
+                let has_required = fs.borrow().evaluations().unwrap_or(&vec![]).iter()
+                .any(|eval|
+                    eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, None)
+                    .context.get("required").unwrap_or(&ContextValue::BOOLEAN(false)).as_bool()
+                );
+                let has_default = fs.borrow().evaluations().unwrap_or(&vec![]).iter()
+                .any(|eval|
+                    eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, None)
+                    .context.contains_key("default")
+                );
+                if has_required && !has_default {
+                    mandatory_fields.insert(field_name.to_string());
+                }
+            }
+        }
+        // Also compute mandatory fields from XML-defined ir.model.fields records
+        for (field_name, field_records) in xml_field_records.iter() {
+            if mandatory_fields.contains(field_name) {
+                continue;
+            }
+            for field_record in field_records {
+                let has_required = || field_record.fields.iter()
+                    .find(|f| f.name.as_str() == "required")
+                    .and_then(|f| f.text.as_deref())
+                    .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                    .unwrap_or(false);
+                let has_default = || field_record.fields.iter().any(|f| f.name.as_str() == "default");
+                if has_required() && !has_default() {
+                    mandatory_fields.insert(field_name.to_string());
+                    break;
                 }
             }
         }
@@ -179,7 +250,9 @@ impl XmlValidator {
                 }
             }
             //Check that the field belong to the model
-            if all_fields.contains_key(&field_name) {
+            let in_python_fields = all_fields.contains_key(&field_name);
+            let in_xml_fields = xml_field_records.contains_key(field_name.as_str());
+            if in_python_fields || in_xml_fields {
                 mandatory_fields.retain(|f| f != &field_name.to_string());
                 //Check specific attributes
                 let (Some(field_text), Some(field_text_range)) = (field.text.as_ref(), field.text_range.as_ref()) else {
@@ -192,11 +265,7 @@ impl XmlValidator {
                         if !model_exists {
                             missing_model_dependencies.insert(Sy!(field_text.clone()));
                         }
-                        let mut main_sym = vec![];
                         let from_module = self.xml_symbol.borrow().find_module();
-                        if let Some(model) = model {
-                            main_sym = model.borrow().get_main_symbols(session, from_module.clone());
-                        }
                         if !model_exists {
                             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[field_text, &xml_data_record.model.0]) {
                                 diagnostics.push(Diagnostic {
@@ -205,12 +274,15 @@ impl XmlValidator {
                                 });
                             }
                         }
-                        if  let Some(module) = from_module &&model_exists && main_sym.is_empty() {
-                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05055, &[field_text, module.borrow().name()]) {
-                                diagnostics.push(Diagnostic {
-                                    range: Range { start: Position::new(field_text_range.start.try_into().unwrap(), 0), end: Position::new(field_text_range.end.try_into().unwrap(), 0) },
-                                    ..diagnostic.clone()
-                                });
+                        if let Some(module) = from_module && model_exists {
+                            let model_in_deps = model.map_or(false, |m| m.borrow().model_in_deps(session, &module));
+                             if !model_in_deps {
+                                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05055, &[field_text, module.borrow().name()]) {
+                                    diagnostics.push(Diagnostic {
+                                        range: Range { start: Position::new(field_text_range.start.try_into().unwrap(), 0), end: Position::new(field_text_range.end.try_into().unwrap(), 0) },
+                                        ..diagnostic.clone()
+                                    });
+                                }
                             }
                         }
                     },

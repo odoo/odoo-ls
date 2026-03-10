@@ -2,12 +2,12 @@ use std::{cell::RefCell, collections::HashMap, ops::Range, rc::Rc};
 
 use roxmltree::Node;
 
-use crate::{constants::OYarn, core::{evaluation::ContextValue, odoo::SyncOdoo, symbols::{module_symbol::ModuleSymbol, symbol::Symbol}, xml_data::OdooData}, threads::SessionInfo, Sy, S};
+use crate::{S, Sy, constants::OYarn, core::{evaluation::ContextValue, odoo::SyncOdoo, symbols::{module_symbol::ModuleSymbol, symbol::Symbol}, xml_data::{OdooData, OdooDataRecord}}, threads::SessionInfo};
 
 pub enum XmlAstResult {
     SYMBOL(Rc<RefCell<Symbol>>),
     #[allow(non_camel_case_types)]
-    XML_DATA(Rc<RefCell<Symbol>>, Range<usize>), //xml file symbol and range of the xml data
+    XML_DATA(Rc<RefCell<Symbol>>, OdooDataRecord), //xml file symbol and data record of the xml data
 }
 
 impl XmlAstResult {
@@ -18,10 +18,10 @@ impl XmlAstResult {
         }
     }
 
-    pub fn as_xml_data(&self) -> (Rc<RefCell<Symbol>>, Range<usize>) {
+    pub fn as_xml_data(&self) -> (Rc<RefCell<Symbol>>, OdooDataRecord) {
         match self {
             XmlAstResult::SYMBOL(_) => panic!("Symbol is not an XML Data"),
-            XmlAstResult::XML_DATA(sym, range) => (sym.clone(), range.clone()),
+            XmlAstResult::XML_DATA(sym, record) => (sym.clone(), record.clone()),
         }
     }
 }
@@ -72,18 +72,11 @@ impl XmlAstUtils {
                 let model_name = attr.value().to_string();
                 ctxt.insert(S!("record_model"), ContextValue::STRING(model_name.clone()));
                 if attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    if let Some(model) = session.sync_odoo.models.get(&Sy!(model_name)).cloned() {
-                        let from_module = match on_dep_only {
-                            true => from_module.clone(),
-                            false => None,
-                        };
-                        results.0.extend(model.borrow().all_symbols(session, from_module, false).iter().filter(|s| s.1.is_none()).map(|s| XmlAstResult::SYMBOL(s.0.clone())));
-                        results.1 = Some(attr.range_value());
-                    }
+                    Self::add_model_result(session, Sy!(model_name), attr.range_value(), &from_module, results, on_dep_only);
                 }
             } else if attr.name() == "id" {
                 if attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    XmlAstUtils::add_xml_id_result(session, attr.value(), &from_module.as_ref().unwrap(), attr.range_value(), results, on_dep_only);
+                    Self::add_xml_id_result(session, attr.value(), &from_module.as_ref().unwrap(), attr.range_value(), results, on_dep_only);
                     results.1 = Some(attr.range_value());
                 }
             }
@@ -97,24 +90,28 @@ impl XmlAstUtils {
     fn visit_field(session: &mut SessionInfo<'_>, node: &Node, offset: usize, from_module: Option<Rc<RefCell<Symbol>>>, ctxt: &mut HashMap<String, ContextValue>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
         for attr in node.attributes() {
             if attr.name() == "name" {
-                ctxt.insert(S!("field_name"), ContextValue::STRING(attr.value().to_string()));
+                let field_name = attr.value();
+                ctxt.insert(S!("field_name"), ContextValue::STRING(field_name.to_string()));
                 if attr.range_value().start <= offset && attr.range_value().end >= offset {
                     let model_name = ctxt.get(&S!("record_model")).cloned().unwrap_or(ContextValue::STRING(S!(""))).as_string();
                     if model_name.is_empty() {
                         continue;
                     }
                     if let Some(model) = session.sync_odoo.models.get(&Sy!(model_name)).cloned() {
-                        let from_module = match on_dep_only {
+                        let from_module_option = match on_dep_only {
                             true => from_module.clone(),
                             false => None,
                         };
-                        for symbol in model.borrow().all_symbols(session, from_module, true) {
+                        for symbol in model.borrow().all_symbols(session, from_module_option.clone(), true) {
                             if symbol.1.is_none() {
-                                let content = symbol.0.borrow().get_content_symbol(attr.value(), u32::MAX);
+                                let content = symbol.0.borrow().get_content_symbol(field_name, u32::MAX);
                                 for symbol in content.symbols.iter() {
                                     results.0.push(XmlAstResult::SYMBOL(symbol.clone()));
                                 }
                             }
+                        }
+                        for (xml_file_sym, record) in model.borrow().get_model_field_record_by_name(session, from_module_option, field_name) {
+                            results.0.push(XmlAstResult::XML_DATA(xml_file_sym, record.clone()));
                         }
                         results.1 = Some(attr.range_value());
                     }
@@ -140,7 +137,7 @@ impl XmlAstUtils {
                 return;
             }
             if field == "model" || field == "res_model" { //do not check model, let's assume it will contains a model name
-                XmlAstUtils::add_model_result(session, node, from_module, results, on_dep_only);
+                Self::add_model_result(session, Sy!(node.text().unwrap().to_string()), node.range(), &from_module, results, on_dep_only);
             }
         }
     }
@@ -183,21 +180,35 @@ impl XmlAstUtils {
         }
     }
 
-    fn add_model_result(session: &mut SessionInfo, node: &Node, from_module: Option<Rc<RefCell<Symbol>>>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
-        if let Some(model) = session.sync_odoo.models.get(node.text().unwrap()).cloned() {
+    fn add_model_result(session: &mut SessionInfo, model_name: OYarn, range: Range<usize>, from_module: &Option<Rc<RefCell<Symbol>>>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
+        if let Some(model) = session.sync_odoo.models.get(&model_name).cloned() {
             let from_module = match on_dep_only {
                 true => from_module.clone(),
                 false => None,
             };
-            results.0.extend(model.borrow().all_symbols(session, from_module, false).iter().filter(|s| s.1.is_none()).map(|s| XmlAstResult::SYMBOL(s.0.clone())));
-            results.1 = Some(node.range());
+            results.0.extend(
+                model
+                    .borrow()
+                    .all_symbols(session, from_module.clone(), false)
+                    .iter()
+                    .filter(|s| s.1.is_none())
+                    .map(|s| XmlAstResult::SYMBOL(s.0.clone())),
+            );
+            results.0.extend(
+                model
+                    .borrow()
+                    .get_xml_symbol_records(session, from_module.clone())
+                    .iter()
+                    .map(|(x, r)| XmlAstResult::XML_DATA(x.clone(), r.clone())),
+            );
+            results.1 = Some(range);
         }
     }
 
     fn add_xml_id_result(session: &mut SessionInfo, xml_id: &str, file_symbol: &Rc<RefCell<Symbol>>, range: Range<usize>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
         let mut xml_ids = SyncOdoo::get_xml_ids(session, file_symbol, xml_id, &range, &mut vec![]);
         if on_dep_only {
-            xml_ids = xml_ids.into_iter().filter(|x| 
+            xml_ids = xml_ids.into_iter().filter(|x|
                 {
                     let file = x.get_file_symbol();
                     if let Some(file) = file {
@@ -215,7 +226,7 @@ impl XmlAstUtils {
         for xml_data in xml_ids.iter() {
             match xml_data {
                 OdooData::RECORD(r) => {
-                    results.0.push(XmlAstResult::XML_DATA(r.file_symbol.upgrade().unwrap(), r.range.clone()));
+                    results.0.push(XmlAstResult::XML_DATA(r.file_symbol.upgrade().unwrap(), r.clone()));
                 },
                 _ => {}
             }

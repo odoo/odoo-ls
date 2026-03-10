@@ -4,9 +4,11 @@ use ruff_text_size::{Ranged, TextRange, TextSize};
 use crate::core::file_mgr::FileMgr;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::function_symbol::Argument;
-use crate::utils::{MaxTextSize, PathSanitizer, compare_semver};
+use crate::core::xml_data::{OdooData, OdooDataRecord};
+use crate::utils::{compare_semver, PathSanitizer};
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::ops::Range;
 use std::path::PathBuf;
 use std::rc::Weak;
 use std::{cell::RefCell, rc::Rc};
@@ -424,7 +426,7 @@ impl FeaturesUtils {
         evals: &Vec<Evaluation>,
         call_expr: &Option<ExprCall>,
         offset: Option<usize>
-    ) -> String {
+    ) -> Option<String> {
         #[derive(Debug, Eq, PartialEq, Hash)]
         struct SymbolKey {
             name: OYarn,
@@ -503,6 +505,7 @@ impl FeaturesUtils {
                         return r;
                     }
                 }
+                let mut string_handled = false;
                 if let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", str)).cloned() {
                     let main_classes = model.borrow().get_main_symbols(session, from_module.clone());
                     let mut block = S!("");
@@ -539,7 +542,29 @@ impl FeaturesUtils {
                                 }).collect::<String>();
                         }
                     }
+                    for xml_file_sym in model.borrow().get_xml_symbols(session, from_module.clone()).iter() {
+                        if let Some(xml_class_module) = xml_file_sym.borrow().find_module() {
+                            block += format!("Model (XML record: {}) in {}: {}", xml_class_module.borrow().name(), xml_file_sym.borrow().name(), model.borrow().name()).as_str();
+                        }
+                    }
                     blocks.push(block);
+                    string_handled = true;
+                }
+                // Check for xml ids
+                if let Some(file_sym) = file_symbol.as_ref() {
+                    let xml_ids = SyncOdoo::get_xml_ids(session, file_sym, &str, &Range::default(), &mut vec![]);
+                    for xml_id in xml_ids.iter() {
+                        if let OdooData::RECORD(r) = xml_id {
+                            if let Some(xml_file_sym) = r.file_symbol.upgrade() {
+                                if let Some(block) = FeaturesUtils::build_xml_data_hover_block(&xml_file_sym, &r) {
+                                    blocks.push(block);
+                                    string_handled = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                if string_handled {
                     continue;
                 }
             }
@@ -583,7 +608,13 @@ impl FeaturesUtils {
             }
             blocks.push(block);
         }
-        blocks.iter().join("  \n***  \n")
+        blocks.retain(|block| !block.is_empty());
+        if blocks.is_empty() {
+            None
+        } else {
+            Some(blocks.iter().join("  \n***  \n"))
+        }
+
     }
 
     fn get_type_symbol_tag(rc_symbol: &Rc<RefCell<Symbol>>) -> String{
@@ -803,5 +834,32 @@ impl FeaturesUtils {
             return "  \\\n"
         }
         "  \n"
+    }
+
+    fn build_xml_data_hover_block(xml_file_symbol: &Rc<RefCell<Symbol>>, odoo_data_record: &OdooDataRecord) -> Option<String> {
+        if xml_file_symbol.borrow().typ() != SymType::XML_FILE {
+            return None;
+        }
+        let local_id = odoo_data_record.xml_id.as_ref()?;
+        let module_name = xml_file_symbol.borrow().find_module()
+            .map(|m| m.borrow().name().clone())
+            .unwrap_or_default();
+        let full_xml_id = if module_name.is_empty() {
+            local_id.to_string()
+        } else {
+            format!("{}.{}", module_name, local_id)
+        };
+        Some(format!("```\n(XML record) {}\nmodel: {}\n```", full_xml_id, odoo_data_record.model.0))
+    }
+
+    pub fn build_xml_data_markdown_description(xml_data: &Vec<(Rc<RefCell<Symbol>>, OdooDataRecord)>) -> Option<String> {
+        let blocks: Vec<String> = xml_data.iter()
+            .filter_map(|(xml_file_symbol, odoo_data_record)| FeaturesUtils::build_xml_data_hover_block(xml_file_symbol, odoo_data_record))
+            .collect();
+        if blocks.is_empty() {
+            None
+        } else {
+            Some(blocks.join("  \n***  \n"))
+        }
     }
 }

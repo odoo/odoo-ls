@@ -10,7 +10,7 @@ use weak_table::PtrWeakHashSet;
 use crate::constants::{OYarn, SymType};
 use crate::core::model::{Model, ModelData};
 use crate::core::symbols::symbol::Symbol;
-use crate::core::xml_data::{OdooData, OdooDataRecord};
+use crate::core::xml_data::{OdooData, OdooDataField, OdooDataRecord};
 use crate::threads::SessionInfo;
 use crate::utils::compare_semver;
 use crate::{oyarn, Sy, S};
@@ -72,7 +72,17 @@ impl PythonOdooBuilder {
                     end: 1,
                 }),
                 xml_id: Some(xml_id_model_name),
-                fields: vec![],
+                fields: vec![
+                    OdooDataField {
+                        name: Sy!("model"),
+                        range: std::ops::Range::<usize> {
+                            start: self.symbol.borrow().range().start().to_usize(),
+                            end: self.symbol.borrow().range().end().to_usize(),
+                        },
+                        text: Some(model_name.to_string()),
+                        ..Default::default()
+                    },
+                ],
                 range: std::ops::Range::<usize> {
                     start: self.symbol.borrow().range().start().to_usize(),
                     end: self.symbol.borrow().range().end().to_usize(),
