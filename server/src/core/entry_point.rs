@@ -3,7 +3,7 @@ use std::{cell::RefCell, cmp, collections::{HashMap, HashSet}, path::PathBuf, rc
 use tracing::{error, info, warn};
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree}, core::symbols::symbol_table::{SymbolKey, Weak}, threads::SessionInfo, utils::PathSanitizer, warn_or_panic, weak_hash_set::WeakSet};
+use crate::{constants::{flatten_tree, BuildSteps, OYarn, PackageType, SymType, Tree}, core::symbols::symbol_table::{SymbolKey, SymbolTable, Weak}, threads::SessionInfo, utils::PathSanitizer, warn_or_panic, weak_hash_set::WeakSet};
 
 use super::{odoo::SyncOdoo, symbols::symbol::Symbol};
 
@@ -422,12 +422,13 @@ impl EntryPoint {
         self.typ == EntryPointType::MAIN || self.typ == EntryPointType::ADDON
     }
 
-    pub fn get_symbol(&self) -> Option<Rc<RefCell<Symbol>>> {
+    // @arena: not sure if this should take symbol_table as arg or should live elsewhere
+    pub fn get_symbol(&self, symbol_table: &SymbolTable) -> Option<SymbolKey> {
         let tree = self.addon_to_odoo_tree.as_ref().unwrap_or(&self.tree).clone();
-        let symbol = self.root.borrow().get_symbol(&(tree, vec![]), u32::MAX);
+        let symbol = symbol_table.get_symbol(self.root, &(tree, vec![]), u32::MAX);
         match symbol.len() {
             0 => None,
-            1 => Some(symbol[0].clone()),
+            1 => Some(symbol[0]),
             _ => panic!("Multiple symbols found for entry point {:?}", self)
         }
     }
