@@ -398,6 +398,7 @@ impl SymbolView<'_> {
         }
     }
 
+    // @arena: consider moving to symbol table, next to get_as_symbol_mgr_mut
     pub fn as_symbol_mgr(&self) -> &dyn SymbolMgr {
         match self {
             Self::File(f) => *f,
@@ -1376,6 +1377,20 @@ impl SymbolTable {
             SymbolKey::Variable(_) => panic!("no not_found_path on Variable"),
             SymbolKey::XmlFile(_) => { panic!("no not_found_path on XmlFileSymbol") },
             SymbolKey::CsvFile(_) => { panic!("no not_found_path on CsvFileSymbol") },
+        }
+    }
+
+
+    pub fn get_as_mut_symbol_mgr(&mut self, target: SymbolKey) -> &mut dyn SymbolMgr {
+        match target {
+            SymbolKey::File(f) => &mut self.files[f],
+            SymbolKey::Class(c) => &mut self.classes[c],
+            SymbolKey::Function(f) => &mut self.functions[f],
+            SymbolKey::Package(p) => match &mut self.packages[p] {
+                PackageSymbol::Module(m) => m,
+                PackageSymbol::PythonPackage(p) => p,
+            },
+            _ => {panic!("Not a symbol Mgr");}
         }
     }
 }
