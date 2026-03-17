@@ -9,6 +9,7 @@ use crate::constants::BuildStatus;
 use crate::constants::BuildSteps;
 use crate::constants::OYarn;
 use crate::core::symbols::symbol_table::ClassKey;
+use crate::core::symbols::symbol_table::ContainsKey;
 use crate::core::symbols::symbol_table::SymbolKey;
 use crate::core::symbols::symbol_table::SymbolTable;
 use crate::core::symbols::symbol_table::get_sym;
@@ -258,7 +259,7 @@ impl Model {
         self.all_inherits_helper(session, from_module, &mut visited_models)
     }
 
-    /// @arena: code repetition with all_symbols_helper 
+    /// @arena: code repetition with all_symbols_helper
     fn all_inherits_helper(&self, session: &SessionInfo, from_module: Option<SymbolKey>, visited_models: &mut HashSet<OYarn>) -> (Vec<(ClassKey, Option<OYarn>)>, Vec<(ClassKey, Option<OYarn>)>) {
         if visited_models.contains(&self.name) {
             return (Vec::new(), Vec::new());
