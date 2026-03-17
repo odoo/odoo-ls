@@ -22,6 +22,7 @@ pub enum ArgumentType {
 
 #[derive(Debug, Clone)]
 pub struct Argument {
+    // @arena: always a VariableKey?
     pub symbol: SymbolKey, // @arena: formerly a weak to a symbol of the function
     //other informations about arg
     pub default_value: Option<Evaluation>,

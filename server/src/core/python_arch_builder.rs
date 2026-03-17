@@ -659,16 +659,14 @@ impl PythonArchBuilder {
     }
 
     fn visit_func_def(&mut self, session: &mut SessionInfo, func_def: &StmtFunctionDef) -> Result<(), Error> {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         if func_def.body.is_empty() {
             return Ok(()) //if body is empty, it usually means that the ast of the class is invalid. Skip it
         }
-        let sym = self.sym_stack.last().unwrap().borrow_mut().add_new_function(
-            session, &func_def.name.id.to_string(), &func_def.range, &func_def.body.get(0).unwrap().range().start());
-        let mut sym_bw = sym.borrow_mut();
-
-        sym_bw.node_index_mut().set(func_def.node_index.load());
-
-        let func_sym = sym_bw.as_func_mut();
+        let function_key = st!().add_new_function(*self.sym_stack.last().unwrap(),
+            &func_def.name.id.to_string(), &func_def.range, &func_def.body.get(0).unwrap().range().start());
+        let func_sym = &mut st!().functions[function_key];
+        func_sym.node_index.set(func_def.node_index.load());
         for decorator in func_def.decorator_list.iter() {
             if decorator.expression.is_name_expr() {
                 if decorator.expression.as_name_expr().unwrap().id.to_string() == "staticmethod" {
@@ -701,61 +699,60 @@ impl PythonArchBuilder {
                 func_sym.doc_string = Some(s.value.to_string())
             }
         }
-        drop(sym_bw);
         //add params
         for arg in func_def.parameters.posonlyargs.iter() {
-            let param = sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.parameter.name.id), &arg.range);
-            param.borrow_mut().as_variable_mut().is_parameter = true;
+            let param = st!().add_new_variable(function_key.into(), oyarn!("{}", arg.parameter.name.id), &arg.range);
+            st!().variables[param].is_parameter = true;
             let mut default = None;
             if arg.default.is_some() {
                 default = Some(Evaluation::new_none()); //TODO evaluate default? actually only used to know if there is a default or not
             }
-            sym.borrow_mut().as_func_mut().args.push(Argument {
-                symbol: Rc::downgrade(&param),
+            st!().functions[function_key].args.push(Argument {
+                symbol: param.into(),
                 default_value: default,
                 arg_type: ArgumentType::POS_ONLY,
                 annotation: arg.parameter.annotation.clone(),
             });
         }
         for arg in func_def.parameters.args.iter() {
-            let param = sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.parameter.name.id), &arg.range);
-            param.borrow_mut().as_variable_mut().is_parameter = true;
+            let param = st!().add_new_variable(function_key.into(), oyarn!("{}", arg.parameter.name.id), &arg.range);
+            st!().variables[param].is_parameter = true;
             let mut default = None;
             if arg.default.is_some() {
                 default = Some(Evaluation::new_none()); //TODO evaluate default? actually only used to know if there is a default or not
             }
-            sym.borrow_mut().as_func_mut().args.push(Argument {
-                symbol: Rc::downgrade(&param),
+            st!().functions[function_key].args.push(Argument {
+                symbol: param.into(),
                 default_value: default,
                 arg_type: ArgumentType::ARG,
                 annotation: arg.parameter.annotation.clone(),
             });
         }
         if let Some(arg) = &func_def.parameters.vararg {
-            let param = sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.name.id), &arg.range);
-            param.borrow_mut().as_variable_mut().is_parameter = true;
-            sym.borrow_mut().as_func_mut().args.push(Argument {
-                symbol: Rc::downgrade(&param),
+            let param = st!().add_new_variable(function_key.into(), oyarn!("{}", arg.name.id), &arg.range);
+            st!().variables[param].is_parameter = true;
+            st!().functions[function_key].args.push(Argument {
+                symbol: param.into(),
                 default_value: None,
                 arg_type: ArgumentType::VARARG,
                 annotation: arg.annotation.clone(),
             });
         }
         for arg in func_def.parameters.kwonlyargs.iter() {
-            let param = sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.parameter.name.id), &arg.range);
-            param.borrow_mut().as_variable_mut().is_parameter = true;
-            sym.borrow_mut().as_func_mut().args.push(Argument {
-                symbol: Rc::downgrade(&param),
+            let param = st!().add_new_variable(function_key.into(), oyarn!("{}", arg.parameter.name.id), &arg.range);
+            st!().variables[param].is_parameter = true;
+            st!().functions[function_key].args.push(Argument {
+                symbol: param.into(),
                 default_value: arg.default.as_ref().map(|_default| Evaluation::new_none()),
                 arg_type: ArgumentType::KWORD_ONLY,
                 annotation: arg.parameter.annotation.clone(),
             });
         }
         if let Some(arg) = &func_def.parameters.kwarg {
-            let param = sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.name.id), &arg.range);
-            param.borrow_mut().as_variable_mut().is_parameter = true;
-            sym.borrow_mut().as_func_mut().args.push(Argument {
-                symbol: Rc::downgrade(&param),
+            let param = st!().add_new_variable(function_key.into(), oyarn!("{}", arg.name.id), &arg.range);
+            st!().variables[param].is_parameter = true;
+            st!().functions[function_key].args.push(Argument {
+                symbol: param.into(),
                 default_value: None,
                 arg_type: ArgumentType::KWARG,
                 annotation: arg.annotation.clone(),
@@ -766,15 +763,16 @@ impl PythonArchBuilder {
             session.noqas_stack.push(noqa_bloc.clone());
             add_noqa = true;
         }
-        sym.borrow_mut().set_noqas(combine_noqa_info(&session.noqas_stack));
-        session.current_noqa = sym.borrow().get_noqas().clone();
+        let noqa = combine_noqa_info(&session.noqas_stack);
+        st!().functions[function_key].noqas = noqa.clone();
+        session.current_noqa = noqa;
         //visit body
-        if !self.file_mode || sym.borrow().get_in_parents(&vec![SymType::CLASS], true).is_none() {
-            sym.borrow_mut().as_func_mut().arch_status = BuildStatus::IN_PROGRESS;
-            self.sym_stack.push(sym.clone());
+        if !self.file_mode || st!().get_in_parents(function_key.into(), &[SymType::CLASS], true).is_none() {
+            st!().functions[function_key].arch_status = BuildStatus::IN_PROGRESS;
+            self.sym_stack.push(function_key.into());
             self.visit_node(session, &func_def.body)?;
             self.sym_stack.pop();
-            sym.borrow_mut().as_func_mut().arch_status = BuildStatus::DONE;
+            st!().functions[function_key].arch_status = BuildStatus::DONE;
         }
         if add_noqa {
             session.noqas_stack.pop();
