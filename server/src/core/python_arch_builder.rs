@@ -550,7 +550,7 @@ impl PythonArchBuilder {
             }
             match assign.target {
                 AssignTargetType::Name(ref name_expr) => {
-                    self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", name_expr.id), &name_expr.range);
+                    session.sync_odoo.symbol_table.add_new_variable(*self.sym_stack.last().unwrap(), oyarn!("{}", name_expr.id), &name_expr.range);
                 },
                 AssignTargetType::Attribute(ref _attr_expr) => {
                 }
@@ -559,6 +559,7 @@ impl PythonArchBuilder {
     }
 
     fn _visit_assign(&mut self, session: &mut SessionInfo, assign_stmt: &StmtAssign) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
         for assign in assigns.iter() {
             if let Some(ref expr) = assign.value {
@@ -566,36 +567,26 @@ impl PythonArchBuilder {
             }
             match assign.target {
                 AssignTargetType::Name(ref name_expr) => {
-                    let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", name_expr.id), &name_expr.range);
-                    let mut variable = variable.borrow_mut();
-                    if self.file_mode && variable.name() == "__all__" && assign.value.is_some() && variable.parent().is_some() {
-                        let parent = variable.parent().as_ref().unwrap().upgrade();
-                        if parent.is_some() {
-                            let parent = parent.unwrap();
-                            let mut deps = vec![vec![]]; //only arch level
-                            let eval = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start(), false, &mut deps);
-                            Symbol::insert_dependencies(&self.file, &mut deps, BuildSteps::ARCH);
-                            variable.as_variable_mut().evaluations = eval.0;
-                            self.diagnostics.extend(eval.1);
-                            if !variable.as_variable().evaluations.is_empty() {
-                                if (*self.sym_stack.last().unwrap()).borrow().is_external() {
-                                    // external packages often import symbols from compiled files
-                                    // or with meta programmation like globals["var"] = __get_func().
-                                    // we don't want to handle that, so just declare __all__ content
-                                    // as symbols to not raise any error.
-                                    let evaluation = variable.as_variable_mut().evaluations.get(0).unwrap();
-                                    match &evaluation.value {
-                                        Some(EvaluationValue::LIST(list)) => {
-                                            for item in list.iter() {
-                                                match item {
-                                                    Expr::StringLiteral(s) => {
-                                                        self.__all_symbols_to_add.push((s.value.to_string(), evaluation.range.unwrap()));
-                                                    },
-                                                    _ => {}
-                                                }
-                                            }
-                                        },
-                                        _ => {}
+                    let variable_key = st!().add_new_variable(*self.sym_stack.last().unwrap(), oyarn!("{}", name_expr.id), &name_expr.range);
+                    let variable = &st!().variables[variable_key];
+                    if self.file_mode && variable.name == "__all__" && assign.value.is_some() && variable.parent.is_some() {
+                        let parent = variable.parent.unwrap();
+                        let mut deps = vec![vec![]]; //only arch level
+                        let eval = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start(), false, &mut deps);
+                        st!().insert_dependencies(self.file, &deps, BuildSteps::ARCH);
+                        st!().variables[variable_key].evaluations = eval.0;
+                        self.diagnostics.extend(eval.1);
+                        if let Some(evaluation) = st!().variables[variable_key].evaluations.get(0) {
+                            if get_sym!(st!(), *self.sym_stack.last().unwrap()).is_external() {
+                                // external packages often import symbols from compiled files
+                                // or with meta programmation like globals["var"] = __get_func().
+                                // we don't want to handle that, so just declare __all__ content
+                                // as symbols to not raise any error.
+                                if let Some(EvaluationValue::LIST(list)) = &evaluation.value {
+                                    for item in list.iter() {
+                                        if let Expr::StringLiteral(s) = item {
+                                            self.__all_symbols_to_add.push((s.value.to_string(), evaluation.range.unwrap()));
+                                        }
                                     }
                                 }
                             }
@@ -663,7 +654,7 @@ impl PythonArchBuilder {
     fn visit_named_expr(&mut self, session: &mut SessionInfo, named_expr: &ExprNamed) {
         self.visit_expr(session, &named_expr.value);
         if let Some(name_expr) = named_expr.target.as_name_expr() { // Only handle valid named expressions
-            self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", name_expr.id), &named_expr.target.range());
+            session.sync_odoo.symbol_table.add_new_variable(*self.sym_stack.last().unwrap(), oyarn!("{}", name_expr.id), &named_expr.target.range());
         }
     }
 

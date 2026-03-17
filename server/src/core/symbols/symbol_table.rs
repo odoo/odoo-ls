@@ -1093,7 +1093,7 @@ impl SymbolTable {
     }
 
     /* Helper to merge dependencies eval_from_ast will fill when called. To be called on a file/package... */
-    pub fn insert_dependencies(&mut self, target: SymbolKey, deps: &mut Vec<Vec<SymbolKey>>, current_step: BuildSteps) {
+    pub fn insert_dependencies(&mut self, target: SymbolKey, deps: &Vec<Vec<SymbolKey>>, current_step: BuildSteps) {
         for (step, dependencies) in deps.iter().enumerate() {
             let dep_level = BuildSteps::from(step as i32);
             for &dependency in dependencies.iter() {
