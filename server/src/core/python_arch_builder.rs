@@ -237,7 +237,7 @@ impl PythonArchBuilder {
                             and so create a borrow error here
                             */
                             let mut import_variables_to_create = vec![];
-                            for (name, loc_syms) in get_sym!(st!(), import_symbol).iter_symbols() {
+                            for (name, loc_syms) in st!().iter_symbols(import_symbol) {
                                 if all_name_allowed || name_filter.contains(&name) {
                                     let evaluations = Evaluation::from_sections(&st!(), import_symbol, loc_syms);
                                     import_variables_to_create.push((name.clone(), evaluations));
@@ -363,14 +363,14 @@ impl PythonArchBuilder {
                 // one section per value
                 // one succeeding section with all the value sections in OR
                 let scope = *self.sym_stack.last().unwrap();
-                let mut prev_section = get_sym!(st!(), scope).as_symbol_mgr().get_last_index();
+                let mut prev_section = st!().get_as_symbol_mgr(scope).get_last_index();
                 let cond_sections = bool_op_expr.values.iter().map(|expr|{
                     st!().get_as_mut_symbol_mgr(scope).add_section(
                         expr.range().start(),
                         Some(SectionIndex::INDEX(prev_section))
                     ).index;
                     self.visit_expr(session, &expr);
-                    prev_section = get_sym!(st!(), scope).as_symbol_mgr().get_last_index();
+                    prev_section = st!().get_as_symbol_mgr(scope).get_last_index();
                     SectionIndex::INDEX(prev_section)
                 }).collect::<Vec<_>>();
                 st!().get_as_mut_symbol_mgr(scope).add_section(

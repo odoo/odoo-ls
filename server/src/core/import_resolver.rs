@@ -638,8 +638,7 @@ fn valid_name_from_disk(path: &String, start_filter: &OYarn) -> HashMap<OYarn, S
 
 fn valid_name_from_symbol(symbol_table: &SymbolTable, symbol: SymbolKey, start_filter: &OYarn) -> HashMap<OYarn, SymType> {
     let mut res = HashMap::new();
-    let symbols = get_sym!(symbol_table, symbol);
-    for s in symbols.iter_symbols() {
+    for s in symbol_table.iter_symbols(symbol) {
         if s.0.starts_with(&start_filter.to_string()) {
             let mut typ = SymType::VARIABLE;
             let a_section = s.1.iter().last(); //let's take the last section, anyway we can display only one icon

@@ -259,10 +259,6 @@ impl SymbolView<'_> {
         }
     }
 
-    // @arena: original code did not rely on dyn dispatch (as_symbol_mgr)
-    pub fn iter_symbols(&self) -> hash_map::Iter<'_, OYarn, HashMap<u32, Vec<SymbolKey>>> {
-        self.as_symbol_mgr().get_symbols().iter()
-    }
 
     // @arena: like the original, this is not lazy iteration (might as well just return the Vec)
     pub fn all_symbols(&self) -> impl Iterator<Item = SymbolKey> + use<> {
@@ -398,17 +394,6 @@ impl SymbolView<'_> {
         }
     }
 
-    // @arena: consider moving to symbol table, next to get_as_symbol_mgr_mut
-    pub fn as_symbol_mgr(&self) -> &dyn SymbolMgr {
-        match self {
-            Self::File(f) => *f,
-            Self::Class(c) => *c,
-            Self::Function(f) => *f,
-            Self::Package(PackageSymbol::Module(m)) => m,
-            Self::Package(PackageSymbol::PythonPackage(p)) => p,
-            _ => {panic!("Not a symbol Mgr");}
-        }
-    }
 
     /*
     Return a symbol that is in module symbols (symbol that represent something on disk - file, package, namespace)
@@ -728,8 +713,7 @@ impl SymbolTable {
     ///Return all the symbols that are valid as last declaration for the given position
     /// @arena: the one from SymbolMgr trait
     fn _get_content_symbol(&self, target: SymbolKey, name: &str, position: u32) -> ContentSymbols {
-        let target_sym = self.get_symbol_view(target).expect("valid key");
-        let target_sym_mgr = target_sym.as_symbol_mgr();
+        let target_sym_mgr = self.get_as_symbol_mgr(target);
         let sections = target_sym_mgr.get_symbols().get(name);
         let mut content = if let Some(sections) = sections {
             let section: SectionRange = target_sym_mgr.get_section_for(position);
@@ -803,8 +787,7 @@ impl SymbolTable {
 
     // @arena The one from SymbolMgr trait
     fn _get_all_visible_symbols(&self, target: SymbolKey, name_prefix: &String, position: u32) -> HashMap<OYarn, Vec<SymbolKey>> {
-        let target_sym = self.get_symbol_view(target).expect("valid key");
-        let target_sym_mgr = target_sym.as_symbol_mgr();
+        let target_sym_mgr = self.get_as_symbol_mgr(target);
         let mut result = HashMap::new();
         let current_section = target_sym_mgr.get_section_for(position);
         let current_index = SectionIndex::INDEX(current_section.index);
@@ -922,8 +905,7 @@ impl SymbolTable {
     /* return the Symbol (class, function or file) the closest to the given offset */
     pub fn get_scope_symbol(&self, file: SymbolKey, offset: u32, is_param: bool) -> SymbolKey {
         let mut result = file;
-        let file_sym = self.get_symbol_view(file).expect("valid key"); // formely Rc (strong)
-        let file_sym_mgr = file_sym.as_symbol_mgr();
+        let file_sym_mgr = self.get_as_symbol_mgr(file); // formely Rc (strong)
         let section_id = file_sym_mgr.get_section_for(offset);
         for (_, sym_map) in file_sym_mgr.get_symbols() {
             match sym_map.get(&section_id.index) {
@@ -1380,6 +1362,18 @@ impl SymbolTable {
         }
     }
 
+    pub fn get_as_symbol_mgr(&self, target: SymbolKey) -> &dyn SymbolMgr {
+        match target {
+            SymbolKey::File(f) => &self.files[f],
+            SymbolKey::Class(c) => &self.classes[c],
+            SymbolKey::Function(f) => &self.functions[f],
+            SymbolKey::Package(p) => match &self.packages[p] {
+                PackageSymbol::Module(m) => m,
+                PackageSymbol::PythonPackage(p) => p,
+            },
+            _ => {panic!("Not a symbol Mgr");}
+        }
+    }
 
     pub fn get_as_mut_symbol_mgr(&mut self, target: SymbolKey) -> &mut dyn SymbolMgr {
         match target {
@@ -1391,6 +1385,31 @@ impl SymbolTable {
                 PackageSymbol::PythonPackage(p) => p,
             },
             _ => {panic!("Not a symbol Mgr");}
+        }
+    }
+
+    pub fn iter_symbols(&self, target: SymbolKey) -> hash_map::Iter<'_, OYarn, HashMap<u32, Vec<SymbolKey>>> {
+        match target {
+            SymbolKey::File(f) => {
+                self.files[f].symbols.iter()
+            }
+            SymbolKey::Root(_) => panic!(),
+            SymbolKey::Namespace(_) => panic!(),
+            SymbolKey::DiskDir(_) => panic!(),
+            SymbolKey::Package(p) => match &self.packages[p] {
+                PackageSymbol::Module(m) => m.symbols.iter(),
+                PackageSymbol::PythonPackage(p) => p.symbols.iter(),
+            },
+            SymbolKey::Compiled(_) => panic!(),
+            SymbolKey::Class(c) => {
+                self.classes[c].symbols.iter()
+            },
+            SymbolKey::Function(f) => {
+                self.functions[f].symbols.iter()
+            },
+            SymbolKey::Variable(_) => panic!(),
+            SymbolKey::XmlFile(_) => panic!(),
+            SymbolKey::CsvFile(_) => panic!(),
         }
     }
 }

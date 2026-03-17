@@ -503,8 +503,7 @@ impl Evaluation {
     /// It will return two evaluation for i, one with 5 and one for "test"
     /// @ arena: formerly took a Symbol as parent (borrowed from strong RC by the caller)
     pub fn from_sections(symbol_table: &SymbolTable, parent_key: SymbolKey, sections: &HashMap<u32, Vec<SymbolKey>>) -> Vec<Evaluation> {
-        let parent = symbol_table.get_symbol_view(parent_key).expect("valid key");
-        let parent_sym_mgr = parent.as_symbol_mgr();
+        let parent_sym_mgr = symbol_table.get_as_symbol_mgr(parent_key);
         let mut res = vec![];
         let section = parent_sym_mgr.get_section_for(u32::MAX);
         let content_symbols = symbol_table._get_loc_symbol(parent_sym_mgr, sections, u32::MAX, &SectionIndex::INDEX(section.index), &mut HashSet::new());
