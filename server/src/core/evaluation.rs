@@ -507,7 +507,6 @@ impl Evaluation {
         let parent_sym_mgr = parent.as_symbol_mgr();
         let mut res = vec![];
         let section = parent_sym_mgr.get_section_for(u32::MAX);
-        // let content_symbols = parent.as_symbol_mgr()._get_loc_symbol(sections, u32::MAX, &SectionIndex::INDEX(section.index), &mut HashSet::new());
         let content_symbols = symbol_table._get_loc_symbol(parent_sym_mgr, sections, u32::MAX, &SectionIndex::INDEX(section.index), &mut HashSet::new());
         for sym_key in content_symbols.symbols {
             let symbol = symbol_table.get_symbol_view(sym_key).expect("valid key");
@@ -570,7 +569,7 @@ impl Evaluation {
     * The result is a list, because some ast can give various possible results. For example: a = func()
     * required_dependencies will be filled with dependencies required to build the value, step by step.
     * You have to provide a vector with the length matching the available steps. For example, in arch_eval, required_dependencies
-    * should be equal to vec![vec![], vec![]] to be able to get arch and arch_eval deps at index 0 and 1. It means that if validation is 
+    * should be equal to vec![vec![], vec![]] to be able to get arch and arch_eval deps at index 0 and 1. It means that if validation is
     * not build but required during the eval_from_ast, it will NOT be built
     */
     pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: SymbolKey, max_infer: &TextSize, for_annotation: bool, required_dependencies: &mut Vec<Vec<SymbolKey>>) -> (Vec<Evaluation>, Vec<Diagnostic>) {
@@ -926,7 +925,7 @@ impl Evaluation {
                                         v.validate(session);
                                     }
                                     if let Some(init_eval) = get_sym!(st!(), init).evaluations() {
-                                        //init will always return an instance of the class, so we are not searching the method to check its return type, but rather to check if there is 
+                                        //init will always return an instance of the class, so we are not searching the method to check its return type, but rather to check if there is
                                         //an hook on it. Hooks, can be used to use parameters for context (see relational fields for example).
                                         if init_eval.len() == 1 && init_eval[0].symbol.get_symbol_hook.is_some() {
                                             context.as_mut().unwrap().insert(S!("constructing_class"), ContextValue::SYMBOL(base_sym.into()));

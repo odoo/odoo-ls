@@ -90,10 +90,10 @@ pub enum SymbolView<'a> {
 
 /// @arena: temporary. symbol_rc.borrow() -> get_sym!(symbol_key).
 /// Assumes `symbol_table` is in scope
-macro_rules! get_sym {                                                                     
-    ($st:expr, $key:expr) => {                                                                  
-        $st.get_symbol_view($key).expect("valid key (formerly Rc)")          
-    };          
+macro_rules! get_sym {
+    ($st:expr, $key:expr) => {
+        $st.get_symbol_view($key).expect("valid key (formerly Rc)")
+    };
 }
 
 pub(crate) use get_sym;
@@ -226,7 +226,7 @@ impl SymbolView<'_> {
             Self::CsvFileSymbol(_) => false,
         }
     }
-    
+
     pub fn range(&self) -> &TextRange {
         match self {
             Self::Root(_) => panic!(),
@@ -356,7 +356,7 @@ impl SymbolView<'_> {
             Self::CsvFileSymbol(c) => c.dependents(),
         }
     }
-    
+
     pub fn get_all_dependencies(&self, step: BuildSteps) -> Option<&Vec<Option<WeakSet<SymbolKey>>>> {
         if step == BuildSteps::SYNTAX {
             panic!("Can't get dependencies for syntax step")
@@ -383,7 +383,7 @@ impl SymbolView<'_> {
             _ => {panic!("Not a module package")}
         }
     }
-    
+
     pub fn as_root(&self) -> &RootSymbol {
         match self {
             Self::Root(r) => r,
@@ -985,7 +985,7 @@ impl SymbolTable {
         let Some(parent_key) = func.parent else {
             return false;
         };
-        // @arena: Equivalent of if Some(parent) = parent_weak.upgrade() 
+        // @arena: Equivalent of if Some(parent) = parent_weak.upgrade()
         if !self.contains_key(parent_key) {
             return false;
         }
@@ -1038,11 +1038,11 @@ impl SymbolTable {
             SymbolKey::XmlFile(k) => &mut self.xml_files[k].dependencies,
             SymbolKey::CsvFile(k) => &mut self.csv_files[k].dependencies,
             SymbolKey::Package(k) => self.packages[k].dependencies_as_mut(),
-            SymbolKey::Root(_) 
-            | SymbolKey::DiskDir(_) 
-            | SymbolKey::Compiled(_) 
-            | SymbolKey::Class(_) 
-            | SymbolKey::Function(_) 
+            SymbolKey::Root(_)
+            | SymbolKey::DiskDir(_)
+            | SymbolKey::Compiled(_)
+            | SymbolKey::Class(_)
+            | SymbolKey::Function(_)
             | SymbolKey::Variable(_) => panic!("No dependencies on {:?}", valid_key),
         }
     }
@@ -1054,11 +1054,11 @@ impl SymbolTable {
             SymbolKey::XmlFile(x) => &mut self.xml_files[x].dependents,
             SymbolKey::CsvFile(c) => &mut self.csv_files[c].dependents,
             SymbolKey::Package(p) => self.packages[p].dependents_as_mut(),
-            SymbolKey::Root(_) 
-            | SymbolKey::DiskDir(_) 
-            | SymbolKey::Compiled(_) 
-            | SymbolKey::Class(_) 
-            | SymbolKey::Function(_) 
+            SymbolKey::Root(_)
+            | SymbolKey::DiskDir(_)
+            | SymbolKey::Compiled(_)
+            | SymbolKey::Class(_)
+            | SymbolKey::Function(_)
             | SymbolKey::Variable(_) => panic!("No dependencies on {:?}", valid_key),
         }
     }
@@ -1185,7 +1185,7 @@ impl SymbolTable {
                 func.set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
             }
         }
-    }    
+    }
 
     /**
      * Only browse file content, do not use on namespace or packages to browse disk
@@ -1275,7 +1275,7 @@ impl SymbolTable {
             _ => None,
         }
     }
-    
+
     // @arena: originally method on EvaluationSymbolPtr
     pub fn is_expired_if_weak(&self, eval_ptr: &EvaluationSymbolPtr) -> bool {
         match eval_ptr {
@@ -1357,6 +1357,25 @@ impl SymbolTable {
             SymbolKey::Variable(_) => panic!("set_processed_text_hash called on Variable"),
             SymbolKey::XmlFile(x) => self.xml_files[x].processed_text_hash = hash,
             SymbolKey::CsvFile(c) => self.csv_files[c].processed_text_hash = hash,
+        }
+    }
+
+    pub fn not_found_paths_mut(&mut self, target: SymbolKey) -> &mut Vec<(BuildSteps, Vec<OYarn>)> {
+        match target {
+            SymbolKey::File(f) => { &mut self.files[f].not_found_paths },
+            SymbolKey::Root(_) => { panic!("no not_found_path on Root") },
+            SymbolKey::Namespace(_) => { panic!("no not_found_path on Namespace") },
+            SymbolKey::DiskDir(_) => { panic!("no not_found_path on DiskDir") },
+            SymbolKey::Package(k) => match &mut self.packages[k] {
+                PackageSymbol::Module(m) => &mut m.not_found_paths,
+                PackageSymbol::PythonPackage(p) => &mut p.not_found_paths,
+            }
+            SymbolKey::Compiled(_) => { panic!("no not_found_path on Compiled") },
+            SymbolKey::Class(_) => { panic!("no not_found_path on Class") },
+            SymbolKey::Function(_) => { panic!("no not_found_path on Function") },
+            SymbolKey::Variable(_) => panic!("no not_found_path on Variable"),
+            SymbolKey::XmlFile(_) => { panic!("no not_found_path on XmlFileSymbol") },
+            SymbolKey::CsvFile(_) => { panic!("no not_found_path on CsvFileSymbol") },
         }
     }
 }
@@ -1468,7 +1487,7 @@ pub fn is_field_class(session: &SessionInfo, symbol_key: SymbolKey) -> bool {
     let cache = &class_symbol._is_field_class;
     if let Some(is_field_class) = *cache.borrow() {
         return is_field_class;
-    } 
+    }
     let result = is_field_class_uncached(session, class_key);
     cache.borrow_mut().replace(result);
     result
@@ -1537,7 +1556,7 @@ pub fn is_field(session: &mut SessionInfo, target: SymbolKey) -> bool {
 }
 
 // @arena: helper for get_member_symbol
-// @arena: code duplication with is_field 
+// @arena: code duplication with is_field
 fn is_method(session: &mut SessionInfo, target: SymbolKey) -> bool {
     if matches!(target, SymbolKey::Function(_)) {
         return true;
@@ -1601,9 +1620,9 @@ pub fn all_members(
 }
 
 fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>>, with_co_models: bool, only_fields: bool, only_methods: bool, from_module: Option<SymbolKey>, acc: &mut HashSet<Tree>, is_super: bool) {
-    macro_rules! st {                                                                                        
+    macro_rules! st {
         () => { session.sync_odoo.symbol_table }
-    }  
+    }
     let tree = st!().get_tree(symbol_key);
     if acc.contains(&tree) {
         return;
@@ -1725,9 +1744,9 @@ fn _get_member_symbol_helper(
     is_super: bool,
     visited_classes: &mut HashSet<ClassKey>
 ) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
-    macro_rules! st {                                                                                        
+    macro_rules! st {
         () => { session.sync_odoo.symbol_table }
-    }  
+    }
     let mut result: Vec<SymbolKey> = vec![];
     let mut visited_symbols: HashSet<SymbolKey> = HashSet::new();
     let extend_result = |syms: Vec<SymbolKey>, result: &mut Vec<SymbolKey>, visited_symbols: &mut HashSet<SymbolKey>| {
@@ -1840,9 +1859,9 @@ fn _get_member_symbol_helper(
 
 
 fn next_refs_class(session: &mut SessionInfo, class_key: ClassKey, context: &mut Option<Context>, symbol_context: &Context) -> Vec<EvaluationSymbolPtr> {
-    macro_rules! st {                                                                                        
+    macro_rules! st {
         () => { session.sync_odoo.symbol_table }
-    }  
+    }
     //if current symbol is a descriptor, we have to resolve __get__ method before going further
     let mut res = Vec::new();
     let mut base_attr = symbol_context.get("base_attr");
@@ -1963,7 +1982,7 @@ If a symbol in the chain is a descriptor, return the __get__ return evaluation.
 If filter_on_tree is set, stop following when one of the symbols in the chain is in the tree, and only return those symbols.
     */
 pub fn follow_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, filter_on_tree: Option<Tree>, max_scope: Option<SymbolKey>) -> Vec<EvaluationSymbolPtr> {
-    macro_rules! st { () => { session.sync_odoo.symbol_table } }  
+    macro_rules! st { () => { session.sync_odoo.symbol_table } }
 
     let default_result = match filter_on_tree.as_ref() {
         Some(_) => vec![],
@@ -2109,7 +2128,7 @@ pub fn is_specific_field_class(session: &SessionInfo, target: SymbolKey, field_n
 }
 
 pub fn is_specific_field(session: &mut SessionInfo, target: SymbolKey, field_names: &[&str]) -> bool {
-    macro_rules! st { () => { session.sync_odoo.symbol_table } }  
+    macro_rules! st { () => { session.sync_odoo.symbol_table } }
     let SymbolKey::Variable(v) = target else {
         return false;
     };
@@ -2129,7 +2148,7 @@ pub fn is_specific_field(session: &mut SessionInfo, target: SymbolKey, field_nam
 }
 
 pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildSteps) {
-    macro_rules! st { () => { session.sync_odoo.symbol_table } }  
+    macro_rules! st { () => { session.sync_odoo.symbol_table } }
     //signals that a change occurred to this symbol. "step" indicates which level of change occurred.
     //It will trigger rebuild on all dependencies
     let mut vec_to_invalidate = VecDeque::from([symbol]);
@@ -2234,7 +2253,7 @@ pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildStep
  pub struct Weak<K: Copy> {
     key: K,
  }
- 
+
  impl<K: Copy> Weak<K> {
     pub fn upgrade(&self, table: &impl ContainsKey<K>) -> Option<K> {
         if table.contains_key(self.key) {

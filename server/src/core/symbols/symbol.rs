@@ -1246,6 +1246,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol table
     pub fn not_found_paths_mut(&mut self) -> &mut Vec<(BuildSteps, Vec<OYarn>)> {
         match self {
             Symbol::File(f) => { &mut f.not_found_paths },
@@ -1406,7 +1407,7 @@ impl Symbol {
         res
     }
 
-    
+
 
     // @arena: moved to symbol table
     pub fn get_tree_and_entry(&self) -> (Tree, Option<Rc<RefCell<EntryPoint>>>) {
@@ -2902,7 +2903,7 @@ impl Symbol {
     if not all, it will return the first found. If all, the all found symbols are returned, but the first one
     is the one that is overriding others.
     :param: from_module: optional, can change the from_module of the given class */
-    // @arena: moved to symbol_table (free function) 
+    // @arena: moved to symbol_table (free function)
     pub fn get_member_symbol(
         &self,
         session: &mut SessionInfo,

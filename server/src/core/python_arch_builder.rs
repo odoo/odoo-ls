@@ -14,7 +14,7 @@ use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 use crate::core::symbols::package_symbol::PackageSymbol;
-use crate::core::symbols::symbol_table::{SymbolKey, get_sym};
+use crate::core::symbols::symbol_table::{follow_ref, get_sym, SymbolKey};
 use crate::threads::SessionInfo;
 use crate::{oyarn, S};
 
@@ -175,6 +175,7 @@ impl PythonArchBuilder {
     }
 
     fn create_local_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: u32, _range: &TextRange) -> Result<(), Error> {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         for import_name in name_aliases {
             if import_name.name.as_str() == "*" {
                 if self.sym_stack.len() != 1 { //only at top level for now.
@@ -182,95 +183,91 @@ impl PythonArchBuilder {
                 }
                 let import_result: ImportResult = resolve_import_stmt(
                     session,
-                    self.sym_stack.last().unwrap(),
+                    *self.sym_stack.last().unwrap(),
                     from_stmt,
                     name_aliases,
                     level,
                     &mut None).remove(0); //we don't need the vector with this call as there will be 1 result.
                 if !import_result.found {
-                    self.entry_point.borrow_mut().not_found_symbols.insert(self.file.clone());
-                    self.file.borrow_mut().not_found_paths_mut().push((self.current_step, import_result.file_tree.clone()));
+                    self.entry_point.borrow_mut().not_found_symbols.insert(self.file);
+                    st!().not_found_paths_mut(self.file).push((self.current_step, import_result.file_tree.clone()));
                     continue;
                 }
                 let mut all_name_allowed = true;
                 let mut name_filter: Vec<OYarn> = vec![];
-                for import_symbol in import_result.symbols{
-                    if let Some(all) = import_symbol.borrow().get_content_symbol("__all__", u32::MAX).symbols.first().cloned() {
-                        let all_value = Symbol::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
-                            Rc::downgrade(&all), None, false
+                for import_symbol in import_result.symbols {
+                    if let Some(all) = st!().get_content_symbol(import_symbol, "__all__", u32::MAX).symbols.first().copied() {
+                        let all_value = follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
+                            all, None, false
                         )), session, &mut None, false, true, None, None);
                         if let Some(all_value_first) = all_value.get(0) {
-                            if !all_value_first.is_expired_if_weak() {
-                                let all_upgraded = all_value_first.upgrade_weak();
+                            if !st!().is_expired_if_weak(all_value_first) {
+                                let all_upgraded = st!().upgrade_weak(all_value_first);
                                 if let Some(all_upgraded_unwrapped) = all_upgraded {
-                                    let all_upgraded_unwrapped_bw = (*all_upgraded_unwrapped).borrow();
-                                    if all_upgraded_unwrapped_bw.evaluations().is_some() && all_upgraded_unwrapped_bw.evaluations().unwrap().len() == 1 {
-                                        let value = &all_upgraded_unwrapped_bw.evaluations().unwrap()[0].value;
+                                    let all_upgraded_unwrapped_bw = get_sym!(st!(), all_upgraded_unwrapped);
+                                    let evaluations = all_upgraded_unwrapped_bw.evaluations();
+                                    if let Some(evals) = evaluations && evals.len() == 1 {
+                                        let value = &evals[0].value;
                                         if value.is_some() {
                                             let (nf, parse_error) = self.extract_all_symbol_eval_values(&value.as_ref());
                                             if parse_error {
-                                                warn!("error during parsing __all__ import in file {}", import_symbol.borrow().paths()[0] )
+                                                warn!("error during parsing __all__ import in file {}", get_sym!(st!(), import_symbol).paths()[0] )
                                             }
                                             name_filter = nf;
                                             all_name_allowed = false;
                                         } else {
-                                            warn!("invalid __all__ import in file {} - no value found", import_symbol.borrow().paths()[0])
+                                            warn!("invalid __all__ import in file {} - no value found", get_sym!(st!(), import_symbol).paths()[0])
                                         }
                                     } else {
-                                        warn!("invalid __all__ import in file {} - multiple evaluation found", import_symbol.borrow().paths()[0])
+                                        warn!("invalid __all__ import in file {} - multiple evaluation found", get_sym!(st!(), import_symbol).paths()[0])
                                     }
                                 } else {
-                                    warn!("invalid __all__ import in file {} - localizedSymbol not found", import_symbol.borrow().paths()[0])
+                                    warn!("invalid __all__ import in file {} - localizedSymbol not found", get_sym!(st!(), import_symbol).paths()[0])
                                 }
                             } else {
-                                warn!("invalid __all__ import in file {} - expired symbol", import_symbol.borrow().paths()[0])
+                                warn!("invalid __all__ import in file {} - expired symbol", get_sym!(st!(), import_symbol).paths()[0])
                             }
                         } else {
-                            warn!("invalid __all__ import in file {} - no symbol found", import_symbol.borrow().paths()[0])
+                            warn!("invalid __all__ import in file {} - no symbol found", get_sym!(st!(), import_symbol).paths()[0])
                         }
                     }
-                    let mut dep_to_add = vec![];
-                    let sym_type = import_symbol.borrow().typ();
-                    if sym_type != SymType::COMPILED {
-                        if !Rc::ptr_eq(self.sym_stack.last().unwrap(), &import_symbol) { /*We have to check that the imported symbol is not the current one. It can
+                    if !matches!(import_symbol, SymbolKey::Compiled(_)) {
+                        if *self.sym_stack.last().unwrap() != import_symbol { /*We have to check that the imported symbol is not the current one. It can
                             happen for example in a .pyi that is importing the .pyd file with the same name. As both exists, odools will try to import the pyi a second time in the same file,
                             and so create a borrow error here
                             */
-                            let symbol = import_symbol.borrow();
-                            for (name, loc_syms) in symbol.iter_symbols() {
+                            let mut import_variables_to_create = vec![];
+                            for (name, loc_syms) in get_sym!(st!(), import_symbol).iter_symbols() {
                                 if all_name_allowed || name_filter.contains(&name) {
-                                    let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, OYarn::from(name.clone()), &import_result.range);
-                                    let mut loc = variable.borrow_mut();
-                                    loc.as_variable_mut().is_import_variable = true;
-                                    loc.as_variable_mut().evaluations = Evaluation::from_sections(&symbol, loc_syms);
-                                    dep_to_add.push(variable.clone());
+                                    let evaluations = Evaluation::from_sections(&st!(), import_symbol, loc_syms);
+                                    import_variables_to_create.push((name.clone(), evaluations));
                                 }
                             }
-                        }
-                    }
-                    for sym in dep_to_add {
-                        let mut sym_bw = sym.borrow_mut();
-                        let evaluation = &sym_bw.as_variable_mut().evaluations[0];
-                        let evaluated_type = &evaluation.symbol;
-                        let evaluated_type = evaluated_type.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, None).weak;
-                        if !evaluated_type.is_expired() {
-                            let evaluated_type = evaluated_type.upgrade().unwrap();
-                            let evaluated_type_file = evaluated_type.borrow().get_file().unwrap().clone().upgrade().unwrap();
-                            if !Rc::ptr_eq(&self.file, &evaluated_type_file) {
-                                self.file.borrow_mut().add_dependency(&mut evaluated_type_file.borrow_mut(), self.current_step, BuildSteps::ARCH);
+                            for (name, evaluations) in import_variables_to_create {
+                                let evaluated_type = &evaluations[0].symbol;
+                                let evaluated_type = evaluated_type.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, None).weak;
+                                if let Some(evaluated_type) = evaluated_type.upgrade(&st!()) {
+                                    let evaluated_type_file = st!().get_file(evaluated_type).unwrap();
+                                    if !(self.file == evaluated_type_file) {
+                                        st!().add_dependency(self.file, evaluated_type_file, self.current_step, BuildSteps::ARCH);
+                                    }
+                                }
+                                let variable_key = st!().add_new_variable(*self.sym_stack.last().unwrap(), name, &import_result.range);
+                                let variable = &mut st!().variables[variable_key];
+                                variable.is_import_variable = true;
+                                variable.evaluations = evaluations;
                             }
                         }
                     }
                 }
-
             } else {
                 let var_name = if import_name.asname.is_none() {
                     S!(import_name.name.split(".").next().unwrap())
                 } else {
                     import_name.asname.as_ref().unwrap().clone().to_string()
                 };
-                let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, OYarn::from(var_name), &import_name.range);
-                variable.borrow_mut().as_variable_mut().is_import_variable = true;
+                let variable_key = st!().add_new_variable(*self.sym_stack.last().unwrap(), OYarn::from(var_name), &import_name.range);
+                st!().variables[variable_key].is_import_variable = true;
             }
         }
         Ok(())
