@@ -1024,6 +1024,7 @@ impl Symbol {
             Symbol::CsvFileSymbol(c) => c.is_in_workspace(),
         }
     }
+    // @arena: moved to symbol table
     pub fn set_in_workspace(&mut self, in_workspace: bool) {
         match self {
             Symbol::Root(_) => panic!(),
@@ -1957,6 +1958,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol table
     pub fn set_processed_text_hash(&mut self, hash: u64){
         match self {
             Symbol::File(f) => f.processed_text_hash = hash,
@@ -1991,6 +1993,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol table
     pub fn set_noqas(&mut self, noqa: NoqaInfo) {
         match self {
             Symbol::File(f) => f.noqas = noqa,
@@ -2008,6 +2011,7 @@ impl Symbol {
         }
     }
 
+    // @arena: moved to symbol table (not view!)
     pub fn get_noqas(&self) -> NoqaInfo {
         match self {
             Symbol::File(f) => f.noqas.clone(),

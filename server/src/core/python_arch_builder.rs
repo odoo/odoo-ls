@@ -11,10 +11,10 @@ use weak_table::traits::WeakElement;
 use crate::constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, DEBUG_STEPS, DEBUG_STEPS_ONLY_INTERNAL};
 use crate::core::python_utils;
 use crate::core::import_resolver::resolve_import_stmt;
-use crate::core::symbols::symbol::Symbol;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
-use crate::core::symbols::symbol_table::SymbolKey;
+use crate::core::symbols::package_symbol::PackageSymbol;
+use crate::core::symbols::symbol_table::{SymbolKey, get_sym};
 use crate::threads::SessionInfo;
 use crate::{oyarn, S};
 
@@ -58,35 +58,37 @@ impl PythonArchBuilder {
     }
 
     pub fn load_arch(&mut self, session: &mut SessionInfo) {
-        let symbol = &self.sym_stack[0];
-        if [SymType::NAMESPACE, SymType::ROOT, SymType::COMPILED, SymType::VARIABLE, SymType::CLASS].contains(&symbol.borrow().typ()) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+
+        let symbol = self.sym_stack[0];
+        if matches!(symbol, SymbolKey::Namespace(_) | SymbolKey::Root(_) | SymbolKey::Compiled(_) | SymbolKey::Variable(_) | SymbolKey::Class(_)) {
             return; // nothing to extract
         }
-        {
-            let file = symbol.borrow();
-            let file = file.get_file().unwrap();
-            let file = file.upgrade().unwrap();
-            self.file = file.clone();
-            self.file_mode = Rc::ptr_eq(&file, &symbol);
-            self.current_step = if self.file_mode {BuildSteps::ARCH} else {BuildSteps::VALIDATION};
+        let file = st!().get_file(symbol).unwrap();
+        self.file = file;
+        self.file_mode = file == symbol;
+        self.current_step = if self.file_mode {BuildSteps::ARCH} else {BuildSteps::VALIDATION};
+        let symbol_view = get_sym!(st!(), symbol);
+        if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !symbol_view.is_external()) {
+            trace!("building {} - {}", get_sym!(st!(), self.file).paths().first().unwrap_or(&S!("No path found")), symbol_view.name());
         }
-        if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !symbol.borrow().is_external()) {
-            trace!("building {} - {}", self.file.borrow().paths().first().unwrap_or(&S!("No path found")), symbol.borrow().name());
-        }
-        symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
-        let path = self.file.borrow().get_symbol_first_path();
+        st!().set_build_status(symbol, BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
+        let path = get_sym!(st!(), self.file).get_symbol_first_path();
         if self.file_mode {
-            let in_workspace = (self.file.borrow().parent().is_some() &&
-                self.file.borrow().parent().as_ref().unwrap().upgrade().is_some() &&
-                self.file.borrow().parent().as_ref().unwrap().upgrade().unwrap().borrow().in_workspace()) ||
-                SyncOdoo::is_in_workspace_or_entry(session, path.as_str());
-            self.file.borrow_mut().set_in_workspace(in_workspace);
+            let in_workspace = get_sym!(st!(), self.file).parent()
+                .and_then(|p| st!().get_symbol_view(p))
+                .is_some_and(|parent_sym| parent_sym.in_workspace()) ||
+                SyncOdoo::is_in_workspace_or_entry(session, &path);
+            st!().set_in_workspace(self.file, in_workspace);
         }
-        if symbol.borrow().typ() == SymType::PACKAGE(PackageType::MODULE) {
-            // @arena: is odoo_addons always a namespace?
-            let odoo_addons = symbol.borrow().parent().as_ref().and_then(|p| p.upgrade()).unwrap();
-            ModuleSymbol::load_module_info(symbol, session, odoo_addons);
-            ModuleSymbol::load_data(symbol, session);
+        if let SymbolKey::Package(p) = symbol  {
+            if let PackageSymbol::Module(m) = &st!().packages[p] {
+                // @arena: is odoo_addons always a namespace?
+                let odoo_addons = m.parent.unwrap();
+                // @ arena: borrow conflict here??
+                ModuleSymbol::load_module_info(p, session, odoo_addons);
+                ModuleSymbol::load_data(p, session);
+            }
         }
         let file_info_rc = match self.file_mode {
             true => {
@@ -117,7 +119,9 @@ impl PythonArchBuilder {
             let ast = if self.file_mode {
                 file_info_ast.get_stmts().unwrap()
             } else {
-                let ast_index = self.sym_stack[0].borrow().node_index().unwrap().load();
+                // @arena: formely unwrap on Option that was only Some for the function case
+                let SymbolKey::Function(f) = self.sym_stack[0] else { panic!("expected function key") };
+                let ast_index = st!().functions[f].node_index.load();
                 if ast_index.as_u32().is_some() {
                     let func = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(ast_index);
                     match func {
@@ -137,15 +141,17 @@ impl PythonArchBuilder {
                 if let Some(file_noqa) = file_noqa {
                     session.noqas_stack.push(file_noqa);
                 }
-                symbol.borrow_mut().set_noqas(combine_noqa_info(&session.noqas_stack)); //only set for file, functions are set in visit_func_def
+                let new_noqa = combine_noqa_info(&session.noqas_stack);
+                st!().set_noqas(symbol, new_noqa.clone()); //only set for file, functions are set in visit_func_def
                 let old = session.current_noqa.clone();
-                session.current_noqa = symbol.borrow().get_noqas().clone();
-                symbol.borrow_mut().set_processed_text_hash(file_info_ast.text_hash);
+                session.current_noqa = new_noqa;
+                st!().set_processed_text_hash(symbol, file_info_ast.text_hash);
                 old
             } else {
-                session.noqas_stack.push(symbol.borrow().get_noqas().clone());
+                let noqas = st!().get_noqas(symbol);
+                session.noqas_stack.push(noqas.clone());
                 let old = session.current_noqa.clone();
-                session.current_noqa = symbol.borrow().get_noqas().clone();
+                session.current_noqa = noqas;
                 old
             };
             let _ = self.visit_node(session, &ast);
@@ -153,20 +159,19 @@ impl PythonArchBuilder {
             session.noqas_stack = old_stack_noqa;
             self._resolve_all_symbols(session);
             if self.file_mode {
-                session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
+                session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0]);
             }
         } else if self.file_mode {
-            if symbol.borrow().typ() == SymType::PACKAGE(PackageType::MODULE) {
+            if get_sym!(st!(), symbol).typ() == SymType::PACKAGE(PackageType::MODULE) {
                 //even if there is no __init__.py, we need to go to rebuild_arch and validation to validate the manifest
-                session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
+                session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0]);
             } else {
                 let mut file_info = file_info_rc.borrow_mut();
                 file_info.publish_diagnostics(session);
             }
         }
-        PythonArchBuilderHooks::on_done(session, &self.sym_stack[0]);
-        let mut symbol = self.sym_stack[0].borrow_mut();
-        symbol.set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
+        PythonArchBuilderHooks::on_done(session, self.sym_stack[0]);
+        st!().set_build_status(self.sym_stack[0], BuildSteps::ARCH, BuildStatus::DONE);
     }
 
     fn create_local_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: u32, _range: &TextRange) -> Result<(), Error> {
@@ -826,6 +831,7 @@ impl PythonArchBuilder {
     }
 
     fn _resolve_all_symbols(&mut self, session: &mut SessionInfo) {
+        // @arena-next
         for (symbol_name, range) in self.__all_symbols_to_add.drain(..) {
             if self.sym_stack.last().unwrap().borrow().get_content_symbol(&symbol_name, u32::MAX).symbols.is_empty() {
                 self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", symbol_name), &range);

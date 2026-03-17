@@ -8,8 +8,7 @@ use tracing::trace;
 
 use crate::{S, Sy, constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree}, core::{diagnostics::{DiagnosticCode,
 create_diagnostic}, entry_point::EntryPoint, evaluation::{Context, ContextValue,
-Evaluation, EvaluationSymbolPtr}, model::Model, odoo::SyncOdoo,
-python_validator::PythonValidator, symbols::{ class_symbol::ClassSymbol,
+Evaluation, EvaluationSymbolPtr}, file_mgr::NoqaInfo, model::Model, odoo::SyncOdoo, python_validator::PythonValidator, symbols::{ class_symbol::ClassSymbol,
 compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol,
 dependency_mgr::{Buildable, Dependencies}, disk_dir_symbol::DiskDirSymbol,
 ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol,
@@ -326,7 +325,7 @@ impl SymbolView<'_> {
         }
     }
 
-    pub fn get_symbol_first_path(&self) -> String{
+    pub fn get_symbol_first_path(&self) -> String {
         match self{
             Self::Package(p) => PathBuf::from(p.paths()[0].clone()).join("__init__.py").sanitize() + p.i_ext(),
             Self::File(f) => f.path.clone(),
@@ -1282,6 +1281,82 @@ impl SymbolTable {
         match eval_ptr {
             EvaluationSymbolPtr::WEAK(w) => w.weak.is_expired(self),
             _ => false,
+        }
+    }
+
+    pub fn set_in_workspace(&mut self, target: SymbolKey, in_workspace: bool) {
+        match target {
+            SymbolKey::Root(_) => panic!(),
+            SymbolKey::Namespace(n) => self.namespaces[n].set_in_workspace(in_workspace),
+            SymbolKey::DiskDir(d) => { self.disk_dirs[d].in_workspace = in_workspace; },
+            SymbolKey::Package(p) => match &mut self.packages[p] {
+                PackageSymbol::Module(m) => m.set_in_workspace(in_workspace),
+                PackageSymbol::PythonPackage(p) => p.set_in_workspace(in_workspace),
+            }
+            SymbolKey::File(f) => self.files[f].set_in_workspace(in_workspace),
+            SymbolKey::Compiled(_) => panic!(),
+            SymbolKey::Class(_) => panic!(),
+            SymbolKey::Function(_) => panic!(),
+            SymbolKey::Variable(_) => panic!(),
+            SymbolKey::XmlFile(x) => self.xml_files[x].set_in_workspace(in_workspace),
+            SymbolKey::CsvFile(c) => self.csv_files[c].set_in_workspace(in_workspace),
+        }
+    }
+
+    pub fn get_noqas(&self, target: SymbolKey) -> NoqaInfo {
+        match target {
+            SymbolKey::File(f) => self.files[f].noqas.clone(),
+            SymbolKey::Package(p) => match &self.packages[p] {
+                PackageSymbol::Module(m) => m.noqas.clone(),
+                PackageSymbol::PythonPackage(p) => p.noqas.clone(),
+            }
+            SymbolKey::DiskDir(_) => panic!("get_noqas called on DiskDir"),
+            SymbolKey::Function(f) => self.functions[f].noqas.clone(),
+            SymbolKey::Root(_) => panic!("get_noqas called on Root"),
+            SymbolKey::Namespace(_) => panic!("get_noqas called on Namespace"),
+            SymbolKey::Compiled(_) => panic!("get_noqas called on Compiled"),
+            SymbolKey::Class(c) => self.classes[c].noqas.clone(),
+            SymbolKey::Variable(_) => panic!("get_noqas called on Variable"),
+            SymbolKey::XmlFile(x) => self.xml_files[x].noqas.clone(),
+            SymbolKey::CsvFile(c) => self.csv_files[c].noqas.clone(),
+        }
+    }
+
+    pub fn set_noqas(&mut self, target: SymbolKey, noqa: NoqaInfo) {
+        match target {
+            SymbolKey::File(f) => self.files[f].noqas = noqa,
+            SymbolKey::DiskDir(_) => panic!("set_noqas called on DiskDir"),
+            SymbolKey::Package(p) => match &mut self.packages[p] {
+                PackageSymbol::Module(m) => m.noqas = noqa,
+                PackageSymbol::PythonPackage(p) => p.noqas = noqa,
+            }
+            SymbolKey::Function(f) => self.functions[f].noqas = noqa,
+            SymbolKey::Root(_) => panic!("set_noqas called on Root"),
+            SymbolKey::Namespace(_) => panic!("set_noqas called on Namespace"),
+            SymbolKey::Compiled(_) => panic!("set_noqas called on Compiled"),
+            SymbolKey::Class(c) => self.classes[c].noqas = noqa,
+            SymbolKey::Variable(_) => panic!("set_noqas called on Variable"),
+            SymbolKey::XmlFile(x) => self.xml_files[x].noqas = noqa,
+            SymbolKey::CsvFile(c) => self.csv_files[c].noqas = noqa,
+        }
+    }
+
+    pub fn set_processed_text_hash(&mut self, target: SymbolKey, hash: u64) {
+        match target {
+            SymbolKey::File(f) => self.files[f].processed_text_hash = hash,
+            SymbolKey::DiskDir(_) => panic!("set_processed_text_hash called on DiskDir"),
+            SymbolKey::Package(p) => match &mut self.packages[p] {
+                PackageSymbol::Module(m) => m.processed_text_hash = hash,
+                PackageSymbol::PythonPackage(p) => p.processed_text_hash = hash,
+            },
+            SymbolKey::Function(_) => panic!("set_processed_text_hash called on Function"),
+            SymbolKey::Root(_) => panic!("set_processed_text_hash called on Root"),
+            SymbolKey::Namespace(_) => panic!("set_processed_text_hash called on Namespace"),
+            SymbolKey::Compiled(_) => panic!("set_processed_text_hash called on Compiled"),
+            SymbolKey::Class(_) => panic!("set_processed_text_hash called on Class"),
+            SymbolKey::Variable(_) => panic!("set_processed_text_hash called on Variable"),
+            SymbolKey::XmlFile(x) => self.xml_files[x].processed_text_hash = hash,
+            SymbolKey::CsvFile(c) => self.csv_files[c].processed_text_hash = hash,
         }
     }
 }

@@ -8,6 +8,7 @@ use tracing::{info, warn};
 use crate::core::entry_point::EntryPoint;
 use crate::core::import_resolver::manual_import;
 use crate::core::symbols::symbol::Symbol;
+use crate::core::symbols::symbol_table::SymbolKey;
 use crate::threads::SessionInfo;
 use crate::utils::compare_semver;
 use crate::{Sy, S};
@@ -173,7 +174,8 @@ impl PythonArchBuilderHooks {
         }
     }
 
-    pub fn on_done(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>) {
+    // @arena todo
+    pub fn on_done(session: &mut SessionInfo, symbol: SymbolKey) {
         let name = symbol.borrow().name().clone();
         if name == "release" {
             if symbol.borrow().get_main_entry_tree(session) == (vec![Sy!("odoo"), Sy!("release")], vec![]) {
