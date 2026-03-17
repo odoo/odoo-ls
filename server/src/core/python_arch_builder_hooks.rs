@@ -8,7 +8,7 @@ use tracing::{info, warn};
 use crate::core::entry_point::EntryPoint;
 use crate::core::import_resolver::manual_import;
 use crate::core::symbols::symbol::Symbol;
-use crate::core::symbols::symbol_table::SymbolKey;
+use crate::core::symbols::symbol_table::{ClassKey, SymbolKey};
 use crate::threads::SessionInfo;
 use crate::utils::compare_semver;
 use crate::{Sy, S};
@@ -156,7 +156,8 @@ pub struct PythonArchBuilderHooks {}
 
 impl PythonArchBuilderHooks {
 
-    pub fn on_class_def(session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>) {
+    // @arena todo
+    pub fn on_class_def(session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: ClassKey) {
         let tree = symbol.borrow().get_tree();
         let odoo_tree = symbol.borrow().get_main_entry_tree(session);
         let name = symbol.borrow().name().clone();

@@ -781,14 +781,15 @@ impl PythonArchBuilder {
     }
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, class_def: &StmtClassDef) -> Result<(), Error> {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         if class_def.body.is_empty() {
             return Ok(()) //if body is empty, it usually means that the ast of the class is invalid. Skip it
         }
-        let sym = self.sym_stack.last().unwrap().borrow_mut().add_new_class(
-            session, &class_def.name.id.to_string(), &class_def.range, &class_def.body.get(0).unwrap().range().start());
-        let mut sym_bw = sym.borrow_mut();
+        let parent = *self.sym_stack.last().unwrap();
+        let class_key = st!().add_new_class(
+            parent, &class_def.name.id.to_string(), &class_def.range, &class_def.body.get(0).unwrap().range().start());
+        let class_sym = &mut st!().classes[class_key];
 
-        let class_sym = sym_bw.as_class_sym_mut();
         if class_def.body.len() > 0 && class_def.body[0].is_expr_stmt() {
             let expr = class_def.body[0].as_expr_stmt().unwrap();
             if expr.value.is_literal_expr() {
@@ -798,21 +799,21 @@ impl PythonArchBuilder {
                 }
             }
         }
-        drop(sym_bw);
         let mut add_noqa = false;
         if let Some(noqa_bloc) = self.file_info.as_ref().unwrap().borrow().noqas_blocs.get(&class_def.range.start().to_u32()) {
             session.noqas_stack.push(noqa_bloc.clone());
             add_noqa = true;
         }
-        sym.borrow_mut().set_noqas(combine_noqa_info(&session.noqas_stack));
-        session.current_noqa = sym.borrow().get_noqas().clone();
-        self.sym_stack.push(sym.clone());
+        let noqas = combine_noqa_info(&session.noqas_stack);
+        class_sym.noqas = noqas.clone();
+        session.current_noqa = noqas;
+        self.sym_stack.push(class_key.into());
         self.visit_node(session, &class_def.body)?;
         self.sym_stack.pop();
         if add_noqa {
             session.noqas_stack.pop();
         }
-        PythonArchBuilderHooks::on_class_def(session, &self.entry_point, sym);
+        PythonArchBuilderHooks::on_class_def(session, &self.entry_point, class_key);
         Ok(())
     }
 
