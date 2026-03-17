@@ -14,7 +14,7 @@ use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 use crate::core::symbols::package_symbol::PackageSymbol;
-use crate::core::symbols::symbol_table::{follow_ref, get_sym, SymbolKey};
+use crate::core::symbols::symbol_table::{follow_ref, get_sym, FunctionKey, SymbolKey, SymbolTable};
 use crate::threads::SessionInfo;
 use crate::{oyarn, S};
 
@@ -701,18 +701,28 @@ impl PythonArchBuilder {
         }
         //add params
         for arg in func_def.parameters.posonlyargs.iter() {
-            let param = st!().add_new_variable(function_key.into(), oyarn!("{}", arg.parameter.name.id), &arg.range);
-            st!().variables[param].is_parameter = true;
-            let mut default = None;
-            if arg.default.is_some() {
-                default = Some(Evaluation::new_none()); //TODO evaluate default? actually only used to know if there is a default or not
-            }
-            st!().functions[function_key].args.push(Argument {
-                symbol: param.into(),
-                default_value: default,
-                arg_type: ArgumentType::POS_ONLY,
-                annotation: arg.parameter.annotation.clone(),
-            });
+            Self::add_param_to_func(
+                &mut st!(),
+                function_key,
+                arg.parameter.name.id.as_str(),
+                &arg.range,
+                //TODO evaluate default? actually only used to know if there is a default or not
+                arg.default.as_ref().map(|_| Evaluation::new_none()),
+                ArgumentType::POS_ONLY,
+                &arg.parameter.annotation,
+            );
+            // let param = st!().add_new_variable(function_key.into(), oyarn!("{}", arg.parameter.name.id), &arg.range);
+            // st!().variables[param].is_parameter = true;
+            // let mut default = None;
+            // if arg.default.is_some() {
+            //     default = Some(Evaluation::new_none()); //TODO evaluate default? actually only used to know if there is a default or not
+            // }
+            // st!().functions[function_key].args.push(Argument {
+            //     symbol: param.into(),
+            //     default_value: default,
+            //     arg_type: ArgumentType::POS_ONLY,
+            //     annotation: arg.parameter.annotation.clone(),
+            // });
         }
         for arg in func_def.parameters.args.iter() {
             let param = st!().add_new_variable(function_key.into(), oyarn!("{}", arg.parameter.name.id), &arg.range);
@@ -778,6 +788,25 @@ impl PythonArchBuilder {
             session.noqas_stack.pop();
         }
         Ok(())
+    }
+
+    fn add_param_to_func(
+        symbol_table: &mut SymbolTable,
+        function: FunctionKey,
+        name: &str,
+        range: &TextRange,
+        default: Option<Evaluation>,
+        arg_type: ArgumentType,
+        annotation: &Option<Box<Expr>>
+    ) {
+        let param = symbol_table.add_new_variable(function.into(), oyarn!("{}", name), range);
+        symbol_table.variables[param].is_parameter = true;
+        symbol_table.functions[function].args.push(Argument {
+            symbol: param.into(),
+            default_value: default,
+            arg_type,
+            annotation: annotation.clone(),
+        });
     }
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, class_def: &StmtClassDef) -> Result<(), Error> {
