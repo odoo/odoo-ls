@@ -538,7 +538,7 @@ impl SyncOdoo {
 
         sort_result.sorted
             .iter()
-            .skip(1) // skip "base" 
+            .skip(1) // skip "base"
             // TODO: decide what to do with invalid modules. For now, we append them at the end.
             .chain(sort_result.invalid.iter())
             .map(|&name| module_info.get(name).expect("module should exist").0.clone())

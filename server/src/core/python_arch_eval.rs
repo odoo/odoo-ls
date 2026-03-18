@@ -10,11 +10,10 @@ use tracing::{debug, trace, warn};
 
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
-use crate::core::symbols::symbol_table::SymbolKey;
+use crate::core::symbols::symbol_table::{get_sym, FunctionKey, SymbolKey};
 use crate::{constants::*, oyarn, Sy};
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
-use crate::core::symbols::symbol::Symbol;
 use crate::core::evaluation::Evaluation;
 use crate::core::python_utils;
 // use crate::features::ast_utils::AstUtils;
@@ -70,29 +69,30 @@ impl PythonArchEval {
     }
 
     pub fn eval_arch(&mut self, session: &mut SessionInfo) {
-        let symbol = self.sym_stack[0].clone();
-        if [SymType::NAMESPACE, SymType::ROOT, SymType::COMPILED, SymType::VARIABLE, SymType::CLASS].contains(&symbol.borrow().typ()) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let symbol = self.sym_stack[0];
+        if matches!(symbol, SymbolKey::Namespace(_) | SymbolKey::Root(_) | SymbolKey::Compiled(_) | SymbolKey::Variable(_) | SymbolKey::Class(_)) {
             return; // nothing to evaluate
         }
-        if symbol.borrow().build_status(BuildSteps::ARCH) != BuildStatus::DONE || symbol.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::PENDING {
+        if st!().build_status(symbol,BuildSteps::ARCH) != BuildStatus::DONE || st!().build_status(symbol, BuildSteps::ARCH_EVAL) != BuildStatus::PENDING {
             return;
         }
-        {
-            let file = symbol.borrow();
-            let file = file.get_file().unwrap();
-            let file = file.upgrade().unwrap();
-            self.file = file.clone();
-            self.file_mode = Rc::ptr_eq(&file, &symbol);
-            self.current_step = if self.file_mode {BuildSteps::ARCH_EVAL} else {BuildSteps::VALIDATION};
+
+        let file = st!().get_file(symbol).unwrap();
+        self.file = file;
+        self.file_mode = file == symbol;
+        self.current_step = if self.file_mode {BuildSteps::ARCH_EVAL} else {BuildSteps::VALIDATION};
+
+        let symbol_view = get_sym!(st!(), symbol);
+        if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !symbol_view.is_external()) {
+            trace!("evaluating {} - {}", get_sym!(st!(), self.file).paths().first().unwrap_or(&S!("No path found")), symbol_view.name());
         }
-        if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !symbol.borrow().is_external()) {
-            trace!("evaluating {} - {}", self.file.borrow().paths().first().unwrap_or(&S!("No path found")), symbol.borrow().name());
-        }
-        symbol.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::IN_PROGRESS);
-        if self.file.borrow().paths().len() != 1 {
+        st!().set_build_status(symbol, BuildSteps::ARCH_EVAL, BuildStatus::IN_PROGRESS);
+        let file_view = get_sym!(st!(), self.file);
+        if file_view.paths().len() != 1 {
             panic!("Trying to eval_arch a symbol without any path")
         }
-        let path = self.file.borrow().get_symbol_first_path();
+        let path = file_view.get_symbol_first_path();
         let Some(file_info_rc) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).clone() else {
             warn!("File info not found for {}", path);
             return;
@@ -105,18 +105,19 @@ impl PythonArchEval {
         drop(file_info);
         if file_info_ast.borrow().indexed_module.is_some() {
             let old_noqa = session.current_noqa.clone();
-            session.current_noqa = symbol.borrow().get_noqas();
+            session.current_noqa = st!().get_noqas(symbol);
             let file_info_ast_bw  = file_info_ast.borrow();
             let (ast, maybe_func_stmt) = match self.file_mode {
                 true => {
-                    if file_info_ast_bw.text_hash != symbol.borrow().get_processed_text_hash(){
-                        symbol.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::INVALID);
+                    if file_info_ast_bw.text_hash != st!().get_processed_text_hash(symbol){
+                        st!().set_build_status(symbol, BuildSteps::ARCH_EVAL, BuildStatus::INVALID);
                         return;
                     }
                     (file_info_ast_bw.get_stmts().unwrap(), None)
                 },
                 false => {
-                    let fun_index = self.sym_stack[0].borrow().node_index().unwrap().load();
+                    let f = self.sym_stack[0].unwrap_function_key();
+                    let fun_index = st!().functions[f].node_index.load();
                     if fun_index == NodeIndex::NONE{ // uninitialized node index
                         // Function has no body or is dynamically created from a hook
                         (&vec![], None) // essentially skip evaluation
@@ -133,32 +134,32 @@ impl PythonArchEval {
             };
             self.visit_sub_stmts(session, &ast);
             if !self.file_mode && let Some(func_stmt) = maybe_func_stmt {
+                let f = self.sym_stack[0].unwrap_function_key();
                 self.diagnostics.extend(
-                    PythonArchEvalHooks::handle_func_decorators(session, func_stmt, self.sym_stack[0].clone(), self.file.clone(), self.current_step)
+                    PythonArchEvalHooks::handle_func_decorators(session, func_stmt, f, self.file, self.current_step)
                 );
-                PythonArchEval::handle_function_returns(session, func_stmt, &self.sym_stack[0], &ast.last().unwrap().range().end(), &mut self.diagnostics);
-                PythonArchEval::handle_func_evaluations(&ast, &self.sym_stack[0]);
+                PythonArchEval::handle_function_returns(session, func_stmt, f, &ast.last().unwrap().range().end(), &mut self.diagnostics);
+                PythonArchEval::handle_func_evaluations(&ast, f);
             }
             session.current_noqa = old_noqa;
         }
         if self.file_mode {
             file_info_rc.borrow_mut().replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
-            PythonArchEvalHooks::on_file_eval(session, &self.entry_point, symbol.clone());
+            PythonArchEvalHooks::on_file_eval(session, &self.entry_point, symbol);
         } else {
             //then Symbol must be a function
-            symbol.borrow_mut().as_func_mut().replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
-            PythonArchEvalHooks::on_function_eval(session, &self.entry_point, symbol.clone());
+            let f = symbol.unwrap_function_key();
+            st!().functions[f].replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
+            PythonArchEvalHooks::on_function_eval(session, &self.entry_point, f);
         }
-        let mut symbol = self.sym_stack[0].borrow_mut();
-        symbol.set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::DONE);
-        if symbol.is_external() && (!self.file_mode  || !file_info_rc.borrow().opened) {
+        st!().set_build_status(self.sym_stack[0], BuildSteps::ARCH_EVAL, BuildStatus::DONE);
+        if get_sym!(st!(), self.sym_stack[0]).is_external() && (!self.file_mode  || !file_info_rc.borrow().opened) {
             if self.file_mode {
                 FileMgr::delete_path(session, &path);
             }
         } else {
-            drop(symbol);
             if self.file_mode {
-                session.sync_odoo.add_to_validations(self.sym_stack[0].clone());
+                session.sync_odoo.add_to_validations(self.sym_stack[0]);
             }
         }
     }
@@ -995,10 +996,11 @@ impl PythonArchEval {
 
     // Handle function return annotation
     // Evaluate return annotation and add it to function evaluations
+    // @arena next
     fn handle_function_returns(
         session: &mut SessionInfo,
         func_stmt: &StmtFunctionDef,
-        func_sym: &Rc<RefCell<Symbol>>,
+        func_sym: FunctionKey,
         max_infer: &TextSize,
         diagnostics: &mut Vec<Diagnostic>,
     ) {
@@ -1047,9 +1049,10 @@ impl PythonArchEval {
     // First we check if it is a function signature with no body ( like in stubs ) like def func():...
     // If so we give it an Any evaluation because it is undetermined, otherwise we give it None, because that means
     // we have a body but no return statement, which defaults to return None at the end
+    // @arena next
     fn handle_func_evaluations(
         func_body: &Vec<Stmt>,
-        func_sym: &Rc<RefCell<Symbol>>,
+        func_sym: FunctionKey,
     ){
         if func_sym.borrow().as_func().evaluations.is_empty() {
             let has_implementation = !matches!(

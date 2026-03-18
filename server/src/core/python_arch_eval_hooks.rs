@@ -18,6 +18,8 @@ use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation::Context;
 use crate::core::symbols::symbol::Symbol;
 use crate::constants::*;
+use crate::core::symbols::symbol_table::FunctionKey;
+use crate::core::symbols::symbol_table::SymbolKey;
 use crate::oyarn;
 use crate::threads::SessionInfo;
 use crate::utils::compare_semver;
@@ -652,13 +654,14 @@ pub struct PythonArchEvalHooks {
 
 impl PythonArchEvalHooks {
 
-    pub fn on_file_eval(session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>) {
+    // @arena todo
+    pub fn on_file_eval(session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: SymbolKey) {
         let tree = symbol.borrow().get_tree();
         let odoo_tree = symbol.borrow().get_main_entry_tree(session);
         let name = symbol.borrow().name().clone();
         for hook in arch_eval_file_hooks.iter() {
             for (min_version, max_version, hook_tree) in hook.trees.iter() {
-                if compare_semver(min_version, &session.sync_odoo.full_version) == Ordering::Greater || 
+                if compare_semver(min_version, &session.sync_odoo.full_version) == Ordering::Greater ||
                     compare_semver(max_version, &session.sync_odoo.full_version) <= Ordering::Equal {
                     continue; //skip if version not in range
                 }
@@ -677,13 +680,14 @@ impl PythonArchEvalHooks {
         }
     }
 
-    pub fn on_function_eval(session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>) {
+    // @arena todo
+    pub fn on_function_eval(session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey) {
         let tree = symbol.borrow().get_tree();
         let odoo_tree = symbol.borrow().get_main_entry_tree(session);
         let name = symbol.borrow().name().clone();
         for hook in arch_eval_function_hooks.iter() {
             for hook_tree in hook.tree.iter() {
-                if compare_semver(hook_tree.0.as_str(), session.sync_odoo.full_version.as_str()) == Ordering::Greater || 
+                if compare_semver(hook_tree.0.as_str(), session.sync_odoo.full_version.as_str()) == Ordering::Greater ||
                     compare_semver(hook_tree.1.as_str(), session.sync_odoo.full_version.as_str()) <= Ordering::Equal {
                     continue; //skip if version not in range
                 }
@@ -699,11 +703,12 @@ impl PythonArchEvalHooks {
     /// Read function decorators and set evaluations where applicable
     /// - api.returns -> self -> Self, string -> model name if exists + validate
     /// - validates api.depends/onchange/constrains
+    /// @arena todo
     pub fn handle_func_decorators(
         session: &mut SessionInfo,
         func_stmt: &StmtFunctionDef,
-        func_sym: Rc<RefCell<Symbol>>,
-        file: Rc<RefCell<Symbol>>,
+        func_sym: FunctionKey,
+        file: SymbolKey,
         current_step: BuildSteps,
     ) -> Vec<Diagnostic>{
         let mut diagnostics = vec![];

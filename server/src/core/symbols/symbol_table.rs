@@ -88,6 +88,15 @@ pub enum SymbolView<'a> {
     CsvFileSymbol(&'a CsvFileSymbol),
 }
 
+impl SymbolKey {
+    pub fn unwrap_function_key(&self) -> FunctionKey {
+        match self {
+            SymbolKey::Function(k) => *k,
+            _ => panic!("Not a FunctionKey"),
+        }
+    }
+}
+
 /// @arena: temporary. symbol_rc.borrow() -> get_sym!(symbol_key).
 /// Assumes `symbol_table` is in scope
 macro_rules! get_sym {
@@ -1321,6 +1330,25 @@ impl SymbolTable {
             SymbolKey::Variable(_) => panic!("set_noqas called on Variable"),
             SymbolKey::XmlFile(x) => self.xml_files[x].noqas = noqa,
             SymbolKey::CsvFile(c) => self.csv_files[c].noqas = noqa,
+        }
+    }
+
+    pub fn get_processed_text_hash(&self, target: SymbolKey) -> u64 {
+        match target {
+            SymbolKey::File(f) => self.files[f].processed_text_hash,
+            SymbolKey::Package(p) => match &self.packages[p] {
+                PackageSymbol::Module(m) => m.processed_text_hash,
+                PackageSymbol::PythonPackage(p) => p.processed_text_hash,
+            }
+            SymbolKey::DiskDir(_) => panic!("get_processed_text_hash called on DiskDir"),
+            SymbolKey::Function(_) => panic!("get_processed_text_hash called on Function"),
+            SymbolKey::Root(_) => panic!("get_processed_text_hash called on Root"),
+            SymbolKey::Namespace(_) => panic!("get_processed_text_hash called on Namespace"),
+            SymbolKey::Compiled(_) => panic!("get_processed_text_hash called on Compiled"),
+            SymbolKey::Class(_) => panic!("get_processed_text_hash called on Class"),
+            SymbolKey::Variable(_) => panic!("get_processed_text_hash called on Variable"),
+            SymbolKey::XmlFile(x) => self.xml_files[x].processed_text_hash,
+            SymbolKey::CsvFile(c) => self.csv_files[c].processed_text_hash,
         }
     }
 
