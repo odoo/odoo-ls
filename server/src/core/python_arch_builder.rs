@@ -924,10 +924,12 @@ impl PythonArchBuilder {
     }
 
     fn visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) -> Result<(), Error> {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         //TODO check platform condition (sys.version > 3.12, etc...)
-        let scope = self.sym_stack.last().unwrap().clone();
-        let prefix_section = scope.borrow().as_symbol_mgr().get_last_index();
-        let test_section = scope.borrow_mut().as_mut_symbol_mgr().add_section(
+        let scope = *self.sym_stack.last().unwrap();
+        let scope_as_sym_mgr = st!().get_as_mut_symbol_mgr(scope);
+        let prefix_section = scope_as_sym_mgr.get_last_index();
+        let test_section = scope_as_sym_mgr.add_section(
             if_stmt.test.range().start(),
             None // Take preceding section (before if stmt)
         );
@@ -938,7 +940,7 @@ impl PythonArchBuilder {
         let mut stmt_sections = if if_stmt.body.is_empty() {
             vec![]
         } else {
-                scope.borrow_mut().as_mut_symbol_mgr().add_section( // first body section
+                st!().get_as_mut_symbol_mgr(scope).add_section( // first body section
                     if_stmt.body[0].range().start(),
                     None // Take preceding section (if test)
                 );
@@ -948,7 +950,7 @@ impl PythonArchBuilder {
                     body_version_ok = true;
                 }
                 self.visit_node(session, &if_stmt.body)?;
-                vec![ SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index())]
+                vec![ SectionIndex::INDEX(st!().get_as_symbol_mgr(scope).get_last_index())]
             } else {
                 vec![]
             }
@@ -959,7 +961,7 @@ impl PythonArchBuilder {
         let stmt_clauses_iter = if_stmt.elif_else_clauses.iter().map(|elif_else_clause|{
             match elif_else_clause.test {
                 Some(ref test_clause) => {
-                    last_test_section = scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                    last_test_section = st!().get_as_mut_symbol_mgr(scope).add_section(
                         test_clause.range().start(),
                         Some(SectionIndex::INDEX(last_test_section))
                     ).index;
@@ -970,7 +972,7 @@ impl PythonArchBuilder {
             if elif_else_clause.body.is_empty() {
                 return Ok::<Option<SectionIndex>, Error>(None);
             }
-            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            st!().get_as_mut_symbol_mgr(scope).add_section(
                 elif_else_clause.body[0].range().start(),
                 Some(SectionIndex::INDEX(last_test_section))
             );
@@ -986,7 +988,7 @@ impl PythonArchBuilder {
             else if !body_version_ok { //else clause
                 self.visit_node(session, &elif_else_clause.body)?;
             }
-            let clause_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+            let clause_section = SectionIndex::INDEX(st!().get_as_symbol_mgr(scope).get_last_index());
             Ok::<Option<SectionIndex>, Error>(Some(clause_section))
         });
 
@@ -1001,7 +1003,7 @@ impl PythonArchBuilder {
             // If there are no valid bodies or tests, point to the section before the if-stmt
             stmt_sections.push(SectionIndex::INDEX(prefix_section));
         }
-        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+        st!().get_as_mut_symbol_mgr(scope).add_section(
             if_stmt.range().end() + TextSize::new(1),
             Some(SectionIndex::OR(stmt_sections))
         );
