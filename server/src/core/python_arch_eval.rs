@@ -651,17 +651,17 @@ impl PythonArchEval {
         self.handle_assigns(session, assigns, &named_expr.range);
     }
 
-    // @arena next
     fn load_base_classes(&mut self, session: &mut SessionInfo, loc_sym: ClassKey, class_stmt: &StmtClassDef) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         for base in class_stmt.bases() {
             let mut deps = vec![vec![], vec![]];
-            let eval_base = Evaluation::eval_from_ast(session, base, self.sym_stack.last().unwrap().clone(), &class_stmt.range().start(), false, &mut deps);
-            Symbol::insert_dependencies(&self.file, &mut deps, BuildSteps::ARCH_EVAL);
+            let eval_base = Evaluation::eval_from_ast(session, base, *self.sym_stack.last().unwrap(), &class_stmt.range().start(), false, &mut deps);
+            st!().insert_dependencies(self.file, &mut deps, BuildSteps::ARCH_EVAL);
             self.diagnostics.extend(eval_base.1);
             let eval_base = eval_base.0;
             if eval_base.len() == 0 {
                 //TODO build tree for not_found_path
-                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01001, &[&AstUtils::flatten_expr(base)]) {
+                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01001, &[&flatten_expr(base)]) {
                     self.diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(base.range().start().to_u32(), 0), Position::new(base.range().end().to_u32(), 0)),
                         ..diagnostic
@@ -670,7 +670,7 @@ impl PythonArchEval {
                 continue;
             }
             if eval_base.len() > 1 {
-                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01003, &[&AstUtils::flatten_expr(base)]) {
+                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01003, &[&flatten_expr(base)]) {
                     self.diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(base.range().start().to_u32(), 0), Position::new(base.range().end().to_u32(), 0)),
                         ..diagnostic
@@ -680,9 +680,9 @@ impl PythonArchEval {
             }
             let eval_base = &eval_base[0];
             let eval_symbol = eval_base.symbol.get_symbol(session, &mut None, &mut vec![], None);
-            let ref_sym = Symbol::follow_ref(&eval_symbol, session, &mut None, false, true, None, None);
+            let ref_sym = follow_ref(&eval_symbol, session, &mut None, false, true, None, None);
             if ref_sym.len() > 1 {
-                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01003, &[&AstUtils::flatten_expr(base)]) {
+                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01003, &[&flatten_expr(base)]) {
                     self.diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(base.range().start().to_u32(), 0), Position::new(base.range().end().to_u32(), 0)),
                         ..diagnostic
@@ -690,34 +690,32 @@ impl PythonArchEval {
                 }
                 continue;
             }
-            let symbol = &ref_sym[0].upgrade_weak();
+            let symbol = st!().upgrade_weak(&ref_sym[0]);
             let Some(symbol) = symbol else {
                 continue;
             };
-            if symbol.borrow().typ() == SymType::COMPILED {
+            if matches!(symbol, SymbolKey::Compiled(_)) {
                 continue; //Compiled classes do not have their bases loaded
             }
-            if symbol.borrow().typ() != SymType::CLASS {
-                if symbol.borrow().typ() != SymType::VARIABLE || symbol.borrow().as_variable().is_value() { // if it's a variable and not a value, it means we can't evaluate it, let's skip diagnostic
-                    if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01002, &[&AstUtils::flatten_expr(base)]) {
-                        self.diagnostics.push(Diagnostic {
-                            range: Range::new(Position::new(base.start().to_u32(), 0), Position::new(base.end().to_u32(), 0)),
-                            ..diagnostic
-                        });
-                    }
-                }
-            } else {
+            if let SymbolKey::Class(c) = symbol {
                 //Even if this is a valid class, we have to be sure that its own bases should have been loaded already
-                let sym_file = symbol.borrow().get_file().clone();
-                if let Some(file) =  sym_file.and_then(|fw| fw.upgrade()) {
-                    if file.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
-                        SyncOdoo::build_now(session, &file, BuildSteps::ARCH_EVAL);
+                let sym_file = st!().get_file(symbol);
+                if let Some(file) = sym_file {
+                    if st!().build_status(file, BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
+                        SyncOdoo::build_now(session, file, BuildSteps::ARCH_EVAL);
                     }
-                    if !Rc::ptr_eq(&self.file, &file) {
-                        self.file.borrow_mut().add_dependency(&mut file.borrow_mut(), self.current_step, BuildSteps::ARCH_EVAL);
+                    if self.file != file {
+                        st!().add_dependency(self.file, file, self.current_step, BuildSteps::ARCH_EVAL);
                     }
                 }
-                loc_sym.borrow_mut().as_class_sym_mut().bases.push(Rc::downgrade(&symbol));
+                st!().classes[loc_sym].bases.push(c.into());
+            } else if !matches!(symbol, SymbolKey::Variable(_)) || st!().variables[symbol.unwrap_variable_key()].is_value() { // if it's a variable and not a value, it means we can't evaluate it, let's skip diagnostic
+                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01002, &[&flatten_expr(base)]) {
+                    self.diagnostics.push(Diagnostic {
+                        range: Range::new(Position::new(base.start().to_u32(), 0), Position::new(base.end().to_u32(), 0)),
+                        ..diagnostic
+                    });
+                }
             }
         }
     }
