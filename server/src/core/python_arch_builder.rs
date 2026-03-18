@@ -1058,16 +1058,17 @@ impl PythonArchBuilder {
     }
 
     fn visit_try(&mut self, session: &mut SessionInfo, try_stmt: &StmtTry) -> Result<(), Error> {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         // Try sections:
         // try block is always executed, so it has the same section as the one preceding it.
         // Finally is always executed if it exists, so it belongs to the lower section
-        let scope = self.sym_stack.last().unwrap().clone();
+        let scope = *self.sym_stack.last().unwrap();
         self.visit_node(session, &try_stmt.body)?;
         if !try_stmt.handlers.is_empty(){
             // Branching around except _T, except, and else act similar to if-elif-else
             // The direct link (eq. to empty section) to previous scope is always there
             // Unless both catch-all except and else clauses exist.
-            let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+            let previous_section = SectionIndex::INDEX(st!().get_as_symbol_mgr(scope).get_last_index());
             let mut stmt_sections = vec![previous_section.clone()];
             let mut catch_all_except_exists = false;
             for handler in try_stmt.handlers.iter() {
@@ -1077,12 +1078,12 @@ impl PythonArchBuilder {
                         if h.body.is_empty() {
                             continue;
                         }
-                        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                        st!().get_as_mut_symbol_mgr(scope).add_section(
                             h.body[0].range().start(),
                             Some(previous_section.clone())
                         );
                         self.visit_node(session, &h.body)?;
-                        stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
+                        stmt_sections.push(SectionIndex::INDEX(st!().get_as_symbol_mgr(scope).get_last_index()));
                     }
                 }
             }
@@ -1090,16 +1091,16 @@ impl PythonArchBuilder {
                 if catch_all_except_exists{
                     stmt_sections.remove(0);
                 }
-                scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                st!().get_as_mut_symbol_mgr(scope).add_section(
                     try_stmt.orelse[0].range().start(),
                     Some(previous_section.clone())
                 );
                 self.visit_node(session, &try_stmt.orelse)?;
-                stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
+                stmt_sections.push(SectionIndex::INDEX(st!().get_as_symbol_mgr(scope).get_last_index()));
             }
             // Next section is either the start of the finally block, or right after the try block if finally does not exist
             let next_section_start = try_stmt.finalbody.first().map(|stmt| stmt.range().start()).unwrap_or(try_stmt.range().end() + TextSize::new(1));
-            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            st!().get_as_mut_symbol_mgr(scope).add_section(
                 next_section_start,
                 Some(SectionIndex::OR(stmt_sections))
             );
