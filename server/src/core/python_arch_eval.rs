@@ -10,7 +10,8 @@ use tracing::{debug, trace, warn};
 
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
-use crate::core::symbols::symbol_table::{follow_ref, get_sym, is_field, is_field_class, ClassKey, FunctionKey, SymbolKey, SymbolTable};
+use crate::core::symbols::symbol_table::{follow_ref, get_member_symbol, get_sym, is_field, is_field_class, is_specific_field, ClassKey, FunctionKey, SymbolKey, SymbolTable};
+use crate::core::symbols::variable_symbol::VariableSymbol;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
@@ -1082,9 +1083,9 @@ impl PythonArchEval {
     pub fn get_nested_sub_field(
         session: &mut SessionInfo,
         field_name: &String,
-        class_sym: Rc<RefCell<Symbol>>,
-        from_module: Option<Rc<RefCell<Symbol>>>,
-    ) -> Vec<Rc<RefCell<Symbol>>>{
+        class_sym: ClassKey,
+        from_module: Option<SymbolKey>,
+    ) -> Vec<SymbolKey>{
         let mut parent_object = Some(class_sym);
         let mut syms = vec![];
         let split_expr: Vec<String> = field_name.split(".").map(|x| x.to_string()).collect();
@@ -1092,9 +1093,10 @@ impl PythonArchEval {
             if parent_object.is_none() {
                 break;
             }
-            let (symbols, _diagnostics) = parent_object.clone().unwrap().borrow().get_member_symbol(session,
-                &name.to_string(),
-                from_module.clone(),
+            let (symbols, _diagnostics) = get_member_symbol(session,
+                parent_object.unwrap().into(),
+                name,
+                from_module,
                 false,
                 true,
                 false,
@@ -1107,14 +1109,13 @@ impl PythonArchEval {
                 break;
             }
             parent_object = None;
-            for s in symbols.iter() {
-                if !s.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) {
+            for s in symbols {
+                if !is_specific_field(session, s, &["Many2one", "One2many", "Many2many"]) {
                     break;
                 }
-                // @arena-todo
-                let models = crate::core::symbols::variable_symbol::VariableSymbol::get_relational_model(s.borrow().as_variable(), session, from_module.clone());
+                let models = VariableSymbol::get_relational_model(s.unwrap_variable_key(), session, from_module);
                 if models.len() == 1 {
-                    parent_object = Some(models[0].clone());
+                    parent_object = Some(models[0]);
                     break;
                 }
             }
