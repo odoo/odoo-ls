@@ -10,7 +10,7 @@ use tracing::{debug, trace, warn};
 
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
-use crate::core::symbols::symbol_table::{follow_ref, get_sym, is_field, is_field_class, FunctionKey, SymbolKey};
+use crate::core::symbols::symbol_table::{follow_ref, get_sym, is_field, is_field_class, ClassKey, FunctionKey, SymbolKey};
 use crate::{constants::*, oyarn, Sy};
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
@@ -651,7 +651,8 @@ impl PythonArchEval {
         self.handle_assigns(session, assigns, &named_expr.range);
     }
 
-    fn load_base_classes(&mut self, session: &mut SessionInfo, loc_sym: &Rc<RefCell<Symbol>>, class_stmt: &StmtClassDef) {
+    // @arena next
+    fn load_base_classes(&mut self, session: &mut SessionInfo, loc_sym: ClassKey, class_stmt: &StmtClassDef) {
         for base in class_stmt.bases() {
             let mut deps = vec![vec![], vec![]];
             let eval_base = Evaluation::eval_from_ast(session, base, self.sym_stack.last().unwrap().clone(), &class_stmt.range().start(), false, &mut deps);
@@ -726,17 +727,19 @@ impl PythonArchEval {
     }
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, class_stmt: &StmtClassDef) {
-        let Some(class_sym_rc) = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&OYarn::from(class_stmt.name.to_string()), &class_stmt.range) else {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let Some(class_key) = st!().get_positioned_symbol(*self.sym_stack.last().unwrap(), &OYarn::from(class_stmt.name.to_string()), &class_stmt.range) else {
             return;
         };
-        self.load_base_classes(session, &class_sym_rc, class_stmt);
+        let c = class_key.unwrap_class_key();
+        self.load_base_classes(session, c, class_stmt);
         let old_noqa = session.current_noqa.clone();
-        session.current_noqa = class_sym_rc.borrow().get_noqas();
-        self.sym_stack.push(class_sym_rc.clone());
+        session.current_noqa = st!().get_noqas(class_key);
+        self.sym_stack.push(class_key);
         self.visit_sub_stmts(session, &class_stmt.body);
         self.sym_stack.pop();
-        if !self.sym_stack[0].borrow().is_external() && self.sym_stack[0].borrow().get_entry().is_some_and(|e| e.borrow().typ == EntryPointType::MAIN) {
-            if class_sym_rc.borrow().get_in_parents(&vec![SymType::FUNCTION], true).is_some() {
+        if !st!().is_external(self.sym_stack[0]) && st!().get_entry(self.sym_stack[0]).is_some_and(|e| e.borrow().typ == EntryPointType::MAIN) {
+            if st!().get_in_parents(class_key, &[SymType::FUNCTION], true).is_some() {
                 if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS03024, &[]) {
                     self.diagnostics.push(Diagnostic {
                         range: FileMgr::textRange_to_temporary_Range(&class_stmt.name.range),
@@ -744,7 +747,7 @@ impl PythonArchEval {
                     });
                 }
             } else {
-                let odoo_builder_diags = PythonOdooBuilder::new(class_sym_rc).load(session);
+                let odoo_builder_diags = PythonOdooBuilder::new(class_key).load(session);
                 self.diagnostics.extend(odoo_builder_diags);
             }
         }

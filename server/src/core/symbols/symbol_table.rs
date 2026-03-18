@@ -1455,6 +1455,8 @@ impl SymbolTable {
         }
     }
 
+    // ======= Duplicates of SymbolView methods =============
+    //
     // @arena: consider removing the one from SymbolView
     pub fn evaluations(&self, target: SymbolKey) -> Option<&Vec<Evaluation>> {
         match target {
@@ -1469,6 +1471,23 @@ impl SymbolTable {
             SymbolKey::Variable(v) => Some(&self.variables[v].evaluations),
             SymbolKey::XmlFile(_) => None,
             SymbolKey::CsvFile(_) => None,
+        }
+    }
+
+    // @arena: consider replacing the calls to symbol view by this one
+    pub fn is_external(&self, target: SymbolKey) -> bool {
+        match target {
+            SymbolKey::Root(_) => false,
+            SymbolKey::DiskDir(d) => self.disk_dirs[d].is_external,
+            SymbolKey::Namespace(n) => self.namespaces[n].is_external,
+            SymbolKey::Package(p) => self.packages[p].is_external(),
+            SymbolKey::File(f) => self.files[f].is_external,
+            SymbolKey::Compiled(c) => self.compiled[c].is_external,
+            SymbolKey::Class(c) => self.classes[c].is_external,
+            SymbolKey::Function(f) => self.functions[f].is_external,
+            SymbolKey::Variable(v) => self.variables[v].is_external,
+            SymbolKey::XmlFile(x) => self.xml_files[x].is_external,
+            SymbolKey::CsvFile(c) => self.csv_files[c].is_external,
         }
     }
 }

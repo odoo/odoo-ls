@@ -9,7 +9,7 @@ use weak_table::PtrWeakHashSet;
 
 use crate::constants::{OYarn, SymType};
 use crate::core::model::{Model, ModelData};
-use crate::core::symbols::symbol::Symbol;
+use crate::core::symbols::symbol_table::SymbolKey;
 use crate::core::xml_data::{OdooData, OdooDataRecord};
 use crate::threads::SessionInfo;
 use crate::utils::compare_semver;
@@ -27,12 +27,13 @@ pub const MAGIC_FIELDS: [&str; 6] = [
 ];
 
 pub struct PythonOdooBuilder {
-    symbol: Rc<RefCell<Symbol>>,
+    symbol: SymbolKey,
 }
 
 impl PythonOdooBuilder {
 
-    pub fn new(symbol: Rc<RefCell<Symbol>>) -> PythonOdooBuilder {
+    // @arena next
+    pub fn new(symbol: SymbolKey) -> PythonOdooBuilder {
         PythonOdooBuilder {
             symbol: symbol,
         }
