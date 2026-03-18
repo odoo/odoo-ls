@@ -10,7 +10,7 @@ use tracing::{debug, trace, warn};
 
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
-use crate::core::symbols::symbol_table::{follow_ref, get_sym, is_field, is_field_class, ClassKey, FunctionKey, SymbolKey};
+use crate::core::symbols::symbol_table::{follow_ref, get_sym, is_field, is_field_class, ClassKey, FunctionKey, SymbolKey, SymbolTable};
 use crate::{constants::*, oyarn, Sy};
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
@@ -139,7 +139,7 @@ impl PythonArchEval {
                     PythonArchEvalHooks::handle_func_decorators(session, func_stmt, f, self.file, self.current_step)
                 );
                 PythonArchEval::handle_function_returns(session, func_stmt, f, &ast.last().unwrap().range().end(), &mut self.diagnostics);
-                PythonArchEval::handle_func_evaluations(&ast, f);
+                PythonArchEval::handle_func_evaluations(&mut session.sync_odoo.symbol_table, &ast, f);
             }
             session.current_noqa = old_noqa;
         }
@@ -822,7 +822,7 @@ impl PythonArchEval {
             self.sym_stack.pop();
             session.current_noqa = old_noqa;
             PythonArchEval::handle_function_returns(session, func_stmt, &function_sym, &func_stmt.range.end(), &mut self.diagnostics);
-            PythonArchEval::handle_func_evaluations(&func_stmt.body, &function_sym);
+            PythonArchEval::handle_func_evaluations(&mut session.sync_odoo.symbol_table, &func_stmt.body, &function_sym);
             function_sym.borrow_mut().as_func_mut().arch_eval_status = BuildStatus::DONE;
         }
     }
@@ -928,53 +928,53 @@ impl PythonArchEval {
             self.visit_expr(session, &value);
         }
         let func = self.sym_stack.last().unwrap().clone();
-        if func.borrow().typ() == SymType::FUNCTION {
+        if let SymbolKey::Function(f) = func {
             if let Some(value) = return_stmt.value.as_ref() {
                 let mut deps = vec![vec![], vec![]];
                 if !self.file_mode {
                     deps.push(vec![]);
                 }
-                let (eval, diags) = Evaluation::eval_from_ast(session, value, func.clone(), &return_stmt.range.start(), false, &mut deps);
-                Symbol::insert_dependencies(&self.file, &mut deps, self.current_step);
+                let (eval, diags) = Evaluation::eval_from_ast(session, value, func, &return_stmt.range.start(), false, &mut deps);
+                session.sync_odoo.symbol_table.insert_dependencies(self.file, &mut deps, self.current_step);
                 self.diagnostics.extend(diags);
-                FunctionSymbol::add_return_evaluations(func, session, eval);
+                FunctionSymbol::add_return_evaluations(f, session, eval);
             } else {
-                FunctionSymbol::add_return_evaluations(func, session, vec![Evaluation::new_none()]);
+                FunctionSymbol::add_return_evaluations(f, session, vec![Evaluation::new_none()]);
             }
         }
     }
 
     fn _visit_with(&mut self, session: &mut SessionInfo, with_stmt: &StmtWith) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         for item in with_stmt.items.iter() {
             self.visit_expr(session, &item.context_expr);
             if let Some(var) = item.optional_vars.as_ref() {
                 match &**var {
                     Expr::Name(expr_name) => {
-                        let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&OYarn::from(expr_name.id.to_string()), &expr_name.range());
-                        if let Some(variable_rc) = variable {
-                            let parent = variable_rc.borrow().parent().unwrap().upgrade().unwrap().clone();
+                        let variable = st!().get_positioned_symbol(*self.sym_stack.last().unwrap(), &OYarn::from(expr_name.id.to_string()), &expr_name.range());
+                        if let Some(variable_key) = variable {
+                            let v = variable_key.unwrap_variable_key();
+                            let parent = st!().variables[v].parent.unwrap();
                             let mut deps = vec![vec![], vec![]];
                             if !self.file_mode {
                                 deps.push(vec![]);
                             }
                             let (eval, diags) = Evaluation::eval_from_ast(session, &item.context_expr, parent, &with_stmt.range.start(), false, &mut deps);
-                            Symbol::insert_dependencies(&self.file, &mut deps, self.current_step);
+                            st!().insert_dependencies(self.file, &mut deps, self.current_step);
                             let mut evals = vec![];
+                            // @arena: the for-loop below is dead code, as evals is never read or assigned
                             for eval in eval.iter() {
-                                let symbol = eval.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, Some(variable_rc.borrow().parent_file_or_function().unwrap().upgrade().unwrap().clone()));
-                                if let Some(symbol) = symbol.weak.upgrade() {
-                                    let _enter_ = symbol.borrow().get_symbol(&(vec![], vec![Sy!("__enter__")]), u32::MAX);
-                                    if let Some(_enter_) = _enter_.last() {
-                                        match *_enter_.borrow() {
-                                            Symbol::Function(ref func) => {
-                                                evals.extend(func.evaluations.clone());
-                                            },
-                                            _ => {}
+                                let symbol = eval.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, Some(st!().parent_file_or_function(variable_key).unwrap()));
+                                if let Some(symbol) = symbol.weak.upgrade(&st!()) {
+                                    let _enter_ = st!().get_symbol(symbol, &(vec![], vec![Sy!("__enter__")]), u32::MAX);
+                                    if let Some(&_enter_) = _enter_.last() {
+                                        if let SymbolKey::Function(f) = _enter_ {
+                                            evals.extend(st!().functions[f].evaluations.clone());
                                         }
                                     }
                                 }
                             }
-                            variable_rc.borrow_mut().set_evaluations(eval);
+                            st!().variables[v].evaluations = eval;
                             self.diagnostics.extend(diags);
                         }
                     },
@@ -1003,7 +1003,6 @@ impl PythonArchEval {
 
     // Handle function return annotation
     // Evaluate return annotation and add it to function evaluations
-    // @arena next
     fn handle_function_returns(
         session: &mut SessionInfo,
         func_stmt: &StmtFunctionDef,
@@ -1011,12 +1010,14 @@ impl PythonArchEval {
         max_infer: &TextSize,
         diagnostics: &mut Vec<Diagnostic>,
     ) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         if let Some(returns_ann) = func_stmt.returns.as_ref() {
             let mut deps = vec![vec![], vec![]];
+            let parent = st!().functions[func_sym].parent.unwrap();
             let (mut evaluations, diags) = Evaluation::eval_from_ast(
                 session,
                 &returns_ann,
-                func_sym.borrow().parent().and_then(|p| p.upgrade()).unwrap(),
+                parent,
                 max_infer,
                 true,
                 &mut deps,
@@ -1024,7 +1025,7 @@ impl PythonArchEval {
             // Check for type annotation `typing.Self`, if so, return a `self` evaluation
             // And give it priority over other evaluations
             if evaluations.iter().any(|evaluation|
-                Symbol::follow_ref(
+                follow_ref(
                     &evaluation.symbol.get_symbol(session, &mut None, diagnostics, None),
                     session,
                     &mut None,
@@ -1034,9 +1035,10 @@ impl PythonArchEval {
                     None
                 ).len() > 0
             ){
-                func_sym.borrow_mut().set_evaluations(vec![Evaluation::new_self()]);
+                st!().functions[func_sym].evaluations = vec![Evaluation::new_self()];
                 return;
             }
+            // @arena: this for loop below is dead code (evaluations is never read or assigned)
             for eval in evaluations.iter_mut() { //as this is an evaluation, we need to set the instance to true
                 match eval.symbol.get_mut_symbol_ptr() {
                     EvaluationSymbolPtr::WEAK(sym_weak) => {
@@ -1045,8 +1047,8 @@ impl PythonArchEval {
                     _ => {}
                 }
             }
-            if let Some(file_sym) = func_sym.borrow().get_file().and_then(|file_weak| file_weak.upgrade()).as_ref() {
-                Symbol::insert_dependencies(file_sym, &mut deps, BuildSteps::ARCH_EVAL);
+            if let Some(file_sym) = st!().get_file(func_sym.into()) {
+                st!().insert_dependencies(file_sym, &mut deps, BuildSteps::ARCH_EVAL);
             }
             diagnostics.extend(diags);
         }
@@ -1056,17 +1058,18 @@ impl PythonArchEval {
     // First we check if it is a function signature with no body ( like in stubs ) like def func():...
     // If so we give it an Any evaluation because it is undetermined, otherwise we give it None, because that means
     // we have a body but no return statement, which defaults to return None at the end
-    // @arena next
     fn handle_func_evaluations(
+        symbol_table: &mut SymbolTable,
         func_body: &Vec<Stmt>,
         func_sym: FunctionKey,
     ){
-        if func_sym.borrow().as_func().evaluations.is_empty() {
+        let func_mut = &mut symbol_table.functions[func_sym];
+        if func_mut.evaluations.is_empty() {
             let has_implementation = !matches!(
                 func_body.first(),
                 Some(Stmt::Expr(StmtExpr { range: _, value:  x, node_index: _})) if matches!(**x, Expr::EllipsisLiteral(_))
             );
-            func_sym.borrow_mut().as_func_mut().evaluations  = vec![
+            func_mut.evaluations  = vec![
                 if has_implementation {
                     Evaluation::new_none()
                 } else {
