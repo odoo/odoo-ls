@@ -764,10 +764,12 @@ impl PythonArchEval {
             return; // can be not found if AST is incomplete
         };
         let f = function_sym_key.unwrap_function_key();
-        if st!()[f].can_be_in_class() || !matches!(scope, SymbolKey::Class(_)) {
+        let func = &st!()[f];
+        let is_static = func.is_static;
+        if func.can_be_in_class() || !matches!(scope, SymbolKey::Class(_)) {
             let mut is_first = true;
             for arg in func_stmt.parameters.posonlyargs.iter().chain(&func_stmt.parameters.args) {
-                if is_first && matches!(scope, SymbolKey::Class(_)) {
+                if is_first && !is_static && matches!(scope, SymbolKey::Class(_)) {
                     let is_class_method = st!()[f].is_class_method;
                     let arg_name = OYarn::from(arg.parameter.name.id.to_string());
                     let arg_sym = st!()[f].symbols().get(&arg_name).unwrap().get(&0).unwrap()[0]; //get first declaration
@@ -814,10 +816,10 @@ impl PythonArchEval {
                     self.diagnostics.extend(diags);
                 }
             }
-        } else if !st!()[f].is_static && !st!()[f].is_class_method {
+        } else if !is_static {
             if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01004, &[]) {
                 self.diagnostics.push(Diagnostic {
-                    range: FileMgr::textRange_to_temporary_Range(&func_stmt.range),
+                    range: FileMgr::textRange_to_temporary_Range(&func_stmt.name.range()),
                     ..diagnostic
                 });
             }

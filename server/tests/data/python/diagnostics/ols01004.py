@@ -28,8 +28,8 @@ class Test():
         pass
 
     @classmethod
-    def e(): #Should trigger another diagnostic, not OLS01004
+    def e(): # OLS01004
         pass
 
-    def oups(): #should trigger OLS01004
+    def oups(): # OLS01004
         pass
