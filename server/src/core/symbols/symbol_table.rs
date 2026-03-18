@@ -102,6 +102,13 @@ impl SymbolKey {
             _ => panic!("Not a VariableKey"),
         }
     }
+
+    pub fn unwrap_class_key(&self) -> ClassKey {
+        match self {
+            SymbolKey::Class(k) => *k,
+            _ => panic!("Not a ClassKey"),
+        }
+    }
 }
 
 /// @arena: temporary. symbol_rc.borrow() -> get_sym!(symbol_key).

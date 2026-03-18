@@ -1784,7 +1784,6 @@ impl EvaluationSymbol {
     }
 
     /* Execute the hook, then use context to return an EvaluationSymbolWeak if possible, else return an empty one */
-    /// @arena: todo
     pub fn get_symbol_as_weak(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> EvaluationSymbolWeak {
         let eval = EvaluationSymbol::get_symbol(&self, session, context, diagnostics, scope);
         match eval {
