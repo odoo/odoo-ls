@@ -2453,12 +2453,10 @@ impl Symbol {
                 symbol.borrow().as_class_sym().bases.iter().for_each(|base| {
                     base.upgrade().map(|b| bases.insert(b));
                 });
-                if with_co_models {
-                    let Some(model) = symbol.borrow().as_class_sym()._model.as_ref().and_then(|model_data|
-                        session.sync_odoo.models.get(&model_data.name).cloned()
-                    ) else {
-                        return;
-                    };
+                let model_option = symbol.borrow().as_class_sym()._model.as_ref().and_then(|model_data|
+                    session.sync_odoo.models.get(&model_data.name).cloned()
+                );
+                if let Some(model) = model_option && with_co_models {
                     // no recursion because it is handled in all_symbols_inherits
                     let (model_symbols, model_inherits_symbols) = model.borrow().all_symbols_inherits(session, from_module.clone());
                     for (model_sym, dependency) in model_symbols {
