@@ -95,6 +95,13 @@ impl SymbolKey {
             _ => panic!("Not a FunctionKey"),
         }
     }
+
+    pub fn unwrap_variable_key(&self) -> VariableKey {
+        match self {
+            SymbolKey::Variable(k) => *k,
+            _ => panic!("Not a VariableKey"),
+        }
+    }
 }
 
 /// @arena: temporary. symbol_rc.borrow() -> get_sym!(symbol_key).
@@ -1438,6 +1445,23 @@ impl SymbolTable {
             SymbolKey::Variable(_) => panic!(),
             SymbolKey::XmlFile(_) => panic!(),
             SymbolKey::CsvFile(_) => panic!(),
+        }
+    }
+
+    // @arena: consider removing the one from SymbolView
+    pub fn evaluations(&self, target: SymbolKey) -> Option<&Vec<Evaluation>> {
+        match target {
+            SymbolKey::File(_) => { None },
+            SymbolKey::Root(_) => { None },
+            SymbolKey::Namespace(_) => { None },
+            SymbolKey::DiskDir(_) => { None },
+            SymbolKey::Package(_) => { None },
+            SymbolKey::Compiled(_) => { None },
+            SymbolKey::Class(_) => { None },
+            SymbolKey::Function(f) => Some(&self.functions[f].evaluations),
+            SymbolKey::Variable(v) => Some(&self.variables[v].evaluations),
+            SymbolKey::XmlFile(_) => None,
+            SymbolKey::CsvFile(_) => None,
         }
     }
 }

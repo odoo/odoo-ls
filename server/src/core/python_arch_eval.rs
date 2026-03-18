@@ -10,7 +10,7 @@ use tracing::{debug, trace, warn};
 
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
-use crate::core::symbols::symbol_table::{get_sym, FunctionKey, SymbolKey};
+use crate::core::symbols::symbol_table::{follow_ref, get_sym, FunctionKey, SymbolKey};
 use crate::{constants::*, oyarn, Sy};
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
@@ -355,7 +355,7 @@ impl PythonArchEval {
         }
     }
 
-    fn _match_diag_config(&self, odoo: &mut SyncOdoo, symbol: &Rc<RefCell<Symbol>>) -> bool {
+    fn _match_diag_config(&self, odoo: &mut SyncOdoo, symbol: SymbolKey) -> bool {
         let import_diag_level = &odoo.config.diag_missing_imports;
         if *import_diag_level == DiagMissingImportsMode::None {
             return false
@@ -364,7 +364,7 @@ impl PythonArchEval {
             return true
         }
         if *import_diag_level == DiagMissingImportsMode::OnlyOdoo {
-            let tree = symbol.borrow().get_tree();
+            let tree = odoo.symbol_table.get_tree(symbol);
             if tree.0.len() > 0 && tree.0[0] == "odoo" {
                 return true;
             }
@@ -373,72 +373,71 @@ impl PythonArchEval {
     }
 
     ///Follow the evaluations of sym_ref, evaluate files if needed, and return true if the end evaluation contains from_sym
-    fn check_for_loop_evaluation(&mut self, session: &mut SessionInfo, sym_ref: Rc<RefCell<Symbol>>, from_sym: &Rc<RefCell<Symbol>>) -> bool {
-        let sym_ref_cl = sym_ref.clone();
-        let syms_followed = Symbol::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
-            Rc::downgrade(&sym_ref_cl), None, false
+    fn check_for_loop_evaluation(&mut self, session: &mut SessionInfo, sym_ref: SymbolKey, from_sym: SymbolKey) -> bool {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let syms_followed = follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
+            sym_ref, None, false
         )), session, &mut None, false, false, None, None);
         for sym in syms_followed.iter() {
-            let sym = sym.upgrade_weak();
-            if let Some(sym) = sym {
-                if sym.borrow().evaluations().is_some() && sym.borrow().evaluations().unwrap().is_empty() {
-                    let file_sym = sym_ref.borrow().get_file();
-                    if file_sym.is_some() {
-                        let rc_file_sym = file_sym.as_ref().unwrap().upgrade().unwrap();
-                        if SyncOdoo::build_now(session, &rc_file_sym, BuildSteps::ARCH_EVAL) {
-                            if self.check_for_loop_evaluation(session, sym_ref.clone(), from_sym) {
-                                return true;
-                            }
+            let Some(sym) = st!().upgrade_weak(sym) else { continue };
+            if st!().evaluations(sym).is_some_and(|e| e.is_empty()) {
+                if let Some(file_sym) = st!().get_file(sym_ref) {
+                    if SyncOdoo::build_now(session, file_sym, BuildSteps::ARCH_EVAL) {
+                        if self.check_for_loop_evaluation(session, sym_ref, from_sym) {
+                            return true;
                         }
                     }
                 }
-                if Rc::ptr_eq(&sym, &from_sym) {
-                    return true;
-                }
+            }
+            if sym == from_sym {
+                return true;
             }
         }
         false
     }
 
     fn eval_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: u32, _range: &TextRange) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         if name_aliases.len() == 1 && name_aliases[0].name.to_string() == "*" {
             return;
         }
         let import_results: Vec<ImportResult> = resolve_import_stmt(
             session,
-            &self.file,
+            self.file,
             from_stmt,
             name_aliases,
             level,
             &mut Some(&mut self.diagnostics));
 
         for import_result in import_results.iter() {
-            let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&import_result.var_name, &import_result.range);
-            let Some(variable) = variable.clone() else {
+            let variable = st!().get_positioned_symbol(*self.sym_stack.last().unwrap(), &import_result.var_name, &import_result.range);
+            let Some(variable) = variable else {
                 continue;
             };
+            // @arena: this assumes `variable` is a variable symbol (not present in original code)
+            let v = variable.unwrap_variable_key();
             if import_result.found {
-                variable.borrow_mut().set_evaluations(vec![]);
-                for import_sym in import_result.symbols.iter() {
-                    let has_loop = self.check_for_loop_evaluation(session, import_sym.clone(), &variable);
+                st!().variables[v].evaluations = vec![];
+                for &import_sym in import_result.symbols.iter() {
+                    let has_loop = self.check_for_loop_evaluation(session, import_sym, variable);
                     if !has_loop { //anti-loop. We want to be sure we are not evaluating to the same sym
-                        let instance = match import_sym.borrow().typ() {
-                            SymType::CLASS => Some(false),
+                        let instance = match import_sym {
+                            SymbolKey::Class(_) => Some(false),
                             _ => None
                         };
-                        variable.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(&import_sym), instance));
-                        let file_of_import_symbol = import_sym.borrow().get_file();
+                        let evaluation = Evaluation::eval_from_symbol(&st!(), import_sym.into(), instance);
+                        st!().variables[v].evaluations.push(evaluation);
+                        let file_of_import_symbol = st!().get_file(import_sym);
                         if let Some(import_file) = file_of_import_symbol {
-                            let import_file = import_file.upgrade().unwrap();
-                            if !Rc::ptr_eq(&self.file, &import_file) {
-                                self.file.borrow_mut().add_dependency(&mut import_file.borrow_mut(), self.current_step, BuildSteps::ARCH);
+                            if self.file != import_file {
+                                st!().add_dependency(self.file, import_file, self.current_step, BuildSteps::ARCH);
                             }
                         }
                     } else {
                         let mut file_tree = import_result.file_tree.clone();
                         file_tree.extend(import_result.name.split(".").map(|s| oyarn!("{}", s)));
-                        self.file.borrow_mut().not_found_paths_mut().push((self.current_step, file_tree.clone()));
-                        self.entry_point.borrow_mut().not_found_symbols.insert(self.file.clone());
+                        st!().not_found_paths_mut(self.file).push((self.current_step, file_tree.clone()));
+                        self.entry_point.borrow_mut().not_found_symbols.insert(self.file);
                         if self._match_diag_config(session.sync_odoo, import_sym) {
                             if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS02002, &[&file_tree.clone().join(".")]) {
                                 self.diagnostics.push(Diagnostic {
@@ -457,9 +456,9 @@ impl PythonArchEval {
                     continue;
                 }
                 if !self.safe_import.last().unwrap() {
-                    self.file.borrow_mut().not_found_paths_mut().push((self.current_step, file_tree.clone()));
-                    self.entry_point.borrow_mut().not_found_symbols.insert(self.file.clone());
-                    for import_sym in import_result.symbols.iter() {
+                    st!().not_found_paths_mut(self.file).push((self.current_step, file_tree.clone()));
+                    self.entry_point.borrow_mut().not_found_symbols.insert(self.file);
+                    for &import_sym in import_result.symbols.iter() {
                         if self._match_diag_config(session.sync_odoo, import_sym) {
                             if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS02001, &[&file_tree.clone().join(".")]) {
                                 self.diagnostics.push(Diagnostic {
