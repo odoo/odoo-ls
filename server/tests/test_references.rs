@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use lsp_types::{Location, PartialResultParams, Position, WorkDoneProgressParams};
 use odoo_ls_server::{core::file_mgr::FileMgr, threads::SessionInfo, utils::PathSanitizer};
+use tracing::error;
 
 use crate::setup::setup::{create_init_session, setup_server};
 
@@ -19,6 +20,7 @@ fn test_references() {
     //1. reference of a model
     let mut references = get_references(&mut session, &test_file, Position::new(4, 29));
     //as order is not guaranteed (usage of set), check if the expected reference is somewhere in the result list.
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 3, 0);
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 4, 12);
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 15, 8);
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 32, 17);
@@ -41,6 +43,7 @@ fn test_references() {
 
     // reference of an attribute
     let mut references = get_references(&mut session, &test_file, Position::new(9, 8));
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 9, 4);
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 37, 18);
     assert!(references.len() == 0, "Some references were not expected: {}",
         references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
@@ -50,6 +53,8 @@ fn test_references() {
     let mut references = get_references(&mut session, &test_file, Position::new(50, 4));
     // usage in models.py import
     assert_in_result(&mut references, "module_1/models/models.py", 1, 30);
+    //definition
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 50, 0);
     // usage inside lambda body
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 51, 23);
     // usage inside f-string
