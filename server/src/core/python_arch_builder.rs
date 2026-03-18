@@ -13,7 +13,7 @@ use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 use crate::core::symbols::package_symbol::PackageSymbol;
-use crate::core::symbols::symbol_table::{follow_ref, get_sym, SymbolKey};
+use crate::core::symbols::symbol_table::{follow_ref, get_sym, SymbolKey, SymbolTable};
 use crate::threads::SessionInfo;
 use crate::{oyarn, S};
 
@@ -1115,8 +1115,8 @@ impl PythonArchBuilder {
             if let Some(var) = item.optional_vars.as_ref() {
                 match &**var {
                     Expr::Name(expr_name) => {
-                        self.sym_stack.last().unwrap().borrow_mut().add_new_variable(
-                            session, oyarn!("{}", expr_name.id), &var.range());
+                        let parent = *self.sym_stack.last().unwrap();
+                        session.sync_odoo.symbol_table.add_new_variable(parent, oyarn!("{}", expr_name.id), &var.range());
                     },
                     Expr::Tuple(_) => {continue;},
                     Expr::List(_) => {continue;},
@@ -1129,53 +1129,54 @@ impl PythonArchBuilder {
     }
 
     fn visit_match(&mut self, session: &mut SessionInfo, match_stmt: &StmtMatch) -> Result<(), Error> {
-        fn traverse_match(pattern: &Pattern, session: &mut SessionInfo, scope: &Rc<RefCell<Symbol>>){
+        fn traverse_match(pattern: &Pattern, symbol_table: &mut SymbolTable, scope: SymbolKey){
             match pattern {
                 Pattern::MatchValue(_) => {},
                 Pattern::MatchSingleton(_) => {},
                 Pattern::MatchSequence(match_sequence) => {
-                    match_sequence.patterns.iter().for_each(|sequence_pattern| traverse_match(sequence_pattern, session, scope));
+                    match_sequence.patterns.iter().for_each(|sequence_pattern| traverse_match(sequence_pattern, symbol_table, scope));
                 },
                 Pattern::MatchMapping(match_mapping) => {
-                    match_mapping.patterns.iter().for_each(|mapping_value_pattern| traverse_match(mapping_value_pattern, session, scope));
+                    match_mapping.patterns.iter().for_each(|mapping_value_pattern| traverse_match(mapping_value_pattern, symbol_table, scope));
                 },
                 Pattern::MatchClass(match_class) => {
-                    match_class.arguments.patterns.iter().for_each(|class_arg_pattern| traverse_match(class_arg_pattern, session, scope));
+                    match_class.arguments.patterns.iter().for_each(|class_arg_pattern| traverse_match(class_arg_pattern, symbol_table, scope));
                 },
                 Pattern::MatchStar(pattern_match_star) => {
                     if let Some(name) = &pattern_match_star.name { //if name is None, this is a wildcard pattern (*_)
-                        scope.borrow_mut().add_new_variable(
-                            session, oyarn!("{}", name), &pattern_match_star.range());
+                        symbol_table.add_new_variable(
+                            scope, oyarn!("{}", name), &pattern_match_star.range());
                     }
                 },
                 Pattern::MatchAs(pattern_match_as) => {
                     if let Some(name) = &pattern_match_as.name { //if name is None, this is a wildcard pattern (_)
-                        scope.borrow_mut().add_new_variable(
-                            session, oyarn!("{}", name), &pattern_match_as.range());
+                        symbol_table.add_new_variable(
+                            scope, oyarn!("{}", name), &pattern_match_as.range());
                     }
                 },
                 Pattern::MatchOr(match_or) => {
-                    match_or.patterns.iter().for_each(|pattern| traverse_match(pattern, session, scope));
+                    match_or.patterns.iter().for_each(|pattern| traverse_match(pattern, symbol_table, scope));
                 },
             }
         }
-        let scope = self.sym_stack.last().unwrap().clone();
-        let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let scope = *self.sym_stack.last().unwrap();
+        let previous_section = SectionIndex::INDEX(st!().get_as_symbol_mgr(scope).get_last_index());
         let mut stmt_sections = vec![previous_section.clone()];
         for case in match_stmt.cases.iter() {
             case.guard.as_ref().map(|test_clause| self.visit_expr(session, test_clause));
             if matches!(&case.pattern, ruff_python_ast::Pattern::MatchAs(_)){
                 stmt_sections.remove(0); // When we have a wildcard pattern, previous section is shadowed
             }
-            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            st!().get_as_mut_symbol_mgr(scope).add_section(
                 case.range().start(),
                 Some(previous_section.clone())
             );
-            traverse_match(&case.pattern, session, &scope);
+            traverse_match(&case.pattern, &mut st!(), scope);
             self.visit_node(session, &case.body)?;
-            stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
+            stmt_sections.push(SectionIndex::INDEX(st!().get_as_symbol_mgr(scope).get_last_index()));
         }
-        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+        st!().get_as_mut_symbol_mgr(scope).add_section(
             match_stmt.range().end() + TextSize::new(1),
             Some(SectionIndex::OR(stmt_sections))
         );
@@ -1183,31 +1184,34 @@ impl PythonArchBuilder {
     }
 
     fn visit_while(&mut self, session: &mut SessionInfo, while_stmt: &StmtWhile) -> Result<(), Error> {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         // TODO: Handle breaks for sections
-        let scope = self.sym_stack.last().unwrap().clone();
-        let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+        let scope = *self.sym_stack.last().unwrap();
+        let scope_as_sym_mgr = st!().get_as_mut_symbol_mgr(scope);
+        let previous_section = SectionIndex::INDEX(scope_as_sym_mgr.get_last_index());
         if let Some(first_body_stmt) = while_stmt.body.first() {
-            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            scope_as_sym_mgr.add_section(
                 first_body_stmt.range().start(),
                 None
             );
         }
         self.visit_expr(session, &while_stmt.test);
         self.visit_node(session, &while_stmt.body)?;
-        let body_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+        let scope_as_sym_mgr = st!().get_as_mut_symbol_mgr(scope);
+        let body_section = SectionIndex::INDEX(scope_as_sym_mgr.get_last_index());
         let mut stmt_sections = vec![body_section];
         if !while_stmt.orelse.is_empty(){
-            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            scope_as_sym_mgr.add_section(
                 while_stmt.orelse[0].range().start(),
                 Some(previous_section.clone())
             );
             self.visit_node(session, &while_stmt.orelse)?;
-            stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
+            stmt_sections.push(SectionIndex::INDEX(st!().get_as_symbol_mgr(scope).get_last_index()));
         } else {
             stmt_sections.push(previous_section.clone());
         }
 
-        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+        st!().get_as_mut_symbol_mgr(scope).add_section(
             while_stmt.range().end() + TextSize::new(1),
             Some(SectionIndex::OR(stmt_sections))
         );
