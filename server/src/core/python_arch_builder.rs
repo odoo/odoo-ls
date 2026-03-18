@@ -1011,44 +1011,46 @@ impl PythonArchBuilder {
     }
 
     fn visit_for(&mut self, session: &mut SessionInfo, for_stmt: &StmtFor) -> Result<(), Error> {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         // TODO: Handle breaks for sections
-        let scope = self.sym_stack.last().unwrap().clone();
+        let scope = *self.sym_stack.last().unwrap();
         let unpacked = python_utils::unpack_assign(&vec![*for_stmt.target.clone()], None, None);
         for assign in unpacked {
             if let Some(ref expr) = assign.value {
                 self.visit_expr(session, expr);
             }
-            match assign.target{
+            match assign.target {
                 AssignTargetType::Name(ref name_expr) => {
-                    scope.borrow_mut().add_new_variable(session, oyarn!("{}", name_expr.id), &name_expr.range);
+                    st!().add_new_variable(scope, oyarn!("{}", name_expr.id), &name_expr.range);
                 },
                 AssignTargetType::Attribute(_) => {
                 }
             }
         }
-        let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+        let scope_as_sym_mgr = st!().get_as_mut_symbol_mgr(scope);
+        let previous_section = SectionIndex::INDEX(scope_as_sym_mgr.get_last_index());
         if let Some(first_body_stmt) = for_stmt.body.first() {
-            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            scope_as_sym_mgr.add_section(
                 first_body_stmt.range().start(),
                 None
             );
         }
 
         self.visit_node(session, &for_stmt.body)?;
-        let mut stmt_sections = vec![SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index())];
+        let mut stmt_sections = vec![SectionIndex::INDEX(st!().get_as_symbol_mgr(scope).get_last_index())];
 
         if !for_stmt.orelse.is_empty(){
-            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            st!().get_as_mut_symbol_mgr(scope).add_section(
                 for_stmt.orelse[0].range().start(),
                 Some(previous_section.clone())
             );
             self.visit_node(session, &for_stmt.orelse)?;
-            stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
+            stmt_sections.push(SectionIndex::INDEX(st!().get_as_symbol_mgr(scope).get_last_index()));
         } else {
             stmt_sections.push(previous_section.clone());
         }
 
-        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+        st!().get_as_mut_symbol_mgr(scope).add_section(
             for_stmt.range().end() + TextSize::new(1),
             Some(SectionIndex::OR(stmt_sections))
         );
