@@ -754,77 +754,82 @@ impl PythonArchEval {
     }
 
     fn visit_func_def(&mut self, session: &mut SessionInfo, func_stmt: &StmtFunctionDef) {
-        let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&OYarn::from(func_stmt.name.to_string()), &func_stmt.range);
-        let Some(function_sym) = variable else {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let scope = *self.sym_stack.last().unwrap();
+        let function_sym = st!().get_positioned_symbol(scope, &OYarn::from(func_stmt.name.to_string()), &func_stmt.range);
+        let Some(function_sym_key) = function_sym else {
             return; // can be not found if AST is incomplete
         };
-        {
-            if function_sym.borrow_mut().as_func_mut().can_be_in_class() || !(self.sym_stack.last().unwrap().borrow().typ() == SymType::CLASS){
-                let mut is_first = true;
-                for arg in func_stmt.parameters.posonlyargs.iter().chain(&func_stmt.parameters.args) {
-                    if is_first && self.sym_stack.last().unwrap().borrow().typ() == SymType::CLASS {
-                        let mut var_bw = function_sym.borrow_mut();
-                        let is_class_method = var_bw.as_func().is_class_method;
-                        let symbol = var_bw.as_func_mut().symbols.get(&OYarn::from(arg.parameter.name.id.to_string())).unwrap().get(&0).unwrap().get(0).unwrap(); //get first declaration
-                        symbol.borrow_mut().evaluations_mut().unwrap().push(Evaluation::eval_from_symbol(&Rc::downgrade(self.sym_stack.last().unwrap()), Some(!is_class_method)));
-                        is_first = false;
-                        continue;
-                    }
+        let f = function_sym_key.unwrap_function_key();
+        if st!().functions[f].can_be_in_class() || !matches!(scope, SymbolKey::Class(_)) {
+            let mut is_first = true;
+            for arg in func_stmt.parameters.posonlyargs.iter().chain(&func_stmt.parameters.args) {
+                if is_first && matches!(scope, SymbolKey::Class(_)) {
+                    let is_class_method = st!().functions[f].is_class_method;
+                    let arg_name = OYarn::from(arg.parameter.name.id.to_string());
+                    let arg_sym = st!().functions[f].symbols.get(&arg_name).unwrap().get(&0).unwrap()[0]; //get first declaration
+                    let v = arg_sym.unwrap_variable_key();
+                    let evaluation = Evaluation::eval_from_symbol(&st!(), scope.into(), Some(!is_class_method));
+                    st!().variables[v].evaluations.push(evaluation);
                     is_first = false;
-                    if arg.parameter.annotation.is_some() {
-                        let mut deps = vec![vec![], vec![]];
-                        if !self.file_mode {
-                            deps.push(vec![]);
-                        }
-                        let (eval, diags) = Evaluation::eval_from_ast(session,
-                                                    &arg.parameter.annotation.as_ref().unwrap(),
-                                                    self.sym_stack.last().unwrap().clone(),
-                                                    &func_stmt.range.start(),
-                                                    true,
-                                                    &mut deps);
-                        Symbol::insert_dependencies(&self.file, &mut deps, self.current_step);
-                        let mut var_bw = function_sym.borrow_mut();
-                        let symbol = var_bw.as_func_mut().symbols.get(&OYarn::from(arg.parameter.name.id.to_string())).unwrap().get(&0).unwrap().get(0).unwrap(); //get first declaration
-                        symbol.borrow_mut().set_evaluations(eval);
-                        self.diagnostics.extend(diags);
-                    } else if arg.default.is_some() {
-                        let mut deps = vec![vec![], vec![]];
-                        if !self.file_mode {
-                            deps.push(vec![]);
-                        }
-                        let (eval, diags) = Evaluation::eval_from_ast(session,
-                                                    arg.default.as_ref().unwrap(),
-                                                    self.sym_stack.last().unwrap().clone(),
-                                                    &func_stmt.range.start(),
-                                                    false,
-                                                    &mut deps);
-                        Symbol::insert_dependencies(&self.file, &mut deps, self.current_step);
-                        let mut var_bw = function_sym.borrow_mut();
-                        let symbol = var_bw.as_func_mut().symbols.get(&OYarn::from(arg.parameter.name.id.to_string())).unwrap().get(&0).unwrap().get(0).unwrap(); //get first declaration
-                        symbol.borrow_mut().set_evaluations(eval);
-                        self.diagnostics.extend(diags);
-                    }
+                    continue;
                 }
-            } else if !function_sym.borrow_mut().as_func_mut().is_static && !function_sym.borrow().as_func().is_class_method {
-                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01004, &[]) {
-                    self.diagnostics.push(Diagnostic {
-                        range: FileMgr::textRange_to_temporary_Range(&func_stmt.range),
-                        ..diagnostic
-                    });
+                is_first = false;
+                if arg.parameter.annotation.is_some() {
+                    let mut deps = vec![vec![], vec![]];
+                    if !self.file_mode {
+                        deps.push(vec![]);
+                    }
+                    let (eval, diags) = Evaluation::eval_from_ast(session,
+                                                &arg.parameter.annotation.as_ref().unwrap(),
+                                                scope,
+                                                &func_stmt.range.start(),
+                                                true,
+                                                &mut deps);
+                    st!().insert_dependencies(self.file, &mut deps, self.current_step);
+                    let arg_name = OYarn::from(arg.parameter.name.id.to_string());
+                    let arg_sym = st!().functions[f].symbols.get(&arg_name).unwrap().get(&0).unwrap()[0];
+                    let v = arg_sym.unwrap_variable_key();
+                    st!().variables[v].evaluations = eval;
+                    self.diagnostics.extend(diags);
+                } else if arg.default.is_some() {
+                    let mut deps = vec![vec![], vec![]];
+                    if !self.file_mode {
+                        deps.push(vec![]);
+                    }
+                    let (eval, diags) = Evaluation::eval_from_ast(session,
+                                                arg.default.as_ref().unwrap(),
+                                                scope,
+                                                &func_stmt.range.start(),
+                                                false,
+                                                &mut deps);
+                    st!().insert_dependencies(self.file, &mut deps, self.current_step);
+                    let arg_name = OYarn::from(arg.parameter.name.id.to_string());
+                    let arg_sym = st!().functions[f].symbols.get(&arg_name).unwrap().get(&0).unwrap()[0];
+                    let v = arg_sym.unwrap_variable_key();
+                    st!().variables[v].evaluations = eval;
+                    self.diagnostics.extend(diags);
                 }
             }
+        } else if !st!().functions[f].is_static && !st!().functions[f].is_class_method {
+            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01004, &[]) {
+                self.diagnostics.push(Diagnostic {
+                    range: FileMgr::textRange_to_temporary_Range(&func_stmt.range),
+                    ..diagnostic
+                });
+            }
         }
-        if !self.file_mode || function_sym.borrow().get_in_parents(&vec![SymType::CLASS], true).is_none() {
-            function_sym.borrow_mut().as_func_mut().arch_eval_status = BuildStatus::IN_PROGRESS;
+        if !self.file_mode || st!().get_in_parents(function_sym_key, &[SymType::CLASS], true).is_none() {
+            st!().functions[f].arch_eval_status = BuildStatus::IN_PROGRESS;
             let old_noqa = session.current_noqa.clone();
-            session.current_noqa = function_sym.borrow().get_noqas();
-            self.sym_stack.push(function_sym.clone());
+            session.current_noqa = st!().get_noqas(function_sym_key);
+            self.sym_stack.push(function_sym_key);
             self.visit_sub_stmts(session, &func_stmt.body);
             self.sym_stack.pop();
             session.current_noqa = old_noqa;
-            PythonArchEval::handle_function_returns(session, func_stmt, &function_sym, &func_stmt.range.end(), &mut self.diagnostics);
-            PythonArchEval::handle_func_evaluations(&mut session.sync_odoo.symbol_table, &func_stmt.body, &function_sym);
-            function_sym.borrow_mut().as_func_mut().arch_eval_status = BuildStatus::DONE;
+            PythonArchEval::handle_function_returns(session, func_stmt, f, &func_stmt.range.end(), &mut self.diagnostics);
+            PythonArchEval::handle_func_evaluations(&mut session.sync_odoo.symbol_table, &func_stmt.body, f);
+            st!().functions[f].arch_eval_status = BuildStatus::DONE;
         }
     }
 
