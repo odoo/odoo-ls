@@ -531,10 +531,14 @@ impl ReferenceVisitor {
     }
 
     fn visit_assign(&mut self, session: &mut SessionInfo, assign: &StmtAssign) {
+        for assign_target in assign.targets.iter() {
+            self.visit_expr(session, assign_target, &assign.range.start());
+        }
         self.visit_expr(session, &assign.value, &assign.range.start());
     }
 
     fn visit_ann_assign(&mut self, session: &mut SessionInfo, assign: &StmtAnnAssign) {
+        self.visit_expr(session, &assign.target, &assign.range.start());
         if let Some(value) = assign.value.as_ref() {
             self.visit_expr(session, value, &assign.range.start());
         }
