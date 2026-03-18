@@ -6,7 +6,6 @@ use ruff_text_size::{Ranged, TextRange, TextSize};
 use ruff_python_ast::{Alias, AnyRootNodeRef, CmpOp, Expr, ExprNamed, ExprTuple, FStringPart, Identifier, Pattern, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtMatch, StmtTry, StmtWhile, StmtWith};
 use lsp_types::Diagnostic;
 use tracing::{trace, warn};
-use weak_table::traits::WeakElement;
 
 use crate::constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, DEBUG_STEPS, DEBUG_STEPS_ONLY_INTERNAL};
 use crate::core::python_utils;
@@ -819,10 +818,11 @@ impl PythonArchBuilder {
     }
 
     fn _resolve_all_symbols(&mut self, session: &mut SessionInfo) {
-        // @arena-next
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let parent = *self.sym_stack.last().unwrap();
         for (symbol_name, range) in self.__all_symbols_to_add.drain(..) {
-            if self.sym_stack.last().unwrap().borrow().get_content_symbol(&symbol_name, u32::MAX).symbols.is_empty() {
-                self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", symbol_name), &range);
+            if st!().get_content_symbol(parent, &symbol_name, u32::MAX).symbols.is_empty() {
+                st!().add_new_variable(parent, oyarn!("{}", symbol_name), &range);
             }
         }
     }
