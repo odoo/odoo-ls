@@ -736,10 +736,14 @@ impl PythonArchEval {
             return; // can be not found if AST is incomplete
         };
         {
+            let is_static = function_sym.borrow().as_func().is_static.clone();
             if function_sym.borrow_mut().as_func_mut().can_be_in_class() || !(self.sym_stack.last().unwrap().borrow().typ() == SymType::CLASS){
                 let mut is_first = true;
                 for arg in func_stmt.parameters.posonlyargs.iter().chain(&func_stmt.parameters.args) {
-                    if is_first && self.sym_stack.last().unwrap().borrow().typ() == SymType::CLASS {
+                    if is_first
+                        && !is_static
+                        && self.sym_stack.last().unwrap().borrow().typ() == SymType::CLASS
+                    {
                         let mut var_bw = function_sym.borrow_mut();
                         let is_class_method = var_bw.as_func().is_class_method;
                         let symbol = var_bw.as_func_mut().symbols.get(&OYarn::from(arg.parameter.name.id.to_string())).unwrap().get(&0).unwrap().get(0).unwrap(); //get first declaration
@@ -782,10 +786,10 @@ impl PythonArchEval {
                         self.diagnostics.extend(diags);
                     }
                 }
-            } else if !function_sym.borrow_mut().as_func_mut().is_static && !function_sym.borrow().as_func().is_class_method {
+            } else if !is_static {
                 if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01004, &[]) {
                     self.diagnostics.push(Diagnostic {
-                        range: FileMgr::textRange_to_temporary_Range(&func_stmt.range),
+                        range: FileMgr::textRange_to_temporary_Range(&func_stmt.name.range()),
                         ..diagnostic
                     });
                 }
