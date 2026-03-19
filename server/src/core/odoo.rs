@@ -901,6 +901,25 @@ impl SyncOdoo {
         false
     }
 
+    /// Ensure that a function symbol's evaluations are as fully populated
+    pub fn ensure_func_evaluations(session: &mut SessionInfo, func: &Rc<RefCell<Symbol>>) {
+        if func.borrow().typ() != SymType::FUNCTION {
+            return; // TODO: Arena, func should accept function symbols only
+        }
+        let Some(func_file) = func.borrow().get_file().and_then(|f| f.upgrade()) else {
+            return;
+        };
+        if func.borrow().evaluations().expect("Function symbols must have evaluations").is_empty()
+        && !func_file.borrow().is_external()
+        {
+            // Run Arch eval on file, if possible, then run everything on the fn
+            // until arch_eval
+            SyncOdoo::build_now(session, &func_file, BuildSteps::ARCH_EVAL);
+            SyncOdoo::build_now(session, &func, BuildSteps::ARCH);
+            SyncOdoo::build_now(session, &func, BuildSteps::ARCH_EVAL);
+        }
+    }
+
     pub fn build_now_dependencies(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, step: BuildSteps) {
         let symbol = symbol.borrow();
         match symbol.typ() {
