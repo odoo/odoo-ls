@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use lsp_types::{Diagnostic, Position, Range};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation::ContextValue;
+use crate::core::symbols::package_symbol::PackageSymbol;
 use crate::core::symbols::symbol_table::{follow_ref, get_member_symbol, get_sym, is_field_class, is_specific_field, ClassKey, SymbolKey};
 use crate::{constants::*, oyarn, Sy};
 use crate::core::odoo::SyncOdoo;
@@ -28,6 +29,7 @@ pub struct PythonValidator {
     sym_stack: Vec<SymbolKey>,
     pub diagnostics: Vec<Diagnostic>, //collect diagnostic from arch and arch_eval too from inner functions, but put everything at Validation level
     safe_imports: Vec<bool>,
+    // @arena todo: store a module key here?
     current_module: Option<SymbolKey>,
     file_info: Option<Rc<RefCell<FileInfo>>>,
 }
@@ -71,39 +73,39 @@ impl PythonValidator {
 
     /* Validate the symbol. The dependencies must be done before any validation. */
     pub fn validate(&mut self, session: &mut SessionInfo) {
-        self.file = self.sym_stack[0].borrow().get_file().unwrap().upgrade().unwrap();
-        let symbol = self.sym_stack[0].borrow();
-        self.current_module = symbol.find_module();
-        if symbol.build_status(BuildSteps::VALIDATION) != BuildStatus::PENDING {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let symbol = self.sym_stack[0];
+        self.file = st!().get_file(symbol).unwrap();
+        self.current_module = st!().find_module(symbol);
+        if st!().build_status(symbol, BuildSteps::VALIDATION) != BuildStatus::PENDING {
             return;
         }
-        let sym_type = symbol.typ().clone();
-        drop(symbol);
         let file_info_rc = self.get_file_info(session).clone();
         let file_info_rc = match file_info_rc {
             Some(f) => f,
             None => {
-                self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::INVALID);
+                st!().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::INVALID);
                 return;
             }
         };
         self.file_info = Some(file_info_rc.clone());
-        match sym_type {
-            SymType::FILE | SymType::PACKAGE(_) => {
-                if self.sym_stack[0].borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
+        match symbol {
+            SymbolKey::File(_) | SymbolKey::Package(_) => {
+                if st!().build_status(symbol, BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
                     return;
                 }
-                if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !self.sym_stack[0].borrow().is_external()) {
-                trace!("Validating {}", self.sym_stack[0].borrow().paths().first().unwrap_or(&S!("No path found")));
+                let symbol_view = get_sym!(st!(), symbol);
+                if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !symbol_view.is_external()) {
+                trace!("Validating {}", symbol_view.paths().first().unwrap_or(&S!("No path found")));
                 }
-                self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
+                st!().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 file_info_rc.borrow_mut().replace_diagnostics(BuildSteps::VALIDATION, vec![]);
                 if file_info_rc.borrow().file_info_ast.borrow().indexed_module.is_none() {
                     file_info_rc.borrow_mut().prepare_ast(session);
                 }
                 let file_info = file_info_rc.borrow();
-                if file_info_rc.borrow().file_info_ast.borrow().text_hash != self.sym_stack[0].borrow().get_processed_text_hash(){
-                    self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::INVALID);
+                if file_info_rc.borrow().file_info_ast.borrow().text_hash != st!().get_processed_text_hash(symbol){
+                    st!().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::INVALID);
                     return;
                 }
                 let file_info_ast_rc = file_info.file_info_ast.clone();
@@ -111,44 +113,46 @@ impl PythonValidator {
                 drop(file_info);
                 if file_info_ast.indexed_module.is_some() {
                     let old_noqa = session.current_noqa.clone();
-                    session.current_noqa = self.sym_stack[0].borrow().get_noqas();
+                    session.current_noqa = st!().get_noqas(symbol);
                     self.validate_body(session, file_info_ast.get_stmts().as_ref().unwrap());
                     session.current_noqa = old_noqa;
                 }
                 drop(file_info_ast);
-                if self.sym_stack[0].borrow().typ() == SymType::PACKAGE(PackageType::MODULE) {
-                    ModuleSymbol::validate_manifest(&self.sym_stack[0], session);
+                let symbol = self.sym_stack[0];
+                if let SymbolKey::Package(p) = symbol && matches!(st!().packages[p], PackageSymbol::Module(_)) {
+                    ModuleSymbol::validate_manifest(p, session);
                 }
                 let mut file_info = file_info_rc.borrow_mut();
                 file_info.replace_diagnostics(BuildSteps::VALIDATION, self.diagnostics.clone());
             },
-            SymType::FUNCTION => {
-                if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !self.sym_stack[0].borrow().is_external()) {
-                trace!("Validating function {}", self.sym_stack[0].borrow().name());
+            SymbolKey::Function(f) => {
+                let symbol_view = get_sym!(st!(), symbol);
+                if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !symbol_view.is_external()) {
+                    trace!("Validating function {}", symbol_view.name());
                 }
                 self.file_mode = false;
-                let func = &self.sym_stack[0];
-                let Some(parent_file) = func.borrow().get_file().and_then(|parent_weak| parent_weak.upgrade()) else {
+                let func = symbol;
+                let Some(parent_file) = st!().get_file(func) else {
                     panic!("Parent file not found on validating function")
                 };
-                if file_info_rc.borrow().file_info_ast.borrow().text_hash != parent_file.borrow().get_processed_text_hash(){
-                    self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::INVALID);
+                if file_info_rc.borrow().file_info_ast.borrow().text_hash != st!().get_processed_text_hash(parent_file) {
+                    st!().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::INVALID);
                     return;
                 }
-                if func.borrow().as_func().arch_status == BuildStatus::PENDING { //TODO other checks to do? maybe odoo step, or?????????
-                    self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::PENDING);
-                    self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
-                    self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
-                    SyncOdoo::build_now(session, &func, BuildSteps::ARCH);
+                if st!().functions[f].arch_status == BuildStatus::PENDING { //TODO other checks to do? maybe odoo step, or?????????
+                    st!().set_build_status(symbol, BuildSteps::ARCH, BuildStatus::PENDING);
+                    st!().set_build_status(symbol, BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
+                    st!().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::PENDING);
+                    SyncOdoo::build_now(session, func, BuildSteps::ARCH);
                 }
-                if func.borrow().as_func().arch_eval_status == BuildStatus::PENDING { //TODO other checks to do? maybe odoo step, or?????????
-                    SyncOdoo::build_now(session, &func, BuildSteps::ARCH_EVAL);
+                if st!().functions[f].arch_eval_status == BuildStatus::PENDING { //TODO other checks to do? maybe odoo step, or?????????
+                    SyncOdoo::build_now(session, func, BuildSteps::ARCH_EVAL);
                 }
-                if func.borrow().as_func().arch_eval_status != BuildStatus::DONE {
+                if st!().functions[f].arch_eval_status != BuildStatus::DONE {
                     return;
                 }
                 self.diagnostics = vec![];
-                self.sym_stack[0].borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
+                st!().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 if file_info_rc.borrow().file_info_ast.borrow().indexed_module.is_none() {
                     file_info_rc.borrow_mut().prepare_ast(session);
                 }
@@ -157,24 +161,25 @@ impl PythonValidator {
                 let file_info_ast = file_info_ast_rc.borrow();
                 drop(file_info);
                 if file_info_ast.indexed_module.is_some() {
-                    let func_index = self.sym_stack[0].borrow().node_index().unwrap().load();
+                    let func_index = st!().functions[f].node_index.load();
                     if func_index != NodeIndex::NONE {
                         let stmt = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(func_index);
                         let body = match stmt {
                             AnyRootNodeRef::Stmt(Stmt::FunctionDef(s)) => {
                                 &s.body
                             },
-                            _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
+                            _ => {panic!("Wrong statement in validation ast extraction {} ", SymType::FUNCTION)}
                         };
                         let old_noqa = session.current_noqa.clone();
-                        session.current_noqa = self.sym_stack[0].borrow().get_noqas();
+                        session.current_noqa = st!().get_noqas(symbol);
                         self.validate_body(session, body);
                         session.current_noqa = old_noqa;
                         match stmt {
                             AnyRootNodeRef::Stmt(Stmt::FunctionDef(_)) => {
-                                self.sym_stack[0].borrow_mut().as_func_mut().diagnostics.insert(BuildSteps::VALIDATION, self.diagnostics.clone());
+                                let f = self.sym_stack[0].unwrap_function_key();
+                                st!().functions[f].diagnostics.insert(BuildSteps::VALIDATION, self.diagnostics.clone());
                             },
-                            _ => {panic!("Wrong statement in validation ast extraction {} ", sym_type)}
+                            _ => {panic!("Wrong statement in validation ast extraction {} ", SymType::FUNCTION)}
                         }
                     }
                 } else {
@@ -183,20 +188,21 @@ impl PythonValidator {
             },
             _ => {panic!("Only File, function can be validated")}
         }
-        let mut symbol = self.sym_stack[0].borrow_mut();
-        symbol.set_build_status(BuildSteps::VALIDATION, BuildStatus::DONE);
-        if matches!(&symbol.typ(), SymType::FILE | SymType::PACKAGE(_)) {
-            if !symbol.in_workspace() {
-                if !symbol.is_external() {
-                    return
+        let symbol = self.sym_stack[0];
+        st!().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::DONE);
+        let symbol_view = get_sym!(st!(), symbol);
+        if matches!(symbol_view.typ(), SymType::FILE | SymType::PACKAGE(_)) {
+            if !symbol_view.in_workspace() {
+                if !symbol_view.is_external() {
+                    return;
                 }
-                FileMgr::delete_path(session, &symbol.paths()[0].to_string());
+                FileMgr::delete_path(session, &symbol_view.paths()[0]);
             } else {
                 self.file_info.as_ref().unwrap().borrow_mut().publish_diagnostics(session);
             }
             if !session.sync_odoo.config.file_cache {
-                if symbol.typ() == SymType::PACKAGE(PackageType::MODULE) {
-                    let manifest_path = PathBuf::from(symbol.as_module_package().path.clone()).join("__manifest__.py").sanitize();
+                if let SymbolKey::Package(p) = symbol && let PackageSymbol::Module(module) = &st!().packages[p] {
+                    let manifest_path = PathBuf::from(module.path.clone()).join("__manifest__.py").sanitize();
                     if let Some(manifest_file) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path) {
                         if !manifest_file.borrow().opened {
                             let manifest_file = manifest_file.borrow();
