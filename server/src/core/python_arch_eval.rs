@@ -843,6 +843,7 @@ impl PythonArchEval {
     }
 
     fn _visit_for(&mut self, session: &mut SessionInfo, for_stmt: &StmtFor) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         self.visit_expr(session, &for_stmt.iter);
         let mut deps = vec![vec![], vec![]];
         if !self.file_mode {
@@ -850,39 +851,32 @@ impl PythonArchEval {
         }
         let (eval_iter_node, diags) = Evaluation::eval_from_ast(session,
             &for_stmt.iter,
-            self.sym_stack.last().unwrap().clone(),
+            *self.sym_stack.last().unwrap(),
             &for_stmt.target.range().start(), false, &mut deps);
-        Symbol::insert_dependencies(&self.file, &mut deps, self.current_step);
+        st!().insert_dependencies(self.file, &mut deps, self.current_step);
         self.diagnostics.extend(diags);
         if eval_iter_node.len() == 1 { //Only handle values that we are sure about
             let eval = &eval_iter_node[0];
             let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-            if !eval_symbol.is_expired_if_weak() {
-                let symbol_eval = Symbol::follow_ref(&eval_symbol, session, &mut None, false, false, None, None);
-                if symbol_eval.len() == 1 && symbol_eval[0].upgrade_weak().is_some() {
-                    let symbol_type_rc = symbol_eval[0].upgrade_weak().unwrap();
-                    let symbol_type = symbol_type_rc.borrow();
-                    if symbol_type.typ() == SymType::CLASS {
-                        let (iter, _) = symbol_type.get_member_symbol(session, &S!("__iter__"), None, true, false, false, false, false);
+            if !st!().is_expired_if_weak(&eval_symbol) {
+                let symbol_eval = follow_ref(&eval_symbol, session, &mut None, false, false, None, None);
+                if symbol_eval.len() == 1 && let Some(symbol_type) = st!().upgrade_weak(&symbol_eval[0]) {
+                    if matches!(symbol_type, SymbolKey::Class(_)) {
+                        let (iter, _) = get_member_symbol(session, symbol_type, &S!("__iter__"), None, true, false, false, false, false);
                         if iter.len() == 1 {
-                            if !iter[0].borrow().is_external() { //we can't rebuild functions of external files
-                                SyncOdoo::build_now(session, &iter[0], BuildSteps::ARCH);
-                                SyncOdoo::build_now(session, &iter[0], BuildSteps::ARCH_EVAL);
-                                SyncOdoo::build_now(session, &iter[0], BuildSteps::VALIDATION);
+                            if !st!().is_external(iter[0]) { //we can't rebuild functions of external files
+                                SyncOdoo::build_now(session, iter[0], BuildSteps::ARCH);
+                                SyncOdoo::build_now(session, iter[0], BuildSteps::ARCH_EVAL);
+                                SyncOdoo::build_now(session, iter[0], BuildSteps::VALIDATION);
                             }
-                            if iter[0].borrow().evaluations().is_some() && iter[0].borrow().evaluations().unwrap().len() == 1 {
-                                let iter = iter[0].borrow();
-                                let eval_iter = &iter.evaluations().unwrap()[0];
+                            let evaluations = st!().evaluations(iter[0]);
+                            if let Some(evals) = evaluations && evals.len() == 1 {
+                                let eval_iter = evals[0].clone();
                                 if for_stmt.target.is_name_expr() { //only handle simple variable for now
-                                    let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&OYarn::from(for_stmt.target.as_name_expr().unwrap().id.to_string()), &for_stmt.target.range());
-                                    variable.as_ref().unwrap().borrow_mut().evaluations_mut().unwrap().clear();
-                                    let symbol = &eval_iter.symbol.get_symbol_as_weak(session, &mut Some(HashMap::from([(S!("parent_for"), ContextValue::SYMBOL(Rc::downgrade(&symbol_type_rc)))])), &mut vec![], None);
-                                    variable.as_ref().unwrap().borrow_mut().evaluations_mut().unwrap().push(
-                                        Evaluation::eval_from_symbol(
-                                            &symbol.weak,
-                                            symbol.instance
-                                        )
-                                    );
+                                    let variable = st!().get_positioned_symbol(*self.sym_stack.last().unwrap(), &OYarn::from(for_stmt.target.as_name_expr().unwrap().id.to_string()), &for_stmt.target.range());
+                                    let symbol = eval_iter.symbol.get_symbol_as_weak(session, &mut Some(HashMap::from([(S!("parent_for"), ContextValue::SYMBOL(symbol_type.into()))])), &mut vec![], None);
+                                    let v = variable.unwrap().unwrap_variable_key();
+                                    st!().variables[v].evaluations = vec![Evaluation::eval_from_symbol(&st!(), symbol.weak, symbol.instance)];
                                 }
                             }
                         }
