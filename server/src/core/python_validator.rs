@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use lsp_types::{Diagnostic, Position, Range};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation::ContextValue;
-use crate::core::symbols::symbol_table::{get_sym, ClassKey, SymbolKey};
+use crate::core::symbols::symbol_table::{follow_ref, get_member_symbol, get_sym, is_field_class, is_specific_field, ClassKey, SymbolKey};
 use crate::{constants::*, oyarn, Sy};
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::module_symbol::ModuleSymbol;
@@ -395,31 +395,28 @@ impl PythonValidator {
         self.validate_body(session, &stmt_with.body);
     }
 
-    // @arena todo
     fn _check_model(&mut self, session: &mut SessionInfo, class: ClassKey) {
-        let class_ref = class.borrow();
-        let Some(model_data) = class_ref.as_class_sym()._model.as_ref() else {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let Some(model_data) = st!().classes[class]._model.as_ref() else {
             return;
         };
+        let model_name = model_data.name.clone();
         if self.current_module.is_none() {
             return;
         }
-        let maybe_from_module = class_ref.find_module();
+        let maybe_from_module = st!().find_module(class.into());
         // Check fields, check related and comodel arguments
-        for symbol in class_ref.all_symbols(){
-            let sym_ref = symbol.borrow();
-            if sym_ref.typ() != SymType::VARIABLE {
-                continue;
-            }
-            let Some(evals) = sym_ref.evaluations() else {
+        for symbol in get_sym!(st!(), class.into()).all_symbols() {
+            let SymbolKey::Variable(v) = symbol else {
                 continue;
             };
+            let evals = st!().variables[v].evaluations.clone();
             for eval in evals.iter() {
                 let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
-                let eval_weaks = Symbol::follow_ref(&symbol, session, &mut None, true, false, None, None);
+                let eval_weaks = follow_ref(&symbol, session, &mut None, true, false, None, None);
                 for eval_weak in eval_weaks.iter() {
-                    let Some(symbol) = eval_weak.upgrade_weak() else {continue};
-                    if !symbol.borrow().is_field_class(session){
+                    let Some(symbol) = st!().upgrade_weak(eval_weak) else {continue};
+                    if !is_field_class(session, symbol) {
                         continue;
                     }
                     'related_check: {
@@ -427,9 +424,9 @@ impl PythonValidator {
                             let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("related_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                 break 'related_check;
                             };
-                            let syms = PythonArchEval::get_nested_sub_field(session, &related_field_name, class.clone(), maybe_from_module.clone());
-                            if syms.is_empty(){
-                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03014, &[&related_field_name, &model_data.name]) {
+                            let syms = PythonArchEval::get_nested_sub_field(session, &related_field_name, class, maybe_from_module);
+                            if syms.is_empty() {
+                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03014, &[&related_field_name, &model_name]) {
                                     self.diagnostics.push(Diagnostic {
                                         range: Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
                                         ..diagnostic_base.clone()
@@ -437,11 +434,9 @@ impl PythonValidator {
                                 }
                                 break 'related_check;
                             }
-                            let Some(field_type) = symbol
-                                .borrow()
-                                .get_member_symbol(session, &S!("type"), None, false, false, false, false, false)
+                            let Some(field_type) = get_member_symbol(session, symbol, &S!("type"), None, false, false, false, false, false)
                                 .0.first()
-                                .and_then(|field_type_var| field_type_var.borrow().evaluations().cloned())
+                                .and_then(|field_type_var| st!().evaluations(*field_type_var).cloned())
                                 .and_then(|evals| evals.first().cloned())
                                 .and_then(|eval| eval.value.clone())
                                 .and_then(|value| match value {
@@ -450,21 +445,20 @@ impl PythonValidator {
                                 }) else {
                                 break 'related_check;
                             };
-                            let found_same_type_match = syms.iter().any(|sym|{
-                                let related_eval_weaks = Symbol::follow_ref(&&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
-                                    Rc::downgrade(&sym),
+                            let found_same_type_match = syms.iter().any(|&sym| {
+                                let related_eval_weaks = follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
+                                    sym,
                                     None,
                                     false,
                                 )), session, &mut None, true, true, None, None);
                                 related_eval_weaks.iter().any(|related_eval_weak|{
-                                    let Some(related_field_class_sym) = related_eval_weak.upgrade_weak() else {
+                                    let Some(related_field_class_sym) = st!().upgrade_weak(related_eval_weak) else {
                                         return false
                                     };
-                                    let found = related_field_class_sym
-                                        .borrow()
-                                        .get_member_symbol(session, &S!("type"), None, false, false, false, false, false)
+                                    let found =
+                                        get_member_symbol(session, related_field_class_sym, &S!("type"), None, false, false, false, false, false)
                                         .0.first()
-                                        .and_then(|field_type_var| field_type_var.borrow().evaluations().cloned())
+                                        .and_then(|field_type_var| st!().evaluations(*field_type_var).cloned())
                                         .and_then(|evals| evals.first().cloned())
                                         .and_then(|eval| eval.value.clone())
                                         .map(|value| matches!(value, EvaluationValue::CONSTANT(Expr::StringLiteral(s)) if s.value.to_string() == field_type))
@@ -488,14 +482,14 @@ impl PythonValidator {
                             let Some(special_arg_range) = eval_weak.as_weak().context.get(&S!("comodel_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                 break 'comodel_check;
                             };
-                            let Some(file_symbol) = class_ref.get_file().and_then(|file| file.upgrade()) else {
+                            let Some(file_symbol) = st!().get_file(class.into()) else {
                                 break 'comodel_check;
                             };
-                            let maybe_model = session.sync_odoo.models.get(&Sy!(comodel_field_name.clone()));
-                            if maybe_model.map(|m| m.borrow_mut().has_symbols()).unwrap_or(false){
+                            let maybe_model = session.sync_odoo.models.get(comodel_field_name.as_str());
+                            if maybe_model.map(|m| m.borrow_mut().has_symbols(&st!())).unwrap_or(false) {
                                 let model = maybe_model.unwrap().clone();
-                                file_symbol.borrow_mut().add_model_dependencies(&model);
-                                let Some(ref from_module) = maybe_from_module else {break 'comodel_check;};
+                                st!().add_model_dependencies(file_symbol, &model);
+                                let Some(from_module) = maybe_from_module else {break 'comodel_check;};
                                 if !model.clone().borrow().model_in_deps(session, from_module) {
                                     if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03015, &[&comodel_field_name]) {
                                         self.diagnostics.push(Diagnostic {
@@ -514,20 +508,21 @@ impl PythonValidator {
                                     });
                                 }
                             }
-                            file_symbol.borrow_mut().as_file_mut().not_found_models.insert(Sy!(comodel_field_name.clone()), BuildSteps::ARCH_EVAL);
-                            session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(file_symbol.clone());
+                            let f = file_symbol.unwrap_file_key();
+                            st!().files[f].not_found_models.insert(Sy!(comodel_field_name), BuildSteps::ARCH_EVAL);
+                            session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(file_symbol);
                         }
                     }
                     for special_fn_field_name in ["compute", "inverse", "search"]{
                         let Some(method_name) = eval_weak.as_weak().context.get(&S!(special_fn_field_name)).map(|ctx_val| ctx_val.as_string()) else {
                             continue;
                         };
-                        let Some(module) = class_ref.find_module() else {
+                        let Some(module) = maybe_from_module else {
                             continue;
                         };
-                        let (symbols, _diagnostics) = class.clone().borrow().get_member_symbol(session,
+                        let (symbols, _diagnostics) = get_member_symbol(session, class.into(),
                             &method_name.to_string(),
-                            Some(module.clone()),
+                            Some(module),
                             false,
                             false,
                             true,
@@ -549,31 +544,31 @@ impl PythonValidator {
                         }
                     }
                     if let Some(inverse_name) = eval_weak.as_weak().context.get(&S!("inverse_name")).map(|ctx_val| ctx_val.as_string()) {
-                        let Some(model_name) = eval_weak.as_weak().context.get(&S!("comodel_name")).map(|ctx_val| ctx_val.as_string()) else {
+                        let Some(comodel_name) = eval_weak.as_weak().context.get(&S!("comodel_name")).map(|ctx_val| ctx_val.as_string()) else {
                             continue;
                         };
-                        let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", model_name)).cloned() else {
+                        let Some(model) = session.sync_odoo.models.get(comodel_name.as_str()).cloned() else {
                             continue;
                         };
-                        let Some(module) = class_ref.find_module() else {
+                        let Some(module) = maybe_from_module else {
                             continue;
                         };
-                        let main_syms = model.borrow().get_main_symbols(session, Some(module.clone()));
-                        let symbols: Vec<_> = main_syms.iter().flat_map(|main_sym|
-                            main_sym.clone().borrow().get_member_symbol(session, &inverse_name, Some(module.clone()), false, true, false, true, false).0
+                        let main_syms = model.borrow().get_main_symbols(session, Some(module));
+                        let symbols: Vec<_> = main_syms.iter().flat_map(|&main_sym|
+                            get_member_symbol(session, main_sym.into(), &inverse_name, Some(module), false, true, false, true, false).0
                         ).collect();
                         if symbols.is_empty() {
                             let Some(arg_range) = eval_weak.as_weak().context.get(&format!("inverse_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                 continue;
                             };
-                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03021, &[&inverse_name, &model_name]) {
+                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03021, &[&inverse_name, &comodel_name]) {
                                 self.diagnostics.push(Diagnostic {
                                     range: Range::new(Position::new(arg_range.start().to_u32(), 0), Position::new(arg_range.end().to_u32(), 0)),
                                     ..diagnostic_base.clone()
                                 });
                             }
                         }
-                        if symbols.iter().any(|sym| !sym.borrow().is_specific_field(session, &["Many2one", "Many2oneReference"])) {
+                        if symbols.iter().any(|&sym| !is_specific_field(session, sym, &["Many2one", "Many2oneReference"])) {
                             let Some(arg_range) = eval_weak.as_weak().context.get(&format!("inverse_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                 continue;
                             };
@@ -586,11 +581,11 @@ impl PythonValidator {
                         } else {
                             // Check if we have a many2one field pointing to the comodel with another name than the current model
                             let mut comodel_eval_weaks = Vec::new();
-                            for sym in symbols.iter() {
-                                let sym_ref = sym.borrow();
-                                let evals = sym_ref.evaluations().as_ref().unwrap().iter();
+                            for sym in symbols {
+                                // @arena: borrow error expected (clone evals)
+                                let evals = st!().evaluations(sym).cloned().unwrap();
                                 for eval in evals {
-                                    let followed = Symbol::follow_ref(
+                                    let followed = follow_ref(
                                         &eval.symbol.get_symbol(session, &mut None, &mut vec![], None),
                                         session,
                                         &mut None,
@@ -603,16 +598,16 @@ impl PythonValidator {
                                 }
                             }
                             for comodel_eval_weak in comodel_eval_weaks {
-                                let Some(model_name) = comodel_eval_weak.as_weak().context.get(&S!("comodel_name")).map(|ctx_val| ctx_val.as_string()) else {
+                                let Some(comodel_name) = comodel_eval_weak.as_weak().context.get(&S!("comodel_name")).map(|ctx_val| ctx_val.as_string()) else {
                                     continue;
                                 };
-                                if model_name == model_data.name.to_string() { // valid
+                                if comodel_name == model_name.to_string() { // valid
                                     continue;
                                 }
                                 let Some(arg_range) = eval_weak.as_weak().context.get(&format!("inverse_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                     continue;
                                 };
-                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03023, &[&inverse_name, &model_data.name, &model_name]) {
+                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03023, &[&inverse_name, &model_name, &comodel_name]) {
                                     self.diagnostics.push(Diagnostic {
                                         range: Range::new(Position::new(arg_range.start().to_u32(), 0), Position::new(arg_range.end().to_u32(), 0)),
                                         ..diagnostic_base.clone()
@@ -626,15 +621,15 @@ impl PythonValidator {
             }
         }
         //Check inherit field
-        let inherit = class_ref.get_symbol(&(vec![], vec![Sy!("_inherit")]), u32::MAX);
-        if let Some(inherit) = inherit.last() {
-            let inherit = inherit.borrow();
-            let inherit_evals = &inherit.evaluations().unwrap();
-            for inherit_eval in inherit_evals.iter() {
+        let inherit = st!().get_symbol(class.into(), &(vec![], vec![Sy!("_inherit")]), u32::MAX);
+        if let Some(&inherit) = inherit.last() {
+            let inherit_evals = st!().evaluations(inherit).cloned().unwrap();
+            for inherit_eval in inherit_evals {
                 let inherit_value = inherit_eval.follow_ref_and_get_value(session, &mut None, &mut vec![]);
                 if let Some(inherit_value) = inherit_value {
                     match inherit_value {
                         EvaluationValue::CONSTANT(Expr::StringLiteral(s)) => {
+                            // @arena: consider using "as_slice" instead of alocating new string
                             self._check_module_dependency(session, class, &s.value.to_string(), &s.range());
                         },
                         EvaluationValue::LIST(l) => {
@@ -659,22 +654,23 @@ impl PythonValidator {
             }
         }
         // Check name for shadowing warning
-        let model_name = model_data.name.clone();
         let Some(model) = session.sync_odoo.models.get(&model_name).cloned() else {
             return;
         };
-        let inherited_model_names = class_ref.as_class_sym()._model.as_ref().unwrap().inherit.clone();
+        let inherited_model_names = st!().classes[class]._model.as_ref().unwrap().inherit.clone();
         if !inherited_model_names.contains(&model_name)
-        && model.borrow().get_main_symbols(session, class_ref.find_module()).into_iter().filter(|main_sym| {
-            !Rc::ptr_eq(main_sym, class)
+        && model.borrow().get_main_symbols(session, maybe_from_module).into_iter().filter(|&main_sym| {
+            main_sym != class
         }).count() > 0 {
             // This a model with a name that already exists in models and in dependencies,
             // and it is not inherited, so it is basically shadowing the existing model.
-            let _name = class_ref.get_symbol(&(vec![], vec![Sy!("_name")]), u32::MAX);
-            if let Some(_name) = _name.last() {
-                let mut range = _name.borrow().range().clone();
+            let _name = st!().get_symbol(class.into(), &(vec![], vec![Sy!("_name")]), u32::MAX);
+            if let Some(&_name) = _name.last() {
+                let _name_sym = get_sym!(st!(), _name);
+                let mut range = _name_sym.range().clone();
+                let evals = _name_sym.evaluations().cloned().unwrap();
                 // Try to get the string value range, otherwise stick to _name var range.
-                if let Some(eval_range) = _name.borrow().evaluations().unwrap().iter().find_map(|e|
+                if let Some(eval_range) = evals.iter().find_map(|e|
                     match e.follow_ref_and_get_value(session, &mut None, &mut self.diagnostics) {
                         Some(EvaluationValue::CONSTANT(Expr::StringLiteral(_))) => e.range,
                         _ => None,
@@ -691,11 +687,10 @@ impl PythonValidator {
             }
         }
         // check inherits
-        let inherits = class_ref.get_symbol(&(vec![], vec![Sy!("_inherits")]), u32::MAX);
-        if let Some(inherits) = inherits.last() {
-            let inherits = inherits.borrow();
-            let inherits_evals = &inherits.evaluations().unwrap();
-            for inherits_eval in inherits_evals.iter() {
+        let inherits = st!().get_symbol(class.into(), &(vec![], vec![Sy!("_inherits")]), u32::MAX);
+        if let Some(&inherits) = inherits.last() {
+            let inherits_evals = st!().evaluations(inherits).cloned().unwrap();
+            for inherits_eval in inherits_evals {
                 let inherits_value = inherits_eval.follow_ref_and_get_value(session, &mut None, &mut vec![]);
                 if let Some(inherits_value) = inherits_value {
                     match inherits_value {
