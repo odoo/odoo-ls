@@ -7,9 +7,8 @@ use std::path::PathBuf;
 use lsp_types::{Diagnostic, Position, Range};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation::ContextValue;
-use crate::core::symbols::symbol_table::SymbolKey;
+use crate::core::symbols::symbol_table::{get_sym, SymbolKey};
 use crate::{constants::*, oyarn, Sy};
-use crate::core::symbols::symbol::Symbol;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::threads::SessionInfo;
@@ -29,7 +28,7 @@ pub struct PythonValidator {
     sym_stack: Vec<SymbolKey>,
     pub diagnostics: Vec<Diagnostic>, //collect diagnostic from arch and arch_eval too from inner functions, but put everything at Validation level
     safe_imports: Vec<bool>,
-    current_module: Option<Rc<RefCell<Symbol>>>,
+    current_module: Option<SymbolKey>,
     file_info: Option<Rc<RefCell<FileInfo>>>,
 }
 
@@ -50,19 +49,18 @@ impl PythonValidator {
         }
     }
 
+    // @arena: different behavior from the original - use same path (with
+    // _init_.py(i) for package) for both get_file_info and update_file_info
     fn get_file_info(&mut self, session: &mut SessionInfo) -> Option<Rc<RefCell<FileInfo>>> {
-        let file_symbol = self.file.borrow();
-        let mut path = file_symbol.paths()[0].clone();
-        if matches!(file_symbol.typ(), SymType::PACKAGE(_)) {
-            path = PathBuf::from(path).join("__init__.py").sanitize() + file_symbol.as_package().i_ext();
-        }
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let path = get_sym!(st!(), self.file).get_symbol_first_path();
         let file_info_rc = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
         let file_info_rc = match file_info_rc {
             Some(f) => f,
             None => {
-                let (updated, symbol) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &file_symbol.paths()[0], None, Some(-100), true);
+                let (updated, symbol) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path, None, Some(-100), true);
                 if !updated {
-                    warn!("File info not found for validating symbol: {} at path {}", self.sym_stack[0].borrow().name(), file_symbol.paths()[0]);
+                    warn!("File info not found for validating symbol: {} at path {}", st!().name(self.sym_stack[0]), path);
                     return None;
                 }
                 symbol

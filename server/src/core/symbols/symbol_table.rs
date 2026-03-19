@@ -1490,6 +1490,22 @@ impl SymbolTable {
             SymbolKey::CsvFile(c) => self.csv_files[c].is_external,
         }
     }
+
+    pub fn name(&self, target: SymbolKey) -> &OYarn {
+        match target {
+            SymbolKey::Root(k) => &self.roots[k].name,
+            SymbolKey::DiskDir(k) => &self.disk_dirs[k].name,
+            SymbolKey::Namespace(k) => &self.namespaces[k].name,
+            SymbolKey::Package(k) => self.packages[k].name(),
+            SymbolKey::File(k) => &self.files[k].name,
+            SymbolKey::Compiled(k) => &self.compiled[k].name,
+            SymbolKey::Class(k) => &self.classes[k].name,
+            SymbolKey::Function(k) => &self.functions[k].name,
+            SymbolKey::Variable(k) => &self.variables[k].name,
+            SymbolKey::XmlFile(k) => &self.xml_files[k].name,
+            SymbolKey::CsvFile(k) => &self.csv_files[k].name,
+        }
+    }
 }
 
 //infer a name, given a position
