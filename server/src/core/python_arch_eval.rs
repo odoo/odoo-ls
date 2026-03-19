@@ -839,15 +839,11 @@ impl PythonArchEval {
                     let symbol_type_rc = symbol_eval[0].upgrade_weak().unwrap();
                     let symbol_type = symbol_type_rc.borrow();
                     if symbol_type.typ() == SymType::CLASS {
-                        let (iter, _) = symbol_type.get_member_symbol(session, &S!("__iter__"), None, true, false, false, false, false);
-                        if iter.len() == 1 {
-                            if !iter[0].borrow().is_external() { //we can't rebuild functions of external files
-                                SyncOdoo::build_now(session, &iter[0], BuildSteps::ARCH);
-                                SyncOdoo::build_now(session, &iter[0], BuildSteps::ARCH_EVAL);
-                                SyncOdoo::build_now(session, &iter[0], BuildSteps::VALIDATION);
-                            }
-                            if iter[0].borrow().evaluations().is_some() && iter[0].borrow().evaluations().unwrap().len() == 1 {
-                                let iter = iter[0].borrow();
+                        let (iters, _) = symbol_type.get_member_symbol(session, &S!("__iter__"), None, true, false, false, false, false);
+                        if let Some(iter) = iters.first() && iters.len() == 1 {
+                            SyncOdoo::ensure_func_evaluations(session, iter);
+                            if iter.borrow().evaluations().is_some() && iter.borrow().evaluations().unwrap().len() == 1 {
+                                let iter = iter.borrow();
                                 let eval_iter = &iter.evaluations().unwrap()[0];
                                 if for_stmt.target.is_name_expr() { //only handle simple variable for now
                                     let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&OYarn::from(for_stmt.target.as_name_expr().unwrap().id.to_string()), &for_stmt.target.range());
@@ -948,6 +944,7 @@ impl PythonArchEval {
                                 if let Some(symbol) = symbol.weak.upgrade() {
                                     let _enter_ = symbol.borrow().get_symbol(&(vec![], vec![Sy!("__enter__")]), u32::MAX);
                                     if let Some(_enter_) = _enter_.last() {
+                                        SyncOdoo::ensure_func_evaluations(session, _enter_);
                                         match *_enter_.borrow() {
                                             Symbol::Function(ref func) => {
                                                 enter_evals.extend(func.evaluations.clone());

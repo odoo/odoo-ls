@@ -912,17 +912,7 @@ impl Evaluation {
                                 let init = base_sym.borrow().get_member_symbol(session, &S!("__init__"), module.clone(), true, false, false, false, false);
                                 let mut found_hook = false;
                                 if let Some(init) = init.0.first() {
-                                    let init_sym_file = init.borrow().get_file().as_ref().unwrap().upgrade().unwrap().clone();
-                                    if init.borrow().evaluations().is_some()
-                                    && init.borrow().evaluations().unwrap().len() == 0
-                                    && !init_sym_file.borrow().is_external()
-                                    && init_sym_file.borrow().build_status(BuildSteps::ARCH_EVAL) == BuildStatus::DONE
-                                    && init.borrow().build_status(BuildSteps::ARCH) != BuildStatus::IN_PROGRESS
-                                    && init.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS
-                                    && init.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::PENDING {
-                                        let mut v = PythonValidator::new(init.borrow().get_entry().unwrap(), init.clone());
-                                        v.validate(session);
-                                    }
+                                    SyncOdoo::ensure_func_evaluations(session, init);
                                     if let Some(init_eval) = init.borrow().evaluations() {
                                         //init will always return an instance of the class, so we are not searching the method to check its return type, but rather to check if there is 
                                         //an hook on it. Hooks, can be used to use parameters for context (see relational fields for example).
@@ -974,29 +964,15 @@ impl Evaluation {
                         }
                     } else if base_sym.borrow().typ() == SymType::FUNCTION {
                         let base_sym_file = base_sym.borrow().get_file().as_ref().unwrap().upgrade().unwrap().clone();
-                        SyncOdoo::build_now(session, &base_sym_file, BuildSteps::ARCH_EVAL);
                         let in_class = base_sym.borrow().get_in_parents(&vec![SymType::CLASS], true).is_some();
                         if required_dependencies.len() >= 2 {
                             if !in_class {
                                 required_dependencies[1].push(base_sym_file.clone());
                             }
                         }
-                        //function return evaluation can come from:
-                        //  - type annotation parsing (ARCH_EVAL step)
-                        //  - documentation parsing (Arch_eval and VALIDATION step)
-                        //  - function body inference (VALIDATION step)
-                        // Therefore, the actual version of the algorithm will trigger build from the different steps if this one has already been reached.
-                        // We don't want to launch validation step while Arch evaluating the code.
-                        if base_sym.borrow().evaluations().is_some()
-                        && base_sym.borrow().evaluations().unwrap().len() == 0
-                        && !base_sym_file.borrow().is_external()
-                        && base_sym_file.borrow().build_status(BuildSteps::ARCH_EVAL) == BuildStatus::DONE
-                        && base_sym.borrow().build_status(BuildSteps::ARCH) != BuildStatus::IN_PROGRESS
-                        && base_sym.borrow().build_status(BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS
-                        && base_sym.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::PENDING {
-                            let mut v = PythonValidator::new(base_sym.borrow().get_entry().unwrap(), base_sym.clone());
-                            v.validate(session);
-                        }
+                        // Ensure return-type evaluations are available: resolves type annotations
+                        // (ARCH_EVAL) and, if still empty, infers from body (VALIDATION).
+                        SyncOdoo::ensure_func_evaluations(session, &base_sym);
                         if required_dependencies.len() >= 3 {
                             if in_class {
                                 required_dependencies[2].push(base_sym_file.clone());
