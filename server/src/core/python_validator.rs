@@ -329,8 +329,8 @@ impl PythonValidator {
     }
 
     fn _resolve_import(&mut self, session: &mut SessionInfo, _from_stmt: Option<&Identifier>, name_aliases: &[Alias], _level: Option<u32>, _range: &TextRange) {
-        let file_symbol = self.sym_stack[0].borrow().get_file();
-        let file_symbol = file_symbol.expect("file symbol not found").upgrade().expect("unable to upgrade file symbol");
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let file_symbol = st!().get_file(self.sym_stack[0]).expect("file symbol not found");
         for alias in name_aliases.iter() {
             if alias.name.id == "*" {
                 continue;
@@ -341,17 +341,20 @@ impl PythonValidator {
                 } else {
                     alias.asname.as_ref().unwrap().clone().to_string()
                 };
-                let variable = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&OYarn::from(var_name), &alias.range);
+                let variable = st!().get_positioned_symbol(*self.sym_stack.last().unwrap(), &OYarn::from(var_name), &alias.range);
                 if let Some(variable) = variable {
-                    for evaluation in variable.borrow().evaluations().as_ref().unwrap().iter() {
-                        let eval_sym = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics, Some(file_symbol.clone()));
+                    let v = variable.unwrap_variable_key();
+                    for evaluation in st!().variables[v].evaluations.clone() {
+                        let eval_sym = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics, Some(file_symbol));
                         match eval_sym {
                             EvaluationSymbolPtr::WEAK(w) => {
-                                if let Some(symbol) = w.weak.upgrade() {
-                                    let module = symbol.borrow().find_module();
+                                if let Some(symbol) = w.weak.upgrade(&st!()) {
+                                    let module = st!().find_module(symbol);
                                     if let Some(module) = module {
-                                        if !ModuleSymbol::is_in_deps(session, self.current_module.as_ref().unwrap(), &module.borrow().as_module_package().dir_name) && !self.safe_imports.last().unwrap() {
-                                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03003, &[&module.borrow().as_module_package().dir_name]) {
+                                        let module_sym = get_sym!(st!(), module);
+                                        let dir_name = &module_sym.as_module_package().dir_name;
+                                        if !ModuleSymbol::is_in_deps(&st!(), self.current_module.unwrap(), dir_name) && !self.safe_imports.last().unwrap() {
+                                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03003, &[dir_name]) {
                                                 self.diagnostics.push(Diagnostic {
                                                     range: Range::new(Position::new(alias.range.start().to_u32(), 0), Position::new(alias.range.end().to_u32(), 0)),
                                                     ..diagnostic_base.clone()
