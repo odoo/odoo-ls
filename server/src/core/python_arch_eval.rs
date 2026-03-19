@@ -198,7 +198,7 @@ impl PythonArchEval {
                 self._visit_for(session, for_stmt);
             },
             Stmt::With(with_stmt) => {
-                self._visit_with(session, with_stmt);
+                self.visit_with(session, with_stmt);
             },
             Stmt::Return(return_stmt) => {
                 self._visit_return(session, return_stmt);
@@ -949,12 +949,12 @@ impl PythonArchEval {
         }
     }
 
-    fn _visit_with(&mut self, session: &mut SessionInfo, with_stmt: &StmtWith) {
+    fn visit_with(&mut self, session: &mut SessionInfo, with_stmt: &StmtWith) {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         for item in with_stmt.items.iter() {
             self.visit_expr(session, &item.context_expr);
             if let Some(var) = item.optional_vars.as_ref() {
-                match &**var {
+                match var.as_ref() {
                     Expr::Name(expr_name) => {
                         let variable = st!().get_positioned_symbol(*self.sym_stack.last().unwrap(), &OYarn::from(expr_name.id.to_string()), &expr_name.range());
                         if let Some(variable_key) = variable {
@@ -964,22 +964,22 @@ impl PythonArchEval {
                             if !self.file_mode {
                                 deps.push(vec![]);
                             }
-                            let (eval, diags) = Evaluation::eval_from_ast(session, &item.context_expr, parent, &with_stmt.range.start(), false, &mut deps);
+                            let (context_mgr_evals, diags) = Evaluation::eval_from_ast(session, &item.context_expr, parent, &with_stmt.range.start(), false, &mut deps);
                             st!().insert_dependencies(self.file, &mut deps, self.current_step);
-                            let mut evals = vec![];
-                            // @arena: the for-loop below is dead code, as evals is never read or assigned
-                            for eval in eval.iter() {
-                                let symbol = eval.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, Some(st!().parent_file_or_function(variable_key).unwrap()));
+                            // The expression name in with <> [as <name>], is the result of __enter__.
+                            let mut enter_evals = vec![];
+                            for context_mgr_eval in context_mgr_evals.iter() {
+                                let symbol = context_mgr_eval.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, Some(st!().parent_file_or_function(variable_key).unwrap()));
                                 if let Some(symbol) = symbol.weak.upgrade(&st!()) {
                                     let _enter_ = st!().get_symbol(symbol, &(vec![], vec![Sy!("__enter__")]), u32::MAX);
                                     if let Some(&_enter_) = _enter_.last() {
                                         if let SymbolKey::Function(f) = _enter_ {
-                                            evals.extend(st!()[f].evaluations.clone());
+                                            enter_evals.extend(st!()[f].evaluations.clone());
                                         }
                                     }
                                 }
                             }
-                            st!()[v].evaluations = eval;
+                            st!()[v].evaluations = enter_evals;
                             self.diagnostics.extend(diags);
                         }
                     },
