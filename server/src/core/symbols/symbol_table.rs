@@ -109,6 +109,13 @@ impl SymbolKey {
             _ => panic!("Not a ClassKey"),
         }
     }
+
+    pub fn unwrap_file_key(&self) -> FileKey {
+        match self {
+            SymbolKey::File(k) => *k,
+            _ => panic!("Not a FileKey"),
+        }
+    }
 }
 
 /// @arena: temporary. symbol_rc.borrow() -> get_sym!(symbol_key).

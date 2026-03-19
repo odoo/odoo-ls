@@ -713,24 +713,24 @@ impl PythonValidator {
         }
     }
 
-    fn _check_module_dependency(&mut self, session: &mut SessionInfo, class_sym_rc: &Rc<RefCell<Symbol>>, model: &String, range: &TextRange) {
-        let Some(from) = self.current_module.as_ref() else {
+    fn _check_module_dependency(&mut self, session: &mut SessionInfo, class_key: ClassKey, model_name: &str, range: &TextRange) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let Some(from) = self.current_module else {
             return; //TODO do we want to raise something?
         };
-        let model_name = Sy!(model.clone());
-        let model = session.sync_odoo.models.get(&model_name);
-        if model.map(|m| m.borrow_mut().has_symbols()).unwrap_or(false) {
+        let model = session.sync_odoo.models.get(model_name);
+        if model.map(|m| m.borrow_mut().has_symbols(&st!())).unwrap_or(false) {
             let model = model.unwrap().clone();
             let borrowed_model = model.borrow();
             let mut main_modules = vec![];
             let mut found_one = false;
-            for main_sym in borrowed_model.get_main_symbols(session, None).iter() {
-                let main_sym = main_sym.borrow();
-                let main_sym_module = main_sym.find_module();
+            for main_sym in borrowed_model.get_main_symbols(session, None) {
+                let main_sym_module = st!().find_module(main_sym.into());
                 if let Some(main_sym_module) = main_sym_module {
-                    let module_name = main_sym_module.borrow().as_module_package().dir_name.clone();
+                    let main_sym_module_sv = get_sym!(st!(), main_sym_module);
+                    let module_name = &main_sym_module_sv.as_module_package().dir_name;
                     main_modules.push(module_name.clone());
-                    if ModuleSymbol::is_in_deps(session, from, &module_name) {
+                    if ModuleSymbol::is_in_deps(&st!(), from, module_name) {
                         found_one = true;
                         break;
                     }
@@ -760,11 +760,12 @@ impl PythonValidator {
                     ..diagnostic_base
                 });
             }
-            let Some(file_symbol) = class_sym_rc.borrow().get_file().and_then(|file| file.upgrade()) else {
+            let Some(file_symbol) = st!().get_file(class_key.into()) else {
               return;
             };
-            file_symbol.borrow_mut().as_file_mut().not_found_models.insert(model_name.clone(), BuildSteps::ARCH_EVAL);
-            session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(file_symbol.clone());
+            let f = file_symbol.unwrap_file_key();
+            st!().files[f].not_found_models.insert(oyarn!("{}", model_name), BuildSteps::ARCH_EVAL);
+            session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(file_symbol);
         }
     }
 
