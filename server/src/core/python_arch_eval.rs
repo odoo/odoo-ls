@@ -1030,6 +1030,7 @@ impl PythonArchEval {
                 Symbol::insert_dependencies(file_sym, &mut deps, BuildSteps::ARCH_EVAL);
             }
             diagnostics.extend(diags);
+            func_sym.borrow_mut().set_evaluations(evaluations);
         }
     }
 
