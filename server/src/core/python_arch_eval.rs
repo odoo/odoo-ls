@@ -1056,6 +1056,7 @@ impl PythonArchEval {
                 st!().insert_dependencies(file_sym, &mut deps, BuildSteps::ARCH_EVAL);
             }
             diagnostics.extend(diags);
+            st!()[func_sym].evaluations = evaluations;
         }
     }
 
