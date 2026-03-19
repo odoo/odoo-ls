@@ -1839,20 +1839,7 @@ impl SymbolTable {
         let Some(get_method) = get_method else {
             return res;
         };
-    
-        let get_sym_file = st!().get_file(get_method).unwrap();
-        let get_method_evaluations = st!().evaluations(get_method);
-    
-        if get_method_evaluations.is_some_and(|evals| evals.is_empty())
-        && !st!().is_external(get_sym_file)
-        && st!().build_status(get_sym_file, BuildSteps::ARCH_EVAL) == BuildStatus::DONE
-        && st!().build_status(get_method, BuildSteps::ARCH) != BuildStatus::IN_PROGRESS
-        && st!().build_status(get_method, BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS
-        && st!().build_status(get_method, BuildSteps::VALIDATION) == BuildStatus::PENDING {
-            let entry_point = st!().get_entry(get_method).unwrap();
-            let mut v = PythonValidator::new(entry_point, get_method);
-            v.validate(session);
-        }
+        SyncOdoo::ensure_func_evaluations(session, get_method); 
         let Some(evaluations) = st!().evaluations(get_method).cloned() else {
             return res;
         };

@@ -888,21 +888,9 @@ impl Evaluation {
                                 let init = SymbolTable::get_member_symbol(session, base_sym, &S!("__init__"), module, true, false, false, false, false);
                                 let mut found_hook = false;
                                 if let Some(&init) = init.0.first() {
-                                    let init_file = st!().get_file(init).unwrap();
-                                    let init_evaluations = st!().evaluations(init);
-
-                                    if init_evaluations.is_some()
-                                    && init_evaluations.unwrap().len() == 0
-                                    && !st!().is_external(init_file)
-                                    && st!().build_status(init_file, BuildSteps::ARCH_EVAL) == BuildStatus::DONE
-                                    && st!().build_status(init,BuildSteps::ARCH) != BuildStatus::IN_PROGRESS
-                                    && st!().build_status(init, BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS
-                                    && st!().build_status(init, BuildSteps::VALIDATION) == BuildStatus::PENDING {
-                                        let mut v = PythonValidator::new(st!().get_entry(init).unwrap(), init);
-                                        v.validate(session);
-                                    }
+                                    SyncOdoo::ensure_func_evaluations(session, init);
                                     if let Some(init_eval) = st!().evaluations(init) {
-                                        //init will always return an instance of the class, so we are not searching the method to check its return type, but rather to check if there is
+                                        //init will always return an instance of the class, so we are not searching the method to check its return type, but rather to check if there is 
                                         //an hook on it. Hooks, can be used to use parameters for context (see relational fields for example).
                                         if init_eval.len() == 1 && init_eval[0].symbol.get_symbol_hook.is_some() {
                                             context.as_mut().unwrap().insert(S!("constructing_class"), ContextValue::SYMBOL(base_sym.into()));
@@ -953,32 +941,17 @@ impl Evaluation {
                         }
                     } else if let SymbolKey::Function(f) = base_sym {
                         let base_sym_file = st!().get_file(base_sym).unwrap();
-                        SyncOdoo::build_now(session, base_sym_file, BuildSteps::ARCH_EVAL);
                         let in_class = st!().get_in_parents(base_sym, &[SymType::CLASS], true).is_some();
                         if required_dependencies.len() >= 2 && !in_class {
                             required_dependencies[1].push(base_sym_file);
                         }
-                        //function return evaluation can come from:
-                        //  - type annotation parsing (ARCH_EVAL step)
-                        //  - documentation parsing (Arch_eval and VALIDATION step)
-                        //  - function body inference (VALIDATION step)
-                        // Therefore, the actual version of the algorithm will trigger build from the different steps if this one has already been reached.
-                        // We don't want to launch validation step while Arch evaluating the code.
-                        let base_sym_evaluations = &st!()[f].evaluations;
+                        // Ensure return-type evaluations are available: resolves type annotations
+                        // (ARCH_EVAL) and, if still empty, infers from body (VALIDATION).
+                        SyncOdoo::ensure_func_evaluations(session, base_sym);
 
-                        if base_sym_evaluations.len() == 0
-                        && !st!().is_external(base_sym_file)
-                        && st!().build_status(base_sym_file, BuildSteps::ARCH_EVAL) == BuildStatus::DONE
-                        && st!().build_status(base_sym, BuildSteps::ARCH) != BuildStatus::IN_PROGRESS
-                        && st!().build_status(base_sym, BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS
-                        && st!().build_status(base_sym, BuildSteps::VALIDATION) == BuildStatus::PENDING {
-                            let mut v = PythonValidator::new(st!().get_entry(base_sym).unwrap(), base_sym);
-                            v.validate(session);
-                        }
-                        if required_dependencies.len() >= 3 {
-                            if in_class {
-                                required_dependencies[2].push(base_sym_file);
-                            }
+                      
+                        if required_dependencies.len() >= 3 && in_class {
+                            required_dependencies[2].push(base_sym_file);
                         }
                         let call_parent = match base_sym_weak_eval.context.get(&S!("base_attr")) {
                             Some(ContextValue::SYMBOL(s)) => *s,

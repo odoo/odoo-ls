@@ -867,15 +867,10 @@ impl PythonArchEval {
                 let symbol_eval = SymbolTable::follow_ref(&eval_symbol, session, &mut None, false, false, None, None);
                 if symbol_eval.len() == 1 && let Some(symbol_type) = st!().upgrade_weak(&symbol_eval[0]) {
                     if matches!(symbol_type, SymbolKey::Class(_)) {
-                        let (iter, _) = SymbolTable::get_member_symbol(session, symbol_type, &S!("__iter__"), None, true, false, false, false, false);
-                        if iter.len() == 1 {
-                            if !st!().is_external(iter[0]) { //we can't rebuild functions of external files
-                                SyncOdoo::build_now(session, iter[0], BuildSteps::ARCH);
-                                SyncOdoo::build_now(session, iter[0], BuildSteps::ARCH_EVAL);
-                                SyncOdoo::build_now(session, iter[0], BuildSteps::VALIDATION);
-                            }
-                            let evaluations = st!().evaluations(iter[0]);
-                            if let Some(evals) = evaluations && evals.len() == 1 {
+                        let (iters, _) = SymbolTable::get_member_symbol(session, symbol_type, &S!("__iter__"), None, true, false, false, false, false);
+                        if let Some(&iter) = iters.first() && iters.len() == 1 {
+                            SyncOdoo::ensure_func_evaluations(session, iter);
+                            if let Some(evals) = st!().evaluations(iter) && evals.len() == 1 {
                                 let eval_iter = evals[0].clone();
                                 if for_stmt.target.is_name_expr() { //only handle simple variable for now
                                     let variable = st!().get_positioned_symbol(*self.sym_stack.last().unwrap(), &OYarn::from(for_stmt.target.as_name_expr().unwrap().id.to_string()), &for_stmt.target.range());
@@ -973,6 +968,7 @@ impl PythonArchEval {
                                 if let Some(symbol) = symbol.weak.upgrade(&st!()) {
                                     let _enter_ = st!().get_symbol(symbol, &(vec![], vec![Sy!("__enter__")]), u32::MAX);
                                     if let Some(&_enter_) = _enter_.last() {
+                                        SyncOdoo::ensure_func_evaluations(session, _enter_);
                                         if let SymbolKey::Function(f) = _enter_ {
                                             enter_evals.extend(st!()[f].evaluations.clone());
                                         }

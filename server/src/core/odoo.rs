@@ -3,9 +3,10 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
 use crate::core::module_load_order::sort_by_load_order;
+use crate::core::symbols::function_symbol;
 use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::core::symbols::symbol_table::SymbolTable;
-use crate::core::symbols::symbol_keys::{ModuleKey, SymbolKey, Weak, ContainsKey};
+use crate::core::symbols::symbol_keys::{ContainsKey, FunctionKey, ModuleKey, SymbolKey, Weak};
 use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
 use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
@@ -939,6 +940,25 @@ impl SyncOdoo {
             }
         }
         false
+    }
+
+    /// Ensure that a function symbol's evaluations are as fully populated
+    /// @arena: change symbol type to FunctionKey if call sites allow
+    pub fn ensure_func_evaluations(session: &mut SessionInfo, symbol: SymbolKey) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let SymbolKey::Function(function_key) = symbol else {
+            return;
+        };
+        let Some(func_file) = st!().get_file(function_key.into()) else {
+            return;
+        };
+        if st!()[function_key].evaluations.is_empty() && !st!().is_external(func_file) {
+            // Run Arch eval on file, if possible, then run everything on the fn
+            // until arch_eval
+            SyncOdoo::build_now(session, func_file, BuildSteps::ARCH_EVAL);
+            SyncOdoo::build_now(session, function_key.into(), BuildSteps::ARCH);
+            SyncOdoo::build_now(session, function_key.into(), BuildSteps::ARCH_EVAL);
+        }
     }
 
     // @arena: before: build_now called directly in the inner loop (no build_queue), while the symbol was borrowed.
