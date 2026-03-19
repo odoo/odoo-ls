@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use lsp_types::{Diagnostic, Position, Range};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation::ContextValue;
-use crate::core::symbols::symbol_table::{get_sym, SymbolKey};
+use crate::core::symbols::symbol_table::{get_sym, ClassKey, SymbolKey};
 use crate::{constants::*, oyarn, Sy};
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::module_symbol::ModuleSymbol;
@@ -219,19 +219,21 @@ impl PythonValidator {
     }
 
     fn validate_body(&mut self, session: &mut SessionInfo, vec_ast: &Vec<Stmt>) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         for stmt in vec_ast.iter() {
             match stmt {
                 Stmt::FunctionDef(f) => {
-                    let sym = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&OYarn::from(f.name.to_string()), &f.range);
+                    let sym = st!().get_positioned_symbol(*self.sym_stack.last().unwrap(), &OYarn::from(f.name.to_string()), &f.range);
                     if let Some(sym) = sym {
-                        let val_status = sym.borrow().build_status(BuildSteps::VALIDATION).clone();
+                        let val_status = st!().build_status(sym, BuildSteps::VALIDATION);
                         if val_status == BuildStatus::PENDING {
-                            let mut v = PythonValidator::new(self.entry_point.clone(), sym.clone());
+                            let mut v = PythonValidator::new(self.entry_point.clone(), sym);
                             v.validate(session);
                         } else if val_status == BuildStatus::IN_PROGRESS {
                             panic!("cyclic validation detected... Aborting");
                         }
-                        self.diagnostics.extend(sym.borrow_mut().as_func_mut().diagnostics.values().flat_map(|v| v.clone()));
+                        let f = sym.unwrap_function_key();
+                        self.diagnostics.extend(st!().functions[f].diagnostics.values().flat_map(|v| v.clone()));
                     }
                 },
                 Stmt::ClassDef(c) => {
@@ -298,11 +300,12 @@ impl PythonValidator {
     }
 
     fn visit_class_def(&mut self, session: &mut SessionInfo, c: &StmtClassDef) {
-        let sym = self.sym_stack.last().unwrap().borrow().get_positioned_symbol(&OYarn::from(c.name.to_string()), &c.range);
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let sym = st!().get_positioned_symbol(*self.sym_stack.last().unwrap(), &OYarn::from(c.name.to_string()), &c.range);
         if let Some(sym) = sym {
-            self._check_model(session, &sym);
+            self._check_model(session, sym.unwrap_class_key());
             let old_noqa = session.current_noqa.clone();
-            session.current_noqa = sym.borrow().get_noqas().clone();
+            session.current_noqa = st!().get_noqas(sym).clone();
             self.sym_stack.push(sym);
             self.validate_body(session, &c.body);
             self.sym_stack.pop();
@@ -389,7 +392,8 @@ impl PythonValidator {
         self.validate_body(session, &stmt_with.body);
     }
 
-    fn _check_model(&mut self, session: &mut SessionInfo, class: &Rc<RefCell<Symbol>>) {
+    // @arena todo
+    fn _check_model(&mut self, session: &mut SessionInfo, class: ClassKey) {
         let class_ref = class.borrow();
         let Some(model_data) = class_ref.as_class_sym()._model.as_ref() else {
             return;
@@ -763,8 +767,8 @@ impl PythonValidator {
 
     fn validate_expr(&mut self, session: &mut SessionInfo, expr: &Expr, max_infer: &TextSize) {
         let mut deps = vec![vec![], vec![], vec![]];
-        let (_, diags) = Evaluation::eval_from_ast(session, expr, self.sym_stack.last().unwrap().clone(), max_infer, false, &mut deps);
-        Symbol::insert_dependencies(&self.file, &mut deps, BuildSteps::VALIDATION);
+        let (_, diags) = Evaluation::eval_from_ast(session, expr, *self.sym_stack.last().unwrap(), max_infer, false, &mut deps);
+        session.sync_odoo.symbol_table.insert_dependencies(self.file, &mut deps, BuildSteps::VALIDATION);
         self.diagnostics.extend(diags);
     }
 
