@@ -1513,6 +1513,17 @@ impl SymbolTable {
             SymbolKey::CsvFile(k) => &self.csv_files[k].name,
         }
     }
+
+    // @arena: not sure if good idea. Maybe just access directly when the key type is known?
+    // can be used in PythonArchBuildHooks if enabled.
+    // pub fn file_path(&self, target: SymbolKey) -> &str {
+    //     match target {
+    //         SymbolKey::File(f) => &self.files[f].path,
+    //         SymbolKey::XmlFile(x) => &self.xml_files[x].path,
+    //         SymbolKey::CsvFile(c) => &self.csv_files[c].path,
+    //         _ => panic!("file_path called on non file symbol"),
+    //     }
+    // }
 }
 
 //infer a name, given a position
