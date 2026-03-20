@@ -176,8 +176,11 @@ use Semver to store version in SyncOdoo.
 ## Next big steps
 
 ### split package and module
-    - PyPackageKey and ModuleKey
-    - store ModuleKey's in sync_odoo.modules, update everywhere that takes a PackageKey
+  - PyPackageKey and ModuleKey
+  - store ModuleKey's in sync_odoo.modules, update everywhere that takes a PackageKey
+  - make PackageKey a enum with 2 variants(???): PyPackageKey and ModuleKey
+    - not sure whethet that would help (easy conversion from matching PackageSymbol) or not (have to pattern match everywhere in SymbolTable methods)
+    - would it increase the size of SymbolKey??
 
 ### remove option from parent
 
@@ -192,3 +195,10 @@ Then SymbolView is just an intermediary you could eliminate. The callers
   3. Have a SymbolKey and need to branch on type — they're already matching on
   the SymbolKey enum variants, so they can get the typed key and access the
   slotmap directly.
+  
+### Index trait for SymbolTable
+  allow for: symbol_table[key] to work with any specific key
+  - prevent direct access to slotmaps? (need a setter for everything)
+    - the idea is to prevent changing parent and children, ensuring strong key garanties.
+  
+### change some signatures of methods to take `impl Into<SymbolKey>`, so that .into() by the caller in no longer needed.

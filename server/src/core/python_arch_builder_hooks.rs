@@ -7,8 +7,7 @@ use ruff_text_size::{TextRange, TextSize};
 use tracing::{info, warn};
 use crate::core::entry_point::EntryPoint;
 use crate::core::import_resolver::manual_import;
-use crate::core::symbols::symbol::Symbol;
-use crate::core::symbols::symbol_table::{ClassKey, SymbolKey};
+use crate::core::symbols::symbol_table::{get_main_entry_tree, get_sym, ClassKey, SymbolKey, SymbolTable};
 use crate::threads::SessionInfo;
 use crate::utils::compare_semver;
 use crate::{Sy, S};
@@ -16,7 +15,8 @@ use crate::constants::OYarn;
 
 use super::odoo::SyncOdoo;
 
-type PythonArchClassHookFn = fn (session: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>);
+// @arena: currently, none of the class hooks use entry_point
+type PythonArchClassHookFn = fn (symbol_table: &mut SymbolTable, entry: &Rc<RefCell<EntryPoint>>, class: ClassKey);
 
 pub struct PythonArchClassHook {
     pub odoo_entry: bool,
@@ -32,18 +32,17 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
             (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel")])),
             (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel")]))
         ],
-        func: |session: &mut SessionInfo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
+        func: |symbol_table: &mut SymbolTable, _entry_point: &Rc<RefCell<EntryPoint>>, class: ClassKey| {
             // ----------- env ------------
-            let env = symbol.borrow().get_symbol(&(vec![], vec![Sy!("env")]), u32::MAX);
+            let symbol_key: SymbolKey = class.into();
+            let env = symbol_table.get_symbol(symbol_key, &(vec![], vec![Sy!("env")]), u32::MAX);
             if env.is_empty() {
-                let mut range = symbol.borrow().range().clone();
-                let slots = symbol.borrow().get_symbol(&(vec![], vec![Sy!("__slots__")]), u32::MAX);
+                let mut range = symbol_table.classes[class].range.clone();
+                let slots = symbol_table.get_symbol(symbol_key, &(vec![], vec![Sy!("__slots__")]), u32::MAX);
                 if slots.len() == 1 {
-                    if slots.len() == 1 {
-                        range = slots[0].borrow().range().clone();
-                    }
+                    range = get_sym!(symbol_table, slots[0]).range().clone();
                 }
-                symbol.borrow_mut().add_new_variable(session, Sy!("env"), &range);
+                symbol_table.add_new_variable(symbol_key, Sy!("env"), &range);
             }
         }
     },
@@ -53,25 +52,26 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
             (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("Environment")])),
             (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("environments")], vec![Sy!("Environment")]))
         ],
-        func: |session: &mut SessionInfo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
-            let new_sym = symbol.borrow().get_symbol(&(vec![], vec![Sy!("__new__")]), u32::MAX);
-            let mut range = symbol.borrow().range().clone();
+        func: |symbol_table: &mut SymbolTable, _entry_point: &Rc<RefCell<EntryPoint>>, class: ClassKey| {
+            let symbol_key: SymbolKey = class.into();
+            let new_sym = symbol_table.get_symbol(symbol_key, &(vec![], vec![Sy!("__new__")]), u32::MAX);
+            let mut range = symbol_table.classes[class].range.clone();
             if new_sym.len() == 1 {
-                range = new_sym[0].borrow().range().clone();
+                range = get_sym!(symbol_table, new_sym[0]).range().clone();
             }
             // ----------- env.cr ------------
-            symbol.borrow_mut().add_new_variable(session, Sy!("cr"), &range);
+            symbol_table.add_new_variable(symbol_key, Sy!("cr"), &range);
             // ----------- env.uid ------------
-            let uid_sym = symbol.borrow_mut().add_new_variable(session, Sy!("uid"), &range);
-            uid_sym.borrow_mut().as_variable_mut().doc_string = Some(S!("The current user id (for access rights checks)"));
+            let uid_sym = symbol_table.add_new_variable(symbol_key, Sy!("uid"), &range);
+            symbol_table.variables[uid_sym].doc_string = Some(S!("The current user id (for access rights checks)"));
             // ----------- env.context ------------
-            let context_sym = symbol.borrow_mut().add_new_variable(session, Sy!("context"), &range);
-            context_sym.borrow_mut().as_variable_mut().doc_string = Some(S!("The current context"));
+            let context_sym = symbol_table.add_new_variable(symbol_key, Sy!("context"), &range);
+            symbol_table.variables[context_sym].doc_string = Some(S!("The current context"));
             // ----------- env.su ------------
-            let su_sym = symbol.borrow_mut().add_new_variable(session, Sy!("su"), &range);
-            su_sym.borrow_mut().as_variable_mut().doc_string = Some(S!("whether in superuser mode"));
+            let su_sym = symbol_table.add_new_variable(symbol_key, Sy!("su"), &range);
+            symbol_table.variables[su_sym].doc_string = Some(S!("whether in superuser mode"));
             // ----------- env.registry -----------
-            let _ = symbol.borrow_mut().add_new_variable(session, Sy!("registry"), &range);
+            let _ = symbol_table.add_new_variable(symbol_key, Sy!("registry"), &range);
         }
     },
     PythonArchClassHook {
@@ -79,10 +79,10 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
         trees: vec![
             (Sy!("15.0"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("addons"), Sy!("base"), Sy!("models"), Sy!("ir_rule")], vec![Sy!("IrRule")])),
         ],
-        func: |session: &mut SessionInfo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
-            let range = symbol.borrow().range().clone();
+        func: |symbol_table: &mut SymbolTable, _entry_point: &Rc<RefCell<EntryPoint>>, class: ClassKey| {
+            let range = symbol_table.classes[class].range.clone();
             // ----------- global ------------
-            symbol.borrow_mut().add_new_variable(session, Sy!("global"), &range);
+            symbol_table.add_new_variable(class.into(), Sy!("global"), &range);
         }
     },
     PythonArchClassHook {
@@ -131,22 +131,23 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
             (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_relational")], vec![Sy!("Many2many")])),
             (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_misc")], vec![Sy!("Id")])),
         ],
-        func: |session: &mut SessionInfo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
+        func: |symbol_table: &mut SymbolTable, _entry_point: &Rc<RefCell<EntryPoint>>, class: ClassKey| {
+            let symbol_key: SymbolKey = class.into();
+            let range = symbol_table.classes[class].range.clone();
             // ----------- __get__ ------------
-            let get_sym = symbol.borrow().get_symbol(&(vec![], vec![Sy!("__get__")]), u32::MAX);
+            let get_sym = symbol_table.get_symbol(symbol_key, &(vec![], vec![Sy!("__get__")]), u32::MAX);
             if get_sym.is_empty() {
-                let range = symbol.borrow().range().clone();
-                symbol.borrow_mut().add_new_function(session, &S!("__get__"), &range, &range.end());
+                symbol_table.add_new_function(symbol_key, &S!("__get__"), &range, &range.end());
             } else {
-                if !["Id", "One2many"].contains(&symbol.borrow().name().as_str()){
-                    warn!("Found __get__ function for field of name ({})", symbol.borrow().name());
+                let name = &symbol_table.classes[class].name;
+                if !["Id", "One2many"].contains(&name.as_str()) {
+                    warn!("Found __get__ function for field of name ({})", name);
                 }
             }
             // ----------- __init__ ------------
-            let get_sym = symbol.borrow().get_symbol(&(vec![], vec![Sy!("__init__")]), u32::MAX);
+            let get_sym = symbol_table.get_symbol(symbol_key, &(vec![], vec![Sy!("__init__")]), u32::MAX);
             if get_sym.is_empty() {
-                let range = symbol.borrow().range().clone();
-                symbol.borrow_mut().add_new_function(session, &S!("__init__"), &range, &range.end());
+                symbol_table.add_new_function(symbol_key, &S!("__init__"), &range, &range.end());
             }
         }
     },
@@ -156,21 +157,22 @@ pub struct PythonArchBuilderHooks {}
 
 impl PythonArchBuilderHooks {
 
-    // @arena todo
-    pub fn on_class_def(session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: ClassKey) {
-        let tree = symbol.borrow().get_tree();
-        let odoo_tree = symbol.borrow().get_main_entry_tree(session);
-        let name = symbol.borrow().name().clone();
+    pub fn on_class_def(session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, class_key: ClassKey) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let symbol_key: SymbolKey = class_key.into();
+        let tree = st!().get_tree(symbol_key);
+        let odoo_tree = get_main_entry_tree(session, symbol_key);
+        let name = st!().name(symbol_key).clone();
         for hook in arch_class_hooks.iter() {
             for hook_tree in hook.trees.iter() {
                 if compare_semver(session.sync_odoo.full_version.as_str(), hook_tree.0.as_str()) >= Ordering::Equal &&
                     compare_semver(session.sync_odoo.full_version.as_str(), hook_tree.1.as_str()) == Ordering::Less {
                     if name.eq(hook_tree.2.1.last().unwrap()) {
                         if (hook.odoo_entry && session.sync_odoo.has_main_entry && odoo_tree == hook_tree.2) || (!hook.odoo_entry && tree == hook_tree.2) {
-                            (hook.func)(session, entry_point, symbol.clone());
+                            (hook.func)(&mut session.sync_odoo.symbol_table, entry_point, class_key);
                         }
                     }
-                    }
+                }
             }
         }
     }
