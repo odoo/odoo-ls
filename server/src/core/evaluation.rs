@@ -1746,8 +1746,8 @@ impl Evaluation {
 
 impl EvaluationSymbol {
 
-    pub fn new_with_symbol(symbol: SymbolKey, instance: Option<bool>, context: Context, get_symbol_hook: Option<GetSymbolHook>) -> Self {
-        Self { sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: symbol.into(), context, instance: instance, is_super: false}), get_symbol_hook }
+    pub fn new_with_symbol(symbol: Weak<SymbolKey>, instance: Option<bool>, context: Context, get_symbol_hook: Option<GetSymbolHook>) -> Self {
+        Self { sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: symbol, context, instance: instance, is_super: false}), get_symbol_hook }
     }
 
     pub fn new_self(get_symbol_hook: Option<GetSymbolHook>) -> EvaluationSymbol {

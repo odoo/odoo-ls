@@ -1516,14 +1516,30 @@ impl SymbolTable {
 
     // @arena: not sure if good idea. Maybe just access directly when the key type is known?
     // can be used in PythonArchBuildHooks if enabled.
-    // pub fn file_path(&self, target: SymbolKey) -> &str {
-    //     match target {
-    //         SymbolKey::File(f) => &self.files[f].path,
-    //         SymbolKey::XmlFile(x) => &self.xml_files[x].path,
-    //         SymbolKey::CsvFile(c) => &self.csv_files[c].path,
-    //         _ => panic!("file_path called on non file symbol"),
-    //     }
-    // }
+    pub fn file_path(&self, target: SymbolKey) -> &str {
+        match target {
+            SymbolKey::File(f) => &self.files[f].path,
+            SymbolKey::XmlFile(x) => &self.xml_files[x].path,
+            SymbolKey::CsvFile(c) => &self.csv_files[c].path,
+            _ => panic!("file_path called on non file symbol"),
+        }
+    }
+
+    pub fn set_evaluations(&mut self, target: SymbolKey, data: Vec<Evaluation>) {
+        match target {
+            SymbolKey::File(_) => { panic!() },
+            SymbolKey::Root(_) => { panic!() },
+            SymbolKey::Namespace(_) => { panic!() },
+            SymbolKey::DiskDir(_) => { panic!() },
+            SymbolKey::Package(_) => { panic!() },
+            SymbolKey::Compiled(_) => { panic!() },
+            SymbolKey::Class(_) => { panic!() },
+            SymbolKey::Function(f) => { self.functions[f].evaluations = data; },
+            SymbolKey::Variable(v) => { self.variables[v].evaluations = data; },
+            SymbolKey::XmlFile(x) => { panic!() },
+            SymbolKey::CsvFile(c) => { panic!() },
+        }
+    }
 }
 
 //infer a name, given a position
@@ -2417,7 +2433,6 @@ pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildStep
     pub fn null() -> Self {
         Self { key: RootKey::null().into() }
     }
-
  }
 
 impl SymbolTable {
