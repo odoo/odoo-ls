@@ -659,7 +659,6 @@ pub struct PythonArchEvalHooks {
 
 impl PythonArchEvalHooks {
 
-    // @arena todo
     pub fn on_file_eval(session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: SymbolKey) {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let tree = st!().get_tree(symbol);
@@ -686,7 +685,6 @@ impl PythonArchEvalHooks {
         }
     }
 
-    // @arena todo
     pub fn on_function_eval(session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, function: FunctionKey) {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let symbol_key: SymbolKey = function.into();
@@ -711,7 +709,6 @@ impl PythonArchEvalHooks {
     /// Read function decorators and set evaluations where applicable
     /// - api.returns -> self -> Self, string -> model name if exists + validate
     /// - validates api.depends/onchange/constrains
-    /// @arena todo
     pub fn handle_func_decorators(
         session: &mut SessionInfo,
         func_stmt: &StmtFunctionDef,
@@ -863,7 +860,6 @@ impl PythonArchEvalHooks {
         res
     }
 
-    // @arena todo
     pub fn eval_registry_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
     {
         let mut result = PythonArchEvalHooks::eval_env_get_item(session, evaluation_sym, context, diagnostics, scope);
@@ -894,25 +890,24 @@ impl PythonArchEvalHooks {
         Some(EvaluationSymbolPtr::WEAK(evaluation_sym.get_weak().clone()))
     }
 
-    // @arena todo
     fn _update_get_eval_func_level(odoo: &mut SyncOdoo, entry_point: &Rc<RefCell<EntryPoint>>, function: FunctionKey, tree: Tree) {
         let return_sym = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(), &tree, u32::MAX);
-        if return_sym.is_empty() {
-            let file = function.borrow_mut().get_file().clone();
-            file.as_ref().unwrap().upgrade().unwrap().borrow_mut().not_found_paths_mut().push((BuildSteps::ARCH_EVAL, flatten_tree(&tree)));
-            entry_point.borrow_mut().not_found_symbols.insert(function.borrow().parent().unwrap().upgrade().unwrap());
+        let Some(&return_sym) = return_sym.last() else {
+            let file = odoo.symbol_table.get_file(function.into());
+            odoo.symbol_table.not_found_paths_mut(file.unwrap()).push((BuildSteps::ARCH_EVAL, flatten_tree(&tree)));
+            entry_point.borrow_mut().not_found_symbols.insert(odoo.symbol_table.functions[function].parent.unwrap());
             return;
-        }
-        function.borrow_mut().set_evaluations(vec![Evaluation {
+        };
+        odoo.symbol_table.functions[function].evaluations = vec![Evaluation {
             symbol: EvaluationSymbol::new_with_symbol(
-                Rc::downgrade(return_sym.last().unwrap()),
+                return_sym.into(),
                 Some(true),
                 HashMap::new(),
                 Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_get, name: S!("eval_get")})
             ),
             value: None,
             range: None
-        }]);
+        }];
     }
 
     fn _update_get_eval(odoo: &mut SyncOdoo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: SymbolKey, tree: Tree) {
@@ -951,42 +946,43 @@ impl PythonArchEvalHooks {
         let field_get_args = odoo.symbol_table.functions[field_get.unwrap_function_key()].args.clone();
         odoo.symbol_table.functions[get_sym.unwrap_function_key()].args = field_get_args;
     }
+
+    // @arena todo: double check if class_sym can safely be unwrapped as ClassKey
     fn eval_relational_with_related(session: &mut SessionInfo, related_field: &ContextValue, context: &Context) -> Option<EvaluationSymbolPtr>{
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let Some(ContextValue::SYMBOL(class_sym_weak)) = context.get(&S!("field_parent")) else {return None};
-        let Some(class_sym) = class_sym_weak.upgrade() else {return None};
+        let Some(class_sym) = class_sym_weak.upgrade(&st!()) else {return None};
         let related_field_name = related_field.as_string();
-        let from_module = class_sym.borrow().find_module();
-        let syms = PythonArchEval::get_nested_sub_field(session, &related_field_name, class_sym.clone(), from_module.clone());
-        if let Some(symbol) = syms.first(){
-            return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Rc::downgrade(symbol), context: HashMap::new(), instance: Some(true), is_super: false}))
+        let from_module = st!().find_module(class_sym);
+        let syms = PythonArchEval::get_nested_sub_field(session, &related_field_name, class_sym.unwrap_class_key(), from_module);
+        if let Some(&symbol) = syms.first() {
+            return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: symbol.into(), context: HashMap::new(), instance: Some(true), is_super: false}))
         }
         None
     }
 
-    fn eval_relational_with_comodel(session: &mut SessionInfo, comodel: &ContextValue, context: &Context, scope: Option<Rc<RefCell<Symbol>>>) -> Option<EvaluationSymbolPtr>{
+    fn eval_relational_with_comodel(session: &mut SessionInfo, comodel: &ContextValue, context: &Context, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>{
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let comodel = oyarn!("{}", comodel.as_string());
         let comodel_sym = session.sync_odoo.models.get(&comodel).cloned();
         if let Some(comodel_sym) = comodel_sym {
             // Add dependency
-            if let Some(scope) = scope
-                .and_then(|s| s.borrow().get_file())
-                .and_then(|w| w.upgrade()) {
-                let mut f = scope.borrow_mut();
-                f.add_model_dependencies(&comodel_sym);
+            if let Some(scope) = scope.and_then(|s| st!().get_file(s)) {
+                st!().add_model_dependencies(scope, &comodel_sym);
             }
             let module = context.get(&S!("module"));
             let mut from_module = None;
             if let Some(ContextValue::MODULE(m)) = module {
-                if let Some(m) = m.upgrade() {
-                    from_module = Some(m.clone());
+                if let Some(m) = m.upgrade(&st!()) {
+                    from_module = Some(m);
                 }
             }
             let main_symbol = comodel_sym.borrow().get_main_symbols(session, from_module);
             if main_symbol.len() == 1 {
-                return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Rc::downgrade(&main_symbol[0]), context: HashMap::new(), instance: Some(true), is_super: false}))
+                return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: main_symbol[0].into(), context: HashMap::new(), instance: Some(true), is_super: false}))
             }
         }
-        Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Weak::new(), context: HashMap::new(), instance: Some(true), is_super: false}))
+        Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Weak::null(), context: HashMap::new(), instance: Some(true), is_super: false}))
     }
 
     fn eval_relational(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, _diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
@@ -1003,7 +999,7 @@ impl PythonArchEvalHooks {
         None
     }
 
-    fn _update_get_eval_relational(symbol_table: &mut SymbolTable ,symbol: SymbolKey) {
+    fn _update_get_eval_relational(symbol_table: &mut SymbolTable, symbol: SymbolKey) {
         let get_sym = symbol_table.get_symbol(symbol, &(vec![], vec![Sy!("__get__")]), u32::MAX);
         if get_sym.is_empty() {
             return;
@@ -1252,8 +1248,8 @@ impl PythonArchEvalHooks {
         diagnostics
     }
 
-    // @arena todo
     fn eval_env_ref(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, _scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let Some(context) = context else {return None};
         let in_validation = context.get(&S!("is_in_validation")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool();
         let Some(parameters) = context.get(&S!("parameters")).map(|ps| ps.as_arguments()) else {return None};
@@ -1281,7 +1277,7 @@ impl PythonArchEvalHooks {
                 });
             }
         }
-        let module = session.sync_odoo.modules.get(module_name).cloned();
+        let module = session.sync_odoo.modules.get(module_name);
         if module.is_none() {
             if in_validation {
                 if xml_id.len() == 0 {
@@ -1302,11 +1298,12 @@ impl PythonArchEvalHooks {
             }
             return None;
         }
-        let Some(module_rc) = module.unwrap().upgrade() else {
-            return None;
-        };
-        let module_rc_bw = module_rc.borrow();
-        let Some(_symbol) = module_rc_bw.as_module_package().xml_id_locations.get(xml_id.as_str()) else {
+        // @arena TODO: change this after converting modules map to Weaks
+        let module_key = Weak::from(*module.unwrap()).upgrade(&st!())?;
+        // let Some(module_rc) = module.unwrap().upgrade() else {
+            // return None;
+        // };
+        let Some(_symbol) = st!().packages[module_key].as_module_package().xml_id_locations.get(xml_id.as_str()) else {
             if in_validation {
                 /*if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05001, &[]) {
                     diagnostics.push(Diagnostic {

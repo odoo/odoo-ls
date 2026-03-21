@@ -2477,6 +2477,12 @@ impl ContainsKey<ClassKey> for SymbolTable {
     }
 }
 
+impl ContainsKey<PackageKey> for SymbolTable {
+    fn contains_key(&self, key: PackageKey) -> bool {
+        self.packages.contains_key(key)
+    }
+}
+
 impl ContainsKey<SymbolKey> for SymbolTable {
     fn contains_key(&self, key: SymbolKey) -> bool {
         match key {

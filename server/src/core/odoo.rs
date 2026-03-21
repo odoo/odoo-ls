@@ -76,6 +76,7 @@ pub struct SyncOdoo {
     pub stdlib_dir: String,
     pub progress_token: i32,
     file_mgr: Rc<RefCell<FileMgr>>,
+    // @arena: Change this to WEAK keys??
     pub modules: HashMap<OYarn, PackageKey>, // former map of weak refs. Should use ModuleKey instead.
     pub models: HashMap<OYarn, Rc<RefCell<Model>>>,
     pub interrupt_rebuild: Arc<AtomicBool>,
