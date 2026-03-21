@@ -95,7 +95,7 @@ impl Model {
             return;
         }
         self.symbols.insert(symbol);
-        let from_module = session.sync_odoo.symbol_table.find_module(symbol.into());
+        let from_module = session.sync_odoo.symbol_table.find_module(symbol);
         self.add_dependents_to_validation(session, from_module);
     }
 
@@ -109,7 +109,7 @@ impl Model {
         let mut symbol = Vec::new();
         // @arena obs: possible stale keys
         for s in self.symbols.iter_valid(|&k| symbol_table.classes.contains_key(k)) {
-            let module = symbol_table.find_module(s.into()).expect("Unreachable: Model should be declared in a module");
+            let module = symbol_table.find_module(s).expect("Unreachable: Model should be declared in a module");
             let module_sym = symbol_table.get_symbol_view(module).expect("valid key from find_module");
             if from_module.is_none() || ModuleSymbol::is_in_deps(symbol_table, from_module.unwrap(), &module_sym.as_module_package().dir_name) {
                 symbol.push(s);
@@ -125,7 +125,7 @@ impl Model {
         for key in self.symbols.iter_valid(|&k| st.classes.contains_key(k)) {
             let model = st.classes[key]._model.as_ref().unwrap();
             if !model.inherit.contains(&model.name) {
-                let module = st.find_module(key.into());
+                let module = st.find_module(key);
                 if from_module.is_none() || module.is_none() {
                     res.push(key);
                 } else {
@@ -145,7 +145,7 @@ impl Model {
         for key in self.symbols.iter_valid(|&k| st.classes.contains_key(k)) {
             let model = st.classes[key]._model.as_ref().unwrap();
             if !model.inherit.contains(&model.name) {
-                let module = st.find_module(key.into()).unwrap(); // @arena: same as original code (unwrap)
+                let module = st.find_module(key).unwrap(); // @arena: same as original code (unwrap)
                 let module_sym =  get_sym!(st, module);
                 let dir_name = &module_sym.as_module_package().dir_name;
                 if ModuleSymbol::is_in_deps(st, from_module, dir_name) {
@@ -223,7 +223,7 @@ impl Model {
         let mut symbols = Vec::new();
         for s in self.symbols.iter_valid(|&k| st.classes.contains_key(k)) { // filter stale keys
             if let Some(from_module) = from_module {
-                let module = st.find_module(s.into());
+                let module = st.find_module(s);
                 if let Some(module) = module {
                     let module_sym = get_sym!(st, module);
                     let dir_name = &module_sym.as_module_package().dir_name;
@@ -270,7 +270,7 @@ impl Model {
         let mut inherits_symbols = Vec::new();
         for s in self.symbols.iter_valid(|&k| st.classes.contains_key(k)) {
             if let Some(from_module) = from_module {
-                let module = st.find_module(s.into());
+                let module = st.find_module(s);
                 if let Some(module) = module {
                     let module_sym = get_sym!(st, module);
                     let dir_name = &module_sym.as_module_package().dir_name;

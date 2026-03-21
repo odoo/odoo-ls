@@ -715,8 +715,8 @@ impl SymbolTable {
     // @arena: compare with get_in_parents, and chose an approach (trust the key or not)
     // Consider just calling get_in_parents
     /// @arena: this should return a ModuleKey (after spliting it from PackageKey)
-    /// @arena: maybe this only gets called with class key (change signature if so) -> NO!
-    pub fn find_module(&self, key: SymbolKey) -> Option<SymbolKey> {
+    pub fn find_module(&self, key: impl Into<SymbolKey>) -> Option<SymbolKey> {
+        let key = key.into();
         let symbol = self.get_symbol_view(key)?;
         if let SymbolView::Package(PackageSymbol::Module(_)) = symbol {
             return Some(key);
@@ -2371,7 +2371,7 @@ pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildStep
                     if let Some(model_data) = &class_sym._model {
                         let model = session.sync_odoo.models.get(&model_data.name).cloned();
                         if let Some(model) = model {
-                            let from_module = st!().find_module(class.into());
+                            let from_module = st!().find_module(class);
                             // @arena: todo: check if this mutates the dependents of sym_to_inv
                             model.borrow().add_dependents_to_validation(session, from_module);
                         }
@@ -2452,6 +2452,18 @@ impl SymbolTable {
 impl<K: Copy> From<K> for Weak<K> {
     fn from(key: K) -> Self {
         Self { key }
+    }
+}
+
+impl From<ClassKey> for Weak<SymbolKey> {
+    fn from(key: ClassKey) -> Self {
+        Self { key: SymbolKey::Class(key) }
+    }
+}
+
+impl From<FunctionKey> for Weak<SymbolKey> {
+    fn from(key: FunctionKey) -> Self {
+        Self { key: SymbolKey::Function(key) }
     }
 }
 

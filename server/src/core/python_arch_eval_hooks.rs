@@ -16,7 +16,9 @@ use crate::core::evaluation::GetSymbolHook;
 use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation::Context;
 use crate::constants::*;
+use crate::core::symbols::symbol_table::follow_ref;
 use crate::core::symbols::symbol_table::get_main_entry_tree;
+use crate::core::symbols::symbol_table::get_member_symbol;
 use crate::core::symbols::symbol_table::get_sym;
 use crate::core::symbols::symbol_table::FunctionKey;
 use crate::core::symbols::symbol_table::SymbolKey;
@@ -623,7 +625,7 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
 ]});
 
 
-type PythonArchEvalHookDecorator = fn (session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments) -> Vec<Diagnostic>;
+type PythonArchEvalHookDecorator = fn (session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments) -> Vec<Diagnostic>;
 
 pub struct PythonArchEvalDecoratorHook {
     pub trees: Vec<(OYarn, OYarn, Tree)>, //min_version, max_version, tree
@@ -633,22 +635,22 @@ pub struct PythonArchEvalDecoratorHook {
 #[allow(non_upper_case_globals)]
 static arch_eval_decorator_hooks: Lazy<Vec<PythonArchEvalDecoratorHook>> = Lazy::new(|| {vec![
     PythonArchEvalDecoratorHook {trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("returns")]))], //disappear in 18.1
-                        func: |session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments| {
+                        func: |session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments| {
                             PythonArchEvalHooks::handle_api_returns_decorator(session, func_sym, arguments)
     }},
     PythonArchEvalDecoratorHook {trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("onchange")])),
                         (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("decorators")], vec![Sy!("onchange")]))],
-                        func: |session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments| {
+                        func: |session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments| {
                             PythonArchEvalHooks::handle_api_simple_field_decorator(session, func_sym, arguments)
     }},
     PythonArchEvalDecoratorHook {trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("constrains")])),
                         (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("decorators")], vec![Sy!("constrains")]))],
-                        func: |session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments| {
+                        func: |session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments| {
                             PythonArchEvalHooks::handle_api_simple_field_decorator(session, func_sym, arguments)
     }},
     PythonArchEvalDecoratorHook {trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("depends")])),
                         (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("decorators")], vec![Sy!("depends")]))],
-                        func: |session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments| {
+                        func: |session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments| {
                             PythonArchEvalHooks::handle_api_nested_field_decorator(session, func_sym, arguments)
     }},
 ]});
@@ -717,8 +719,9 @@ impl PythonArchEvalHooks {
         file: SymbolKey,
         current_step: BuildSteps,
     ) -> Vec<Diagnostic>{
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let mut diagnostics = vec![];
-        for decorator in func_stmt.decorator_list.iter(){
+        for decorator in func_stmt.decorator_list.iter() {
             let (decorator_base, decorator_args) = match &decorator.expression {
                 Expr::Call(call_expr) => {
                     (&call_expr.func, &call_expr.arguments)
@@ -728,25 +731,25 @@ impl PythonArchEvalHooks {
             if decorator_args.args.is_empty(){
                 continue; // All the decorators we handle have at least one arg for now
             }
-            let Some(parent) = func_sym.borrow().parent().and_then(|weak_parent| weak_parent.upgrade()).clone() else {
+            let Some(parent) = st!().functions[func_sym].parent else {
                 return diagnostics // failed to find parent
             };
             let mut deps = vec![vec![], vec![], vec![]];
             let (dec_evals, diags) = Evaluation::eval_from_ast(session, &decorator_base, parent, &func_stmt.range.start(), false, &mut deps);
-            Symbol::insert_dependencies(&file, &mut deps, current_step);
+            st!().insert_dependencies(file, &mut deps, current_step);
             diagnostics.extend(diags);
             let mut followed_evals = vec![];
             for eval in dec_evals {
-                followed_evals.extend(Symbol::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, None));
+                followed_evals.extend(follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, None));
             }
             for decorator_eval in followed_evals {
                 let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval else {
                     continue;
                 };
-                let Some(dec_sym) = decorator_eval_sym_weak.weak.upgrade() else {
+                let Some(dec_sym) = decorator_eval_sym_weak.weak.upgrade(&st!()) else {
                     continue;
                 };
-                let dec_sym_tree = dec_sym.borrow().get_tree();
+                let dec_sym_tree = st!().get_tree(dec_sym);
                 for hook in arch_eval_decorator_hooks.iter() {
                     for (min_version, max_version, hook_tree) in hook.trees.iter() {
                         if compare_semver(min_version, &session.sync_odoo.full_version) == Ordering::Greater ||
@@ -756,7 +759,7 @@ impl PythonArchEvalHooks {
                         if !dec_sym_tree.0.ends_with(&hook_tree.0) || !dec_sym_tree.1.ends_with(&hook_tree.1) || !SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0) {
                             continue;
                         }
-                        diagnostics.extend((hook.func)(session, func_sym.clone(), decorator_args));
+                        diagnostics.extend((hook.func)(session, func_sym, decorator_args));
                     }
                 }
             }
@@ -1156,12 +1159,13 @@ impl PythonArchEvalHooks {
     /// - string: model name if exists + validate
     /// Adds evaluation to the function symbol
     /// Returns a vector of diagnostics if the model is not found or not in the dependencies of the module
-    fn handle_api_returns_decorator(session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments) -> Vec<Diagnostic>{
+    fn handle_api_returns_decorator(session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments) -> Vec<Diagnostic>{
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let mut diagnostics = vec![];
         let Some(Expr::StringLiteral(expr)) = arguments.args.first() else {return diagnostics};
         let returns_str = expr.value.to_string();
-        if returns_str == S!("self"){
-            func_sym.borrow_mut().set_evaluations(vec![Evaluation::new_self()]);
+        if returns_str == S!("self") {
+            st!().functions[func_sym].evaluations = vec![Evaluation::new_self()];
             return diagnostics;
         }
         let Some(model) = session.sync_odoo.models.get(&oyarn!("{}", returns_str)).cloned() else {
@@ -1173,7 +1177,7 @@ impl PythonArchEvalHooks {
             };
             return diagnostics;
         };
-        let Some(ref main_model_sym) =  model.borrow().get_main_symbols(session, func_sym.borrow().find_module()).first().cloned() else {
+        let Some(&main_model_sym) = model.borrow().get_main_symbols(session, st!().find_module(func_sym)).first() else {
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03001, &[]) {
                 diagnostics.push(Diagnostic {
                     range: FileMgr::textRange_to_temporary_Range(&expr.range()),
@@ -1182,30 +1186,30 @@ impl PythonArchEvalHooks {
             }
             return diagnostics
         };
-        func_sym.borrow_mut().set_evaluations(vec![Evaluation::eval_from_symbol(&Rc::downgrade(main_model_sym), Some(false))]);
+        st!().functions[func_sym].evaluations = vec![Evaluation::eval_from_symbol(&st!(), main_model_sym.into(), Some(false))];
         diagnostics
     }
 
     /// For @api.constrains and @api.onchange, both can only take a simple field name
-    fn handle_api_simple_field_decorator(session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments) -> Vec<Diagnostic>{
+    fn handle_api_simple_field_decorator(session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments) -> Vec<Diagnostic>{
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let mut diagnostics = vec![];
-        let from_module = func_sym.borrow().find_module();
+        let from_module = st!().find_module(func_sym);
 
-        let Some(class_sym) = func_sym.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(
-            |class_sym_weak| class_sym_weak.upgrade()
-        ) else {
+        let Some(class_sym) = st!().get_in_parents(func_sym.into(), &vec![SymType::CLASS], true) else {
             return diagnostics;
         };
 
-        let Some(model_name) = class_sym.borrow().as_class_sym()._model.as_ref().map(|model| &model.name).cloned() else {
+        let class_key = class_sym.unwrap_class_key();
+        let Some(model_name) = st!().classes[class_key]._model.as_ref().map(|model| &model.name).cloned() else {
             return diagnostics;
         };
 
         for arg in arguments.args.iter() {
             let Expr::StringLiteral(expr) = arg else {return diagnostics};
             let field_name = expr.value.to_string();
-            let (syms, _) = class_sym.borrow().get_member_symbol(session, &field_name, from_module.clone(), false, true, false, true, false);
-            if syms.is_empty(){
+            let (syms, _) = get_member_symbol(session, class_sym, &field_name, from_module.clone(), false, true, false, true, false);
+            if syms.is_empty() {
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03014, &[&field_name, &model_name]) {
                     diagnostics.push(Diagnostic {
                         range: FileMgr::textRange_to_temporary_Range(&expr.range()),
@@ -1218,25 +1222,25 @@ impl PythonArchEvalHooks {
     }
 
     /// For @api.depends, which can take a nested simple field name
-    fn handle_api_nested_field_decorator(session: &mut SessionInfo, func_sym: Rc<RefCell<Symbol>>, arguments: &Arguments) -> Vec<Diagnostic>{
+    fn handle_api_nested_field_decorator(session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments) -> Vec<Diagnostic>{
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let mut diagnostics = vec![];
-        let from_module = func_sym.borrow().find_module();
+        let from_module = st!().find_module(func_sym);
 
-        let Some(class_sym) = func_sym.borrow().get_in_parents(&vec![SymType::CLASS], true).and_then(
-            |class_sym_weak| class_sym_weak.upgrade()
-        ) else {
+        let Some(class_sym) = st!().get_in_parents(func_sym.into(), &vec![SymType::CLASS], true) else {
             return diagnostics;
         };
 
-        let Some(model_name) = class_sym.borrow().as_class_sym()._model.as_ref().map(|model| &model.name).cloned() else {
+        let class_key = class_sym.unwrap_class_key();
+        let Some(model_name) = st!().classes[class_key]._model.as_ref().map(|model| &model.name).cloned() else {
             return diagnostics;
         };
 
         for arg in arguments.args.iter() {
             let Expr::StringLiteral(expr) = arg else {return diagnostics};
             let field_name = expr.value.to_string();
-            let syms = PythonArchEval::get_nested_sub_field(session, &field_name, class_sym.clone(), from_module.clone());
-            if syms.is_empty(){
+            let syms = PythonArchEval::get_nested_sub_field(session, &field_name, class_key, from_module);
+            if syms.is_empty() {
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03014, &[&field_name, &model_name]) {
                     diagnostics.push(Diagnostic {
                         range: FileMgr::textRange_to_temporary_Range(&expr.range()),
@@ -1324,7 +1328,7 @@ impl PythonArchEvalHooks {
         let diagnostics = vec![];
         symbol_table.functions[func_sym].evaluations = vec![Evaluation {
             symbol: EvaluationSymbol::new_with_symbol(
-                (SymbolKey::from(func_sym)).into(),
+                func_sym.into(),
                 Some(true),
                 HashMap::new(),
                 Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_env_ref, name: S!("eval_env_ref")})

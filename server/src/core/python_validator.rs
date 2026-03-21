@@ -410,7 +410,7 @@ impl PythonValidator {
         if self.current_module.is_none() {
             return;
         }
-        let maybe_from_module = st!().find_module(class.into());
+        let maybe_from_module = st!().find_module(class);
         // Check fields, check related and comodel arguments
         for symbol in get_sym!(st!(), class.into()).all_symbols() {
             let SymbolKey::Variable(v) = symbol else {
@@ -726,7 +726,7 @@ impl PythonValidator {
             let mut main_modules = vec![];
             let mut found_one = false;
             for main_sym in borrowed_model.get_main_symbols(session, None) {
-                let main_sym_module = st!().find_module(main_sym.into());
+                let main_sym_module = st!().find_module(main_sym);
                 if let Some(main_sym_module) = main_sym_module {
                     let main_sym_module_sv = get_sym!(st!(), main_sym_module);
                     let module_name = &main_sym_module_sv.as_module_package().dir_name;

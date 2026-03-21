@@ -47,6 +47,9 @@ pub fn flatten_expr(expr: &Expr) -> String {
 #[derive(Debug, Clone)]
 pub struct PythonArchEval {
     entry_point: Rc<RefCell<EntryPoint>>,
+    // @arena: consider making this a specific type (e.g.FileLikeKey), that one
+    // of File, Packages, XmlFile or CsvFile (not sure about these last 2, as
+    // this is PYTHON eval)
     file: SymbolKey,
     file_mode: bool,
     current_step: BuildSteps,
