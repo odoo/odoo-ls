@@ -10,7 +10,6 @@ use ruff_python_ast::StmtFunctionDef;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use tracing::warn;
-use weak_table::traits::WeakElement;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation::GetSymbolHook;
 use crate::core::odoo::SyncOdoo;
@@ -1036,15 +1035,15 @@ impl PythonArchEvalHooks {
         })
     }
 
-    // @arena todo
     fn eval_init_common(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: &mut Option<Context>, _diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>, relational: bool, one2many: bool) -> Option<EvaluationSymbolPtr>
     {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let Some(context) = maybe_context else {return None};
 
         let Some(parameters) = context.get(&S!("parameters")).map(|ps| ps.as_arguments()) else {return None};
 
-        let parent = Symbol::get_scope_symbol(
-            file_symbol.unwrap().clone(),
+        let parent = st!().get_scope_symbol(
+            file_symbol.unwrap(),
             context.get(&S!("range")).unwrap().as_text_range().start().to_u32(),
             false
         );
@@ -1084,12 +1083,12 @@ impl PythonArchEvalHooks {
 
         for (arg_name, (field_name_expr, arg_range, bool_or_str)) in contexts_to_add {
             match bool_or_str {
-                "str" => if let Some(related_string) = Evaluation::expr_to_str(session, field_name_expr, parent.clone(), &parameters.range.start(), false, &mut vec![]).0 {
+                "str" => if let Some(related_string) = Evaluation::expr_to_str(session, field_name_expr, parent, &parameters.range.start(), false, &mut vec![]).0 {
                     result_context.insert(S!(arg_name), ContextValue::STRING(related_string.to_string()));
                     result_context.insert(format!("{arg_name}_arg_range"), ContextValue::RANGE(arg_range.clone()));
                 },
                 "bool" => {
-                    let maybe_boolean = Evaluation::expr_to_bool(session, field_name_expr, parent.clone(), &parameters.range.start(), false, &mut vec![]).0;
+                    let maybe_boolean = Evaluation::expr_to_bool(session, field_name_expr, parent, &parameters.range.start(), false, &mut vec![]).0;
                     if let Some(boolean) = maybe_boolean {
                         result_context.insert(S!(arg_name), ContextValue::BOOLEAN(boolean));
                     }
@@ -1102,11 +1101,11 @@ impl PythonArchEvalHooks {
         }
 
         result_context.extend([
-            (S!("field_parent"), ContextValue::SYMBOL(Rc::downgrade(&parent))),
+            (S!("field_parent"), ContextValue::SYMBOL(parent.into())),
         ]);
         let weak_eval = match context.get(&S!("constructing_class")) {
-            Some(ContextValue::SYMBOL(weak)) if !weak.is_expired() => weak.clone(),
-            _ => evaluation_sym.get_weak().weak.clone(),
+            Some(ContextValue::SYMBOL(weak)) if !weak.is_expired(&st!()) => *weak,
+            _ => evaluation_sym.get_weak().weak,
         };
         return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak {
             weak: weak_eval,
