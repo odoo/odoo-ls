@@ -764,10 +764,10 @@ impl PythonArchEvalHooks {
         diagnostics
     }
 
-    // @arena todo
     pub fn eval_env_get_item(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
     {
-        let res = Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(Weak::new(), Some(true), false)));
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let res = Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(Weak::null(), Some(true), false)));
         let Some(context) = context else {
             return res
         };
@@ -776,40 +776,38 @@ impl PythonArchEvalHooks {
             return res
         };
         let maybe_model = session.sync_odoo.models.get(&oyarn!("{}", s)).cloned();
-        let has_class_in_parents = scope.as_ref().map(|scope| scope.borrow().get_in_parents(&vec![SymType::CLASS], true).is_some()).unwrap_or(false);
-        if maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols()).unwrap_or(false) {
+        let has_class_in_parents = scope.as_ref().map(|&scope| st!().get_in_parents(scope, &[SymType::CLASS], true).is_some()).unwrap_or(false);
+        if maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols(&st!())).unwrap_or(false) {
             let Some(model) = maybe_model else {unreachable!()};
             let module = context.get(&S!("module"));
             let from_module = if let Some(ContextValue::MODULE(m)) = module {
-                m.upgrade().clone()
+                m.upgrade(&st!())
             } else {
                 None
             };
-            if let Some(scope_file) = scope
-                .and_then(|s| s.borrow().get_file())
-                .and_then(|w| w.upgrade()) {
+            if let Some(scope_file) = scope.and_then(|s| st!().get_file(s)) {
                 //exclude orm files
                 if compare_semver(session.sync_odoo.full_version.as_str(), "18.1") < Ordering::Equal {
                     let env_files = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("api")], vec![]), u32::MAX);
-                    let env_file = env_files.last().unwrap();
-                    if !Rc::ptr_eq(env_file, &scope_file) {
-                        scope_file.borrow_mut().add_model_dependencies(&model);
+                    let env_file = *env_files.last().unwrap();
+                    if env_file != scope_file {
+                        st!().add_model_dependencies(scope_file, &model);
                     }
                 } else {
-                    let tree = scope_file.borrow().get_main_entry_tree(session);
+                    let tree = get_main_entry_tree(session, scope_file);
                     if !tree.0.starts_with(&[Sy!("odoo"), Sy!("orm")]) {
-                        scope_file.borrow_mut().add_model_dependencies(&model);
+                        st!().add_model_dependencies(scope_file, &model);
                     }
                 }
             }
             let model = model.clone();
             let model = model.borrow();
-            let symbols = model.get_main_symbols(session, from_module.clone());
-            if let Some(first_symbol) = symbols.first() {
-                return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(Rc::downgrade(first_symbol), Some(true), false)));
+            let symbols = model.get_main_symbols(session, from_module);
+            if let Some(&first_symbol) = symbols.first() {
+                return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(first_symbol, Some(true), false)));
             }
             if in_validation && has_class_in_parents { //we don't want to show error for functions outside of a model body
-                if from_module.is_some(){
+                if from_module.is_some() {
                     //retry without from_module to see if model exists elsewhere
                     let symbols = model.get_main_symbols(session, None);
                     if symbols.is_empty() {
@@ -822,9 +820,9 @@ impl PythonArchEvalHooks {
                         }
                     } else {
                         // Model exists but not in dependencies
-                        let valid_modules: Vec<OYarn> = symbols.iter().map(|s| match s.borrow().find_module() {
-                            Some(sym) => sym.borrow().name().clone(),
-                            None => Sy!("Unknown").clone()
+                        let valid_modules: Vec<OYarn> = symbols.iter().map(|&s| match st!().find_module(s) {
+                            Some(sym) => st!().name(sym).clone(),
+                            None => Sy!("Unknown")
                         }).collect();
                         if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03001, &[&format!("{:?}", valid_modules)]) {
                             diagnostics.push(Diagnostic {
@@ -851,11 +849,12 @@ impl PythonArchEvalHooks {
                     ..diagnostic_base
                 });
             }
-            let Some(file_symbol) = scope.and_then(|scope| scope.borrow().get_file()).and_then(|file| file.upgrade()) else {
+            let Some(file_symbol) = scope.and_then(|scope| st!().get_file(scope)) else {
               return res
             };
-            file_symbol.borrow_mut().as_file_mut().not_found_models.insert(Sy!(s.clone()), BuildSteps::VALIDATION);
-            session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(file_symbol.clone());
+            let f = file_symbol.unwrap_file_key();
+            st!().files[f].not_found_models.insert(Sy!(s.clone()), BuildSteps::VALIDATION);
+            session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(file_symbol);
         }
         res
     }

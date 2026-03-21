@@ -231,7 +231,7 @@ impl PartialEq for EvaluationSymbolWeak {
 }
 
 impl EvaluationSymbolWeak {
-    pub fn new(key: SymbolKey, instance: Option<bool>, is_super: bool) -> Self {
+    pub fn new(key: impl Into<Weak<SymbolKey>>, instance: Option<bool>, is_super: bool) -> Self {
         EvaluationSymbolWeak {
             weak: key.into(),
             context: HashMap::new(),
