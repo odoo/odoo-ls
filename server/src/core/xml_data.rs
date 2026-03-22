@@ -31,21 +31,21 @@ pub struct OdooDataField {
 
 #[derive(Debug, Clone)]
 pub struct XmlDataMenuItem {
-    pub file_symbol: Weak<RefCell<Symbol>>,
+    pub file_symbol: Weak<SymbolKey>,
     pub xml_id: Option<OYarn>,
     pub range: Range<usize>,
 }
 
 #[derive(Debug, Clone)]
 pub struct XmlDataTemplate {
-    pub file_symbol: Weak<RefCell<Symbol>>,
+    pub file_symbol: Weak<SymbolKey>,
     pub xml_id: Option<OYarn>,
     pub range: Range<usize>,
 }
 
 #[derive(Debug, Clone)]
 pub struct XmlDataDelete {
-    pub file_symbol: Weak<RefCell<Symbol>>,
+    pub file_symbol: Weak<SymbolKey>,
     pub xml_id: Option<OYarn>,
     pub range: Range<usize>,
     pub model: OYarn,

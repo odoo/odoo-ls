@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use lsp_types::{Diagnostic, Position, Range};
 use roxmltree::Node;
 
@@ -10,7 +8,6 @@ use super::xml_arch_builder::XmlArchBuilder;
 /* Contains the RelaxNG Validation part of the XmlArchBuilder */
 impl XmlArchBuilder {
 
-    // @arena todo
     pub fn load_odoo_openerp_data(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
         match node.tag_name().name() {
             "odoo" | "openerp" | "data" => {
@@ -100,7 +97,7 @@ impl XmlArchBuilder {
                         }
                     }
                     //check that action exists
-                    if SyncOdoo::get_xml_ids(session, &self.xml_symbol, attr.value(), &attr.range(), diagnostics).is_empty() {
+                    if SyncOdoo::get_xml_ids(session, self.xml_symbol.into(), attr.value(), &attr.range(), diagnostics).is_empty() {
                         if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05053, &[attr.value()]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
@@ -119,7 +116,7 @@ impl XmlArchBuilder {
                         }
                     } else {
                         //check that parent exists
-                        if SyncOdoo::get_xml_ids(session, &self.xml_symbol, attr.value(), &attr.range(), diagnostics).is_empty() {
+                        if SyncOdoo::get_xml_ids(session, self.xml_symbol.into(), attr.value(), &attr.range(), diagnostics).is_empty() {
                             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05052, &[attr.value()]) {
                                 diagnostics.push(Diagnostic {
                                     range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
@@ -171,7 +168,7 @@ impl XmlArchBuilder {
             }
         }
         let data = OdooData::MENUITEM(XmlDataMenuItem {
-            file_symbol: Rc::downgrade(&self.xml_symbol),
+            file_symbol: self.xml_symbol.into(),
             xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
             range: node.range().clone()
         });
@@ -212,7 +209,7 @@ impl XmlArchBuilder {
             return true;
         }
         let mut data = OdooDataRecord {
-            file_symbol: Rc::downgrade(&self.xml_symbol),
+            file_symbol: self.xml_symbol.into(),
             model: (oyarn!("{}", node.attribute("model").unwrap()), node.attribute_node("model").unwrap().range()),
             xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
             fields: vec![],
@@ -485,7 +482,7 @@ impl XmlArchBuilder {
         //no interesting rule to check, as 'any' is valid
         let found_id = node.attribute("id").map(|s| s.to_string());
         let data = OdooData::TEMPLATE(XmlDataTemplate {
-            file_symbol: Rc::downgrade(&self.xml_symbol),
+            file_symbol: self.xml_symbol.into(),
             xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
             range: node.range().clone(),
         });
@@ -523,7 +520,7 @@ impl XmlArchBuilder {
             }
         }
         let data = OdooData::DELETE(XmlDataDelete {
-            file_symbol: Rc::downgrade(&self.xml_symbol),
+            file_symbol: self.xml_symbol.into(),
             xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
             range: node.range().clone(),
             model: Sy!(node.attribute("model").unwrap().to_string()),
