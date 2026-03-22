@@ -10,6 +10,7 @@ use super::xml_arch_builder::XmlArchBuilder;
 /* Contains the RelaxNG Validation part of the XmlArchBuilder */
 impl XmlArchBuilder {
 
+    // @arena todo
     pub fn load_odoo_openerp_data(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
         match node.tag_name().name() {
             "odoo" | "openerp" | "data" => {
@@ -317,7 +318,7 @@ impl XmlArchBuilder {
                 }
                 _ => {},
             }
-        } 
+        }
         for attr in node.attributes() {
             match attr.name() {
                 "name" | "type" | "file" => {},

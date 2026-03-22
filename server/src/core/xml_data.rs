@@ -53,6 +53,7 @@ pub struct XmlDataDelete {
 
 impl OdooData {
 
+    // @arena todo
     pub fn set_file_symbol(&mut self, xml_symbol: &Rc<RefCell<Symbol>>) {
         match self {
             OdooData::RECORD(record) => {

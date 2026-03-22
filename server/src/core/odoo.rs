@@ -1169,7 +1169,8 @@ impl SyncOdoo {
     /**
      * search for an xml_id in the already registered xml files.
      * */
-    pub fn get_xml_ids(session: &mut SessionInfo, from_file: &Rc<RefCell<Symbol>>, xml_id: &str, range: &std::ops::Range<usize>, diagnostics: &mut Vec<Diagnostic>) -> Vec<OdooData> {
+     // @arena todo
+    pub fn get_xml_ids(session: &mut SessionInfo, from_file: SymbolKey, xml_id: &str, range: &std::ops::Range<usize>, diagnostics: &mut Vec<Diagnostic>) -> Vec<OdooData> {
         if !from_file.borrow().get_entry().unwrap().borrow().is_main() {
             return vec![];
         }
