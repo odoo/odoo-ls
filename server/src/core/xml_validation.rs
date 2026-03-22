@@ -3,18 +3,18 @@ use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet}, rc::Rc}
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{info, trace};
 
-use crate::{Sy, constants::{BuildSteps, DEBUG_STEPS, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{OdooData, OdooDataRecord, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver};
+use crate::{constants::{BuildSteps, OYarn, DEBUG_STEPS}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::{symbol::Symbol, symbol_table::XmlFileKey}, xml_data::{OdooData, OdooDataRecord, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver, Sy};
 
 
 
 pub struct XmlValidator {
-    pub xml_symbol: Rc<RefCell<Symbol>>,
+    pub xml_symbol: XmlFileKey,
     pub is_in_main_ep: bool,
 }
 
 impl XmlValidator {
 
-    pub fn new(entry: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>) -> Self {
+    pub fn new(entry: &Rc<RefCell<EntryPoint>>, symbol: XmlFileKey) -> Self {
         let is_in_main_ep = entry.borrow().typ == EntryPointType::MAIN || entry.borrow().typ == EntryPointType::ADDON;
         Self {
             xml_symbol: symbol,
@@ -23,12 +23,12 @@ impl XmlValidator {
     }
 
     fn get_file_info(&mut self, odoo: &mut SyncOdoo) -> Rc<RefCell<FileInfo>> {
-        let file_symbol = self.xml_symbol.borrow();
-        let path = file_symbol.paths()[0].clone();
-        let file_info_rc = odoo.get_file_mgr().borrow().get_file_info(&path).expect("File not found in cache").clone();
+        let path = &odoo.symbol_table.xml_files[self.xml_symbol].path;
+        let file_info_rc = odoo.get_file_mgr().borrow().get_file_info(path).expect("File not found in cache").clone();
         file_info_rc
     }
 
+    // @arena todo
     pub fn validate(&mut self, session: &mut SessionInfo) {
         if DEBUG_STEPS {
             trace!("Validating XML File {}", self.xml_symbol.borrow().name());

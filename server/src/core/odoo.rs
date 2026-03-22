@@ -671,6 +671,7 @@ impl SyncOdoo {
         });
     }
 
+    // @arena todo
     pub fn process_rebuilds(session: &mut SessionInfo, no_validation: bool) -> bool {
         session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
         if session.sync_odoo.watched_file_updates > MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART {
@@ -763,10 +764,9 @@ impl SyncOdoo {
                         return true;
                     }
                 }
-                let typ = sym_rc.borrow().typ();
-                match typ {
-                    SymType::XML_FILE => {
-                        let mut validator = XmlValidator::new(entry.as_ref().unwrap(), sym_rc);
+                match sym_rc {
+                    SymbolKey::XmlFile(xml) => {
+                        let mut validator = XmlValidator::new(entry.as_ref().unwrap(), xml);
                         validator.validate(session);
                     },
                     _ => {
