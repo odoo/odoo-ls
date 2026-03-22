@@ -1,7 +1,5 @@
-use std::{cell::RefCell, ops::Range};
-
-use crate::{constants::{OYarn, SymType}, core::symbols::symbol_table::{SymbolKey, Weak}};
-
+use std::ops::Range;
+use crate::{constants::OYarn, core::symbols::symbol_table::{SymbolKey, SymbolTable, Weak, XmlFileKey}};
 
 #[derive(Debug, Clone)]
 pub enum OdooData {
@@ -53,20 +51,20 @@ pub struct XmlDataDelete {
 
 impl OdooData {
 
-    // @arena todo
-    pub fn set_file_symbol(&mut self, xml_symbol: &Rc<RefCell<Symbol>>) {
+    pub fn set_file_symbol(&mut self, xml_symbol: XmlFileKey) {
+        let file_symbol: Weak<SymbolKey> = xml_symbol.into();
         match self {
             OdooData::RECORD(record) => {
-                record.file_symbol = Rc::downgrade(xml_symbol);
+                record.file_symbol = file_symbol;
             },
             OdooData::MENUITEM(menu_item) => {
-                menu_item.file_symbol = Rc::downgrade(xml_symbol);
+                menu_item.file_symbol = file_symbol;
             },
             OdooData::TEMPLATE(template) => {
-                template.file_symbol = Rc::downgrade(xml_symbol);
+                template.file_symbol = file_symbol;
             },
             OdooData::DELETE(delete) => {
-                delete.file_symbol = Rc::downgrade(xml_symbol);
+                delete.file_symbol = file_symbol;
             },
         }
     }
@@ -80,30 +78,29 @@ impl OdooData {
         }
     }
 
-    pub fn get_xml_file_symbol(&self) -> Option<Rc<RefCell<Symbol>>> {
+    pub fn get_xml_file_symbol(&self, symbol_table: &SymbolTable) -> Option<XmlFileKey> {
         let file_symbol = self.get_file_symbol()?;
-        if let Some(symbol) = file_symbol.upgrade() {
-            if symbol.borrow().typ() == SymType::XML_FILE {
-                return Some(symbol);
-            }
+        let symbol = file_symbol.upgrade(symbol_table)?;
+        if let SymbolKey::XmlFile(xml_file_key) = symbol {
+            return Some(xml_file_key);
         }
         None
     }
 
     /* Warning: the returned symbol can of a different type than an XML_SYMBOL */
-    pub fn get_file_symbol(&self) -> Option<Weak<RefCell<Symbol>>> {
+    pub fn get_file_symbol(&self) -> Option<Weak<SymbolKey>> {
         match self {
             OdooData::RECORD(record) => {
-                Some(record.file_symbol.clone())
+                Some(record.file_symbol)
             },
             OdooData::MENUITEM(menu_item) => {
-                Some(menu_item.file_symbol.clone())
+                Some(menu_item.file_symbol)
             },
             OdooData::TEMPLATE(template) => {
-                Some(template.file_symbol.clone())
+                Some(template.file_symbol)
             },
             OdooData::DELETE(delete) => {
-                Some(delete.file_symbol.clone())
+                Some(delete.file_symbol)
             }
         }
     }

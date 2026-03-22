@@ -58,8 +58,9 @@ impl XmlValidator {
         file_info.borrow_mut().publish_diagnostics(session);
     }
 
+    // @arena todo
     pub fn validate_xml_id(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, data: &OdooData, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>, missing_model_dependencies: &mut HashSet<OYarn>) {
-        let Some(_) = data.get_xml_file_symbol() else {
+        let Some(_) = data.get_xml_file_symbol(&session.sync_odoo.symbol_table) else {
             return;
         };
         match data {
