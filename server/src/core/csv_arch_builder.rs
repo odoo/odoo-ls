@@ -1,10 +1,9 @@
-use std::{cell::RefCell, path::PathBuf, rc::{Rc, Weak}};
+use std::{collections::HashSet, path::PathBuf};
 
 use csv::StringRecord;
 use lsp_types::Diagnostic;
-use weak_table::PtrWeakHashSet;
 
-use crate::{Sy, constants::{BuildStatus, BuildSteps, OYarn}, core::{symbols::symbol_table::CsvFileKey, xml_data::{OdooData, OdooDataField, OdooDataRecord}}, oyarn, threads::SessionInfo};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{symbols::{dependency_mgr::Buildable, symbol_table::{CsvFileKey, SymbolKey, Weak}}, xml_data::{OdooData, OdooDataField, OdooDataRecord}}, oyarn, threads::SessionInfo, Sy};
 
 
 pub struct CsvArchBuilder {
@@ -17,59 +16,57 @@ impl CsvArchBuilder {
         }
     }
 
-    // @arena-next
-    // @arena Vec<Diagnostic> is not used by caller?
+    // @arena Vec<Diagnostic> is not used by caller
     pub fn load_csv(&mut self, session: &mut SessionInfo, csv_symbol: CsvFileKey, content: &String) -> Vec<Diagnostic> {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let diagnostics = vec![];
-        csv_symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
-        let model_name_pb = PathBuf::from(&csv_symbol.borrow().paths()[0]);
+        st!().csv_files[csv_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
+        let model_name_pb = PathBuf::from(&st!().csv_files[csv_symbol].path);
         let model_name = Sy!(model_name_pb.file_stem().unwrap().to_str().unwrap().to_string());
-        let csv_module = csv_symbol.borrow().find_module();
-        let Some(csv_module) = &csv_module else {
+        let csv_module = st!().find_module(csv_symbol);
+        let Some(csv_module) = csv_module else {
             return diagnostics;
         };
-        {
-            let mut csv_sym = csv_symbol.borrow_mut();
-            let csv = csv_sym.as_csv_file_sym_mut();
-            let mut rdr = csv::Reader::from_reader(content.as_bytes());
-            if rdr.has_headers() {
-                if let Ok(header) = rdr.headers() {
-                    for h in header.iter() {
-                        csv.headers.push(oyarn!("{}", h));
-                    }
-                }
-            }
-            if !csv.headers.is_empty() && csv.headers[0] == "id" {
-                for result in rdr.records() {
-                    if let Ok(result) = result {
-                        let record = self.extract_record(Rc::downgrade(&csv_symbol), model_name.clone(), &csv.headers, &result);
-                        if let Some(record) = record {
-                            if let Some(xml_id) = record.xml_id.as_ref() {
-                                let id_split = xml_id.split(".").collect::<Vec<&str>>();
-                                if id_split.len() > 2 {
-                                    //TODO diagnostic
-                                    continue;
-                                }
-                                let mut csv_module = csv_module.clone();
-                                if id_split.len() == 2 {
-                                    let module_name = Sy!(id_split.first().unwrap().to_string());
-                                    if let Some(m) = session.sync_odoo.modules.get(&module_name) {
-                                        csv_module = m.upgrade().unwrap();
-                                    }
-                                }
-                                csv_module.borrow_mut().as_module_package_mut().xml_id_locations.entry(Sy!(id_split.last().unwrap().to_string())).or_insert(PtrWeakHashSet::new()).insert(csv_symbol.clone());
-                                csv.xml_ids.entry(Sy!(id_split.last().unwrap().to_string())).or_insert(vec![]).push(OdooData::RECORD(record));
-                            }
-                        }
-                    }
+        let csv = &mut st!().csv_files[csv_symbol];
+        let mut rdr = csv::Reader::from_reader(content.as_bytes());
+        if rdr.has_headers() {
+            if let Ok(header) = rdr.headers() {
+                for h in header.iter() {
+                    csv.headers.push(oyarn!("{}", h));
                 }
             }
         }
-        csv_symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
+        if !csv.headers.is_empty() && csv.headers[0] == "id" {
+            for result in rdr.records() {
+                let Ok(result) = result else { continue };
+                let record = self.extract_record(csv_symbol.into(), model_name.clone(), &csv.headers, &result);
+                let Some(record) = record else { continue };
+                let Some(xml_id) = record.xml_id.as_ref() else { continue };
+                let id_split = xml_id.split(".").collect::<Vec<&str>>();
+                if id_split.len() > 2 {
+                    //TODO diagnostic
+                    continue;
+                }
+                // @arena: not needed after find_module returns a module_key
+                let mut csv_module = csv_module.unwrap_package_key();
+                if id_split.len() == 2 {
+                    let module_name = Sy!(id_split.first().unwrap().to_string());
+                    if let Some(&m) = session.sync_odoo.modules.get(&module_name) {
+                        // @arena: upgrade weak here after converting modules values to weak keys
+                        // csv_module = m.upgrade().unwrap();
+                        csv_module = m;
+                    }
+                }
+                st!().packages[csv_module].as_module_package_mut().xml_id_locations.entry(Sy!(id_split.last().unwrap().to_string())).or_insert_with(HashSet::new).insert(csv_symbol.into());
+                // @arena: possible borrow error (use st!() again)
+                csv.xml_ids.entry(Sy!(id_split.last().unwrap().to_string())).or_insert(vec![]).push(OdooData::RECORD(record));
+            }
+        }
+        st!().csv_files[csv_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
         diagnostics
     }
 
-    fn extract_record(&self, file_symbol: Weak<RefCell<Symbol>>, model_name: OYarn, headers: &Vec<OYarn>, record: &StringRecord) -> Option<OdooDataRecord> {
+    fn extract_record(&self, file_symbol: Weak<SymbolKey>, model_name: OYarn, headers: &Vec<OYarn>, record: &StringRecord) -> Option<OdooDataRecord> {
         if record.position().is_none() {
             return None;
         }

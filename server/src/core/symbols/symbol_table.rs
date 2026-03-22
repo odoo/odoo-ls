@@ -2491,6 +2491,12 @@ impl From<FunctionKey> for Weak<SymbolKey> {
     }
 }
 
+impl From<CsvFileKey> for Weak<SymbolKey> {
+    fn from(key: CsvFileKey) -> Self {
+        Self { key: SymbolKey::CsvFile(key) }
+    }
+}
+
 pub trait ContainsKey<K> {
     fn contains_key(&self, key: K) -> bool;
 }
