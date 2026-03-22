@@ -749,7 +749,7 @@ impl PythonArchEval {
                     });
                 }
             } else {
-                let odoo_builder_diags = PythonOdooBuilder::new(class_key).load(session);
+                let odoo_builder_diags = PythonOdooBuilder::new(c).load(session);
                 self.diagnostics.extend(odoo_builder_diags);
             }
         }

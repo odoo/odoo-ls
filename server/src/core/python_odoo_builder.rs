@@ -9,7 +9,8 @@ use weak_table::PtrWeakHashSet;
 
 use crate::constants::{OYarn, SymType};
 use crate::core::model::{Model, ModelData};
-use crate::core::symbols::symbol_table::SymbolKey;
+use crate::core::symbols::class_symbol::ClassSymbol;
+use crate::core::symbols::symbol_table::{ClassKey, SymbolKey};
 use crate::core::xml_data::{OdooData, OdooDataRecord};
 use crate::threads::SessionInfo;
 use crate::utils::compare_semver;
@@ -27,13 +28,12 @@ pub const MAGIC_FIELDS: [&str; 6] = [
 ];
 
 pub struct PythonOdooBuilder {
-    symbol: SymbolKey,
+    symbol: ClassKey,
 }
 
 impl PythonOdooBuilder {
 
-    // @arena next
-    pub fn new(symbol: SymbolKey) -> PythonOdooBuilder {
+    pub fn new(symbol: ClassKey) -> PythonOdooBuilder {
         PythonOdooBuilder {
             symbol: symbol,
         }
@@ -41,15 +41,11 @@ impl PythonOdooBuilder {
 
     pub fn load(&mut self, session: &mut SessionInfo) -> Vec<Diagnostic> {
         let mut diagnostics: Vec<Diagnostic> =  vec![];
-        let sym = self.symbol.clone();
-        // @arena: extrac class key here
-        if sym.borrow().typ() != SymType::CLASS {
-            return diagnostics;
-        }
-        // @arena: call this with class key
+        let sym = self.symbol;
         if !self.is_symbol_model(session, &mut diagnostics) {
             return diagnostics;
         }
+        // @arena: todo from here
         self.symbol.borrow_mut().as_class_sym_mut()._model = Some(ModelData::new());
         self._load_class_inherit(session, &mut diagnostics);
         self._load_class_name(session, &mut diagnostics);
@@ -95,37 +91,40 @@ impl PythonOdooBuilder {
     }
 
     fn _load_class_inherit(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) {
-        let mut symbol = self.symbol.borrow_mut();
-        let _inherit = symbol.get_symbol(&(vec![], vec![Sy!("_inherit")]), u32::MAX);
-        if let Some(_inherit) = _inherit.last() {
-            if _inherit.borrow().evaluations().is_none() || _inherit.borrow().evaluations().unwrap().len() == 0 {
-                error!("wrong _inherit structure");
-            }
-            for eval in _inherit.borrow().evaluations().unwrap().iter() {
-                let eval = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
-                if let Some(eval) = eval.as_ref() {
-                    match eval {
-                        EvaluationValue::CONSTANT(Expr::StringLiteral(s)) => {
-                            symbol.as_class_sym_mut()._model.as_mut().unwrap().inherit = vec![oyarn!("{}", s.value)];
-                        },
-                        EvaluationValue::LIST(l) | EvaluationValue::TUPLE(l)=> {
-                            for e in l {
-                                if let Expr::StringLiteral(s) = e {
-                                    symbol.as_class_sym_mut()._model.as_mut().unwrap().inherit.push(oyarn!("{}", s.value));
-                                }
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let symbol = self.symbol;
+        let _inherit = st!().get_symbol(symbol.into(), &(vec![], vec![Sy!("_inherit")]), u32::MAX);
+        let Some(&_inherit) = _inherit.last() else { return };
+        let evaluations = st!().evaluations(_inherit);
+        if evaluations.is_none() || evaluations.unwrap().len() == 0 {
+            error!("wrong _inherit structure");
+            // @arena: not present in the original code. Without this, it could crash on the unwrap below.
+            return;
+        }
+        for eval in evaluations.unwrap().clone() {
+            if let Some(eval) = eval.follow_ref_and_get_value(session, &mut None, diagnostics) {
+                match eval {
+                    EvaluationValue::CONSTANT(Expr::StringLiteral(s)) => {
+                        st!().classes[symbol]._model.as_mut().unwrap().inherit = vec![oyarn!("{}", s.value)];
+                    },
+                    EvaluationValue::LIST(l) | EvaluationValue::TUPLE(l)=> {
+                        for e in l {
+                            if let Expr::StringLiteral(s) = e {
+                                st!().classes[symbol]._model.as_mut().unwrap().inherit.push(oyarn!("{}", s.value));
                             }
-                        },
-                        _ => {
-                            error!("wrong _inherit value");
                         }
+                    },
+                    _ => {
+                        error!("wrong _inherit value");
                     }
-                } else {
-                    error!("wrong _inherit value");
                 }
+            } else {
+                error!("wrong _inherit value");
             }
         }
     }
 
+    // @arena todo
     fn _evaluate_name(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) -> OYarn {
         let mut symbol = self.symbol.borrow_mut();
         let _name = symbol.get_symbol(&(vec![], vec![Sy!("_name")]), u32::MAX);
@@ -147,14 +146,14 @@ impl PythonOdooBuilder {
 
     fn _load_class_name(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) {
         let class_name = self._evaluate_name(session, diagnostics);
-        let mut symbol = self.symbol.borrow_mut();
-        symbol.as_class_sym_mut()._model.as_mut().unwrap().name = class_name;
-        if symbol.as_class_sym()._model.as_ref().unwrap().name.is_empty() {
-            symbol.as_class_sym_mut()._model = None;
+        let symbol = &mut session.sync_odoo.symbol_table.classes[self.symbol];
+        symbol._model.as_mut().unwrap().name = class_name;
+        if symbol._model.as_ref().unwrap().name.is_empty() {
+            symbol._model = None;
             return;
         }
-        if symbol.as_class_sym()._model.as_ref().unwrap().name != Sy!("base") {
-            symbol.as_class_sym_mut()._model.as_mut().unwrap().inherit.push(Sy!("base"));
+        if symbol._model.as_ref().unwrap().name != Sy!("base") {
+            symbol._model.as_mut().unwrap().inherit.push(Sy!("base"));
         }
     }
 
@@ -356,11 +355,10 @@ impl PythonOdooBuilder {
     }
 
     /* true if the symbol inherits from BaseModel, Model, TransientModel, or CachedModel. symbol must be the data of rc_symbol and must be a Class */
-    /// @arena-todo
-    /// take ClassKey as target
     fn is_symbol_model(&self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) -> bool {
-        let symbol = &self.symbol.clone();
-        if symbol.borrow().as_class_sym().bases.is_empty() || symbol.borrow().find_module().is_none(){
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let symbol = self.symbol;
+        if st!().classes[symbol].bases.is_empty() || st!().find_module(symbol).is_none() {
             // We only consider symbols that has inheritance base or defined in modules as models
             return false;
         }
@@ -370,18 +368,18 @@ impl PythonOdooBuilder {
             (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel")])
         };
         let base_model_syms = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &base_model_tree, u32::MAX);
-        if base_model_syms.is_empty() {
+        // @arena: different from original, here we make sure it's a class symbol
+        let Some(&SymbolKey::Class(base)) = base_model_syms.first() else {
             // base_model_syms empty so sym cannot be a model, otherwise we would have found it earlier
             return false;
-        }
-        if !crate::core::symbols::class_symbol::ClassSymbol::inherits(symbol.borrow().as_class_sym(), &base_model_syms[0], &mut None) {
+        };
+        if !ClassSymbol::inherits(&st!(), symbol, base, &mut None) {
             return false;
         }
         // Check if we have a _register = False
-        let register = symbol.borrow().get_symbol(&(vec![], vec![Sy!("_register")]), u32::MAX);
-        if let Some(register) = register.last() {
-            let loc_register = register.borrow();
-            let register_evals = loc_register.evaluations().unwrap();
+        let register = st!().get_symbol(symbol.into(), &(vec![], vec![Sy!("_register")]), u32::MAX);
+        if let Some(&register) = register.last() {
+            let register_evals = st!().evaluations(register).unwrap().clone();
             // Read all boolean values, ignore non-boolean-value evaluations, as they can be dynamic or type annotations
             let register_evals_values: Vec<_> = register_evals.iter().filter_map(
                 |eval|
