@@ -429,7 +429,7 @@ impl PythonArchEval {
                             SymbolKey::Class(_) => Some(false),
                             _ => None
                         };
-                        let evaluation = Evaluation::eval_from_symbol(&st!(), import_sym.into(), instance);
+                        let evaluation = Evaluation::eval_from_symbol(&st!(), import_sym, instance);
                         st!().variables[v].evaluations.push(evaluation);
                         let file_of_import_symbol = st!().get_file(import_sym);
                         if let Some(import_file) = file_of_import_symbol {
@@ -772,7 +772,7 @@ impl PythonArchEval {
                     let arg_name = OYarn::from(arg.parameter.name.id.to_string());
                     let arg_sym = st!().functions[f].symbols.get(&arg_name).unwrap().get(&0).unwrap()[0]; //get first declaration
                     let v = arg_sym.unwrap_variable_key();
-                    let evaluation = Evaluation::eval_from_symbol(&st!(), scope.into(), Some(!is_class_method));
+                    let evaluation = Evaluation::eval_from_symbol(&st!(), scope, Some(!is_class_method));
                     st!().variables[v].evaluations.push(evaluation);
                     is_first = false;
                     continue;

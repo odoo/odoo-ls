@@ -494,6 +494,7 @@ impl EntryPoint {
         });
     }
 
+    // @arena todo
     pub fn search_rebuild_for_models(&mut self, session: &mut SessionInfo, model_name: OYarn){
         let mut to_add: [Vec<Rc<RefCell<Symbol>>>; 4] = [vec![], vec![], vec![], vec![]]; //list of symbols to add after the loop (borrow issue)
         for sym_rc in self.not_found_symbols_for_models.iter() {

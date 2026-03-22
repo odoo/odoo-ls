@@ -266,7 +266,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SymbolKey, symbol: SymbolKey| {
         let odoo_underscore = odoo.get_symbol(odoo.symbol_table.file_path(file_symbol), &(vec![Sy!("odoo")], vec![Sy!("_")]), u32::MAX);
         if let Some(&eval_1) = odoo_underscore.first() {
-            odoo.symbol_table.set_evaluations(eval_1, vec![Evaluation::eval_from_symbol(&odoo.symbol_table, symbol.into(), Some(false))]);
+            odoo.symbol_table.set_evaluations(eval_1, vec![Evaluation::eval_from_symbol(&odoo.symbol_table, symbol, Some(false))]);
         }
     }},
     PythonArchEvalFileHook {odoo_entry: true,
@@ -275,7 +275,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SymbolKey, symbol: SymbolKey| {
         let odoo_superuser_id = odoo.get_symbol(odoo.symbol_table.file_path(file_symbol), &(vec![Sy!("odoo")], vec![Sy!("SUPERUSER_ID")]), u32::MAX);
         if let Some(&eval_1) = odoo_superuser_id.first() {
-            odoo.symbol_table.set_evaluations(eval_1,vec![Evaluation::eval_from_symbol(&odoo.symbol_table, symbol.into(), Some(false))]);
+            odoo.symbol_table.set_evaluations(eval_1,vec![Evaluation::eval_from_symbol(&odoo.symbol_table, symbol, Some(false))]);
         }
     }},
     PythonArchEvalFileHook {odoo_entry: true,
@@ -284,7 +284,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SymbolKey, symbol: SymbolKey| {
         let odoo_lt = odoo.get_symbol(odoo.symbol_table.file_path(file_symbol), &(vec![Sy!("odoo")], vec![Sy!("_lt")]), u32::MAX);
         if let Some(&eval_1) = odoo_lt.first() {
-            odoo.symbol_table.set_evaluations(eval_1, vec![Evaluation::eval_from_symbol(&odoo.symbol_table, symbol.into(), Some(false))]);
+            odoo.symbol_table.set_evaluations(eval_1, vec![Evaluation::eval_from_symbol(&odoo.symbol_table, symbol, Some(false))]);
         }
     }},
     PythonArchEvalFileHook {odoo_entry: true,
@@ -293,7 +293,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                             func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SymbolKey, symbol: SymbolKey| {
         let odoo_command = odoo.get_symbol(odoo.symbol_table.file_path(file_symbol), &(vec![Sy!("odoo")], vec![Sy!("Command")]), u32::MAX);
         if let Some(&eval_1) = odoo_command.first() {
-            odoo.symbol_table.set_evaluations(eval_1, vec![Evaluation::eval_from_symbol(&odoo.symbol_table, symbol.into(), Some(false))]);
+            odoo.symbol_table.set_evaluations(eval_1, vec![Evaluation::eval_from_symbol(&odoo.symbol_table, symbol, Some(false))]);
         }
     }},
     PythonArchEvalFileHook {odoo_entry: true,
@@ -307,7 +307,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
             odoo.get_symbol(file_path, &(vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Boolean")]), u32::MAX)
         };
         if let Some(&boolean) = boolean_field.first() {
-            let mut eval = Evaluation::eval_from_symbol(&odoo.symbol_table, boolean.into(), Some(true));
+            let mut eval = Evaluation::eval_from_symbol(&odoo.symbol_table, boolean, Some(true));
             let weak = eval.symbol.get_mut_symbol_ptr().as_mut_weak();
             weak.context.insert(S!("compute"), ContextValue::STRING(S!("_compute_global")));
             odoo.symbol_table.set_evaluations(symbol, vec![eval]);
@@ -324,7 +324,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
             if let SymbolKey::Variable(v) = werkzeug_url_decode { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_decode.first() {
                     odoo.symbol_table.variables[v].evaluations = vec![
-                        Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1.into(), Some(false))
+                        Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
             }
@@ -335,7 +335,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
             if let SymbolKey::Variable(v) = werkzeug_url_encode { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_encode.first() {
                     odoo.symbol_table.variables[v].evaluations = vec![
-                        Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1.into(), Some(false))
+                        Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
             }
@@ -346,7 +346,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
             if let SymbolKey::Variable(v) = werkzeug_url_join { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_join.first() {
                     odoo.symbol_table.variables[v].evaluations = vec![
-                        Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1.into(), Some(false))
+                        Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
             }
@@ -357,7 +357,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
             if let SymbolKey::Variable(v) = werkzeug_url_parse { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_parse.first() {
                     odoo.symbol_table.variables[v].evaluations = vec![
-                        Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1.into(), Some(false))
+                        Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
             }
@@ -368,7 +368,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
             if let SymbolKey::Variable(v) = werkzeug_url_quote { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_quote.first() {
                     odoo.symbol_table.variables[v].evaluations = vec![
-                        Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1.into(), Some(false))
+                        Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
             }
@@ -379,7 +379,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
             if let SymbolKey::Variable(v) = werkzeug_url_unquote { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_unquote.first() {
                     odoo.symbol_table.variables[v].evaluations = vec![
-                        Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1.into(), Some(false))
+                        Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
             }
@@ -390,7 +390,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
             if let SymbolKey::Variable(v) = werkzeug_url_quote_plus { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_quote_plus.first() {
                     odoo.symbol_table.variables[v].evaluations = vec![
-                        Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1.into(), Some(false))
+                        Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
             }
@@ -401,7 +401,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
             if let SymbolKey::Variable(v) = werkzeug_url_unquote_plus { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_unquote_plus.first() {
                     odoo.symbol_table.variables[v].evaluations = vec![
-                        Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1.into(), Some(false))
+                        Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
             }
@@ -412,7 +412,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
             if let SymbolKey::Variable(v) = werkzeug_url_unparse { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_unparse.first() {
                     odoo.symbol_table.variables[v].evaluations = vec![
-                        Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1.into(), Some(false))
+                        Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
             }
@@ -423,7 +423,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
             if let SymbolKey::Variable(v) = werkzeug_url { //if not variable, no need to patch it
                 if let Some(&eval_1) = url.first() {
                     odoo.symbol_table.variables[v].evaluations = vec![
-                        Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1.into(), Some(false))
+                        Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
             }
@@ -1180,7 +1180,7 @@ impl PythonArchEvalHooks {
             }
             return diagnostics
         };
-        st!().functions[func_sym].evaluations = vec![Evaluation::eval_from_symbol(&st!(), main_model_sym.into(), Some(false))];
+        st!().functions[func_sym].evaluations = vec![Evaluation::eval_from_symbol(&st!(), main_model_sym, Some(false))];
         diagnostics
     }
 

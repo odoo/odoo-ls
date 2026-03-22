@@ -1,5 +1,5 @@
-//! Symbol creation methods 
- 
+//! Symbol creation methods
+
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
@@ -85,8 +85,8 @@ impl SymbolTable {
                 self.disk_dirs.get_mut(d).unwrap().add_file(compiled_key, name);
             },
             _ => {
-                panic!("Impossible to add a {} to a {}", 
-                    self.get_symbol_view(compiled_key).unwrap().typ(), 
+                panic!("Impossible to add a {} to a {}",
+                    self.get_symbol_view(compiled_key).unwrap().typ(),
                     self.get_symbol_view(parent).unwrap().typ()
                 );
             }
@@ -114,7 +114,7 @@ impl SymbolTable {
         }
     }
 
-    fn register_in_parent(&mut self, parent: SymbolKey, child: SymbolKey, name: &str, path: &str) {             
+    fn register_in_parent(&mut self, parent: SymbolKey, child: SymbolKey, name: &str, path: &str) {
         match parent {
             SymbolKey::Namespace(n) => {
                 self.namespaces.get_mut(n).unwrap().add_file(child, name, path);
@@ -129,8 +129,8 @@ impl SymbolTable {
                 self.disk_dirs.get_mut(d).unwrap().add_file(child, name);
             },
             _ => {
-                panic!("Impossible to add a {} to a {}", 
-                    self.get_symbol_view(child).unwrap().typ(), 
+                panic!("Impossible to add a {} to a {}",
+                    self.get_symbol_view(child).unwrap().typ(),
                     self.get_symbol_view(parent).unwrap().typ()
                 );
             }
@@ -138,13 +138,14 @@ impl SymbolTable {
     }
 
     // @arena: consider taking &str for name
-    pub fn add_new_variable(&mut self, parent: SymbolKey, name: OYarn, range: &TextRange) -> VariableKey {
+    pub fn add_new_variable(&mut self, parent: impl Into<SymbolKey>, name: OYarn, range: &TextRange) -> VariableKey {
+        let parent = parent.into();
         let is_external = self.get_symbol_view(parent).expect("valid key").is_external();
         let variable_symbol = VariableSymbol::new(name.clone(), parent, range.clone(), is_external);
         let variable_key = self.variables.insert(variable_symbol);
         self.add_to_parent_symbols(parent, variable_key.into(), &name, range.start().to_u32());
         variable_key
-    } 
+    }
     pub fn add_new_function(&mut self, parent: SymbolKey, name: &str, range: &TextRange, body_start: &TextSize) -> FunctionKey {
         let is_external = self.get_symbol_view(parent).expect("valid key").is_external();
         let function_symbol = FunctionSymbol::new(name, parent, range.clone(), body_start.clone(), is_external);
@@ -190,9 +191,9 @@ impl SymbolTable {
                 let section = function.get_section_for(position).index;
                 function.add_symbol(content, name, section);
             }
-            _ => { 
-                panic!("Impossible to add a {} to a {}", 
-                    self.get_symbol_view(content).unwrap().typ(), 
+            _ => {
+                panic!("Impossible to add a {} to a {}",
+                    self.get_symbol_view(content).unwrap().typ(),
                     self.get_symbol_view(parent).unwrap().typ()
                 );
             }
@@ -391,7 +392,7 @@ pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: Symbo
 // of data files. Consider moving the clean up to here. Or to split the remove
 // from parent + cleanup in separate functions per key type, that would mirror the add_* methods.
 pub fn unload(session: &mut SessionInfo, symbol: SymbolKey) {
-    macro_rules! st { () => { session.sync_odoo.symbol_table } }  
+    macro_rules! st { () => { session.sync_odoo.symbol_table } }
     /* Unload the symbol and its children. Mark all dependents symbols as 'to_revalidate' */
     let mut vec_to_unload = VecDeque::from([symbol]);
     while !vec_to_unload.is_empty() {

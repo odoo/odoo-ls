@@ -53,25 +53,24 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
             (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("environments")], vec![Sy!("Environment")]))
         ],
         func: |symbol_table: &mut SymbolTable, _entry_point: &Rc<RefCell<EntryPoint>>, class: ClassKey| {
-            let symbol_key: SymbolKey = class.into();
-            let new_sym = symbol_table.get_symbol(symbol_key, &(vec![], vec![Sy!("__new__")]), u32::MAX);
+            let new_sym = symbol_table.get_symbol(class.into(), &(vec![], vec![Sy!("__new__")]), u32::MAX);
             let mut range = symbol_table.classes[class].range.clone();
             if new_sym.len() == 1 {
                 range = get_sym!(symbol_table, new_sym[0]).range().clone();
             }
             // ----------- env.cr ------------
-            symbol_table.add_new_variable(symbol_key, Sy!("cr"), &range);
+            symbol_table.add_new_variable(class, Sy!("cr"), &range);
             // ----------- env.uid ------------
-            let uid_sym = symbol_table.add_new_variable(symbol_key, Sy!("uid"), &range);
+            let uid_sym = symbol_table.add_new_variable(class, Sy!("uid"), &range);
             symbol_table.variables[uid_sym].doc_string = Some(S!("The current user id (for access rights checks)"));
             // ----------- env.context ------------
-            let context_sym = symbol_table.add_new_variable(symbol_key, Sy!("context"), &range);
+            let context_sym = symbol_table.add_new_variable(class, Sy!("context"), &range);
             symbol_table.variables[context_sym].doc_string = Some(S!("The current context"));
             // ----------- env.su ------------
-            let su_sym = symbol_table.add_new_variable(symbol_key, Sy!("su"), &range);
+            let su_sym = symbol_table.add_new_variable(class, Sy!("su"), &range);
             symbol_table.variables[su_sym].doc_string = Some(S!("whether in superuser mode"));
             // ----------- env.registry -----------
-            let _ = symbol_table.add_new_variable(symbol_key, Sy!("registry"), &range);
+            let _ = symbol_table.add_new_variable(class, Sy!("registry"), &range);
         }
     },
     PythonArchClassHook {
@@ -82,7 +81,7 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
         func: |symbol_table: &mut SymbolTable, _entry_point: &Rc<RefCell<EntryPoint>>, class: ClassKey| {
             let range = symbol_table.classes[class].range.clone();
             // ----------- global ------------
-            symbol_table.add_new_variable(class.into(), Sy!("global"), &range);
+            symbol_table.add_new_variable(class, Sy!("global"), &range);
         }
     },
     PythonArchClassHook {

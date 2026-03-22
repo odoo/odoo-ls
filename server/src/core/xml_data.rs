@@ -1,6 +1,6 @@
-use std::{cell::RefCell, ops::Range, rc::{Rc, Weak}};
+use std::{cell::RefCell, ops::Range};
 
-use crate::{constants::{OYarn, SymType}, core::symbols::symbol::Symbol};
+use crate::{constants::{OYarn, SymType}, core::symbols::symbol_table::{SymbolKey, Weak}};
 
 
 #[derive(Debug, Clone)]
@@ -13,7 +13,7 @@ pub enum OdooData {
 
 #[derive(Debug, Clone)]
 pub struct OdooDataRecord {
-    pub file_symbol: Weak<RefCell<Symbol>>,
+    pub file_symbol: Weak<SymbolKey>,
     pub model: (OYarn, Range<usize>),
     pub xml_id: Option<OYarn>,
     pub fields: Vec<OdooDataField>,

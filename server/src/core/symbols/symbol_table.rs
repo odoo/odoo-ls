@@ -116,6 +116,13 @@ impl SymbolKey {
             _ => panic!("Not a FileKey"),
         }
     }
+
+    pub fn unwrap_package_key(&self) -> PackageKey {
+        match self {
+            SymbolKey::Package(k) => *k,
+            _ => panic!("Not a PackageKey"),
+        }
+    }
 }
 
 /// @arena: temporary. symbol_rc.borrow() -> get_sym!(symbol_key).
@@ -1538,6 +1545,23 @@ impl SymbolTable {
             SymbolKey::Variable(v) => { self.variables[v].evaluations = data; },
             SymbolKey::XmlFile(x) => { panic!() },
             SymbolKey::CsvFile(c) => { panic!() },
+        }
+    }
+
+    pub fn insert_xml_id(&mut self, target: SymbolKey, xml_id: OYarn, xml_data: OdooData) {
+        match target {
+            SymbolKey::File(file) => {
+                self.files[file].xml_ids.entry(xml_id).or_insert(vec![]).push(xml_data);
+            },
+            SymbolKey::Package(p) => match &mut self.packages[p] {
+                PackageSymbol::Module(module) => {
+                    module.xml_ids.entry(xml_id).or_insert(vec![]).push(xml_data);
+                },
+                PackageSymbol::PythonPackage(package) => {
+                    package.xml_ids.entry(xml_id).or_insert(vec![]).push(xml_data);
+                },
+            },
+            _ => {}
         }
     }
 }

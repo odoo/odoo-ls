@@ -701,7 +701,7 @@ impl PythonArchBuilder {
         }
         //add params
         for arg in func_def.parameters.posonlyargs.iter() {
-            let param = st!().add_new_variable(function_key.into(), oyarn!("{}", arg.parameter.name.id), &arg.range);
+            let param = st!().add_new_variable(function_key, oyarn!("{}", arg.parameter.name.id), &arg.range);
             st!().variables[param].is_parameter = true;
             let mut default = None;
             if arg.default.is_some() {
@@ -715,7 +715,7 @@ impl PythonArchBuilder {
             });
         }
         for arg in func_def.parameters.args.iter() {
-            let param = st!().add_new_variable(function_key.into(), oyarn!("{}", arg.parameter.name.id), &arg.range);
+            let param = st!().add_new_variable(function_key, oyarn!("{}", arg.parameter.name.id), &arg.range);
             st!().variables[param].is_parameter = true;
             let mut default = None;
             if arg.default.is_some() {
@@ -729,7 +729,7 @@ impl PythonArchBuilder {
             });
         }
         if let Some(arg) = &func_def.parameters.vararg {
-            let param = st!().add_new_variable(function_key.into(), oyarn!("{}", arg.name.id), &arg.range);
+            let param = st!().add_new_variable(function_key, oyarn!("{}", arg.name.id), &arg.range);
             st!().variables[param].is_parameter = true;
             st!().functions[function_key].args.push(Argument {
                 symbol: param.into(),
@@ -739,7 +739,7 @@ impl PythonArchBuilder {
             });
         }
         for arg in func_def.parameters.kwonlyargs.iter() {
-            let param = st!().add_new_variable(function_key.into(), oyarn!("{}", arg.parameter.name.id), &arg.range);
+            let param = st!().add_new_variable(function_key, oyarn!("{}", arg.parameter.name.id), &arg.range);
             st!().variables[param].is_parameter = true;
             st!().functions[function_key].args.push(Argument {
                 symbol: param.into(),
@@ -749,7 +749,7 @@ impl PythonArchBuilder {
             });
         }
         if let Some(arg) = &func_def.parameters.kwarg {
-            let param = st!().add_new_variable(function_key.into(), oyarn!("{}", arg.name.id), &arg.range);
+            let param = st!().add_new_variable(function_key, oyarn!("{}", arg.name.id), &arg.range);
             st!().variables[param].is_parameter = true;
             st!().functions[function_key].args.push(Argument {
                 symbol: param.into(),

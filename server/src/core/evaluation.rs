@@ -526,13 +526,15 @@ impl Evaluation {
             } else if matches!(symbol.typ(), SymType::CLASS) {
                 is_instance = Some(false);
             }
-            res.push(Evaluation::eval_from_symbol(symbol_table, sym_key.into(), is_instance));
+            res.push(Evaluation::eval_from_symbol(symbol_table, sym_key, is_instance));
         }
         res
     }
 
     /// Create an evaluation that is evaluating to the given symbol
-    pub fn eval_from_symbol(symbol_table: &SymbolTable, symbol: Weak<SymbolKey>, instance: Option<bool>) -> Evaluation {
+    /// @arena: consider taking impl Into<Weak<SymbolKey>> instead of Weak<SymbolKey> directly, to avoid the need of calling .into() everywhere
+    pub fn eval_from_symbol(symbol_table: &SymbolTable, symbol: impl Into<Weak<SymbolKey>>, instance: Option<bool>) -> Evaluation {
+        let symbol: Weak<SymbolKey> = symbol.into();
         if symbol.is_expired(symbol_table) {
             return Evaluation::new_none();
         }
@@ -1088,7 +1090,7 @@ impl Evaluation {
                                         }
                                         _ => None
                                     };
-                                    let mut eval = Evaluation::eval_from_symbol(&st!(), attribute.into(), instance);
+                                    let mut eval = Evaluation::eval_from_symbol(&st!(), attribute, instance);
                                     match eval.symbol.sym {
                                         EvaluationSymbolPtr::WEAK(ref mut weak) => {
                                             weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(base_loc.into()));
@@ -1155,7 +1157,7 @@ impl Evaluation {
                         }
                         _ => None
                     };
-                    evals.push(Evaluation::eval_from_symbol(&st!(), inferred_sym.into(), instance));
+                    evals.push(Evaluation::eval_from_symbol(&st!(), inferred_sym, instance));
                 }
                 if !inferred_syms.always_defined{
                     evals.push(Evaluation::new_unbound(name));
