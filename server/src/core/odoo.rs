@@ -151,6 +151,7 @@ impl SyncOdoo {
         sync_odoo
     }
 
+    // @arena todo: reset symbol table!
     pub fn reset(session: &mut SessionInfo, config: ConfigEntry) {
         session.log_message(MessageType::INFO, S!("Resetting Database..."));
         info!("Resetting database...");
@@ -1113,6 +1114,8 @@ impl SyncOdoo {
         path.starts_with(session.sync_odoo.main_entry_tree.as_slice())
     }
 
+    // @arena temp
+    #[allow(dead_code)]
     fn is_non_main_manifest_file(symbol_table: &SymbolTable, file_symbol: SymbolKey, file_path_buff: &PathBuf) -> bool {
         symbol_table.get_entry(file_symbol).map_or(false, |e| !e.borrow().is_main())
         && file_path_buff.components().last()
@@ -1567,6 +1570,7 @@ impl Odoo {
     }
 
     pub fn search_symbols_to_rebuild(session: &mut SessionInfo, path: &String) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let path_for_tree = PathBuf::from(path.clone()).to_tree_path();
         //search if the path does match a missing file path somewhere
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
@@ -1587,7 +1591,7 @@ impl Odoo {
             let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
             for entry in ep_mgr.borrow().addons_entry_points.iter() {
                 if entry.borrow().path == parent_path.sanitize() {
-                    let module_symbol = Symbol::create_from_path(session, &path_for_tree, entry.borrow().get_symbol().unwrap().clone(), true);
+                    let module_symbol = create_from_path(session, &path_for_tree, entry.borrow().get_symbol(&st!()).unwrap(), true);
                     if module_symbol.is_some() {
                         session.sync_odoo.add_to_rebuild_arch(module_symbol.unwrap());
                     }
@@ -1595,12 +1599,12 @@ impl Odoo {
                 }
             }
             if parent_path.sanitize() == session.sync_odoo.config.odoo_path.as_ref().unwrap_or(&"".to_string()).clone() + "/odoo/addons" {
-                let addons_symbol = session.sync_odoo.get_main_entry().borrow().get_symbol().map(|ep_sym_rc|
-                    ep_sym_rc.borrow().get_symbol(&(vec![Sy!("odoo"), Sy!("addons")], vec![]), u32::MAX)
+                let addons_symbol = session.sync_odoo.get_main_entry().borrow().get_symbol(&st!()).map(|ep_sym_key|
+                    st!().get_symbol(ep_sym_key, &(vec![Sy!("odoo"), Sy!("addons")], vec![]), u32::MAX)
                 );
                 match addons_symbol {
                     Some(addons_symbol) if !addons_symbol.is_empty() => {
-                        let module_symbol = Symbol::create_from_path(session, &path_for_tree, addons_symbol[0].clone(), true);
+                        let module_symbol = create_from_path(session, &path_for_tree, addons_symbol[0], true);
                         if module_symbol.is_some() {
                             session.sync_odoo.add_to_rebuild_arch(module_symbol.unwrap());
                         }
