@@ -545,6 +545,14 @@ impl SymbolTable {
         }
     }
 
+    pub fn pre_allocate(&mut self) {
+        self.files.reserve(7000);
+        self.packages.reserve(2200);
+        self.classes.reserve(14000);
+        self.functions.reserve(80000);
+        self.variables.reserve(450000);
+        self.xml_files.reserve(3200);
+    }
 
 
     pub fn remove(&mut self, key: SymbolKey) {
