@@ -3,7 +3,7 @@ use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet}, rc::Rc}
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{info, trace};
 
-use crate::{constants::{BuildSteps, OYarn, DEBUG_STEPS}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::{symbol::Symbol, symbol_table::XmlFileKey}, xml_data::{OdooData, OdooDataRecord, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver, Sy};
+use crate::{constants::{BuildSteps, OYarn, DEBUG_STEPS}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::{symbol::Symbol, symbol_table::{SymbolKey, XmlFileKey}}, xml_data::{OdooData, OdooDataRecord, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver, Sy};
 
 
 
@@ -30,36 +30,39 @@ impl XmlValidator {
 
     // @arena todo
     pub fn validate(&mut self, session: &mut SessionInfo) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         if DEBUG_STEPS {
-            trace!("Validating XML File {}", self.xml_symbol.borrow().name());
+            let name = &st!().xml_files[self.xml_symbol].name;
+            trace!("Validating XML File {}", name);
         }
-        let module = self.xml_symbol.borrow().find_module().unwrap();
+        let module = st!().find_module(self.xml_symbol).unwrap();
         let mut dependencies = vec![];
         let mut model_dependencies = vec![];
         let mut missing_model_dependencies = HashSet::new();
         let mut diagnostics = vec![];
-        for xml_ids in self.xml_symbol.borrow().as_xml_file_sym().xml_ids.values() {
-            for xml_id in xml_ids.iter() {
-                self.validate_xml_id(session, &module, xml_id, &mut diagnostics, &mut dependencies, &mut model_dependencies, &mut missing_model_dependencies);
+        for xml_ids in st!().xml_files[self.xml_symbol].xml_ids.values().cloned().collect::<Vec<_>>() {
+            for xml_id in &xml_ids {
+                self.validate_xml_id(session, module, xml_id, &mut diagnostics, &mut dependencies, &mut model_dependencies, &mut missing_model_dependencies);
             }
         }
-        for dep in dependencies.iter_mut() {
-            self.xml_symbol.borrow_mut().add_dependency(&mut dep.borrow_mut(), BuildSteps::VALIDATION, BuildSteps::ARCH_EVAL);
+        for dep in dependencies {
+            st!().add_dependency(self.xml_symbol.into(), dep, BuildSteps::VALIDATION, BuildSteps::ARCH_EVAL);
         }
+        // @arena: this is dead code (no-op for xml files in add_model_dependencies)
         for model in model_dependencies.iter() {
-            self.xml_symbol.borrow_mut().add_model_dependencies(&model);
+            st!().add_model_dependencies(self.xml_symbol.into(), &model);
         }
         if !missing_model_dependencies.is_empty() {
-            session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(self.xml_symbol.clone());
+            session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(self.xml_symbol.into());
         }
-        self.xml_symbol.borrow_mut().as_xml_file_sym_mut().not_found_models.extend(missing_model_dependencies.into_iter().map(|m| (m, BuildSteps::VALIDATION)));
+        st!().xml_files[self.xml_symbol].not_found_models.extend(missing_model_dependencies.into_iter().map(|m| (m, BuildSteps::VALIDATION)));
         let file_info = self.get_file_info(&mut session.sync_odoo);
         file_info.borrow_mut().replace_diagnostics(BuildSteps::VALIDATION, diagnostics);
         file_info.borrow_mut().publish_diagnostics(session);
     }
 
     // @arena todo
-    pub fn validate_xml_id(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, data: &OdooData, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>, missing_model_dependencies: &mut HashSet<OYarn>) {
+    pub fn validate_xml_id(&self, session: &mut SessionInfo, module: SymbolKey, data: &OdooData, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<SymbolKey>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>, missing_model_dependencies: &mut HashSet<OYarn>) {
         let Some(_) = data.get_xml_file_symbol(&session.sync_odoo.symbol_table) else {
             return;
         };
