@@ -1598,7 +1598,11 @@ impl Odoo {
         if session.sync_odoo.state_init == InitState::NOT_READY {
             return Ok(None);
         }
-        session.log_message(MessageType::INFO, format!("GoToDeclaration requested on {} at {} - {}",
+        session.log_message(MessageType::INFO, format!("{} requested on {} at {} - {}",
+            match is_declaration {
+                false => "GoToDefinition",
+                true => "GoToDeclaration"
+            },
             params.text_document_position_params.text_document.uri.to_string(),
             params.text_document_position_params.position.line,
             params.text_document_position_params.position.character));
@@ -1649,7 +1653,6 @@ impl Odoo {
                             params.text_document_position_params.position.character))
                     }
                 }
-                    
             }
         }
         Ok(None)
