@@ -3,6 +3,7 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
 use crate::core::module_load_order::sort_by_load_order;
+use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::core::symbols::package_symbol::PackageSymbol;
 use crate::core::symbols::symbol_table::{get_main_entry_tree, get_sym, ContainsKey, PackageKey, SymbolKey, SymbolTable, Weak};
 use crate::core::symbols::symbol_table_create::{create_from_path, unload};
@@ -1022,14 +1023,14 @@ impl SyncOdoo {
      * could have it in dependencies but are not the main entry. If not found, create a new entry (is useful if the entry was dropped before
      * due to an inclusion in main entry then removed)
      */
-    pub fn get_symbol_of_opened_file(session: &mut SessionInfo, path: &PathBuf) -> Option<Rc<RefCell<Symbol>>> {
+    pub fn get_symbol_of_opened_file(session: &mut SessionInfo, path: &PathBuf) -> Option<SymbolKey> {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let path_in_tree = path.to_tree_path();
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_main() {
             let sym_in_data = entry.borrow().data_symbols.get(path.sanitize().as_str()).cloned();
             if let Some(sym) = sym_in_data {
-                if let Some(sym) = sym.upgrade() {
+                if let Some(sym) = sym.upgrade(&st!()) {
                     return Some(sym);
                 }
                 continue;
@@ -1040,7 +1041,7 @@ impl SyncOdoo {
                 if path_symbol.is_empty() {
                     continue;
                 }
-                return Some(path_symbol[0].clone());
+                return Some(path_symbol[0]);
             }
         }
         //Not found? Then return if it is matching a non-public entry strictly matching the file
@@ -1048,7 +1049,7 @@ impl SyncOdoo {
         for entry in ep_mgr.borrow().custom_entry_points.iter() {
             let sym_in_data = entry.borrow().data_symbols.get(path.sanitize().as_str()).cloned();
             if let Some(sym) = sym_in_data {
-                if let Some(sym) = sym.upgrade() {
+                if let Some(sym) = sym.upgrade(&st!()) {
                     return Some(sym);
                 }
                 continue;
@@ -1060,13 +1061,13 @@ impl SyncOdoo {
                 if path_symbol.is_empty() {
                     continue;
                 }
-                return Some(path_symbol[0].clone());
+                return Some(path_symbol[0]);
             }
         }
         for entry in ep_mgr.borrow().untitled_entry_points.iter() {
             if entry.borrow().path == path.sanitize() {
                 let name = path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
-                let Some(file) = entry.borrow().root.borrow().as_root().module_symbols.get(&Sy!(name)).cloned() else {
+                let Some(file) = st!().roots[entry.borrow().root].module_symbols.get(name.as_str()).cloned() else {
                     continue;
                 };
                 return Some(file);
@@ -1112,30 +1113,31 @@ impl SyncOdoo {
         path.starts_with(session.sync_odoo.main_entry_tree.as_slice())
     }
 
-    fn is_non_main_manifest_file(file_symbol: &Rc<RefCell<Symbol>>, file_path_buff: &PathBuf) -> bool {
-        file_symbol.borrow().get_entry().map_or(false, |e| !e.borrow().is_main())
+    fn is_non_main_manifest_file(symbol_table: &SymbolTable, file_symbol: SymbolKey, file_path_buff: &PathBuf) -> bool {
+        symbol_table.get_entry(file_symbol).map_or(false, |e| !e.borrow().is_main())
         && file_path_buff.components().last()
         .map_or(false, |c| c.as_os_str().to_str().map_or(false, |s| s == "__manifest__.py"))
     }
 
-    pub fn refresh_evaluations(session: &mut SessionInfo) {
-        let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
-        for entry in ep_mgr.borrow().iter_all() {
-            let mut symbols = vec![entry.borrow().root.clone()];
-            while symbols.len() > 0 {
-                let s = symbols.pop();
-                if let Some(s) = s {
-                    if s.borrow().in_workspace() && matches!(&s.borrow().typ(), SymType::FILE | SymType::PACKAGE(_)) {
-                        session.sync_odoo.add_to_rebuild_arch_eval(s.clone());
-                    }
-                    if s.borrow().has_modules() {
-                        symbols.extend(s.borrow().all_module_symbol().map(|x| {x.clone()}) );
-                    }
-                }
-            }
-        }
-        SyncOdoo::process_rebuilds(session, false);
-    }
+    // @arena: dead code?
+    // pub fn refresh_evaluations(session: &mut SessionInfo) {
+    //     let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
+    //     for entry in ep_mgr.borrow().iter_all() {
+    //         let mut symbols = vec![entry.borrow().root.clone()];
+    //         while symbols.len() > 0 {
+    //             let s = symbols.pop();
+    //             if let Some(s) = s {
+    //                 if s.borrow().in_workspace() && matches!(&s.borrow().typ(), SymType::FILE | SymType::PACKAGE(_)) {
+    //                     session.sync_odoo.add_to_rebuild_arch_eval(s.clone());
+    //                 }
+    //                 if s.borrow().has_modules() {
+    //                     symbols.extend(s.borrow().all_module_symbol().map(|x| {x.clone()}) );
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     SyncOdoo::process_rebuilds(session, false);
+    // }
 
     pub fn get_rebuild_queue_size(&self) -> usize {
         return self.rebuild_arch.len() + self.rebuild_arch_eval.len() + self.rebuild_validation.len()
@@ -1178,20 +1180,22 @@ impl SyncOdoo {
     /**
      * search for an xml_id in the already registered xml files.
      * */
-     // @arena todo
     pub fn get_xml_ids(session: &mut SessionInfo, from_file: SymbolKey, xml_id: &str, range: &std::ops::Range<usize>, diagnostics: &mut Vec<Diagnostic>) -> Vec<OdooData> {
-        if !from_file.borrow().get_entry().unwrap().borrow().is_main() {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        if !st!().get_entry(from_file).unwrap().borrow().is_main() {
             return vec![];
         }
         let id_split = xml_id.split(".").collect::<Vec<&str>>();
         let mut module = None;
         if id_split.len() == 1 {
             // If no module name, we are in the current module
-            module = from_file.borrow().find_module();
+            module = st!().find_module(from_file).map(|m| m.unwrap_package_key());
         } else if id_split.len() == 2 {
             // Try to find the module by name
-            if let Some(m) = session.sync_odoo.modules.get(&Sy!(id_split.first().unwrap().to_string())) {
-                module = m.upgrade();
+            if let Some(&m) = session.sync_odoo.modules.get(*id_split.first().unwrap()) {
+                // @arena: to adapt, upgrade weak
+                // module = m.upgrade();
+                module = Weak::from(m).upgrade(&st!());
             }
         } else if id_split.len() > 2 {
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05051, &[xml_id]) {
@@ -1210,8 +1214,7 @@ impl SyncOdoo {
             return vec![];
         }
         let module = module.unwrap();
-        let module = module.borrow();
-        crate::core::symbols::module_symbol::ModuleSymbol::get_xml_id(module.as_module_package(), &oyarn!("{}", id_split.last().unwrap()))
+        ModuleSymbol::get_xml_id(&st!(), module, &oyarn!("{}", id_split.last().unwrap()))
     }
 
 }
