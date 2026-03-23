@@ -4,7 +4,7 @@ use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
 use crate::core::module_load_order::sort_by_load_order;
 use crate::core::symbols::package_symbol::PackageSymbol;
-use crate::core::symbols::symbol_table::{ContainsKey, PackageKey, SymbolKey, SymbolTable, get_sym};
+use crate::core::symbols::symbol_table::{get_main_entry_tree, get_sym, ContainsKey, PackageKey, SymbolKey, SymbolTable, Weak};
 use crate::core::symbols::symbol_table_create::create_from_path;
 use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
@@ -12,7 +12,7 @@ use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
 use crate::threads::SessionInfo;
 use std::collections::HashMap;
 use std::cell::RefCell;
-use std::rc::{Rc, Weak};
+use std::rc::{Rc};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -89,7 +89,7 @@ pub struct SyncOdoo {
     rebuild_arch_eval: FifoWeakHashSet<SymbolKey>,
     rebuild_validation: FifoWeakHashSet<SymbolKey>,
     pub state_init: InitState,
-    pub must_reload_paths: Vec<(SymbolKey, String)>, // formerly Weak refs
+    pub must_reload_paths: Vec<(Weak<SymbolKey>, String)>, // formerly Weak refs
     pub load_odoo_addons: bool, //indicate if we want to load odoo addons or not
     pub need_rebuild: bool, //if true, the next process_rebuilds will drop everything and rebuild everything
     pub import_cache: Option<ImportCache>,
@@ -625,34 +625,39 @@ impl SyncOdoo {
     }
 
     fn add_from_self_reload(session: &mut SessionInfo) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         for (weak_sym, path) in session.sync_odoo.must_reload_paths.clone().iter() {
-            if let Some(parent) = weak_sym.upgrade() {
-                let in_addons = parent.borrow().get_main_entry_tree(session) == tree(vec!["odoo", "addons"], vec![]);
-                let new_symbol = Symbol::create_from_path(session, &PathBuf::from(path), parent, in_addons);
-                if new_symbol.is_some() {
-                    session.sync_odoo.must_reload_paths.retain(|(_, p)| p != path);
-                    let new_symbol = new_symbol.as_ref().unwrap().clone();
-                    new_symbol.borrow_mut().set_is_external(false);
-                    let new_sym_typ = new_symbol.borrow().typ();
-                    match new_sym_typ {
-                        SymType::PACKAGE(PackageType::PYTHON_PACKAGE) => {
-                            new_symbol.borrow_mut().as_python_package_mut().self_import = true;
-                        },
-                        SymType::FILE => {
-                            new_symbol.borrow_mut().as_file_mut().self_import = true;
-                        },
-                        SymType::PACKAGE(PackageType::MODULE) => {},
-                        SymType::NAMESPACE => continue, // A module became a namespace, due to __init__ deletion/renaming
-                        _ => {panic!("Unexpected symbol type: {:?}", new_sym_typ);}
+            let Some(parent) = weak_sym.upgrade(&st!()) else {
+                continue;
+            };
+            let in_addons = get_main_entry_tree(session, parent) == tree(vec!["odoo", "addons"], vec![]);
+            let new_symbol = create_from_path(session, &PathBuf::from(path), parent, in_addons);
+            let Some(new_symbol) = new_symbol else {
+                continue;
+            };
+            session.sync_odoo.must_reload_paths.retain(|(_, p)| p != path);
+            st!().set_is_external(new_symbol, false);
+            // let new_sym_typ = new_symbol.borrow().typ();
+            match new_symbol {
+                SymbolKey::Package(p) => match &mut st!().packages[p] {
+                    PackageSymbol::PythonPackage(python_package) => {
+                        python_package.self_import = true;
                     }
-                    if matches!(new_symbol.borrow().typ(), SymType::PACKAGE(PackageType::MODULE)) {
-                        session.sync_odoo.modules.insert(new_symbol.borrow().name().clone(), Rc::downgrade(&new_symbol));
-                    }
-                    session.sync_odoo.add_to_rebuild_arch(new_symbol.clone());
-                }
+                    PackageSymbol::Module(_) => {}
+                },
+                SymbolKey::File(f) => {
+                    st!().files[f].self_import = true;
+                },
+                SymbolKey::Namespace(_) => continue, // A module became a namespace, due to __init__ deletion/renaming
+                _ => {panic!("Unexpected symbol type: {:?}", new_symbol);}
             }
+            if let SymbolKey::Package(p) = new_symbol  && let PackageSymbol::Module(module) = &st!().packages[p] {
+                // @arena: add as weak after modules uses weak values
+                session.sync_odoo.modules.insert(module.name.clone(), p);
+            }
+            session.sync_odoo.add_to_rebuild_arch(new_symbol);
         }
-        session.sync_odoo.must_reload_paths.retain(|x| x.0.upgrade().is_some());
+        session.sync_odoo.must_reload_paths.retain(|x| x.0.upgrade(&st!()).is_some());
     }
 
     fn start_reporting(session: &mut SessionInfo) {

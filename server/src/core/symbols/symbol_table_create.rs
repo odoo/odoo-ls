@@ -423,13 +423,13 @@ pub fn unload(session: &mut SessionInfo, symbol: SymbolKey) {
             SymbolKey::Package(p) => {
                 let package = &st!().packages[p];
                 if let PackageSymbol::PythonPackage(pp) = package && pp.self_import {
-                    session.sync_odoo.must_reload_paths.push((parent, pp.path.clone()));
+                    session.sync_odoo.must_reload_paths.push((parent.into(), pp.path.clone()));
                 }
             }
             SymbolKey::File(f) => {
                 let file = &st!().files[f];
                 if file.self_import {
-                    session.sync_odoo.must_reload_paths.push((parent, file.path.clone()));
+                    session.sync_odoo.must_reload_paths.push((parent.into(), file.path.clone()));
                 }
             }
             _ => {}
