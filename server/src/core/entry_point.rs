@@ -3,7 +3,7 @@ use std::{cell::RefCell, cmp, collections::{HashMap, HashSet}, path::PathBuf, rc
 use tracing::{error, info, warn};
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{flatten_tree, BuildSteps, OYarn, PackageType, SymType, Tree}, core::symbols::{symbol_table::{get_sym, FileKey, RootKey, SymbolKey, SymbolTable, Weak}, symbol_table_create::create_from_path}, threads::SessionInfo, utils::PathSanitizer, warn_or_panic, weak_hash_set::WeakSet};
+use crate::{constants::{flatten_tree, BuildSteps, OYarn, PackageType, SymType, Tree}, core::symbols::{package_symbol::PackageSymbol, symbol_table::{get_sym, FileKey, RootKey, SymbolKey, SymbolTable, Weak}, symbol_table_create::create_from_path}, threads::SessionInfo, utils::PathSanitizer, warn_or_panic, weak_hash_set::WeakSet};
 
 use super::{odoo::SyncOdoo};
 
@@ -198,29 +198,30 @@ impl EntryPointMgr {
     /// Create a new custom entry point for a given tree path and file path.
     /// tree_path can possibly be the path stripped from __manifest__/__init__.py
     pub fn create_new_custom_entry_for_path(session: &mut SessionInfo, tree_path: &String, file_path: &String) -> bool {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let new_sym = EntryPointMgr::add_entry_to_customs(session, tree_path.clone());
         if let Some(new_sym) = new_sym {
-            new_sym.borrow_mut().set_is_external(false);
-            let new_sym_typ = new_sym.borrow().typ();
-            match new_sym_typ {
-                SymType::PACKAGE(PackageType::PYTHON_PACKAGE) => {
-                    new_sym.borrow_mut().as_python_package_mut().self_import = true;
+            st!().set_is_external(new_sym, false);
+            match new_sym {
+                // @arena: adapt this after spliting package key into module and package
+                SymbolKey::Package(p) if matches!(st!().packages[p], PackageSymbol::PythonPackage(_)) => {
+                    st!().packages[p].as_python_package_mut().self_import = true;
                 },
-                SymType::FILE => {
-                    new_sym.borrow_mut().as_file_mut().self_import = true;
+                SymbolKey::File(f) => {
+                    st!().files[f].self_import = true;
                 },
-                SymType::NAMESPACE => {
+                SymbolKey::Namespace(n) => {
                     if file_path.ends_with("__manifest__.py") {
                         warn!("new custom entry point for manifest without related init.py is not supported outside of main entry point. skipping...");
                         session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(tree_path);
                     } else {
                         // There was an __init__.py, that was renamed or deleted.
                         // Another notification will come for the deletion of the file, so we just warn here.
-                        warn_or_panic!("Trying to create a custom entrypoint on a namespace symbol: {:?}", new_sym.borrow().paths());
+                        warn_or_panic!("Trying to create a custom entrypoint on a namespace symbol: {:?}", st!().namespaces[n].paths());
                     }
                     return false;
                 }
-                _ => {panic!("Unexpected symbol type: {:?}", new_sym_typ);}
+                _ => {panic!("Unexpected symbol type: {:?}", new_sym);}
             }
             SyncOdoo::add_to_rebuild_arch(session.sync_odoo, new_sym);
         }

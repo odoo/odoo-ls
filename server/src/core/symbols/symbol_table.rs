@@ -1505,6 +1505,25 @@ impl SymbolTable {
         }
     }
 
+    pub fn set_is_external(&mut self, target: SymbolKey, external: bool) {
+        match target {
+            SymbolKey::Root(_) => {},
+            SymbolKey::DiskDir(d) => self.disk_dirs[d].is_external = external,
+            SymbolKey::Namespace(n) => self.namespaces[n].is_external = external,
+            SymbolKey::Package(p) => match &mut self.packages[p] {
+                 PackageSymbol::Module(m) => m.is_external = external,
+                 PackageSymbol::PythonPackage(p) => p.is_external = external,
+            },
+            SymbolKey::File(f) => self.files[f].is_external = external,
+            SymbolKey::Compiled(c) => self.compiled[c].is_external = external,
+            SymbolKey::Class(c) => self.classes[c].is_external = external,
+            SymbolKey::Function(f) => self.functions[f].is_external = external,
+            SymbolKey::Variable(v) => self.variables[v].is_external = external,
+            SymbolKey::XmlFile(x) => self.xml_files[x].is_external = external,
+            SymbolKey::CsvFile(c) => self.csv_files[c].is_external = external,
+        }
+    }
+
     pub fn name(&self, target: SymbolKey) -> &OYarn {
         match target {
             SymbolKey::Root(k) => &self.roots[k].name,
