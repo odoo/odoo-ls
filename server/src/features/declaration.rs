@@ -17,54 +17,15 @@ impl DeclarationFeature {
         character: u32
     ) -> Option<GotoDeclarationResponse> {
         let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
-        let function = match ast_type {
-            AstType::Python => DeclarationFeature::_get_location_py,
-            AstType::Xml => DeclarationFeature::_get_location_xml,
-            AstType::Csv => DeclarationFeature::_get_location_csv,
+        let definitions_sources = match ast_type {
+            AstType::Python => GotoUtils::get_symbols(session, GotoRequest::Declaration, file_symbol, file_info, line, character),
+            AstType::Xml => GotoUtils::get_symbols_xml(session, file_symbol, file_info, line, character),
+            AstType::Csv => GotoUtils::get_symbols_csv(session, file_symbol, file_info, line, character),
         };
-        function(session, file_symbol, file_info, line, character)
-    }
-
-    pub fn _get_location_py(session: &mut SessionInfo,
-        file_symbol: &Rc<RefCell<Symbol>>,
-        file_info: &Rc<RefCell<FileInfo>>,
-        line: u32,
-        character: u32
-    ) -> Option<GotoDeclarationResponse> {
-        let definitions_sources = GotoUtils::get_symbols(session, GotoRequest::Declaration, file_symbol, file_info, line, character);
         let mut links = vec![];
         for def in definitions_sources.iter() {
             links.extend(GotoUtils::goto_source_to_location(session, def));
         }
         Some(GotoDeclarationResponse::Link(links))
     }
-
-    pub fn _get_location_xml(session: &mut SessionInfo,
-        file_symbol: &Rc<RefCell<Symbol>>,
-        file_info: &Rc<RefCell<FileInfo>>,
-        line: u32,
-        character: u32
-    ) -> Option<GotoDeclarationResponse> {
-        let definitions_sources = GotoUtils::get_symbols_xml(session, file_symbol, file_info, line, character);
-        let mut links = vec![];
-        for xml_result in definitions_sources.iter() {
-            links.extend(GotoUtils::goto_source_to_location(session, xml_result));
-        }
-        Some(GotoDeclarationResponse::Link(links))
-    }
-
-    pub fn _get_location_csv(session: &mut SessionInfo,
-        file_symbol: &Rc<RefCell<Symbol>>,
-        file_info: &Rc<RefCell<FileInfo>>,
-        line: u32,
-        character: u32
-    ) -> Option<GotoDeclarationResponse> {
-        let definitions_sources = GotoUtils::get_symbols_csv(session, file_symbol, file_info, line, character);
-        let mut links = vec![];
-        for xml_result in definitions_sources.iter() {
-            links.extend(GotoUtils::goto_source_to_location(session, xml_result));
-        }
-        Some(GotoDeclarationResponse::Link(links))
-    }
-
 }

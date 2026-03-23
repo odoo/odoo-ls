@@ -21,7 +21,6 @@ impl CsvAstReferenceVisitor {
                 let mut h_start = header.position().unwrap().byte() as usize;
                 for h in header.iter() {
                     let end = h_start + h.len() as usize;
-                    let has_quotes = h.starts_with('"') && h.ends_with('"') && h.len() >= 2;
                     let header_txt = CsvAstReferenceVisitor::remove_quotes(h);
                     headers.push(oyarn!("{}", header_txt));
                     let header_elts = header_txt.splitn(2, [':', '/']).collect::<Vec<_>>();

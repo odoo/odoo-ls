@@ -4,14 +4,13 @@ use std::{cell::RefCell, path::PathBuf, rc::Rc};
 use lsp_types::Location;
 use ruff_python_ast::{Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtIf, StmtMatch, StmtRaise, StmtReturn, StmtTry, StmtTypeAlias, StmtWith};
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use tracing::error;
 use weak_table::PtrWeakHashSet;
 
 use crate::core::file_mgr::AstType;
 use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::features::references_csv::CsvAstReferenceVisitor;
 use crate::features::references_xml::XmlAstReferenceVisitor;
-use crate::{S, Sy, oyarn};
+use crate::{S, Sy};
 use crate::constants::OYarn;
 use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr};
 use crate::core::odoo::SyncOdoo;
@@ -235,8 +234,6 @@ impl ReferenceFeature {
                                     }
                                 },
                                 SymType::CSV_FILE => {
-                                    //let model_name_pb = PathBuf::from(&file_s.borrow().paths()[0]);
-                                    //let model_name = Sy!(model_name_pb.file_stem().unwrap().to_str().unwrap().to_string());
                                     let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
                                     let mut csv_reader = csv::ReaderBuilder::new().quoting(false).from_reader(data.as_bytes());
                                     locations.extend(CsvAstReferenceVisitor::search_target(session, &file_s, &mut csv_reader, None, &ReferenceTarget::String(full_xml_id)));

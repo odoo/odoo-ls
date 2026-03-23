@@ -38,7 +38,7 @@ impl CsvArchBuilder {
                     }
                 }
             }
-            if !csv.headers.is_empty() && csv.headers[0] == "id" {
+            if csv.headers.contains(&Sy!("id")) {
                 for result in rdr.records() {
                     if let Ok(result) = result {
                         let record = self.extract_record(Rc::downgrade(&csv_symbol), model_name.clone(), &csv.headers, &result);
