@@ -3,7 +3,7 @@ use std::{cell::RefCell, cmp, collections::{HashMap, HashSet}, path::PathBuf, rc
 use tracing::{error, info, warn};
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{flatten_tree, BuildSteps, OYarn, PackageType, SymType, Tree}, core::symbols::{package_symbol::PackageSymbol, symbol_table::{get_sym, FileKey, RootKey, SymbolKey, SymbolTable, Weak}, symbol_table_create::create_from_path}, threads::SessionInfo, utils::PathSanitizer, warn_or_panic, weak_hash_set::WeakSet};
+use crate::{constants::{flatten_tree, BuildSteps, OYarn, PackageType, SymType, Tree}, core::symbols::{package_symbol::PackageSymbol, symbol_table::{get_sym, ContainsKey, FileKey, RootKey, SymbolKey, SymbolTable, Weak}, symbol_table_create::create_from_path}, threads::SessionInfo, utils::PathSanitizer, warn_or_panic, weak_hash_set::WeakSet};
 
 use super::{odoo::SyncOdoo};
 
@@ -459,50 +459,59 @@ impl EntryPoint {
     /* Consider the given 'tree' path as updated (or new) and move all symbols that were searching for it
     from the not_found_symbols list to the rebuild list. Return True is something should be rebuilt */
     pub fn search_symbols_to_rebuild(&mut self, session: &mut SessionInfo, path: &String, tree: &Tree) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let flat_tree = [tree.0.clone(), tree.1.clone()].concat();
         let mut to_add = [vec![], vec![], vec![], vec![]]; //list of symbols to add after the loop (borrow issue)
-        for s in self.not_found_symbols.iter() {
-            if s.borrow().typ() == SymType::PACKAGE(PackageType::MODULE) {
-                let mut sym = s.borrow_mut();
-                if let Some(step) = sym.as_module_package().not_found_data.get(path) {
+        for s in self.not_found_symbols.iter_valid(|&k| st!().contains_key(k)) {
+            if let SymbolKey::Package(p) = s && matches!(st!().packages[p], PackageSymbol::Module(_)) {
+                let module_package = st!().packages[p].as_module_package_mut();
+                if let Some(step) = module_package.not_found_data.get(path) {
                     match step {
                         BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION => {
                             to_add[*step as usize].push(s.clone());
                         }
                         _ => {}
                     }
-                    sym.as_module_package_mut().not_found_data.remove(path);
+                    module_package.not_found_data.remove(path);
                     continue; //as if a data has been found, we won't find anything later, so we can continue the loop
                 }
             }
+            // @arena: this would be simpler/safer by collecting indexes to
+            // remove first, then removing them after the loop (in reverse order)
             let mut index: i32 = 0; //i32 sa we could go in negative values
-            while (index as usize) < s.borrow().not_found_paths().len() {
-                let (step, not_found_tree) = s.borrow().not_found_paths()[index as usize].clone();
+            while (index as usize) < st!().not_found_paths(s).len() {
+                let (step, not_found_tree) = st!().not_found_paths(s)[index as usize].clone();
                 if flat_tree[..cmp::min(not_found_tree.len(), flat_tree.len())] == not_found_tree[..cmp::min(not_found_tree.len(), flat_tree.len())] {
                     match step {
                         BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION => {
-                            to_add[step as usize].push(s.clone());
+                            to_add[step as usize].push(s);
                         }
                         _ => {}
                     }
-                    s.borrow_mut().not_found_paths_mut().remove(index as usize);
+                    st!().not_found_paths_mut(s).remove(index as usize);
                     index -= 1;
                 }
                 index += 1;
             }
         }
-        for s in to_add[BuildSteps::ARCH as usize].iter() {
-            session.sync_odoo.add_to_rebuild_arch(s.clone());
+        for &s in to_add[BuildSteps::ARCH as usize].iter() {
+            session.sync_odoo.add_to_rebuild_arch(s);
         }
-        for s in to_add[BuildSteps::ARCH_EVAL as usize].iter() {
-            session.sync_odoo.add_to_rebuild_arch_eval(s.clone());
+        for &s in to_add[BuildSteps::ARCH_EVAL as usize].iter() {
+            session.sync_odoo.add_to_rebuild_arch_eval(s);
         }
-        for s in to_add[BuildSteps::VALIDATION as usize].iter() {
-            s.borrow_mut().invalidate_sub_functions(session);
-            session.sync_odoo.add_to_validations(s.clone());
+        for &s in to_add[BuildSteps::VALIDATION as usize].iter() {
+            st!().invalidate_sub_functions(s);
+            session.sync_odoo.add_to_validations(s);
         }
-        self.not_found_symbols.retain(|sym| {
-            !sym.borrow().not_found_paths().is_empty() || (sym.borrow().typ() == SymType::PACKAGE(PackageType::MODULE) && !sym.borrow().as_module_package().not_found_data.is_empty())
+        self.not_found_symbols.retain(|&sym| {
+            if !st!().not_found_paths(sym).is_empty() {
+                return true;
+            }
+            if let SymbolKey::Package(p) = sym && matches!(st!().packages[p], PackageSymbol::Module(_)) {
+                return !st!().packages[p].as_module_package().not_found_data.is_empty();
+            }
+            false
         });
     }
 

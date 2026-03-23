@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashSet, hash::Hash};
 
 #[derive(Debug, Clone)]
 pub struct WeakSet<K: Eq + Hash + Copy> {
-    set: RefCell<HashSet<K>>,                                            
+    set: RefCell<HashSet<K>>,
 }
 
 impl<K: Eq + Hash + Copy> WeakSet<K> {
@@ -13,7 +13,7 @@ impl<K: Eq + Hash + Copy> WeakSet<K> {
     }
 
     pub fn insert(&mut self, key: K) -> bool {
-        self.set.borrow_mut().insert(key)
+        self.set.get_mut().insert(key)
     }
 
     pub fn contains(&self, key: &K) -> bool {
@@ -25,11 +25,11 @@ impl<K: Eq + Hash + Copy> WeakSet<K> {
     }
 
     pub fn remove(&mut self, key: &K) {
-        self.set.borrow_mut().remove(key);
+        self.set.get_mut().remove(key);
     }
 
     pub fn clear_invalid(&mut self, is_valid: impl Fn(&K) -> bool) {
-        self.set.borrow_mut().retain(|k| is_valid(k));
+        self.set.get_mut().retain(|k| is_valid(k));
     }
 
     pub fn iter_valid(&self, is_valid: impl Fn(&K) -> bool) -> std::vec::IntoIter<K> {
@@ -37,5 +37,9 @@ impl<K: Eq + Hash + Copy> WeakSet<K> {
         set.retain(|k| is_valid(k));
         let snapshot: Vec<_> = set.iter().copied().collect();
         snapshot.into_iter()
+    }
+
+    pub fn retain(&mut self, f: impl Fn(&K) -> bool) {
+        self.set.get_mut().retain(|k| f(k));
     }
 }

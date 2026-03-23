@@ -1399,6 +1399,26 @@ impl SymbolTable {
         }
     }
 
+    pub fn not_found_paths(&self, target: SymbolKey) -> &Vec<(BuildSteps, Vec<OYarn>)> {
+        static EMPTY_VEC: Vec<(BuildSteps, Vec<OYarn>)> = Vec::new();
+        match target {
+            SymbolKey::File(f) => { &self.files[f].not_found_paths },
+            SymbolKey::Root(_) => { &EMPTY_VEC },
+            SymbolKey::Namespace(_) => { &EMPTY_VEC },
+            SymbolKey::DiskDir(_) => { &EMPTY_VEC },
+            SymbolKey::Package(p) => match &self.packages[p] {
+                 PackageSymbol::Module(m) => &m.not_found_paths,
+                 PackageSymbol::PythonPackage(p) => &p.not_found_paths,
+            },
+            SymbolKey::Compiled(_) => { &EMPTY_VEC },
+            SymbolKey::Class(_) => { &EMPTY_VEC },
+            SymbolKey::Function(_) => { &EMPTY_VEC },
+            SymbolKey::Variable(_) => &EMPTY_VEC,
+            SymbolKey::XmlFile(_) => { &EMPTY_VEC },
+            SymbolKey::CsvFile(_) => { &EMPTY_VEC },
+        }
+    }
+
     pub fn not_found_paths_mut(&mut self, target: SymbolKey) -> &mut Vec<(BuildSteps, Vec<OYarn>)> {
         match target {
             SymbolKey::File(f) => { &mut self.files[f].not_found_paths },
