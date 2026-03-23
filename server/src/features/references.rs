@@ -72,14 +72,16 @@ impl ReferenceFeature {
 
                     to_check.insert(file_symbol.clone());
 
-                    //take arch and arch_eval dependents
-                    if !file_symbol.borrow().dependents().is_empty() { // file could be out of workspace
-                        for dep in file_symbol.borrow().dependents().iter().take(2) {
-                            //dep.len()-1 here is to take only dependencies that are not validation (arch and arch_eval for arch, arch_eval for arch_eval)
-                            for dep in dep.iter().take(dep.len()) {
-                                if let Some(dep_set) = dep {
-                                    for dep_symbol_rc in dep_set.iter() {
-                                        to_check.insert(dep_symbol_rc.clone());
+                    if let Some(target_file) = target_symbol.borrow().get_file().and_then(|f| f.upgrade()) {
+                        //take arch and arch_eval dependents
+                        if !target_file.borrow().dependents().is_empty() { // file could be out of workspace
+                            for dep in target_file.borrow().dependents().iter().take(2) {
+                                //dep.len()-1 here is to take only dependencies that are not validation (arch and arch_eval for arch, arch_eval for arch_eval)
+                                for dep in dep.iter().take(dep.len()) {
+                                    if let Some(dep_set) = dep {
+                                        for dep_symbol_rc in dep_set.iter() {
+                                            to_check.insert(dep_symbol_rc.clone());
+                                        }
                                     }
                                 }
                             }
