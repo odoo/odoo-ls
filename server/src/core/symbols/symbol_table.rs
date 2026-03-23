@@ -1898,6 +1898,10 @@ fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut H
     }
 }
 
+pub fn all_fields(symbol: SymbolKey, session: &mut SessionInfo, from_module: Option<SymbolKey>) -> HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> {
+    all_members(symbol, session, true, true, false, from_module, false)
+}
+
 /* similar to get_symbol: will return the symbol that is under this one with the specified name.
 However, if the symbol is a class or a model, it will search in the base class or in comodel classes
 if not all, it will return the first found. If all, the all found symbols are returned, but the first one

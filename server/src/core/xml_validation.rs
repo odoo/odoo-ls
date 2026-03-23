@@ -3,7 +3,7 @@ use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet}, rc::Rc}
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{info, trace};
 
-use crate::{constants::{BuildSteps, OYarn, DEBUG_STEPS}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::{symbol::Symbol, symbol_table::{SymbolKey, XmlFileKey}}, xml_data::{OdooData, OdooDataRecord, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver, Sy};
+use crate::{constants::{BuildSteps, OYarn, DEBUG_STEPS}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::{symbol::Symbol, symbol_table::{all_fields, SymbolKey, XmlFileKey}}, xml_data::{OdooData, OdooDataRecord, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver, Sy};
 
 
 
@@ -28,7 +28,6 @@ impl XmlValidator {
         file_info_rc
     }
 
-    // @arena todo
     pub fn validate(&mut self, session: &mut SessionInfo) {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         if DEBUG_STEPS {
@@ -61,7 +60,7 @@ impl XmlValidator {
         file_info.borrow_mut().publish_diagnostics(session);
     }
 
-    // @arena todo
+    // @arena change module to ModuleKey
     pub fn validate_xml_id(&self, session: &mut SessionInfo, module: SymbolKey, data: &OdooData, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<SymbolKey>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>, missing_model_dependencies: &mut HashSet<OYarn>) {
         let Some(_) = data.get_xml_file_symbol(&session.sync_odoo.symbol_table) else {
             return;
@@ -73,9 +72,10 @@ impl XmlValidator {
             OdooData::DELETE(xml_data_delete) => self.validate_delete(session, module, xml_data_delete, diagnostics, dependencies, model_dependencies, missing_model_dependencies),
         }
     }
-    fn validate_record(&self, session: &mut SessionInfo, module: &Rc<RefCell<Symbol>>, xml_data_record: &OdooDataRecord, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<Rc<RefCell<Symbol>>>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>, missing_model_dependencies: &mut HashSet<OYarn>) {
+    fn validate_record(&self, session: &mut SessionInfo, module: SymbolKey, xml_data_record: &OdooDataRecord, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<SymbolKey>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>, missing_model_dependencies: &mut HashSet<OYarn>) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let maybe_model = session.sync_odoo.models.get(&xml_data_record.model.0).cloned();
-        let model_exists = maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols()).unwrap_or(false);
+        let model_exists = maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols(&st!())).unwrap_or(false);
         if !model_exists {
             missing_model_dependencies.insert(xml_data_record.model.0.clone());
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[&xml_data_record.model.0]) {
@@ -88,25 +88,26 @@ impl XmlValidator {
             return;
         }
         let Some(model) = maybe_model else {unreachable!();};
-        let has_symbols_in_deps = !model.borrow().get_main_symbols(session, Some(module.clone())).is_empty();
+        let main_symbols = model.borrow().get_main_symbols(session, Some(module));
+        let has_symbols_in_deps = !main_symbols.is_empty();
         if !has_symbols_in_deps {
             missing_model_dependencies.insert(xml_data_record.model.0.clone());
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05055, &[&xml_data_record.model.0, module.borrow().name()]) {
+            let module_name = st!().name(module);
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05055, &[&xml_data_record.model.0, module_name]) {
                 diagnostics.push(Diagnostic {
                     range: Range { start: Position::new(xml_data_record.model.1.start.try_into().unwrap(), 0), end: Position::new(xml_data_record.model.1.end.try_into().unwrap(), 0) },
                     ..diagnostic.clone()
                 });
             }
-            info!("Model '{}' has no symbols in module '{}'", xml_data_record.model.0, module.borrow().name());
+            info!("Model '{}' has no symbols in module '{}'", xml_data_record.model.0, module_name);
             return;
         }
         model_dependencies.push(model.clone());
-        let main_symbols = model.borrow().get_main_symbols(session, Some(module.clone()));
-        for main_sym in main_symbols.iter() {
-            dependencies.push(main_sym.borrow().get_file().unwrap().upgrade().unwrap());
+        for &main_sym in main_symbols.iter() {
+            dependencies.push(st!().get_file(main_sym.into()).unwrap());
         }
-        let Some(main_symbol) = main_symbols.get(0) else { return; };
-        let all_fields = Symbol::all_fields(main_symbol, session, Some(module.clone()));
+        let Some(&main_symbol) = main_symbols.get(0) else { return; };
+        let all_fields = all_fields(main_symbol.into(), session, Some(module));
         self.validate_fields(session, xml_data_record, &all_fields, diagnostics, missing_model_dependencies);
     }
 

@@ -2894,6 +2894,7 @@ impl Symbol {
         false
     }
 
+    // @arena: moved to symbol_table (free function)
     pub fn all_fields(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>> {
         Symbol::all_members(symbol, session, true, true, false, from_module.clone(), false)
     }
