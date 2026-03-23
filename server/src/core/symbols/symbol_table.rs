@@ -1606,6 +1606,21 @@ impl SymbolTable {
         }
     }
 
+    pub fn parent(&self, target: SymbolKey) -> Option<SymbolKey> {
+        match target {
+            SymbolKey::Root(k) => self.roots[k].parent,
+            SymbolKey::DiskDir(k) => self.disk_dirs[k].parent,
+            SymbolKey::Namespace(k) => self.namespaces[k].parent,
+            SymbolKey::Package(k) => self.packages[k].parent(),
+            SymbolKey::File(k) => self.files[k].parent,
+            SymbolKey::Compiled(k) => self.compiled[k].parent,
+            SymbolKey::Class(k) => self.classes[k].parent,
+            SymbolKey::Function(k) => self.functions[k].parent,
+            SymbolKey::Variable(k) => self.variables[k].parent,
+            SymbolKey::XmlFile(x) => self.xml_files[x].parent,
+            SymbolKey::CsvFile(c) => self.csv_files[c].parent,        }
+    }
+
     // @arena: not sure if good idea. Maybe just access directly when the key type is known?
     // can be used in PythonArchBuildHooks if enabled.
     pub fn file_path(&self, target: SymbolKey) -> &str {

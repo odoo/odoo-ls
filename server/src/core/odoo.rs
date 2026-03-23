@@ -5,7 +5,7 @@ use crate::core::file_mgr::AstType;
 use crate::core::module_load_order::sort_by_load_order;
 use crate::core::symbols::package_symbol::PackageSymbol;
 use crate::core::symbols::symbol_table::{get_main_entry_tree, get_sym, ContainsKey, PackageKey, SymbolKey, SymbolTable, Weak};
-use crate::core::symbols::symbol_table_create::create_from_path;
+use crate::core::symbols::symbol_table_create::{create_from_path, unload};
 use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
 use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
@@ -678,6 +678,7 @@ impl SyncOdoo {
 
     // @arena todo
     pub fn process_rebuilds(session: &mut SessionInfo, no_validation: bool) -> bool {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
         if session.sync_odoo.watched_file_updates > MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART {
             return false;
@@ -717,20 +718,20 @@ impl SyncOdoo {
                 return false;
             }
             let sym = session.sync_odoo.pop_item(BuildSteps::ARCH);
-            if let Some(sym_rc) = sym {
-                let (tree, entry) = sym_rc.borrow().get_tree_and_entry();
+            if let Some(sym_key) = sym {
+                let (tree, entry) = st!().get_tree_and_entry(sym_key);
                 if already_arch_rebuilt.contains(&tree) {
                     info!("Already arch rebuilt, skipping");
                     continue;
                 }
                 already_arch_rebuilt.insert(tree);
-                let mut builder = PythonArchBuilder::new(entry.unwrap(), sym_rc);
+                let mut builder = PythonArchBuilder::new(entry.unwrap(), sym_key);
                 builder.load_arch(session);
                 continue;
             }
             let sym = session.sync_odoo.pop_item(BuildSteps::ARCH_EVAL);
             if let Some(sym_rc) = sym {
-                let (tree, entry) = sym_rc.borrow().get_tree_and_entry();
+                let (tree, entry) = st!().get_tree_and_entry(sym_rc);
                 if already_arch_eval_rebuilt.contains(&tree) {
                     info!("Already arch eval rebuilt, skipping");
                     continue;
@@ -741,8 +742,8 @@ impl SyncOdoo {
                 continue;
             }
             let sym = session.sync_odoo.pop_item(BuildSteps::VALIDATION);
-            if let Some(sym_rc) = sym {
-                let (tree, entry) = sym_rc.borrow_mut().get_tree_and_entry();
+            if let Some(sym_key) = sym {
+                let (tree, entry) = st!().get_tree_and_entry(sym_key);
                 if already_validation_rebuilt.contains(&tree) {
                     info!("Already validation rebuilt, skipping");
                     continue;
@@ -757,7 +758,7 @@ impl SyncOdoo {
                     }
                     if no_validation {
                         session.request_delayed_rebuild();
-                        session.sync_odoo.add_to_validations(sym_rc.clone());
+                        session.sync_odoo.add_to_validations(sym_key);
                         if is_reporting_progress {
                             session.send_notification(Progress::METHOD, ProgressParams {
                                 token: ProgressToken::Number(session.sync_odoo.progress_token),
@@ -769,13 +770,13 @@ impl SyncOdoo {
                         return true;
                     }
                 }
-                match sym_rc {
+                match sym_key {
                     SymbolKey::XmlFile(xml) => {
                         let mut validator = XmlValidator::new(entry.as_ref().unwrap(), xml);
                         validator.validate(session);
                     },
                     _ => {
-                        let mut validator = PythonValidator::new(entry.unwrap(), sym_rc);
+                        let mut validator = PythonValidator::new(entry.unwrap(), sym_key);
                         validator.validate(session);
                     }
                 }
@@ -971,19 +972,19 @@ impl SyncOdoo {
         self.file_mgr.clone()
     }
 
-    pub fn unload_path(session: &mut SessionInfo, path: &PathBuf, clean_cache: bool) -> Vec<Rc<RefCell<Symbol>>> {
+    pub fn unload_path(session: &mut SessionInfo, path: &PathBuf, clean_cache: bool) -> Vec<SymbolKey> {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let mut parents = vec![];
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_all() {
             let sym_in_data = entry.borrow().data_symbols.get(path.sanitize().as_str()).cloned();
             if let Some(sym) = sym_in_data {
-                if let Some(sym) = sym.upgrade() {
-                    let parent = sym.borrow().parent().clone().unwrap().upgrade().unwrap();
+                if let Some(sym) = sym.upgrade(&st!()) {
+                    let parent = st!().parent(sym).unwrap();
                     if clean_cache {
                         FileMgr::delete_path(session, &path.sanitize());
                     }
-                    Symbol::unload(session, sym.clone());
+                    unload(session, sym);
                     parents.push(parent);
                 }
                 entry.borrow_mut().data_symbols.remove(path.sanitize().as_str());
@@ -995,20 +996,21 @@ impl SyncOdoo {
                 if path_symbol.is_empty() {
                     continue
                 }
-                let path_symbol = path_symbol[0].clone();
-                let parent = path_symbol.borrow().parent().clone().unwrap().upgrade().unwrap();
+                let path_symbol = path_symbol[0];
+                let parent = st!().parent(path_symbol).unwrap();
                 if clean_cache {
                     FileMgr::delete_path(session, &path.sanitize());
-                    let mut to_del = Vec::from_iter(path_symbol.borrow().all_module_symbol().map(|x| x.clone()));
+                    let mut to_del = Vec::from_iter(get_sym!(st!(), path_symbol).all_module_symbol().copied());
                     let mut index = 0;
                     while index < to_del.len() {
-                        FileMgr::delete_path(session, &to_del[index].borrow().paths()[0]);
-                        let mut to_del_child = Vec::from_iter(to_del[index].borrow().all_module_symbol().map(|x| x.clone()));
+                        // @arena: shouldn't it be using get_symbol_first_path?
+                        FileMgr::delete_path(session, &get_sym!(st!(),to_del[index]).paths()[0]);
+                        let mut to_del_child = Vec::from_iter(get_sym!(st!(), to_del[index]).all_module_symbol().copied());
                         to_del.append(&mut to_del_child);
                         index += 1;
                     }
                 }
-                Symbol::unload(session, path_symbol.clone());
+                unload(session, path_symbol);
                 parents.push(parent);
             }
         }

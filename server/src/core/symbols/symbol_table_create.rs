@@ -231,6 +231,7 @@ impl SymbolTable {
     }
 
     // @arena: this is not done in the original code.
+    // unload_path does it, apparently
     fn unregister_data_file(&mut self, parent: PackageKey, path: &str) {
         let entry = self.get_entry(parent.into()).unwrap();
         entry.borrow_mut().data_symbols.remove(path);
