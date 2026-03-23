@@ -1,9 +1,8 @@
-use std::{cell::RefCell, cmp, collections::{HashMap, HashSet}, path::PathBuf, rc::{Rc}, u32};
+use std::{cell::RefCell, cmp, collections::HashMap, path::PathBuf, rc::{Rc}, u32};
 
 use tracing::{error, info, warn};
-use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{flatten_tree, BuildSteps, OYarn, PackageType, SymType, Tree}, core::symbols::{package_symbol::PackageSymbol, symbol_table::{get_sym, ContainsKey, FileKey, RootKey, SymbolKey, SymbolTable, Weak}, symbol_table_create::create_from_path}, threads::SessionInfo, utils::PathSanitizer, warn_or_panic, weak_hash_set::WeakSet};
+use crate::{constants::{flatten_tree, BuildSteps, OYarn, Tree}, core::symbols::{package_symbol::PackageSymbol, symbol_table::{get_sym, ContainsKey, FileKey, RootKey, SymbolKey, SymbolTable, Weak}, symbol_table_create::create_from_path}, threads::SessionInfo, utils::PathSanitizer, warn_or_panic, weak_hash_set::WeakSet};
 
 use super::{odoo::SyncOdoo};
 
@@ -515,38 +514,34 @@ impl EntryPoint {
         });
     }
 
-    // @arena todo
-    pub fn search_rebuild_for_models(&mut self, session: &mut SessionInfo, model_name: OYarn){
-        let mut to_add: [Vec<Rc<RefCell<Symbol>>>; 4] = [vec![], vec![], vec![], vec![]]; //list of symbols to add after the loop (borrow issue)
-        for sym_rc in self.not_found_symbols_for_models.iter() {
-            let mut sym_ref = sym_rc.borrow_mut();
-            let Some(not_found_models) = sym_ref.not_found_models_mut() else {
+    pub fn search_rebuild_for_models(&mut self, session: &mut SessionInfo, model_name: OYarn) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let mut to_add: [Vec<SymbolKey>; 4] = [vec![], vec![], vec![], vec![]]; //list of symbols to add after the loop (borrow issue)
+        for sym_key in self.not_found_symbols_for_models.iter_valid(|&k| st!().contains_key(k)) {
+            let Some(not_found_models) = st!().not_found_models_mut(sym_key) else {
                 continue;
             };
             let Some(step) = not_found_models.get(&model_name) else {
                 continue;
             };
-            match step {
-                BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION => {
-                    to_add[*step as usize].push(sym_rc.clone());
-                }
-                _ => {} // unreachable
+            if let BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION = step {
+                to_add[*step as usize].push(sym_key);
             }
             not_found_models.remove(&model_name);
 
         }
-        for s in to_add[BuildSteps::ARCH as usize].iter() {
-            session.sync_odoo.add_to_rebuild_arch(s.clone());
+        for &s in to_add[BuildSteps::ARCH as usize].iter() {
+            session.sync_odoo.add_to_rebuild_arch(s);
         }
-        for s in to_add[BuildSteps::ARCH_EVAL as usize].iter() {
-            session.sync_odoo.add_to_rebuild_arch_eval(s.clone());
+        for &s in to_add[BuildSteps::ARCH_EVAL as usize].iter() {
+            session.sync_odoo.add_to_rebuild_arch_eval(s);
         }
-        for s in to_add[BuildSteps::VALIDATION as usize].iter() {
-            s.borrow_mut().invalidate_sub_functions(session);
-            session.sync_odoo.add_to_validations(s.clone());
+        for &s in to_add[BuildSteps::VALIDATION as usize].iter() {
+            st!().invalidate_sub_functions(s);
+            session.sync_odoo.add_to_validations(s);
         }
-        self.not_found_symbols_for_models.retain(|sym| {
-            !sym.borrow().not_found_models().map(|models| models.is_empty()).unwrap_or(true)
+        self.not_found_symbols_for_models.retain(|&sym| {
+            !st!().not_found_models(sym).map(|models| models.is_empty()).unwrap_or(true)
         });
 
     }

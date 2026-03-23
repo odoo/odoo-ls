@@ -1438,6 +1438,44 @@ impl SymbolTable {
         }
     }
 
+    pub fn not_found_models(&self, target: SymbolKey) -> Option<&HashMap<OYarn, BuildSteps>> {
+        match target {
+            SymbolKey::File(f) => Some(&self.files[f].not_found_models),
+            SymbolKey::XmlFile(f) => Some(&self.xml_files[f].not_found_models),
+            SymbolKey::Package(p) => match &self.packages[p] {
+                PackageSymbol::Module(m) => Some(&m.not_found_models),
+                PackageSymbol::PythonPackage(_) => None,
+            },
+            SymbolKey::Root(_) => None,
+            SymbolKey::Namespace(_) => None,
+            SymbolKey::DiskDir(_) => None,
+            SymbolKey::Compiled(_) => None,
+            SymbolKey::Class(_) => None,
+            SymbolKey::Function(_) => None,
+            SymbolKey::Variable(_) => None,
+            SymbolKey::CsvFile(_) => None,
+        }
+    }
+
+    pub fn not_found_models_mut(&mut self, target: SymbolKey) -> Option<&mut HashMap<OYarn, BuildSteps>> {
+        match target {
+            SymbolKey::File(f) => Some(&mut self.files[f].not_found_models),
+            SymbolKey::XmlFile(f) => Some(&mut self.xml_files[f].not_found_models),
+            SymbolKey::Package(p) => match &mut self.packages[p] {
+                PackageSymbol::Module(m) => Some(&mut m.not_found_models),
+                PackageSymbol::PythonPackage(_) => None,
+            },
+            SymbolKey::Root(_) => None,
+            SymbolKey::Namespace(_) => None,
+            SymbolKey::DiskDir(_) => None,
+            SymbolKey::Compiled(_) => None,
+            SymbolKey::Class(_) => None,
+            SymbolKey::Function(_) => None,
+            SymbolKey::Variable(_) => None,
+            SymbolKey::CsvFile(_) => None,
+        }
+    }
+
     pub fn get_as_symbol_mgr(&self, target: SymbolKey) -> &dyn SymbolMgr {
         match target {
             SymbolKey::File(f) => &self.files[f],
