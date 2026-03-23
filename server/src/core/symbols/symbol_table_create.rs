@@ -18,7 +18,7 @@ use crate::{constants::OYarn, core::symbols::{
     compiled_symbol::CompiledSymbol, disk_dir_symbol::DiskDirSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, symbol_mgr::SymbolMgr, variable_symbol::VariableSymbol
 }, threads::SessionInfo, utils::PathSanitizer};
 
-use crate::core::symbols::symbol_table::{ClassKey, CsvFileKey, FileKey, FunctionKey, PackageKey, RootKey, SymbolKey, SymbolTable, VariableKey, XmlFileKey, get_main_entry_tree, get_sym, invalidate};
+use crate::core::symbols::symbol_table::{get_main_entry_tree, get_sym, invalidate, ClassKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, PackageKey, RootKey, SymbolKey, SymbolTable, VariableKey, XmlFileKey};
 use tracing::info;
 use crate::core::symbols::symbol_table::ContainsKey;
 
@@ -56,12 +56,12 @@ impl SymbolTable {
         namespace_key.into()
     }
 
-    pub fn add_new_disk_dir(&mut self, parent: SymbolKey, name: &str, path: &str) -> SymbolKey {
+    pub fn add_new_disk_dir(&mut self, parent: SymbolKey, name: &str, path: &str) -> DiskDirKey {
         let is_external = self.parent_is_external(parent);
         let disk_dir_symbol = DiskDirSymbol::new(name, path, parent, is_external);
         let disk_dir_key = self.disk_dirs.insert(disk_dir_symbol);
         self.register_in_parent(parent, disk_dir_key.into(), name, path);
-        disk_dir_key.into()
+        disk_dir_key
     }
 
     pub fn add_new_compiled(&mut self, parent: SymbolKey, name: &str, path: &str) -> SymbolKey {

@@ -3,7 +3,7 @@ use std::{cell::RefCell, cmp, collections::{HashMap, HashSet}, path::PathBuf, rc
 use tracing::{error, info, warn};
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{flatten_tree, BuildSteps, OYarn, PackageType, SymType, Tree}, core::symbols::symbol_table::{SymbolKey, SymbolTable, Weak}, threads::SessionInfo, utils::PathSanitizer, warn_or_panic, weak_hash_set::WeakSet};
+use crate::{constants::{flatten_tree, BuildSteps, OYarn, PackageType, SymType, Tree}, core::symbols::{symbol_table::{get_sym, RootKey, SymbolKey, SymbolTable, Weak}, symbol_table_create::create_from_path}, threads::SessionInfo, utils::PathSanitizer, warn_or_panic, weak_hash_set::WeakSet};
 
 use super::{odoo::SyncOdoo, symbols::symbol::Symbol};
 
@@ -52,26 +52,27 @@ impl EntryPointMgr {
     /**
      * Create each required directory symbols for a given path.
      * /!\ path must point to a directory on disk */
-    pub fn create_dir_symbols_from_path_to_entry(session: &mut SessionInfo, path: &PathBuf, entry: Rc<RefCell<EntryPoint>>) -> Option<Rc<RefCell<Symbol>>> {
+    pub fn create_dir_symbols_from_path_to_entry(session: &mut SessionInfo, path: &PathBuf, entry: Rc<RefCell<EntryPoint>>) -> Option<SymbolKey> {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let mut iter_path = PathBuf::new();
-        let mut current_sym = entry.borrow().root.clone();
+        let mut current_sym: SymbolKey = entry.borrow().root.into();
         let component_count = path.components().count();
         for component in path.components().take(component_count - 1) {
             iter_path.push(component);
             if let Some(name) = component.as_os_str().to_str() {
-                let sym = current_sym.borrow().get_module_symbol(name).clone();
+                let sym = get_sym!(st!(), current_sym).get_module_symbol(name);
                 if let Some(existing_sym) = sym {
-                    current_sym = existing_sym.clone();
+                    current_sym = existing_sym;
                 } else {
-                    let disk_dir = current_sym.borrow_mut().add_new_disk_dir(&name.to_string(), &iter_path.to_str().unwrap().to_string()).clone();
-                    current_sym = disk_dir;
+                    let disk_dir = st!().add_new_disk_dir(current_sym, name, iter_path.to_str().unwrap());
+                    current_sym = disk_dir.into();
                 }
             } else {
                 error!("Unable to convert path component to string");
                 return None;
             }
         }
-        Symbol::create_from_path(session, path, current_sym, false)
+        create_from_path(session, path, current_sym, false)
     }
 
     /* Create a new main entry_point.
@@ -381,17 +382,15 @@ pub struct EntryPoint {
     pub typ: EntryPointType,
     pub addon_to_odoo_path: Option<String>, //contains the odoo path if this is an addon entry point
     pub addon_to_odoo_tree: Option<Vec<OYarn>>, //contains the odoo tree if this is an addon entry point
-    pub root: SymbolKey,
+    pub root: RootKey,
     pub not_found_symbols: WeakSet<SymbolKey>, // former PtrWeakHashSet
     pub not_found_symbols_for_models: WeakSet<SymbolKey>, // formerly PtrWeakHashSet<Weak<RefCell<Symbol>>>,
     pub to_delete: bool,
-    // @arena-next: use Weak here
     pub data_symbols: HashMap<String, Weak<SymbolKey>>, //key is path, weak to Rc that is hold by the module symbol
 }
 impl EntryPoint {
-    pub fn new(path: String, tree: Vec<OYarn>, typ:EntryPointType, addon_to_odoo_path: Option<String>, addon_to_odoo_tree: Option<Vec<OYarn>>) -> Rc<RefCell<Self>> {
-        let root = Symbol::new_root();
-        root.borrow_mut().as_root_mut().weak_self = Some(Rc::downgrade(&root)); // manually set weakself for root symbols
+    pub fn new(symbol_table: &mut SymbolTable, path: String, tree: Vec<OYarn>, typ:EntryPointType, addon_to_odoo_path: Option<String>, addon_to_odoo_tree: Option<Vec<OYarn>>) -> Rc<RefCell<Self>> {
+        let root = symbol_table.new_root();
         let res = Rc::new(RefCell::new(Self { path,
             tree,
             typ,
@@ -399,11 +398,11 @@ impl EntryPoint {
             addon_to_odoo_tree,
             not_found_symbols: WeakSet::new(),
             not_found_symbols_for_models: WeakSet::new(),
-            root: root.clone(),
+            root,
             to_delete: false,
             data_symbols: HashMap::new(),
         }));
-        root.borrow_mut().as_root_mut().entry_point = Some(res.clone());
+        symbol_table.roots[root].entry_point = Some(res.clone());
         res
     }
 
@@ -425,7 +424,7 @@ impl EntryPoint {
     // @arena: not sure if this should take symbol_table as arg or should live elsewhere
     pub fn get_symbol(&self, symbol_table: &SymbolTable) -> Option<SymbolKey> {
         let tree = self.addon_to_odoo_tree.as_ref().unwrap_or(&self.tree).clone();
-        let symbol = symbol_table.get_symbol(self.root, &(tree, vec![]), u32::MAX);
+        let symbol = symbol_table.get_symbol(self.root.into(), &(tree, vec![]), u32::MAX);
         match symbol.len() {
             0 => None,
             1 => Some(symbol[0]),

@@ -1543,8 +1543,8 @@ impl SymbolTable {
             SymbolKey::Class(_) => { panic!() },
             SymbolKey::Function(f) => { self.functions[f].evaluations = data; },
             SymbolKey::Variable(v) => { self.variables[v].evaluations = data; },
-            SymbolKey::XmlFile(x) => { panic!() },
-            SymbolKey::CsvFile(c) => { panic!() },
+            SymbolKey::XmlFile(_) => { panic!() },
+            SymbolKey::CsvFile(_) => { panic!() },
         }
     }
 
