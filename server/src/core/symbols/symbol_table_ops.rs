@@ -1249,17 +1249,18 @@ impl SymbolTable {
         iter
     }
 
+    // @arena: dead code?
     /* Return an iterator on all symbols of self and their sub-symbols recursively. only symbols in symbols and module_symbols will
     * be returned.
     */
-    pub fn all_symbols_recursive(&self, target: SymbolKey) -> Vec<SymbolKey> {
-        let mut iter = Vec::new();
-        for symbol in self.all_symbols(target) {
-            iter.push(symbol);
-            iter.extend(self.all_symbols_recursive(symbol));
-        }
-        iter
-    }
+    // pub fn all_symbols_recursive(&self, target: SymbolKey) -> Vec<SymbolKey> {
+    //     let mut iter = Vec::new();
+    //     for symbol in self.all_symbols(target) {
+    //         iter.push(symbol);
+    //         iter.extend(self.all_symbols_recursive(symbol));
+    //     }
+    //     iter
+    // }
     
     pub fn all_module_symbol(&self, target: SymbolKey) -> Vec<SymbolKey> {
         match target {

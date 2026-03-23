@@ -1,6 +1,6 @@
 use itertools::Itertools;
 use itertools::FoldWhile::{Continue, Done};
-use ruff_python_ast::{Arguments, Expr, ExprCall, FStringPart, Identifier, Number, Operator, Parameter, UnaryOp};
+use ruff_python_ast::{Arguments, Expr, ExprCall, FStringPart, Identifier, Number, Parameter, UnaryOp};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::{Diagnostic, Location, Position, Range};
 use std::cmp::{max, min};
@@ -792,7 +792,9 @@ impl Evaluation {
                     }
                 }
                 let (base_evals, diags) = Evaluation::eval_from_ast(session, &expr.func, parent, max_infer, false, required_dependencies);
-                diagnostics.extend(diags);
+                if is_in_validation {
+                    diagnostics.extend(diags);
+                }
                 //TODO actually we only evaluate if there is only one function behind the evaluation.
                 // we could evaluate the result of each function and filter results by signature matching.
                 /* example:

@@ -22,51 +22,49 @@ impl CsvAstUtils {
         let Some(main_symbol) = model_syms.first().cloned() else {return results;};
         drop(model_syms);
         let mut headers = vec![];
-        if csv_reader.has_headers() {
-            if let Ok(header) = csv_reader.headers() {
-                let mut h_start = header.position().unwrap().byte() as usize;
-                for h in header.iter() {
-                    let end = h_start + h.len() as usize;
-                    let has_quotes = h.starts_with('"') && h.ends_with('"') && h.len() >= 2;
-                    let header_txt = CsvAstUtils::remove_quotes(h);
-                    headers.push(oyarn!("{}", header_txt));
-                    if offset >= h_start && offset <= end {
-                        let header_elts = header_txt.splitn(2, [':', '/']).collect::<Vec<_>>();
-                        let symbols = main_symbol.borrow().get_member_symbol(session, &S!(header_elts[0]), module.clone(), false, true, false, true, false);
-                        if offset <= h_start + has_quotes as usize + header_elts[0].len() + 1 {
-                            for sym in symbols.0.iter() {
-                                results.push(GotoSource {
-                                    source: GotoSourceType::Symbol(sym.clone()),
-                                    origin_selection_range: None, //TODO
-                                })
-                            }
-                        } else {
-                            for sym in symbols.0.iter() {
-                                if sym.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) && sym.borrow().typ() == SymType::VARIABLE{
-                                    let models = sym.borrow().as_variable().get_relational_model(session, module.clone());
-                                    if models.len() == 1 {
-                                        let model = models[0].clone();
-                                        let sub_symbols = model.borrow().get_member_symbol(session, &S!(header_elts[1]), module.clone(), false, true, false, true, false);
-                                        for sym in sub_symbols.0.iter() {
-                                            results.push(GotoSource {
-                                                source: GotoSourceType::Symbol(sym.clone()),
-                                                origin_selection_range: None, //TODO
-                                            })
-                                        }
-                                    }
+        if !csv_reader.has_headers() {
+            return results;
+        }
+        let Ok(header) = csv_reader.headers() else { return results;};
+        let mut h_start = header.position().unwrap().byte() as usize;
+        for h in header.iter() {
+            let end = h_start + h.len() as usize;
+            let has_quotes = h.starts_with('"') && h.ends_with('"') && h.len() >= 2;
+            let header_txt = CsvAstUtils::remove_quotes(h);
+            headers.push(oyarn!("{}", header_txt));
+            if offset >= h_start && offset <= end {
+                let header_elts = header_txt.splitn(2, [':', '/']).collect::<Vec<_>>();
+                let symbols = main_symbol.borrow().get_member_symbol(session, &S!(header_elts[0]), module.clone(), false, true, false, true, false);
+                if offset <= h_start + has_quotes as usize + header_elts[0].len() + 1 {
+                    for sym in symbols.0.iter() {
+                        results.push(GotoSource {
+                            source: GotoSourceType::Symbol(sym.clone()),
+                            origin_selection_range: None, //TODO
+                        })
+                    }
+                } else {
+                    for sym in symbols.0.iter() {
+                        if sym.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) && sym.borrow().typ() == SymType::VARIABLE{
+                            let models = sym.borrow().as_variable().get_relational_model(session, module.clone());
+                            if models.len() == 1 {
+                                let model = models[0].clone();
+                                let sub_symbols = model.borrow().get_member_symbol(session, &S!(header_elts[1]), module.clone(), false, true, false, true, false);
+                                for sym in sub_symbols.0.iter() {
+                                    results.push(GotoSource {
+                                        source: GotoSourceType::Symbol(sym.clone()),
+                                        origin_selection_range: None, //TODO
+                                    })
                                 }
                             }
                         }
                     }
-                    h_start = end + 1;
                 }
             }
+            h_start = end + 1;
         }
-        if !headers.is_empty() && headers[0] == "id" {
-            for result in csv_reader.records() {
-                if let Ok(record) = &result {
+        if headers.contains(&oyarn!("id")) {
+            for record in csv_reader.records().filter_map(Result::ok) {
                     CsvAstUtils::get_symbols_in_record(session, offset, &headers, &record, &mut results, &file_symbol, model_name.clone(), &main_symbol, module.clone());
-                }
             }
         }
         results

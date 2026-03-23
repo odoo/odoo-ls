@@ -2,7 +2,6 @@ use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
 use lsp_types::{LocationLink, Range};
 use ruff_python_ast::{Expr, ExprCall};
-use tracing::error;
 
 use crate::{S, Sy, constants::{PackageType, SymType, OYarn}, core::{evaluation::{Evaluation, EvaluationValue, ExprOrIdent}, file_mgr::{FileInfo, FileMgr}, odoo::SyncOdoo, python_odoo_builder::MAGIC_FIELDS, symbols::symbol::Symbol, xml_data::OdooData}, features::{ast_utils::AstUtils, csv_ast_utils::CsvAstUtils, features_utils::FeaturesUtils, xml_ast_utils::{XmlAstResult, XmlAstUtils}}, oyarn, threads::SessionInfo, utils::PathSanitizer};
 

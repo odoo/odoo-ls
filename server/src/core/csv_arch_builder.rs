@@ -36,7 +36,7 @@ impl CsvArchBuilder {
                 }
             }
         }
-        if !csv.headers.is_empty() && csv.headers[0] == "id" {
+        if csv.headers.contains(&Sy!("id")) {
             for result in rdr.records() {
                 let Ok(result) = result else { continue };
                 let headers = &st!()[csv_symbol].headers;

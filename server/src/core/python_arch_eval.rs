@@ -335,11 +335,6 @@ impl PythonArchEval {
             },
             // Expressions that cannot contained a named expressions are not traversed
             Expr::Lambda(lambda_expr) => {
-                // Lambdas can have named expressions, but it is not a common use
-                // Like lambda vals: vals[(x := 0): x + 3]
-                // However x is only in scope in the lambda expression only
-                // It needs adding a new function, ast_indexes, then add the variable inside
-                // I deem it currently unnecessary
                 let Some(lambda_sym) = st!().get_positioned_symbol(*self.sym_stack.last().unwrap(), &Sy!("<lambda>"), &lambda_expr.range) else {
                     return; // can be not found if AST is incomplete
                 };

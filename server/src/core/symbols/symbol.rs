@@ -2505,18 +2505,6 @@ impl Symbol {
         iter.into_iter()
     }
 
-    /* Return an iterator on all symbols of self and their sub-symbols recursively. only symbols in symbols and module_symbols will
-    * be returned.
-    */
-    pub fn all_symbols_recursive(&self) -> impl Iterator<Item= Rc<RefCell<Symbol>>> + use<> {
-        let mut iter: Vec<Rc<RefCell<Symbol>>> = Vec::new();
-        for symbol in self.all_symbols() {
-            iter.push(symbol.clone());
-            iter.extend(symbol.borrow().all_symbols_recursive());
-        }
-        iter.into_iter()
-    }
-
     //store in result all available members for symbol: sub symbols, base class elements and models symbols
     //TODO is order right of Vec in HashMap? if we take first or last in it, do we have the last effective value?
     // @arena:  moved to symbol_table (free function)

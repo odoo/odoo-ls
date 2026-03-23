@@ -4,7 +4,7 @@ use ruff_text_size::{Ranged, TextRange, TextSize};
 use crate::core::file_mgr::FileMgr;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::function_symbol::Argument;
-use crate::utils::{MaxTextSize, PathSanitizer, compare_semver};
+use crate::utils::{PathSanitizer, compare_semver};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::PathBuf;
