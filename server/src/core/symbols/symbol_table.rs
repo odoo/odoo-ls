@@ -123,6 +123,14 @@ impl SymbolKey {
             _ => panic!("Not a PackageKey"),
         }
     }
+
+    pub fn unwrap_namespace_key(&self) -> NamespaceKey {
+        match self {
+            SymbolKey::Namespace(k) => *k,
+            _ => panic!("Not a NamespaceKey"),
+        }
+    }
+
 }
 
 /// @arena: temporary. symbol_rc.borrow() -> get_sym!(symbol_key).

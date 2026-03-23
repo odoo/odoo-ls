@@ -3,7 +3,9 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
 use crate::core::module_load_order::sort_by_load_order;
+use crate::core::symbols::package_symbol::PackageSymbol;
 use crate::core::symbols::symbol_table::{ContainsKey, PackageKey, SymbolKey, SymbolTable, get_sym};
+use crate::core::symbols::symbol_table_create::create_from_path;
 use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
 use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
@@ -34,7 +36,6 @@ use super::config::{self, default_profile_name, get_configuration, ConfigEntry, 
 use super::entry_point::{EntryPoint, EntryPointMgr};
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportCache;
-use super::symbols::symbol::Symbol;
 use crate::core::model::Model;
 use crate::core::python_arch_builder::PythonArchBuilder;
 use crate::core::python_arch_eval::PythonArchEval;
@@ -300,6 +301,7 @@ impl SyncOdoo {
     }
 
     pub fn load_builtins(session: &mut SessionInfo) -> bool {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let path = PathBuf::from(&session.sync_odoo.stdlib_dir);
         let builtins_path = path.join("builtins.pyi");
         if !builtins_path.exists() {
@@ -309,11 +311,11 @@ impl SyncOdoo {
         };
         let tree_builtins = path.to_tree();
         let entry_stdlib = session.sync_odoo.find_stdlib_entry_point();
-        let disk_dir_builtins = entry_stdlib.borrow().root.borrow().get_symbol(&tree_builtins, u32::MAX);
+        let disk_dir_builtins = st!().get_symbol(entry_stdlib.borrow().root.into(), &tree_builtins, u32::MAX);
         if disk_dir_builtins.is_empty() {
             panic!("Unable to find builtins disk dir symbol");
         }
-        let _builtins_rc_symbol = Symbol::create_from_path(session, &builtins_path, disk_dir_builtins[0].clone(), false);
+        let _builtins_rc_symbol = create_from_path(session, &builtins_path, disk_dir_builtins[0], false);
         session.sync_odoo.add_to_rebuild_arch(_builtins_rc_symbol.unwrap());
         SyncOdoo::process_rebuilds(session, false)
     }
@@ -363,6 +365,7 @@ impl SyncOdoo {
     }
 
     fn build_base(session: &mut SessionInfo) -> bool {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let odoo_path = session.sync_odoo.config.odoo_path.clone();
         let Some(odoo_path) = odoo_path.filter(|odoo_path| PathBuf::from(odoo_path.clone()).exists()) else {
             info!("Odoo path not provided or is not a valid path. Continuing in single file mode");
@@ -397,34 +400,34 @@ impl SyncOdoo {
         let Some(odoo_sym) = odoo_sym else {
             panic!("Odoo root symbol not found")
         };
-        odoo_sym.borrow_mut().set_is_external(false);
-        let odoo_odoo = Symbol::create_from_path(session, &config_odoo_path.join("odoo"), odoo_sym.clone(), false);
-        if odoo_odoo.is_none() {
+        st!().set_is_external(odoo_sym, false);
+        let odoo_odoo = create_from_path(session, &config_odoo_path.join("odoo"), odoo_sym, false);
+        let Some(odoo_odoo) = odoo_odoo else {
             panic!("Not able to find odoo with given path. Aborting...");
-        }
-        let odoo_typ = odoo_odoo.as_ref().unwrap().borrow().typ().clone();
-        match odoo_typ {
-            SymType::PACKAGE(PackageType::PYTHON_PACKAGE) => {
-                odoo_odoo.as_ref().unwrap().borrow_mut().as_python_package_mut().self_import = true;
-                session.sync_odoo.add_to_rebuild_arch(odoo_odoo.as_ref().unwrap().clone());
+        };
+        match odoo_odoo {
+            SymbolKey::Package(p) if matches!(st!().packages[p], PackageSymbol::PythonPackage(_)) => {
+                st!().packages[p].as_python_package_mut().self_import = true;
+                session.sync_odoo.add_to_rebuild_arch(odoo_odoo);
             },
-            SymType::NAMESPACE => {
+            SymbolKey::Namespace(_) => {
                 //starting from > 18.0, odoo is now a namespace. Start import project from odoo/__main__.py
-                let main_file = Symbol::create_from_path(session, &PathBuf::from(config_odoo_path.clone()).join("odoo").join("__main__.py"),  odoo_odoo.as_ref().unwrap().clone(), false);
-                if main_file.is_none() {
+                let main_file = create_from_path(session, &PathBuf::from(config_odoo_path.clone()).join("odoo").join("__main__.py"),  odoo_odoo, false);
+                let Some(main_file) = main_file else {
                     panic!("Not able to find odoo/__main__.py. Aborting...");
-                }
-                main_file.as_ref().unwrap().borrow_mut().as_file_mut().self_import = true;
-                session.sync_odoo.add_to_rebuild_arch(main_file.unwrap());
+                };
+                let f = main_file.unwrap_file_key();
+                st!().files[f].self_import = true;
+                session.sync_odoo.add_to_rebuild_arch(main_file);
             },
             _ => panic!("Root symbol is not a package or namespace (> 18.0)")
         }
         session.sync_odoo.has_odoo_main_entry = true; // set it now has we need it to parse base addons
-        if !SyncOdoo::process_rebuilds(session, false){
+        if !SyncOdoo::process_rebuilds(session, false) {
             return false;
         }
         //search common odoo addons path
-        let mut addon_symbol = session.sync_odoo.get_symbol(&odoo_path.clone(), &tree(vec!["odoo", "addons"], vec![]), u32::MAX);
+        let mut addon_symbol = session.sync_odoo.get_symbol(&odoo_path, &tree(vec!["odoo", "addons"], vec![]), u32::MAX);
         if addon_symbol.is_empty() {
             let odoo = session.sync_odoo.get_symbol(&odoo_path, &tree(vec!["odoo"], vec![]), u32::MAX);
             if odoo.is_empty() {
@@ -433,7 +436,7 @@ impl SyncOdoo {
                 return false;
             }
             //if we are > 18.1, odoo.addons is not imported automatically anymore. Let's try to import it manually
-            let addons_folder = Symbol::create_from_path(session, &PathBuf::from(config_odoo_path).join("odoo").join("addons"), odoo_odoo.as_ref().unwrap().clone(), false);
+            let addons_folder = create_from_path(session, &PathBuf::from(config_odoo_path).join("odoo").join("addons"), odoo_odoo, false);
             if let Some(addons) = addons_folder {
                 addon_symbol = vec![addons];
             } else {
@@ -442,13 +445,13 @@ impl SyncOdoo {
                 return false;
             }
         }
-        let addon_symbol = addon_symbol[0].clone();
+        // @arena: not in the original code!
+        let addon_symbol = addon_symbol[0].unwrap_namespace_key();
         if odoo_addon_path.exists() {
             if session.sync_odoo.load_odoo_addons {
-                addon_symbol.borrow_mut().add_path(
-                    odoo_addon_path.sanitize()
-                );
-                EntryPointMgr::add_entry_to_addons(session, odoo_addon_path.sanitize(),
+                let path = odoo_addon_path.sanitize();
+                st!().namespaces[addon_symbol].add_path(path.clone());
+                EntryPointMgr::add_entry_to_addons(session, path,
                     Some(odoo_entry.clone()),
                     Some(vec![Sy!("odoo"),
                         Sy!("addons")]));
@@ -456,13 +459,11 @@ impl SyncOdoo {
         } else {
             session.log_message(MessageType::WARNING, format!("Unable to find odoo addons path at {}. You can ignore this message if you use a nightly build or if your community addons are in another addon paths.", odoo_addon_path.sanitize()));
         }
-        for addon in session.sync_odoo.config.addons_paths.clone().iter() {
-            let addon_path = PathBuf::from(addon);
+        for addon in session.sync_odoo.config.addons_paths.clone() {
+            let addon_path = PathBuf::from(&addon);
             if addon_path.exists() {
-                addon_symbol.borrow_mut().add_path(
-                    addon_path.sanitize()
-                );
-                EntryPointMgr::add_entry_to_addons(session, addon.clone(),
+                st!().namespaces[addon_symbol].add_path(addon_path.sanitize());
+                EntryPointMgr::add_entry_to_addons(session, addon,
                     Some(odoo_entry.clone()),
                     Some(vec![Sy!("odoo"),
                         Sy!("addons")]));
@@ -472,34 +473,32 @@ impl SyncOdoo {
     }
 
     fn build_modules(session: &mut SessionInfo) {
-        {
-            let addons_symbol = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &tree(vec!["odoo", "addons"], vec![]), u32::MAX)[0].clone();
-            let addons_path = addons_symbol.borrow().paths().clone();
-            let mut modules = vec![];
-            for addon_path in addons_path.iter() {
-                info!("searching modules in {}", addon_path);
-                if PathBuf::from(addon_path).exists() {
-                    //browse all dir in path
-                    for item in PathBuf::from(addon_path).read_dir().expect("Unable to browse and odoo addon directory") {
-                        match item {
-                            Ok(item) => {
-                                if item.file_type().unwrap().is_dir() && !session.sync_odoo.modules.contains_key(&oyarn!("{}", item.file_name().to_str().unwrap())) {
-                                    if let Some(module_symbol) = Symbol::create_from_path(session, &item.path(), addons_symbol.clone(), true) {
-                                        modules.push(module_symbol);
-                                    }
-                                }
-                            },
-                            Err(_) => {}
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let addons_symbol = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &tree(vec!["odoo", "addons"], vec![]), u32::MAX)[0];
+        // @arena: not in the original code. Consider wrapping get_symbol in a get_addon_namespace function
+        let addons_path = st!().namespaces[addons_symbol.unwrap_namespace_key()].paths();
+        let mut modules = vec![];
+        for addon_path in addons_path.iter() {
+            info!("searching modules in {}", addon_path);
+            if PathBuf::from(addon_path).exists() {
+                //browse all dir in path
+                for item in PathBuf::from(addon_path).read_dir().expect("Unable to browse and odoo addon directory") {
+                    if let Ok(item) = item {
+                        if item.file_type().unwrap().is_dir() && !session.sync_odoo.modules.contains_key(&oyarn!("{}", item.file_name().to_str().unwrap())) {
+                            // @arena: consider a specific function for creating module symbols
+                            if let Some(module_symbol) = create_from_path(session, &item.path(), addons_symbol, true) {
+                                modules.push(module_symbol);
+                            }
                         }
                     }
                 }
             }
-            let sorted_modules = Self::sort_modules(modules);
-            for module_symbol in sorted_modules {
-                session.sync_odoo.add_to_rebuild_arch(module_symbol);
-            }
         }
-        if !SyncOdoo::process_rebuilds(session, false){
+        let sorted_modules = SyncOdoo::sort_modules(&st!(), modules);
+        for module_symbol in sorted_modules {
+            session.sync_odoo.add_to_rebuild_arch(module_symbol);
+        }
+        if !SyncOdoo::process_rebuilds(session, false) {
             return;
         }
         //println!("{}", self.symbols.as_ref().unwrap().borrow_mut().debug_print_graph());
@@ -511,14 +510,15 @@ impl SyncOdoo {
     }
 
     /// Sort modules by load order
-    fn sort_modules(modules: Vec<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Symbol>>> {
+    /// @arena: change this to ModuleKey instead
+    fn sort_modules(symbol_table: &SymbolTable, modules: Vec<SymbolKey>) -> Vec<SymbolKey> {
         // Build name -> (symbol, dependencies) lookup
-        let module_info: HashMap<OYarn, (Rc<RefCell<Symbol>>, Vec<OYarn>)> = modules
+        let module_info: HashMap<OYarn, (SymbolKey, Vec<OYarn>)> = modules
             .into_iter()
             .map(|symbol| {
                 let (name, depends) = {
-                    let sym = symbol.borrow();
-                    let package = sym.as_module_package();
+                    let p = symbol.unwrap_package_key();
+                    let package = symbol_table.packages[p].as_module_package();
                     let name = package.name.clone();
                     let depends = package.depends.iter().map(|(d, _)| d.clone()).collect();
                     (name, depends)
@@ -554,7 +554,7 @@ impl SyncOdoo {
             let entry_point = entry.borrow();
             if entry_point.is_public() || PathBuf::from(from_path).starts_with(&entry_point.path) {
                 let tree: Tree = (entry_point.addon_to_odoo_tree.as_ref().unwrap_or(&entry_point.tree).iter().chain(&tree.0).map(|x| x.clone()).collect(), tree.1.clone());
-                let symbols = self.symbol_table.get_symbol(entry_point.root, &tree, position);
+                let symbols = self.symbol_table.get_symbol(entry_point.root.into(), &tree, position);
                 if !symbols.is_empty() {
                     return symbols;
                 }
@@ -967,6 +967,7 @@ impl SyncOdoo {
     }
 
     pub fn unload_path(session: &mut SessionInfo, path: &PathBuf, clean_cache: bool) -> Vec<Rc<RefCell<Symbol>>> {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let mut parents = vec![];
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_all() {
@@ -985,7 +986,7 @@ impl SyncOdoo {
             }
             if entry.borrow().is_valid_for(path) {
                 let tree = entry.borrow().get_tree_for_entry(path);
-                let path_symbol = entry.borrow().root.borrow().get_symbol(&tree, u32::MAX);
+                let path_symbol = st!().get_symbol(entry.borrow().root.into(), &tree, u32::MAX);
                 if path_symbol.is_empty() {
                     continue
                 }
@@ -1015,6 +1016,7 @@ impl SyncOdoo {
      * due to an inclusion in main entry then removed)
      */
     pub fn get_symbol_of_opened_file(session: &mut SessionInfo, path: &PathBuf) -> Option<Rc<RefCell<Symbol>>> {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let path_in_tree = path.to_tree_path();
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_main() {
@@ -1027,7 +1029,7 @@ impl SyncOdoo {
             }
             if (entry.borrow().typ == EntryPointType::MAIN || entry.borrow().addon_to_odoo_path.is_some()) && entry.borrow().is_valid_for(path) {
                 let tree = entry.borrow().get_tree_for_entry(path);
-                let path_symbol = entry.borrow().root.borrow().get_symbol(&tree, u32::MAX);
+                let path_symbol = st!().get_symbol(entry.borrow().root.into(), &tree, u32::MAX);
                 if path_symbol.is_empty() {
                     continue;
                 }
@@ -1047,7 +1049,7 @@ impl SyncOdoo {
             if !entry.borrow().is_public() && &path_in_tree == &PathBuf::from(&entry.borrow().path) {
                 found_an_entry = true;
                 let tree = entry.borrow().get_tree_for_entry(path);
-                let path_symbol = entry.borrow().root.borrow().get_symbol(&tree, u32::MAX);
+                let path_symbol = st!().get_symbol(entry.borrow().root.into(), &tree, u32::MAX);
                 if path_symbol.is_empty() {
                     continue;
                 }
@@ -1440,6 +1442,7 @@ impl Odoo {
     }
 
     pub fn handle_did_open(session: &mut SessionInfo, params: DidOpenTextDocumentParams) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         //to implement Incremental update of file caches, we have to handle DidOpen notification, to be sure
         // that we use the same base version of the file for future incrementation.
         match params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
@@ -1462,7 +1465,7 @@ impl Odoo {
                             let tree = session.sync_odoo.path_to_main_entry_tree(&path);
                             let tree_path = path.to_tree_path();
                             if tree.is_none() ||
-                            (session.sync_odoo.get_main_entry().borrow().root.borrow().get_symbol(tree.as_ref().unwrap(), u32::MAX).is_empty()
+                            (st!().get_symbol(session.sync_odoo.get_main_entry().borrow().root.into(), tree.as_ref().unwrap(), u32::MAX).is_empty()
                             && session.sync_odoo.get_main_entry().borrow().data_symbols.get(&path.sanitize()).is_none())
                             {
                                 //main entry doesn't handle this file. Let's test customs entries, or create a new one
@@ -1601,6 +1604,7 @@ impl Odoo {
     }
 
     pub fn handle_did_rename(session: &mut SessionInfo, params: RenameFilesParams) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         if session.sync_odoo.state_init == InitState::NOT_READY {
             return
         }
@@ -1621,7 +1625,7 @@ impl Odoo {
             SyncOdoo::process_rebuilds(session, false);
             let tree = session.sync_odoo.path_to_main_entry_tree(&new_path_buf);
             if let Some(tree) = tree {
-                if  new_path_buf.is_file() &&  session.sync_odoo.get_main_entry().borrow().root.borrow().get_symbol(&tree, u32::MAX).is_empty() {
+                if  new_path_buf.is_file() &&  st!().get_symbol(session.sync_odoo.get_main_entry().borrow().root.into(), &tree, u32::MAX).is_empty() {
                     //file has not been added to main entry. Let's build a new entry point
                     EntryPointMgr::create_new_custom_entry_for_path(session, &new_path_updated, &new_path_buf.sanitize());
                     SyncOdoo::process_rebuilds(session, false);
@@ -1632,6 +1636,7 @@ impl Odoo {
     }
 
     pub fn handle_did_create(session: &mut SessionInfo, params: CreateFilesParams) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         if session.sync_odoo.state_init == InitState::NOT_READY {
             return
         }
@@ -1648,7 +1653,7 @@ impl Odoo {
             let path = FileMgr::uri2pathname(&f.uri);
             let path_updated = PathBuf::from(path.clone()).to_tree_path().sanitize();
             let tree = session.sync_odoo.path_to_main_entry_tree(&PathBuf::from(path.clone()));
-            if PathBuf::from(&path).is_file() && (tree.is_none() || session.sync_odoo.get_main_entry().borrow().root.borrow().get_symbol(&tree.unwrap(), u32::MAX).is_empty()) {
+            if PathBuf::from(&path).is_file() && (tree.is_none() || st!().get_symbol(session.sync_odoo.get_main_entry().borrow().root.into(), &tree.unwrap(), u32::MAX).is_empty()) {
                 //file has not been added to main entry. Let's build a new entry point
                 EntryPointMgr::create_new_custom_entry_for_path(session, &path_updated, &path);
                 SyncOdoo::process_rebuilds(session, false);

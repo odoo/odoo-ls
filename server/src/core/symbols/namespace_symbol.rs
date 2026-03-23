@@ -68,6 +68,11 @@ impl NamespaceSymbol {
         self.directories.iter().map(|x| {x.path.clone()}).collect()
     }
 
+    // @arena: originally a branch in Symbol::add_path
+    pub fn add_path(&mut self, path: String) {
+        self.directories.push(NamespaceDirectory { path: path, module_symbols: HashMap::new() });
+    }
+
     // @arena: moved to SymbolTable
     // pub fn get_ext_symbol(&self, name: &OYarn) -> Vec<Rc<RefCell<Symbol>>> {
     //     let mut result = vec![];
