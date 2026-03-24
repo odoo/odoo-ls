@@ -12,7 +12,6 @@ use crate::core::python_utils;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
-use crate::core::symbols::package_symbol::PackageSymbol;
 use crate::core::symbols::symbol_table::{follow_ref, get_sym, SymbolKey, SymbolTable};
 use crate::threads::SessionInfo;
 use crate::{oyarn, S};
@@ -80,14 +79,12 @@ impl PythonArchBuilder {
                 SyncOdoo::is_in_workspace_or_entry(session, &path);
             st!().set_in_workspace(self.file, in_workspace);
         }
-        if let SymbolKey::Package(p) = symbol  {
-            if let PackageSymbol::Module(m) = &st!().packages[p] {
-                // @arena: is odoo_addons always a namespace?
-                let odoo_addons = m.parent;
-                // @ arena: borrow conflict here??
-                ModuleSymbol::load_module_info(p, session, odoo_addons);
-                ModuleSymbol::load_data(p, session);
-            }
+        if let SymbolKey::Module(m) = symbol  {
+            // @arena: is odoo_addons always a namespace?
+            let odoo_addons = st!().modules[m].parent;
+            // @ arena: borrow conflict here??
+            ModuleSymbol::load_module_info(m, session, odoo_addons);
+            ModuleSymbol::load_data(m, session);
         }
         let file_info_rc = match self.file_mode {
             true => {

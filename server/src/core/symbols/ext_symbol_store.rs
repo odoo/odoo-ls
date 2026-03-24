@@ -2,13 +2,13 @@ use std::collections::HashMap;
 
 use ruff_text_size::TextRange;
 
-use crate::{constants::{OYarn, PackageType, SymType}, core::symbols::{package_symbol::PackageSymbol, symbol_mgr::SymbolMgr, symbol_table::{SymbolKey, SymbolTable}, variable_symbol::VariableSymbol}, weak_hash_set::WeakSet};
+use crate::{constants::{OYarn, PackageType, SymType}, core::symbols::{symbol_mgr::SymbolMgr, symbol_table::{SymbolKey, SymbolTable}, variable_symbol::VariableSymbol}, weak_hash_set::WeakSet};
 use crate::core::symbols::symbol_table::ContainsKey;
 
-/// section index → [variable keys]                                                                  
-type SectionSymbols = HashMap<u32, Vec<SymbolKey>>;                                                  
+/// section index → [variable keys]
+type SectionSymbols = HashMap<u32, Vec<SymbolKey>>;
 /// name → section symbols
-type NamedSectionSymbols = HashMap<OYarn, SectionSymbols>;                                           
+type NamedSectionSymbols = HashMap<OYarn, SectionSymbols>;
 /// target/host → named section symbols
 type DeclsByTarget = HashMap<SymbolKey, NamedSectionSymbols>;
 /// name → set of owners
@@ -111,18 +111,14 @@ impl SymbolTable {
         self.ext_symbols.add(target, owner, name, section, variable_key);
         variable_key
     }
-    
+
     // @arena: assumes owner as valid key (formerly self on a Symbol)
     /* used by add_new_ext_symbol. Do not call directly */
     fn get_section_for_key(&self, owner: SymbolKey, position: u32) -> u32 {
         match owner {
             SymbolKey::File(f) => self.files[f].get_section_for(position).index,
-            SymbolKey::Package(p) => {
-                match &self.packages[p] {
-                    PackageSymbol::Module(m) => m.get_section_for(position).index,
-                    PackageSymbol::PythonPackage(p) => p.get_section_for(position).index,
-                }
-            },
+            SymbolKey::Module(m) => self.modules[m].get_section_for(position).index,
+            SymbolKey::PythonPackage(p) => self.python_packages[p].get_section_for(position).index,
             SymbolKey::Class(c) => self.classes[c].get_section_for(position).index,
             SymbolKey::Function(f) => self.functions[f].get_section_for(position).index,
             _ => panic!(
@@ -148,4 +144,3 @@ impl SymbolTable {
     }
 
 }
-

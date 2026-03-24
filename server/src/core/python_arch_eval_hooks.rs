@@ -1299,7 +1299,7 @@ impl PythonArchEvalHooks {
         // let Some(module_rc) = module.unwrap().upgrade() else {
             // return None;
         // };
-        let Some(_symbol) = st!().packages[module_key].as_module_package().xml_id_locations.get(xml_id.as_str()) else {
+        let Some(_symbol) = st!().modules[module_key].xml_id_locations.get(xml_id.as_str()) else {
             if in_validation {
                 /*if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05001, &[]) {
                     diagnostics.push(Diagnostic {

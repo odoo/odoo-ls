@@ -4,8 +4,7 @@ use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
 use crate::core::module_load_order::sort_by_load_order;
 use crate::core::symbols::module_symbol::ModuleSymbol;
-use crate::core::symbols::package_symbol::PackageSymbol;
-use crate::core::symbols::symbol_table::{get_main_entry_tree, get_sym, ContainsKey, PackageKey, SymbolKey, SymbolTable, Weak};
+use crate::core::symbols::symbol_table::{get_main_entry_tree, get_sym, ContainsKey, ModuleKey, SymbolKey, SymbolTable, Weak};
 use crate::core::symbols::symbol_table_create::{create_from_path, unload};
 use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
@@ -79,7 +78,8 @@ pub struct SyncOdoo {
     pub progress_token: i32,
     file_mgr: Rc<RefCell<FileMgr>>,
     // @arena: Change this to WEAK keys??
-    pub modules: HashMap<OYarn, PackageKey>, // former map of weak refs. Should use ModuleKey instead.
+    // @arena next: follow refs from here
+    pub modules: HashMap<OYarn, ModuleKey>, // former map of weak refs. Should use ModuleKey instead.
     pub models: HashMap<OYarn, Rc<RefCell<Model>>>,
     pub interrupt_rebuild: Arc<AtomicBool>,
     pub terminate_rebuild: Arc<AtomicBool>,
@@ -341,7 +341,8 @@ impl SyncOdoo {
         info!("Symbol table roots count: {}", st.roots.len());
         info!("Symbol table disk_dirs count: {}", st.disk_dirs.len());
         info!("Symbol table namespaces count: {}", st.namespaces.len());
-        info!("Symbol table packages count: {}", st.packages.len());
+        info!("Symbol table python packages count: {}", st.python_packages.len());
+        info!("Symbol table modules count: {}", st.modules.len());
         info!("Symbol table files count: {}", st.files.len());
         info!("Symbol table compiled count: {}", st.compiled.len());
         info!("Symbol table classes count: {}", st.classes.len());
@@ -353,11 +354,12 @@ impl SyncOdoo {
 
     fn log_capacities(session: &mut SessionInfo) {
         let st = &session.sync_odoo.symbol_table;
-        info!("Symbol table capacities - roots: {}, disk_dirs: {}, namespaces: {}, packages: {}, files: {}, compiled: {}, classes: {}, functions: {}, variables: {}, xml_files: {}, csv_files: {}",
+        info!("Symbol table capacities - roots: {}, disk_dirs: {}, namespaces: {}, python packages: {}, modules: {}, files: {}, compiled: {}, classes: {}, functions: {}, variables: {}, xml_files: {}, csv_files: {}",
             st.roots.capacity(),
             st.disk_dirs.capacity(),
             st.namespaces.capacity(),
-            st.packages.capacity(),
+            st.python_packages.capacity(),
+            st.modules.capacity(),
             st.files.capacity(),
             st.compiled.capacity(),
             st.classes.capacity(),
@@ -456,8 +458,8 @@ impl SyncOdoo {
             panic!("Not able to find odoo with given path. Aborting...");
         };
         match odoo_odoo {
-            SymbolKey::Package(p) if matches!(st!().packages[p], PackageSymbol::PythonPackage(_)) => {
-                st!().packages[p].as_python_package_mut().self_import = true;
+            SymbolKey::PythonPackage(p) => {
+                st!().python_packages[p].self_import = true;
                 session.sync_odoo.add_to_rebuild_arch(odoo_odoo);
             },
             SymbolKey::Namespace(_) => {
@@ -567,8 +569,8 @@ impl SyncOdoo {
             .into_iter()
             .map(|symbol| {
                 let (name, depends) = {
-                    let p = symbol.unwrap_package_key();
-                    let package = symbol_table.packages[p].as_module_package();
+                    let p = symbol.unwrap_module_key();
+                    let package = &symbol_table.modules[p];
                     let name = package.name.clone();
                     let depends = package.depends.iter().map(|(d, _)| d.clone()).collect();
                     (name, depends)
@@ -689,21 +691,20 @@ impl SyncOdoo {
             st!().set_is_external(new_symbol, false);
             // let new_sym_typ = new_symbol.borrow().typ();
             match new_symbol {
-                SymbolKey::Package(p) => match &mut st!().packages[p] {
-                    PackageSymbol::PythonPackage(python_package) => {
-                        python_package.self_import = true;
-                    }
-                    PackageSymbol::Module(_) => {}
-                },
+                SymbolKey::PythonPackage(p) => {
+                    st!().python_packages[p].self_import = true;
+                }
                 SymbolKey::File(f) => {
                     st!().files[f].self_import = true;
                 },
+                SymbolKey::Module(_) => {}
                 SymbolKey::Namespace(_) => continue, // A module became a namespace, due to __init__ deletion/renaming
                 _ => {panic!("Unexpected symbol type: {:?}", new_symbol);}
             }
-            if let SymbolKey::Package(p) = new_symbol  && let PackageSymbol::Module(module) = &st!().packages[p] {
+            if let SymbolKey::Module(m) = new_symbol {
                 // @arena: add as weak after modules uses weak values
-                session.sync_odoo.modules.insert(module.name.clone(), p);
+                let name = st!().modules[m].name.clone();
+                session.sync_odoo.modules.insert(name, m);
             }
             session.sync_odoo.add_to_rebuild_arch(new_symbol);
         }
@@ -1240,7 +1241,7 @@ impl SyncOdoo {
         let mut module = None;
         if id_split.len() == 1 {
             // If no module name, we are in the current module
-            module = st!().find_module(from_file).map(|m| m.unwrap_package_key());
+            module = st!().find_module(from_file).map(|m| m.unwrap_module_key());
         } else if id_split.len() == 2 {
             // Try to find the module by name
             if let Some(&m) = session.sync_odoo.modules.get(*id_split.first().unwrap()) {

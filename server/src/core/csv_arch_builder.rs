@@ -48,7 +48,7 @@ impl CsvArchBuilder {
                     continue;
                 }
                 // @arena: not needed after find_module returns a module_key
-                let mut csv_module = csv_module.unwrap_package_key();
+                let mut csv_module = csv_module.unwrap_module_key();
                 if id_split.len() == 2 {
                     let module_name = Sy!(id_split.first().unwrap().to_string());
                     if let Some(&m) = session.sync_odoo.modules.get(&module_name) {
@@ -57,7 +57,7 @@ impl CsvArchBuilder {
                         csv_module = m;
                     }
                 }
-                st!().packages[csv_module].as_module_package_mut().xml_id_locations.entry(Sy!(id_split.last().unwrap().to_string())).or_insert_with(HashSet::new).insert(csv_symbol.into());
+                st!().modules[csv_module].xml_id_locations.entry(Sy!(id_split.last().unwrap().to_string())).or_insert_with(HashSet::new).insert(csv_symbol.into());
                 // @arena: possible borrow error (use st!() again)
                 csv.xml_ids.entry(Sy!(id_split.last().unwrap().to_string())).or_insert(vec![]).push(OdooData::RECORD(record));
             }

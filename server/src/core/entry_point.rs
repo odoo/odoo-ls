@@ -2,7 +2,7 @@ use std::{cell::RefCell, cmp, collections::HashMap, path::PathBuf, rc::{Rc}, u32
 
 use tracing::{error, info, warn};
 
-use crate::{constants::{flatten_tree, BuildSteps, OYarn, Tree}, core::symbols::{package_symbol::PackageSymbol, symbol_table::{get_sym, ContainsKey, FileKey, RootKey, SymbolKey, SymbolTable, Weak}, symbol_table_create::create_from_path}, threads::SessionInfo, utils::PathSanitizer, warn_or_panic, weak_hash_set::WeakSet};
+use crate::{constants::{flatten_tree, BuildSteps, OYarn, Tree}, core::symbols::{symbol_table::{get_sym, ContainsKey, FileKey, RootKey, SymbolKey, SymbolTable, Weak}, symbol_table_create::create_from_path}, threads::SessionInfo, utils::PathSanitizer, warn_or_panic, weak_hash_set::WeakSet};
 
 use super::{odoo::SyncOdoo};
 
@@ -203,8 +203,8 @@ impl EntryPointMgr {
             st!().set_is_external(new_sym, false);
             match new_sym {
                 // @arena: adapt this after spliting package key into module and package
-                SymbolKey::Package(p) if matches!(st!().packages[p], PackageSymbol::PythonPackage(_)) => {
-                    st!().packages[p].as_python_package_mut().self_import = true;
+                SymbolKey::PythonPackage(p) => {
+                    st!().python_packages[p].self_import = true;
                 },
                 SymbolKey::File(f) => {
                     st!().files[f].self_import = true;
@@ -462,8 +462,8 @@ impl EntryPoint {
         let flat_tree = [tree.0.clone(), tree.1.clone()].concat();
         let mut to_add = [vec![], vec![], vec![], vec![]]; //list of symbols to add after the loop (borrow issue)
         for s in self.not_found_symbols.iter_valid(|&k| st!().contains_key(k)) {
-            if let SymbolKey::Package(p) = s && matches!(st!().packages[p], PackageSymbol::Module(_)) {
-                let module_package = st!().packages[p].as_module_package_mut();
+            if let SymbolKey::Module(p) = s {
+                let module_package = &mut st!().modules[p];
                 if let Some(step) = module_package.not_found_data.get(path) {
                     match step {
                         BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION => {
@@ -507,8 +507,8 @@ impl EntryPoint {
             if !st!().not_found_paths(sym).is_empty() {
                 return true;
             }
-            if let SymbolKey::Package(p) = sym && matches!(st!().packages[p], PackageSymbol::Module(_)) {
-                return !st!().packages[p].as_module_package().not_found_data.is_empty();
+            if let SymbolKey::Module(p) = sym {
+                return !st!().modules[p].not_found_data.is_empty();
             }
             false
         });

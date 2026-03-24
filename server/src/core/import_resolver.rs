@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use ruff_text_size::{TextRange, TextSize};
 use ruff_python_ast::{Alias, AtomicNodeIndex, Identifier};
-use crate::core::symbols::symbol_table::{PackageKey, SymbolKey, SymbolTable, get_main_entry_tree, get_sym};
+use crate::core::symbols::symbol_table::{get_main_entry_tree, get_sym, ModuleKey, SymbolKey, SymbolTable};
 use crate::core::symbols::symbol_table_create::create_from_path;
 use crate::{constants::*, oyarn, Sy, S};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
@@ -233,11 +233,11 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
 }
 
 // @arena: actually CREATES a module
-pub fn find_module(session: &mut SessionInfo, odoo_addons: SymbolKey, name: &OYarn) -> Option<PackageKey> {
+pub fn find_module(session: &mut SessionInfo, odoo_addons: SymbolKey, name: &OYarn) -> Option<ModuleKey> {
     let st = &session.sync_odoo.symbol_table;
     let paths = st.get_symbol_view(odoo_addons).expect("valid key").paths().clone();
     for path in paths.iter() {
-        let full_path = Path::new(path.as_str()).join(name.as_str());
+        let full_path = Path::new(path).join(name.as_str());
         if !is_dir_cs(full_path.sanitize()) {
             continue;
         }
@@ -246,12 +246,12 @@ pub fn find_module(session: &mut SessionInfo, odoo_addons: SymbolKey, name: &OYa
         };
         // @arena: not in original code
         // todo: factor out the part of create_from_path that creates a module symbol and use it here instead
-        let SymbolKey::Package(p) = module_symbol else {
+        let SymbolKey::Module(m) = module_symbol else {
             panic!("Should have created a module package symbol for path {}", full_path.display());
         };
-        session.sync_odoo.modules.insert(name.clone(), p);
+        session.sync_odoo.modules.insert(name.clone(), m);
         SyncOdoo::build_now(session, module_symbol, BuildSteps::ARCH);
-        return Some(p);
+        return Some(m);
     }
     None
 }
@@ -264,7 +264,7 @@ fn resolve_packages(symbol_table: &SymbolTable, from_file: SymbolKey, level: u32
         if lvl > Path::new(&paths[0]).components().count() as u32 {
             panic!("Level is too high!")
         }
-        if matches!(from_file, SymbolKey::Package(_)) {
+        if matches!(from_file, SymbolKey::PythonPackage(_) | SymbolKey::Module(_)) {
             lvl -= 1;
         }
         if lvl == 0 {
@@ -309,7 +309,7 @@ fn get_or_create_symbol(
                 let mut next_symbol = vec![];
                 for &s in symbols.iter() {
                     let mut current_batch_symbol = st!().get_symbol(s, &(vec![branch.clone()], vec![]), u32::MAX);
-                    if current_batch_symbol.is_empty() && matches!(s, SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::Package(_) | SymbolKey::Compiled(_) | SymbolKey::DiskDir(_)) {
+                    if current_batch_symbol.is_empty() && matches!(s, SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::Compiled(_) | SymbolKey::DiskDir(_)) {
                         current_batch_symbol = match resolve_new_symbol(session, s, &branch, asname.clone()) {
                             Ok(v) => vec![v],
                             Err(_) => vec![]
@@ -357,7 +357,7 @@ fn get_or_create_symbol(
                         let entry_point = entry.borrow().get_symbol(&st!());
                         if let Some(entry_point) = entry_point {
                             let mut next_symbols = st!().get_symbol(entry_point, &(vec![branch.clone()], vec![]), u32::MAX);
-                            if next_symbols.is_empty() && matches!(entry_point, SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::Package(_) | SymbolKey::Compiled(_) | SymbolKey::DiskDir(_)) {
+                            if next_symbols.is_empty() && matches!(entry_point, SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::Compiled(_) | SymbolKey::DiskDir(_)) {
                                 next_symbols = match resolve_new_symbol(session, entry_point, &branch, asname.clone()) {
                                     Ok(v) => vec![v],
                                     Err(_) => vec![]
@@ -584,7 +584,7 @@ fn valid_names_for_a_symbol(symbol_table: &SymbolTable, symbol: SymbolKey, start
                 res.extend(valid_name_from_disk(path, start_filter));
             }
         },
-        SymbolKey::Package(_) => {
+        SymbolKey::PythonPackage(_) | SymbolKey::Module(_) => {
             for path in get_sym!(symbol_table, symbol).paths().iter() {
                 res.extend(valid_name_from_disk(path, start_filter));
             }

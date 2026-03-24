@@ -787,7 +787,7 @@ impl Evaluation {
 
                 let parent_file_or_func = st!().parent_file_or_function(parent).unwrap();
                 let is_in_validation = match parent_file_or_func {
-                    SymbolKey::File(_) | SymbolKey::Package(_) | SymbolKey::Function(_) => {
+                    SymbolKey::File(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::Function(_) => {
                         // parent_file_or_func.borrow().build_status(BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
                         st!().build_status(parent_file_or_func, BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
                     },
@@ -1224,7 +1224,7 @@ impl Evaluation {
                             if let Some(hook) = get_item_eval.symbol.get_symbol_hook.as_ref() {
                                 let parent_file_or_func = st!().parent_file_or_function(parent).unwrap();
                                 let is_in_validation = match parent_file_or_func {
-                                    SymbolKey::File(_) | SymbolKey::Package(_) | SymbolKey::Function(_) => {
+                                    SymbolKey::File(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::Function(_) => {
                                         st!().build_status(parent_file_or_func, BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
                                     },
                                     _ => {false}

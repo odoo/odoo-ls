@@ -6,23 +6,21 @@ use ruff_text_size::TextRange;
 use slotmap::{Key, SlotMap, new_key_type};
 use tracing::trace;
 
-use crate::{S, Sy, constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree}, core::{diagnostics::{DiagnosticCode,
-create_diagnostic}, entry_point::EntryPoint, evaluation::{Context, ContextValue,
+use crate::{constants::{flatten_tree, BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, entry_point::EntryPoint, evaluation::{Context, ContextValue,
 Evaluation, EvaluationSymbolPtr}, file_mgr::NoqaInfo, model::Model, odoo::SyncOdoo, python_validator::PythonValidator, symbols::{ class_symbol::ClassSymbol,
 compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol,
 dependency_mgr::{Buildable, Dependencies}, disk_dir_symbol::DiskDirSymbol,
 ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol,
 function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol,
-namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol,
-root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex,
-SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol,
-xml_file_symbol::XmlFileSymbol }, xml_data::OdooData}, threads::SessionInfo, utils::{PathSanitizer,
-compare_semver}, weak_hash_set::WeakSet};
+namespace_symbol::NamespaceSymbol, package_symbol::PythonPackageSymbol,
+root_symbol::RootSymbol, symbol_mgr::{iter_symbol_keys, ContentSymbols, SectionIndex, SectionRange, SymbolMgr}, variable_symbol::VariableSymbol,
+xml_file_symbol::XmlFileSymbol }, xml_data::OdooData}, threads::SessionInfo, utils::{compare_semver, PathSanitizer}, weak_hash_set::WeakSet, Sy, S};
 
 new_key_type! { pub struct RootKey; }
 new_key_type! { pub struct DiskDirKey; }
 new_key_type! { pub struct NamespaceKey; }
-new_key_type! { pub struct PackageKey; }
+new_key_type! { pub struct PythonPackageKey; }
+new_key_type! { pub struct ModuleKey; }
 new_key_type! { pub struct FileKey; }
 new_key_type! { pub struct CompiledKey; }
 new_key_type! { pub struct ClassKey; }
@@ -36,7 +34,8 @@ pub enum SymbolKey {
     Root(RootKey),
     DiskDir(DiskDirKey),
     Namespace(NamespaceKey),
-    Package(PackageKey),
+    PythonPackage(PythonPackageKey),
+    Module(ModuleKey),
     File(FileKey),
     Compiled(CompiledKey),
     Class(ClassKey),
@@ -63,7 +62,8 @@ impl_from_key! {
     Root(RootKey),
     DiskDir(DiskDirKey),
     Namespace(NamespaceKey),
-    Package(PackageKey),
+    PythonPackage(PythonPackageKey),
+    Module(ModuleKey),
     File(FileKey),
     Compiled(CompiledKey),
     Class(ClassKey),
@@ -78,7 +78,8 @@ pub enum SymbolView<'a> {
     Root(&'a RootSymbol),
     DiskDir(&'a DiskDirSymbol),
     Namespace(&'a NamespaceSymbol),
-    Package(&'a PackageSymbol),
+    PythonPackage(&'a PythonPackageSymbol),
+    Module(&'a ModuleSymbol),
     File(&'a FileSymbol),
     Compiled(&'a CompiledSymbol),
     Class(&'a ClassSymbol),
@@ -117,10 +118,17 @@ impl SymbolKey {
         }
     }
 
-    pub fn unwrap_package_key(&self) -> PackageKey {
+    pub fn unwrap_python_package_key(&self) -> PythonPackageKey {
         match self {
-            SymbolKey::Package(k) => *k,
-            _ => panic!("Not a PackageKey"),
+            SymbolKey::PythonPackage(k) => *k,
+            _ => panic!("Not a PythonPackageKey"),
+        }
+    }
+
+    pub fn unwrap_module_key(&self) -> ModuleKey {
+        match self {
+            SymbolKey::Module(k) => *k,
+            _ => panic!("Not a ModuleKey"),
         }
     }
 
@@ -149,7 +157,8 @@ impl SymbolView<'_> {
             Self::Root(_) => None,
             Self::DiskDir(s) => Some(s.parent),
             Self::Namespace(s) => Some(s.parent),
-            Self::Package(s) => Some(s.parent()),
+            Self::PythonPackage(s) => Some(s.parent),
+            Self::Module(s) => Some(s.parent),
             Self::File(s) => Some(s.parent),
             Self::Compiled(s) => Some(s.parent),
             Self::Class(s) => Some(s.parent),
@@ -165,7 +174,8 @@ impl SymbolView<'_> {
             Self::Root(_) => false,
             Self::DiskDir(d) => d.is_external,
             Self::Namespace(n) => n.is_external,
-            Self::Package(p) => p.is_external(),
+            Self::PythonPackage(p) => p.is_external,
+            Self::Module(p) => p.is_external,
             Self::File(f) => f.is_external,
             Self::Compiled(c) => c.is_external,
             Self::Class(c) => c.is_external,
@@ -181,8 +191,8 @@ impl SymbolView<'_> {
             Self::Root(_) => SymType::ROOT,
             Self::Namespace(_) => SymType::NAMESPACE,
             Self::DiskDir(_) => SymType::DISK_DIR,
-            Self::Package(PackageSymbol::Module(_)) => SymType::PACKAGE(PackageType::MODULE),
-            Self::Package(PackageSymbol::PythonPackage(_)) => SymType::PACKAGE(PackageType::PYTHON_PACKAGE),
+            Self::Module(_) => SymType::PACKAGE(PackageType::MODULE),
+            Self::PythonPackage(_) => SymType::PACKAGE(PackageType::PYTHON_PACKAGE),
             Self::File(_) => SymType::FILE,
             Self::Compiled(_) => SymType::COMPILED,
             Self::Class(_) => SymType::CLASS,
@@ -198,7 +208,8 @@ impl SymbolView<'_> {
             Self::Root(s) => &s.name,
             Self::DiskDir(s) => &s.name,
             Self::Namespace(s) => &s.name,
-            Self::Package(p) => p.name(),
+            Self::PythonPackage(p) => &p.name,
+            Self::Module(p) => &p.name,
             Self::File(f) => &f.name,
             Self::Compiled(c) => &c.name,
             Self::Class(c) => &c.name,
@@ -214,7 +225,8 @@ impl SymbolView<'_> {
             Self::Root(_) => &None,
             Self::DiskDir(_) => &None,
             Self::Namespace(_) => &None,
-            Self::Package(_) => &None,
+            Self::PythonPackage(_) => &None,
+            Self::Module(_) => &None,
             Self::File(_) => &None,
             Self::Compiled(_) => &None,
             Self::Class(c) => &c.doc_string,
@@ -230,7 +242,8 @@ impl SymbolView<'_> {
             Self::Root(_)
             | Self::Namespace(_)
             | Self::DiskDir(_)
-            | Self::Package(_)
+            | Self::PythonPackage(_)
+            | Self::Module(_)
             | Self::File(_)
             | Self::Compiled(_)
             | Self::XmlFileSymbol(_)
@@ -244,8 +257,8 @@ impl SymbolView<'_> {
             Self::Root(_) => false,
             Self::Namespace(n) => n.is_in_workspace(),
             Self::DiskDir(d) => d.in_workspace,
-            Self::Package(PackageSymbol::Module(m)) => m.in_workspace,
-            Self::Package(PackageSymbol::PythonPackage(p)) => p.in_workspace,
+            Self::Module(m) => m.in_workspace,
+            Self::PythonPackage(p) => p.in_workspace,
             Self::File(f) => f.is_in_workspace(),
             Self::Compiled(_) => panic!(),
             Self::Class(_) => panic!(),
@@ -261,7 +274,8 @@ impl SymbolView<'_> {
             Self::Root(_) => false,
             Self::DiskDir(_) => false,
             Self::Namespace(_) => false,
-            Self::Package(_) => false,
+            Self::PythonPackage(_) => false,
+            Self::Module(_) => false,
             Self::File(_) => false,
             Self::Compiled(_) => false,
             Self::Class(_) => true,
@@ -277,7 +291,8 @@ impl SymbolView<'_> {
             Self::Root(_) => panic!(),
             Self::DiskDir(_) => panic!(),
             Self::Namespace(_) => panic!(),
-            Self::Package(_) => panic!(),
+            Self::PythonPackage(_) => panic!(),
+            Self::Module(_) => panic!(),
             Self::File(_) => panic!(),
             Self::Compiled(_) => panic!(),
             Self::Class(c) => &c.range,
@@ -294,7 +309,8 @@ impl SymbolView<'_> {
             Self::Root(_) => { None },
             Self::Namespace(_) => { None },
             Self::DiskDir(_) => { None },
-            Self::Package(_) => { None },
+            Self::PythonPackage(_) => { None },
+            Self::Module(_) => { None },
             Self::Compiled(_) => { None },
             Self::Class(_) => { None },
             Self::Function(f) => Some(&f.evaluations),
@@ -314,12 +330,12 @@ impl SymbolView<'_> {
             Self::File(f) => iter.extend(iter_symbol_keys(*f)),
             Self::Class(c) => iter.extend(iter_symbol_keys(*c)),
             Self::Function(f) => iter.extend(iter_symbol_keys(*f)),
-            Self::Package(PackageSymbol::Module(m)) => {
-                iter.extend(iter_symbol_keys(m));
+            Self::Module(m) => {
+                iter.extend(iter_symbol_keys(*m));
                 iter.extend(m.module_symbols.values());
             },
-            Self::Package(PackageSymbol::PythonPackage(p)) => {
-                iter.extend(iter_symbol_keys(p));
+            Self::PythonPackage(p) => {
+                iter.extend(iter_symbol_keys(*p));
                 iter.extend(p.module_symbols.values());
             },
             Self::Namespace(n) => {
@@ -338,7 +354,8 @@ impl SymbolView<'_> {
             Self::Root(_) => panic!(),
             Self::DiskDir(_) => panic!(),
             Self::Namespace(_) => panic!(),
-            Self::Package(_) => panic!(),
+            Self::PythonPackage(_) => panic!(),
+            Self::Module(_) => panic!(),
             Self::File(_) => panic!(),
             Self::Compiled(_) => panic!(),
             Self::Class(c) => &c.body_range,
@@ -355,7 +372,8 @@ impl SymbolView<'_> {
             Self::Root(r) => r.paths.clone(),
             Self::Namespace(n) => n.paths(),
             Self::DiskDir(d) => vec![d.path.clone()],
-            Self::Package(p) => p.paths(),
+            Self::PythonPackage(p) => vec![p.path.clone()],
+            Self::Module(m) => vec![m.path.clone()],
             Self::File(f) => vec![f.path.clone()],
             Self::Compiled(c) => vec![c.path.clone()],
             Self::Class(_) => vec![],
@@ -368,7 +386,8 @@ impl SymbolView<'_> {
 
     pub fn get_symbol_first_path(&self) -> String {
         match self{
-            Self::Package(p) => PathBuf::from(p.paths()[0].clone()).join("__init__.py").sanitize() + p.i_ext(),
+            Self::PythonPackage(p) => PathBuf::from(&p.path).join("__init__.py").sanitize() + p.i_ext,
+            Self::Module(m) => PathBuf::from(&m.path).join("__init__.py").sanitize() + m.i_ext,
             Self::File(f) => f.path.clone(),
             Self::DiskDir(_) => panic!("invalid symbol type to extract path"),
             Self::Root(_) => panic!("invalid symbol type to extract path"),
@@ -387,7 +406,8 @@ impl SymbolView<'_> {
             Self::Root(_) => panic!("No dependencies on Root"),
             Self::Namespace(n) => n.dependents(),
             Self::DiskDir(_) => panic!("No dependencies on DiskDir"),
-            Self::Package(p) => p.dependents(),
+            Self::PythonPackage(p) => p.dependents(),
+            Self::Module(m) => m.dependents(),
             Self::File(f) => f.dependents(),
             Self::Compiled(_) => panic!("No dependencies on Compiled"),
             Self::Class(_) => panic!("No dependencies on Class"),
@@ -406,8 +426,8 @@ impl SymbolView<'_> {
             Self::Root(_) => panic!("There is no dependencies on Root Symbol"),
             Self::Namespace(n) => n.get_all_dependencies(step as usize),
             Self::DiskDir(_) => panic!("There is no dependencies on DiskDir Symbol"),
-            Self::Package(PackageSymbol::Module(m)) => m.get_all_dependencies(step as usize),
-            Self::Package(PackageSymbol::PythonPackage(p)) => p.get_all_dependencies(step as usize),
+            Self::Module(m) => m.get_all_dependencies(step as usize),
+            Self::PythonPackage(p) => p.get_all_dependencies(step as usize),
             Self::File(f) => f.get_all_dependencies(step as usize),
             Self::Compiled(_) => panic!("There is no dependencies on Compiled Symbol"),
             Self::Class(_) => panic!("There is no dependencies on Class Symbol"),
@@ -420,7 +440,7 @@ impl SymbolView<'_> {
 
     pub fn as_module_package(&self) -> &ModuleSymbol {
         match self {
-            Self::Package(PackageSymbol::Module(m)) => m,
+            Self::Module(m) => m,
             _ => {panic!("Not a module package")}
         }
     }
@@ -454,10 +474,10 @@ impl SymbolView<'_> {
                 }
                 None
             },
-            Self::Package(PackageSymbol::Module(m)) => {
+            Self::Module(m) => {
                 m.module_symbols.get(name).copied()
             },
-            Self::Package(PackageSymbol::PythonPackage(p)) => {
+            Self::PythonPackage(p) => {
                 p.module_symbols.get(name).copied()
             }
             Self::Root(r) => {
@@ -472,7 +492,7 @@ impl SymbolView<'_> {
 
     pub fn has_modules(&self) -> bool {
         match self {
-            Self::Root(_) | Self::Namespace(_) | Self::Package(_) | Self::DiskDir(_) => true,
+            Self::Root(_) | Self::Namespace(_) | Self::PythonPackage(_) | Self::Module(_) | Self::DiskDir(_) => true,
             _ => {false}
         }
     }
@@ -484,8 +504,8 @@ impl SymbolView<'_> {
                 Box::new(n.directories.iter().flat_map(|x| x.module_symbols.values()))
             },
             Self::DiskDir(d) => Box::new(d.module_symbols.values()),
-            Self::Package(PackageSymbol::Module(m)) => Box::new(m.module_symbols.values()),
-            Self::Package(PackageSymbol::PythonPackage(p)) => Box::new(p.module_symbols.values()),
+            Self::Module(m) => Box::new(m.module_symbols.values()),
+            Self::PythonPackage(p) => Box::new(p.module_symbols.values()),
             Self::File(_) => panic!("No module symbol on File"),
             Self::Compiled(_) => panic!("No module symbol on Compiled"),
             Self::Class(_c) => panic!("No module symbol on Class"),
@@ -499,8 +519,8 @@ impl SymbolView<'_> {
     pub fn get_xml_id(&self, xml_id: &OYarn) -> Option<Vec<OdooData>> {
         match self {
             Self::XmlFileSymbol(xml_file) => xml_file.xml_ids.get(xml_id).cloned(),
-            Self::Package(PackageSymbol::Module(module)) => module.xml_ids.get(xml_id).cloned(),
-            Self::Package(PackageSymbol::PythonPackage(package)) => package.xml_ids.get(xml_id).cloned(),
+            Self::Module(module) => module.xml_ids.get(xml_id).cloned(),
+            Self::PythonPackage(package) => package.xml_ids.get(xml_id).cloned(),
             Self::File(file) => file.xml_ids.get(xml_id).cloned(),
             Self::CsvFileSymbol(file) => file.xml_ids.get(xml_id).cloned(),
             _ => None,
@@ -515,7 +535,8 @@ pub struct SymbolTable {
     pub roots: SlotMap<RootKey, RootSymbol>,
     pub disk_dirs: SlotMap<DiskDirKey, DiskDirSymbol>,
     pub namespaces: SlotMap<NamespaceKey, NamespaceSymbol>,
-    pub packages: SlotMap<PackageKey, PackageSymbol>,
+    pub python_packages: SlotMap<PythonPackageKey, PythonPackageSymbol>,
+    pub modules: SlotMap<ModuleKey, ModuleSymbol>,
     pub files: SlotMap<FileKey, FileSymbol>,
     pub compiled: SlotMap<CompiledKey, CompiledSymbol>,
     pub classes: SlotMap<ClassKey, ClassSymbol>,
@@ -533,7 +554,8 @@ impl SymbolTable {
             roots: SlotMap::with_key(),
             disk_dirs: SlotMap::with_key(),
             namespaces: SlotMap::with_key(),
-            packages: SlotMap::with_key(),
+            python_packages: SlotMap::with_key(),
+            modules: SlotMap::with_key(),
             files: SlotMap::with_key(),
             compiled: SlotMap::with_key(),
             classes: SlotMap::with_key(),
@@ -547,7 +569,7 @@ impl SymbolTable {
 
     pub fn pre_allocate(&mut self) {
         self.files.reserve(7000);
-        self.packages.reserve(2200);
+        // self.packages.reserve(2200);
         self.classes.reserve(14000);
         self.functions.reserve(80000);
         self.variables.reserve(450000);
@@ -561,7 +583,8 @@ impl SymbolTable {
             SymbolKey::Root(k) => { self.roots.remove(k); }
             SymbolKey::DiskDir(k) => { self.disk_dirs.remove(k); }
             SymbolKey::Namespace(k) => { self.namespaces.remove(k); }
-            SymbolKey::Package(k) => { self.packages.remove(k); }
+            SymbolKey::PythonPackage(k) => { self.python_packages.remove(k); }
+            SymbolKey::Module(k) => { self.modules.remove(k); }
             SymbolKey::File(k) => { self.files.remove(k); }
             SymbolKey::Compiled(k) => { self.compiled.remove(k); }
             SymbolKey::Class(k) => { self.classes.remove(k); }
@@ -587,7 +610,8 @@ impl SymbolTable {
             SymbolKey::Root(k) => self.roots.get(k).map(SymbolView::Root),
             SymbolKey::DiskDir(k) => self.disk_dirs.get(k).map(SymbolView::DiskDir),
             SymbolKey::Namespace(k) => self.namespaces.get(k).map(SymbolView::Namespace),
-            SymbolKey::Package(k) => self.packages.get(k).map(SymbolView::Package),
+            SymbolKey::PythonPackage(k) => self.python_packages.get(k).map(SymbolView::PythonPackage),
+            SymbolKey::Module(k) => self.modules.get(k).map(SymbolView::Module),
             SymbolKey::File(k) => self.files.get(k).map(SymbolView::File),
             SymbolKey::Compiled(k) => self.compiled.get(k).map(SymbolView::Compiled),
             SymbolKey::Class(k) => self.classes.get(k).map(SymbolView::Class),
@@ -741,7 +765,7 @@ impl SymbolTable {
     pub fn find_module(&self, key: impl Into<SymbolKey>) -> Option<SymbolKey> {
         let key = key.into();
         let symbol = self.get_symbol_view(key)?;
-        if let SymbolView::Package(PackageSymbol::Module(_)) = symbol {
+        if let SymbolView::Module(_) = symbol {
             return Some(key);
         }
         return self.find_module(symbol.parent()?);
@@ -757,7 +781,8 @@ impl SymbolTable {
         match target {
             SymbolKey::Class(_)
             | SymbolKey::File(_)
-            | SymbolKey::Package(_)
+            | SymbolKey::PythonPackage(_)
+            | SymbolKey::Module(_)
             | SymbolKey::Function(_) => self._get_content_symbol(target, name, position),
             _ => ContentSymbols::default(),
         }
@@ -832,7 +857,8 @@ impl SymbolTable {
         match target {
             SymbolKey::Class(_)
             | SymbolKey::File(_)
-            | SymbolKey::Package(_)
+            | SymbolKey::PythonPackage(_)
+            | SymbolKey::Module(_)
             | SymbolKey::Function(_) => self._get_all_visible_symbols(target, name_prefix, position),
             _ => HashMap::new(),
         }
@@ -864,7 +890,7 @@ impl SymbolTable {
      */
     pub fn get_sub_symbol(&self, target: SymbolKey, name: &str, position: u32) -> ContentSymbols {
         match target {
-            SymbolKey::Class(_) | SymbolKey::File(_) | SymbolKey::Package(_) => {
+            SymbolKey::Class(_) | SymbolKey::File(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) => {
                 self._get_content_symbol(target, name, position)
             },
             SymbolKey::Function(_) | SymbolKey::Namespace(_) => ContentSymbols {
@@ -883,8 +909,8 @@ impl SymbolTable {
             SymbolView::Class(c) => { c.symbols.get(name) },
             SymbolView::File(f) => {f.symbols.get(name)},
             SymbolView::Function(f) => {f.symbols.get(name)},
-            SymbolView::Package(PackageSymbol::Module(m)) => {m.symbols.get(name)},
-            SymbolView::Package(PackageSymbol::PythonPackage(p)) => {p.symbols.get(name)},
+            SymbolView::Module(m) => {m.symbols.get(name)},
+            SymbolView::PythonPackage(p) => {p.symbols.get(name)},
             _ => {None}
         } {
             for sym_list in symbols.values() {
@@ -1059,14 +1085,14 @@ impl SymbolTable {
 
     // ======== Dependencies management
 
-    // @arena: consider using get_unchecked_mut for verified keys (in private methods)
     fn dependencies_mut(&mut self, valid_key: SymbolKey) -> &mut Vec<Vec<Option<WeakSet<SymbolKey>>>> {
         match valid_key {
             SymbolKey::File(k) => &mut self.files[k].dependencies,
             SymbolKey::Namespace(k) => &mut self.namespaces[k].dependencies,
             SymbolKey::XmlFile(k) => &mut self.xml_files[k].dependencies,
             SymbolKey::CsvFile(k) => &mut self.csv_files[k].dependencies,
-            SymbolKey::Package(k) => self.packages[k].dependencies_as_mut(),
+            SymbolKey::PythonPackage(p) => &mut self.python_packages[p].dependencies,
+            SymbolKey::Module(k) => &mut self.modules[k].dependencies,
             SymbolKey::Root(_)
             | SymbolKey::DiskDir(_)
             | SymbolKey::Compiled(_)
@@ -1082,7 +1108,8 @@ impl SymbolTable {
             SymbolKey::File(f) => &mut self.files[f].dependents,
             SymbolKey::XmlFile(x) => &mut self.xml_files[x].dependents,
             SymbolKey::CsvFile(c) => &mut self.csv_files[c].dependents,
-            SymbolKey::Package(p) => self.packages[p].dependents_as_mut(),
+            SymbolKey::PythonPackage(p) => &mut self.python_packages[p].dependents,
+            SymbolKey::Module(k) => &mut self.modules[k].dependents,
             SymbolKey::Root(_)
             | SymbolKey::DiskDir(_)
             | SymbolKey::Compiled(_)
@@ -1136,15 +1163,13 @@ impl SymbolTable {
     // @arena TODO: convert Rc<RefCell<Model>> too! Then make this sync_odoo method (uses symbol table and model table)
     pub fn add_model_dependencies(&mut self, target: SymbolKey, model: &Rc<RefCell<Model>>) {
         match target {
-            SymbolKey::Package(p) => {
-                match self.packages.get_mut(p).expect("valid key") {
-                    PackageSymbol::Module(m) => {
-                        m.model_dependencies.insert(model.clone());
-                    }
-                    PackageSymbol::PythonPackage(p) => {
-                        p.model_dependencies.insert(model.clone());
-                    }
-                }
+            SymbolKey::Module(m) => {
+                let module = self.modules.get_mut(m).expect("valid key");
+                module.model_dependencies.insert(model.clone());
+            },
+            SymbolKey::PythonPackage(p) => {
+                let package = self.python_packages.get_mut(p).expect("valid key");
+                package.model_dependencies.insert(model.clone());
             },
             SymbolKey::File(f) => {
                 let file = self.files.get_mut(f).expect("valid key");
@@ -1153,7 +1178,7 @@ impl SymbolTable {
             SymbolKey::Function(f) => {
                 let func = self.functions.get_mut(f).expect("valid key");
                 func.model_dependencies.insert(model.clone());
-            }
+            },
             _ => { return; }
         }
         model.borrow_mut().add_dependent(target);
@@ -1165,7 +1190,8 @@ impl SymbolTable {
             SymbolKey::Root(_) => panic!(),
             SymbolKey::Namespace(_) => panic!(),
             SymbolKey::DiskDir(_) => panic!(),
-            SymbolKey::Package(k) => self.packages[k].build_status(step),
+            SymbolKey::PythonPackage(k) => self.python_packages[k].build_status(step),
+            SymbolKey::Module(k) => self.modules[k].build_status(step),
             SymbolKey::File(k) => self.files[k].build_status(step),
             SymbolKey::Compiled(_) => todo!(),
             SymbolKey::Class(_) => todo!(),
@@ -1182,7 +1208,8 @@ impl SymbolTable {
             SymbolKey::Root(_) => panic!(),
             SymbolKey::Namespace(_) => panic!(),
             SymbolKey::DiskDir(_) => panic!(),
-            SymbolKey::Package(k) => self.packages[k].set_build_status(step, status),
+            SymbolKey::PythonPackage(k) => self.python_packages[k].set_build_status(step, status),
+            SymbolKey::Module(k) => self.modules[k].set_build_status(step, status),
             SymbolKey::File(k) => self.files[k].set_build_status(step, status),
             SymbolKey::Compiled(_) => panic!(),
             SymbolKey::Class(_) => panic!(),
@@ -1206,7 +1233,7 @@ impl SymbolTable {
     }
 
     pub fn invalidate_sub_functions(&mut self, target: SymbolKey) {
-        if matches!(target, SymbolKey::File(_) | SymbolKey::Package(_)) {
+        if matches!(target, SymbolKey::File(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_)) {
             for func_key in self.iter_inner_functions(target) {
                 let func = self.functions.get_mut(func_key).expect("valid key"); // Rc's in the original code
                 func.evaluations.clear();
@@ -1245,7 +1272,8 @@ impl SymbolTable {
                 SymbolView::DiskDir(_)
                 | SymbolView::Root(_)
                 | SymbolView::Namespace(_)
-                | SymbolView::Package(_)
+                | SymbolView::PythonPackage(_)
+                | SymbolView::Module(_)
                 | SymbolView::Compiled(_)
                 | SymbolView::Variable(_)
                 | SymbolView::XmlFileSymbol(_)
@@ -1284,7 +1312,8 @@ impl SymbolTable {
                 SymbolKey::DiskDir(_)
                 | SymbolKey::Root(_)
                 | SymbolKey::Namespace(_)
-                | SymbolKey::Package(_)
+                | SymbolKey::PythonPackage(_)
+                | SymbolKey::Module(_)
                 | SymbolKey::Compiled(_)
                 | SymbolKey::Variable(_)
                 | SymbolKey::XmlFile(_)
@@ -1318,10 +1347,8 @@ impl SymbolTable {
             SymbolKey::Root(_) => panic!(),
             SymbolKey::Namespace(n) => self.namespaces[n].set_in_workspace(in_workspace),
             SymbolKey::DiskDir(d) => { self.disk_dirs[d].in_workspace = in_workspace; },
-            SymbolKey::Package(p) => match &mut self.packages[p] {
-                PackageSymbol::Module(m) => m.set_in_workspace(in_workspace),
-                PackageSymbol::PythonPackage(p) => p.set_in_workspace(in_workspace),
-            }
+            SymbolKey::Module(m) => self.modules[m].set_in_workspace(in_workspace),
+            SymbolKey::PythonPackage(p) => self.python_packages[p].set_in_workspace(in_workspace),
             SymbolKey::File(f) => self.files[f].set_in_workspace(in_workspace),
             SymbolKey::Compiled(_) => panic!(),
             SymbolKey::Class(_) => panic!(),
@@ -1335,10 +1362,8 @@ impl SymbolTable {
     pub fn get_noqas(&self, target: SymbolKey) -> NoqaInfo {
         match target {
             SymbolKey::File(f) => self.files[f].noqas.clone(),
-            SymbolKey::Package(p) => match &self.packages[p] {
-                PackageSymbol::Module(m) => m.noqas.clone(),
-                PackageSymbol::PythonPackage(p) => p.noqas.clone(),
-            }
+            SymbolKey::Module(m) => self.modules[m].noqas.clone(),
+            SymbolKey::PythonPackage(p) => self.python_packages[p].noqas.clone(),
             SymbolKey::DiskDir(_) => panic!("get_noqas called on DiskDir"),
             SymbolKey::Function(f) => self.functions[f].noqas.clone(),
             SymbolKey::Root(_) => panic!("get_noqas called on Root"),
@@ -1355,10 +1380,9 @@ impl SymbolTable {
         match target {
             SymbolKey::File(f) => self.files[f].noqas = noqa,
             SymbolKey::DiskDir(_) => panic!("set_noqas called on DiskDir"),
-            SymbolKey::Package(p) => match &mut self.packages[p] {
-                PackageSymbol::Module(m) => m.noqas = noqa,
-                PackageSymbol::PythonPackage(p) => p.noqas = noqa,
-            }
+            SymbolKey::Module(m) => self.modules[m].noqas = noqa,
+            SymbolKey::PythonPackage(p) => self.python_packages[p].noqas = noqa,
+
             SymbolKey::Function(f) => self.functions[f].noqas = noqa,
             SymbolKey::Root(_) => panic!("set_noqas called on Root"),
             SymbolKey::Namespace(_) => panic!("set_noqas called on Namespace"),
@@ -1373,10 +1397,8 @@ impl SymbolTable {
     pub fn get_processed_text_hash(&self, target: SymbolKey) -> u64 {
         match target {
             SymbolKey::File(f) => self.files[f].processed_text_hash,
-            SymbolKey::Package(p) => match &self.packages[p] {
-                PackageSymbol::Module(m) => m.processed_text_hash,
-                PackageSymbol::PythonPackage(p) => p.processed_text_hash,
-            }
+            SymbolKey::Module(m) => self.modules[m].processed_text_hash,
+            SymbolKey::PythonPackage(p) => self.python_packages[p].processed_text_hash,
             SymbolKey::DiskDir(_) => panic!("get_processed_text_hash called on DiskDir"),
             SymbolKey::Function(_) => panic!("get_processed_text_hash called on Function"),
             SymbolKey::Root(_) => panic!("get_processed_text_hash called on Root"),
@@ -1393,10 +1415,9 @@ impl SymbolTable {
         match target {
             SymbolKey::File(f) => self.files[f].processed_text_hash = hash,
             SymbolKey::DiskDir(_) => panic!("set_processed_text_hash called on DiskDir"),
-            SymbolKey::Package(p) => match &mut self.packages[p] {
-                PackageSymbol::Module(m) => m.processed_text_hash = hash,
-                PackageSymbol::PythonPackage(p) => p.processed_text_hash = hash,
-            },
+            SymbolKey::Module(m) => self.modules[m].processed_text_hash = hash,
+            SymbolKey::PythonPackage(p) => self.python_packages[p].processed_text_hash = hash,
+
             SymbolKey::Function(_) => panic!("set_processed_text_hash called on Function"),
             SymbolKey::Root(_) => panic!("set_processed_text_hash called on Root"),
             SymbolKey::Namespace(_) => panic!("set_processed_text_hash called on Namespace"),
@@ -1415,10 +1436,8 @@ impl SymbolTable {
             SymbolKey::Root(_) => { &EMPTY_VEC },
             SymbolKey::Namespace(_) => { &EMPTY_VEC },
             SymbolKey::DiskDir(_) => { &EMPTY_VEC },
-            SymbolKey::Package(p) => match &self.packages[p] {
-                 PackageSymbol::Module(m) => &m.not_found_paths,
-                 PackageSymbol::PythonPackage(p) => &p.not_found_paths,
-            },
+            SymbolKey::Module(m) => &self.modules[m].not_found_paths,
+            SymbolKey::PythonPackage(p) => &self.python_packages[p].not_found_paths,
             SymbolKey::Compiled(_) => { &EMPTY_VEC },
             SymbolKey::Class(_) => { &EMPTY_VEC },
             SymbolKey::Function(_) => { &EMPTY_VEC },
@@ -1434,10 +1453,8 @@ impl SymbolTable {
             SymbolKey::Root(_) => { panic!("no not_found_path on Root") },
             SymbolKey::Namespace(_) => { panic!("no not_found_path on Namespace") },
             SymbolKey::DiskDir(_) => { panic!("no not_found_path on DiskDir") },
-            SymbolKey::Package(k) => match &mut self.packages[k] {
-                PackageSymbol::Module(m) => &mut m.not_found_paths,
-                PackageSymbol::PythonPackage(p) => &mut p.not_found_paths,
-            }
+            SymbolKey::Module(m) => &mut self.modules[m].not_found_paths,
+            SymbolKey::PythonPackage(p) => &mut self.python_packages[p].not_found_paths,
             SymbolKey::Compiled(_) => { panic!("no not_found_path on Compiled") },
             SymbolKey::Class(_) => { panic!("no not_found_path on Class") },
             SymbolKey::Function(_) => { panic!("no not_found_path on Function") },
@@ -1451,10 +1468,8 @@ impl SymbolTable {
         match target {
             SymbolKey::File(f) => Some(&self.files[f].not_found_models),
             SymbolKey::XmlFile(f) => Some(&self.xml_files[f].not_found_models),
-            SymbolKey::Package(p) => match &self.packages[p] {
-                PackageSymbol::Module(m) => Some(&m.not_found_models),
-                PackageSymbol::PythonPackage(_) => None,
-            },
+            SymbolKey::Module(m) => Some(&self.modules[m].not_found_models),
+            SymbolKey::PythonPackage(_) => None,
             SymbolKey::Root(_) => None,
             SymbolKey::Namespace(_) => None,
             SymbolKey::DiskDir(_) => None,
@@ -1470,10 +1485,9 @@ impl SymbolTable {
         match target {
             SymbolKey::File(f) => Some(&mut self.files[f].not_found_models),
             SymbolKey::XmlFile(f) => Some(&mut self.xml_files[f].not_found_models),
-            SymbolKey::Package(p) => match &mut self.packages[p] {
-                PackageSymbol::Module(m) => Some(&mut m.not_found_models),
-                PackageSymbol::PythonPackage(_) => None,
-            },
+            SymbolKey::Module(m) => Some(&mut self.modules[m].not_found_models),
+            SymbolKey::PythonPackage(_) => None,
+
             SymbolKey::Root(_) => None,
             SymbolKey::Namespace(_) => None,
             SymbolKey::DiskDir(_) => None,
@@ -1490,10 +1504,8 @@ impl SymbolTable {
             SymbolKey::File(f) => &self.files[f],
             SymbolKey::Class(c) => &self.classes[c],
             SymbolKey::Function(f) => &self.functions[f],
-            SymbolKey::Package(p) => match &self.packages[p] {
-                PackageSymbol::Module(m) => m,
-                PackageSymbol::PythonPackage(p) => p,
-            },
+            SymbolKey::Module(m) => &self.modules[m],
+            SymbolKey::PythonPackage(p) => &self.python_packages[p],
             _ => {panic!("Not a symbol Mgr");}
         }
     }
@@ -1503,10 +1515,9 @@ impl SymbolTable {
             SymbolKey::File(f) => &mut self.files[f],
             SymbolKey::Class(c) => &mut self.classes[c],
             SymbolKey::Function(f) => &mut self.functions[f],
-            SymbolKey::Package(p) => match &mut self.packages[p] {
-                PackageSymbol::Module(m) => m,
-                PackageSymbol::PythonPackage(p) => p,
-            },
+            SymbolKey::Module(m) => &mut self.modules[m],
+            SymbolKey::PythonPackage(p) => &mut self.python_packages[p],
+
             _ => {panic!("Not a symbol Mgr");}
         }
     }
@@ -1519,10 +1530,8 @@ impl SymbolTable {
             SymbolKey::Root(_) => panic!(),
             SymbolKey::Namespace(_) => panic!(),
             SymbolKey::DiskDir(_) => panic!(),
-            SymbolKey::Package(p) => match &self.packages[p] {
-                PackageSymbol::Module(m) => m.symbols.iter(),
-                PackageSymbol::PythonPackage(p) => p.symbols.iter(),
-            },
+            SymbolKey::Module(m) => self.modules[m].symbols.iter(),
+            SymbolKey::PythonPackage(p) => self.python_packages[p].symbols.iter(),
             SymbolKey::Compiled(_) => panic!(),
             SymbolKey::Class(c) => {
                 self.classes[c].symbols.iter()
@@ -1545,7 +1554,8 @@ impl SymbolTable {
             SymbolKey::Root(_) => { None },
             SymbolKey::Namespace(_) => { None },
             SymbolKey::DiskDir(_) => { None },
-            SymbolKey::Package(_) => { None },
+            SymbolKey::PythonPackage(_) => { None },
+            SymbolKey::Module(_) => { None },
             SymbolKey::Compiled(_) => { None },
             SymbolKey::Class(_) => { None },
             SymbolKey::Function(f) => Some(&self.functions[f].evaluations),
@@ -1561,7 +1571,8 @@ impl SymbolTable {
             SymbolKey::Root(_) => false,
             SymbolKey::DiskDir(d) => self.disk_dirs[d].is_external,
             SymbolKey::Namespace(n) => self.namespaces[n].is_external,
-            SymbolKey::Package(p) => self.packages[p].is_external(),
+            SymbolKey::PythonPackage(p) => self.python_packages[p].is_external,
+            SymbolKey::Module(m) => self.modules[m].is_external,
             SymbolKey::File(f) => self.files[f].is_external,
             SymbolKey::Compiled(c) => self.compiled[c].is_external,
             SymbolKey::Class(c) => self.classes[c].is_external,
@@ -1577,10 +1588,8 @@ impl SymbolTable {
             SymbolKey::Root(_) => {},
             SymbolKey::DiskDir(d) => self.disk_dirs[d].is_external = external,
             SymbolKey::Namespace(n) => self.namespaces[n].is_external = external,
-            SymbolKey::Package(p) => match &mut self.packages[p] {
-                 PackageSymbol::Module(m) => m.is_external = external,
-                 PackageSymbol::PythonPackage(p) => p.is_external = external,
-            },
+            SymbolKey::Module(m) => self.modules[m].is_external = external,
+            SymbolKey::PythonPackage(p) => self.python_packages[p].is_external = external,
             SymbolKey::File(f) => self.files[f].is_external = external,
             SymbolKey::Compiled(c) => self.compiled[c].is_external = external,
             SymbolKey::Class(c) => self.classes[c].is_external = external,
@@ -1596,7 +1605,8 @@ impl SymbolTable {
             SymbolKey::Root(k) => &self.roots[k].name,
             SymbolKey::DiskDir(k) => &self.disk_dirs[k].name,
             SymbolKey::Namespace(k) => &self.namespaces[k].name,
-            SymbolKey::Package(k) => self.packages[k].name(),
+            SymbolKey::PythonPackage(p) => &self.python_packages[p].name,
+            SymbolKey::Module(m) => &self.modules[m].name,
             SymbolKey::File(k) => &self.files[k].name,
             SymbolKey::Compiled(k) => &self.compiled[k].name,
             SymbolKey::Class(k) => &self.classes[k].name,
@@ -1612,7 +1622,8 @@ impl SymbolTable {
             SymbolKey::Root(_) => None,
             SymbolKey::DiskDir(k) => Some(self.disk_dirs[k].parent),
             SymbolKey::Namespace(k) => Some(self.namespaces[k].parent),
-            SymbolKey::Package(k) => Some(self.packages[k].parent()),
+            SymbolKey::PythonPackage(k) => Some(self.python_packages[k].parent),
+            SymbolKey::Module(k) => Some(self.modules[k].parent),
             SymbolKey::File(k) => Some(self.files[k].parent),
             SymbolKey::Compiled(k) => Some(self.compiled[k].parent),
             SymbolKey::Class(k) => Some(self.classes[k].parent),
@@ -1640,7 +1651,8 @@ impl SymbolTable {
             SymbolKey::Root(_) => { panic!() },
             SymbolKey::Namespace(_) => { panic!() },
             SymbolKey::DiskDir(_) => { panic!() },
-            SymbolKey::Package(_) => { panic!() },
+            SymbolKey::PythonPackage(_) => { panic!() },
+            SymbolKey::Module(_) => { panic!() },
             SymbolKey::Compiled(_) => { panic!() },
             SymbolKey::Class(_) => { panic!() },
             SymbolKey::Function(f) => { self.functions[f].evaluations = data; },
@@ -1655,13 +1667,11 @@ impl SymbolTable {
             SymbolKey::File(file) => {
                 self.files[file].xml_ids.entry(xml_id).or_insert(vec![]).push(xml_data);
             },
-            SymbolKey::Package(p) => match &mut self.packages[p] {
-                PackageSymbol::Module(module) => {
-                    module.xml_ids.entry(xml_id).or_insert(vec![]).push(xml_data);
-                },
-                PackageSymbol::PythonPackage(package) => {
-                    package.xml_ids.entry(xml_id).or_insert(vec![]).push(xml_data);
-                },
+            SymbolKey::Module(module) => {
+                self.modules[module].xml_ids.entry(xml_id).or_insert(vec![]).push(xml_data);
+            },
+            SymbolKey::PythonPackage(package) => {
+                self.python_packages[package].xml_ids.entry(xml_id).or_insert(vec![]).push(xml_data);
             },
             _ => {}
         }
@@ -2619,9 +2629,15 @@ impl ContainsKey<ClassKey> for SymbolTable {
     }
 }
 
-impl ContainsKey<PackageKey> for SymbolTable {
-    fn contains_key(&self, key: PackageKey) -> bool {
-        self.packages.contains_key(key)
+impl ContainsKey<PythonPackageKey> for SymbolTable {
+    fn contains_key(&self, key: PythonPackageKey) -> bool {
+        self.python_packages.contains_key(key)
+    }
+}
+
+impl ContainsKey<ModuleKey> for SymbolTable {
+    fn contains_key(&self, key: ModuleKey) -> bool {
+        self.modules.contains_key(key)
     }
 }
 
@@ -2631,7 +2647,8 @@ impl ContainsKey<SymbolKey> for SymbolTable {
             SymbolKey::Root(k) => self.roots.contains_key(k),
             SymbolKey::DiskDir(k) => self.disk_dirs.contains_key(k),
             SymbolKey::Namespace(k) => self.namespaces.contains_key(k),
-            SymbolKey::Package(k) => self.packages.contains_key(k),
+            SymbolKey::PythonPackage(k) => self.python_packages.contains_key(k),
+            SymbolKey::Module(k) => self.modules.contains_key(k),
             SymbolKey::File(k) => self.files.contains_key(k),
             SymbolKey::Compiled(k) => self.compiled.contains_key(k),
             SymbolKey::Class(k) => self.classes.contains_key(k),

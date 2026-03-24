@@ -12,13 +12,15 @@ use crate::core::symbols::csv_file_symbol::CsvFileSymbol;
 use crate::core::symbols::dependency_mgr::Dependencies;
 use crate::core::symbols::file_symbol::FileSymbol;
 use crate::core::symbols::function_symbol::FunctionSymbol;
+use crate::core::symbols::module_symbol::ModuleSymbol;
+use crate::core::symbols::package_symbol::PythonPackageSymbol;
 use crate::core::symbols::root_symbol::RootSymbol;
 use crate::core::symbols::xml_file_symbol::XmlFileSymbol;
 use crate::{constants::OYarn, core::symbols::{
-    compiled_symbol::CompiledSymbol, disk_dir_symbol::DiskDirSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PackageSymbol, symbol_mgr::SymbolMgr, variable_symbol::VariableSymbol
+    compiled_symbol::CompiledSymbol, disk_dir_symbol::DiskDirSymbol, namespace_symbol::NamespaceSymbol, symbol_mgr::SymbolMgr, variable_symbol::VariableSymbol
 }, threads::SessionInfo, utils::PathSanitizer};
 
-use crate::core::symbols::symbol_table::{get_main_entry_tree, get_sym, invalidate, ClassKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, PackageKey, RootKey, SymbolKey, SymbolTable, VariableKey, XmlFileKey};
+use crate::core::symbols::symbol_table::{get_main_entry_tree, get_sym, invalidate, ClassKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, ModuleKey, PythonPackageKey, RootKey, SymbolKey, SymbolTable, VariableKey, XmlFileKey};
 use tracing::info;
 use crate::core::symbols::symbol_table::ContainsKey;
 
@@ -40,10 +42,10 @@ impl SymbolTable {
 
     // @arena: parent is a verified existing key - Consider adding a validate_key method
     //Create a sub-symbol that is representing a package
-    pub fn add_new_python_package(&mut self, parent: SymbolKey, name: &str, path: &str) -> PackageKey {
+    pub fn add_new_python_package(&mut self, parent: SymbolKey, name: &str, path: &str, i_ext: &'static str) -> PythonPackageKey {
         let is_external = self.parent_is_external(parent);
-        let package_symbol = PackageSymbol::new_python_package(name, path, parent, is_external);
-        let package_key = self.packages.insert(package_symbol);
+        let package_symbol = PythonPackageSymbol::new(name, path, parent, is_external, i_ext);
+        let package_key = self.python_packages.insert(package_symbol);
         self.register_in_parent(parent, package_key.into(), name, path);
         package_key
     }
@@ -72,8 +74,11 @@ impl SymbolTable {
             SymbolKey::Namespace(n) => {
                 self.namespaces.get_mut(n).unwrap().add_file(compiled_key, name, path);
             },
-            SymbolKey::Package(p) => {
-                self.packages.get_mut(p).unwrap().add_file(compiled_key, name);
+            SymbolKey::PythonPackage(p) => {
+                self.python_packages.get_mut(p).unwrap().add_file(compiled_key, name);
+            },
+            SymbolKey::Module(m) => {
+                self.modules.get_mut(m).unwrap().add_file(compiled_key, name);
             },
             SymbolKey::Root(r) => {
                 self.roots.get_mut(r).unwrap().add_file(compiled_key, name);
@@ -95,11 +100,11 @@ impl SymbolTable {
     }
 
     // @arena: not a method! (takes SessionInfo as arg)
-    pub fn add_new_module_package(session: &mut SessionInfo, parent: SymbolKey, name: &str, path: &PathBuf) -> Option<PackageKey> {
+    pub fn add_new_module_package(session: &mut SessionInfo, parent: SymbolKey, name: &str, path: &PathBuf) -> Option<ModuleKey> {
         let is_external = session.sync_odoo.symbol_table.parent_is_external(parent);
-        let module = PackageSymbol::new_module_package(session, name, path, parent, is_external)?;
+        let module = ModuleSymbol::new(session, name, path, parent, is_external)?;
         let symbol_table = &mut session.sync_odoo.symbol_table;
-        let module_key = symbol_table.packages.insert(module);
+        let module_key = symbol_table.modules.insert(module);
         symbol_table.register_in_parent(parent, module_key.into(), name, &path.sanitize());
         Some(module_key)
     }
@@ -119,8 +124,11 @@ impl SymbolTable {
             SymbolKey::Namespace(n) => {
                 self.namespaces.get_mut(n).unwrap().add_file(child, name, path);
             },
-            SymbolKey::Package(p) => {
-                self.packages.get_mut(p).unwrap().add_file(child, name);
+            SymbolKey::PythonPackage(p) => {
+                self.python_packages.get_mut(p).unwrap().add_file(child, name);
+            },
+            SymbolKey::Module(p) => {
+                self.modules.get_mut(p).unwrap().add_file(child, name);
             },
             SymbolKey::Root(r) => {
                 self.roots.get_mut(r).unwrap().add_file(child, name);
@@ -169,17 +177,15 @@ impl SymbolTable {
                 let section = file.get_section_for(position).index;
                 file.add_symbol(content, name, section);
             },
-            SymbolKey::Package(p) => {
-                match &mut self.packages[p] {
-                    PackageSymbol::Module(m) => {
-                        let section = m.get_section_for(position).index;
-                        m.add_symbol(content, name, section);
-                    },
-                    PackageSymbol::PythonPackage(p) => {
-                        let section = p.get_section_for(position).index;
-                        p.add_symbol(content, name, section);
-                    },
-                }
+            SymbolKey::Module(m) => {
+                let module = &mut self.modules[m];
+                let section = module.get_section_for(position).index;
+                module.add_symbol(content, name, section);
+            },
+            SymbolKey::PythonPackage(p) => {
+                let package = &mut self.python_packages[p];
+                let section = package.get_section_for(position).index;
+                package.add_symbol(content, name, section);
             },
             SymbolKey::Class(c) => {
                 let class = &mut self.classes[c];
@@ -201,43 +207,40 @@ impl SymbolTable {
     }
 
 
-    /// parent is a module package
-    pub fn add_new_xml_file(&mut self, parent: PackageKey, name: &str, path: &str) -> XmlFileKey {
-        let parent_symbol = self.packages.get(parent).expect("valid key");
-        let mut xml_file_symbol = XmlFileSymbol::new(name, path, parent.into(), parent_symbol.is_external());
-        xml_file_symbol.set_in_workspace(parent_symbol.in_workspace());
+    pub fn add_new_xml_file(&mut self, parent: ModuleKey, name: &str, path: &str) -> XmlFileKey {
+        let parent_symbol = self.modules.get(parent).expect("valid key");
+        let mut xml_file_symbol = XmlFileSymbol::new(name, path, parent.into(), parent_symbol.is_external);
+        xml_file_symbol.set_in_workspace(parent_symbol.in_workspace);
         let xml_file_key = self.xml_files.insert(xml_file_symbol);
         self.register_data_file(parent, path, xml_file_key.into());
         xml_file_key
     }
 
     /// parent is a module package
-    pub fn add_new_csv_file(&mut self, parent: PackageKey, name: &str, path: &str) -> CsvFileKey {
-        let parent_symbol = self.packages.get(parent).expect("valid key");
-        let mut csv_file_symbol = CsvFileSymbol::new(name, path, parent.into(), parent_symbol.is_external());
-        csv_file_symbol.set_in_workspace(parent_symbol.in_workspace());
+    pub fn add_new_csv_file(&mut self, parent: ModuleKey, name: &str, path: &str) -> CsvFileKey {
+        let parent_symbol = self.modules.get(parent).expect("valid key");
+        let mut csv_file_symbol = CsvFileSymbol::new(name, path, parent.into(), parent_symbol.is_external);
+        csv_file_symbol.set_in_workspace(parent_symbol.in_workspace);
         let csv_file_key = self.csv_files.insert(csv_file_symbol);
         self.register_data_file(parent, path, csv_file_key.into());
         csv_file_key
     }
 
     /// parent is a module package
-    fn register_data_file(&mut self, parent: PackageKey, path: &str, data_file: SymbolKey) {
+    fn register_data_file(&mut self, parent: ModuleKey, path: &str, data_file: SymbolKey) {
         let entry = self.get_entry(parent.into()).unwrap();
         entry.borrow_mut().data_symbols.insert(path.to_string(), data_file.into());
 
-        let package = &mut self.packages[parent];
-        package.as_module_package_mut().data_symbols.insert(path.to_string(), data_file);
+        self.modules[parent].data_symbols.insert(path.to_string(), data_file);
     }
 
     // @arena: this is not done in the original code.
     // unload_path does it, apparently
-    fn unregister_data_file(&mut self, parent: PackageKey, path: &str) {
+    fn unregister_data_file(&mut self, parent: ModuleKey, path: &str) {
         let entry = self.get_entry(parent.into()).unwrap();
         entry.borrow_mut().data_symbols.remove(path);
 
-        let package = &mut self.packages[parent];
-        package.as_module_package_mut().data_symbols.remove(path);
+        self.modules[parent].data_symbols.remove(path);
     }
 
     // @arena: removes a symbol from its parent (not yet from the symbol table)
@@ -251,12 +254,8 @@ impl SymbolTable {
                 SymbolKey::Class(c) => { self.classes[c].symbols.remove(&child_name); },
                 SymbolKey::File(f) => { self.files[f].symbols.remove(&child_name); },
                 SymbolKey::Function(f) => { self.functions[f].symbols.remove(&child_name); },
-                SymbolKey::Package(p) => {
-                    match &mut self.packages[p] {
-                        PackageSymbol::Module(m) => { m.symbols.remove(&child_name); },
-                        PackageSymbol::PythonPackage(p) => { p.symbols.remove(&child_name); },
-                    }
-                },
+                SymbolKey::Module(m) => { self.modules[m].symbols.remove(&child_name); },
+                SymbolKey::PythonPackage(p) => { self.python_packages[p].symbols.remove(&child_name); },
                 SymbolKey::DiskDir(_) => { panic!("A disk directory can not contain python code") },
                 SymbolKey::Compiled(_) => { panic!("A compiled symbol can not contain python code") },
                 SymbolKey::Namespace(_) => { panic!("A namespace can not contain python code") },
@@ -271,21 +270,19 @@ impl SymbolTable {
                 SymbolKey::File(_) => { panic!("A file can not contain a file structure"); },
                 SymbolKey::Function(_) => { panic!("A function can not contain a file structure") },
                 SymbolKey::DiskDir(d) => { self.disk_dirs[d].module_symbols.remove(&child_name); },
-                SymbolKey::Package(p) => match &mut self.packages[p] {
-                    PackageSymbol::Module(m) => match child {
-                        SymbolKey::XmlFile(x) => {
-                            self.unregister_data_file(p, &self.xml_files[x].path.clone());
-                        },
-                        SymbolKey::CsvFile(c) => {
-                            self.unregister_data_file(p, &self.csv_files[c].path.clone());
-                        },
-                        _ => {
-                            m.module_symbols.remove(&child_name);
-                        },
+                SymbolKey::Module(m) => match child {
+                    SymbolKey::XmlFile(x) => {
+                        self.unregister_data_file(m, &self.xml_files[x].path.clone());
                     },
-                    PackageSymbol::PythonPackage(p) => {
-                        p.module_symbols.remove(&child_name);
+                    SymbolKey::CsvFile(c) => {
+                        self.unregister_data_file(m, &self.csv_files[c].path.clone());
                     },
+                    _ => {
+                        self.modules[m].module_symbols.remove(&child_name);
+                    },
+                },
+                SymbolKey::PythonPackage(p) => {
+                    self.python_packages[p].module_symbols.remove(&child_name);
                 },
                 SymbolKey::Compiled(c) => { self.compiled[c].module_symbols.remove(&child_name); },
                 SymbolKey::Namespace(n) => {
@@ -322,19 +319,15 @@ pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: Symbo
         let module = SymbolTable::add_new_module_package(session, parent, &name, path);
         let symbol_table = &mut session.sync_odoo.symbol_table;
         if let Some(module) = module {
-            // let module_symbol = symbol_table.get_symbol_view(module).unwrap();
-            let module_symbol = symbol_table.packages[module].as_module_package();
-            let dir_name = module_symbol.dir_name.clone();
+            let dir_name = symbol_table.modules[module].dir_name.clone();
             session.sync_odoo.modules.insert(dir_name, module);
             return Some(module.into());
         } else if require_module {
             return None;
         } else {
             if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
-                let package_key = symbol_table.add_new_python_package(parent, &name, &path_str);
-                if !path.join("__init__.py").exists() {
-                    symbol_table.packages.get_mut(package_key).unwrap().set_i_ext("i");
-                }
+                let i_ext = if path.join("__init__.py").exists() { "" } else { "i" };
+                let package_key = symbol_table.add_new_python_package(parent, &name, &path_str, i_ext);
                 return Some(package_key.into());
             } else {
                 return None;
@@ -350,11 +343,8 @@ pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: Symbo
                 let namespace_key = symbol_table.add_new_namespace(parent, &name, &path_str);
                 return Some(namespace_key);
             } else {
-                // let ref_sym = parent.borrow_mut().add_new_python_package(session, &name, &path_str);
-                let package_key = symbol_table.add_new_python_package(parent, &name, &path_str);
-                if !path.join("__init__.py").exists() {
-                    symbol_table.packages.get_mut(package_key).unwrap().set_i_ext("i");
-                }
+                let i_ext = if path.join("__init__.py").exists() { "" } else { "i" };
+                let package_key = symbol_table.add_new_python_package(parent, &name, &path_str, i_ext);
                 return Some(package_key.into());
             }
         } else if path.is_dir() {
@@ -394,15 +384,15 @@ pub fn unload(session: &mut SessionInfo, symbol: SymbolKey) {
         //unload symbol
         let parent = *sym_ref.parent().as_ref().unwrap();
         st!().remove_symbol(ref_to_unload);
-        if matches!(ref_to_unload, SymbolKey::File(_) | SymbolKey::Package(_) | SymbolKey::XmlFile(_) | SymbolKey::CsvFile(_)) {
+        if matches!(ref_to_unload, SymbolKey::File(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::XmlFile(_) | SymbolKey::CsvFile(_)) {
             invalidate(session, ref_to_unload, &BuildSteps::ARCH);
         }
         //check if we should not reimport automatically
         match ref_to_unload {
-            SymbolKey::Package(p) => {
-                let package = &st!().packages[p];
-                if let PackageSymbol::PythonPackage(pp) = package && pp.self_import {
-                    session.sync_odoo.must_reload_paths.push((parent.into(), pp.path.clone()));
+            SymbolKey::PythonPackage(p) => {
+                let package = &st!().python_packages[p];
+                if package.self_import {
+                    session.sync_odoo.must_reload_paths.push((parent.into(), package.path.clone()));
                 }
             }
             SymbolKey::File(f) => {
@@ -414,11 +404,9 @@ pub fn unload(session: &mut SessionInfo, symbol: SymbolKey) {
             _ => {}
         }
         match ref_to_unload {
-            SymbolKey::Package(p) => {
-                let package = &st!().packages[p];
-                if let PackageSymbol::Module(m) = package {
-                    session.sync_odoo.modules.remove(m.dir_name.as_str());
-                }
+            SymbolKey::Module(p) => {
+                let m = &st!().modules[p];
+                session.sync_odoo.modules.remove(m.dir_name.as_str());
             }
             SymbolKey::Class(c) => {
                 let class = &st!().classes[c];

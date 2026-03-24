@@ -7,7 +7,6 @@ use std::path::PathBuf;
 use lsp_types::{Diagnostic, Position, Range};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation::ContextValue;
-use crate::core::symbols::package_symbol::PackageSymbol;
 use crate::core::symbols::symbol_table::{follow_ref, get_member_symbol, get_sym, is_field_class, is_specific_field, ClassKey, SymbolKey};
 use crate::{constants::*, oyarn, Sy};
 use crate::core::odoo::SyncOdoo;
@@ -90,7 +89,7 @@ impl PythonValidator {
         };
         self.file_info = Some(file_info_rc.clone());
         match symbol {
-            SymbolKey::File(_) | SymbolKey::Package(_) => {
+            SymbolKey::File(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) => {
                 if st!().build_status(symbol, BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
                     return;
                 }
@@ -119,8 +118,8 @@ impl PythonValidator {
                 }
                 drop(file_info_ast);
                 let symbol = self.sym_stack[0];
-                if let SymbolKey::Package(p) = symbol && matches!(st!().packages[p], PackageSymbol::Module(_)) {
-                    ModuleSymbol::validate_manifest(p, session);
+                if let SymbolKey::Module(m) = symbol {
+                    ModuleSymbol::validate_manifest(m, session);
                 }
                 let mut file_info = file_info_rc.borrow_mut();
                 file_info.replace_diagnostics(BuildSteps::VALIDATION, self.diagnostics.clone());
@@ -201,8 +200,8 @@ impl PythonValidator {
                 self.file_info.as_ref().unwrap().borrow_mut().publish_diagnostics(session);
             }
             if !session.sync_odoo.config.file_cache {
-                if let SymbolKey::Package(p) = symbol && let PackageSymbol::Module(module) = &st!().packages[p] {
-                    let manifest_path = PathBuf::from(module.path.clone()).join("__manifest__.py").sanitize();
+                if let SymbolKey::Module(m) = symbol {
+                    let manifest_path = PathBuf::from(&st!().modules[m].path).join("__manifest__.py").sanitize();
                     if let Some(manifest_file) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path) {
                         if !manifest_file.borrow().opened {
                             let manifest_file = manifest_file.borrow();
