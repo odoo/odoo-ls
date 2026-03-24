@@ -489,7 +489,7 @@ impl PythonArchEval {
                     if let Some(variable_key) = variable {
                         // @arena: this assumes `variable` is a variable symbol (not present in original code)
                         let v = variable_key.unwrap_variable_key();
-                        let parent = st!().variables[v].parent.unwrap();
+                        let parent = st!().variables[v].parent;
                         if assign.annotation.is_none() && assign.value.is_none() {
                             panic!("either value or annotation should exists");
                         }
@@ -957,7 +957,7 @@ impl PythonArchEval {
                         let variable = st!().get_positioned_symbol(*self.sym_stack.last().unwrap(), &OYarn::from(expr_name.id.to_string()), &expr_name.range());
                         if let Some(variable_key) = variable {
                             let v = variable_key.unwrap_variable_key();
-                            let parent = st!().variables[v].parent.unwrap();
+                            let parent = st!().variables[v].parent;
                             let mut deps = vec![vec![], vec![]];
                             if !self.file_mode {
                                 deps.push(vec![]);
@@ -1016,7 +1016,7 @@ impl PythonArchEval {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         if let Some(returns_ann) = func_stmt.returns.as_ref() {
             let mut deps = vec![vec![], vec![]];
-            let parent = st!().functions[func_sym].parent.unwrap();
+            let parent = st!().functions[func_sym].parent;
             let (mut evaluations, diags) = Evaluation::eval_from_ast(
                 session,
                 &returns_ann,

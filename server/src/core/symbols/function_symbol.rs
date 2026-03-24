@@ -41,8 +41,7 @@ pub struct FunctionSymbol {
     pub diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>, //only temporary used for CLASS and FUNCTION to be collected like others are stored on FileInfo
     pub evaluations: Vec<Evaluation>, //Vec, because sometimes a single allocation can be ambiguous, like ''' a = "5" if X else 5 '''
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>,
-    // pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub parent: Option<SymbolKey>,
+    pub parent: SymbolKey,
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub validation_status: BuildStatus,
@@ -68,8 +67,7 @@ impl FunctionSymbol {
         let mut res = Self {
             name: oyarn!("{}", name),
             is_external,
-            // weak_self: None,
-            parent: Some(parent),
+            parent,
             range,
             body_range: TextRange::new(body_start, range.end()),
             is_static: false,

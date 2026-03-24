@@ -8,10 +8,8 @@ pub struct CompiledSymbol {
     pub name: OYarn,
     pub is_external: bool,
     pub path: String,
-    // pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub parent: Option<SymbolKey>,
+    pub parent: SymbolKey,
     pub module_symbols: HashMap<OYarn, SymbolKey>,
-    // pub ext_symbols: HashMap<OYarn, PtrWeakHashSet<Weak<RefCell<Symbol>>>>,
 }
 
 impl CompiledSymbol {
@@ -20,11 +18,9 @@ impl CompiledSymbol {
         Self {
             name: oyarn!("{}", name),
             is_external,
-            // weak_self: None,
             path: path.to_string(),
             module_symbols: HashMap::new(),
-            // ext_symbols: HashMap::new(),
-            parent: Some(parent),
+            parent,
         }
     }
 

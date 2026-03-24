@@ -14,8 +14,7 @@ pub struct XmlFileSymbol {
     pub name: OYarn,
     pub path: String,
     pub is_external: bool,
-    // pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub parent: Option<SymbolKey>,
+    pub parent: SymbolKey,
     pub arch_status: BuildStatus,
     pub validation_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
@@ -39,14 +38,13 @@ pub struct XmlFileSymbol {
 
 impl XmlFileSymbol {
 
-    // @arena: parent could be of type PackageKey 
+    // @arena: parent could be of type PackageKey
     pub fn new(name: &str, path: &str, parent: SymbolKey, is_external: bool) -> Self {
         let res = Self {
             name: oyarn!("{}", name),
             path: path.to_string(),
             is_external,
-            // weak_self: None,
-            parent: Some(parent),
+            parent,
             arch_status: BuildStatus::PENDING,
             validation_status: BuildStatus::PENDING,
             not_found_paths: vec![],

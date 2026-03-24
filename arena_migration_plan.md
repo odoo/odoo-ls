@@ -21,8 +21,8 @@ TO DECIDE: start with a fresh code (copy paste cli parts) of comment out every t
     - keep as Symbol methods:
         - data acessors: name, typ, parent
     - roughly: local operation on the variants, keep the dispatching on Symbol. Cross symbol boundaries, move to SymbolTable
-[ ] follow compiler errors: adapt functions (bottom-up)
-[ ] test output: compare with pre_refactor_diagnostics.json
+[x] follow compiler errors: adapt functions (bottom-up)
+[x] test output: compare with pre_refactor_diagnostics.json
 
 ### 1.3 left for later:
 [ ] split PackageSymbol slotmap into 2 different ones
@@ -181,8 +181,10 @@ use Semver to store version in SyncOdoo.
   - make PackageKey a enum with 2 variants(???): PyPackageKey and ModuleKey
     - not sure whethet that would help (easy conversion from matching PackageSymbol) or not (have to pattern match everywhere in SymbolTable methods)
     - would it increase the size of SymbolKey??
+  
+  - return module_key from find_module
 
-### remove option from parent
+### remove option from parent (done)
 
 ### remove SymbolView
 Then SymbolView is just an intermediary you could eliminate. The callers

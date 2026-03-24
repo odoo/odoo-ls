@@ -14,8 +14,7 @@ pub struct DiskDirSymbol {
     // @todo: this name is confusing. Maybe just "children"?
     pub module_symbols: HashMap<OYarn, SymbolKey>,
     pub is_external: bool,
-    // pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub parent: Option<SymbolKey>,
+    pub parent: SymbolKey,
     pub in_workspace: bool,
 }
 
@@ -26,8 +25,7 @@ impl DiskDirSymbol {
             name: oyarn!("{}", name),
             path: PathBuf::from(path).sanitize(),
             is_external,
-            // weak_self: None,
-            parent: Some(parent),
+            parent,
             in_workspace: false,
             module_symbols: HashMap::new()
         }

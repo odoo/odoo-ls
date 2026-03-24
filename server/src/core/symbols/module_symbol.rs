@@ -51,8 +51,7 @@ pub struct ModuleSymbol {
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub validation_status: BuildStatus,
-    // pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub parent: Option<SymbolKey>,
+    pub parent: SymbolKey,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     pub not_found_data: HashMap<String, BuildSteps>,
     pub not_found_models: HashMap<OYarn, BuildSteps>,
@@ -91,8 +90,7 @@ impl ModuleSymbol {
             depends: vec!((OYarn::from("base"), TextRange::default())),
             all_depends: HashSet::new(),
             data: Vec::new(),
-            // weak_self: None,
-            parent: Some(parent),
+            parent,
             module_symbols: HashMap::new(),
             arch_status: BuildStatus::PENDING,
             arch_eval_status: BuildStatus::PENDING,
@@ -143,7 +141,7 @@ impl ModuleSymbol {
     // }
 
     pub fn load_module_info(module_key: PackageKey, session: &mut SessionInfo, odoo_addons: SymbolKey) {
-        macro_rules! st { () => { session.sync_odoo.symbol_table } }  
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let (mut diagnostics, _loaded) = ModuleSymbol::_load_depends(module_key, session, odoo_addons);
         diagnostics.extend(ModuleSymbol::check_data(module_key, session));
         let module = st!().packages.get(module_key).expect("valid key").as_module_package();
@@ -294,7 +292,7 @@ impl ModuleSymbol {
     Returns list of diagnostics to publish in manifest file */
     // @arena: extend a map with a vector??
     fn _load_depends(symbol_key: PackageKey, session: &mut SessionInfo, odoo_addons: SymbolKey) -> (Vec<Diagnostic>, Vec<OYarn>) {
-        macro_rules! st { () => { session.sync_odoo.symbol_table } }  
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let symbol = st!().packages.get_mut(symbol_key).expect("valid key");
         let module = symbol.as_module_package_mut();
         let name = module.name.clone();
@@ -349,7 +347,7 @@ impl ModuleSymbol {
     }
 
     fn check_data(module_key: PackageKey, session: &mut SessionInfo) -> Vec<Diagnostic> {
-        macro_rules! st { () => { session.sync_odoo.symbol_table } }  
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let mut diagnostics = vec![];
         let module = st!().packages.get(module_key).expect("valid key").as_module_package();
         let module_path = module.path.clone();
@@ -379,7 +377,7 @@ impl ModuleSymbol {
     }
 
     pub fn validate_manifest(module_key: PackageKey, session: &mut SessionInfo){
-        macro_rules! st { () => { session.sync_odoo.symbol_table } }  
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let module = st!().packages.get(module_key).expect("valid key").as_module_package();
         let module_path = module.path.clone();
         let data_paths = module.data.clone();
@@ -415,7 +413,7 @@ impl ModuleSymbol {
     }
 
     pub fn load_data(symbol_key: PackageKey, session: &mut SessionInfo) {
-        macro_rules! st { () => { session.sync_odoo.symbol_table } }  
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let module = st!().packages.get(symbol_key).expect("valid key").as_module_package();
         let module_path = module.path.clone();
         let data_paths = module.data.clone();
@@ -530,7 +528,7 @@ impl ModuleSymbol {
 
     //given an xml_id without "module." part, return all XmlData that declare it ("this_module.xml_id"), regardless of the module declaring it.
     //For example, stock could create an xml_id called "account.my_xml_id", and so be returned by this function called on "account" module with xml_id "my_xml_id"
-    // @arena: target is module 
+    // @arena: target is module
     pub fn get_xml_id(symbol_table: &SymbolTable, target: PackageKey, xml_id: &OYarn) -> Vec<OdooData> {
         // @arena: get directly from module table after spliting package and module
         let package = symbol_table.packages.get(target).expect("valid key");

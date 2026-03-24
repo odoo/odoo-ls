@@ -727,9 +727,7 @@ impl PythonArchEvalHooks {
             if decorator_args.args.is_empty(){
                 continue; // All the decorators we handle have at least one arg for now
             }
-            let Some(parent) = st!().functions[func_sym].parent else {
-                return diagnostics // failed to find parent
-            };
+            let parent = st!().functions[func_sym].parent;
             let mut deps = vec![vec![], vec![], vec![]];
             let (dec_evals, diags) = Evaluation::eval_from_ast(session, &decorator_base, parent, &func_stmt.range.start(), false, &mut deps);
             st!().insert_dependencies(file, &mut deps, current_step);
@@ -893,7 +891,7 @@ impl PythonArchEvalHooks {
         let Some(&return_sym) = return_sym.last() else {
             let file = odoo.symbol_table.get_file(function.into());
             odoo.symbol_table.not_found_paths_mut(file.unwrap()).push((BuildSteps::ARCH_EVAL, flatten_tree(&tree)));
-            entry_point.borrow_mut().not_found_symbols.insert(odoo.symbol_table.functions[function].parent.unwrap());
+            entry_point.borrow_mut().not_found_symbols.insert(odoo.symbol_table.functions[function].parent);
             return;
         };
         odoo.symbol_table.functions[function].evaluations = vec![Evaluation {

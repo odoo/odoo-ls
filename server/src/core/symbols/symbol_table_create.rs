@@ -246,7 +246,6 @@ impl SymbolTable {
         let child_symbol = self.get_symbol_view(child).expect("valid key");
         let child_name = child_symbol.name().clone();
         let parent = child_symbol.parent().expect("symbol should have a parent");
-        debug_assert!(self.contains_key(parent)); // @arena: original code unwraps the upgrade of parent
         if child_symbol.is_file_content() {
             match parent {
                 SymbolKey::Class(c) => { self.classes[c].symbols.remove(&child_name); },
@@ -300,30 +299,9 @@ impl SymbolTable {
                 SymbolKey::CsvFile(_) => { panic!("A CSV file symbol can not contain a file structure") }
             };
         }
-        self.set_parent(child, None);
+        // self.set_parent(child, None);
     }
 
-    // @arena: probably not needed.
-    fn set_parent(&mut self, symbol_key: SymbolKey, new_parent: Option<SymbolKey>) {
-        match symbol_key {
-            SymbolKey::Class(c) => { self.classes[c].parent = new_parent; },
-            SymbolKey::File(f) => { self.files[f].parent = new_parent; },
-            SymbolKey::Function(f) => { self.functions[f].parent = new_parent; },
-            SymbolKey::Package(p) => {
-                match &mut self.packages[p] {
-                    PackageSymbol::Module(m) => { m.parent = new_parent; },
-                    PackageSymbol::PythonPackage(p) => { p.parent = new_parent; },
-                }
-            },
-            SymbolKey::DiskDir(d) => { self.disk_dirs[d].parent = new_parent; },
-            SymbolKey::Compiled(c) => { self.compiled[c].parent = new_parent; },
-            SymbolKey::Namespace(n) => { self.namespaces[n].parent = new_parent; },
-            SymbolKey::Root(r) => { self.roots[r].parent = new_parent; },
-            SymbolKey::Variable(v) => { self.variables[v].parent = new_parent; }
-            SymbolKey::XmlFile(x) => { self.xml_files[x].parent = new_parent; }
-            SymbolKey::CsvFile(c) => { self.csv_files[c].parent = new_parent; }
-        };
-    }
 }
 
 // @arena: associated function in SymbolTable?

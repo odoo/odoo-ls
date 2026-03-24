@@ -146,17 +146,17 @@ pub(crate) use get_sym;
 impl SymbolView<'_> {
     pub fn parent(&self) -> Option<SymbolKey> {
         match self {
-            Self::Root(s) => s.parent,
-            Self::DiskDir(s) => s.parent,
-            Self::Namespace(s) => s.parent,
-            Self::Package(s) => s.parent(),
-            Self::File(s) => s.parent,
-            Self::Compiled(s) => s.parent,
-            Self::Class(s) => s.parent,
-            Self::Function(s) => s.parent,
-            Self::Variable(s) => s.parent,
-            Self::XmlFileSymbol(s) => s.parent,
-            Self::CsvFileSymbol(s) => s.parent,
+            Self::Root(_) => None,
+            Self::DiskDir(s) => Some(s.parent),
+            Self::Namespace(s) => Some(s.parent),
+            Self::Package(s) => Some(s.parent()),
+            Self::File(s) => Some(s.parent),
+            Self::Compiled(s) => Some(s.parent),
+            Self::Class(s) => Some(s.parent),
+            Self::Function(s) => Some(s.parent),
+            Self::Variable(s) => Some(s.parent),
+            Self::XmlFileSymbol(s) => Some(s.parent),
+            Self::CsvFileSymbol(s) => Some(s.parent),
         }
     }
 
@@ -1018,14 +1018,7 @@ impl SymbolTable {
         if func.is_overloaded {
             return true;
         }
-        let Some(parent_key) = func.parent else {
-            return false;
-        };
-        // @arena: Equivalent of if Some(parent) = parent_weak.upgrade()
-        if !self.contains_key(parent_key) {
-            return false;
-        }
-        let previous_defs = self.get_content_symbol(parent_key, &func.name, func.range.start().to_u32()).symbols;
+        let previous_defs = self.get_content_symbol(func.parent, &func.name, func.range.start().to_u32()).symbols;
         if let Some(SymbolKey::Function(k)) = previous_defs.last() {
             // @arena: previous_defs is [Rc] (strong) originally
             return self.functions.get(*k).expect("valid key").is_overloaded;
@@ -1616,17 +1609,18 @@ impl SymbolTable {
 
     pub fn parent(&self, target: SymbolKey) -> Option<SymbolKey> {
         match target {
-            SymbolKey::Root(k) => self.roots[k].parent,
-            SymbolKey::DiskDir(k) => self.disk_dirs[k].parent,
-            SymbolKey::Namespace(k) => self.namespaces[k].parent,
-            SymbolKey::Package(k) => self.packages[k].parent(),
-            SymbolKey::File(k) => self.files[k].parent,
-            SymbolKey::Compiled(k) => self.compiled[k].parent,
-            SymbolKey::Class(k) => self.classes[k].parent,
-            SymbolKey::Function(k) => self.functions[k].parent,
-            SymbolKey::Variable(k) => self.variables[k].parent,
-            SymbolKey::XmlFile(x) => self.xml_files[x].parent,
-            SymbolKey::CsvFile(c) => self.csv_files[c].parent,        }
+            SymbolKey::Root(_) => None,
+            SymbolKey::DiskDir(k) => Some(self.disk_dirs[k].parent),
+            SymbolKey::Namespace(k) => Some(self.namespaces[k].parent),
+            SymbolKey::Package(k) => Some(self.packages[k].parent()),
+            SymbolKey::File(k) => Some(self.files[k].parent),
+            SymbolKey::Compiled(k) => Some(self.compiled[k].parent),
+            SymbolKey::Class(k) => Some(self.classes[k].parent),
+            SymbolKey::Function(k) => Some(self.functions[k].parent),
+            SymbolKey::Variable(k) => Some(self.variables[k].parent),
+            SymbolKey::XmlFile(x) => Some(self.xml_files[x].parent),
+            SymbolKey::CsvFile(c) => Some(self.csv_files[c].parent),
+        }
     }
 
     // @arena: not sure if good idea. Maybe just access directly when the key type is known?
@@ -1686,7 +1680,7 @@ pub fn infer_name(odoo: &SyncOdoo, on_symbol_key: SymbolKey, name: &String, posi
         let mut parent = on_symbol.parent().unwrap();
         while let SymbolKey::Class(c) = parent {
             let class_sym = symbol_table.classes.get(c).expect("valid key");
-            parent = class_sym.parent.unwrap();
+            parent = class_sym.parent;
         }
         // A function can reference another name from the full outer scope so no position is needed
         infer_name(odoo, parent, name, None)

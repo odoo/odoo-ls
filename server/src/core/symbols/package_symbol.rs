@@ -28,19 +28,13 @@ impl PackageSymbol {
             PackageSymbol::Module(m) => &m.name,
         }
     }
-    pub fn parent(&self) -> Option<SymbolKey> {
+    pub fn parent(&self) -> SymbolKey {
         match self {
             PackageSymbol::Module(m) => m.parent,
             PackageSymbol::PythonPackage(p) => p.parent,
         }
     }
-    // @arena: ideally, this should not exist (parent should be set at construction and never change).
-    pub fn set_parent(&mut self, parent: Option<SymbolKey>) {
-        match self {
-            PackageSymbol::Module(m) => m.parent = parent,
-            PackageSymbol::PythonPackage(p) => p.parent = parent,
-        }
-    }
+
     pub fn i_ext(&self) -> &'static str {
         match self {
             PackageSymbol::Module(m) => m.i_ext,
@@ -147,8 +141,7 @@ pub struct PythonPackageSymbol {
     pub path: String,
     pub i_ext: &'static str,
     pub is_external: bool,
-    // pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub parent: Option<SymbolKey>,
+    pub parent: SymbolKey,
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub validation_status: BuildStatus,
@@ -181,8 +174,7 @@ impl PythonPackageSymbol {
             path: path.to_string(),
             is_external,
             i_ext: "",
-            // weak_self: None,
-            parent: Some(parent),
+            parent,
             arch_status: BuildStatus::PENDING,
             arch_eval_status: BuildStatus::PENDING,
             validation_status: BuildStatus::PENDING,

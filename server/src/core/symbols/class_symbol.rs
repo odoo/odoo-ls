@@ -16,9 +16,8 @@ pub struct ClassSymbol {
     pub name: OYarn,
     pub is_external: bool,
     pub doc_string: Option<String>,
-    pub bases: Vec<Weak<ClassKey>>, // formely Vec<Weak<RefCell<Symbol>>> 
-    // pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub parent: Option<SymbolKey>,
+    pub bases: Vec<Weak<ClassKey>>, // formely Vec<Weak<RefCell<Symbol>>>
+    pub parent: SymbolKey,
     pub range: TextRange,
     pub body_range: TextRange,
     pub _model: Option<ModelData>,
@@ -37,8 +36,7 @@ impl ClassSymbol {
         let mut res = Self {
             name: oyarn!("{}", name),
             is_external,
-            // weak_self: None,
-            parent: Some(parent),
+            parent,
             range,
             body_range: TextRange::new(body_start, range.end()),
             doc_string: None,

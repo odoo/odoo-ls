@@ -8,9 +8,7 @@ pub struct VariableSymbol {
     pub name: OYarn,
     pub is_external: bool,
     pub doc_string: Option<String>,
-    // pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    // @todo: is it possible to have a variable that does not have a parent?
-    pub parent: Option<SymbolKey>,
+    pub parent: SymbolKey,
     pub is_import_variable: bool,
     pub is_parameter: bool,
     pub evaluations: Vec<Evaluation>, //Vec, because sometimes a single allocation can be ambiguous, like ''' a = "5" if X else 5 '''
@@ -24,8 +22,7 @@ impl VariableSymbol {
             name,
             is_external,
             doc_string: None,
-            // weak_self: None,
-            parent: Some(parent),
+            parent,
             range,
             is_import_variable: false,
             is_parameter: false,
@@ -57,18 +54,16 @@ impl VariableSymbol {
 
     /* If this variable has been evaluated to a relational field, return the main symbol of the comodel */
     pub fn get_relational_model(target: VariableKey, session: &mut SessionInfo, from_module: Option<SymbolKey>) -> Vec<ClassKey> {
-        macro_rules! st { () => { session.sync_odoo.symbol_table } }  
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let variable_symbol = st!().variables.get(target).expect("valid key"); // former method taking self
         let evaluations = variable_symbol.evaluations.clone();
         for eval in evaluations.iter() {
             let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-            let mut context = None;
-            if let Some(parent) = st!().variables[target].parent {
-                // To be able to follow related fields, we need to have the base_attr set in order to find the __get__ hook in next_refs
-                // we update the context here for the case where we are coming from a decorator for example.
-                context = Some(HashMap::new());
-                context.as_mut().unwrap().insert(S!("base_attr"), ContextValue::SYMBOL(parent.into()));
-            }
+            let parent = st!().variables[target].parent;
+            // To be able to follow related fields, we need to have the base_attr set in order to find the __get__ hook in next_refs
+            // we update the context here for the case where we are coming from a decorator for example.
+            let mut context = Some(HashMap::new());
+            context.as_mut().unwrap().insert(S!("base_attr"), ContextValue::SYMBOL(parent.into()));
             let eval_weaks = follow_ref(&symbol, session, &mut context, false, false, None, None);
             for eval_weak in eval_weaks.iter() {
                 if let Some(symbol) = st!().upgrade_weak(eval_weak) {
