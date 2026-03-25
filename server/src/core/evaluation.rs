@@ -7,7 +7,7 @@ use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
 use std::i32;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
-use crate::core::symbols::symbol_table::{FunctionKey, SymbolKey, SymbolTable, Weak, follow_ref, get_member_symbol, get_sym, infer_name, is_specific_field, match_tree_from_any_entry};
+use crate::core::symbols::symbol_table::{follow_ref, get_member_symbol, get_sym, infer_name, is_specific_field, match_tree_from_any_entry, FunctionKey, ModuleKey, SymbolKey, SymbolTable, Weak};
 use crate::core::symbols::variable_symbol::VariableSymbol;
 use crate::{constants::*, Sy};
 use crate::core::odoo::SyncOdoo;
@@ -117,7 +117,7 @@ impl ExprOrIdent<'_> {
 pub enum ContextValue {
     BOOLEAN(bool),
     STRING(String),
-    MODULE(Weak<SymbolKey>),
+    MODULE(Weak<ModuleKey>),
     SYMBOL(Weak<SymbolKey>),
     ARGUMENTS(Arguments),
     RANGE(TextRange)
@@ -151,13 +151,6 @@ impl ContextValue {
         match self {
             ContextValue::STRING(s) => s.clone(),
             _ => panic!("Not a string")
-        }
-    }
-
-    pub fn as_module(&self) -> Weak<SymbolKey> {
-        match self {
-            ContextValue::MODULE(m) => *m,
-            _ => panic!("Not a module")
         }
     }
 
@@ -1361,7 +1354,7 @@ impl Evaluation {
      * parameters:
      * object_instance: None if called on nothing, true on an instance, false on a class
      */
-    fn validate_call_arguments(session: &mut SessionInfo, function_key: FunctionKey, expr_call: &ExprCall, on_object: Weak<SymbolKey>, from_module: Option<SymbolKey>, object_instance: Option<bool>) -> Vec<Diagnostic> {
+    fn validate_call_arguments(session: &mut SessionInfo, function_key: FunctionKey, expr_call: &ExprCall, on_object: Weak<SymbolKey>, from_module: Option<ModuleKey>, object_instance: Option<bool>) -> Vec<Diagnostic> {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let function = st!().functions.get(function_key).expect("valid key");
         if st!().is_func_overloaded(function_key) || function.is_property {
@@ -1552,7 +1545,7 @@ impl Evaluation {
     }
 
     // @arena: on_object is weak
-    fn validate_domain(session: &mut SessionInfo, on_object: Weak<SymbolKey>, from_module: Option<SymbolKey>, value: &Expr) -> Vec<Diagnostic> {
+    fn validate_domain(session: &mut SessionInfo, on_object: Weak<SymbolKey>, from_module: Option<ModuleKey>, value: &Expr) -> Vec<Diagnostic> {
         let mut diagnostics = vec![];
         if value.is_literal_expr() || matches!(value, Expr::Tuple(_)) {
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03006, &[]) {
@@ -1638,7 +1631,7 @@ impl Evaluation {
     }
 
     // @arena: on_object is weak
-    fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: Weak<SymbolKey>, from_module: Option<SymbolKey>, elt1: &Expr, elt2: &Expr, _elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
+    fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: Weak<SymbolKey>, from_module: Option<ModuleKey>, elt1: &Expr, elt2: &Expr, _elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         //parameter 1
         let Some(on_object) = st!().upgrade(on_object) else { return }; //if weak is not set, we didn't manage to evalue base object. Do not validate in this case
@@ -1733,7 +1726,7 @@ impl Evaluation {
     }
 
     // @arena: on_object is weak
-    fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg: &Argument, arg: &Expr, on_object: Weak<SymbolKey>, from_module: Option<SymbolKey>) -> Vec<Diagnostic> {
+    fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg: &Argument, arg: &Expr, on_object: Weak<SymbolKey>, from_module: Option<ModuleKey>) -> Vec<Diagnostic> {
         let st = &session.sync_odoo.symbol_table;
         let mut diagnostics = vec![];
         let Some(symbol) = st.get_symbol_view(function_arg.symbol) else { return diagnostics };

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use lsp_types::{Diagnostic, Position, Range};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation::ContextValue;
-use crate::core::symbols::symbol_table::{follow_ref, get_member_symbol, get_sym, is_field_class, is_specific_field, ClassKey, SymbolKey};
+use crate::core::symbols::symbol_table::{follow_ref, get_member_symbol, get_sym, is_field_class, is_specific_field, ClassKey, ModuleKey, SymbolKey};
 use crate::{constants::*, oyarn, Sy};
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::module_symbol::ModuleSymbol;
@@ -28,8 +28,7 @@ pub struct PythonValidator {
     sym_stack: Vec<SymbolKey>,
     pub diagnostics: Vec<Diagnostic>, //collect diagnostic from arch and arch_eval too from inner functions, but put everything at Validation level
     safe_imports: Vec<bool>,
-    // @arena todo: store a module key here?
-    current_module: Option<SymbolKey>,
+    current_module: Option<ModuleKey>,
     file_info: Option<Rc<RefCell<FileInfo>>>,
 }
 
@@ -356,8 +355,7 @@ impl PythonValidator {
                                 if let Some(symbol) = w.weak.upgrade(&st!()) {
                                     let module = st!().find_module(symbol);
                                     if let Some(module) = module {
-                                        let module_sym = get_sym!(st!(), module);
-                                        let dir_name = &module_sym.as_module_package().dir_name;
+                                        let dir_name = &st!().modules[module].dir_name;
                                         if !ModuleSymbol::is_in_deps(&st!(), self.current_module.unwrap(), dir_name) && !self.safe_imports.last().unwrap() {
                                             if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03003, &[dir_name]) {
                                                 self.diagnostics.push(Diagnostic {
@@ -727,8 +725,7 @@ impl PythonValidator {
             for main_sym in borrowed_model.get_main_symbols(session, None) {
                 let main_sym_module = st!().find_module(main_sym);
                 if let Some(main_sym_module) = main_sym_module {
-                    let main_sym_module_sv = get_sym!(st!(), main_sym_module);
-                    let module_name = &main_sym_module_sv.as_module_package().dir_name;
+                    let module_name = &st!().modules[main_sym_module].dir_name;
                     main_modules.push(module_name.clone());
                     if ModuleSymbol::is_in_deps(&st!(), from, module_name) {
                         found_one = true;

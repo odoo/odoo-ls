@@ -3,7 +3,7 @@ use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet}, rc::Rc}
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{info, trace};
 
-use crate::{constants::{BuildSteps, OYarn, DEBUG_STEPS}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, entry_point::{EntryPoint, EntryPointType}, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::{symbol_table::{all_fields, SymbolKey, XmlFileKey}}, xml_data::{OdooData, OdooDataRecord, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver, Sy};
+use crate::{constants::{BuildSteps, OYarn, DEBUG_STEPS}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, entry_point::{EntryPoint, EntryPointType}, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol_table::{all_fields, ModuleKey, SymbolKey, XmlFileKey}, xml_data::{OdooData, OdooDataRecord, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver, Sy};
 
 
 
@@ -60,8 +60,7 @@ impl XmlValidator {
         file_info.borrow_mut().publish_diagnostics(session);
     }
 
-    // @arena change module to ModuleKey
-    pub fn validate_xml_id(&self, session: &mut SessionInfo, module: SymbolKey, data: &OdooData, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<SymbolKey>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>, missing_model_dependencies: &mut HashSet<OYarn>) {
+    pub fn validate_xml_id(&self, session: &mut SessionInfo, module: ModuleKey, data: &OdooData, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<SymbolKey>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>, missing_model_dependencies: &mut HashSet<OYarn>) {
         let Some(_) = data.get_xml_file_symbol(&session.sync_odoo.symbol_table) else {
             return;
         };
@@ -72,7 +71,7 @@ impl XmlValidator {
             OdooData::DELETE(xml_data_delete) => self.validate_delete(session, module, xml_data_delete, diagnostics, dependencies, model_dependencies, missing_model_dependencies),
         }
     }
-    fn validate_record(&self, session: &mut SessionInfo, module: SymbolKey, xml_data_record: &OdooDataRecord, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<SymbolKey>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>, missing_model_dependencies: &mut HashSet<OYarn>) {
+    fn validate_record(&self, session: &mut SessionInfo, module: ModuleKey, xml_data_record: &OdooDataRecord, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<SymbolKey>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>, missing_model_dependencies: &mut HashSet<OYarn>) {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let maybe_model = session.sync_odoo.models.get(&xml_data_record.model.0).cloned();
         let model_exists = maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols(&st!())).unwrap_or(false);
@@ -211,7 +210,7 @@ impl XmlValidator {
                                 });
                             }
                         }
-                        if  let Some(module) = from_module &&model_exists && main_sym.is_empty() {
+                        if  let Some(module) = from_module && model_exists && main_sym.is_empty() {
                             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05055, &[field_text, st!().name(module)]) {
                                 diagnostics.push(Diagnostic {
                                     range: Range { start: Position::new(field_text_range.start.try_into().unwrap(), 0), end: Position::new(field_text_range.end.try_into().unwrap(), 0) },
@@ -250,15 +249,15 @@ impl XmlValidator {
         // }
     }
 
-    fn validate_menu_item(&self, _session: &mut SessionInfo, _module: SymbolKey, _xml_data_menu_item: &XmlDataMenuItem, _diagnostics: &mut Vec<Diagnostic>, _dependencies: &mut Vec<SymbolKey>, _model_dependencies: &mut Vec<Rc<RefCell<Model>>>, _missing_model_dependencies: &mut HashSet<OYarn>) {
+    fn validate_menu_item(&self, _session: &mut SessionInfo, _module: ModuleKey, _xml_data_menu_item: &XmlDataMenuItem, _diagnostics: &mut Vec<Diagnostic>, _dependencies: &mut Vec<SymbolKey>, _model_dependencies: &mut Vec<Rc<RefCell<Model>>>, _missing_model_dependencies: &mut HashSet<OYarn>) {
 
     }
 
-    fn validate_template(&self, _session: &mut SessionInfo, _module: SymbolKey, _xml_data_template: &XmlDataTemplate, _diagnostics: &mut Vec<Diagnostic>, _dependencies: &mut Vec<SymbolKey>, _model_dependencies: &mut Vec<Rc<RefCell<Model>>>, _missing_model_dependencies: &mut HashSet<OYarn>) {
+    fn validate_template(&self, _session: &mut SessionInfo, _module: ModuleKey, _xml_data_template: &XmlDataTemplate, _diagnostics: &mut Vec<Diagnostic>, _dependencies: &mut Vec<SymbolKey>, _model_dependencies: &mut Vec<Rc<RefCell<Model>>>, _missing_model_dependencies: &mut HashSet<OYarn>) {
 
     }
 
-    fn validate_delete(&self, _session: &mut SessionInfo, _module: SymbolKey, _xml_data_delete: &XmlDataDelete, _diagnostics: &mut Vec<Diagnostic>, _dependencies: &mut Vec<SymbolKey>, _model_dependencies: &mut Vec<Rc<RefCell<Model>>>, _missing_model_dependencies: &mut HashSet<OYarn>) {
+    fn validate_delete(&self, _session: &mut SessionInfo, _module: ModuleKey, _xml_data_delete: &XmlDataDelete, _diagnostics: &mut Vec<Diagnostic>, _dependencies: &mut Vec<SymbolKey>, _model_dependencies: &mut Vec<Rc<RefCell<Model>>>, _missing_model_dependencies: &mut HashSet<OYarn>) {
 
     }
 }

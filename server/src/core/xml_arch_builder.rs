@@ -72,7 +72,7 @@ impl XmlArchBuilder {
                 return;
             }
             let id = id_split.last().unwrap().to_string();
-            let mut xml_module = module.unwrap_module_key();
+            let mut xml_module = module;
             if id_split.len() == 2 {
                 let module_name = Sy!(id_split.first().unwrap().to_string());
                 if let Some(&m) = session.sync_odoo.modules.get(&module_name) {

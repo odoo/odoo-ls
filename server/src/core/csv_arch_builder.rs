@@ -47,8 +47,7 @@ impl CsvArchBuilder {
                     //TODO diagnostic
                     continue;
                 }
-                // @arena: not needed after find_module returns a module_key
-                let mut csv_module = csv_module.unwrap_module_key();
+                let mut csv_module = csv_module;
                 if id_split.len() == 2 {
                     let module_name = Sy!(id_split.first().unwrap().to_string());
                     if let Some(&m) = session.sync_odoo.modules.get(&module_name) {

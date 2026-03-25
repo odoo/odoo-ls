@@ -475,9 +475,8 @@ impl ModuleSymbol {
     }
 
     // @arena done
-    pub fn is_in_deps(symbol_table: &SymbolTable, module_key: SymbolKey, dir_name: &OYarn) -> bool {
-        let symbol = symbol_table.get_symbol_view(module_key).expect("valid key");
-        let module = symbol.as_module_package();
+    pub fn is_in_deps(symbol_table: &SymbolTable, module_key: ModuleKey, dir_name: &OYarn) -> bool {
+        let module = &symbol_table.modules[module_key];
         module.dir_name == *dir_name || module.all_depends.contains(dir_name)
     }
 

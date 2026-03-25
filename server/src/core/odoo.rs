@@ -1241,7 +1241,7 @@ impl SyncOdoo {
         let mut module = None;
         if id_split.len() == 1 {
             // If no module name, we are in the current module
-            module = st!().find_module(from_file).map(|m| m.unwrap_module_key());
+            module = st!().find_module(from_file);
         } else if id_split.len() == 2 {
             // Try to find the module by name
             if let Some(&m) = session.sync_odoo.modules.get(*id_split.first().unwrap()) {

@@ -761,14 +761,12 @@ impl SymbolTable {
     // Now called directly with the key
     // @arena: compare with get_in_parents, and chose an approach (trust the key or not)
     // Consider just calling get_in_parents
-    /// @arena: this should return a ModuleKey (after spliting it from PackageKey)
-    pub fn find_module(&self, key: impl Into<SymbolKey>) -> Option<SymbolKey> {
+    pub fn find_module(&self, key: impl Into<SymbolKey>) -> Option<ModuleKey> {
         let key = key.into();
-        let symbol = self.get_symbol_view(key)?;
-        if let SymbolView::Module(_) = symbol {
-            return Some(key);
+        if let SymbolKey::Module(module) = key {
+            return Some(module);
         }
-        return self.find_module(symbol.parent()?);
+        return self.find_module(self.parent(key)?);
     }
 
     // ========= former SymbolMgr trait methods =========
@@ -1600,8 +1598,8 @@ impl SymbolTable {
         }
     }
 
-    pub fn name(&self, target: SymbolKey) -> &OYarn {
-        match target {
+    pub fn name(&self, target: impl Into<SymbolKey>) -> &OYarn {
+        match target.into() {
             SymbolKey::Root(k) => &self.roots[k].name,
             SymbolKey::DiskDir(k) => &self.disk_dirs[k].name,
             SymbolKey::Namespace(k) => &self.namespaces[k].name,
@@ -1908,7 +1906,7 @@ pub fn all_members(
     with_co_models: bool,
     only_fields: bool,
     only_methods: bool,
-    from_module: Option<SymbolKey>,
+    from_module: Option<ModuleKey>,
     is_super: bool
 ) -> HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> {
     let mut result: HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> = HashMap::new();
@@ -1917,7 +1915,7 @@ pub fn all_members(
     return  result;
 }
 
-fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>>, with_co_models: bool, only_fields: bool, only_methods: bool, from_module: Option<SymbolKey>, acc: &mut HashSet<Tree>, is_super: bool) {
+fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>>, with_co_models: bool, only_fields: bool, only_methods: bool, from_module: Option<ModuleKey>, acc: &mut HashSet<Tree>, is_super: bool) {
     macro_rules! st {
         () => { session.sync_odoo.symbol_table }
     }
@@ -2010,7 +2008,7 @@ fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut H
     }
 }
 
-pub fn all_fields(symbol: SymbolKey, session: &mut SessionInfo, from_module: Option<SymbolKey>) -> HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> {
+pub fn all_fields(symbol: SymbolKey, session: &mut SessionInfo, from_module: Option<ModuleKey>) -> HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> {
     all_members(symbol, session, true, true, false, from_module, false)
 }
 
@@ -2023,7 +2021,7 @@ pub fn get_member_symbol(
     session: &mut SessionInfo,
     target: SymbolKey,
     name: &String,
-    from_module: Option<SymbolKey>,
+    from_module: Option<ModuleKey>,
     prevent_comodel: bool,
     only_fields: bool,
     only_methods: bool,
@@ -2038,7 +2036,7 @@ fn _get_member_symbol_helper(
     session: &mut SessionInfo,
     target: SymbolKey,
     name: &String,
-    from_module: Option<SymbolKey>,
+    from_module: Option<ModuleKey>,
     prevent_comodel: bool,
     only_fields: bool,
     only_methods: bool,
@@ -2094,7 +2092,7 @@ fn _get_member_symbol_helper(
     if model_data.is_some() && !prevent_comodel {
         let model = session.sync_odoo.models.get(&model_data.as_ref().unwrap().name).cloned();
         if let Some(model) = model {
-            let mut from_module = from_module.clone();
+            let mut from_module = from_module;
             if from_module.is_none() {
                 from_module = st!().find_module(target);
             }
@@ -2616,6 +2614,12 @@ impl From<CsvFileKey> for Weak<SymbolKey> {
 impl From<XmlFileKey> for Weak<SymbolKey> {
     fn from(key: XmlFileKey) -> Self {
         Self { key: SymbolKey::XmlFile(key) }
+    }
+}
+
+impl From<ModuleKey> for Weak<SymbolKey> {
+    fn from(key: ModuleKey) -> Self {
+        Self { key: SymbolKey::Module(key) }
     }
 }
 

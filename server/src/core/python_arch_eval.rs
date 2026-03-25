@@ -10,7 +10,7 @@ use tracing::{debug, trace, warn};
 
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
-use crate::core::symbols::symbol_table::{follow_ref, get_member_symbol, get_sym, is_field, is_field_class, is_specific_field, ClassKey, FunctionKey, SymbolKey, SymbolTable};
+use crate::core::symbols::symbol_table::{follow_ref, get_member_symbol, get_sym, is_field, is_field_class, is_specific_field, ClassKey, FunctionKey, ModuleKey, SymbolKey, SymbolTable};
 use crate::core::symbols::variable_symbol::VariableSymbol;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::import_resolver::resolve_import_stmt;
@@ -1086,7 +1086,7 @@ impl PythonArchEval {
         session: &mut SessionInfo,
         field_name: &String,
         class_sym: ClassKey,
-        from_module: Option<SymbolKey>,
+        from_module: Option<ModuleKey>,
     ) -> Vec<SymbolKey>{
         let mut parent_object = Some(class_sym);
         let mut syms = vec![];

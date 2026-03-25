@@ -10,6 +10,7 @@ use crate::constants::BuildSteps;
 use crate::constants::OYarn;
 use crate::core::symbols::symbol_table::ClassKey;
 use crate::core::symbols::symbol_table::ContainsKey;
+use crate::core::symbols::symbol_table::ModuleKey;
 use crate::core::symbols::symbol_table::SymbolKey;
 use crate::core::symbols::symbol_table::SymbolTable;
 use crate::core::symbols::symbol_table::get_sym;
@@ -99,27 +100,25 @@ impl Model {
         self.add_dependents_to_validation(session, from_module);
     }
 
-    pub fn remove_symbol(&mut self, session: &mut SessionInfo, symbol: ClassKey, from_module: Option<SymbolKey>) {
+    pub fn remove_symbol(&mut self, session: &mut SessionInfo, symbol: ClassKey, from_module: Option<ModuleKey>) {
         self.symbols.remove(&symbol);
         self.add_dependents_to_validation(session, from_module);
     }
 
-    /// @arena: done
-    pub fn get_symbols(&self, symbol_table: &SymbolTable, from_module: Option<SymbolKey>) -> Vec<ClassKey> {
+    pub fn get_symbols(&self, symbol_table: &SymbolTable, from_module: Option<ModuleKey>) -> Vec<ClassKey> {
         let mut symbol = Vec::new();
         // @arena obs: possible stale keys
         for s in self.symbols.iter_valid(|&k| symbol_table.classes.contains_key(k)) {
             let module = symbol_table.find_module(s).expect("Unreachable: Model should be declared in a module");
-            let module_sym = symbol_table.get_symbol_view(module).expect("valid key from find_module");
-            if from_module.is_none() || ModuleSymbol::is_in_deps(symbol_table, from_module.unwrap(), &module_sym.as_module_package().dir_name) {
+            let module_sym = &symbol_table.modules[module];
+            if from_module.is_none() || ModuleSymbol::is_in_deps(symbol_table, from_module.unwrap(), &module_sym.dir_name) {
                 symbol.push(s);
             }
         }
         symbol
     }
 
-    /// @arena: done
-    pub fn get_main_symbols(&self, session: &SessionInfo, from_module: Option<SymbolKey>) -> Vec<ClassKey> {
+    pub fn get_main_symbols(&self, session: &SessionInfo, from_module: Option<ModuleKey>) -> Vec<ClassKey> {
         let st = &session.sync_odoo.symbol_table;
         let mut res = vec![];
         for key in self.symbols.iter_valid(|&k| st.classes.contains_key(k)) {
@@ -129,8 +128,7 @@ impl Model {
                 if from_module.is_none() || module.is_none() {
                     res.push(key);
                 } else {
-                    let module_sym = get_sym!(st, module.unwrap());
-                    let dir_name = &module_sym.as_module_package().dir_name;
+                    let dir_name = &st.modules[module.unwrap()].dir_name;
                     if ModuleSymbol::is_in_deps(st, from_module.unwrap(), dir_name) {
                         res.push(key);
                     }
@@ -140,14 +138,13 @@ impl Model {
         res
     }
 
-    pub fn model_in_deps(&self, session: &mut SessionInfo, from_module: SymbolKey) -> bool {
+    pub fn model_in_deps(&self, session: &mut SessionInfo, from_module: ModuleKey) -> bool {
         let st = &session.sync_odoo.symbol_table;
         for key in self.symbols.iter_valid(|&k| st.classes.contains_key(k)) {
             let model = st.classes[key]._model.as_ref().unwrap();
             if !model.inherit.contains(&model.name) {
                 let module = st.find_module(key).unwrap(); // @arena: same as original code (unwrap)
-                let module_sym =  get_sym!(st, module);
-                let dir_name = &module_sym.as_module_package().dir_name;
+                let dir_name = &st.modules[module].dir_name;
                 if ModuleSymbol::is_in_deps(st, from_module, dir_name) {
                     return true;
                 }
@@ -157,8 +154,7 @@ impl Model {
     }
 
     /// @arena: formerly returned PtrWeakHashSet<Weak<RefCell<Symbol>>>
-    /// @arena: done
-    pub fn get_full_model_symbols(model_rc: Rc<RefCell<Model>>, session: &SessionInfo, from_module: SymbolKey) -> HashSet<ClassKey> {
+    pub fn get_full_model_symbols(model_rc: Rc<RefCell<Model>>, session: &SessionInfo, from_module: ModuleKey) -> HashSet<ClassKey> {
         let st = &session.sync_odoo.symbol_table;
         let mut symbol_set  = HashSet::new();
         let mut already_in = HashSet::new();
@@ -182,8 +178,7 @@ impl Model {
         symbol_set
     }
 
-    // @arena-done
-    pub fn get_inherits_models(&self, session: &mut SessionInfo, from_module: SymbolKey) -> Vec<Rc<RefCell<Model>>> {
+    pub fn get_inherits_models(&self, session: &mut SessionInfo, from_module: ModuleKey) -> Vec<Rc<RefCell<Model>>> {
         let st = &session.sync_odoo.symbol_table;
         let mut res = vec![];
         let mut already_in = HashSet::new();
@@ -213,20 +208,18 @@ impl Model {
         It returns the symbol and an optional string that represents the module name that should be added to dependencies to be used.
         if with_inheritance is true, it will also return symbols from inherited models (NOT Base classes).
     */
-    /// @arena: done
-    pub fn all_symbols(&self, session: &SessionInfo, from_module: Option<SymbolKey>, with_inheritance: bool) -> Vec<(ClassKey, Option<OYarn>)> {
+    pub fn all_symbols(&self, session: &SessionInfo, from_module: Option<ModuleKey>, with_inheritance: bool) -> Vec<(ClassKey, Option<OYarn>)> {
         self.all_symbols_helper(session, from_module, with_inheritance, &mut HashSet::new())
     }
 
-    fn all_symbols_helper(&self, session: &SessionInfo, from_module: Option<SymbolKey>, with_inheritance: bool, seen_inherited_models: &mut HashSet<OYarn>) -> Vec<(ClassKey, Option<OYarn>)> {
+    fn all_symbols_helper(&self, session: &SessionInfo, from_module: Option<ModuleKey>, with_inheritance: bool, seen_inherited_models: &mut HashSet<OYarn>) -> Vec<(ClassKey, Option<OYarn>)> {
         let st = &session.sync_odoo.symbol_table;
         let mut symbols = Vec::new();
         for s in self.symbols.iter_valid(|&k| st.classes.contains_key(k)) { // filter stale keys
             if let Some(from_module) = from_module {
                 let module = st.find_module(s);
                 if let Some(module) = module {
-                    let module_sym = get_sym!(st, module);
-                    let dir_name = &module_sym.as_module_package().dir_name;
+                    let dir_name = &st.modules[module].dir_name;
                     if ModuleSymbol::is_in_deps(st, from_module, dir_name) {
                         symbols.push((s, None));
                     } else {
@@ -254,13 +247,13 @@ impl Model {
         symbols
     }
 
-    pub fn all_symbols_inherits(&self, session: &SessionInfo, from_module: Option<SymbolKey>) -> (Vec<(ClassKey, Option<OYarn>)>, Vec<(ClassKey, Option<OYarn>)>) {
+    pub fn all_symbols_inherits(&self, session: &SessionInfo, from_module: Option<ModuleKey>) -> (Vec<(ClassKey, Option<OYarn>)>, Vec<(ClassKey, Option<OYarn>)>) {
         let mut visited_models = HashSet::new();
         self.all_inherits_helper(session, from_module, &mut visited_models)
     }
 
     /// @arena: code repetition with all_symbols_helper
-    fn all_inherits_helper(&self, session: &SessionInfo, from_module: Option<SymbolKey>, visited_models: &mut HashSet<OYarn>) -> (Vec<(ClassKey, Option<OYarn>)>, Vec<(ClassKey, Option<OYarn>)>) {
+    fn all_inherits_helper(&self, session: &SessionInfo, from_module: Option<ModuleKey>, visited_models: &mut HashSet<OYarn>) -> (Vec<(ClassKey, Option<OYarn>)>, Vec<(ClassKey, Option<OYarn>)>) {
         if visited_models.contains(&self.name) {
             return (Vec::new(), Vec::new());
         }
@@ -272,8 +265,7 @@ impl Model {
             if let Some(from_module) = from_module {
                 let module = st.find_module(s);
                 if let Some(module) = module {
-                    let module_sym = get_sym!(st, module);
-                    let dir_name = &module_sym.as_module_package().dir_name;
+                    let dir_name = &st.modules[module].dir_name;
                     if ModuleSymbol::is_in_deps(st, from_module, dir_name) {
                         symbols.push((s, None));
                     } else {
@@ -313,14 +305,13 @@ impl Model {
         self.dependents.insert(symbol);
     }
 
-    /// @arena: done
-    pub fn add_dependents_to_validation(&self, session: &mut SessionInfo, module_change: Option<SymbolKey>) {
+    pub fn add_dependents_to_validation(&self, session: &mut SessionInfo, module_change: Option<ModuleKey>) {
         let st = &session.sync_odoo.symbol_table;
         for dep in self.dependents.iter_valid(|&k| st.contains_key(k)) {
             let st = &mut session.sync_odoo.symbol_table;
             st.invalidate_sub_functions(dep);
             let module = st.find_module(dep);
-            if module_change.is_none() || module.is_none() || ModuleSymbol::is_in_deps(st, module.unwrap(), &get_sym!(st, module_change.unwrap()).as_module_package().dir_name) {
+            if module_change.is_none() || module.is_none() || ModuleSymbol::is_in_deps(st, module.unwrap(), &st.modules[module_change.unwrap()].dir_name) {
                 if matches!(dep, SymbolKey::Function(_)) {
                     st.set_build_status(dep, BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
                 };

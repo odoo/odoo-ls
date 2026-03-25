@@ -59,7 +59,7 @@ impl PythonOdooBuilder {
             let file = st!().get_file(self.symbol.into()).unwrap();
             let xml_id_model_name = oyarn!("model_{}", model_name.replace(".", "_").as_str());
             // @arena: adapt this after changing xml_id_locations values to be WeakSet
-            let set = st!().modules[module.unwrap_module_key()].xml_id_locations.entry(xml_id_model_name.clone()).or_insert_with(HashSet::new);
+            let set = st!().modules[module].xml_id_locations.entry(xml_id_model_name.clone()).or_insert_with(HashSet::new);
             set.insert(file);
             let range = st!().classes[self.symbol].range;
             st!().insert_xml_id(file, xml_id_model_name.clone(), OdooData::RECORD(OdooDataRecord {
