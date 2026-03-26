@@ -302,8 +302,8 @@ impl ModuleSymbol {
         let mut loaded: Vec<OYarn> = vec![];
         let dependencies = module.depends.clone();
         for (depend, range) in dependencies.iter() {
-            // @arena todo: handle key being weak
             if let Some(&dependency) = session.sync_odoo.modules.get(depend) {
+                let dependency = dependency.upgrade(&st!()).unwrap();
                 // Dependency already in modules
                 SyncOdoo::build_now(session, dependency.into(), BuildSteps::ARCH);
                 if st!().modules[dependency].all_depends.contains(&name) {

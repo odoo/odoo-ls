@@ -1294,11 +1294,7 @@ impl PythonArchEvalHooks {
             }
             return None;
         }
-        // @arena TODO: change this after converting modules map to Weaks
-        let module_key = Weak::from(*module.unwrap()).upgrade(&st!())?;
-        // let Some(module_rc) = module.unwrap().upgrade() else {
-            // return None;
-        // };
+        let module_key = module.unwrap().upgrade(&st!())?;
         let Some(_symbol) = st!().modules[module_key].xml_id_locations.get(xml_id.as_str()) else {
             if in_validation {
                 /*if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05001, &[]) {

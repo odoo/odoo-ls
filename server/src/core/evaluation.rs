@@ -123,21 +123,6 @@ pub enum ContextValue {
     RANGE(TextRange)
 }
 
-// @todo: maybe this is not necessary at all
-// impl PartialEq for ContextValue {
-//     fn eq(&self, other: &Self) -> bool {
-//         match (self, other) {
-//             (ContextValue::MODULE(me), ContextValue::MODULE(them)) => me == them,
-//             (ContextValue::SYMBOL(me), ContextValue::SYMBOL(them)) => me == them,
-//             (ContextValue::BOOLEAN(me), ContextValue::BOOLEAN(them)) => me == them,
-//             (ContextValue::STRING(me), ContextValue::STRING(them)) => me == them,
-//             (ContextValue::ARGUMENTS(me), ContextValue::ARGUMENTS(them)) => me == them,
-//             (ContextValue::RANGE(me), ContextValue::RANGE(them)) => me == them,
-//             _ => false,
-//         }
-//     }
-// }
-
 impl ContextValue {
     pub fn as_bool(&self) -> bool {
         match self {

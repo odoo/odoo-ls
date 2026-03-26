@@ -39,7 +39,8 @@ impl CsvArchBuilder {
         if !csv.headers.is_empty() && csv.headers[0] == "id" {
             for result in rdr.records() {
                 let Ok(result) = result else { continue };
-                let record = self.extract_record(csv_symbol.into(), model_name.clone(), &csv.headers, &result);
+                let headers = &st!().csv_files[csv_symbol].headers;
+                let record = self.extract_record(csv_symbol.into(), model_name.clone(), headers, &result);
                 let Some(record) = record else { continue };
                 let Some(xml_id) = record.xml_id.as_ref() else { continue };
                 let id_split = xml_id.split(".").collect::<Vec<&str>>();
@@ -51,14 +52,11 @@ impl CsvArchBuilder {
                 if id_split.len() == 2 {
                     let module_name = Sy!(id_split.first().unwrap().to_string());
                     if let Some(&m) = session.sync_odoo.modules.get(&module_name) {
-                        // @arena: upgrade weak here after converting modules values to weak keys
-                        // csv_module = m.upgrade().unwrap();
-                        csv_module = m;
+                        csv_module = m.upgrade(&st!()).unwrap();
                     }
                 }
                 st!().modules[csv_module].xml_id_locations.entry(Sy!(id_split.last().unwrap().to_string())).or_insert_with(HashSet::new).insert(csv_symbol.into());
-                // @arena: possible borrow error (use st!() again)
-                csv.xml_ids.entry(Sy!(id_split.last().unwrap().to_string())).or_insert(vec![]).push(OdooData::RECORD(record));
+                st!().csv_files[csv_symbol].xml_ids.entry(Sy!(id_split.last().unwrap().to_string())).or_insert(vec![]).push(OdooData::RECORD(record));
             }
         }
         st!().csv_files[csv_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::DONE);

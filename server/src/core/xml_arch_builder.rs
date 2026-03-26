@@ -76,9 +76,7 @@ impl XmlArchBuilder {
             if id_split.len() == 2 {
                 let module_name = Sy!(id_split.first().unwrap().to_string());
                 if let Some(&m) = session.sync_odoo.modules.get(&module_name) {
-                    // @arena todo: upgrade weak here after converting modules values to weak keys
-                    // xml_module = m.upgrade().unwrap();
-                    xml_module = m;
+                    xml_module = m.upgrade(&st!()).unwrap();
                 }
             }
             xml_data.set_file_symbol(self.xml_symbol);

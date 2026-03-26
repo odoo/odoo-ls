@@ -249,7 +249,7 @@ pub fn find_module(session: &mut SessionInfo, odoo_addons: SymbolKey, name: &OYa
         let SymbolKey::Module(m) = module_symbol else {
             panic!("Should have created a module package symbol for path {}", full_path.display());
         };
-        session.sync_odoo.modules.insert(name.clone(), m);
+        session.sync_odoo.modules.insert(name.clone(), m.into());
         SyncOdoo::build_now(session, module_symbol, BuildSteps::ARCH);
         return Some(m);
     }

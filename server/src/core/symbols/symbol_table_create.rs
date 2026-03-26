@@ -22,7 +22,6 @@ use crate::{constants::OYarn, core::symbols::{
 
 use crate::core::symbols::symbol_table::{get_main_entry_tree, get_sym, invalidate, ClassKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, ModuleKey, PythonPackageKey, RootKey, SymbolKey, SymbolTable, VariableKey, XmlFileKey};
 use tracing::info;
-use crate::core::symbols::symbol_table::ContainsKey;
 
 
 impl SymbolTable {
@@ -320,7 +319,7 @@ pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: Symbo
         let symbol_table = &mut session.sync_odoo.symbol_table;
         if let Some(module) = module {
             let dir_name = symbol_table.modules[module].dir_name.clone();
-            session.sync_odoo.modules.insert(dir_name, module);
+            session.sync_odoo.modules.insert(dir_name, module.into());
             return Some(module.into());
         } else if require_module {
             return None;
@@ -406,6 +405,7 @@ pub fn unload(session: &mut SessionInfo, symbol: SymbolKey) {
         match ref_to_unload {
             SymbolKey::Module(p) => {
                 let m = &st!().modules[p];
+                // @arena: because of this, values in sync_odoo.modules can be trusted (make it not a Weak then?)
                 session.sync_odoo.modules.remove(m.dir_name.as_str());
             }
             SymbolKey::Class(c) => {

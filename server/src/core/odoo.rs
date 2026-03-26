@@ -77,9 +77,7 @@ pub struct SyncOdoo {
     pub stdlib_dir: String,
     pub progress_token: i32,
     file_mgr: Rc<RefCell<FileMgr>>,
-    // @arena: Change this to WEAK keys??
-    // @arena next: follow refs from here
-    pub modules: HashMap<OYarn, ModuleKey>, // former map of weak refs. Should use ModuleKey instead.
+    pub modules: HashMap<OYarn, Weak<ModuleKey>>,
     pub models: HashMap<OYarn, Rc<RefCell<Model>>>,
     pub interrupt_rebuild: Arc<AtomicBool>,
     pub terminate_rebuild: Arc<AtomicBool>,
@@ -174,6 +172,7 @@ impl SyncOdoo {
         session.sync_odoo.watched_file_updates = 0;
         //drop all entries, except entries of opened files
         session.sync_odoo.entry_point_mgr.borrow_mut().reset_entry_points(false);
+        session.sync_odoo.symbol_table = SymbolTable::new();
         SyncOdoo::init(session, config);
     }
 
@@ -704,7 +703,7 @@ impl SyncOdoo {
             if let SymbolKey::Module(m) = new_symbol {
                 // @arena: add as weak after modules uses weak values
                 let name = st!().modules[m].name.clone();
-                session.sync_odoo.modules.insert(name, m);
+                session.sync_odoo.modules.insert(name, m.into());
             }
             session.sync_odoo.add_to_rebuild_arch(new_symbol);
         }
