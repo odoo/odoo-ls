@@ -3,7 +3,7 @@ use std::{collections::HashSet, path::PathBuf};
 use csv::StringRecord;
 use lsp_types::Diagnostic;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{symbols::{dependency_mgr::Buildable, symbol_table::{CsvFileKey, SymbolKey, Weak}}, xml_data::{OdooData, OdooDataField, OdooDataRecord}}, oyarn, threads::SessionInfo, Sy};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{symbols::{dependency_mgr::Buildable, symbol_table::{CsvFileKey, SymbolKey, Weak}}, xml_data::{OdooData, OdooDataField, OdooDataRecord}}, oyarn, threads::SessionInfo, weak_hash_set::WeakSet, Sy};
 
 
 pub struct CsvArchBuilder {
@@ -55,7 +55,7 @@ impl CsvArchBuilder {
                         csv_module = m.upgrade(&st!()).unwrap();
                     }
                 }
-                st!().modules[csv_module].xml_id_locations.entry(Sy!(id_split.last().unwrap().to_string())).or_insert_with(HashSet::new).insert(csv_symbol.into());
+                st!().modules[csv_module].xml_id_locations.entry(Sy!(id_split.last().unwrap().to_string())).or_insert_with(WeakSet::new).insert(csv_symbol.into());
                 st!().csv_files[csv_symbol].xml_ids.entry(Sy!(id_split.last().unwrap().to_string())).or_insert(vec![]).push(OdooData::RECORD(record));
             }
         }

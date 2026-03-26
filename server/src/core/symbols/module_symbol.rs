@@ -44,9 +44,7 @@ pub struct ModuleSymbol {
     all_depends: HashSet<OYarn>, //computed all depends to avoid too many recomputations
     data: Vec<(String, TextRange)>, // TODO
     pub module_symbols: HashMap<OYarn, SymbolKey>,
-    /// formerly a map of weak sets
-    /// @arena-next: use WeakSet here
-    pub xml_id_locations: HashMap<OYarn,HashSet<SymbolKey>>, //contains all xml_file_symbols that contains the xml_id. Needed because it can be in another module.
+    pub xml_id_locations: HashMap<OYarn, WeakSet<SymbolKey>>, //contains all xml_file_symbols that contains the xml_id. Needed because it can be in another module.
     pub xml_ids: HashMap<OYarn, Vec<OdooData>>, //used for dynamic XML_ID records, like ir.models. normal ids are in their XmlFile
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
@@ -531,7 +529,7 @@ impl ModuleSymbol {
         let target_module = symbol_table.modules.get(target).expect("valid key");
         let mut res = vec![];
         if let Some(xml_file_set) = target_module.xml_id_locations.get(xml_id) {
-            for &xml_file_key in xml_file_set.iter().filter(|&&k| symbol_table.contains_key(k)) {
+            for xml_file_key in xml_file_set.iter_valid(|&k| symbol_table.contains_key(k)) {
                 let xml_file = symbol_table.get_symbol_view(xml_file_key).unwrap();
                 if let Some(xml_data) = xml_file.get_xml_id(xml_id) {
                     res.extend(xml_data.iter().cloned());

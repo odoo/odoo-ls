@@ -13,6 +13,7 @@ use crate::core::symbols::symbol_table::{all_members, follow_ref, get_member_sym
 use crate::core::xml_data::{OdooData, OdooDataRecord};
 use crate::threads::SessionInfo;
 use crate::utils::compare_semver;
+use crate::weak_hash_set::WeakSet;
 use crate::{oyarn, Sy, S};
 
 use super::evaluation::{ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationValue};
@@ -58,8 +59,7 @@ impl PythonOdooBuilder {
         if let Some(module) = st!().find_module(sym) {
             let file = st!().get_file(self.symbol.into()).unwrap();
             let xml_id_model_name = oyarn!("model_{}", model_name.replace(".", "_").as_str());
-            // @arena: adapt this after changing xml_id_locations values to be WeakSet
-            let set = st!().modules[module].xml_id_locations.entry(xml_id_model_name.clone()).or_insert_with(HashSet::new);
+            let set = st!().modules[module].xml_id_locations.entry(xml_id_model_name.clone()).or_insert_with(WeakSet::new);
             set.insert(file);
             let range = st!().classes[self.symbol].range;
             st!().insert_xml_id(file, xml_id_model_name.clone(), OdooData::RECORD(OdooDataRecord {

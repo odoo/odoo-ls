@@ -4,7 +4,7 @@ use lsp_types::Diagnostic;
 use roxmltree::{Attribute, Node};
 use tracing::warn;
 
-use crate::core::{diagnostics::{create_diagnostic, DiagnosticCode}, odoo::SyncOdoo, symbols::{dependency_mgr::Buildable, symbol_table::XmlFileKey}};
+use crate::{core::{diagnostics::{create_diagnostic, DiagnosticCode}, odoo::SyncOdoo, symbols::{dependency_mgr::Buildable, symbol_table::XmlFileKey}}, weak_hash_set::WeakSet};
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{entry_point::EntryPointType, xml_data::OdooData}, threads::SessionInfo, Sy};
 
 use super::{file_mgr::FileInfo};
@@ -80,7 +80,7 @@ impl XmlArchBuilder {
                 }
             }
             xml_data.set_file_symbol(self.xml_symbol);
-            st!().modules[xml_module].xml_id_locations.entry(Sy!(id.clone())).or_insert_with(HashSet::new).insert(self.xml_symbol.into());
+            st!().modules[xml_module].xml_id_locations.entry(Sy!(id.clone())).or_insert_with(WeakSet::new).insert(self.xml_symbol.into());
             st!().xml_files[self.xml_symbol].xml_ids.entry(Sy!(id)).or_insert(vec![]).push(xml_data);
         }
     }
