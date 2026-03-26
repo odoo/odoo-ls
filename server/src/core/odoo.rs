@@ -5,7 +5,7 @@ use crate::core::file_mgr::AstType;
 use crate::core::module_load_order::sort_by_load_order;
 use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::core::symbols::symbol_table::{get_main_entry_tree, get_sym, ContainsKey, ModuleKey, SymbolKey, SymbolTable, Weak};
-use crate::core::symbols::symbol_table_create::{create_from_path, unload};
+use crate::core::symbols::symbol_table_create::{create_from_path, create_module_from_path, unload};
 use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
 use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
@@ -536,8 +536,7 @@ impl SyncOdoo {
                 for item in PathBuf::from(addon_path).read_dir().expect("Unable to browse and odoo addon directory") {
                     if let Ok(item) = item {
                         if item.file_type().unwrap().is_dir() && !session.sync_odoo.modules.contains_key(&oyarn!("{}", item.file_name().to_str().unwrap())) {
-                            // @arena: consider a specific function for creating module symbols
-                            if let Some(module_symbol) = create_from_path(session, &item.path(), addons_symbol, true) {
+                            if let Some(module_symbol) = create_module_from_path(session, &item.path(), addons_symbol) {
                                 modules.push(module_symbol);
                             }
                         }
@@ -547,7 +546,7 @@ impl SyncOdoo {
         }
         let sorted_modules = SyncOdoo::sort_modules(&st!(), modules);
         for module_symbol in sorted_modules {
-            session.sync_odoo.add_to_rebuild_arch(module_symbol);
+            session.sync_odoo.add_to_rebuild_arch(module_symbol.into());
         }
         if !SyncOdoo::process_rebuilds(session, false) {
             return;
@@ -561,20 +560,18 @@ impl SyncOdoo {
     }
 
     /// Sort modules by load order
-    /// @arena: change this to ModuleKey instead
-    fn sort_modules(symbol_table: &SymbolTable, modules: Vec<SymbolKey>) -> Vec<SymbolKey> {
+    fn sort_modules(symbol_table: &SymbolTable, modules: Vec<ModuleKey>) -> Vec<ModuleKey> {
         // Build name -> (symbol, dependencies) lookup
-        let module_info: HashMap<OYarn, (SymbolKey, Vec<OYarn>)> = modules
+        let module_info: HashMap<OYarn, (ModuleKey, Vec<OYarn>)> = modules
             .into_iter()
-            .map(|symbol| {
+            .map(|module_key| {
                 let (name, depends) = {
-                    let p = symbol.unwrap_module_key();
-                    let package = &symbol_table.modules[p];
-                    let name = package.name.clone();
-                    let depends = package.depends.iter().map(|(d, _)| d.clone()).collect();
+                    let module_symbol = &symbol_table.modules[module_key];
+                    let name = module_symbol.name.clone();
+                    let depends = module_symbol.depends.iter().map(|(d, _)| d.clone()).collect();
                     (name, depends)
                 };
-                (name, (symbol, depends))
+                (name, (module_key, depends))
             })
             .collect();
 
@@ -593,7 +590,7 @@ impl SyncOdoo {
             .skip(1) // skip "base"
             // TODO: decide what to do with invalid modules. For now, we append them at the end.
             .chain(sort_result.invalid.iter())
-            .map(|&name| module_info.get(name).expect("module should exist").0.clone())
+            .map(|&name| module_info.get(name).expect("module should exist").0)
             .collect()
     }
 
@@ -701,7 +698,6 @@ impl SyncOdoo {
                 _ => {panic!("Unexpected symbol type: {:?}", new_symbol);}
             }
             if let SymbolKey::Module(m) = new_symbol {
-                // @arena: add as weak after modules uses weak values
                 let name = st!().modules[m].name.clone();
                 session.sync_odoo.modules.insert(name, m.into());
             }

@@ -51,7 +51,7 @@ pub struct ModuleSymbol {
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub validation_status: BuildStatus,
-    pub parent: SymbolKey,
+    pub parent: SymbolKey, // @arena: always a namespace??
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     pub not_found_data: HashMap<String, BuildSteps>,
     pub not_found_models: HashMap<OYarn, BuildSteps>,

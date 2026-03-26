@@ -25,7 +25,7 @@ TO DECIDE: start with a fresh code (copy paste cli parts) of comment out every t
 [x] test output: compare with pre_refactor_diagnostics.json
 
 ### 1.3 left for later:
-[ ] split PackageSymbol slotmap into 2 different ones
+[x] split PackageSymbol slotmap into 2 different ones
 
 - do we need self_key? (no!)
 
@@ -204,3 +204,5 @@ Then SymbolView is just an intermediary you could eliminate. The callers
     - the idea is to prevent changing parent and children, ensuring strong key garanties.
   
 ### change some signatures of methods to take `impl Into<SymbolKey>`, so that .into() by the caller in no longer needed.
+
+### WeakSet: take table instead of function in iter_valid ?

@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use ruff_text_size::{TextRange, TextSize};
 use ruff_python_ast::{Alias, AtomicNodeIndex, Identifier};
 use crate::core::symbols::symbol_table::{get_main_entry_tree, get_sym, ModuleKey, SymbolKey, SymbolTable};
-use crate::core::symbols::symbol_table_create::create_from_path;
+use crate::core::symbols::symbol_table_create::{create_from_path, create_module_from_path};
 use crate::{constants::*, oyarn, Sy, S};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::threads::SessionInfo;
@@ -241,17 +241,13 @@ pub fn find_module(session: &mut SessionInfo, odoo_addons: SymbolKey, name: &OYa
         if !is_dir_cs(full_path.sanitize()) {
             continue;
         }
-        let Some(module_symbol) = create_from_path(session, &full_path, odoo_addons, true) else {
+        let Some(module) = create_module_from_path(session, &full_path, odoo_addons) else {
             continue;
         };
-        // @arena: not in original code
-        // todo: factor out the part of create_from_path that creates a module symbol and use it here instead
-        let SymbolKey::Module(m) = module_symbol else {
-            panic!("Should have created a module package symbol for path {}", full_path.display());
-        };
-        session.sync_odoo.modules.insert(name.clone(), m.into());
-        SyncOdoo::build_now(session, module_symbol, BuildSteps::ARCH);
-        return Some(m);
+        // @arena: double insertion in the map
+        session.sync_odoo.modules.insert(name.clone(), module.into());
+        SyncOdoo::build_now(session, module.into(), BuildSteps::ARCH);
+        return Some(module);
     }
     None
 }
