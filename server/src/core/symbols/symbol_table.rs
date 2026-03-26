@@ -1932,7 +1932,7 @@ fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut H
         }
     };
     match symbol_key {
-        SymbolKey::Class(c) => {
+        SymbolKey::Class(class_key) => {
             // Skip current class symbols for super
             if !is_super{
                 for symbol in get_sym!(st!(), symbol_key).all_symbols() {
@@ -1944,7 +1944,7 @@ fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut H
                 }
             }
             if with_co_models {
-                let class_sym = st!().classes.get(c).expect("valid key");
+                let class_sym = st!().classes.get(class_key).expect("valid key");
                 let Some(model) = class_sym._model.as_ref().and_then(|model_data|
                     session.sync_odoo.models.get(&model_data.name).cloned()
                 ) else {
@@ -1953,38 +1953,36 @@ fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut H
                 // no recursion because it is handled in all_symbols_inherits
                 let (model_symbols, model_inherits_symbols) = model.borrow().all_symbols_inherits(session, from_module);
                 for (model_key, dependency) in model_symbols {
-                    // @arena todo: adapt code below to knowing it's a class
-                    let model_key = SymbolKey::from(model_key);
-                    if dependency.is_some() || symbol_key == model_key {
+                    if dependency.is_some() || class_key == model_key {
                         continue;
                     }
-                    let model_sym = get_sym!(st!(), model_key);
-                    for s in model_sym.all_symbols() {
+                    let model_sym = &st!().classes[model_key];
+                    let all_symbols = iter_symbol_keys(model_sym).copied().collect::<Vec<_>>();
+                    let model_name = model_sym.name.clone();
+                    for s in all_symbols {
                         if (only_fields && !is_field(session, s)) || (only_methods && !matches!(s, SymbolKey::Function(_))) {
                             continue;
                         }
-                        let name = get_sym!(st!(), s).name().clone();
-                        let model_name = get_sym!(st!(), model_key).name().clone();
-                        append_result(name, s, Some(model_name));
+                        let name = st!().name(s).clone();
+                        append_result(name, s, Some(model_name.clone()));
                     }
                 }
                 for (model_key, dependency) in model_inherits_symbols {
-                    // @arena todo: adapt code below to knowing it's a class
-                    let model_key = SymbolKey::from(model_key);
-                    if dependency.is_some() || symbol_key == model_key {
+                    if dependency.is_some() || class_key == model_key {
                         continue;
                     }
-                    let model_sym = get_sym!(st!(), model_key);
+                    let model_sym = &st!().classes[model_key];
                     // for inherits symbols, we only add fields
-                    let fields = model_sym.all_symbols().into_iter().filter(|&s| is_field(session, s)).collect::<Vec<_>>();
+                    let all_symbols = iter_symbol_keys(model_sym).copied().collect::<Vec<_>>();
+                    let model_name = model_sym.name.clone();
+                    let fields = all_symbols.into_iter().filter(|&s| is_field(session, s)).collect::<Vec<_>>();
                     for s in fields {
-                        let name = get_sym!(st!(), s).name().clone();
-                        let model_name = get_sym!(st!(), model_key).name().clone();
-                        append_result(name, s, Some(model_name));
+                        let name = st!().name(s).clone();
+                        append_result(name, s, Some(model_name.clone()));
                     }
                 }
             }
-            let bases = st!().classes[c].bases.iter()
+            let bases = st!().classes[class_key].bases.iter()
                 .filter_map(|base| base.upgrade(&st!()))
                 .collect::<Vec<_>>();
             for base in bases {
@@ -2000,7 +1998,7 @@ fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut H
         _ => {
             get_sym!(st!(), symbol_key).all_symbols().for_each(|s|
                 if !(only_fields && !is_field(session, s)) {
-                    let name = get_sym!(st!(), s).name().clone();
+                    let name = st!().name(s).clone();
                     append_result(name, s, None);
                 }
             )

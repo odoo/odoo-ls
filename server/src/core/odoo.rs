@@ -149,7 +149,6 @@ impl SyncOdoo {
         sync_odoo
     }
 
-    // @arena todo: reset symbol table!
     pub fn reset(session: &mut SessionInfo, config: ConfigEntry) {
         session.log_message(MessageType::INFO, S!("Resetting Database..."));
         info!("Resetting database...");
@@ -722,7 +721,6 @@ impl SyncOdoo {
         });
     }
 
-    // @arena todo
     pub fn process_rebuilds(session: &mut SessionInfo, no_validation: bool) -> bool {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);

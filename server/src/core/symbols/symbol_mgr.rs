@@ -113,7 +113,7 @@ macro_rules! impl_section_mgr_for {
             let section_vec = sections.entry(section).or_default();
             section_vec.push(content);
         }
-        
+
         // @arena: moved to SymbolTable
         //Return all the symbols that are valid as last declaration for the given position
         // fn get_content_symbol(&self, name: OYarn, position: u32) -> ContentSymbols {
@@ -201,6 +201,7 @@ macro_rules! impl_section_mgr_for {
 
 impl_section_mgr_for!(FileSymbol, ClassSymbol, FunctionSymbol, ModuleSymbol, PythonPackageSymbol);
 
+// @arena: "keys"? bad name??
 pub fn iter_symbol_keys<'a>(symbol: &'a impl SymbolMgr) -> impl Iterator<Item = &SymbolKey> + 'a {
     symbol.get_symbols().values()
         .flat_map(|section| section.values())
