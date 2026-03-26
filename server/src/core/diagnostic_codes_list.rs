@@ -235,6 +235,38 @@ OLS04011, DiagnosticSetting::Error, "Do not use dict unpacking to build your man
 */
 OLS04012, DiagnosticSetting::Error, "Module dependency: module {0} depends on current module",
 /**
+* The assets value should be a dictionnary
+*/
+OLS04013, DiagnosticSetting::Error, "The assets value should be a dictionary",
+/**
+* 'OR' Expression is not allowed in assets definition.
+*/
+OLS04014, DiagnosticSetting::Error, "'OR' Expression is not allowed in assets definition.",
+/**
+* Bundle name should be expressed with strings
+*/
+OLS04015, DiagnosticSetting::Error, "Bundle name should be expressed with strings",
+/**
+* Bundle content should be expressed with a list of strings
+*/
+OLS04016, DiagnosticSetting::Error, "Bundle content should be expressed with a list of strings",
+/**
+* An element of a bundle should be a string or a tuple of ('action': string, 'path': string)
+*/
+OLS04017, DiagnosticSetting::Error, "An element of a bundle should be a string or a tuple of ('action': string, 'path': string)",
+/**
+* Tuple element should be a string
+*/
+OLS04018, DiagnosticSetting::Error, "Tuple element should be a string in asset bundle definition",
+/**
+* Unknown action value for a tuple element.
+*/
+OLS04019, DiagnosticSetting::Error, "Unknown action value for a tuple element. Values are 'prepend', 'append', 'replace', 'before', 'after', 'include' or 'remove'.",
+/**
+* Unknown action value for a tuple element.
+*/
+OLS04020, DiagnosticSetting::Error, "Unexpected tuple length. Tuple should be {0} elements long.",
+/**
 * Parsing error in XML file
 */
 OLS05000, DiagnosticSetting::Error, "Unable to parse XML file: {0}",
