@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use csv::{Reader, StringRecord};
 use lsp_types::{Location, Uri};
 
-use crate::{S, Sy, constants::{OYarn, SymType}, core::{file_mgr::FileMgr, symbols::symbol::Symbol}, features::references::ReferenceTarget, oyarn, threads::SessionInfo};
+use crate::{S, Sy, constants::{OYarn, SymType}, core::{file_mgr::FileMgr, symbols::symbol::Symbol}, features::{csv_ast_utils::CsvAstUtils, references::ReferenceTarget}, oyarn, threads::SessionInfo};
 
 pub struct CsvAstReferenceVisitor {}
 
@@ -21,7 +21,7 @@ impl CsvAstReferenceVisitor {
                 let mut h_start = header.position().unwrap().byte() as usize;
                 for h in header.iter() {
                     let end = h_start + h.len() as usize;
-                    let header_txt = CsvAstReferenceVisitor::remove_quotes(h);
+                    let header_txt = CsvAstUtils::remove_quotes(h);
                     headers.push(oyarn!("{}", header_txt));
                     let header_elts = header_txt.splitn(2, [':', '/']).collect::<Vec<_>>();
                     if let ReferenceTarget::Symbol(target_sym) = &target {
@@ -86,9 +86,9 @@ impl CsvAstReferenceVisitor {
             let field_name = headers.get(idx).unwrap().clone();
             if field_name == "id" {
                 let xml_id = if field.contains(".") {
-                    oyarn!("{}", CsvAstReferenceVisitor::remove_quotes(field))
+                    oyarn!("{}", CsvAstUtils::remove_quotes(field))
                 } else {
-                    oyarn!("{}.{}", module_name, CsvAstReferenceVisitor::remove_quotes(field))
+                    oyarn!("{}.{}", module_name, CsvAstUtils::remove_quotes(field))
                 };
                 let ReferenceTarget::String(search_str) = reference_target else {continue;};
                 if xml_id == *search_str {
@@ -102,9 +102,9 @@ impl CsvAstReferenceVisitor {
                 }
             } else if field_name.ends_with(":id") {
                 let xml_id = if field.contains(".") {
-                    oyarn!("{}", CsvAstReferenceVisitor::remove_quotes(field))
+                    oyarn!("{}", CsvAstUtils::remove_quotes(field))
                 } else {
-                    oyarn!("{}.{}", module_name, CsvAstReferenceVisitor::remove_quotes(field))
+                    oyarn!("{}.{}", module_name, CsvAstUtils::remove_quotes(field))
                 };
                 let ReferenceTarget::String(search_str) = reference_target else {continue;};
                 if xml_id == *search_str {
@@ -121,13 +121,5 @@ impl CsvAstReferenceVisitor {
             idx +=1 ;
         }
         locations
-    }
-
-    pub fn remove_quotes(s: &str) -> String {
-        if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
-            s[1..s.len()-1].to_string()
-        } else {
-            s.to_string()
-        }
     }
 }
