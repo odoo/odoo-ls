@@ -424,8 +424,8 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
                 full_path = full_path.join(imported_name.to_string());
             }
         }
-        if is_dir_cs(full_path.sanitize()) && (is_file_cs(full_path.join("__init__").with_extension("py").sanitize()) ||
-        is_file_cs(full_path.join("__init__").with_extension("pyi").sanitize())) {
+        if is_dir_cs(full_path.sanitize()) && (is_file_cs(full_path.join("__init__").with_extension("py").sanitize().as_str()) ||
+        is_file_cs(full_path.join("__init__").with_extension("pyi").sanitize().as_str())) {
             //module directory
             let _rc_symbol = SymbolTable::create_from_path(session, &full_path, parent, false);
             if _rc_symbol.is_some() {
@@ -433,14 +433,14 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
                 SyncOdoo::build_now(session, _arc_symbol, BuildSteps::ARCH);
                 return Ok(_arc_symbol);
             }
-        } else if is_file_cs(full_path.with_extension("py").sanitize()) {
+        } else if is_file_cs(full_path.with_extension("py").sanitize().as_str()) {
             let _arc_symbol = SymbolTable::create_from_path(session, &full_path.with_extension("py"), parent, false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
                 SyncOdoo::build_now(session, _arc_symbol, BuildSteps::ARCH);
                 return Ok(_arc_symbol);
             }
-        } else if is_file_cs(full_path.with_extension("pyi").sanitize()) {
+        } else if is_file_cs(full_path.with_extension("pyi").sanitize().as_str()) {
             let _arc_symbol = SymbolTable::create_from_path(session, &full_path.with_extension("pyi"), parent, false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
