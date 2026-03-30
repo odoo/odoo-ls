@@ -97,6 +97,7 @@ impl OdooData {
             OdooData::MENUITEM(m) => m.xml_id.clone(),
             OdooData::TEMPLATE(t) => t.xml_id.clone(),
             OdooData::DELETE(d) => d.xml_id.clone(),
+            OdooData::ASSET(a) => a.xml_id.clone(),
         }
     }
 
@@ -124,6 +125,9 @@ impl OdooData {
             },
             OdooData::DELETE(delete) => {
                 delete.file_symbol.clone()
+            },
+            OdooData::ASSET(asset) => {
+                asset.file_symbol.clone()
             }
         }
     }
