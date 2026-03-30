@@ -62,7 +62,7 @@ impl ReferenceFeature {
                 GotoUtils::get_symbols_csv(session, file_symbol, file_info, line, character)
             }
         };
-        
+
 
         let mut locations = Vec::new();
         for definition in def_sources.iter() {
@@ -76,8 +76,7 @@ impl ReferenceFeature {
                         //take arch and arch_eval dependents
                         if !target_file.borrow().dependents().is_empty() { // file could be out of workspace
                             for dep in target_file.borrow().dependents().iter().take(2) {
-                                //dep.len()-1 here is to take only dependencies that are not validation (arch and arch_eval for arch, arch_eval for arch_eval)
-                                for dep in dep.iter().take(dep.len()) {
+                                for dep in dep.iter() {
                                     if let Some(dep_set) = dep {
                                         for dep_symbol_rc in dep_set.iter() {
                                             to_check.insert(dep_symbol_rc.clone());
@@ -207,8 +206,7 @@ impl ReferenceFeature {
                     //add python dependencies
                     if !current_module.borrow().dependents().is_empty() { // file could be out of workspace
                         for dep in current_module.borrow().dependents().iter().take(2) {
-                            //dep.len()-1 here is to take only dependencies that are not validation (arch and arch_eval for arch, arch_eval for arch_eval)
-                            for dep in dep.iter().take(dep.len()) {
+                            for dep in dep.iter() {
                                 if let Some(dep_set) = dep {
                                     for dep_symbol_rc in dep_set.iter() {
                                         files_to_process.insert(dep_symbol_rc.clone());

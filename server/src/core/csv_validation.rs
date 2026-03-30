@@ -121,7 +121,7 @@ impl CsvValidator {
                 let Some(module_symbol) = session.sync_odoo.modules.get(&module_name) else {
                     if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05003, &[]) {
                         diagnostics.push(Diagnostic {
-                            range: Range { start: Position::new(start as u32, 0), end: Position::new(end as u32, 0) },
+                            range: Range { start: Position::new(start as u32 + 1, 0), end: Position::new(end as u32 + 1, 0) },
                             ..diagnostic.clone()
                         });
                     }
@@ -132,7 +132,7 @@ impl CsvValidator {
                 if module_borrow.as_module_package().xml_id_locations.get(&Sy!(id_split.last().unwrap().to_string())).is_none() {
                     if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05001, &[]) {
                         diagnostics.push(Diagnostic {
-                            range: Range { start: Position::new(start as u32, 0), end: Position::new(end as u32+1, 0) },
+                            range: Range { start: Position::new(start as u32 + 1, 0), end: Position::new(end as u32 + 1, 0) },
                             ..diagnostic.clone()
                         });
                     }
