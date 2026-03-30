@@ -39,34 +39,35 @@ pub fn get_python_command() -> Option<String> {
 }
 
 #[cfg(target_os = "windows")]
-pub fn is_file_cs(path: String) -> bool {
-    let mut p = Path::new(&path);
-    if p.exists() && p.is_file() {
-        while p.parent().is_some() {
-            let mut found = false;
-            if let Ok(entries) = fs::read_dir(p.parent().unwrap()) {
-                for entry in entries {
-                    if let Ok(entry) = entry {
-                        if entry.file_name() == p.components().last().unwrap().as_os_str() {
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-            }
-            if !found {
-                return false;
-            }
-            p = p.parent().unwrap();
-        }
-        return true;
+pub fn is_file_cs(path: &str) -> bool {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use std::ffi::OsString;
+    use winapi::um::fileapi::GetLongPathNameW;
+
+    let wide: Vec<u16> = OsStr::new(path)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let mut buf = vec![0u16; 32_768]; // extended MAX_PATH
+    let len = unsafe {
+        GetLongPathNameW(wide.as_ptr(), buf.as_mut_ptr(), buf.len() as u32)
+    };
+
+    if len == 0 || len as usize >= buf.len() {
+        return false;
     }
-    false
+
+    let canonical = OsString::from_wide(&buf[..len as usize]);
+
+    // Case-sensitive comparison
+    canonical == OsStr::new(path) && std::path::Path::new(path).is_file()
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-pub fn is_file_cs(path: String) -> bool {
-    let p = Path::new(&path);
+pub fn is_file_cs(path: &str) -> bool {
+    let p = Path::new(path);
     p.exists() && p.is_file()
 }
 
