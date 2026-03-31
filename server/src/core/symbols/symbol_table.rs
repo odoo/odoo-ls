@@ -369,7 +369,7 @@ impl SymbolView<'_> {
     // @arena: consider returning Vec<&str> instead
     pub fn paths(&self) -> Vec<String> {
         match self {
-            Self::Root(r) => r.paths.clone(),
+            Self::Root(_) => vec![],
             Self::Namespace(n) => n.paths(),
             Self::DiskDir(d) => vec![d.path.clone()],
             Self::PythonPackage(p) => vec![p.path.clone()],
@@ -1632,6 +1632,7 @@ impl SymbolTable {
         }
     }
 
+    // @arena: maybe create a FileLikeKey for files and packages?
     // @arena: not sure if good idea. Maybe just access directly when the key type is known?
     // can be used in PythonArchBuildHooks if enabled.
     pub fn file_path(&self, target: SymbolKey) -> &str {
