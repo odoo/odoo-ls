@@ -463,8 +463,8 @@ impl Evaluation {
         if evals.len() != 1 { return None; }
         let eval = &evals[0];
         let EvaluationSymbolPtr::WEAK(w) = eval else { return None; };
-        let eval_sym = st!().get_from_weak(w.weak)?;
-        let evals = eval_sym.evaluations()?;
+        let eval_sym = w.weak.upgrade(&st!())?;
+        let evals = st!().evaluations(eval_sym)?;
         if evals.len() == 1 {
             return evals[0].value.clone();
         };

@@ -2562,14 +2562,6 @@ impl SymbolTable {
     pub fn upgrade(&self, weak_key: Weak<SymbolKey>) -> Option<SymbolKey> {
         weak_key.upgrade(self)
     }
-
-    pub fn get_from_weak(&self, weak_key: Weak<SymbolKey>) -> Option<SymbolView> {
-        if let Some(key) = weak_key.upgrade(self) {
-            self.get_symbol_view(key)
-        } else {
-            None
-        }
-    }
 }
 
 impl<K: Copy> From<K> for Weak<K> {

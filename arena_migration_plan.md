@@ -211,3 +211,4 @@ Then SymbolView is just an intermediary you could eliminate. The callers
 - re-scope methods as follow_ref as SymbolTable::follow_ref
 - add `st` field to session to replace usage of st macro?
 - make function args a VariableKey
+- remove SymbolView
