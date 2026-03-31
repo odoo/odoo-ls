@@ -10,16 +10,17 @@ type DepTable = Vec<DepLevel>;
 pub trait Dependencies {
     fn dependencies(&self) -> &DepTable;
     // @arena: probably not needed
-    fn dependencies_mut(&mut self) -> &mut DepTable;
+    // fn dependencies_mut(&mut self) -> &mut DepTable;
     fn dependents(&self) -> &DepTable;
     // @arena: probably not needed
-    fn dependents_mut(&mut self) -> &mut DepTable;
+    // fn dependents_mut(&mut self) -> &mut DepTable;
     fn is_in_workspace(&self) -> bool;
     fn set_in_workspace(&mut self, in_workspace: bool);
 
-    fn get_dependencies(&self, step: usize, level: usize) -> Option<&DepSet> {
-        self.dependencies().get(step)?.get(level)?.as_ref()
-    }
+    // @arena: not needed
+    // fn get_dependencies(&self, step: usize, level: usize) -> Option<&DepSet> {
+    //     self.dependencies().get(step)?.get(level)?.as_ref()
+    // }
 
     fn get_all_dependencies(&self, step: usize) -> Option<&DepLevel> {
         self.dependencies().get(step)
@@ -38,9 +39,9 @@ macro_rules! impl_dependencies {
     ($($t:ty),* $(,)?) => { $(
         impl Dependencies for $t {
             fn dependencies(&self) -> &DepTable { &self.dependencies }
-            fn dependencies_mut(&mut self) -> &mut DepTable { &mut self.dependencies }
+            // fn dependencies_mut(&mut self) -> &mut DepTable { &mut self.dependencies }
             fn dependents(&self) -> &DepTable { &self.dependents }
-            fn dependents_mut(&mut self) -> &mut DepTable { &mut self.dependents }
+            // fn dependents_mut(&mut self) -> &mut DepTable { &mut self.dependents }
             fn is_in_workspace(&self) -> bool { self.in_workspace }
 
             fn set_in_workspace(&mut self, in_workspace: bool) {

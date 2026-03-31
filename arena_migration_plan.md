@@ -206,3 +206,8 @@ Then SymbolView is just an intermediary you could eliminate. The callers
 ### change some signatures of methods to take `impl Into<SymbolKey>`, so that .into() by the caller in no longer needed.
 
 ### WeakSet: take table instead of function in iter_valid ?
+
+##TODO
+- re-scope methods as follow_ref as SymbolTable::follow_ref
+- add `st` field to session to replace usage of st macro?
+- make function args a VariableKey

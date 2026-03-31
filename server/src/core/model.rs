@@ -75,9 +75,8 @@ impl ModelData {
 #[derive(Debug)]
 pub struct Model {
     name: OYarn,
-    /// @arena: always classes: consider changing to ClassKey
-    symbols: WeakSet<ClassKey>, // formerly PtrWeakHashSet<Weak<RefCell<Symbol>>>
-    pub dependents: WeakSet<SymbolKey>, // formerly PtrWeakHashSet<Weak<RefCell<Symbol>>>
+    symbols: WeakSet<ClassKey>,
+    pub dependents: WeakSet<SymbolKey>,
 }
 
 impl Model {
@@ -107,7 +106,6 @@ impl Model {
 
     pub fn get_symbols(&self, symbol_table: &SymbolTable, from_module: Option<ModuleKey>) -> Vec<ClassKey> {
         let mut symbol = Vec::new();
-        // @arena obs: possible stale keys
         for s in self.symbols.iter_valid(|&k| symbol_table.classes.contains_key(k)) {
             let module = symbol_table.find_module(s).expect("Unreachable: Model should be declared in a module");
             let module_sym = &symbol_table.modules[module];
@@ -154,12 +152,13 @@ impl Model {
     }
 
     /// @arena: formerly returned PtrWeakHashSet<Weak<RefCell<Symbol>>>
+    /// returned keys are valid, as they come from Model.get_symbols, that return valid keys (via iter_valid)
     pub fn get_full_model_symbols(model_rc: Rc<RefCell<Model>>, session: &SessionInfo, from_module: ModuleKey) -> HashSet<ClassKey> {
         let st = &session.sync_odoo.symbol_table;
         let mut symbol_set  = HashSet::new();
         let mut already_in = HashSet::new();
         let mut queue = VecDeque::from([model_rc]);
-        while let Some(current_model_rc) = queue.pop_front(){
+        while let Some(current_model_rc) = queue.pop_front() {
             let current_model = current_model_rc.borrow();
             let symbols = current_model.get_symbols(st, Some(from_module));
             for &key in symbols.iter() {

@@ -73,17 +73,6 @@ impl ClassSymbol {
         false
     }
 
-    // @arena: code repetition among types. Move this to a trait and implement with a macro.
-    // or just add this to the SymbolMgr trait, if it matches
-    // pub fn add_symbol(&mut self, content: SymbolKey, name: &OYarn, section: u32) {
-    //     let sections = self.symbols.entry(name.clone()).or_insert(HashMap::new());
-    //     let section_vec = sections.entry(section).or_insert(vec![]);
-    //     section_vec.push(content);
-    // }
-
-    // @arena: moved to SymbolTable::is_class_descriptor(key)
-    // pub fn is_descriptor(&self) -> bool { ... }
-
     // @arena: moved to SymbolTable
     // pub fn get_ext_symbol(&self, name: &OYarn) -> Vec<Rc<RefCell<Symbol>>> {
     //     let mut result = vec![];

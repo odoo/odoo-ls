@@ -202,7 +202,6 @@ impl EntryPointMgr {
         if let Some(new_sym) = new_sym {
             st!().set_is_external(new_sym, false);
             match new_sym {
-                // @arena: adapt this after spliting package key into module and package
                 SymbolKey::PythonPackage(p) => {
                     st!().python_packages[p].self_import = true;
                 },

@@ -59,7 +59,6 @@ pub struct PythonArchEval {
 }
 
 impl PythonArchEval {
-    // @arena-todo
     pub fn new(entry_point: Rc<RefCell<EntryPoint>>, symbol: SymbolKey) -> PythonArchEval {
         PythonArchEval {
             entry_point,

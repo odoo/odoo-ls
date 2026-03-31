@@ -41,7 +41,6 @@ pub struct PythonArchBuilder {
 }
 
 impl PythonArchBuilder {
-    // @arena-todo
     pub fn new(entry_point: Rc<RefCell<EntryPoint>>, symbol: SymbolKey) -> PythonArchBuilder {
         PythonArchBuilder {
             entry_point: entry_point,
@@ -116,7 +115,7 @@ impl PythonArchBuilder {
                 file_info_ast.get_stmts().unwrap()
             } else {
                 // @arena: formely unwrap on Option that was only Some for the function case
-                let SymbolKey::Function(f) = self.sym_stack[0] else { panic!("expected function key") };
+                let f = self.sym_stack[0].unwrap_function_key();
                 let ast_index = st!().functions[f].node_index.load();
                 if ast_index.as_u32().is_some() {
                     let func = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(ast_index);

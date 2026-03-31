@@ -1018,20 +1018,6 @@ impl SymbolTable {
         result
     }
 
-
-    // ==== ClassSymbol methods
-
-    /// @arena: no callers/ dead code??
-    pub fn is_class_descriptor(&self, key: ClassKey) -> bool {
-        for &sym_key in self.get_content_symbol(key.into(), "__get__", u32::MAX).symbols.iter() {
-            if let SymbolKey::Function(_) = sym_key {
-                return true;
-            }
-        }
-        false
-    }
-
-
     // ==== FunctionSymbol methods
 
     /// Return true if a previous implementation has the @overload decorator or has it itself

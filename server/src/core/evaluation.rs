@@ -423,7 +423,6 @@ impl Evaluation {
         }
     }
     ///return the evaluation but valid outside of the given function scope
-    // @arena: depends on follow_ref
     pub fn get_eval_out_of_function_scope(&self, session: &mut SessionInfo, function: FunctionKey) -> Vec<Evaluation> {
         let mut res = vec![];
         match self.symbol.sym {
@@ -656,7 +655,6 @@ impl Evaluation {
         context: {}
         diagnostics: vec![]
      */
-    /// @arena: todo (big todo...)
     pub fn analyze_ast(session: &mut SessionInfo, ast: &ExprOrIdent, parent: SymbolKey, max_infer: &TextSize, context: &mut Option<Context>, for_annotation: bool, required_dependencies: &mut Vec<Vec<SymbolKey>>) -> AnalyzeAstResult {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let odoo: &SyncOdoo = session.sync_odoo;
@@ -1001,7 +999,6 @@ impl Evaluation {
                         context.as_mut().unwrap().insert(S!("is_in_validation"), ContextValue::BOOLEAN(is_in_validation));
                         let evaluations = &st!().functions[f].evaluations;
                         for eval in evaluations.clone() {
-                            // @arena: this will conflict. copy eval before
                             let eval_ptr = eval.symbol.get_symbol_weak_transformed(session, context, &mut diagnostics, Some(st!().get_file(parent).unwrap()));
                             evals.push(Evaluation{
                                 symbol: EvaluationSymbol {
@@ -1019,7 +1016,6 @@ impl Evaluation {
                 }
                 diagnostics.extend(Evaluation::process_argument_diagnostics(&session, expr, call_argument_diagnostics, base_eval_ptrs.len()));
             },
-            // @arena: stopped here!!
             ExprOrIdent::Expr(Expr::Attribute(expr)) => {
                 let (base_evals, diags) = Evaluation::eval_from_ast(session, &expr.value, parent, max_infer, false, required_dependencies);
                 diagnostics.extend(diags);
@@ -1529,7 +1525,6 @@ impl Evaluation {
         filtered_diagnostics
     }
 
-    // @arena: on_object is weak
     fn validate_domain(session: &mut SessionInfo, on_object: Weak<SymbolKey>, from_module: Option<ModuleKey>, value: &Expr) -> Vec<Diagnostic> {
         let mut diagnostics = vec![];
         if value.is_literal_expr() || matches!(value, Expr::Tuple(_)) {
@@ -1615,7 +1610,6 @@ impl Evaluation {
         diagnostics
     }
 
-    // @arena: on_object is weak
     fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: Weak<SymbolKey>, from_module: Option<ModuleKey>, elt1: &Expr, elt2: &Expr, _elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         //parameter 1
@@ -1710,7 +1704,6 @@ impl Evaluation {
         }
     }
 
-    // @arena: on_object is weak
     fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg: &Argument, arg: &Expr, on_object: Weak<SymbolKey>, from_module: Option<ModuleKey>) -> Vec<Diagnostic> {
         let st = &session.sync_odoo.symbol_table;
         let mut diagnostics = vec![];
@@ -1829,22 +1822,6 @@ impl EvaluationSymbol {
 }
 
 impl EvaluationSymbolPtr {
-
-    // @arena: moved to symbol_table
-    // pub fn is_expired_if_weak(&self) -> bool {
-    //     match self {
-    //         EvaluationSymbolPtr::WEAK(w) => w.weak.is_expired(),
-    //         _ => false
-    //     }
-    // }
-
-    // @arena: moved to symbol_table
-    // pub fn upgrade_weak(&self) -> Option<Rc<RefCell<Symbol>>> {
-    //     match self {
-    //         EvaluationSymbolPtr::WEAK(w) => w.weak.upgrade(),
-    //         _ => None
-    //     }
-    // }
 
     pub(crate) fn is_weak(&self) -> bool {
         match self {
