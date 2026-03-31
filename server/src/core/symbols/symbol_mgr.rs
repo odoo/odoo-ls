@@ -202,7 +202,7 @@ macro_rules! impl_section_mgr_for {
 impl_section_mgr_for!(FileSymbol, ClassSymbol, FunctionSymbol, ModuleSymbol, PythonPackageSymbol);
 
 // @arena: "keys"? bad name??
-pub fn iter_symbol_keys<'a>(symbol: &'a impl SymbolMgr) -> impl Iterator<Item = &SymbolKey> + 'a {
+pub fn iter_symbol_keys<'a>(symbol: &'a impl SymbolMgr) -> impl Iterator<Item = &'a SymbolKey> {
     symbol.get_symbols().values()
         .flat_map(|section| section.values())
         .flat_map(|symbol_list| symbol_list.iter())
