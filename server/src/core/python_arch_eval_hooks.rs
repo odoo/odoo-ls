@@ -1224,7 +1224,8 @@ impl PythonArchEvalHooks {
         let Some(Expr::StringLiteral(expr)) = arguments.args.first() else {return diagnostics};
         let returns_str = expr.value.to_string();
         if returns_str == S!("self"){
-            if let Some(base) = func_sym.borrow().get_in_parents(&vec![SymType::CLASS], true){
+            let parent_weak_option = func_sym.borrow().get_in_parents(&vec![SymType::CLASS], true).clone();
+            if let Some(base) = parent_weak_option {
                 let is_class_method = func_sym.borrow().as_func().is_class_method.clone();
                 func_sym.borrow_mut().set_evaluations(vec![Evaluation::new_self(base, Some(!is_class_method))]);
             }
