@@ -212,3 +212,4 @@ Then SymbolView is just an intermediary you could eliminate. The callers
 - add `st` field to session to replace usage of st macro?
 - make function args a VariableKey
 - remove SymbolView
+- make `parent` private (add an acessor) and `symbols` and `module_symbols` `pub(in crate::core::symbols)`, enforce these keys are strong.
