@@ -515,3 +515,22 @@ fn test_lambda_parameter_scoping() {
         "Lambda body 'basic_var' should resolve to the lambda parameter, not the outer int variable, got: {body_hover}"
     );
 }
+
+#[test]
+fn test_csv_quoted_commas() {
+    let (mut odoo, config) = setup::setup::setup_server(true);
+    let session = setup::setup::create_init_session(&mut odoo, config);
+
+    let module = session.sync_odoo.modules.get(&Sy!("module_csv"))
+        .expect("module_csv not loaded")
+        .upgrade()
+        .unwrap();
+
+    // Regression test: when a CSV row contains a comma inside a
+    // quoted field, the record must still be registered. With quoting=false
+    // (old bug) the interior comma caused a field-count error → record skipped.
+    assert!(
+        module.borrow().as_module_package().xml_id_locations.contains_key(&Sy!("state_comma_1")),
+        "state_comma_1 not found in xml_id_locations — CSV record with comma in quoted field was skipped"
+    );
+}
