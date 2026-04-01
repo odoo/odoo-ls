@@ -2,8 +2,9 @@ use std::{collections::HashSet, path::PathBuf};
 
 use csv::StringRecord;
 use lsp_types::Diagnostic;
+use tracing::{error};
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{symbols::{dependency_mgr::Buildable, symbol_keys::{CsvFileKey, SymbolKey, Weak}}, xml_data::{OdooData, OdooDataField, OdooDataRecord}}, oyarn, threads::SessionInfo, weak_hash_set::WeakSet, Sy, features::csv_ast_utils::CsvAstUtils};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{symbols::{dependency_mgr::Buildable, symbol_keys::{CsvFileKey, SymbolKey, Weak}}, xml_data::{OdooData, OdooDataField, OdooDataRecord}}, oyarn, threads::SessionInfo, weak_hash_set::WeakSet, Sy};
 
 
 pub struct CsvArchBuilder {
@@ -28,17 +29,20 @@ impl CsvArchBuilder {
             return diagnostics;
         };
         let csv = &mut st!()[csv_symbol];
-        let mut rdr = csv::ReaderBuilder::new().quoting(false).from_reader(content.as_bytes());
+        let mut rdr = csv::ReaderBuilder::new().from_reader(content.as_bytes());
         if rdr.has_headers() {
             if let Ok(header) = rdr.headers() {
                 for h in header.iter() {
-                    csv.headers.push(oyarn!("{}", CsvAstUtils::remove_quotes(h)));
+                    csv.headers.push(oyarn!("{}", h));
                 }
             }
         }
         if csv.headers.contains(&Sy!("id")) {
             for result in rdr.records() {
-                let Ok(result) = result else { continue };
+                let Ok(result) = result else {
+                    error!("Could not read record in CSV file: {:?}", result);
+                    continue;
+                };
                 let headers = &st!()[csv_symbol].headers;
                 let record = self.extract_record(csv_symbol.into(), model_name.clone(), headers, &result);
                 let Some(record) = record else { continue };
@@ -69,15 +73,17 @@ impl CsvArchBuilder {
             return None;
         }
         let mut fields = vec![];
+        // TODO: account for \r\n as line break (shift start by +1)
         let mut start = record.position().unwrap().byte();
         let mut idx = 0;
         let mut last_end = 0;
         let mut xml_id = None;
         for field in record.iter(){
+            // TODO: account for quotes in the fields (len could be off by 2)
             let end = start + field.len() as u64;
             let field_name = headers.get(idx).unwrap().clone();
             if field_name == "id" {
-                xml_id = Some(oyarn!("{}", CsvAstUtils::remove_quotes(field)));
+                xml_id = Some(oyarn!("{}", field));
             }
             fields.push(
                 OdooDataField {
@@ -86,7 +92,7 @@ impl CsvArchBuilder {
                         start: start as usize,
                         end: end as usize,
                     },
-                    text: Some(CsvAstUtils::remove_quotes(field)),
+                    text: Some(field.to_string()),
                     text_range: Some(core::ops::Range {
                         start: start as usize,
                         end: end as usize,
