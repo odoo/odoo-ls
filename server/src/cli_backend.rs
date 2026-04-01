@@ -61,6 +61,7 @@ impl CliBackend {
     }
 
     fn read_config_file(&self, session: &mut SessionInfo) -> Option<ConfigEntry> {
+        info!("CLI selected config file: {:?}", self.cli.config_path);
         session.sync_odoo.config_path = self.cli.config_path.clone();
 
         let config = match get_configuration(session) {
@@ -72,10 +73,15 @@ impl CliBackend {
         };
 
         let selected_config = match self.cli.selected_config.clone() {
-            Some(selected_config) => selected_config,
-            None => DEFAULT_PROFILE_NAME.to_string(),
+            Some(selected_config) => {
+                info!("CLI selected config profile: {:?}", selected_config);
+                selected_config
+            },
+            None => {
+                info!("No CLI selected config profile, using default: {:?}", DEFAULT_PROFILE_NAME);
+                DEFAULT_PROFILE_NAME.to_string()
+            }
         };
-        info!("Selected config profile: {}", selected_config);
         match config.get(&selected_config) {
             Some(config) => Some(config.clone()),
             None => {

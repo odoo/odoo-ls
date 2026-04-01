@@ -1502,7 +1502,6 @@ impl Odoo {
         };
         let selected_config = match session.sync_odoo.selected_config {
             Some(ref current) => {
-                info!("Using selected configuration from cli arguments ({})", current);
                 current.clone()
             },
             None => {
@@ -1512,10 +1511,11 @@ impl Odoo {
                     Some(c) if c.is_empty() => DEFAULT_PROFILE_NAME.to_string(),
                     Some(config) => config,
                 };
-                info!("Using selected configuration from client : ({})", selected_config);
+                info!("Selected config profile from client : ({})", selected_config);
                 selected_config
             }
         };
+        info!("Selected config profile ({})", selected_config);
         session.sync_odoo.selected_config = Some(selected_config.clone());
         if selected_config == "Disabled" {
             info!("OdooLS is disabled. Exiting...");

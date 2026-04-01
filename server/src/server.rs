@@ -507,6 +507,8 @@ impl Server {
 
     pub fn set_config_cli_args(&mut self, config_path: Option<String>, selected_config: Option<String>) {
         let mut sync_odoo = self.sync_odoo.lock().unwrap();
+        info!("CLI selected config file: {:?}", config_path);
+        info!("CLI selected config profile: {:?}", selected_config);
         sync_odoo.config_path = config_path;
         sync_odoo.selected_config = selected_config;
     }
