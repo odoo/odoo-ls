@@ -198,6 +198,8 @@ Then SymbolView is just an intermediary you could eliminate. The callers
   the SymbolKey enum variants, so they can get the typed key and access the
   slotmap directly.
   
+  ### add typ for SymbolKey, is order to replace the one from symbolview
+  
 ### Index trait for SymbolTable
   allow for: symbol_table[key] to work with any specific key
   - prevent direct access to slotmaps? (need a setter for everything)
@@ -212,4 +214,79 @@ Then SymbolView is just an intermediary you could eliminate. The callers
 - add `st` field to session to replace usage of st macro?
 - make function args a VariableKey
 - remove SymbolView
-- make `parent` private (add an acessor) and `symbols` and `module_symbols` `pub(in crate::core::symbols)`, enforce these keys are strong.
+
+## Strong key guarantees: parent/children and slotmap encapsulation
+
+**Goal:** Ensure `parent`, `symbols` (children), and `module_symbols` always contain valid keys. Prevent external code from inserting/removing keys in slotmaps or mutating relationship fields directly.
+
+### Layer 1: Slotmap encapsulation via Index/IndexMut traits
+
+Make all slotmaps (`files`, `classes`, `functions`, `variables`, `packages`, etc.) **private** on SymbolTable. External access goes through `Index` and `IndexMut` impls on SymbolTable for each typed key:
+
+```rust
+impl Index<FunctionKey> for SymbolTable {
+    type Output = FunctionSymbol;
+    fn index(&self, key: FunctionKey) -> &FunctionSymbol {
+        &self.functions[key]
+    }
+}
+impl IndexMut<FunctionKey> for SymbolTable {
+    fn index_mut(&mut self, key: FunctionKey) -> &mut FunctionSymbol {
+        &mut self.functions[key]
+    }
+}
+// ... same for ClassKey, FileKey, VariableKey, PackageKey, etc.
+```
+
+**What this gives:**
+- `st[func_key].evaluations` — reads work everywhere (via `Index`)
+- `st[func_key].evaluations = vec![...]` — mutation of "safe" fields works everywhere (via `IndexMut`)
+- `st.functions.insert(...)` / `st.functions.remove(key)` — **compile error**, slotmaps are private
+- Only SymbolTable methods (inside `core::symbols`) can insert/remove keys from slotmaps
+
+**What changes:**
+- `st.functions[key]` → `st[key]` everywhere (mechanical rename)
+- Non-index slotmap operations (`contains_key`, `get`, `iter`) need forwarding methods on SymbolTable (some already exist)
+- `SymbolKey` access stays via `get_symbol_view(key)` (can't impl `Index<SymbolKey>` — return type varies per variant)
+
+**Note:** `IndexMut` trait impls are always `pub` (can't restrict visibility). This is fine — the field-level visibility (Layer 2) independently protects relationship fields. `IndexMut` only exposes `&mut FunctionSymbol`, which doesn't imply the ability to break invariants if the sensitive fields are protected.
+
+### Layer 2: Field-level visibility for relationship fields
+
+Make `parent`, `symbols`, and `module_symbols` fields `pub(in crate::core::symbols)` on all variant structs:
+
+```rust
+pub struct FunctionSymbol {
+    pub(in crate::core::symbols) parent: SymbolKey,
+    pub(in crate::core::symbols) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
+    pub(in crate::core::symbols) module_symbols: HashMap<OYarn, SymbolKey>,
+    // other fields stay pub
+    pub evaluations: Vec<Evaluation>,
+    pub is_class_method: bool,
+    // ...
+}
+```
+
+**What this gives:**
+- Code inside `core::symbols` can read these fields (`st[key].parent`, `st[key].symbols`) — they're visible for `&self` access
+- Code outside `core::symbols` **cannot write** to them — `st[key].parent = x` is a compile error
+- Only SymbolTable methods can mutate relationship fields
+- Other fields (`evaluations`, `is_class_method`, etc.) remain freely mutable via `IndexMut`
+
+**Sole mutation entry points (already the case today):**
+- Adding a child to parent's `symbols`: `add_to_parent_symbols()` (called from `add_new_variable`, `add_new_function`, `add_new_class`)
+- Removing a child from parent's `symbols`: `remove_symbol()`
+- Setting `parent`: done in `add_new_*` methods during symbol creation
+
+### Layer 3 (future): Tighten `remove_symbol` to be key-precise
+
+Currently `remove_symbol` does `parent.symbols.remove(&child_name)`, which removes the **entire name entry** (all sections, all keys). This works today because it's only called from `unload()` which removes all children. But for surgical removal (e.g. one overload), it should remove only the specific key from the `Vec<SymbolKey>` in the appropriate section, cleaning up empty maps.
+
+### Migration order
+
+1. **Impl `Index<TypedKey>` for SymbolTable** — add the impls, keep slotmaps `pub` for now. No breakage.
+2. **Migrate call sites** — `st.functions[key]` → `st[key]`. Mechanical. Can be done incrementally per slotmap.
+3. **Add forwarding methods** — `contains_key(TypedKey)`, `get_function(key) -> Option<&FunctionSymbol>`, etc. as needed.
+4. **Make slotmaps private** — flip visibility once all external access goes through `Index`/`IndexMut`/forwarding methods.
+5. **Restrict relationship fields** — change `parent`, `symbols`, `module_symbols` to `pub(in crate::core::symbols)`.
+6. **Audit and tighten** — verify no mutation of relationship fields outside SymbolTable; add read-only accessors (`parent()`, `symbols()`) if needed for ergonomics.

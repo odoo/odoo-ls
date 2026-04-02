@@ -438,27 +438,12 @@ impl SymbolView<'_> {
         }
     }
 
-    pub fn as_module_package(&self) -> &ModuleSymbol {
-        match self {
-            Self::Module(m) => m,
-            _ => {panic!("Not a module package")}
-        }
-    }
-
     pub fn as_root(&self) -> &RootSymbol {
         match self {
             Self::Root(r) => r,
             _ => {panic!("Not a Root")}
         }
     }
-
-    pub fn as_class_sym(&self) -> &ClassSymbol {
-        match self {
-            Self::Class(c) => c,
-            _ => {panic!("Not a class")}
-        }
-    }
-
 
     /*
     Return a symbol that is in module symbols (symbol that represent something on disk - file, package, namespace)
