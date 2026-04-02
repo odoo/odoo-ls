@@ -120,7 +120,7 @@ impl PythonArchEval {
                 },
                 false => {
                     let f = self.sym_stack[0].unwrap_function_key();
-                    let fun_index = st!().functions[f].node_index.load();
+                    let fun_index = st!()[f].node_index.load();
                     if fun_index == NodeIndex::NONE{ // uninitialized node index
                         // Function has no body or is dynamically created from a hook
                         (&vec![], None) // essentially skip evaluation
@@ -152,7 +152,7 @@ impl PythonArchEval {
         } else {
             //then Symbol must be a function
             let f = symbol.unwrap_function_key();
-            st!().functions[f].replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
+            st!()[f].replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
             PythonArchEvalHooks::on_function_eval(session, &self.entry_point, f);
         }
         st!().set_build_status(self.sym_stack[0], BuildSteps::ARCH_EVAL, BuildStatus::DONE);
@@ -763,13 +763,13 @@ impl PythonArchEval {
             return; // can be not found if AST is incomplete
         };
         let f = function_sym_key.unwrap_function_key();
-        if st!().functions[f].can_be_in_class() || !matches!(scope, SymbolKey::Class(_)) {
+        if st!()[f].can_be_in_class() || !matches!(scope, SymbolKey::Class(_)) {
             let mut is_first = true;
             for arg in func_stmt.parameters.posonlyargs.iter().chain(&func_stmt.parameters.args) {
                 if is_first && matches!(scope, SymbolKey::Class(_)) {
-                    let is_class_method = st!().functions[f].is_class_method;
+                    let is_class_method = st!()[f].is_class_method;
                     let arg_name = OYarn::from(arg.parameter.name.id.to_string());
-                    let arg_sym = st!().functions[f].symbols.get(&arg_name).unwrap().get(&0).unwrap()[0]; //get first declaration
+                    let arg_sym = st!()[f].symbols.get(&arg_name).unwrap().get(&0).unwrap()[0]; //get first declaration
                     let v = arg_sym.unwrap_variable_key();
                     let evaluation = Evaluation::eval_from_symbol(&st!(), scope, Some(!is_class_method));
                     st!().variables[v].evaluations.push(evaluation);
@@ -790,7 +790,7 @@ impl PythonArchEval {
                                                 &mut deps);
                     st!().insert_dependencies(self.file, &mut deps, self.current_step);
                     let arg_name = OYarn::from(arg.parameter.name.id.to_string());
-                    let arg_sym = st!().functions[f].symbols.get(&arg_name).unwrap().get(&0).unwrap()[0];
+                    let arg_sym = st!()[f].symbols.get(&arg_name).unwrap().get(&0).unwrap()[0];
                     let v = arg_sym.unwrap_variable_key();
                     st!().variables[v].evaluations = eval;
                     self.diagnostics.extend(diags);
@@ -807,13 +807,13 @@ impl PythonArchEval {
                                                 &mut deps);
                     st!().insert_dependencies(self.file, &mut deps, self.current_step);
                     let arg_name = OYarn::from(arg.parameter.name.id.to_string());
-                    let arg_sym = st!().functions[f].symbols.get(&arg_name).unwrap().get(&0).unwrap()[0];
+                    let arg_sym = st!()[f].symbols.get(&arg_name).unwrap().get(&0).unwrap()[0];
                     let v = arg_sym.unwrap_variable_key();
                     st!().variables[v].evaluations = eval;
                     self.diagnostics.extend(diags);
                 }
             }
-        } else if !st!().functions[f].is_static && !st!().functions[f].is_class_method {
+        } else if !st!()[f].is_static && !st!()[f].is_class_method {
             if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01004, &[]) {
                 self.diagnostics.push(Diagnostic {
                     range: FileMgr::textRange_to_temporary_Range(&func_stmt.range),
@@ -822,7 +822,7 @@ impl PythonArchEval {
             }
         }
         if !self.file_mode || st!().get_in_parents(function_sym_key, &[SymType::CLASS], true).is_none() {
-            st!().functions[f].arch_eval_status = BuildStatus::IN_PROGRESS;
+            st!()[f].arch_eval_status = BuildStatus::IN_PROGRESS;
             let old_noqa = session.current_noqa.clone();
             session.current_noqa = st!().get_noqas(function_sym_key);
             self.sym_stack.push(function_sym_key);
@@ -831,7 +831,7 @@ impl PythonArchEval {
             session.current_noqa = old_noqa;
             PythonArchEval::handle_function_returns(session, func_stmt, f, &func_stmt.range.end(), &mut self.diagnostics);
             PythonArchEval::handle_func_evaluations(&mut session.sync_odoo.symbol_table, &func_stmt.body, f);
-            st!().functions[f].arch_eval_status = BuildStatus::DONE;
+            st!()[f].arch_eval_status = BuildStatus::DONE;
         }
     }
 
@@ -971,7 +971,7 @@ impl PythonArchEval {
                                     let _enter_ = st!().get_symbol(symbol, &(vec![], vec![Sy!("__enter__")]), u32::MAX);
                                     if let Some(&_enter_) = _enter_.last() {
                                         if let SymbolKey::Function(f) = _enter_ {
-                                            evals.extend(st!().functions[f].evaluations.clone());
+                                            evals.extend(st!()[f].evaluations.clone());
                                         }
                                     }
                                 }
@@ -1015,7 +1015,7 @@ impl PythonArchEval {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         if let Some(returns_ann) = func_stmt.returns.as_ref() {
             let mut deps = vec![vec![], vec![]];
-            let parent = st!().functions[func_sym].parent;
+            let parent = st!()[func_sym].parent;
             let (mut evaluations, diags) = Evaluation::eval_from_ast(
                 session,
                 &returns_ann,
@@ -1037,7 +1037,7 @@ impl PythonArchEval {
                     None
                 ).len() > 0
             ){
-                st!().functions[func_sym].evaluations = vec![Evaluation::new_self()];
+                st!()[func_sym].evaluations = vec![Evaluation::new_self()];
                 return;
             }
             // @arena: this for loop below is dead code (evaluations is never read or assigned)
@@ -1065,7 +1065,7 @@ impl PythonArchEval {
         func_body: &Vec<Stmt>,
         func_sym: FunctionKey,
     ){
-        let func_mut = &mut symbol_table.functions[func_sym];
+        let func_mut = &mut symbol_table[func_sym];
         if func_mut.evaluations.is_empty() {
             let has_implementation = !matches!(
                 func_body.first(),

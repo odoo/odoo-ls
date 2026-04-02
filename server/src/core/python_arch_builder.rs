@@ -116,7 +116,7 @@ impl PythonArchBuilder {
             } else {
                 // @arena: formely unwrap on Option that was only Some for the function case
                 let f = self.sym_stack[0].unwrap_function_key();
-                let ast_index = st!().functions[f].node_index.load();
+                let ast_index = st!()[f].node_index.load();
                 if ast_index.as_u32().is_some() {
                     let func = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(ast_index);
                     match func {
@@ -660,7 +660,7 @@ impl PythonArchBuilder {
         }
         let function_key = st!().add_new_function(*self.sym_stack.last().unwrap(),
             &func_def.name.id.to_string(), &func_def.range, &func_def.body.get(0).unwrap().range().start());
-        let func_sym = &mut st!().functions[function_key];
+        let func_sym = &mut st!()[function_key];
         func_sym.node_index.set(func_def.node_index.load());
         for decorator in func_def.decorator_list.iter() {
             if decorator.expression.is_name_expr() {
@@ -702,7 +702,7 @@ impl PythonArchBuilder {
             if arg.default.is_some() {
                 default = Some(Evaluation::new_none()); //TODO evaluate default? actually only used to know if there is a default or not
             }
-            st!().functions[function_key].args.push(Argument {
+            st!()[function_key].args.push(Argument {
                 symbol: param.into(),
                 default_value: default,
                 arg_type: ArgumentType::POS_ONLY,
@@ -716,7 +716,7 @@ impl PythonArchBuilder {
             if arg.default.is_some() {
                 default = Some(Evaluation::new_none()); //TODO evaluate default? actually only used to know if there is a default or not
             }
-            st!().functions[function_key].args.push(Argument {
+            st!()[function_key].args.push(Argument {
                 symbol: param.into(),
                 default_value: default,
                 arg_type: ArgumentType::ARG,
@@ -726,7 +726,7 @@ impl PythonArchBuilder {
         if let Some(arg) = &func_def.parameters.vararg {
             let param = st!().add_new_variable(function_key, oyarn!("{}", arg.name.id), &arg.range);
             st!().variables[param].is_parameter = true;
-            st!().functions[function_key].args.push(Argument {
+            st!()[function_key].args.push(Argument {
                 symbol: param.into(),
                 default_value: None,
                 arg_type: ArgumentType::VARARG,
@@ -736,7 +736,7 @@ impl PythonArchBuilder {
         for arg in func_def.parameters.kwonlyargs.iter() {
             let param = st!().add_new_variable(function_key, oyarn!("{}", arg.parameter.name.id), &arg.range);
             st!().variables[param].is_parameter = true;
-            st!().functions[function_key].args.push(Argument {
+            st!()[function_key].args.push(Argument {
                 symbol: param.into(),
                 default_value: arg.default.as_ref().map(|_default| Evaluation::new_none()),
                 arg_type: ArgumentType::KWORD_ONLY,
@@ -746,7 +746,7 @@ impl PythonArchBuilder {
         if let Some(arg) = &func_def.parameters.kwarg {
             let param = st!().add_new_variable(function_key, oyarn!("{}", arg.name.id), &arg.range);
             st!().variables[param].is_parameter = true;
-            st!().functions[function_key].args.push(Argument {
+            st!()[function_key].args.push(Argument {
                 symbol: param.into(),
                 default_value: None,
                 arg_type: ArgumentType::KWARG,
@@ -759,15 +759,15 @@ impl PythonArchBuilder {
             add_noqa = true;
         }
         let noqa = combine_noqa_info(&session.noqas_stack);
-        st!().functions[function_key].noqas = noqa.clone();
+        st!()[function_key].noqas = noqa.clone();
         session.current_noqa = noqa;
         //visit body
         if !self.file_mode || st!().get_in_parents(function_key.into(), &[SymType::CLASS], true).is_none() {
-            st!().functions[function_key].arch_status = BuildStatus::IN_PROGRESS;
+            st!()[function_key].arch_status = BuildStatus::IN_PROGRESS;
             self.sym_stack.push(function_key.into());
             self.visit_node(session, &func_def.body)?;
             self.sym_stack.pop();
-            st!().functions[function_key].arch_status = BuildStatus::DONE;
+            st!()[function_key].arch_status = BuildStatus::DONE;
         }
         if add_noqa {
             session.noqas_stack.pop();

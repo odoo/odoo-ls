@@ -113,7 +113,7 @@ impl FunctionSymbol {
     pub fn add_return_evaluations(function: FunctionKey, session: &mut SessionInfo, evals: Vec<Evaluation>) {
         for new_eval in evals {
             let out_scope = new_eval.get_eval_out_of_function_scope(session, function);
-            let function_symbol = session.sync_odoo.symbol_table.functions.get_mut(function).expect("valid key");
+            let function_symbol = &mut session.sync_odoo.symbol_table[function];
             for new_eval in out_scope {
                 if !function_symbol.evaluations.contains(&new_eval) {
                     function_symbol.evaluations.push(new_eval);

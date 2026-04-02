@@ -8,7 +8,7 @@ use lsp_types::{CompletionResponse, DocumentSymbolResponse, Hover, Location, Log
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tracing::{error, info, warn};
-use crate::{constants::MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART, create_session};
+use crate::{constants::MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART, core::symbols::symbol_table::SymbolTable, create_session};
 
 use crate::{core::{file_mgr::NoqaInfo, odoo::{Odoo, SyncOdoo}}, server::ServerError, utils::PathSanitizer, S};
 
@@ -22,6 +22,11 @@ pub struct SessionInfo<'a> {
 }
 
 impl <'a> SessionInfo<'a> {
+    /// Get a mutable reference to the symbol table
+    pub fn st(&mut self) -> &mut SymbolTable {
+        &mut self.sync_odoo.symbol_table
+    }
+    
     pub fn log_message(&self, msg_type: MessageType, msg: String) {
         self.sender.send(
             Message::Notification(lsp_server::Notification{

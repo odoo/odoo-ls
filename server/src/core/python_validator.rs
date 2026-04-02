@@ -137,16 +137,16 @@ impl PythonValidator {
                     st!().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::INVALID);
                     return;
                 }
-                if st!().functions[f].arch_status == BuildStatus::PENDING { //TODO other checks to do? maybe odoo step, or?????????
+                if st!()[f].arch_status == BuildStatus::PENDING { //TODO other checks to do? maybe odoo step, or?????????
                     st!().set_build_status(symbol, BuildSteps::ARCH, BuildStatus::PENDING);
                     st!().set_build_status(symbol, BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
                     st!().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::PENDING);
                     SyncOdoo::build_now(session, func, BuildSteps::ARCH);
                 }
-                if st!().functions[f].arch_eval_status == BuildStatus::PENDING { //TODO other checks to do? maybe odoo step, or?????????
+                if st!()[f].arch_eval_status == BuildStatus::PENDING { //TODO other checks to do? maybe odoo step, or?????????
                     SyncOdoo::build_now(session, func, BuildSteps::ARCH_EVAL);
                 }
-                if st!().functions[f].arch_eval_status != BuildStatus::DONE {
+                if st!()[f].arch_eval_status != BuildStatus::DONE {
                     return;
                 }
                 self.diagnostics = vec![];
@@ -159,7 +159,7 @@ impl PythonValidator {
                 let file_info_ast = file_info_ast_rc.borrow();
                 drop(file_info);
                 if file_info_ast.indexed_module.is_some() {
-                    let func_index = st!().functions[f].node_index.load();
+                    let func_index = st!()[f].node_index.load();
                     if func_index != NodeIndex::NONE {
                         let stmt = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(func_index);
                         let body = match stmt {
@@ -175,7 +175,7 @@ impl PythonValidator {
                         match stmt {
                             AnyRootNodeRef::Stmt(Stmt::FunctionDef(_)) => {
                                 let f = self.sym_stack[0].unwrap_function_key();
-                                st!().functions[f].diagnostics.insert(BuildSteps::VALIDATION, self.diagnostics.clone());
+                                st!()[f].diagnostics.insert(BuildSteps::VALIDATION, self.diagnostics.clone());
                             },
                             _ => {panic!("Wrong statement in validation ast extraction {} ", SymType::FUNCTION)}
                         }
@@ -237,7 +237,7 @@ impl PythonValidator {
                             panic!("cyclic validation detected... Aborting");
                         }
                         let f = sym.unwrap_function_key();
-                        self.diagnostics.extend(st!().functions[f].diagnostics.values().flat_map(|v| v.clone()));
+                        self.diagnostics.extend(st!()[f].diagnostics.values().flat_map(|v| v.clone()));
                     }
                 },
                 Stmt::ClassDef(c) => {

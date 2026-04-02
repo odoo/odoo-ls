@@ -808,7 +808,7 @@ impl Evaluation {
                                         } else {
                                             let mut is_instance = None;
                                             let mut default_instance = true; //used if we can't evaluate the instance parameter
-                                            if let SymbolKey::Function(f) = parent && st!().functions[f].is_class_method {
+                                            if let SymbolKey::Function(f) = parent && st!()[f].is_class_method {
                                                 default_instance = false;
                                             }
                                             if expr.arguments.args.len() >= 2 {
@@ -847,7 +847,7 @@ impl Evaluation {
                                         Some(parent_class) => {
                                             let mut instance = Some(true);
                                             if let SymbolKey::Function(f)  = parent {
-                                                let func = &st!().functions[f];
+                                                let func = &st!()[f];
                                                 if func.is_class_method {
                                                     instance = Some(false);
                                                 }
@@ -964,7 +964,7 @@ impl Evaluation {
                         //  - function body inference (VALIDATION step)
                         // Therefore, the actual version of the algorithm will trigger build from the different steps if this one has already been reached.
                         // We don't want to launch validation step while Arch evaluating the code.
-                        let base_sym_evaluations = &st!().functions[f].evaluations;
+                        let base_sym_evaluations = &st!()[f].evaluations;
 
                         if base_sym_evaluations.len() == 0
                         && !get_sym!(st!(), base_sym_file).is_external()
@@ -997,7 +997,7 @@ impl Evaluation {
                         context.as_mut().unwrap().insert(S!("base_call"), ContextValue::SYMBOL(call_parent));
                         context.as_mut().unwrap().insert(S!("parameters"), ContextValue::ARGUMENTS(expr.arguments.clone()));
                         context.as_mut().unwrap().insert(S!("is_in_validation"), ContextValue::BOOLEAN(is_in_validation));
-                        let evaluations = &st!().functions[f].evaluations;
+                        let evaluations = &st!()[f].evaluations;
                         for eval in evaluations.clone() {
                             let eval_ptr = eval.symbol.get_symbol_weak_transformed(session, context, &mut diagnostics, Some(st!().get_file(parent).unwrap()));
                             evals.push(Evaluation{
@@ -1337,7 +1337,7 @@ impl Evaluation {
      */
     fn validate_call_arguments(session: &mut SessionInfo, function_key: FunctionKey, expr_call: &ExprCall, on_object: Weak<SymbolKey>, from_module: Option<ModuleKey>, object_instance: Option<bool>) -> Vec<Diagnostic> {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
-        let function = st!().functions.get(function_key).expect("valid key");
+        let function = &st!()[function_key];
         if st!().is_func_overloaded(function_key) || function.is_property {
             return vec![];
         }
@@ -1399,7 +1399,7 @@ impl Evaluation {
                 return diagnostics;
             }
             //match arg with argument from function
-            let function = &st!().functions[function_key];
+            let function = &st!()[function_key];
             let function_arg = function.args.get(min(arg_index, vararg_index) as usize);
             if function_arg.is_none() || function_arg.unwrap().arg_type == ArgumentType::KWORD_ONLY || function_arg.unwrap().arg_type == ArgumentType::KWARG {
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01007, &[&function_name, &number_pos_arg.to_string(), &(arg_index + 1).to_string()]) {
@@ -1422,7 +1422,7 @@ impl Evaluation {
         for arg in expr_call.arguments.keywords.iter() {
             if let Some(arg_identifier) = &arg.arg { //if None, arg is a dictionary of keywords, like in self.func(a, b, **any_kwargs)
                 let mut found_one = false;
-                let function = &st!().functions[function_key];
+                let function = &st!()[function_key];
                 for func_arg in function.args.iter().skip(to_skip as usize).cloned() {
                     let func_arg_name  = st!().get_symbol_view(func_arg.symbol).unwrap().name().to_string();
                     if func_arg_name == arg_identifier.id {

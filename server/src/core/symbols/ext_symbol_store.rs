@@ -120,7 +120,7 @@ impl SymbolTable {
             SymbolKey::Module(m) => self.modules[m].get_section_for(position).index,
             SymbolKey::PythonPackage(p) => self.python_packages[p].get_section_for(position).index,
             SymbolKey::Class(c) => self.classes[c].get_section_for(position).index,
-            SymbolKey::Function(f) => self.functions[f].get_section_for(position).index,
+            SymbolKey::Function(f) => self[f].get_section_for(position).index,
             _ => panic!(
                 "Impossible to add a declaration of external symbol to a {}",
                 self.get_symbol_view(owner).unwrap().typ()

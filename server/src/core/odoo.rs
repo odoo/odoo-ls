@@ -323,7 +323,7 @@ impl SyncOdoo {
 
     pub fn build_database(session: &mut SessionInfo) {
         session.log_message(MessageType::INFO, String::from("Building Database"));
-        Self::log_capacities(session);
+        // Self::log_capacities(session);
         let result = SyncOdoo::build_base(session);
         if result {
             SyncOdoo::build_modules(session);
@@ -331,42 +331,42 @@ impl SyncOdoo {
 
         // Self::log_counts(session);
         Self::print_memory();
-        Self::log_capacities(session);
+        // Self::log_capacities(session);
     }
 
-    fn log_counts(session: &mut SessionInfo) {
-        let st = &session.sync_odoo.symbol_table;
-        info!("Symbol table roots count: {}", st.roots.len());
-        info!("Symbol table disk_dirs count: {}", st.disk_dirs.len());
-        info!("Symbol table namespaces count: {}", st.namespaces.len());
-        info!("Symbol table python packages count: {}", st.python_packages.len());
-        info!("Symbol table modules count: {}", st.modules.len());
-        info!("Symbol table files count: {}", st.files.len());
-        info!("Symbol table compiled count: {}", st.compiled.len());
-        info!("Symbol table classes count: {}", st.classes.len());
-        info!("Symbol table functions count: {}", st.functions.len());
-        info!("Symbol table variables count: {}", st.variables.len());
-        info!("Symbol table xml_files count: {}", st.xml_files.len());
-        info!("Symbol table csv_files count: {}", st.csv_files.len());
-    }
+    // fn log_counts(session: &mut SessionInfo) {
+    //     let st = &session.sync_odoo.symbol_table;
+    //     info!("Symbol table roots count: {}", st.roots.len());
+    //     info!("Symbol table disk_dirs count: {}", st.disk_dirs.len());
+    //     info!("Symbol table namespaces count: {}", st.namespaces.len());
+    //     info!("Symbol table python packages count: {}", st.python_packages.len());
+    //     info!("Symbol table modules count: {}", st.modules.len());
+    //     info!("Symbol table files count: {}", st.files.len());
+    //     info!("Symbol table compiled count: {}", st.compiled.len());
+    //     info!("Symbol table classes count: {}", st.classes.len());
+    //     info!("Symbol table functions count: {}", st.functions.len());
+    //     info!("Symbol table variables count: {}", st.variables.len());
+    //     info!("Symbol table xml_files count: {}", st.xml_files.len());
+    //     info!("Symbol table csv_files count: {}", st.csv_files.len());
+    // }
 
-    fn log_capacities(session: &mut SessionInfo) {
-        let st = &session.sync_odoo.symbol_table;
-        info!("Symbol table capacities - roots: {}, disk_dirs: {}, namespaces: {}, python packages: {}, modules: {}, files: {}, compiled: {}, classes: {}, functions: {}, variables: {}, xml_files: {}, csv_files: {}",
-            st.roots.capacity(),
-            st.disk_dirs.capacity(),
-            st.namespaces.capacity(),
-            st.python_packages.capacity(),
-            st.modules.capacity(),
-            st.files.capacity(),
-            st.compiled.capacity(),
-            st.classes.capacity(),
-            st.functions.capacity(),
-            st.variables.capacity(),
-            st.xml_files.capacity(),
-            st.csv_files.capacity()
-        );
-    }
+    // fn log_capacities(session: &mut SessionInfo) {
+    //     let st = &session.sync_odoo.symbol_table;
+    //     info!("Symbol table capacities - roots: {}, disk_dirs: {}, namespaces: {}, python packages: {}, modules: {}, files: {}, compiled: {}, classes: {}, functions: {}, variables: {}, xml_files: {}, csv_files: {}",
+    //         st.roots.capacity(),
+    //         st.disk_dirs.capacity(),
+    //         st.namespaces.capacity(),
+    //         st.python_packages.capacity(),
+    //         st.modules.capacity(),
+    //         st.files.capacity(),
+    //         st.compiled.capacity(),
+    //         st.classes.capacity(),
+    //         st.functions.capacity(),
+    //         st.variables.capacity(),
+    //         st.xml_files.capacity(),
+    //         st.csv_files.capacity()
+    //     );
+    // }
 
     fn print_memory() {
         if let Ok(status) = std::fs::read_to_string("/proc/self/status") {

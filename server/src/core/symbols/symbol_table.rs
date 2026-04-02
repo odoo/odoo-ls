@@ -1,4 +1,4 @@
-use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet, VecDeque, hash_map}, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet, VecDeque, hash_map}, ops::{Index, IndexMut}, path::PathBuf, rc::Rc};
 
 use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
 use ruff_python_ast::ExprCall;
@@ -525,7 +525,7 @@ pub struct SymbolTable {
     pub files: SlotMap<FileKey, FileSymbol>,
     pub compiled: SlotMap<CompiledKey, CompiledSymbol>,
     pub classes: SlotMap<ClassKey, ClassSymbol>,
-    pub functions: SlotMap<FunctionKey, FunctionSymbol>,
+    pub(in crate::core::symbols) functions: SlotMap<FunctionKey, FunctionSymbol>,
     pub variables: SlotMap<VariableKey, VariableSymbol>,
     pub xml_files: SlotMap<XmlFileKey, XmlFileSymbol>,
     pub csv_files: SlotMap<CsvFileKey, CsvFileSymbol>,
@@ -2623,6 +2623,18 @@ impl ContainsKey<SymbolKey> for SymbolTable {
             SymbolKey::XmlFile(k) => self.xml_files.contains_key(k),
             SymbolKey::CsvFile(k) => self.csv_files.contains_key(k),
         }
+    }
+}
+
+impl Index<FunctionKey> for SymbolTable {
+    type Output = FunctionSymbol;
+    fn index(&self, key: FunctionKey) -> &FunctionSymbol {
+        &self.functions[key]
+    }
+}
+impl IndexMut<FunctionKey> for SymbolTable {
+    fn index_mut(&mut self, key: FunctionKey) -> &mut FunctionSymbol {
+        &mut self.functions[key]
     }
 }
 
