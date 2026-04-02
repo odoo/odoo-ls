@@ -14,6 +14,10 @@ This is the description of the module CSV
     'depends' : [],
     'data': [
         'data/res.country.state.csv',
+        'data/country_quoted_crlf/res.country.state.csv',
+        'data/country_quoted_lf/res.country.state.csv',
+        'data/country_unquoted_crlf/res.country.state.csv',
+        'data/country_unquoted_lf/res.country.state.csv',
     ],
     'installable': True,
     'application': True,

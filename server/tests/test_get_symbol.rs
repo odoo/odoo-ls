@@ -4,6 +4,7 @@ use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::utils::{PathSanitizer, ToFilePath};
 use odoo_ls_server::Sy;
 use odoo_ls_server::constants::OYarn;
+use odoo_ls_server::threads::SessionInfo;
 use std::env;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -532,5 +533,277 @@ fn test_csv_quoted_commas() {
     assert!(
         module.borrow().as_module_package().xml_id_locations.contains_key(&Sy!("state_comma_1")),
         "state_comma_1 not found in xml_id_locations — CSV record with comma in quoted field was skipped"
+    );
+}
+
+#[test]
+fn test_csv_field_ranges() {
+    let (mut odoo, config) = setup::setup::setup_server(true);
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
+
+    test_csv_ranges_unquoted_lf(&mut session);
+    test_csv_ranges_quoted_lf(&mut session);
+    test_csv_ranges_unquoted_crlf(&mut session);
+    test_csv_ranges_quoted_crlf(&mut session);
+}
+
+fn test_csv_ranges_unquoted_lf(session: &mut SessionInfo) {
+    // Test that field ranges are correctly computed for CSV files with unquoted fields and LF line endings
+    // File content:
+    // Line 0: id,country_id:id,name,code
+    // Line 1: state_unquoted_1,base.au,Test State 1,TS1
+    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let csv_file = test_addons_path.join("module_csv").join("data").join("country_unquoted_lf").join("res.country.state.csv").sanitize();
+
+    assert!(PathBuf::from(&csv_file).exists(), "Test file does not exist: {}", csv_file);
+
+    let file_mgr = session.sync_odoo.get_file_mgr();
+    let file_info = file_mgr.borrow().get_file_info(&csv_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(&csv_file)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    // Test header: click on "country_id" part (position 8 in "country_id:id")
+    // Header: id,country_id:id,name,code
+    //         0         1         2
+    //         0123456789012345678901234567
+    // Field "country_id:id" spans bytes 3-16
+    // When clicking on just "country_id" (before the colon), origin_selection_range should cover it
+    let country_id_click = test_utils::get_definition_locs(session, &file_symbol, &file_info, 0, 8);
+    assert!(country_id_click.len() >= 1, "Expected at least 1 location for country_id field");
+    assert!(country_id_click[0].origin_selection_range.is_some(), "origin_selection_range should be set for header field");
+
+    let origin_range = country_id_click[0].origin_selection_range.unwrap();
+    assert_eq!(origin_range.start.line, 0, "Header should be on line 0");
+    assert_eq!(origin_range.start.character as usize, 3, "country_id field should start at character 3");
+    // For unquoted "country_id", it's 10 chars, so end should be at 3 + 10 + 1 = 14
+    assert_eq!(origin_range.end.character as usize, 14, "country_id part should end at character 14");
+
+    // Test header: click on "id" part (position 15 in "country_id:id")
+    let id_part_click = test_utils::get_definition_locs(session, &file_symbol, &file_info, 0, 15);
+    assert!(id_part_click.len() >= 1, "Expected at least 1 location for id part in header");
+    assert!(id_part_click[0].origin_selection_range.is_some(), "origin_selection_range should be set for id part");
+
+    let id_range = id_part_click[0].origin_selection_range.unwrap();
+    assert_eq!(id_range.start.line, 0, "Header id part should be on line 0");
+    // The "id" part after the colon should have its range at or after country_id end
+    assert!(id_range.start.character >= origin_range.end.character as u32, "id part range should be at or after country_id range end");
+
+    // Test record: get_symbol on first record's id field
+    // Line 1, char 5 should be in "state_unquoted_1" (positions 0-16)
+    let record_id_locs = test_utils::get_definition_locs(session, &file_symbol, &file_info, 1, 5);
+    assert_eq!(record_id_locs.len(), 1, "Expected 1 location for record id field");
+    assert_eq!(record_id_locs[0].target_uri.to_file_path().unwrap().sanitize(), csv_file, "Expected location to be in same file");
+
+    // Verify the target_range covers the entire id field (from start to comma)
+    // In unquoted LF: "state_unquoted_1" is 16 characters (0-15)
+    let target_range = record_id_locs[0].target_range;
+    assert_eq!(target_range.start.line, 1, "Record should be on line 1");
+    assert_eq!(target_range.start.character, 0, "Record id field should start at character 0");
+    assert_eq!(target_range.end.character, 16, "Record id field 'state_unquoted_1' should end at character 16");
+
+    // Test that we can find a record with xml_id
+    let module = session.sync_odoo.modules.get(&Sy!("module_csv"))
+        .expect("module_csv not loaded")
+        .upgrade()
+        .unwrap();
+    assert!(
+        module.borrow().as_module_package().xml_id_locations.contains_key(&Sy!("state_unquoted_1")),
+        "state_unquoted_1 not found in xml_id_locations"
+    );
+}
+
+fn test_csv_ranges_quoted_lf(session: &mut SessionInfo) {
+    // Test that field ranges are correctly computed for CSV files with quoted fields and LF line endings
+    // File content:
+    // Line 0: "id","country_id:id","name","code"
+    // Line 1: "state_quoted_1","base.au","Test State 1","TS1"
+    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let csv_file = test_addons_path.join("module_csv").join("data").join("country_quoted_lf").join("res.country.state.csv").sanitize();
+
+    assert!(PathBuf::from(&csv_file).exists(), "Test file does not exist: {}", csv_file);
+
+    let file_mgr = session.sync_odoo.get_file_mgr();
+    let file_info = file_mgr.borrow().get_file_info(&csv_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(&csv_file)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    // Test header: click on "country_id" part inside quoted field
+    // Quoted header: "id","country_id:id","name","code"
+    //               0         1         2
+    //               0123456789012345678901234567890
+    // The quoted field "country_id:id" spans 5-19 (with quotes at 5 and 19)
+    // Position 8 is 'u' in "country_id"
+    let country_id_click = test_utils::get_definition_locs(session, &file_symbol, &file_info, 0, 8);
+    assert!(country_id_click.len() >= 1, "Expected at least 1 location for country_id in quoted header");
+    assert!(country_id_click[0].origin_selection_range.is_some(), "origin_selection_range should be set");
+
+    let origin_range = country_id_click[0].origin_selection_range.unwrap();
+    assert_eq!(origin_range.start.line, 0, "Header should be on line 0");
+    // For quoted "country_id:id", the range starts at the opening quote (position 5)
+    // and spans to position 5 + 10 (country_id length) + 1 (quote) + 1 = 17
+    assert_eq!(origin_range.start.character as usize, 5, "quoted country_id field should start at character 5 (opening quote)");
+    assert_eq!(origin_range.end.character as usize, 17, "country_id part should end at character 17");
+
+    // Test header: click on "id" part (position 17 in "country_id:id", the 'i' after colon)
+    let id_part_click = test_utils::get_definition_locs(session, &file_symbol, &file_info, 0, 17);
+    assert!(id_part_click.len() >= 1, "Expected at least 1 location for id part in quoted header");
+    assert!(id_part_click[0].origin_selection_range.is_some(), "origin_selection_range should be set for id part");
+
+    let id_range = id_part_click[0].origin_selection_range.unwrap();
+    assert_eq!(id_range.start.line, 0, "Header id part should be on line 0");
+    // The "id" part should be a separate range
+    assert!(id_range.start.character >= origin_range.end.character as u32, "id part range should not overlap with country_id");
+
+    // Test record: get_symbol on first record's id field
+    // Line 1: "state_quoted_1" - the entire field with quotes is 16 chars (positions 0-15)
+    let record_id_locs = test_utils::get_definition_locs(session, &file_symbol, &file_info, 1, 5);
+    assert_eq!(record_id_locs.len(), 1, "Expected 1 location for record id field");
+    assert_eq!(record_id_locs[0].target_uri.to_file_path().unwrap().sanitize(), csv_file, "Expected location to be in same file");
+
+    // Verify the target_range covers the entire quoted id field (including quotes)
+    let target_range = record_id_locs[0].target_range;
+    assert_eq!(target_range.start.line, 1, "Record should be on line 1");
+    assert_eq!(target_range.start.character, 0, "Record id field should start at character 0");
+    // "state_quoted_1" with quotes = 16 characters total
+    assert_eq!(target_range.end.character, 16, "Quoted record id field should end at character 16");
+
+    // Verify the module can find quoted records
+    let module = session.sync_odoo.modules.get(&Sy!("module_csv"))
+        .expect("module_csv not loaded")
+        .upgrade()
+        .unwrap();
+    assert!(
+        module.borrow().as_module_package().xml_id_locations.contains_key(&Sy!("state_quoted_1")),
+        "state_quoted_1 not found in xml_id_locations"
+    );
+}
+
+fn test_csv_ranges_unquoted_crlf(session: &mut SessionInfo) {
+    // Test that field ranges are correctly computed for CSV files with unquoted fields and CRLF line endings
+    // File content:
+    // Line 0: id,country_id:id,name,code\r\n
+    // Line 1: state_unquoted_crlf_1,base.au,Test State 1,TS1\r\n
+    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let csv_file = test_addons_path.join("module_csv").join("data").join("country_unquoted_crlf").join("res.country.state.csv").sanitize();
+
+    assert!(PathBuf::from(&csv_file).exists(), "Test file does not exist: {}", csv_file);
+
+    let file_mgr = session.sync_odoo.get_file_mgr();
+    let file_info = file_mgr.borrow().get_file_info(&csv_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(&csv_file)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    // Test header: click on "country_id" part (CRLF should be handled correctly)
+    // Header format is same as LF: id,country_id:id,name,code (positions 0-26)
+    // CRLF doesn't affect character positions, only affects how lines are split
+    let country_id_click = test_utils::get_definition_locs(session, &file_symbol, &file_info, 0, 8);
+    assert!(country_id_click.len() >= 1, "Expected at least 1 location for country_id field (CRLF)");
+    assert!(country_id_click[0].origin_selection_range.is_some(), "origin_selection_range should be set");
+
+    let origin_range = country_id_click[0].origin_selection_range.unwrap();
+    assert_eq!(origin_range.start.line, 0, "Header should be on line 0");
+    assert_eq!(origin_range.start.character as usize, 3, "country_id field should start at character 3");
+    assert_eq!(origin_range.end.character as usize, 14, "country_id part should end at character 14");
+
+    // Test header: click on "id" part (after the colon)
+    let id_part_click = test_utils::get_definition_locs(session, &file_symbol, &file_info, 0, 15);
+    assert!(id_part_click.len() >= 1, "Expected at least 1 location for id part in header (CRLF)");
+    assert!(id_part_click[0].origin_selection_range.is_some(), "origin_selection_range should be set for id part");
+
+    let id_range = id_part_click[0].origin_selection_range.unwrap();
+    assert_eq!(id_range.start.line, 0, "Header id part should be on line 0");
+    // The "id" part should be a separate range
+    assert!(id_range.start.character >= origin_range.end.character as u32, "id part range should not overlap with country_id");
+
+    // Test record: get_symbol on first record's id field with CRLF line endings
+    // Line 1, char 8 should be in "state_unquoted_crlf_1" (positions 0-20, the name is 21 chars)
+    let record_id_locs = test_utils::get_definition_locs(session, &file_symbol, &file_info, 1, 8);
+    assert_eq!(record_id_locs.len(), 1, "Expected 1 location for record id field (CRLF)");
+    assert_eq!(record_id_locs[0].target_uri.to_file_path().unwrap().sanitize(), csv_file, "Expected location to be in same file");
+
+    // Verify the target_range covers the entire id field, accounting for CRLF
+    // "state_unquoted_crlf_1" is 21 characters (positions 0-20)
+    let target_range = record_id_locs[0].target_range;
+    assert_eq!(target_range.start.line, 1, "Record should be on line 1");
+    assert_eq!(target_range.start.character, 0, "Record id field should start at character 0");
+    assert_eq!(target_range.end.character, 21, "Record id field 'state_unquoted_crlf_1' should end at character 21");
+
+    // Verify records are correctly parsed despite CRLF line endings
+    let module = session.sync_odoo.modules.get(&Sy!("module_csv"))
+        .expect("module_csv not loaded")
+        .upgrade()
+        .unwrap();
+    assert!(
+        module.borrow().as_module_package().xml_id_locations.contains_key(&Sy!("state_unquoted_crlf_1")),
+        "state_unquoted_crlf_1 not found in xml_id_locations — CRLF handling issue"
+    );
+}
+
+fn test_csv_ranges_quoted_crlf(session: &mut SessionInfo) {
+    // Test that field ranges are correctly computed for CSV files with quoted fields and CRLF line endings
+    // This is the most complex case: both quoting and CRLF line endings
+    // File content:
+    // Line 0: "id","country_id:id","name","code"\r\n
+    // Line 1: "state_quoted_crlf_1","base.au","Test State 1","TS1"\r\n
+    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let csv_file = test_addons_path.join("module_csv").join("data").join("country_quoted_crlf").join("res.country.state.csv").sanitize();
+
+    assert!(PathBuf::from(&csv_file).exists(), "Test file does not exist: {}", csv_file);
+
+    let file_mgr = session.sync_odoo.get_file_mgr();
+    let file_info = file_mgr.borrow().get_file_info(&csv_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(&csv_file)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    // Test header: click on "country_id" part inside quoted field (with CRLF)
+    // Quoted header: "id","country_id:id","name","code" (CRLF at end doesn't affect positions)
+    //               0         1         2
+    //               0123456789012345678901234567890
+    // The quoted field "country_id:id" spans 5-19 (with quotes at 5 and 19)
+    // Position 8 is 'u' in "country_id"
+    let country_id_click = test_utils::get_definition_locs(session, &file_symbol, &file_info, 0, 8);
+    assert!(country_id_click.len() >= 1, "Expected at least 1 location for country_id in quoted header (CRLF)");
+    assert!(country_id_click[0].origin_selection_range.is_some(), "origin_selection_range should be set");
+
+    let origin_range = country_id_click[0].origin_selection_range.unwrap();
+    assert_eq!(origin_range.start.line, 0, "Header should be on line 0");
+    assert_eq!(origin_range.start.character as usize, 5, "quoted country_id field should start at character 5 (opening quote)");
+    assert_eq!(origin_range.end.character as usize, 17, "country_id part should end at character 17");
+
+    // Test header: click on "id" part (position 17, the 'i' after colon, with CRLF)
+    let id_part_click = test_utils::get_definition_locs(session, &file_symbol, &file_info, 0, 17);
+    assert!(id_part_click.len() >= 1, "Expected at least 1 location for id part in quoted header (CRLF)");
+    assert!(id_part_click[0].origin_selection_range.is_some(), "origin_selection_range should be set");
+
+    let id_range = id_part_click[0].origin_selection_range.unwrap();
+    assert_eq!(id_range.start.line, 0, "Header id part should be on line 0");
+    // The "id" part should be a separate range
+    assert!(id_range.start.character >= origin_range.end.character as u32, "id part range should not overlap with country_id");
+
+    // Test record: get_symbol on first record's id field
+    // Line 1: "state_quoted_crlf_1" - the entire field with quotes is 21 chars (positions 0-20)
+    let record_id_locs = test_utils::get_definition_locs(session, &file_symbol, &file_info, 1, 8);
+    assert_eq!(record_id_locs.len(), 1, "Expected 1 location for record id field (CRLF + quoted)");
+    assert_eq!(record_id_locs[0].target_uri.to_file_path().unwrap().sanitize(), csv_file, "Expected location to be in same file");
+
+    // Verify the target_range covers the entire quoted id field with CRLF
+    // ""state_quoted_crlf_1"" with quotes = 21 characters total
+    let target_range = record_id_locs[0].target_range;
+    assert_eq!(target_range.start.line, 1, "Record should be on line 1");
+    assert_eq!(target_range.start.character, 0, "Record id field should start at character 0");
+    assert_eq!(target_range.end.character, 21, "Quoted record id field should end at character 21");
+
+    // Verify records are correctly parsed with both quoting and CRLF
+    let module = session.sync_odoo.modules.get(&Sy!("module_csv"))
+        .expect("module_csv not loaded")
+        .upgrade()
+        .unwrap();
+    assert!(
+        module.borrow().as_module_package().xml_id_locations.contains_key(&Sy!("state_quoted_crlf_1")),
+        "state_quoted_crlf_1 not found in xml_id_locations — CRLF + quoting handling issue"
     );
 }
