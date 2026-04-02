@@ -10,6 +10,7 @@ use tracing::{debug, trace, warn};
 
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
+use crate::core::symbols::symbol_mgr::SymbolMgr;
 use crate::core::symbols::symbol_table::{follow_ref, get_member_symbol, get_sym, is_field, is_field_class, is_specific_field, ClassKey, FunctionKey, ModuleKey, SymbolKey, SymbolTable};
 use crate::core::symbols::variable_symbol::VariableSymbol;
 use crate::{constants::*, oyarn, Sy};
@@ -769,7 +770,7 @@ impl PythonArchEval {
                 if is_first && matches!(scope, SymbolKey::Class(_)) {
                     let is_class_method = st!()[f].is_class_method;
                     let arg_name = OYarn::from(arg.parameter.name.id.to_string());
-                    let arg_sym = st!()[f].symbols.get(&arg_name).unwrap().get(&0).unwrap()[0]; //get first declaration
+                    let arg_sym = st!()[f].symbols().get(&arg_name).unwrap().get(&0).unwrap()[0]; //get first declaration
                     let v = arg_sym.unwrap_variable_key();
                     let evaluation = Evaluation::eval_from_symbol(&st!(), scope, Some(!is_class_method));
                     st!()[v].evaluations.push(evaluation);
@@ -790,7 +791,7 @@ impl PythonArchEval {
                                                 &mut deps);
                     st!().insert_dependencies(self.file, &mut deps, self.current_step);
                     let arg_name = OYarn::from(arg.parameter.name.id.to_string());
-                    let arg_sym = st!()[f].symbols.get(&arg_name).unwrap().get(&0).unwrap()[0];
+                    let arg_sym = st!()[f].symbols().get(&arg_name).unwrap().get(&0).unwrap()[0];
                     let v = arg_sym.unwrap_variable_key();
                     st!()[v].evaluations = eval;
                     self.diagnostics.extend(diags);
@@ -807,7 +808,7 @@ impl PythonArchEval {
                                                 &mut deps);
                     st!().insert_dependencies(self.file, &mut deps, self.current_step);
                     let arg_name = OYarn::from(arg.parameter.name.id.to_string());
-                    let arg_sym = st!()[f].symbols.get(&arg_name).unwrap().get(&0).unwrap()[0];
+                    let arg_sym = st!()[f].symbols().get(&arg_name).unwrap().get(&0).unwrap()[0];
                     let v = arg_sym.unwrap_variable_key();
                     st!()[v].evaluations = eval;
                     self.diagnostics.extend(diags);

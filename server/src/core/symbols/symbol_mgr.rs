@@ -29,14 +29,13 @@ pub struct SectionRange {
 
 pub trait SymbolMgr {
     fn get_sections(&self) -> &[SectionRange];
-    fn get_symbols(&self) -> &HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>;
+    fn symbols(&self) -> &HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>;
     fn get_section_for(&self, position: u32) -> SectionRange;
     fn get_last_index(&self) -> u32;
     fn add_section(&mut self, range_start: TextSize, maybe_previous_indexes: Option<SectionIndex>) -> SectionRange;
     fn change_parent(&mut self, new_parent: SectionIndex, section: &mut SectionRange);
     fn _init_symbol_mgr(&mut self);
-    // @arena: get_content_symbol, _get_loc_symbol, get_all_visible_symbols moved to SymbolTable
-    fn add_symbol(&mut self, content: SymbolKey, name: &str, section: u32);
+    // @arena: get_content_symbol, _get_loc_symbol, get_all_visible_symbols, add_symbol moved to SymbolTable
 }
 
 
@@ -77,7 +76,7 @@ macro_rules! impl_section_mgr_for {
             &self.sections
         }
 
-        fn get_symbols(&self) -> &HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>> {
+        fn symbols(&self) -> &HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>> {
             &self.symbols
         }
 
@@ -106,12 +105,6 @@ macro_rules! impl_section_mgr_for {
 
         fn change_parent(&mut self, new_parent: SectionIndex, section: &mut SectionRange) {
             section.previous_indexes = new_parent;
-        }
-
-        fn add_symbol(&mut self, content: SymbolKey, name: &str, section: u32) {
-            let sections = self.symbols.entry(oyarn!("{}", name)).or_default();
-            let section_vec = sections.entry(section).or_default();
-            section_vec.push(content);
         }
 
         // @arena: moved to SymbolTable
@@ -203,7 +196,7 @@ impl_section_mgr_for!(FileSymbol, ClassSymbol, FunctionSymbol, ModuleSymbol, Pyt
 
 // @arena: "keys"? bad name??
 pub fn iter_symbol_keys<'a>(symbol: &'a impl SymbolMgr) -> impl Iterator<Item = &'a SymbolKey> {
-    symbol.get_symbols().values()
+    symbol.symbols().values()
         .flat_map(|section| section.values())
         .flat_map(|symbol_list| symbol_list.iter())
 }

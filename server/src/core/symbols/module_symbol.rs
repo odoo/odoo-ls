@@ -62,7 +62,7 @@ pub struct ModuleSymbol {
 
     //Trait SymbolMgr
     pub sections: Vec<SectionRange>,
-    pub symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
+    pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
 
     pub data_symbols: HashMap<String, SymbolKey>,
 }

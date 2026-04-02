@@ -27,7 +27,7 @@ pub struct ClassSymbol {
     //Trait SymbolMgr
     //--- Body symbols
     pub sections: Vec<SectionRange>,
-    pub symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
+    pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
 }
 
 impl ClassSymbol {

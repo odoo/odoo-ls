@@ -28,7 +28,7 @@ pub struct PythonPackageSymbol {
 
     //Trait SymbolMgr
     pub sections: Vec<SectionRange>,
-    pub symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
+    pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
 
     // @arena: dead code?
     //--- dynamics variables

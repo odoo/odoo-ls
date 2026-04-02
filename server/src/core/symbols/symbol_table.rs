@@ -777,7 +777,7 @@ impl SymbolTable {
     /// @arena: the one from SymbolMgr trait
     fn _get_content_symbol(&self, target: SymbolKey, name: &str, position: u32) -> ContentSymbols {
         let target_sym_mgr = self.get_as_symbol_mgr(target);
-        let sections = target_sym_mgr.get_symbols().get(name);
+        let sections = target_sym_mgr.symbols().get(name);
         let mut content = if let Some(sections) = sections {
             let section: SectionRange = target_sym_mgr.get_section_for(position);
             self._get_loc_symbol(target_sym_mgr, sections, position, &SectionIndex::INDEX(section.index), &mut HashSet::new())
@@ -856,7 +856,7 @@ impl SymbolTable {
         let current_section = target_sym_mgr.get_section_for(position);
         let current_index = SectionIndex::INDEX(current_section.index);
 
-        for (name, section_map) in target_sym_mgr.get_symbols().iter() {
+        for (name, section_map) in target_sym_mgr.symbols().iter() {
             if !name.starts_with(name_prefix) {
                 continue;
             }
@@ -971,7 +971,7 @@ impl SymbolTable {
         let mut result = file;
         let file_sym_mgr = self.get_as_symbol_mgr(file); // formely Rc (strong)
         let section_id = file_sym_mgr.get_section_for(offset);
-        for (_, sym_map) in file_sym_mgr.get_symbols() {
+        for (_, sym_map) in file_sym_mgr.symbols() {
             match sym_map.get(&section_id.index) {
                 Some(symbols) => {
                     for &key in symbols {

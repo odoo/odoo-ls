@@ -168,27 +168,37 @@ impl SymbolTable {
             SymbolKey::File(f) => {
                 let file = &mut self.files[f];
                 let section = file.get_section_for(position).index;
-                file.add_symbol(content, name, section);
+                file.symbols.entry(oyarn!("{}",name)).or_default()
+                    .entry(section).or_default()
+                    .push(content);
             },
             SymbolKey::Module(m) => {
                 let module = &mut self.modules[m];
                 let section = module.get_section_for(position).index;
-                module.add_symbol(content, name, section);
+                module.symbols.entry(oyarn!("{}",name)).or_default()
+                    .entry(section).or_default()
+                    .push(content);
             },
             SymbolKey::PythonPackage(p) => {
                 let package = &mut self.python_packages[p];
                 let section = package.get_section_for(position).index;
-                package.add_symbol(content, name, section);
+                package.symbols.entry(oyarn!("{}",name)).or_default()
+                    .entry(section).or_default()
+                    .push(content);
             },
             SymbolKey::Class(c) => {
                 let class = &mut self.classes[c];
                 let section = class.get_section_for(position).index;
-                class.add_symbol(content, name, section);
+                class.symbols.entry(oyarn!("{}",name)).or_default()
+                    .entry(section).or_default()
+                    .push(content);
             },
             SymbolKey::Function(f) => {
                 let function = &mut self.functions[f];
                 let section = function.get_section_for(position).index;
-                function.add_symbol(content, name, section);
+                function.symbols.entry(oyarn!("{}",name)).or_default()
+                    .entry(section).or_default()
+                    .push(content);
             }
             _ => {
                 panic!("Impossible to add a {} to a {}",
