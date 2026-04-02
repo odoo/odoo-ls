@@ -1,5 +1,5 @@
 
-use std::{collections::{HashMap, HashSet}, path::PathBuf};
+use std::collections::{HashMap, HashSet};
 
 use crate::{constants::OYarn, core::symbols::symbol_table::SymbolKey, oyarn, weak_hash_set::WeakSet};
 
@@ -8,13 +8,13 @@ use crate::{constants::OYarn, core::symbols::symbol_table::SymbolKey, oyarn, wea
 #[derive(Debug)]
 pub struct NamespaceDirectory {
     pub path: String,
-    pub module_symbols: HashMap<OYarn, SymbolKey>,
+    pub(super) module_symbols: HashMap<OYarn, SymbolKey>,
 }
 
 #[derive(Debug)]
 pub struct NamespaceSymbol {
     pub name: OYarn,
-    pub directories: Vec<NamespaceDirectory>,
+    pub(super) directories: Vec<NamespaceDirectory>,
     pub is_external: bool,
     parent: SymbolKey,
     pub(super) in_workspace: bool,
@@ -40,25 +40,6 @@ impl NamespaceSymbol {
             dependencies: vec![],
             dependents: vec![],
             ext_symbols: HashMap::new(),
-        }
-    }
-
-    // @arena originaly got paths() from symbol and used only the first one (paths()[0])
-    pub fn add_file(&mut self, file: SymbolKey, name: &str, path: &str) {
-        let mut best_index: i32 = -1;
-        let mut best_length: i32 = -1;
-        let mut index = 0;
-        while index < self.directories.len() {
-            if PathBuf::from(path).starts_with(&self.directories[index].path) && self.directories[index].path.len() as i32 > best_length {
-                best_index = index as i32;
-                best_length = self.directories[index].path.len() as i32;
-            }
-            index += 1;
-        }
-        if best_index == -1 {
-            panic!("Not valid path found to add the file ({}) to namespace {} with directories {:?}", path, self.name, self.directories);
-        } else {
-            self.directories[best_index as usize].module_symbols.insert(oyarn!("{}", name), file);
         }
     }
 

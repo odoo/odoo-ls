@@ -43,7 +43,7 @@ pub struct ModuleSymbol {
     pub depends: Vec<(OYarn, TextRange)>,
     all_depends: HashSet<OYarn>, //computed all depends to avoid too many recomputations
     data: Vec<(String, TextRange)>, // TODO
-    pub module_symbols: HashMap<OYarn, SymbolKey>,
+    pub(super) module_symbols: HashMap<OYarn, SymbolKey>,
     pub xml_id_locations: HashMap<OYarn, WeakSet<SymbolKey>>, //contains all xml_file_symbols that contains the xml_id. Needed because it can be in another module.
     pub xml_ids: HashMap<OYarn, Vec<OdooData>>, //used for dynamic XML_ID records, like ir.models. normal ids are in their XmlFile
     pub arch_status: BuildStatus,
@@ -536,10 +536,6 @@ impl ModuleSymbol {
             }
         }
         res
-    }
-
-    pub fn add_file(&mut self, file: SymbolKey, name: &str) {
-        self.module_symbols.insert(oyarn!("{}", name), file);
     }
 
     pub fn parent(&self) -> SymbolKey {

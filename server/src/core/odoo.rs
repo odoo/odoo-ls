@@ -1109,7 +1109,7 @@ impl SyncOdoo {
         for entry in ep_mgr.borrow().untitled_entry_points.iter() {
             if entry.borrow().path == path.sanitize() {
                 let name = path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
-                let Some(file) = st!()[entry.borrow().root].module_symbols.get(name.as_str()).cloned() else {
+                let Some(file) = st!()[entry.borrow().root].module_symbols().get(name.as_str()).cloned() else {
                     continue;
                 };
                 return Some(file);

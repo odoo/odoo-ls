@@ -16,11 +16,12 @@ use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::core::symbols::package_symbol::PythonPackageSymbol;
 use crate::core::symbols::root_symbol::RootSymbol;
 use crate::core::symbols::xml_file_symbol::XmlFileSymbol;
+use crate::oyarn;
 use crate::{constants::OYarn, core::symbols::{
     compiled_symbol::CompiledSymbol, disk_dir_symbol::DiskDirSymbol, namespace_symbol::NamespaceSymbol, symbol_mgr::SymbolMgr, variable_symbol::VariableSymbol
 }, threads::SessionInfo, utils::PathSanitizer};
 
-use crate::core::symbols::symbol_table::{get_main_entry_tree, get_sym, invalidate, ClassKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SymbolKey, SymbolTable, VariableKey, XmlFileKey};
+use crate::core::symbols::symbol_table::{ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SymbolKey, SymbolTable, VariableKey, XmlFileKey, get_main_entry_tree, get_sym, invalidate};
 use tracing::info;
 
 
@@ -65,34 +66,16 @@ impl SymbolTable {
         disk_dir_key
     }
 
-    pub fn add_new_compiled(&mut self, parent: SymbolKey, name: &str, path: &str) -> SymbolKey {
+    pub fn add_new_compiled(&mut self, parent: SymbolKey, name: &str, path: &str) -> CompiledKey {
         let is_external = self.parent_is_external(parent);
         let compiled_symbol = CompiledSymbol::new(name, path, parent, is_external);
-        let compiled_key: SymbolKey = self.compiled.insert(compiled_symbol).into();
+        let compiled_key = self.compiled.insert(compiled_symbol);
         match parent {
-            SymbolKey::Namespace(n) => {
-                self.namespaces.get_mut(n).unwrap().add_file(compiled_key, name, path);
-            },
-            SymbolKey::PythonPackage(p) => {
-                self.python_packages.get_mut(p).unwrap().add_file(compiled_key, name);
-            },
-            SymbolKey::Module(m) => {
-                self.modules.get_mut(m).unwrap().add_file(compiled_key, name);
-            },
-            SymbolKey::Root(r) => {
-                self.roots.get_mut(r).unwrap().add_file(compiled_key, name);
-            },
             SymbolKey::Compiled(c) => {
-                self.compiled.get_mut(c).unwrap().add_compiled(compiled_key, name);
-            }
-            SymbolKey::DiskDir(d) => {
-                self.disk_dirs.get_mut(d).unwrap().add_file(compiled_key, name);
+                self.compiled[c].module_symbols.insert(oyarn!("{}", name), compiled_key.into());
             },
             _ => {
-                panic!("Impossible to add a {} to a {}",
-                    self.get_symbol_view(compiled_key).unwrap().typ(),
-                    self.get_symbol_view(parent).unwrap().typ()
-                );
+                self.register_in_parent(parent, compiled_key.into(), name, path);
             }
         }
         compiled_key
@@ -121,19 +104,19 @@ impl SymbolTable {
     fn register_in_parent(&mut self, parent: SymbolKey, child: SymbolKey, name: &str, path: &str) {
         match parent {
             SymbolKey::Namespace(n) => {
-                self.namespaces.get_mut(n).unwrap().add_file(child, name, path);
+                self.add_file_to_namespace(n, child, name, path);
             },
             SymbolKey::PythonPackage(p) => {
-                self.python_packages.get_mut(p).unwrap().add_file(child, name);
+                self.python_packages[p].module_symbols.insert(oyarn!("{}", name), child);
             },
-            SymbolKey::Module(p) => {
-                self.modules.get_mut(p).unwrap().add_file(child, name);
+            SymbolKey::Module(m) => {
+                self.modules[m].module_symbols.insert(oyarn!("{}", name), child);
             },
             SymbolKey::Root(r) => {
-                self.roots.get_mut(r).unwrap().add_file(child, name);
+                self.roots[r].module_symbols.insert(oyarn!("{}", name), child);
             },
             SymbolKey::DiskDir(d) => {
-                self.disk_dirs.get_mut(d).unwrap().add_file(child, name);
+                self.disk_dirs[d].module_symbols.insert(oyarn!("{}", name), child);
             },
             _ => {
                 panic!("Impossible to add a {} to a {}",
@@ -142,6 +125,17 @@ impl SymbolTable {
                 );
             }
         }
+    }
+    
+    fn add_file_to_namespace(&mut self, parent: NamespaceKey, file: SymbolKey, name: &str, path: &str) {
+        let ns = &mut self.namespaces[parent];
+        let best = ns.directories.iter()
+            .enumerate()
+            .filter(|(_, dir)| PathBuf::from(path).starts_with(&dir.path))
+            .max_by_key(|(_, dir)| dir.path.len())
+            .unwrap_or_else(|| panic!("Not valid path found to add the file ({}) to namespace {} with directories {:?}", path, ns.name, ns.directories))
+            .0;
+        ns.directories[best].module_symbols.insert(oyarn!("{}", name), file);
     }
 
     // @arena: consider taking &str for name

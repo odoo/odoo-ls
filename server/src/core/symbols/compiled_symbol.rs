@@ -9,7 +9,7 @@ pub struct CompiledSymbol {
     pub is_external: bool,
     pub path: String,
     parent: SymbolKey,
-    pub module_symbols: HashMap<OYarn, SymbolKey>,
+    pub(super) module_symbols: HashMap<OYarn, SymbolKey>,
 }
 
 impl CompiledSymbol {
@@ -22,10 +22,6 @@ impl CompiledSymbol {
             module_symbols: HashMap::new(),
             parent,
         }
-    }
-
-    pub fn add_compiled(&mut self, compiled: SymbolKey, name: &str) {
-        self.module_symbols.insert(oyarn!("{}", name), compiled);
     }
 
     pub fn parent(&self) -> SymbolKey {

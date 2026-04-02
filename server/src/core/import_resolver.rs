@@ -413,7 +413,7 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
     };
     // COMPILED: we can only create a COMPILED symbol
     if matches!(parent, SymbolKey::Compiled(_)) {
-        return Ok(st!().add_new_compiled(parent, &sym_name, ""));
+        return Ok(st!().add_new_compiled(parent, &sym_name, "").into());
     }
     // ROOT, NAMESPACE, PACKAGE or DISK_DIR: we can search on disk
     let paths = get_sym!(st!(), parent).paths();
@@ -460,7 +460,7 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
                 for entry in glob((full_path.sanitize() + "*.pyd").as_str()).expect("Failed to read glob pattern") {
                     match entry {
                         Ok(_path) => {
-                            return Ok(st!().add_new_compiled(parent, &sym_name, &_path.to_str().unwrap().to_string()));
+                            return Ok(st!().add_new_compiled(parent, &sym_name, _path.to_str().unwrap()).into());
                         }
                         Err(_) => {},
                     }
@@ -469,7 +469,7 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
                 for entry in glob((full_path.sanitize() + "*.so").as_str()).expect("Failed to read glob pattern") {
                     match entry {
                         Ok(_path) => {
-                            return Ok(st!().add_new_compiled(parent, &sym_name, &_path.to_str().unwrap().to_string()));
+                            return Ok(st!().add_new_compiled(parent, &sym_name, _path.to_str().unwrap()).into());
                         }
                         Err(_) => {},
                     }

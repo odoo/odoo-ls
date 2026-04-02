@@ -12,7 +12,7 @@ pub struct DiskDirSymbol {
     pub name: OYarn,
     pub path: String,
     // @todo: this name is confusing. Maybe just "children"?
-    pub module_symbols: HashMap<OYarn, SymbolKey>,
+    pub(super) module_symbols: HashMap<OYarn, SymbolKey>,
     pub is_external: bool,
     parent: SymbolKey,
     pub in_workspace: bool,
@@ -29,10 +29,6 @@ impl DiskDirSymbol {
             in_workspace: false,
             module_symbols: HashMap::new()
         }
-    }
-
-    pub fn add_file(&mut self, file: SymbolKey, name: &str) {
-        self.module_symbols.insert(oyarn!("{}", name), file);
     }
 
     pub fn parent(&self) -> SymbolKey {

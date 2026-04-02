@@ -19,7 +19,7 @@ pub struct PythonPackageSymbol {
     pub in_workspace: bool,
     pub self_import: bool,
     pub xml_ids: HashMap<OYarn, Vec<OdooData>>, //used for dynamic XML_ID records, like ir.models
-    pub module_symbols: HashMap<OYarn, SymbolKey>,
+    pub(super) module_symbols: HashMap<OYarn, SymbolKey>,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
     pub dependencies: Vec<Vec<Option<WeakSet<SymbolKey>>>>,
     pub dependents: Vec<Vec<Option<WeakSet<SymbolKey>>>>,
@@ -65,10 +65,6 @@ impl PythonPackageSymbol {
         };
         res._init_symbol_mgr();
         res
-    }
-
-    pub fn add_file(&mut self, file: SymbolKey, name: &str) {
-        self.module_symbols.insert(oyarn!("{}", name), file);
     }
 
     pub fn parent(&self) -> SymbolKey {
