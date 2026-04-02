@@ -5,7 +5,7 @@ use lsp_types::Diagnostic;
 use weak_table::PtrWeakHashSet;
 use tracing::{error};
 
-use crate::{Sy, constants::{BuildStatus, BuildSteps, OYarn}, core::{xml_data::{OdooData, OdooDataField, OdooDataRecord}}, oyarn, threads::SessionInfo};
+use crate::{Sy, constants::{BuildStatus, BuildSteps, OYarn}, core::xml_data::{OdooData, OdooDataField, OdooDataRecord}, features::csv_ast_utils::CsvFieldIter, oyarn, threads::SessionInfo};
 
 use super::{symbols::{symbol::Symbol}};
 
@@ -41,28 +41,31 @@ impl CsvArchBuilder {
             }
             if csv.headers.contains(&Sy!("id")) {
                 for result in rdr.records() {
-                    if let Ok(result) = result {
-                        let record = self.extract_record(Rc::downgrade(&csv_symbol), model_name.clone(), &csv.headers, &result);
-                        if let Some(record) = record {
-                            if let Some(xml_id) = record.xml_id.as_ref() {
-                                let id_split = xml_id.split(".").collect::<Vec<&str>>();
-                                if id_split.len() > 2 {
-                                    //TODO diagnostic
-                                    continue;
-                                }
-                                let mut csv_module = csv_module.clone();
-                                if id_split.len() == 2 {
-                                    let module_name = Sy!(id_split.first().unwrap().to_string());
-                                    if let Some(m) = session.sync_odoo.modules.get(&module_name) {
-                                        csv_module = m.upgrade().unwrap();
+                    match result {
+                        Ok(result) => {
+                            let record = self.extract_record(Rc::downgrade(&csv_symbol), model_name.clone(), &csv.headers, &result, content);
+                            if let Some(record) = record {
+                                if let Some(xml_id) = record.xml_id.as_ref() {
+                                    let id_split = xml_id.split(".").collect::<Vec<&str>>();
+                                    if id_split.len() > 2 {
+                                        //TODO diagnostic
+                                        continue;
                                     }
+                                    let mut csv_module = csv_module.clone();
+                                    if id_split.len() == 2 {
+                                        let module_name = Sy!(id_split.first().unwrap().to_string());
+                                        if let Some(m) = session.sync_odoo.modules.get(&module_name) {
+                                            csv_module = m.upgrade().unwrap();
+                                        }
+                                    }
+                                    csv_module.borrow_mut().as_module_package_mut().xml_id_locations.entry(Sy!(id_split.last().unwrap().to_string())).or_insert(PtrWeakHashSet::new()).insert(csv_symbol.clone());
+                                    csv.xml_ids.entry(Sy!(id_split.last().unwrap().to_string())).or_insert(vec![]).push(OdooData::RECORD(record));
                                 }
-                                csv_module.borrow_mut().as_module_package_mut().xml_id_locations.entry(Sy!(id_split.last().unwrap().to_string())).or_insert(PtrWeakHashSet::new()).insert(csv_symbol.clone());
-                                csv.xml_ids.entry(Sy!(id_split.last().unwrap().to_string())).or_insert(vec![]).push(OdooData::RECORD(record));
                             }
                         }
-                    } else {
-                        error!("Could not read record in CSV file: {:?}", result);
+                        Err(err) => {
+                            error!("Could not read record in CSV file {:?}. Error: {:?}", model_name_pb, err);
+                        }
                     }
                 }
             }
@@ -72,19 +75,12 @@ impl CsvArchBuilder {
         diagnostics
     }
 
-    fn extract_record(&self, file_symbol: Weak<RefCell<Symbol>>, model_name: OYarn, headers: &Vec<OYarn>, record: &StringRecord) -> Option<OdooDataRecord> {
-        if record.position().is_none() {
-            return None;
-        }
+    fn extract_record(&self, file_symbol: Weak<RefCell<Symbol>>, model_name: OYarn, headers: &Vec<OYarn>, record: &StringRecord, content: &String) -> Option<OdooDataRecord> {
+        let field_iter = CsvFieldIter::new(record, content)?;
         let mut fields = vec![];
-        // TODO: account for \r\n as line break (shift start by +1)
-        let mut start = record.position().unwrap().byte();
-        let mut idx = 0;
         let mut last_end = 0;
         let mut xml_id = None;
-        for field in record.iter(){
-            // TODO: account for quotes in the fields (len could be off by 2)
-            let end = start + field.len() as u64;
+        for (idx, (start, end, field)) in field_iter.enumerate() {
             let field_name = headers.get(idx).unwrap().clone();
             if field_name == "id" {
                 xml_id = Some(oyarn!("{}", field));
@@ -104,9 +100,7 @@ impl CsvArchBuilder {
                     ref_key: None,
                 }
             );
-            start = end + 1;
             last_end = end;
-            idx +=1 ;
         }
         Some(OdooDataRecord {
             symbol: file_symbol,

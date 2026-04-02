@@ -317,8 +317,8 @@ impl GotoUtils {
         let model_name = Sy!(model_name_pb.file_stem().unwrap().to_str().unwrap().to_string());
         let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
         let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
-        let mut csv_reader = csv::ReaderBuilder::new().quoting(false).from_reader(data.as_bytes());
-        let sources = CsvAstUtils::get_symbols(session, file_symbol, &mut csv_reader, &model_name, offset);
+        let mut csv_reader = csv::ReaderBuilder::new().quoting(true).from_reader(data.as_bytes());
+        let sources = CsvAstUtils::get_symbols(session, file_symbol, &mut csv_reader, &model_name, offset, &data);
         sources
     }
 
