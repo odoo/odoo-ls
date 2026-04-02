@@ -41,7 +41,7 @@ pub struct FunctionSymbol {
     pub diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>, //only temporary used for CLASS and FUNCTION to be collected like others are stored on FileInfo
     pub evaluations: Vec<Evaluation>, //Vec, because sometimes a single allocation can be ambiguous, like ''' a = "5" if X else 5 '''
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>,
-    pub parent: SymbolKey,
+    parent: SymbolKey,
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub validation_status: BuildStatus,
@@ -149,6 +149,10 @@ impl FunctionSymbol {
             res.push(new_eval);
         }*/
         res
+    }
+
+    pub fn parent(&self) -> SymbolKey {
+        self.parent
     }
 
     // @areana: moved to SymbolTable

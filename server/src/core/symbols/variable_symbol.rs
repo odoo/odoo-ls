@@ -8,7 +8,7 @@ pub struct VariableSymbol {
     pub name: OYarn,
     pub is_external: bool,
     pub doc_string: Option<String>,
-    pub parent: SymbolKey,
+    parent: SymbolKey,
     pub is_import_variable: bool,
     pub is_parameter: bool,
     pub evaluations: Vec<Evaluation>, //Vec, because sometimes a single allocation can be ambiguous, like ''' a = "5" if X else 5 '''
@@ -59,7 +59,7 @@ impl VariableSymbol {
         let evaluations = variable_symbol.evaluations.clone();
         for eval in evaluations.iter() {
             let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-            let parent = st!()[target].parent;
+            let parent = st!()[target].parent();
             // To be able to follow related fields, we need to have the base_attr set in order to find the __get__ hook in next_refs
             // we update the context here for the case where we are coming from a decorator for example.
             let mut context = Some(HashMap::new());
@@ -86,6 +86,10 @@ impl VariableSymbol {
 
     pub fn is_value(&self) -> bool {
         return !self.evaluations.iter().any(|x| x.value.is_none());
+    }
+
+    pub fn parent(&self) -> SymbolKey {
+        self.parent
     }
 
 }

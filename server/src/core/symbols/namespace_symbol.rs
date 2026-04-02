@@ -16,7 +16,7 @@ pub struct NamespaceSymbol {
     pub name: OYarn,
     pub directories: Vec<NamespaceDirectory>,
     pub is_external: bool,
-    pub parent: SymbolKey,
+    parent: SymbolKey,
     pub(super) in_workspace: bool,
     pub dependencies: Vec<Vec<Option<WeakSet<SymbolKey>>>>,
     pub dependents: Vec<Vec<Option<WeakSet<SymbolKey>>>>,
@@ -69,6 +69,10 @@ impl NamespaceSymbol {
     // @arena: originally a branch in Symbol::add_path
     pub fn add_path(&mut self, path: String) {
         self.directories.push(NamespaceDirectory { path: path, module_symbols: HashMap::new() });
+    }
+
+    pub fn parent(&self) -> SymbolKey {
+        self.parent
     }
 
     // @arena: moved to SymbolTable

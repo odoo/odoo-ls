@@ -14,7 +14,7 @@ pub struct DiskDirSymbol {
     // @todo: this name is confusing. Maybe just "children"?
     pub module_symbols: HashMap<OYarn, SymbolKey>,
     pub is_external: bool,
-    pub parent: SymbolKey,
+    parent: SymbolKey,
     pub in_workspace: bool,
 }
 
@@ -33,6 +33,10 @@ impl DiskDirSymbol {
 
     pub fn add_file(&mut self, file: SymbolKey, name: &str) {
         self.module_symbols.insert(oyarn!("{}", name), file);
+    }
+
+    pub fn parent(&self) -> SymbolKey {
+        self.parent
     }
 
     /*pub fn load(sesion: &mut SessionInfo, dir: &Rc<RefCell<Symbol>>) -> Rc<RefCell<Symbol>> {

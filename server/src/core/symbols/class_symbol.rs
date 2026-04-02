@@ -17,7 +17,7 @@ pub struct ClassSymbol {
     pub is_external: bool,
     pub doc_string: Option<String>,
     pub bases: Vec<Weak<ClassKey>>, // formely Vec<Weak<RefCell<Symbol>>>
-    pub parent: SymbolKey,
+    parent: SymbolKey,
     pub range: TextRange,
     pub body_range: TextRange,
     pub _model: Option<ModelData>,
@@ -71,6 +71,10 @@ impl ClassSymbol {
             }
         }
         false
+    }
+
+    pub fn parent(&self) -> SymbolKey {
+        self.parent
     }
 
     // @arena: moved to SymbolTable

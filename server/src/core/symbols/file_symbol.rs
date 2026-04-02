@@ -10,7 +10,7 @@ pub struct FileSymbol {
     pub name: OYarn,
     pub path: String,
     pub is_external: bool,
-    pub parent: SymbolKey,
+    parent: SymbolKey,
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub validation_status: BuildStatus,
@@ -56,6 +56,10 @@ impl FileSymbol {
         };
         res._init_symbol_mgr();
         res
+    }
+
+    pub fn parent(&self) -> SymbolKey {
+        self.parent
     }
 
     // @arena: moved to SymbolMgr

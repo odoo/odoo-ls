@@ -80,7 +80,7 @@ impl PythonArchBuilder {
         }
         if let SymbolKey::Module(m) = symbol  {
             // @arena: is odoo_addons always a namespace?
-            let odoo_addons = st!()[m].parent;
+            let odoo_addons = st!()[m].parent();
             // @ arena: borrow conflict here??
             ModuleSymbol::load_module_info(m, session, odoo_addons);
             ModuleSymbol::load_data(m, session);
@@ -567,7 +567,7 @@ impl PythonArchBuilder {
                     let variable = &st!()[variable_key];
                     if self.file_mode && variable.name == "__all__" && assign.value.is_some() {
                         let mut deps = vec![vec![]]; //only arch level
-                        let eval = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), variable.parent, &assign_stmt.range.start(), false, &mut deps);
+                        let eval = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), variable.parent(), &assign_stmt.range.start(), false, &mut deps);
                         st!().insert_dependencies(self.file, &deps, BuildSteps::ARCH);
                         st!()[variable_key].evaluations = eval.0;
                         self.diagnostics.extend(eval.1);

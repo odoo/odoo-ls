@@ -10,7 +10,7 @@ pub struct CsvFileSymbol {
     pub name: OYarn,
     pub path: String,
     pub is_external: bool,
-    pub parent: SymbolKey,
+    parent: SymbolKey,
     pub arch_status: BuildStatus,
     pub validation_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
@@ -60,6 +60,10 @@ impl CsvFileSymbol {
             noqas: NoqaInfo::None,
         };
         res
+    }
+
+    pub fn parent(&self) -> SymbolKey {
+        self.parent
     }
 
     // @arena: dead code
