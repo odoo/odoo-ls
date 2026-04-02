@@ -3,7 +3,7 @@ use std::{cell::RefCell, path::PathBuf, rc::Rc};
 use csv::StringRecord;
 use lsp_types::{Diagnostic, Position, Range};
 
-use crate::{S, Sy, constants::{BuildStatus, BuildSteps, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileInfo}, features::csv_ast_utils::CsvAstUtils, oyarn, threads::SessionInfo};
+use crate::{S, Sy, constants::{BuildStatus, BuildSteps, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileInfo}, features::csv_ast_utils::CsvFieldIter, oyarn, threads::SessionInfo};
 
 use super::{symbols::{symbol::Symbol}};
 
@@ -51,10 +51,8 @@ impl CsvValidator {
         let Some(model_main_sym) = model_main_sym.get(0) else { return;};
         {
             if rdr.has_headers() && let Ok(header) = rdr.headers() {
-                let mut start = 0;
                 let mut header_is_xml = vec![false; header.len()];
-                for (idx, h) in header.iter().enumerate() {
-                    let end = start + field_len(h, &data, start);
+                for (idx, (start, end, h)) in CsvFieldIter::new(header, &data).unwrap().enumerate() {
                     let mut header_elts = h.splitn(2, [':', '/']).collect::<Vec<_>>();
                     header_elts[0] = header_elts[0].split("@").next().unwrap(); //remove translation if exists
                     let member_sym = model_main_sym.borrow().get_member_symbol(session, &S!(header_elts[0]), Some(csv_module.clone()), false, true, false, true, false);
@@ -80,7 +78,6 @@ impl CsvValidator {
                         }
                         header_is_xml[idx] = is_relational;
                     }
-                    start = end + 1;
                 }
                 if csv.headers.contains(&Sy!("id")) {
                     for result in rdr.records().filter_map(Result::ok) {
@@ -98,17 +95,9 @@ impl CsvValidator {
         file_info.borrow_mut().publish_diagnostics(session);
     }
 
-    fn validate_record(&self, session: &mut SessionInfo, csv_module: &Rc<RefCell<Symbol>>, headers_is_xml: &Vec<bool>, record: &StringRecord, diagnostics: &mut Vec<Diagnostic>, data: &String) {
-        if record.position().is_none() {
-            return;
-        }
-        let mut start = record.position().unwrap().byte() as usize;
-        // Account for CRLF (\r\n) as line break
-        if data.as_bytes().get(start) == Some(&b'\n') {
-            start += 1;
-        }
-        for (idx, field) in record.iter().enumerate() {
-            let end = start + field_len(field, data, start);
+    fn validate_record(&self, session: &mut SessionInfo, csv_module: &Rc<RefCell<Symbol>>, headers_is_xml: &Vec<bool>, record: &StringRecord, diagnostics: &mut Vec<Diagnostic>, data: &str) {
+        let Some(field_iter) = CsvFieldIter::new(record, data) else { return; };
+        for (idx, (start, end, field)) in field_iter.enumerate() {
             let Some(should_be_xml_id) = headers_is_xml.get(idx) else { break;};
             if *should_be_xml_id {
                 //check that field_data is a valid xml id
@@ -140,21 +129,7 @@ impl CsvValidator {
                     }
                 }
             }
-            start = end + 1;
         }
     }
 }
 
-/// Accounts for outer double quotes in the field length, for positioning purposes.
-/// E.g.: `"abc",def,ghi` in a csv line, the first field has len 5 while the
-/// other two have len 3 each.
-fn field_len(field: &str, data_src: &str, offset: usize) -> usize {
-    let mut len = field.len();
-    if data_src.as_bytes().get(offset) == Some(&b'"') {
-        len += 1;
-    }
-    if data_src.as_bytes().get(offset + len) == Some(&b'"') {
-        len += 1;
-    }
-    len
-}

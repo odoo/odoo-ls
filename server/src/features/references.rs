@@ -140,13 +140,13 @@ impl ReferenceFeature {
                             SymType::CSV_FILE => {
                                 if target_symbol.borrow().is_field(session) {
                                     let data = dep_file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
-                                    let mut csv_reader = csv::ReaderBuilder::new().quoting(false).from_reader(data.as_bytes());
+                                    let mut csv_reader = csv::ReaderBuilder::new().from_reader(data.as_bytes());
                                     let model_class = target_symbol.borrow().get_in_parents(&vec![SymType::CLASS], true);
                                     if let Some(model_class) = model_class {
                                         if let Some(model_class) = model_class.upgrade() {
                                             if let Some(model) = &model_class.borrow().as_class_sym()._model {
                                                 let model_name = model.name.clone();
-                                                locations.extend(CsvAstReferenceVisitor::search_target(session, &file, &mut csv_reader, Some(&model_name), &ReferenceTarget::Symbol(target_symbol.clone())));
+                                                locations.extend(CsvAstReferenceVisitor::search_target(session, &file, &mut csv_reader, Some(&model_name), &ReferenceTarget::Symbol(target_symbol.clone()), &data));
                                             }
                                         }
                                     }
@@ -235,8 +235,8 @@ impl ReferenceFeature {
                                 },
                                 SymType::CSV_FILE => {
                                     let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
-                                    let mut csv_reader = csv::ReaderBuilder::new().quoting(false).from_reader(data.as_bytes());
-                                    locations.extend(CsvAstReferenceVisitor::search_target(session, &file_s, &mut csv_reader, None, &ReferenceTarget::String(full_xml_id)));
+                                    let mut csv_reader = csv::ReaderBuilder::new().from_reader(data.as_bytes());
+                                    locations.extend(CsvAstReferenceVisitor::search_target(session, &file_s, &mut csv_reader, None, &ReferenceTarget::String(full_xml_id), &data));
                                 },
                                 _ => {}
                             }
