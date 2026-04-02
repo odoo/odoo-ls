@@ -4,7 +4,7 @@ use csv::StringRecord;
 use lsp_types::Diagnostic;
 use tracing::{error};
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{symbols::{dependency_mgr::Buildable, symbol_keys::{CsvFileKey, SymbolKey, Weak}}, xml_data::{OdooData, OdooDataField, OdooDataRecord}}, oyarn, threads::SessionInfo, weak_hash_set::WeakSet, Sy};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{symbols::{dependency_mgr::Buildable, symbol_keys::{CsvFileKey, SymbolKey, Weak}}, xml_data::{OdooData, OdooDataField, OdooDataRecord}},features::csv_ast_utils::CsvFieldIter, oyarn, threads::SessionInfo, weak_hash_set::WeakSet, Sy};
 
 
 pub struct CsvArchBuilder {
@@ -39,28 +39,31 @@ impl CsvArchBuilder {
         }
         if csv.headers.contains(&Sy!("id")) {
             for result in rdr.records() {
-                let Ok(result) = result else {
-                    error!("Could not read record in CSV file: {:?}", result);
-                    continue;
-                };
-                let headers = &st!()[csv_symbol].headers;
-                let record = self.extract_record(csv_symbol.into(), model_name.clone(), headers, &result);
-                let Some(record) = record else { continue };
-                let Some(xml_id) = record.xml_id.as_ref() else { continue };
-                let id_split = xml_id.split(".").collect::<Vec<&str>>();
-                if id_split.len() > 2 {
-                    //TODO diagnostic
-                    continue;
-                }
-                let mut csv_module = csv_module;
-                if id_split.len() == 2 {
-                    let module_name = Sy!(id_split.first().unwrap().to_string());
-                    if let Some(&m) = session.sync_odoo.modules.get(&module_name) {
-                        csv_module = m.upgrade(&st!()).unwrap();
+                match result {
+                    Ok(result) => {
+                        let headers = &st!()[csv_symbol].headers;
+                        let record = self.extract_record(csv_symbol.into(), model_name.clone(), headers, &result, content);
+                        let Some(record) = record else { continue };
+                        let Some(xml_id) = record.xml_id.as_ref() else { continue };
+                        let id_split = xml_id.split(".").collect::<Vec<&str>>();
+                        if id_split.len() > 2 {
+                            //TODO diagnostic
+                            continue;
+                        }
+                        let mut csv_module = csv_module;
+                        if id_split.len() == 2 {
+                            let module_name = Sy!(id_split.first().unwrap().to_string());
+                            if let Some(&m) = session.sync_odoo.modules.get(&module_name) {
+                                csv_module = m.upgrade(&st!()).unwrap();
+                            }
+                        }
+                        st!()[csv_module].xml_id_locations.entry(Sy!(id_split.last().unwrap().to_string())).or_insert_with(WeakSet::new).insert(csv_symbol.into());
+                        st!()[csv_symbol].xml_ids.entry(Sy!(id_split.last().unwrap().to_string())).or_insert(vec![]).push(OdooData::RECORD(record));
+                    },
+                    Err(err) => {
+                        error!("Could not read record in CSV file {:?}. Error: {:?}", model_name_pb, err);
                     }
                 }
-                st!()[csv_module].xml_id_locations.entry(Sy!(id_split.last().unwrap().to_string())).or_insert_with(WeakSet::new).insert(csv_symbol.into());
-                st!()[csv_symbol].xml_ids.entry(Sy!(id_split.last().unwrap().to_string())).or_insert(vec![]).push(OdooData::RECORD(record));
             }
         }
         st!()[csv_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
@@ -68,19 +71,12 @@ impl CsvArchBuilder {
         diagnostics
     }
 
-    fn extract_record(&self, file_symbol: Weak<SymbolKey>, model_name: OYarn, headers: &Vec<OYarn>, record: &StringRecord) -> Option<OdooDataRecord> {
-        if record.position().is_none() {
-            return None;
-        }
+    fn extract_record(&self, file_symbol: Weak<SymbolKey>, model_name: OYarn, headers: &Vec<OYarn>, record: &StringRecord, content: &String) -> Option<OdooDataRecord> {
+        let field_iter = CsvFieldIter::new(record, content)?;
         let mut fields = vec![];
-        // TODO: account for \r\n as line break (shift start by +1)
-        let mut start = record.position().unwrap().byte();
-        let mut idx = 0;
         let mut last_end = 0;
         let mut xml_id = None;
-        for field in record.iter(){
-            // TODO: account for quotes in the fields (len could be off by 2)
-            let end = start + field.len() as u64;
+        for (idx, (start, end, field)) in field_iter.enumerate() {
             let field_name = headers.get(idx).unwrap().clone();
             if field_name == "id" {
                 xml_id = Some(oyarn!("{}", field));
@@ -100,9 +96,7 @@ impl CsvArchBuilder {
                     ref_key: None,
                 }
             );
-            start = end + 1;
             last_end = end;
-            idx +=1 ;
         }
         Some(OdooDataRecord {
             symbol: file_symbol,
