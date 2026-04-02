@@ -563,35 +563,6 @@ impl SymbolTable {
         self.xml_files.reserve(3200);
     }
 
-
-    pub fn remove(&mut self, key: SymbolKey) {
-        self.ext_symbols.remove(key);
-        match key {
-            SymbolKey::Root(k) => { self.roots.remove(k); }
-            SymbolKey::DiskDir(k) => { self.disk_dirs.remove(k); }
-            SymbolKey::Namespace(k) => { self.namespaces.remove(k); }
-            SymbolKey::PythonPackage(k) => { self.python_packages.remove(k); }
-            SymbolKey::Module(k) => { self.modules.remove(k); }
-            SymbolKey::File(k) => { self.files.remove(k); }
-            SymbolKey::Compiled(k) => { self.compiled.remove(k); }
-            SymbolKey::Class(k) => { self.classes.remove(k); }
-            SymbolKey::Function(k) => { self.functions.remove(k); }
-            SymbolKey::Variable(k) => { self.variables.remove(k); }
-            SymbolKey::XmlFile(k) => { self.xml_files.remove(k); }
-            SymbolKey::CsvFile(k) => { self.csv_files.remove(k); }
-        }
-    }
-
-    // pub fn insert_variable(&mut self, symbol: VariableSymbol) -> SymbolKey {
-    //     let key = self.variables.insert(symbol);
-    //     SymbolKey::Variable(key)
-    // }
-
-    // pub fn insert_function(&mut self, symbol: FunctionSymbol) -> SymbolKey {
-    //     let key = self.functions.insert(symbol);
-    //     SymbolKey::Function(key)
-    // }
-
     pub fn get_symbol_view(&self, key: SymbolKey) -> Option<SymbolView<'_>> {
         match key {
             SymbolKey::Root(k) => self.roots.get(k).map(SymbolView::Root),

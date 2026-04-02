@@ -25,6 +25,14 @@ use crate::core::symbols::symbol_table::{ClassKey, CompiledKey, CsvFileKey, Disk
 use tracing::info;
 
 
+/// Symbol creation and destruction.
+///
+/// All slotmap insertions/removals and parent/child relationship mutations are
+/// centralized here. The `symbols` and `module_symbols` fields on variant structs
+/// are `pub(super)`, so only code within `core::symbols` can mutate them.
+/// Combined with private slotmaps, this guarantees that `parent`, `symbols`, and
+/// `module_symbols` always hold valid keys — they can be trusted without validity
+/// checks, unlike keys stored elsewhere (e.g. in dependency sets or evaluations).
 impl SymbolTable {
     pub fn new_root(&mut self) -> RootKey {
         let root_symbol = RootSymbol::new();
@@ -245,10 +253,28 @@ impl SymbolTable {
 
         self.modules[parent].data_symbols.remove(path);
     }
+    
+    fn remove(&mut self, key: SymbolKey) {
+        self.ext_symbols.remove(key);
+        match key {
+            SymbolKey::Root(k) => { self.roots.remove(k); }
+            SymbolKey::DiskDir(k) => { self.disk_dirs.remove(k); }
+            SymbolKey::Namespace(k) => { self.namespaces.remove(k); }
+            SymbolKey::PythonPackage(k) => { self.python_packages.remove(k); }
+            SymbolKey::Module(k) => { self.modules.remove(k); }
+            SymbolKey::File(k) => { self.files.remove(k); }
+            SymbolKey::Compiled(k) => { self.compiled.remove(k); }
+            SymbolKey::Class(k) => { self.classes.remove(k); }
+            SymbolKey::Function(k) => { self.functions.remove(k); }
+            SymbolKey::Variable(k) => { self.variables.remove(k); }
+            SymbolKey::XmlFile(k) => { self.xml_files.remove(k); }
+            SymbolKey::CsvFile(k) => { self.csv_files.remove(k); }
+        }
+    }
 
     // @arena: removes a symbol from its parent (not yet from the symbol table)
     // original code in unload + remove symbol: unwraps Option(parent) and the weak.upgrade.
-    pub fn remove_symbol(&mut self, child: SymbolKey) {
+    fn remove_symbol(&mut self, child: SymbolKey) {
         let child_symbol = self.get_symbol_view(child).expect("valid key");
         let child_name = child_symbol.name().clone();
         let parent = child_symbol.parent().expect("symbol should have a parent");
