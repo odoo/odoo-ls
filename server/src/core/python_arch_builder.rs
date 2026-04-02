@@ -80,7 +80,7 @@ impl PythonArchBuilder {
         }
         if let SymbolKey::Module(m) = symbol  {
             // @arena: is odoo_addons always a namespace?
-            let odoo_addons = st!().modules[m].parent;
+            let odoo_addons = st!()[m].parent;
             // @ arena: borrow conflict here??
             ModuleSymbol::load_module_info(m, session, odoo_addons);
             ModuleSymbol::load_data(m, session);
@@ -248,7 +248,7 @@ impl PythonArchBuilder {
                                     }
                                 }
                                 let variable_key = st!().add_new_variable(*self.sym_stack.last().unwrap(), name, &import_result.range);
-                                let variable = &mut st!().variables[variable_key];
+                                let variable = &mut st!()[variable_key];
                                 variable.is_import_variable = true;
                                 variable.evaluations = evaluations;
                             }
@@ -262,7 +262,7 @@ impl PythonArchBuilder {
                     import_name.asname.as_ref().unwrap().clone().to_string()
                 };
                 let variable_key = st!().add_new_variable(*self.sym_stack.last().unwrap(), OYarn::from(var_name), &import_name.range);
-                st!().variables[variable_key].is_import_variable = true;
+                st!()[variable_key].is_import_variable = true;
             }
         }
         Ok(())
@@ -564,14 +564,14 @@ impl PythonArchBuilder {
             match assign.target {
                 AssignTargetType::Name(ref name_expr) => {
                     let variable_key = st!().add_new_variable(*self.sym_stack.last().unwrap(), oyarn!("{}", name_expr.id), &name_expr.range);
-                    let variable = &st!().variables[variable_key];
+                    let variable = &st!()[variable_key];
                     if self.file_mode && variable.name == "__all__" && assign.value.is_some() {
                         let mut deps = vec![vec![]]; //only arch level
                         let eval = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), variable.parent, &assign_stmt.range.start(), false, &mut deps);
                         st!().insert_dependencies(self.file, &deps, BuildSteps::ARCH);
-                        st!().variables[variable_key].evaluations = eval.0;
+                        st!()[variable_key].evaluations = eval.0;
                         self.diagnostics.extend(eval.1);
-                        if let Some(evaluation) = st!().variables[variable_key].evaluations.get(0) {
+                        if let Some(evaluation) = st!()[variable_key].evaluations.get(0) {
                             if get_sym!(st!(), *self.sym_stack.last().unwrap()).is_external() {
                                 // external packages often import symbols from compiled files
                                 // or with meta programmation like globals["var"] = __get_func().
@@ -697,7 +697,7 @@ impl PythonArchBuilder {
         //add params
         for arg in func_def.parameters.posonlyargs.iter() {
             let param = st!().add_new_variable(function_key, oyarn!("{}", arg.parameter.name.id), &arg.range);
-            st!().variables[param].is_parameter = true;
+            st!()[param].is_parameter = true;
             let mut default = None;
             if arg.default.is_some() {
                 default = Some(Evaluation::new_none()); //TODO evaluate default? actually only used to know if there is a default or not
@@ -711,7 +711,7 @@ impl PythonArchBuilder {
         }
         for arg in func_def.parameters.args.iter() {
             let param = st!().add_new_variable(function_key, oyarn!("{}", arg.parameter.name.id), &arg.range);
-            st!().variables[param].is_parameter = true;
+            st!()[param].is_parameter = true;
             let mut default = None;
             if arg.default.is_some() {
                 default = Some(Evaluation::new_none()); //TODO evaluate default? actually only used to know if there is a default or not
@@ -725,7 +725,7 @@ impl PythonArchBuilder {
         }
         if let Some(arg) = &func_def.parameters.vararg {
             let param = st!().add_new_variable(function_key, oyarn!("{}", arg.name.id), &arg.range);
-            st!().variables[param].is_parameter = true;
+            st!()[param].is_parameter = true;
             st!()[function_key].args.push(Argument {
                 symbol: param.into(),
                 default_value: None,
@@ -735,7 +735,7 @@ impl PythonArchBuilder {
         }
         for arg in func_def.parameters.kwonlyargs.iter() {
             let param = st!().add_new_variable(function_key, oyarn!("{}", arg.parameter.name.id), &arg.range);
-            st!().variables[param].is_parameter = true;
+            st!()[param].is_parameter = true;
             st!()[function_key].args.push(Argument {
                 symbol: param.into(),
                 default_value: arg.default.as_ref().map(|_default| Evaluation::new_none()),
@@ -745,7 +745,7 @@ impl PythonArchBuilder {
         }
         if let Some(arg) = &func_def.parameters.kwarg {
             let param = st!().add_new_variable(function_key, oyarn!("{}", arg.name.id), &arg.range);
-            st!().variables[param].is_parameter = true;
+            st!()[param].is_parameter = true;
             st!()[function_key].args.push(Argument {
                 symbol: param.into(),
                 default_value: None,
@@ -783,7 +783,7 @@ impl PythonArchBuilder {
         let parent = *self.sym_stack.last().unwrap();
         let class_key = st!().add_new_class(
             parent, &class_def.name.id.to_string(), &class_def.range, &class_def.body.get(0).unwrap().range().start());
-        let class_sym = &mut st!().classes[class_key];
+        let class_sym = &mut st!()[class_key];
 
         if class_def.body.len() > 0 && class_def.body[0].is_expr_stmt() {
             let expr = class_def.body[0].as_expr_stmt().unwrap();

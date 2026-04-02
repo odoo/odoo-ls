@@ -29,13 +29,13 @@ impl XmlArchBuilder {
     pub fn load_arch(&mut self, session: &mut SessionInfo, file_info: &mut FileInfo, node: &Node) {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let mut diagnostics = vec![];
-        st!().xml_files[self.xml_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
+        st!()[self.xml_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
         let ep = st!().get_entry(self.xml_symbol.into());
         if let Some(ep) = ep {
             self.is_in_main_ep = ep.borrow().typ == EntryPointType::MAIN || ep.borrow().typ == EntryPointType::ADDON;
         }
         self.load_odoo_openerp_data(session, node, &mut diagnostics);
-        st!().xml_files[self.xml_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
+        st!()[self.xml_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
         file_info.replace_diagnostics(BuildSteps::ARCH, diagnostics);
         session.sync_odoo.add_to_validations(self.xml_symbol.into());
     }
@@ -80,8 +80,8 @@ impl XmlArchBuilder {
                 }
             }
             xml_data.set_file_symbol(self.xml_symbol);
-            st!().modules[xml_module].xml_id_locations.entry(Sy!(id.clone())).or_insert_with(WeakSet::new).insert(self.xml_symbol.into());
-            st!().xml_files[self.xml_symbol].xml_ids.entry(Sy!(id)).or_insert(vec![]).push(xml_data);
+            st!()[xml_module].xml_id_locations.entry(Sy!(id.clone())).or_insert_with(WeakSet::new).insert(self.xml_symbol.into());
+            st!()[self.xml_symbol].xml_ids.entry(Sy!(id)).or_insert(vec![]).push(xml_data);
         }
     }
 

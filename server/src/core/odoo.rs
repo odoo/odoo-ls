@@ -457,7 +457,7 @@ impl SyncOdoo {
         };
         match odoo_odoo {
             SymbolKey::PythonPackage(p) => {
-                st!().python_packages[p].self_import = true;
+                st!()[p].self_import = true;
                 session.sync_odoo.add_to_rebuild_arch(odoo_odoo);
             },
             SymbolKey::Namespace(_) => {
@@ -467,7 +467,7 @@ impl SyncOdoo {
                     panic!("Not able to find odoo/__main__.py. Aborting...");
                 };
                 let f = main_file.unwrap_file_key();
-                st!().files[f].self_import = true;
+                st!()[f].self_import = true;
                 session.sync_odoo.add_to_rebuild_arch(main_file);
             },
             _ => panic!("Root symbol is not a package or namespace (> 18.0)")
@@ -500,7 +500,7 @@ impl SyncOdoo {
         if odoo_addon_path.exists() {
             if session.sync_odoo.load_odoo_addons {
                 let path = odoo_addon_path.sanitize();
-                st!().namespaces[addon_symbol].add_path(path.clone());
+                st!()[addon_symbol].add_path(path.clone());
                 EntryPointMgr::add_entry_to_addons(session, path,
                     Some(odoo_entry.clone()),
                     Some(vec![Sy!("odoo"),
@@ -512,7 +512,7 @@ impl SyncOdoo {
         for addon in session.sync_odoo.config.addons_paths.clone() {
             let addon_path = PathBuf::from(&addon);
             if addon_path.exists() {
-                st!().namespaces[addon_symbol].add_path(addon_path.sanitize());
+                st!()[addon_symbol].add_path(addon_path.sanitize());
                 EntryPointMgr::add_entry_to_addons(session, addon,
                     Some(odoo_entry.clone()),
                     Some(vec![Sy!("odoo"),
@@ -526,7 +526,7 @@ impl SyncOdoo {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let addons_symbol = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &tree(vec!["odoo", "addons"], vec![]), u32::MAX)[0];
         // @arena: not in the original code. Consider wrapping get_symbol in a get_addon_namespace function
-        let addons_path = st!().namespaces[addons_symbol.unwrap_namespace_key()].paths();
+        let addons_path = st!()[addons_symbol.unwrap_namespace_key()].paths();
         let mut modules = vec![];
         for addon_path in addons_path.iter() {
             info!("searching modules in {}", addon_path);
@@ -565,7 +565,7 @@ impl SyncOdoo {
             .into_iter()
             .map(|module_key| {
                 let (name, depends) = {
-                    let module_symbol = &symbol_table.modules[module_key];
+                    let module_symbol = &symbol_table[module_key];
                     let name = module_symbol.name.clone();
                     let depends = module_symbol.depends.iter().map(|(d, _)| d.clone()).collect();
                     (name, depends)
@@ -684,20 +684,19 @@ impl SyncOdoo {
             };
             session.sync_odoo.must_reload_paths.retain(|(_, p)| p != path);
             st!().set_is_external(new_symbol, false);
-            // let new_sym_typ = new_symbol.borrow().typ();
             match new_symbol {
                 SymbolKey::PythonPackage(p) => {
-                    st!().python_packages[p].self_import = true;
+                    st!()[p].self_import = true;
                 }
                 SymbolKey::File(f) => {
-                    st!().files[f].self_import = true;
+                    st!()[f].self_import = true;
                 },
                 SymbolKey::Module(_) => {}
                 SymbolKey::Namespace(_) => continue, // A module became a namespace, due to __init__ deletion/renaming
                 _ => {panic!("Unexpected symbol type: {:?}", new_symbol);}
             }
             if let SymbolKey::Module(m) = new_symbol {
-                let name = st!().modules[m].name.clone();
+                let name = st!()[m].name.clone();
                 session.sync_odoo.modules.insert(name, m.into());
             }
             session.sync_odoo.add_to_rebuild_arch(new_symbol);
@@ -1110,7 +1109,7 @@ impl SyncOdoo {
         for entry in ep_mgr.borrow().untitled_entry_points.iter() {
             if entry.borrow().path == path.sanitize() {
                 let name = path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
-                let Some(file) = st!().roots[entry.borrow().root].module_symbols.get(name.as_str()).cloned() else {
+                let Some(file) = st!()[entry.borrow().root].module_symbols.get(name.as_str()).cloned() else {
                     continue;
                 };
                 return Some(file);

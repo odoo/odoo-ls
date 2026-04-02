@@ -203,10 +203,10 @@ impl EntryPointMgr {
             st!().set_is_external(new_sym, false);
             match new_sym {
                 SymbolKey::PythonPackage(p) => {
-                    st!().python_packages[p].self_import = true;
+                    st!()[p].self_import = true;
                 },
                 SymbolKey::File(f) => {
-                    st!().files[f].self_import = true;
+                    st!()[f].self_import = true;
                 },
                 SymbolKey::Namespace(n) => {
                     if file_path.ends_with("__manifest__.py") {
@@ -215,7 +215,7 @@ impl EntryPointMgr {
                     } else {
                         // There was an __init__.py, that was renamed or deleted.
                         // Another notification will come for the deletion of the file, so we just warn here.
-                        warn_or_panic!("Trying to create a custom entrypoint on a namespace symbol: {:?}", st!().namespaces[n].paths());
+                        warn_or_panic!("Trying to create a custom entrypoint on a namespace symbol: {:?}", st!()[n].paths());
                     }
                     return false;
                 }
@@ -228,7 +228,7 @@ impl EntryPointMgr {
 
     pub fn create_new_untitled_entry_for_path(session: &mut SessionInfo, file_name: &String) -> bool {
         let new_sym = EntryPointMgr::add_entry_to_untitled(session, file_name.clone());
-        session.sync_odoo.symbol_table.files[new_sym].self_import = true;
+        session.sync_odoo.symbol_table[new_sym].self_import = true;
         SyncOdoo::add_to_rebuild_arch(session.sync_odoo, new_sym.into());
         true
     }
@@ -413,7 +413,7 @@ impl EntryPoint {
             to_delete: false,
             data_symbols: HashMap::new(),
         }));
-        symbol_table.roots[root].entry_point = Some(res.clone());
+        symbol_table[root].entry_point = Some(res.clone());
         res
     }
 
@@ -462,7 +462,7 @@ impl EntryPoint {
         let mut to_add = [vec![], vec![], vec![], vec![]]; //list of symbols to add after the loop (borrow issue)
         for s in self.not_found_symbols.iter_valid(|&k| st!().contains_key(k)) {
             if let SymbolKey::Module(p) = s {
-                let module_package = &mut st!().modules[p];
+                let module_package = &mut st!()[p];
                 if let Some(step) = module_package.not_found_data.get(path) {
                     match step {
                         BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION => {
@@ -507,7 +507,7 @@ impl EntryPoint {
                 return true;
             }
             if let SymbolKey::Module(p) = sym {
-                return !st!().modules[p].not_found_data.is_empty();
+                return !st!()[p].not_found_data.is_empty();
             }
             false
         });

@@ -106,9 +106,9 @@ impl Model {
 
     pub fn get_symbols(&self, symbol_table: &SymbolTable, from_module: Option<ModuleKey>) -> Vec<ClassKey> {
         let mut symbol = Vec::new();
-        for s in self.symbols.iter_valid(|&k| symbol_table.classes.contains_key(k)) {
+        for s in self.symbols.iter_valid(|&k| symbol_table.contains_key(k)) {
             let module = symbol_table.find_module(s).expect("Unreachable: Model should be declared in a module");
-            let module_sym = &symbol_table.modules[module];
+            let module_sym = &symbol_table[module];
             if from_module.is_none() || ModuleSymbol::is_in_deps(symbol_table, from_module.unwrap(), &module_sym.dir_name) {
                 symbol.push(s);
             }
@@ -119,14 +119,14 @@ impl Model {
     pub fn get_main_symbols(&self, session: &SessionInfo, from_module: Option<ModuleKey>) -> Vec<ClassKey> {
         let st = &session.sync_odoo.symbol_table;
         let mut res = vec![];
-        for key in self.symbols.iter_valid(|&k| st.classes.contains_key(k)) {
-            let model = st.classes[key]._model.as_ref().unwrap();
+        for key in self.symbols.iter_valid(|&k| st.contains_key(k)) {
+            let model = st[key]._model.as_ref().unwrap();
             if !model.inherit.contains(&model.name) {
                 let module = st.find_module(key);
                 if from_module.is_none() || module.is_none() {
                     res.push(key);
                 } else {
-                    let dir_name = &st.modules[module.unwrap()].dir_name;
+                    let dir_name = &st[module.unwrap()].dir_name;
                     if ModuleSymbol::is_in_deps(st, from_module.unwrap(), dir_name) {
                         res.push(key);
                     }
@@ -138,11 +138,11 @@ impl Model {
 
     pub fn model_in_deps(&self, session: &mut SessionInfo, from_module: ModuleKey) -> bool {
         let st = &session.sync_odoo.symbol_table;
-        for key in self.symbols.iter_valid(|&k| st.classes.contains_key(k)) {
-            let model = st.classes[key]._model.as_ref().unwrap();
+        for key in self.symbols.iter_valid(|&k| st.contains_key(k)) {
+            let model = st[key]._model.as_ref().unwrap();
             if !model.inherit.contains(&model.name) {
                 let module = st.find_module(key).unwrap(); // @arena: same as original code (unwrap)
-                let dir_name = &st.modules[module].dir_name;
+                let dir_name = &st[module].dir_name;
                 if ModuleSymbol::is_in_deps(st, from_module, dir_name) {
                     return true;
                 }
@@ -162,7 +162,7 @@ impl Model {
             let current_model = current_model_rc.borrow();
             let symbols = current_model.get_symbols(st, Some(from_module));
             for &key in symbols.iter() {
-                let Some(model_data) = &st.classes.get(key).expect("valid key from get_symbols")._model else {continue};
+                let Some(model_data) = &st[key]._model else {continue};
                 for inherit in model_data.inherit.iter() {
                     if let Some(model) = session.sync_odoo.models.get(inherit).cloned() {
                         if !already_in.contains(&model.borrow().name) {
@@ -183,7 +183,7 @@ impl Model {
         let mut already_in = HashSet::new();
         let symbols = self.get_symbols(st, Some(from_module));
         for symbol_key in symbols {
-            let Some(model_data) = &st.classes.get(symbol_key).expect("valid key from get_symbols")._model else {
+            let Some(model_data) = &st[symbol_key]._model else {
                 continue;
             };
             for (model_name, _field) in model_data.inherits.iter() {
@@ -199,7 +199,7 @@ impl Model {
     }
 
     pub fn has_symbols(&mut self, symbol_table: &SymbolTable) -> bool {
-        self.symbols.clear_invalid(|&k| symbol_table.classes.contains_key(k));
+        self.symbols.clear_invalid(|&k| symbol_table.contains_key(k));
         !self.symbols.is_empty()
     }
 
@@ -214,11 +214,11 @@ impl Model {
     fn all_symbols_helper(&self, session: &SessionInfo, from_module: Option<ModuleKey>, with_inheritance: bool, seen_inherited_models: &mut HashSet<OYarn>) -> Vec<(ClassKey, Option<OYarn>)> {
         let st = &session.sync_odoo.symbol_table;
         let mut symbols = Vec::new();
-        for s in self.symbols.iter_valid(|&k| st.classes.contains_key(k)) { // filter stale keys
+        for s in self.symbols.iter_valid(|&k| st.contains_key(k)) { // filter stale keys
             if let Some(from_module) = from_module {
                 let module = st.find_module(s);
                 if let Some(module) = module {
-                    let dir_name = &st.modules[module].dir_name;
+                    let dir_name = &st[module].dir_name;
                     if ModuleSymbol::is_in_deps(st, from_module, dir_name) {
                         symbols.push((s, None));
                     } else {
@@ -233,7 +233,7 @@ impl Model {
             if !with_inheritance {
                 continue;
             }
-            let inherited_models = &st.classes[s]._model.as_ref().unwrap().inherit;
+            let inherited_models = &st[s]._model.as_ref().unwrap().inherit;
             for inherited_model in inherited_models.iter() {
                 if !seen_inherited_models.contains(inherited_model) {
                     seen_inherited_models.insert(inherited_model.clone());
@@ -260,11 +260,11 @@ impl Model {
         let st = &session.sync_odoo.symbol_table;
         let mut symbols = Vec::new();
         let mut inherits_symbols = Vec::new();
-        for s in self.symbols.iter_valid(|&k| st.classes.contains_key(k)) {
+        for s in self.symbols.iter_valid(|&k| st.contains_key(k)) {
             if let Some(from_module) = from_module {
                 let module = st.find_module(s);
                 if let Some(module) = module {
-                    let dir_name = &st.modules[module].dir_name;
+                    let dir_name = &st[module].dir_name;
                     if ModuleSymbol::is_in_deps(st, from_module, dir_name) {
                         symbols.push((s, None));
                     } else {
@@ -279,7 +279,7 @@ impl Model {
             // First get results from normal inherit
             // To make sure we visit all of inherit before inherits, since it is DFS
             // Only inherits in the tree that are not already visited will be processed in the next iteration
-            let model_data = st.classes[s]._model.as_ref().unwrap();
+            let model_data = st[s]._model.as_ref().unwrap();
             for inherited_model in &model_data.inherit {
                 if let Some(model) = session.sync_odoo.models.get(inherited_model).cloned() {
                     let (main_result, inherits_result) = model.borrow().all_inherits_helper(session, from_module, visited_models);
@@ -310,7 +310,7 @@ impl Model {
             let st = &mut session.sync_odoo.symbol_table;
             st.invalidate_sub_functions(dep);
             let module = st.find_module(dep);
-            if module_change.is_none() || module.is_none() || ModuleSymbol::is_in_deps(st, module.unwrap(), &st.modules[module_change.unwrap()].dir_name) {
+            if module_change.is_none() || module.is_none() || ModuleSymbol::is_in_deps(st, module.unwrap(), &st[module_change.unwrap()].dir_name) {
                 if matches!(dep, SymbolKey::Function(_)) {
                     st.set_build_status(dep, BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
                 };

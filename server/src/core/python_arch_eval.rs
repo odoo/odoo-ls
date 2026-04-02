@@ -420,7 +420,7 @@ impl PythonArchEval {
             // @arena: this assumes `variable` is a variable symbol (not present in original code)
             let v = variable.unwrap_variable_key();
             if import_result.found {
-                st!().variables[v].evaluations = vec![];
+                st!()[v].evaluations = vec![];
                 for &import_sym in import_result.symbols.iter() {
                     let has_loop = self.check_for_loop_evaluation(session, import_sym, variable);
                     if !has_loop { //anti-loop. We want to be sure we are not evaluating to the same sym
@@ -429,7 +429,7 @@ impl PythonArchEval {
                             _ => None
                         };
                         let evaluation = Evaluation::eval_from_symbol(&st!(), import_sym, instance);
-                        st!().variables[v].evaluations.push(evaluation);
+                        st!()[v].evaluations.push(evaluation);
                         let file_of_import_symbol = st!().get_file(import_sym);
                         if let Some(import_file) = file_of_import_symbol {
                             if self.file != import_file {
@@ -488,7 +488,7 @@ impl PythonArchEval {
                     if let Some(variable_key) = variable {
                         // @arena: this assumes `variable` is a variable symbol (not present in original code)
                         let v = variable_key.unwrap_variable_key();
-                        let parent = st!().variables[v].parent;
+                        let parent = st!()[v].parent;
                         if assign.annotation.is_none() && assign.value.is_none() {
                             panic!("either value or annotation should exists");
                         }
@@ -527,7 +527,7 @@ impl PythonArchEval {
                             }
                             ann_evaluations.unwrap()
                         };
-                        let v_mut = &mut st!().variables[v];
+                        let v_mut = &mut st!()[v];
                         v_mut.evaluations.extend(eval);
                         self.diagnostics.extend(diags);
                         let var_name = v_mut.name.clone();
@@ -559,7 +559,7 @@ impl PythonArchEval {
                                 }
                             }
                         }
-                        let v_mut = &mut st!().variables[v];
+                        let v_mut = &mut st!()[v];
                         for ix in to_remove.into_iter().rev() {
                             v_mut.evaluations.remove(ix);
                         }
@@ -582,7 +582,7 @@ impl PythonArchEval {
 
                     // let parent_class = parent_class.borrow();
                     let c = parent_class.unwrap_class_key();
-                    let Some(model_data) = st!().classes[c]._model.as_ref() else {
+                    let Some(model_data) = st!()[c]._model.as_ref() else {
                         continue;
                     };
                     let Some(model) = session.sync_odoo.models.get(&model_data.name).cloned() else {
@@ -591,7 +591,7 @@ impl PythonArchEval {
                     let model_classes = model.borrow().all_symbols(session, st!().find_module(parent_class), false);
                     let fn_name = get_sym!(st!(),self.sym_stack[0]).name().clone();
                     let allowed_fields: HashSet<_> = model_classes.iter().filter_map(|(sym, _)|
-                        st!().classes[*sym]._model.as_ref().unwrap().computes.get(&fn_name).cloned()
+                        st!()[*sym]._model.as_ref().unwrap().computes.get(&fn_name).cloned()
                     ).flatten().collect();
                     if allowed_fields.is_empty() {
                         continue;
@@ -711,8 +711,8 @@ impl PythonArchEval {
                         st!().add_dependency(self.file, file, self.current_step, BuildSteps::ARCH_EVAL);
                     }
                 }
-                st!().classes[loc_sym].bases.push(c.into());
-            } else if !matches!(symbol, SymbolKey::Variable(_)) || st!().variables[symbol.unwrap_variable_key()].is_value() { // if it's a variable and not a value, it means we can't evaluate it, let's skip diagnostic
+                st!()[loc_sym].bases.push(c.into());
+            } else if !matches!(symbol, SymbolKey::Variable(_)) || st!()[symbol.unwrap_variable_key()].is_value() { // if it's a variable and not a value, it means we can't evaluate it, let's skip diagnostic
                 if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01002, &[&flatten_expr(base)]) {
                     self.diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(base.start().to_u32(), 0), Position::new(base.end().to_u32(), 0)),
@@ -772,7 +772,7 @@ impl PythonArchEval {
                     let arg_sym = st!()[f].symbols.get(&arg_name).unwrap().get(&0).unwrap()[0]; //get first declaration
                     let v = arg_sym.unwrap_variable_key();
                     let evaluation = Evaluation::eval_from_symbol(&st!(), scope, Some(!is_class_method));
-                    st!().variables[v].evaluations.push(evaluation);
+                    st!()[v].evaluations.push(evaluation);
                     is_first = false;
                     continue;
                 }
@@ -792,7 +792,7 @@ impl PythonArchEval {
                     let arg_name = OYarn::from(arg.parameter.name.id.to_string());
                     let arg_sym = st!()[f].symbols.get(&arg_name).unwrap().get(&0).unwrap()[0];
                     let v = arg_sym.unwrap_variable_key();
-                    st!().variables[v].evaluations = eval;
+                    st!()[v].evaluations = eval;
                     self.diagnostics.extend(diags);
                 } else if arg.default.is_some() {
                     let mut deps = vec![vec![], vec![]];
@@ -809,7 +809,7 @@ impl PythonArchEval {
                     let arg_name = OYarn::from(arg.parameter.name.id.to_string());
                     let arg_sym = st!()[f].symbols.get(&arg_name).unwrap().get(&0).unwrap()[0];
                     let v = arg_sym.unwrap_variable_key();
-                    st!().variables[v].evaluations = eval;
+                    st!()[v].evaluations = eval;
                     self.diagnostics.extend(diags);
                 }
             }
@@ -878,7 +878,7 @@ impl PythonArchEval {
                                     let variable = st!().get_positioned_symbol(*self.sym_stack.last().unwrap(), &OYarn::from(for_stmt.target.as_name_expr().unwrap().id.to_string()), &for_stmt.target.range());
                                     let symbol = eval_iter.symbol.get_symbol_as_weak(session, &mut Some(HashMap::from([(S!("parent_for"), ContextValue::SYMBOL(symbol_type.into()))])), &mut vec![], None);
                                     let v = variable.unwrap().unwrap_variable_key();
-                                    st!().variables[v].evaluations = vec![Evaluation::eval_from_symbol(&st!(), symbol.weak, symbol.instance)];
+                                    st!()[v].evaluations = vec![Evaluation::eval_from_symbol(&st!(), symbol.weak, symbol.instance)];
                                 }
                             }
                         }
@@ -956,7 +956,7 @@ impl PythonArchEval {
                         let variable = st!().get_positioned_symbol(*self.sym_stack.last().unwrap(), &OYarn::from(expr_name.id.to_string()), &expr_name.range());
                         if let Some(variable_key) = variable {
                             let v = variable_key.unwrap_variable_key();
-                            let parent = st!().variables[v].parent;
+                            let parent = st!()[v].parent;
                             let mut deps = vec![vec![], vec![]];
                             if !self.file_mode {
                                 deps.push(vec![]);
@@ -976,7 +976,7 @@ impl PythonArchEval {
                                     }
                                 }
                             }
-                            st!().variables[v].evaluations = eval;
+                            st!()[v].evaluations = eval;
                             self.diagnostics.extend(diags);
                         }
                     },

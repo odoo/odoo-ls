@@ -200,7 +200,7 @@ impl PythonValidator {
             }
             if !session.sync_odoo.config.file_cache {
                 if let SymbolKey::Module(m) = symbol {
-                    let manifest_path = PathBuf::from(&st!().modules[m].path).join("__manifest__.py").sanitize();
+                    let manifest_path = PathBuf::from(&st!()[m].path).join("__manifest__.py").sanitize();
                     if let Some(manifest_file) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path) {
                         if !manifest_file.borrow().opened {
                             let manifest_file = manifest_file.borrow();
@@ -348,14 +348,14 @@ impl PythonValidator {
                 let variable = st!().get_positioned_symbol(*self.sym_stack.last().unwrap(), &OYarn::from(var_name), &alias.range);
                 if let Some(variable) = variable {
                     let v = variable.unwrap_variable_key();
-                    for evaluation in st!().variables[v].evaluations.clone() {
+                    for evaluation in st!()[v].evaluations.clone() {
                         let eval_sym = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics, Some(file_symbol));
                         match eval_sym {
                             EvaluationSymbolPtr::WEAK(w) => {
                                 if let Some(symbol) = w.weak.upgrade(&st!()) {
                                     let module = st!().find_module(symbol);
                                     if let Some(module) = module {
-                                        let dir_name = &st!().modules[module].dir_name;
+                                        let dir_name = &st!()[module].dir_name;
                                         if !ModuleSymbol::is_in_deps(&st!(), self.current_module.unwrap(), dir_name) && !self.safe_imports.last().unwrap() {
                                             if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03003, &[dir_name]) {
                                                 self.diagnostics.push(Diagnostic {
@@ -400,7 +400,7 @@ impl PythonValidator {
 
     fn _check_model(&mut self, session: &mut SessionInfo, class: ClassKey) {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
-        let Some(model_data) = st!().classes[class]._model.as_ref() else {
+        let Some(model_data) = st!()[class]._model.as_ref() else {
             return;
         };
         let model_name = model_data.name.clone();
@@ -413,7 +413,7 @@ impl PythonValidator {
             let SymbolKey::Variable(v) = symbol else {
                 continue;
             };
-            let evals = st!().variables[v].evaluations.clone();
+            let evals = st!()[v].evaluations.clone();
             for eval in evals.iter() {
                 let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
                 let eval_weaks = follow_ref(&symbol, session, &mut None, true, false, None, None);
@@ -512,7 +512,7 @@ impl PythonValidator {
                                 }
                             }
                             let f = file_symbol.unwrap_file_key();
-                            st!().files[f].not_found_models.insert(Sy!(comodel_field_name), BuildSteps::ARCH_EVAL);
+                            st!()[f].not_found_models.insert(Sy!(comodel_field_name), BuildSteps::ARCH_EVAL);
                             session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(file_symbol);
                         }
                     }
@@ -660,7 +660,7 @@ impl PythonValidator {
         let Some(model) = session.sync_odoo.models.get(&model_name).cloned() else {
             return;
         };
-        let inherited_model_names = st!().classes[class]._model.as_ref().unwrap().inherit.clone();
+        let inherited_model_names = st!()[class]._model.as_ref().unwrap().inherit.clone();
         if !inherited_model_names.contains(&model_name)
         && model.borrow().get_main_symbols(session, maybe_from_module).into_iter().filter(|&main_sym| {
             main_sym != class
@@ -725,7 +725,7 @@ impl PythonValidator {
             for main_sym in borrowed_model.get_main_symbols(session, None) {
                 let main_sym_module = st!().find_module(main_sym);
                 if let Some(main_sym_module) = main_sym_module {
-                    let module_name = &st!().modules[main_sym_module].dir_name;
+                    let module_name = &st!()[main_sym_module].dir_name;
                     main_modules.push(module_name.clone());
                     if ModuleSymbol::is_in_deps(&st!(), from, module_name) {
                         found_one = true;
@@ -761,7 +761,7 @@ impl PythonValidator {
               return;
             };
             let f = file_symbol.unwrap_file_key();
-            st!().files[f].not_found_models.insert(oyarn!("{}", model_name), BuildSteps::ARCH_EVAL);
+            st!()[f].not_found_models.insert(oyarn!("{}", model_name), BuildSteps::ARCH_EVAL);
             session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(file_symbol);
         }
     }

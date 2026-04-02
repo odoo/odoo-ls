@@ -23,7 +23,7 @@ impl XmlValidator {
     }
 
     fn get_file_info(&mut self, odoo: &mut SyncOdoo) -> Rc<RefCell<FileInfo>> {
-        let path = &odoo.symbol_table.xml_files[self.xml_symbol].path;
+        let path = &odoo.symbol_table[self.xml_symbol].path;
         let file_info_rc = odoo.get_file_mgr().borrow().get_file_info(path).expect("File not found in cache").clone();
         file_info_rc
     }
@@ -31,7 +31,7 @@ impl XmlValidator {
     pub fn validate(&mut self, session: &mut SessionInfo) {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         if DEBUG_STEPS {
-            let name = &st!().xml_files[self.xml_symbol].name;
+            let name = &st!()[self.xml_symbol].name;
             trace!("Validating XML File {}", name);
         }
         let module = st!().find_module(self.xml_symbol).unwrap();
@@ -39,7 +39,7 @@ impl XmlValidator {
         let mut model_dependencies = vec![];
         let mut missing_model_dependencies = HashSet::new();
         let mut diagnostics = vec![];
-        for xml_ids in st!().xml_files[self.xml_symbol].xml_ids.values().cloned().collect::<Vec<_>>() {
+        for xml_ids in st!()[self.xml_symbol].xml_ids.values().cloned().collect::<Vec<_>>() {
             for xml_id in &xml_ids {
                 self.validate_xml_id(session, module, xml_id, &mut diagnostics, &mut dependencies, &mut model_dependencies, &mut missing_model_dependencies);
             }
@@ -54,7 +54,7 @@ impl XmlValidator {
         if !missing_model_dependencies.is_empty() {
             session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(self.xml_symbol.into());
         }
-        st!().xml_files[self.xml_symbol].not_found_models.extend(missing_model_dependencies.into_iter().map(|m| (m, BuildSteps::VALIDATION)));
+        st!()[self.xml_symbol].not_found_models.extend(missing_model_dependencies.into_iter().map(|m| (m, BuildSteps::VALIDATION)));
         let file_info = self.get_file_info(&mut session.sync_odoo);
         file_info.borrow_mut().replace_diagnostics(BuildSteps::VALIDATION, diagnostics);
         file_info.borrow_mut().publish_diagnostics(session);

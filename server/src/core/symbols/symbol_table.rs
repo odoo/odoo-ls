@@ -517,18 +517,20 @@ impl SymbolView<'_> {
 #[derive(Debug)]
 pub struct SymbolTable {
     // slotmaps per symbol type
-    pub roots: SlotMap<RootKey, RootSymbol>,
-    pub disk_dirs: SlotMap<DiskDirKey, DiskDirSymbol>,
-    pub namespaces: SlotMap<NamespaceKey, NamespaceSymbol>,
-    pub python_packages: SlotMap<PythonPackageKey, PythonPackageSymbol>,
-    pub modules: SlotMap<ModuleKey, ModuleSymbol>,
-    pub files: SlotMap<FileKey, FileSymbol>,
-    pub compiled: SlotMap<CompiledKey, CompiledSymbol>,
-    pub classes: SlotMap<ClassKey, ClassSymbol>,
+    // @arena todo: make these private, and move symbol_table_create to this module or make it a submodule.
+    // The goal is to prevent the Symbol types to access these slotmaps directly.
+    pub(in crate::core::symbols) roots: SlotMap<RootKey, RootSymbol>,
+    pub(in crate::core::symbols) disk_dirs: SlotMap<DiskDirKey, DiskDirSymbol>,
+    pub(in crate::core::symbols) namespaces: SlotMap<NamespaceKey, NamespaceSymbol>,
+    pub(in crate::core::symbols) python_packages: SlotMap<PythonPackageKey, PythonPackageSymbol>,
+    pub(in crate::core::symbols) modules: SlotMap<ModuleKey, ModuleSymbol>,
+    pub(in crate::core::symbols) files: SlotMap<FileKey, FileSymbol>,
+    pub(in crate::core::symbols) compiled: SlotMap<CompiledKey, CompiledSymbol>,
+    pub(in crate::core::symbols) classes: SlotMap<ClassKey, ClassSymbol>,
     pub(in crate::core::symbols) functions: SlotMap<FunctionKey, FunctionSymbol>,
-    pub variables: SlotMap<VariableKey, VariableSymbol>,
-    pub xml_files: SlotMap<XmlFileKey, XmlFileSymbol>,
-    pub csv_files: SlotMap<CsvFileKey, CsvFileSymbol>,
+    pub(in crate::core::symbols) variables: SlotMap<VariableKey, VariableSymbol>,
+    pub(in crate::core::symbols) xml_files: SlotMap<XmlFileKey, XmlFileSymbol>,
+    pub(in crate::core::symbols) csv_files: SlotMap<CsvFileKey, CsvFileSymbol>,
     // external symbols
     pub ext_symbols: ExtSymbolStore,
 }
@@ -2626,17 +2628,34 @@ impl ContainsKey<SymbolKey> for SymbolTable {
     }
 }
 
-impl Index<FunctionKey> for SymbolTable {
-    type Output = FunctionSymbol;
-    fn index(&self, key: FunctionKey) -> &FunctionSymbol {
-        &self.functions[key]
-    }
+macro_rules! impl_index {
+    ($key:ty, $output:ty, $field:ident) => {
+        impl Index<$key> for SymbolTable {
+            type Output = $output;
+            fn index(&self, key: $key) -> &$output {
+                &self.$field[key]
+            }
+        }
+        impl IndexMut<$key> for SymbolTable {
+            fn index_mut(&mut self, key: $key) -> &mut $output {
+                &mut self.$field[key]
+            }
+        }
+    };
 }
-impl IndexMut<FunctionKey> for SymbolTable {
-    fn index_mut(&mut self, key: FunctionKey) -> &mut FunctionSymbol {
-        &mut self.functions[key]
-    }
-}
+
+impl_index!(RootKey, RootSymbol, roots);
+impl_index!(DiskDirKey, DiskDirSymbol, disk_dirs);
+impl_index!(NamespaceKey, NamespaceSymbol, namespaces);
+impl_index!(PythonPackageKey, PythonPackageSymbol, python_packages);
+impl_index!(ModuleKey, ModuleSymbol, modules);
+impl_index!(FileKey, FileSymbol, files);
+impl_index!(CompiledKey, CompiledSymbol, compiled);
+impl_index!(FunctionKey, FunctionSymbol, functions);
+impl_index!(ClassKey, ClassSymbol, classes);
+impl_index!(VariableKey, VariableSymbol, variables);
+impl_index!(XmlFileKey, XmlFileSymbol, xml_files);
+impl_index!(CsvFileKey, CsvFileSymbol, csv_files);
 
 //  implement  also a Strong<> variant. Slotmap operations with a Strong would panic (with expect message), and
 //  the programmer would skip the check.

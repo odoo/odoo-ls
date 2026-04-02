@@ -53,8 +53,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         let env_file = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("api")], vec![]), u32::MAX);
         let env_class = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("api")], vec![Sy!("Environment")]), u32::MAX);
         if !env_class.is_empty() {
-            // let mut env = symbol.borrow_mut();
-            let env = &mut odoo.symbol_table.variables[symbol.unwrap_variable_key()];
+            let env = &mut odoo.symbol_table[symbol.unwrap_variable_key()];
             let env_class = *env_class.last().unwrap();
             let context = HashMap::new();
             env.evaluations = vec![Evaluation {
@@ -323,7 +322,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         if let Some(&werkzeug_url_decode) = werkzeug_url_decode.first() {
             if let SymbolKey::Variable(v) = werkzeug_url_decode { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_decode.first() {
-                    odoo.symbol_table.variables[v].evaluations = vec![
+                    odoo.symbol_table[v].evaluations = vec![
                         Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
@@ -334,7 +333,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         if let Some(&werkzeug_url_encode) = werkzeug_url_encode.first() {
             if let SymbolKey::Variable(v) = werkzeug_url_encode { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_encode.first() {
-                    odoo.symbol_table.variables[v].evaluations = vec![
+                    odoo.symbol_table[v].evaluations = vec![
                         Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
@@ -345,7 +344,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         if let Some(&werkzeug_url_join) = werkzeug_url_join.first() {
             if let SymbolKey::Variable(v) = werkzeug_url_join { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_join.first() {
-                    odoo.symbol_table.variables[v].evaluations = vec![
+                    odoo.symbol_table[v].evaluations = vec![
                         Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
@@ -356,7 +355,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         if let Some(&werkzeug_url_parse) = werkzeug_url_parse.first() {
             if let SymbolKey::Variable(v) = werkzeug_url_parse { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_parse.first() {
-                    odoo.symbol_table.variables[v].evaluations = vec![
+                    odoo.symbol_table[v].evaluations = vec![
                         Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
@@ -367,7 +366,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         if let Some(&werkzeug_url_quote) = werkzeug_url_quote.first() {
             if let SymbolKey::Variable(v) = werkzeug_url_quote { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_quote.first() {
-                    odoo.symbol_table.variables[v].evaluations = vec![
+                    odoo.symbol_table[v].evaluations = vec![
                         Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
@@ -378,7 +377,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         if let Some(&werkzeug_url_unquote) = werkzeug_url_unquote.first() {
             if let SymbolKey::Variable(v) = werkzeug_url_unquote { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_unquote.first() {
-                    odoo.symbol_table.variables[v].evaluations = vec![
+                    odoo.symbol_table[v].evaluations = vec![
                         Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
@@ -389,7 +388,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         if let Some(&werkzeug_url_quote_plus) = werkzeug_url_quote_plus.first() {
             if let SymbolKey::Variable(v) = werkzeug_url_quote_plus { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_quote_plus.first() {
-                    odoo.symbol_table.variables[v].evaluations = vec![
+                    odoo.symbol_table[v].evaluations = vec![
                         Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
@@ -400,7 +399,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         if let Some(&werkzeug_url_unquote_plus) = werkzeug_url_unquote_plus.first() {
             if let SymbolKey::Variable(v) = werkzeug_url_unquote_plus { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_unquote_plus.first() {
-                    odoo.symbol_table.variables[v].evaluations = vec![
+                    odoo.symbol_table[v].evaluations = vec![
                         Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
@@ -411,7 +410,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         if let Some(&werkzeug_url_unparse) = werkzeug_url_unparse.first() {
             if let SymbolKey::Variable(v) = werkzeug_url_unparse { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_unparse.first() {
-                    odoo.symbol_table.variables[v].evaluations = vec![
+                    odoo.symbol_table[v].evaluations = vec![
                         Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
@@ -422,7 +421,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         if let Some(&werkzeug_url) = werkzeug_url_syms.first() {
             if let SymbolKey::Variable(v) = werkzeug_url { //if not variable, no need to patch it
                 if let Some(&eval_1) = url.first() {
-                    odoo.symbol_table.variables[v].evaluations = vec![
+                    odoo.symbol_table[v].evaluations = vec![
                         Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
@@ -850,7 +849,7 @@ impl PythonArchEvalHooks {
               return res
             };
             let f = file_symbol.unwrap_file_key();
-            st!().files[f].not_found_models.insert(Sy!(s.clone()), BuildSteps::VALIDATION);
+            st!()[f].not_found_models.insert(Sy!(s.clone()), BuildSteps::VALIDATION);
             session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(file_symbol);
         }
         res
@@ -1193,7 +1192,7 @@ impl PythonArchEvalHooks {
         };
 
         let class_key = class_sym.unwrap_class_key();
-        let Some(model_name) = st!().classes[class_key]._model.as_ref().map(|model| &model.name).cloned() else {
+        let Some(model_name) = st!()[class_key]._model.as_ref().map(|model| &model.name).cloned() else {
             return diagnostics;
         };
 
@@ -1224,7 +1223,7 @@ impl PythonArchEvalHooks {
         };
 
         let class_key = class_sym.unwrap_class_key();
-        let Some(model_name) = st!().classes[class_key]._model.as_ref().map(|model| &model.name).cloned() else {
+        let Some(model_name) = st!()[class_key]._model.as_ref().map(|model| &model.name).cloned() else {
             return diagnostics;
         };
 
@@ -1295,7 +1294,7 @@ impl PythonArchEvalHooks {
             return None;
         }
         let module_key = module.unwrap().upgrade(&st!())?;
-        let Some(_symbol) = st!().modules[module_key].xml_id_locations.get(xml_id.as_str()) else {
+        let Some(_symbol) = st!()[module_key].xml_id_locations.get(xml_id.as_str()) else {
             if in_validation {
                 /*if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05001, &[]) {
                     diagnostics.push(Diagnostic {

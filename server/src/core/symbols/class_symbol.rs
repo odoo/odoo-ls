@@ -56,7 +56,7 @@ impl ClassSymbol {
         if checked.is_none() {
             *checked = Some(HashSet::new());
         }
-        let class_symbol = symbol_table.classes.get(class_key).expect("valid key"); // former self on method
+        let class_symbol = &symbol_table[class_key]; // former self on method
         for b in class_symbol.bases.iter().filter_map(|w| w.upgrade(symbol_table)) {
             if b == base {
                 return true;

@@ -20,14 +20,14 @@ impl CsvArchBuilder {
     pub fn load_csv(&mut self, session: &mut SessionInfo, csv_symbol: CsvFileKey, content: &String) -> Vec<Diagnostic> {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let diagnostics = vec![];
-        st!().csv_files[csv_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
-        let model_name_pb = PathBuf::from(&st!().csv_files[csv_symbol].path);
+        st!()[csv_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
+        let model_name_pb = PathBuf::from(&st!()[csv_symbol].path);
         let model_name = Sy!(model_name_pb.file_stem().unwrap().to_str().unwrap().to_string());
         let csv_module = st!().find_module(csv_symbol);
         let Some(csv_module) = csv_module else {
             return diagnostics;
         };
-        let csv = &mut st!().csv_files[csv_symbol];
+        let csv = &mut st!()[csv_symbol];
         let mut rdr = csv::Reader::from_reader(content.as_bytes());
         if rdr.has_headers() {
             if let Ok(header) = rdr.headers() {
@@ -39,7 +39,7 @@ impl CsvArchBuilder {
         if !csv.headers.is_empty() && csv.headers[0] == "id" {
             for result in rdr.records() {
                 let Ok(result) = result else { continue };
-                let headers = &st!().csv_files[csv_symbol].headers;
+                let headers = &st!()[csv_symbol].headers;
                 let record = self.extract_record(csv_symbol.into(), model_name.clone(), headers, &result);
                 let Some(record) = record else { continue };
                 let Some(xml_id) = record.xml_id.as_ref() else { continue };
@@ -55,11 +55,11 @@ impl CsvArchBuilder {
                         csv_module = m.upgrade(&st!()).unwrap();
                     }
                 }
-                st!().modules[csv_module].xml_id_locations.entry(Sy!(id_split.last().unwrap().to_string())).or_insert_with(WeakSet::new).insert(csv_symbol.into());
-                st!().csv_files[csv_symbol].xml_ids.entry(Sy!(id_split.last().unwrap().to_string())).or_insert(vec![]).push(OdooData::RECORD(record));
+                st!()[csv_module].xml_id_locations.entry(Sy!(id_split.last().unwrap().to_string())).or_insert_with(WeakSet::new).insert(csv_symbol.into());
+                st!()[csv_symbol].xml_ids.entry(Sy!(id_split.last().unwrap().to_string())).or_insert(vec![]).push(OdooData::RECORD(record));
             }
         }
-        st!().csv_files[csv_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
+        st!()[csv_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
         diagnostics
     }
 

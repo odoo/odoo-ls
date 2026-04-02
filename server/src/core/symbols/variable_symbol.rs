@@ -55,11 +55,11 @@ impl VariableSymbol {
     /* If this variable has been evaluated to a relational field, return the main symbol of the comodel */
     pub fn get_relational_model(target: VariableKey, session: &mut SessionInfo, from_module: Option<ModuleKey>) -> Vec<ClassKey> {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
-        let variable_symbol = st!().variables.get(target).expect("valid key"); // former method taking self
+        let variable_symbol = &st!()[target]; // former method taking self
         let evaluations = variable_symbol.evaluations.clone();
         for eval in evaluations.iter() {
             let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-            let parent = st!().variables[target].parent;
+            let parent = st!()[target].parent;
             // To be able to follow related fields, we need to have the base_attr set in order to find the __get__ hook in next_refs
             // we update the context here for the case where we are coming from a decorator for example.
             let mut context = Some(HashMap::new());
