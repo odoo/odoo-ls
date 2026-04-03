@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use lsp_types::{TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier};
+use lsp_types::{NumberOrString, TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier};
 use odoo_ls_server::core::config::ConfigFile;
 use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::Odoo;
@@ -230,6 +230,40 @@ fn test_additional_languages_config() {
         languages.contains("zz"),
         "additional_languages should include zz. Available: {:?}",
         languages
+    );
+}
+
+/// Test that all language codes from res.lang.csv are recognized as valid.
+/// This ensures no false positives due to error in parsing the main source of language codes.
+#[test]
+fn test_no_false_positives_from_res_lang_csv() {
+    let (mut odoo, config) = setup_server(true);
+    let mut session = create_init_session(&mut odoo, config);
+
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/data/addons/module_lang_test/data/all_langs_test.xml")
+        .sanitize();
+
+    let diagnostics = get_diagnostics_for_path(&mut session, &path);
+
+    let ols05068: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| {
+            matches!(&d.code, Some(NumberOrString::String(s)) if s == "OLS05068")
+        })
+        .collect();
+
+    assert_eq!(
+        ols05068.len(),
+        1,
+        "Expected exactly 1 OLS05068 (for non_existing_lang), got {}: {:?}",
+        ols05068.len(),
+        ols05068
+    );
+    assert!(
+        ols05068[0].message.contains("non_existing_lang"),
+        "OLS05068 should be for non_existing_lang, got: {}",
+        ols05068[0].message
     );
 }
 
