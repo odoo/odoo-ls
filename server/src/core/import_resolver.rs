@@ -9,7 +9,8 @@ use std::path::{Path, PathBuf};
 
 use ruff_text_size::{TextRange, TextSize};
 use ruff_python_ast::{Alias, AtomicNodeIndex, Identifier};
-use crate::core::symbols::symbol_table::{get_main_entry_tree, get_sym, ModuleKey, SymbolKey, SymbolTable};
+use crate::core::symbols::symbol_table::{get_sym, ModuleKey, SymbolKey, SymbolTable};
+use crate::core::symbols::symbol_table_ops::get_main_entry_tree;
 use crate::core::symbols::symbol_table_create::{create_from_path, create_module_from_path};
 use crate::{constants::*, oyarn, Sy, S};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};

@@ -1,6 +1,7 @@
 use ruff_text_size::TextRange;
 
-use crate::{constants::OYarn, core::{evaluation::{ContextValue, Evaluation}, symbols::symbol_table::{follow_ref, get_sym, ClassKey, ModuleKey, SymbolKey, VariableKey}}, oyarn, threads::SessionInfo, S};
+use crate::{constants::OYarn, core::{evaluation::{ContextValue, Evaluation}, symbols::symbol_table::{get_sym, ClassKey, ModuleKey, SymbolKey, VariableKey}}, oyarn, threads::SessionInfo, S};
+use crate::core::symbols::symbol_table_ops::follow_ref;
 use std::collections::HashMap;
 
 #[derive(Debug)]

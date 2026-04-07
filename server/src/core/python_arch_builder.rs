@@ -12,7 +12,8 @@ use crate::core::python_utils;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
-use crate::core::symbols::symbol_table::{follow_ref, get_sym, SymbolKey, SymbolTable};
+use crate::core::symbols::symbol_table::{get_sym, SymbolKey, SymbolTable};
+use crate::core::symbols::symbol_table_ops::follow_ref;
 use crate::threads::SessionInfo;
 use crate::{oyarn, S};
 

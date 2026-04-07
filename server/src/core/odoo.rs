@@ -4,8 +4,9 @@ use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
 use crate::core::module_load_order::sort_by_load_order;
 use crate::core::symbols::module_symbol::ModuleSymbol;
-use crate::core::symbols::symbol_table::{get_main_entry_tree, get_sym, ContainsKey, ModuleKey, SymbolKey, SymbolTable, Weak};
-use crate::core::symbols::symbol_table_create::{create_from_path, create_module_from_path, unload};
+use crate::core::symbols::symbol_table::{get_sym, ContainsKey, ModuleKey, SymbolKey, SymbolTable, Weak};
+use crate::core::symbols::symbol_table_ops::get_main_entry_tree;
+use crate::core::symbols::symbol_table_create::{create_from_path, create_module_from_path};
 use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
 use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
@@ -1027,7 +1028,7 @@ impl SyncOdoo {
                     if clean_cache {
                         FileMgr::delete_path(session, &path.sanitize());
                     }
-                    unload(session, sym);
+                    SymbolTable::unload(session, sym);
                     parents.push(parent);
                 }
                 entry.borrow_mut().data_symbols.remove(path.sanitize().as_str());
@@ -1053,7 +1054,7 @@ impl SyncOdoo {
                         index += 1;
                     }
                 }
-                unload(session, path_symbol);
+                SymbolTable::unload(session, path_symbol);
                 parents.push(parent);
             }
         }
