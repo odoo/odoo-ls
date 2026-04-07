@@ -81,52 +81,7 @@ impl ExtSymbolStore {
 }
 
 impl SymbolTable {
-        // @arena: assumes owner as valid key (formerly an strong Rc)
-    // @arena TODO: fix this weird API (take &str instead of OYarn)
-    pub fn add_new_ext_symbol(
-        &mut self,
-        target: SymbolKey,
-        name: OYarn,
-        range: &TextRange,
-        owner: SymbolKey,
-    ) -> SymbolKey {
-        let target_sym = self.get_symbol_view(target).expect("valid key");
-        // validate target can host an external symbol
-        if !matches!(target_sym.typ(),
-            SymType::FILE | SymType::PACKAGE(PackageType::MODULE)
-                | SymType::PACKAGE(PackageType::PYTHON_PACKAGE)
-                | SymType::CLASS | SymType::FUNCTION | SymType::NAMESPACE
-        ) {
-            panic!("Impossible to add an external symbol to a {}", target_sym.typ());
-        }
-        let variable_symbol = VariableSymbol::new(
-            name.clone(),
-            target,
-            range.clone(),
-            target_sym.is_external(),
-        );
-        let variable_key: SymbolKey = self.variables.insert(variable_symbol).into();
-        let section = self.get_section_for_key(owner, range.start().to_u32());
 
-        self.ext_symbols.add(target, owner, name, section, variable_key);
-        variable_key
-    }
-
-    // @arena: assumes owner as valid key (formerly self on a Symbol)
-    /* used by add_new_ext_symbol. Do not call directly */
-    fn get_section_for_key(&self, owner: SymbolKey, position: u32) -> u32 {
-        match owner {
-            SymbolKey::File(f) => self.files[f].get_section_for(position).index,
-            SymbolKey::Module(m) => self.modules[m].get_section_for(position).index,
-            SymbolKey::PythonPackage(p) => self.python_packages[p].get_section_for(position).index,
-            SymbolKey::Class(c) => self.classes[c].get_section_for(position).index,
-            SymbolKey::Function(f) => self[f].get_section_for(position).index,
-            _ => panic!(
-                "Impossible to add a declaration of external symbol to a {}",
-                self.get_symbol_view(owner).unwrap().typ()
-            ),
-        }
-    }
 
     // @arena: This used to be a method in each Symbol variant
     pub fn get_ext_symbol(&self, target: SymbolKey, name: &str) -> Vec<SymbolKey> {

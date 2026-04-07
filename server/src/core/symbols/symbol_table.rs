@@ -510,22 +510,20 @@ impl SymbolView<'_> {
 #[derive(Debug)]
 pub struct SymbolTable {
     // slotmaps per symbol type
-    // @arena todo: make these private, and move symbol_table_create to this module or make it a submodule.
-    // The goal is to prevent the Symbol types to access these slotmaps directly.
-    pub(in crate::core::symbols) roots: SlotMap<RootKey, RootSymbol>,
-    pub(in crate::core::symbols) disk_dirs: SlotMap<DiskDirKey, DiskDirSymbol>,
-    pub(in crate::core::symbols) namespaces: SlotMap<NamespaceKey, NamespaceSymbol>,
-    pub(in crate::core::symbols) python_packages: SlotMap<PythonPackageKey, PythonPackageSymbol>,
-    pub(in crate::core::symbols) modules: SlotMap<ModuleKey, ModuleSymbol>,
-    pub(in crate::core::symbols) files: SlotMap<FileKey, FileSymbol>,
-    pub(in crate::core::symbols) compiled: SlotMap<CompiledKey, CompiledSymbol>,
-    pub(in crate::core::symbols) classes: SlotMap<ClassKey, ClassSymbol>,
-    pub(in crate::core::symbols) functions: SlotMap<FunctionKey, FunctionSymbol>,
-    pub(in crate::core::symbols) variables: SlotMap<VariableKey, VariableSymbol>,
-    pub(in crate::core::symbols) xml_files: SlotMap<XmlFileKey, XmlFileSymbol>,
-    pub(in crate::core::symbols) csv_files: SlotMap<CsvFileKey, CsvFileSymbol>,
+    roots: SlotMap<RootKey, RootSymbol>,
+    disk_dirs: SlotMap<DiskDirKey, DiskDirSymbol>,
+    namespaces: SlotMap<NamespaceKey, NamespaceSymbol>,
+    python_packages: SlotMap<PythonPackageKey, PythonPackageSymbol>,
+    modules: SlotMap<ModuleKey, ModuleSymbol>,
+    files: SlotMap<FileKey, FileSymbol>,
+    compiled: SlotMap<CompiledKey, CompiledSymbol>,
+    classes: SlotMap<ClassKey, ClassSymbol>,
+    functions: SlotMap<FunctionKey, FunctionSymbol>,
+    variables: SlotMap<VariableKey, VariableSymbol>,
+    xml_files: SlotMap<XmlFileKey, XmlFileSymbol>,
+    csv_files: SlotMap<CsvFileKey, CsvFileSymbol>,
     // external symbols
-    pub ext_symbols: ExtSymbolStore,
+    pub(super) ext_symbols: ExtSymbolStore,
 }
 
 impl SymbolTable {
@@ -792,6 +790,53 @@ impl SymbolTable {
         entry.borrow_mut().data_symbols.remove(path);
 
         self.modules[parent].data_symbols.remove(path);
+    }
+    
+    // @arena: assumes owner as valid key (formerly a strong Rc)
+    // @arena TODO: fix this weird API (take &str instead of OYarn)
+    pub fn add_new_ext_symbol(
+        &mut self,
+        target: SymbolKey,
+        name: OYarn,
+        range: &TextRange,
+        owner: SymbolKey,
+    ) -> SymbolKey {
+        let target_sym = self.get_symbol_view(target).expect("valid key");
+        // validate target can host an external symbol
+        if !matches!(target_sym.typ(),
+            SymType::FILE | SymType::PACKAGE(PackageType::MODULE)
+                | SymType::PACKAGE(PackageType::PYTHON_PACKAGE)
+                | SymType::CLASS | SymType::FUNCTION | SymType::NAMESPACE
+        ) {
+            panic!("Impossible to add an external symbol to a {}", target_sym.typ());
+        }
+        let variable_symbol = VariableSymbol::new(
+            name.clone(),
+            target,
+            range.clone(),
+            target_sym.is_external(),
+        );
+        let variable_key: SymbolKey = self.variables.insert(variable_symbol).into();
+        let section = self.get_section_for_key(owner, range.start().to_u32());
+    
+        self.ext_symbols.add(target, owner, name, section, variable_key);
+        variable_key
+    }
+    
+    // @arena: assumes owner as valid key (formerly self on a Symbol)
+    /* used by add_new_ext_symbol. Do not call directly */
+    fn get_section_for_key(&self, owner: SymbolKey, position: u32) -> u32 {
+        match owner {
+            SymbolKey::File(f) => self[f].get_section_for(position).index,
+            SymbolKey::Module(m) => self[m].get_section_for(position).index,
+            SymbolKey::PythonPackage(p) => self[p].get_section_for(position).index,
+            SymbolKey::Class(c) => self[c].get_section_for(position).index,
+            SymbolKey::Function(f) => self[f].get_section_for(position).index,
+            _ => panic!(
+                "Impossible to add a declaration of external symbol to a {}",
+                self.get_symbol_view(owner).unwrap().typ()
+            ),
+        }
     }
     
     fn remove(&mut self, key: SymbolKey) {

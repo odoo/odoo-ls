@@ -34,7 +34,7 @@ pub fn create_module_from_path(session: &mut SessionInfo, path: &PathBuf, parent
     }
     let name = path.components().last().unwrap().as_os_str().to_str().unwrap();
     let module = SymbolTable::add_new_module_package(session, parent, &name, path)?;
-    let dir_name = session.sync_odoo.symbol_table.modules[module].dir_name.clone();
+    let dir_name = session.sync_odoo.symbol_table[module].dir_name.clone();
     session.sync_odoo.modules.insert(dir_name, module.into());
     return Some(module);
 }
@@ -60,7 +60,7 @@ pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: Symbo
         let module = SymbolTable::add_new_module_package(session, parent, &name, path);
         let symbol_table = &mut session.sync_odoo.symbol_table;
         if let Some(module) = module {
-            let dir_name = symbol_table.modules[module].dir_name.clone();
+            let dir_name = symbol_table[module].dir_name.clone();
             session.sync_odoo.modules.insert(dir_name, module.into());
             return Some(module.into());
         } else {
