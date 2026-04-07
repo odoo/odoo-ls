@@ -1,7 +1,6 @@
 use ruff_text_size::TextRange;
 
-use crate::{constants::OYarn, core::{evaluation::{ContextValue, Evaluation}, symbols::symbol_table::{get_sym, ClassKey, ModuleKey, SymbolKey, VariableKey}}, oyarn, threads::SessionInfo, S};
-use crate::core::symbols::symbol_table_ops::follow_ref;
+use crate::{S, constants::OYarn, core::{evaluation::{ContextValue, Evaluation}, symbols::symbol_table::{ClassKey, ModuleKey, SymbolKey, SymbolTable, VariableKey, get_sym}}, oyarn, threads::SessionInfo};
 use std::collections::HashMap;
 
 #[derive(Debug)]
@@ -65,7 +64,7 @@ impl VariableSymbol {
             // we update the context here for the case where we are coming from a decorator for example.
             let mut context = Some(HashMap::new());
             context.as_mut().unwrap().insert(S!("base_attr"), ContextValue::SYMBOL(parent.into()));
-            let eval_weaks = follow_ref(&symbol, session, &mut context, false, false, None, None);
+            let eval_weaks = SymbolTable::follow_ref(&symbol, session, &mut context, false, false, None, None);
             for eval_weak in eval_weaks.iter() {
                 if let Some(symbol) = st!().upgrade_weak(eval_weak) {
                     if ["Many2one", "One2many", "Many2many"].contains(&get_sym!(st!(), symbol).name().as_str()) {

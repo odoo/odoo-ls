@@ -1269,7 +1269,7 @@ impl SymbolTable {
         let evaluations = var_symbol.evaluations.clone();
         for eval in evaluations {
             let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
-            let eval_weaks = follow_ref(&symbol, session, &mut None, true, false, None, None);
+            let eval_weaks = Self::follow_ref(&symbol, session, &mut None, true, false, None, None);
             for eval_weak in eval_weaks.iter() {
                 if let Some(key) = session.sync_odoo.symbol_table.upgrade_weak(eval_weak) {
                     if Self::is_field_class(session, key) {
@@ -1297,7 +1297,7 @@ impl SymbolTable {
         let evaluations = st!()[v].evaluations.clone();
         for eval in evaluations.iter() {
             let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-            let eval_weaks = follow_ref(&symbol, session, &mut None, true, false, None, None);
+            let eval_weaks = Self::follow_ref(&symbol, session, &mut None, true, false, None, None);
             for eval_weak in eval_weaks.iter() {
                 if let Some(symbol) = st!().upgrade_weak(eval_weak) {
                     if Self::is_specific_field_class(session, symbol, field_names){
@@ -1309,277 +1309,259 @@ impl SymbolTable {
         false
     }
 
-}
-
-// @arena: helper for get_member_symbol
-// @arena: code duplication with is_field
-fn is_method(session: &mut SessionInfo, target: SymbolKey) -> bool {
-    if matches!(target, SymbolKey::Function(_)) {
-        return true;
+    // @arena: helper for get_member_symbol
+    // @arena: code duplication with is_field
+    fn is_method(session: &mut SessionInfo, target: SymbolKey) -> bool {
+        if matches!(target, SymbolKey::Function(_)) {
+            return true;
+        }
+        let SymbolKey::Variable(v) = target else {
+            return false;
+        };
+        let var_symbol = &session.sync_odoo.symbol_table[v];
+        let evals = var_symbol.evaluations.clone();
+        for eval in evals.iter() {
+            let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
+            let eval_weaks = Self::follow_ref(&symbol, session, &mut None, true, false, None, None);
+            for eval_weak in eval_weaks.iter() {
+                if let Some(key) = session.sync_odoo.symbol_table.upgrade_weak(eval_weak) {
+                    if matches!(key, SymbolKey::Function(_)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
-    let SymbolKey::Variable(v) = target else {
-        return false;
-    };
-    let var_symbol = &session.sync_odoo.symbol_table[v];
-    let evals = var_symbol.evaluations.clone();
-    for eval in evals.iter() {
-        let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
-        let eval_weaks = follow_ref(&symbol, session, &mut None, true, false, None, None);
-        for eval_weak in eval_weaks.iter() {
-            if let Some(key) = session.sync_odoo.symbol_table.upgrade_weak(eval_weak) {
-                if matches!(key, SymbolKey::Function(_)) {
-                    return true;
+
+    /* Hook for get_member_symbol
+    Position is set to [0,0], because inside the method there is no concept of the current position.
+    The setting of the position is then delegated to the calling function.
+    TODO Consider refactoring.
+        */
+    fn member_symbol_hook(session: &SessionInfo, target: SymbolKey, name: &String, diagnostics: &mut Vec<Diagnostic>){
+        if session.sync_odoo.version_major >= 17 && name == "Form"{
+            let tree = session.sync_odoo.symbol_table.get_tree(target);
+            if tree.0.ends_with(&[Sy!("odoo"), Sy!("tests"), Sy!("common")]) && tree.1.is_empty() {
+                if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03301, &[]) {
+                    diagnostics.push(
+                        Diagnostic {
+                            range: Range::new(Position::new(0,0),Position::new(0,0)),
+                            tags: Some(vec![DiagnosticTag::DEPRECATED]),
+                            ..diagnostic_base.clone()
+                        }
+                    );
                 }
             }
         }
     }
-    false
-}
 
-/* Hook for get_member_symbol
-Position is set to [0,0], because inside the method there is no concept of the current position.
-The setting of the position is then delegated to the calling function.
-TODO Consider refactoring.
-    */
-fn member_symbol_hook(session: &SessionInfo, target: SymbolKey, name: &String, diagnostics: &mut Vec<Diagnostic>){
-    if session.sync_odoo.version_major >= 17 && name == "Form"{
-        let tree = session.sync_odoo.symbol_table.get_tree(target);
-        if tree.0.ends_with(&[Sy!("odoo"), Sy!("tests"), Sy!("common")]) && tree.1.is_empty() {
-            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03301, &[]) {
-                diagnostics.push(
-                    Diagnostic {
-                        range: Range::new(Position::new(0,0),Position::new(0,0)),
-                        tags: Some(vec![DiagnosticTag::DEPRECATED]),
-                        ..diagnostic_base.clone()
-                    }
-                );
-            }
+
+    //store in result all available members for symbol: sub symbols, base class elements and models symbols
+    //TODO is order right of Vec in HashMap? if we take first or last in it, do we have the last effective value?
+    pub fn all_members(
+        symbol: SymbolKey,
+        session: &mut SessionInfo,
+        with_co_models: bool,
+        only_fields: bool,
+        only_methods: bool,
+        from_module: Option<ModuleKey>,
+        is_super: bool
+    ) -> HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> {
+        let mut result: HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> = HashMap::new();
+        let mut acc: HashSet<Tree> = HashSet::new();
+        Self::_all_members(symbol, session, &mut result, with_co_models, only_fields, only_methods, from_module, &mut acc, is_super);
+        return  result;
+    }
+    
+    fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>>, with_co_models: bool, only_fields: bool, only_methods: bool, from_module: Option<ModuleKey>, acc: &mut HashSet<Tree>, is_super: bool) {
+        macro_rules! st {
+            () => { session.sync_odoo.symbol_table }
         }
-    }
-}
-
-//store in result all available members for symbol: sub symbols, base class elements and models symbols
-//TODO is order right of Vec in HashMap? if we take first or last in it, do we have the last effective value?
-pub fn all_members(
-    symbol: SymbolKey,
-    session: &mut SessionInfo,
-    with_co_models: bool,
-    only_fields: bool,
-    only_methods: bool,
-    from_module: Option<ModuleKey>,
-    is_super: bool
-) -> HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> {
-    let mut result: HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> = HashMap::new();
-    let mut acc: HashSet<Tree> = HashSet::new();
-    _all_members(symbol, session, &mut result, with_co_models, only_fields, only_methods, from_module, &mut acc, is_super);
-    return  result;
-}
-
-fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>>, with_co_models: bool, only_fields: bool, only_methods: bool, from_module: Option<ModuleKey>, acc: &mut HashSet<Tree>, is_super: bool) {
-    macro_rules! st {
-        () => { session.sync_odoo.symbol_table }
-    }
-    let tree = st!().get_tree(symbol_key);
-    if acc.contains(&tree) {
-        return;
-    }
-    acc.insert(tree);
-    let mut append_result = |name: OYarn, symbol: SymbolKey, dep: Option<OYarn>| {
-        if let Some(vec) = result.get_mut(&name) {
-            vec.push((symbol, dep));
-        } else {
-            result.insert(name, vec![(symbol, dep)]);
+        let tree = st!().get_tree(symbol_key);
+        if acc.contains(&tree) {
+            return;
         }
-    };
-    match symbol_key {
-        SymbolKey::Class(class_key) => {
-            // Skip current class symbols for super
-            if !is_super{
-                for symbol in get_sym!(st!(), symbol_key).all_symbols() {
-                    if (only_fields && !SymbolTable::is_field(session, symbol)) || (only_methods && !matches!(symbol, SymbolKey::Function(_))) {
-                        continue;
-                    }
-                    let name = get_sym!(st!(), symbol).name().clone();
-                    append_result(name, symbol, None);
-                }
+        acc.insert(tree);
+        let mut append_result = |name: OYarn, symbol: SymbolKey, dep: Option<OYarn>| {
+            if let Some(vec) = result.get_mut(&name) {
+                vec.push((symbol, dep));
+            } else {
+                result.insert(name, vec![(symbol, dep)]);
             }
-            if with_co_models {
-                let class_sym = &st!()[class_key];
-                let Some(model) = class_sym._model.as_ref().and_then(|model_data|
-                    session.sync_odoo.models.get(&model_data.name).cloned()
-                ) else {
-                    return;
-                };
-                // no recursion because it is handled in all_symbols_inherits
-                let (model_symbols, model_inherits_symbols) = model.borrow().all_symbols_inherits(session, from_module);
-                for (model_key, dependency) in model_symbols {
-                    if dependency.is_some() || class_key == model_key {
-                        continue;
-                    }
-                    let model_sym = &st!()[model_key];
-                    let all_symbols = iter_symbol_keys(model_sym).copied().collect::<Vec<_>>();
-                    let model_name = model_sym.name.clone();
-                    for s in all_symbols {
-                        if (only_fields && !SymbolTable::is_field(session, s)) || (only_methods && !matches!(s, SymbolKey::Function(_))) {
+        };
+        match symbol_key {
+            SymbolKey::Class(class_key) => {
+                // Skip current class symbols for super
+                if !is_super{
+                    for symbol in get_sym!(st!(), symbol_key).all_symbols() {
+                        if (only_fields && !Self::is_field(session, symbol)) || (only_methods && !matches!(symbol, SymbolKey::Function(_))) {
                             continue;
                         }
-                        let name = st!().name(s).clone();
-                        append_result(name, s, Some(model_name.clone()));
+                        let name = get_sym!(st!(), symbol).name().clone();
+                        append_result(name, symbol, None);
                     }
                 }
-                for (model_key, dependency) in model_inherits_symbols {
-                    if dependency.is_some() || class_key == model_key {
-                        continue;
+                if with_co_models {
+                    let class_sym = &st!()[class_key];
+                    let Some(model) = class_sym._model.as_ref().and_then(|model_data|
+                        session.sync_odoo.models.get(&model_data.name).cloned()
+                    ) else {
+                        return;
+                    };
+                    // no recursion because it is handled in all_symbols_inherits
+                    let (model_symbols, model_inherits_symbols) = model.borrow().all_symbols_inherits(session, from_module);
+                    for (model_key, dependency) in model_symbols {
+                        if dependency.is_some() || class_key == model_key {
+                            continue;
+                        }
+                        let model_sym = &st!()[model_key];
+                        let all_symbols = iter_symbol_keys(model_sym).copied().collect::<Vec<_>>();
+                        let model_name = model_sym.name.clone();
+                        for s in all_symbols {
+                            if (only_fields && !Self::is_field(session, s)) || (only_methods && !matches!(s, SymbolKey::Function(_))) {
+                                continue;
+                            }
+                            let name = st!().name(s).clone();
+                            append_result(name, s, Some(model_name.clone()));
+                        }
                     }
-                    let model_sym = &st!()[model_key];
-                    // for inherits symbols, we only add fields
-                    let all_symbols = iter_symbol_keys(model_sym).copied().collect::<Vec<_>>();
-                    let model_name = model_sym.name.clone();
-                    let fields = all_symbols.into_iter().filter(|&s| SymbolTable::is_field(session, s)).collect::<Vec<_>>();
-                    for s in fields {
-                        let name = st!().name(s).clone();
-                        append_result(name, s, Some(model_name.clone()));
-                    }
-                }
-            }
-            let bases = st!()[class_key].bases.iter()
-                .filter_map(|base| base.upgrade(&st!()))
-                .collect::<Vec<_>>();
-            for base in bases {
-                //no comodel as we will search for co-model from original class (what about overrided _name?)
-                //TODO what about base of co-models classes?
-                _all_members(base.into(), session, result, false, only_fields, only_methods, from_module, acc, false);
-            }
-        },
-        SymbolKey::Function(_) => {
-            // A function does not expose its symbols
-        },
-        // if not class just add it to result
-        _ => {
-            get_sym!(st!(), symbol_key).all_symbols().for_each(|s|
-                if !(only_fields && !SymbolTable::is_field(session, s)) {
-                    let name = st!().name(s).clone();
-                    append_result(name, s, None);
-                }
-            )
-        }
-    }
-}
-
-pub fn all_fields(symbol: SymbolKey, session: &mut SessionInfo, from_module: Option<ModuleKey>) -> HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> {
-    all_members(symbol, session, true, true, false, from_module, false)
-}
-
-/* similar to get_symbol: will return the symbol that is under this one with the specified name.
-However, if the symbol is a class or a model, it will search in the base class or in comodel classes
-if not all, it will return the first found. If all, the all found symbols are returned, but the first one
-is the one that is overriding others.
-:param: from_module: optional, can change the from_module of the given class */
-pub fn get_member_symbol(
-    session: &mut SessionInfo,
-    target: SymbolKey,
-    name: &String,
-    from_module: Option<ModuleKey>,
-    prevent_comodel: bool,
-    only_fields: bool,
-    only_methods: bool,
-    all: bool,
-    is_super: bool
-) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
-    let mut visited_classes: HashSet<ClassKey> = HashSet::new();
-    return _get_member_symbol_helper(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super, &mut visited_classes);
-}
-
-fn _get_member_symbol_helper(
-    session: &mut SessionInfo,
-    target: SymbolKey,
-    name: &String,
-    from_module: Option<ModuleKey>,
-    prevent_comodel: bool,
-    only_fields: bool,
-    only_methods: bool,
-    all: bool,
-    is_super: bool,
-    visited_classes: &mut HashSet<ClassKey>
-) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
-    macro_rules! st {
-        () => { session.sync_odoo.symbol_table }
-    }
-    let mut result: Vec<SymbolKey> = vec![];
-    let mut visited_symbols: HashSet<SymbolKey> = HashSet::new();
-    let extend_result = |syms: Vec<SymbolKey>, result: &mut Vec<SymbolKey>, visited_symbols: &mut HashSet<SymbolKey>| {
-        syms.iter().for_each(|&sym|{
-            if !visited_symbols.contains(&sym){
-                visited_symbols.insert(sym);
-                result.push(sym);
-            }
-        });
-    };
-    let mut diagnostics: Vec<Diagnostic> = vec![];
-    member_symbol_hook(session, target, name, &mut diagnostics);
-    let mod_sym = get_sym!(st!(), target).get_module_symbol(name);
-    if let Some(mod_sym) = mod_sym {
-        if !only_fields {
-            if all {
-                extend_result(vec![mod_sym], &mut result, &mut visited_symbols);
-            } else {
-                return (vec![mod_sym], diagnostics);
-            }
-        }
-    }
-    if !is_super {
-        let mut content_syms = st!().get_sub_symbol(target, name, u32::MAX).symbols;
-        if only_fields {
-            content_syms = content_syms.iter().filter(|&&x| SymbolTable::is_field(session, x)).copied().collect();
-        }
-        if only_methods {
-            content_syms = content_syms.iter().filter(|&&x| is_method(session, x)).copied().collect();
-        }
-        if !content_syms.is_empty() {
-            if all {
-                extend_result(content_syms, &mut result, &mut visited_symbols);
-            } else {
-                return (content_syms, diagnostics);
-            }
-        }
-    }
-    let SymbolKey::Class(c) = target else {
-        return (result, diagnostics);
-    };
-    let model_data = &st!()[c]._model;
-    if model_data.is_some() && !prevent_comodel {
-        let model = session.sync_odoo.models.get(&model_data.as_ref().unwrap().name).cloned();
-        if let Some(model) = model {
-            let mut from_module = from_module;
-            if from_module.is_none() {
-                from_module = st!().find_module(target);
-            }
-            if let Some(from_module) = from_module {
-                let model_symbols = Model::get_full_model_symbols(model.clone(), session, from_module);
-                for model_symbol in model_symbols {
-                    if target == model_symbol.into() || visited_classes.contains(&model_symbol) {
-                        continue;
-                    }
-                    visited_classes.insert(model_symbol);
-                    let (attributs, att_diagnostic) = _get_member_symbol_helper(session, model_symbol.into(), name, None, true, only_fields, only_methods, all, false, visited_classes);
-                    diagnostics.extend(att_diagnostic);
-                    if all {
-                        extend_result(attributs, &mut result, &mut visited_symbols);
-                    } else {
-                        if !attributs.is_empty() {
-                            return (attributs, diagnostics);
+                    for (model_key, dependency) in model_inherits_symbols {
+                        if dependency.is_some() || class_key == model_key {
+                            continue;
+                        }
+                        let model_sym = &st!()[model_key];
+                        // for inherits symbols, we only add fields
+                        let all_symbols = iter_symbol_keys(model_sym).copied().collect::<Vec<_>>();
+                        let model_name = model_sym.name.clone();
+                        let fields = all_symbols.into_iter().filter(|&s| Self::is_field(session, s)).collect::<Vec<_>>();
+                        for s in fields {
+                            let name = st!().name(s).clone();
+                            append_result(name, s, Some(model_name.clone()));
                         }
                     }
                 }
-                for model_inherits_symbol in model.clone().borrow().get_inherits_models(session, from_module) {
-                    //only fields are visible on inherits, not methods
-                    let model_symbols = Model::get_full_model_symbols(model_inherits_symbol, session, from_module);
+                let bases = st!()[class_key].bases.iter()
+                    .filter_map(|base| base.upgrade(&st!()))
+                    .collect::<Vec<_>>();
+                for base in bases {
+                    //no comodel as we will search for co-model from original class (what about overrided _name?)
+                    //TODO what about base of co-models classes?
+                    Self::_all_members(base.into(), session, result, false, only_fields, only_methods, from_module, acc, false);
+                }
+            },
+            SymbolKey::Function(_) => {
+                // A function does not expose its symbols
+            },
+            // if not class just add it to result
+            _ => {
+                get_sym!(st!(), symbol_key).all_symbols().for_each(|s|
+                    if !(only_fields && !Self::is_field(session, s)) {
+                        let name = st!().name(s).clone();
+                        append_result(name, s, None);
+                    }
+                )
+            }
+        }
+    }
+    
+    pub fn all_fields(symbol: SymbolKey, session: &mut SessionInfo, from_module: Option<ModuleKey>) -> HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> {
+        Self::all_members(symbol, session, true, true, false, from_module, false)
+    }
+
+    
+    /* similar to get_symbol: will return the symbol that is under this one with the specified name.
+    However, if the symbol is a class or a model, it will search in the base class or in comodel classes
+    if not all, it will return the first found. If all, the all found symbols are returned, but the first one
+    is the one that is overriding others.
+    :param: from_module: optional, can change the from_module of the given class */
+    pub fn get_member_symbol(
+        session: &mut SessionInfo,
+        target: SymbolKey,
+        name: &String,
+        from_module: Option<ModuleKey>,
+        prevent_comodel: bool,
+        only_fields: bool,
+        only_methods: bool,
+        all: bool,
+        is_super: bool
+    ) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
+        let mut visited_classes: HashSet<ClassKey> = HashSet::new();
+        return Self::_get_member_symbol_helper(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super, &mut visited_classes);
+    }
+    
+    fn _get_member_symbol_helper(
+        session: &mut SessionInfo,
+        target: SymbolKey,
+        name: &String,
+        from_module: Option<ModuleKey>,
+        prevent_comodel: bool,
+        only_fields: bool,
+        only_methods: bool,
+        all: bool,
+        is_super: bool,
+        visited_classes: &mut HashSet<ClassKey>
+    ) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
+        macro_rules! st {
+            () => { session.sync_odoo.symbol_table }
+        }
+        let mut result: Vec<SymbolKey> = vec![];
+        let mut visited_symbols: HashSet<SymbolKey> = HashSet::new();
+        let extend_result = |syms: Vec<SymbolKey>, result: &mut Vec<SymbolKey>, visited_symbols: &mut HashSet<SymbolKey>| {
+            syms.iter().for_each(|&sym|{
+                if !visited_symbols.contains(&sym){
+                    visited_symbols.insert(sym);
+                    result.push(sym);
+                }
+            });
+        };
+        let mut diagnostics: Vec<Diagnostic> = vec![];
+        Self::member_symbol_hook(session, target, name, &mut diagnostics);
+        let mod_sym = get_sym!(st!(), target).get_module_symbol(name);
+        if let Some(mod_sym) = mod_sym {
+            if !only_fields {
+                if all {
+                    extend_result(vec![mod_sym], &mut result, &mut visited_symbols);
+                } else {
+                    return (vec![mod_sym], diagnostics);
+                }
+            }
+        }
+        if !is_super {
+            let mut content_syms = st!().get_sub_symbol(target, name, u32::MAX).symbols;
+            if only_fields {
+                content_syms = content_syms.iter().filter(|&&x| Self::is_field(session, x)).copied().collect();
+            }
+            if only_methods {
+                content_syms = content_syms.iter().filter(|&&x| Self::is_method(session, x)).copied().collect();
+            }
+            if !content_syms.is_empty() {
+                if all {
+                    extend_result(content_syms, &mut result, &mut visited_symbols);
+                } else {
+                    return (content_syms, diagnostics);
+                }
+            }
+        }
+        let SymbolKey::Class(c) = target else {
+            return (result, diagnostics);
+        };
+        let model_data = &st!()[c]._model;
+        if model_data.is_some() && !prevent_comodel {
+            let model = session.sync_odoo.models.get(&model_data.as_ref().unwrap().name).cloned();
+            if let Some(model) = model {
+                let mut from_module = from_module;
+                if from_module.is_none() {
+                    from_module = st!().find_module(target);
+                }
+                if let Some(from_module) = from_module {
+                    let model_symbols = Model::get_full_model_symbols(model.clone(), session, from_module);
                     for model_symbol in model_symbols {
                         if target == model_symbol.into() || visited_classes.contains(&model_symbol) {
                             continue;
                         }
                         visited_classes.insert(model_symbol);
-                        let (attributs, att_diagnostic) = _get_member_symbol_helper(session, model_symbol.into(), name, None, true, true, only_methods, all, false, visited_classes);
+                        let (attributs, att_diagnostic) = Self::_get_member_symbol_helper(session, model_symbol.into(), name, None, true, only_fields, only_methods, all, false, visited_classes);
                         diagnostics.extend(att_diagnostic);
                         if all {
                             extend_result(attributs, &mut result, &mut visited_symbols);
@@ -1589,380 +1571,400 @@ fn _get_member_symbol_helper(
                             }
                         }
                     }
-                }
-            }
-        }
-    }
-    if result.is_empty() { // if we already have something, do not go up in bases
-        let class_sym = &st!()[c];
-        let bases = class_sym.bases.iter().filter_map(|w| w.upgrade(&st!())).collect::<Vec<_>>();
-        for base in bases {
-            if visited_classes.contains(&base){
-                continue;
-            }
-            visited_classes.insert(base);
-            let (s, s_diagnostic) = get_member_symbol(session, base.into(), name, from_module, prevent_comodel, only_fields, only_methods, all, false);
-                diagnostics.extend(s_diagnostic);
-            if !s.is_empty() {
-                if all {
-                    extend_result(s, &mut result, &mut visited_symbols);
-                } else {
-                    return (s, diagnostics);
-                }
-            }
-        }
-    }
-    (result, diagnostics)
-}
-
-
-fn next_refs_class(session: &mut SessionInfo, class_key: ClassKey, context: &mut Option<Context>, symbol_context: &Context) -> Vec<EvaluationSymbolPtr> {
-    macro_rules! st {
-        () => { session.sync_odoo.symbol_table }
-    }
-    //if current symbol is a descriptor, we have to resolve __get__ method before going further
-    let mut res = Vec::new();
-    let mut base_attr = symbol_context.get("base_attr");
-    if base_attr.is_none() {
-        //search in context (used in decorators to indicate on which base the field is searched)
-        if let Some(context) = context.as_ref() {
-            base_attr = context.get("base_attr");
-        }
-    }
-    let Some(base_attr) = base_attr else {
-        return res;
-    };
-    let Some(base_attr) = base_attr.as_symbol().upgrade(&st!()) else {
-        return res;
-    };
-    if !matches!(base_attr, SymbolKey::Class(_)) {
-        return res;
-    }
-    //TODO shouldn't we set the from_module in the call to get_member_symbol?
-    let get_method = get_member_symbol(session, class_key.into(), &S!("__get__"), None, true, false, false, true, false).0.first().copied();
-    let Some(get_method) = get_method else {
-        return res;
-    };
-
-    let get_sym_file = st!().get_file(get_method).unwrap();
-    let get_method_sym = st!().get_symbol_view(get_method).expect("valid key from get_member_symbol");
-
-    if get_method_sym.evaluations().is_some()
-    && get_method_sym.evaluations().unwrap().len() == 0
-    && !get_sym!(st!(), get_sym_file).is_external()
-    && st!().build_status(get_sym_file, BuildSteps::ARCH_EVAL) == BuildStatus::DONE
-    && st!().build_status(get_method, BuildSteps::ARCH) != BuildStatus::IN_PROGRESS
-    && st!().build_status(get_method, BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS
-    && st!().build_status(get_method, BuildSteps::VALIDATION) == BuildStatus::PENDING {
-        let entry_point = st!().get_entry(get_method).unwrap();
-        let mut v = PythonValidator::new(entry_point, get_method);
-        v.validate(session);
-    }
-    let Some(evaluations) = get_sym!(st!(), get_method).evaluations().cloned() else {
-        return res;
-    };
-    if context.is_none() {
-        *context = Some(HashMap::new());
-    }
-    for get_method_eval in evaluations.iter() {
-        context.as_mut().unwrap().extend(symbol_context.clone().into_iter());
-        let get_result = get_method_eval.symbol.get_symbol_as_weak(session, context, &mut vec![], None);
-        if !get_result.weak.is_expired(&st!()) {
-            let mut eval = Evaluation::eval_from_symbol(&st!(), get_result.weak, get_result.instance);
-            match eval.symbol.get_mut_symbol_ptr() {
-                EvaluationSymbolPtr::WEAK(weak) => {
-                    if let Some(eval_sym) = weak.weak.upgrade(&st!()) {
-                        if eval_sym == class_key.into() {
-                            continue;
+                    for model_inherits_symbol in model.clone().borrow().get_inherits_models(session, from_module) {
+                        //only fields are visible on inherits, not methods
+                        let model_symbols = Model::get_full_model_symbols(model_inherits_symbol, session, from_module);
+                        for model_symbol in model_symbols {
+                            if target == model_symbol.into() || visited_classes.contains(&model_symbol) {
+                                continue;
+                            }
+                            visited_classes.insert(model_symbol);
+                            let (attributs, att_diagnostic) = Self::_get_member_symbol_helper(session, model_symbol.into(), name, None, true, true, only_methods, all, false, visited_classes);
+                            diagnostics.extend(att_diagnostic);
+                            if all {
+                                extend_result(attributs, &mut result, &mut visited_symbols);
+                            } else {
+                                if !attributs.is_empty() {
+                                    return (attributs, diagnostics);
+                                }
+                            }
                         }
                     }
-                    weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(base_attr.into()));
-                    res.push(eval.symbol.get_symbol_ptr().clone());
-                },
-                _ => {}
-            }
-        }
-        context.as_mut().unwrap().retain(|k, _| !symbol_context.contains_key(k));
-    }
-    res
-}
-
-fn next_refs_variable(session: &mut SessionInfo, key: VariableKey, context: &mut Option<Context>, symbol_context: &Context) -> Vec<EvaluationSymbolPtr> {
-    let mut res = Vec::new();
-    let var_symbol = &session.sync_odoo.symbol_table[key];
-    let evaluations = var_symbol.evaluations.clone();
-    for eval in evaluations.iter() {
-        let ctx = &mut Some(symbol_context.clone().into_iter().chain(context.clone().unwrap_or(HashMap::new()).into_iter()).collect::<HashMap<_, _>>());
-        let mut sym = eval.symbol.get_symbol(session, ctx, &mut vec![], None);
-        if let EvaluationSymbolPtr::WEAK(ref mut w) = sym {
-            if let Some(base_attr) = symbol_context.get(&S!("base_attr")) {
-                if !w.context.get(&S!("is_attr_of_instance")).map(|x| x.as_bool()).unwrap_or(false) {
-                    w.context.insert(S!("base_attr"), base_attr.clone());
-                }
-            }
-            if let Some(base_attr) = symbol_context.get(&S!("is_attr_of_instance")) {
-                if !w.context.get(&S!("is_attr_of_instance")).map(|x| x.as_bool()).unwrap_or(false) {
-                    w.context.insert(S!("is_attr_of_instance"), base_attr.clone());
                 }
             }
         }
-        if !session.sync_odoo.symbol_table.is_expired_if_weak(&sym) {
-            res.push(sym);
-        }
-    }
-    res
-}
-
-/*given a Symbol, give all the Symbol that are evaluated as valid evaluation for it.
-example:
-====
-a = 5
-if X:
-    a = Test()
-else:
-    a = Object()
-print(a)
-====
-next_refs on the 'a' in the print will return a SymbolRef to Test and one to Object
-*/
-fn next_refs(session: &mut SessionInfo, symbol_key: SymbolKey, context: &mut Option<Context>, symbol_context: &Context, stop_on_type: bool) -> Vec<EvaluationSymbolPtr> {
-    match symbol_key {
-        SymbolKey::Class(c) if !stop_on_type => next_refs_class(session, c, context, symbol_context),
-        SymbolKey::Variable(v) => next_refs_variable(session, v, context, symbol_context),
-        _ => vec![],
-    }
-}
-
-
-/*
-Follow evaluation of current symbol until type, value or end of the chain, depending or the parameters.
-If a symbol in the chain is a descriptor, return the __get__ return evaluation.
-If filter_on_tree is set, stop following when one of the symbols in the chain is in the tree, and only return those symbols.
-    */
-pub fn follow_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, filter_on_tree: Option<Tree>, max_scope: Option<SymbolKey>) -> Vec<EvaluationSymbolPtr> {
-    macro_rules! st { () => { session.sync_odoo.symbol_table } }
-
-    let default_result = match filter_on_tree.as_ref() {
-        Some(_) => vec![],
-        None => vec![evaluation.clone()],
-    };
-    let stop_on_tree_syms = filter_on_tree.map(|tree| session.sync_odoo.get_symbol("", &tree, u32::MAX));
-    if matches!(stop_on_tree_syms.as_ref(), Some(syms) if syms.is_empty()) {
-        // can't find the tree symbol, stop here
-        return default_result;
-    }
-    let EvaluationSymbolPtr::WEAK(w) = evaluation else {
-        // Non-weak evaluations are final
-        return default_result
-    };
-    let Some(symbol_key) = w.weak.upgrade(&st!()) else {
-        return default_result;
-    };
-    let symbol = get_sym!(st!(), symbol_key);
-    if stop_on_value {
-        if let Some(evals) = symbol.evaluations() {
-            for eval in evals.iter() {
-                if eval.value.is_some() {
-                    return default_result;
-                }
-            }
-        }
-    }
-    let can_eval_external = !symbol.is_external();
-    //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
-    let mut work_queue: VecDeque<_> = next_refs(session, symbol_key, context, &w.context, stop_on_type).into_iter().collect();
-    if work_queue.is_empty() {
-        return default_result;
-    }
-    if w.instance.is_some_and(|v| v) {
-        //if the previous evaluation was set to True, we want to keep it
-        work_queue = work_queue.into_iter().map(|mut r| {
-            if let EvaluationSymbolPtr::WEAK(ref mut weak) = r {
-                weak.instance = Some(true);
-            }
-            r
-        }).collect();
-    }
-    let mut results = Vec::new();
-    let mut visited = HashSet::new();
-    while let Some(current_eval) = work_queue.pop_front() {
-        let EvaluationSymbolPtr::WEAK(next_ref_weak) = &current_eval else  {
-            // Non-weak references are final
-            results.push(current_eval);
-            continue;
-        };
-        let Some(sym_key) = next_ref_weak.weak.upgrade(&st!()) else {
-            // Discard evaluation to expired reference
-            continue;
-        };
-        // Avoid cycles
-        if visited.contains(&sym_key) {
-            continue;
-        }
-        visited.insert(sym_key);
-        let next_ref_weak_instance = next_ref_weak.instance.clone();
-        match sym_key {
-            SymbolKey::Variable(v) => {
-                // let sym = sym_key.borrow();
-                // let var = sym.as_variable();
-                let var = &st!()[v];
-                if (stop_on_type && matches!(next_ref_weak.is_instance(), Some(false)) && !var.is_import_variable) ||
-                    (stop_on_value && var.evaluations.len() == 1 && var.evaluations[0].value.is_some()) ||
-                    (max_scope.is_some() && !st!().has_in_parents(sym_key, max_scope.unwrap(), true)) {
-                    // current evaluation is final
-                    results.push(current_eval);
+        if result.is_empty() { // if we already have something, do not go up in bases
+            let class_sym = &st!()[c];
+            let bases = class_sym.bases.iter().filter_map(|w| w.upgrade(&st!())).collect::<Vec<_>>();
+            for base in bases {
+                if visited_classes.contains(&base){
                     continue;
                 }
-                if let Some(stop_on_tree_syms) = stop_on_tree_syms.as_ref() {
-                    if stop_on_tree_syms.iter().any(|s| *s == sym_key) {
+                visited_classes.insert(base);
+                let (s, s_diagnostic) = Self::get_member_symbol(session, base.into(), name, from_module, prevent_comodel, only_fields, only_methods, all, false);
+                    diagnostics.extend(s_diagnostic);
+                if !s.is_empty() {
+                    if all {
+                        extend_result(s, &mut result, &mut visited_symbols);
+                    } else {
+                        return (s, diagnostics);
+                    }
+                }
+            }
+        }
+        (result, diagnostics)
+    }
+
+
+    fn next_refs_class(session: &mut SessionInfo, class_key: ClassKey, context: &mut Option<Context>, symbol_context: &Context) -> Vec<EvaluationSymbolPtr> {
+        macro_rules! st {
+            () => { session.sync_odoo.symbol_table }
+        }
+        //if current symbol is a descriptor, we have to resolve __get__ method before going further
+        let mut res = Vec::new();
+        let mut base_attr = symbol_context.get("base_attr");
+        if base_attr.is_none() {
+            //search in context (used in decorators to indicate on which base the field is searched)
+            if let Some(context) = context.as_ref() {
+                base_attr = context.get("base_attr");
+            }
+        }
+        let Some(base_attr) = base_attr else {
+            return res;
+        };
+        let Some(base_attr) = base_attr.as_symbol().upgrade(&st!()) else {
+            return res;
+        };
+        if !matches!(base_attr, SymbolKey::Class(_)) {
+            return res;
+        }
+        //TODO shouldn't we set the from_module in the call to get_member_symbol?
+        let get_method = Self::get_member_symbol(session, class_key.into(), &S!("__get__"), None, true, false, false, true, false).0.first().copied();
+        let Some(get_method) = get_method else {
+            return res;
+        };
+    
+        let get_sym_file = st!().get_file(get_method).unwrap();
+        let get_method_sym = st!().get_symbol_view(get_method).expect("valid key from get_member_symbol");
+    
+        if get_method_sym.evaluations().is_some()
+        && get_method_sym.evaluations().unwrap().len() == 0
+        && !get_sym!(st!(), get_sym_file).is_external()
+        && st!().build_status(get_sym_file, BuildSteps::ARCH_EVAL) == BuildStatus::DONE
+        && st!().build_status(get_method, BuildSteps::ARCH) != BuildStatus::IN_PROGRESS
+        && st!().build_status(get_method, BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS
+        && st!().build_status(get_method, BuildSteps::VALIDATION) == BuildStatus::PENDING {
+            let entry_point = st!().get_entry(get_method).unwrap();
+            let mut v = PythonValidator::new(entry_point, get_method);
+            v.validate(session);
+        }
+        let Some(evaluations) = get_sym!(st!(), get_method).evaluations().cloned() else {
+            return res;
+        };
+        if context.is_none() {
+            *context = Some(HashMap::new());
+        }
+        for get_method_eval in evaluations.iter() {
+            context.as_mut().unwrap().extend(symbol_context.clone().into_iter());
+            let get_result = get_method_eval.symbol.get_symbol_as_weak(session, context, &mut vec![], None);
+            if !get_result.weak.is_expired(&st!()) {
+                let mut eval = Evaluation::eval_from_symbol(&st!(), get_result.weak, get_result.instance);
+                match eval.symbol.get_mut_symbol_ptr() {
+                    EvaluationSymbolPtr::WEAK(weak) => {
+                        if let Some(eval_sym) = weak.weak.upgrade(&st!()) {
+                            if eval_sym == class_key.into() {
+                                continue;
+                            }
+                        }
+                        weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(base_attr.into()));
+                        res.push(eval.symbol.get_symbol_ptr().clone());
+                    },
+                    _ => {}
+                }
+            }
+            context.as_mut().unwrap().retain(|k, _| !symbol_context.contains_key(k));
+        }
+        res
+    }
+    
+    fn next_refs_variable(session: &mut SessionInfo, key: VariableKey, context: &mut Option<Context>, symbol_context: &Context) -> Vec<EvaluationSymbolPtr> {
+        let mut res = Vec::new();
+        let var_symbol = &session.sync_odoo.symbol_table[key];
+        let evaluations = var_symbol.evaluations.clone();
+        for eval in evaluations.iter() {
+            let ctx = &mut Some(symbol_context.clone().into_iter().chain(context.clone().unwrap_or(HashMap::new()).into_iter()).collect::<HashMap<_, _>>());
+            let mut sym = eval.symbol.get_symbol(session, ctx, &mut vec![], None);
+            if let EvaluationSymbolPtr::WEAK(ref mut w) = sym {
+                if let Some(base_attr) = symbol_context.get(&S!("base_attr")) {
+                    if !w.context.get(&S!("is_attr_of_instance")).map(|x| x.as_bool()).unwrap_or(false) {
+                        w.context.insert(S!("base_attr"), base_attr.clone());
+                    }
+                }
+                if let Some(base_attr) = symbol_context.get(&S!("is_attr_of_instance")) {
+                    if !w.context.get(&S!("is_attr_of_instance")).map(|x| x.as_bool()).unwrap_or(false) {
+                        w.context.insert(S!("is_attr_of_instance"), base_attr.clone());
+                    }
+                }
+            }
+            if !session.sync_odoo.symbol_table.is_expired_if_weak(&sym) {
+                res.push(sym);
+            }
+        }
+        res
+    }
+    
+    /*given a Symbol, give all the Symbol that are evaluated as valid evaluation for it.
+    example:
+    ====
+    a = 5
+    if X:
+        a = Test()
+    else:
+        a = Object()
+    print(a)
+    ====
+    next_refs on the 'a' in the print will return a SymbolRef to Test and one to Object
+    */
+    fn next_refs(session: &mut SessionInfo, symbol_key: SymbolKey, context: &mut Option<Context>, symbol_context: &Context, stop_on_type: bool) -> Vec<EvaluationSymbolPtr> {
+        match symbol_key {
+            SymbolKey::Class(c) if !stop_on_type => Self::next_refs_class(session, c, context, symbol_context),
+            SymbolKey::Variable(v) => Self::next_refs_variable(session, v, context, symbol_context),
+            _ => vec![],
+        }
+    }
+
+
+    /*
+    Follow evaluation of current symbol until type, value or end of the chain, depending or the parameters.
+    If a symbol in the chain is a descriptor, return the __get__ return evaluation.
+    If filter_on_tree is set, stop following when one of the symbols in the chain is in the tree, and only return those symbols.
+        */
+    pub fn follow_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, filter_on_tree: Option<Tree>, max_scope: Option<SymbolKey>) -> Vec<EvaluationSymbolPtr> {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+    
+        let default_result = match filter_on_tree.as_ref() {
+            Some(_) => vec![],
+            None => vec![evaluation.clone()],
+        };
+        let stop_on_tree_syms = filter_on_tree.map(|tree| session.sync_odoo.get_symbol("", &tree, u32::MAX));
+        if matches!(stop_on_tree_syms.as_ref(), Some(syms) if syms.is_empty()) {
+            // can't find the tree symbol, stop here
+            return default_result;
+        }
+        let EvaluationSymbolPtr::WEAK(w) = evaluation else {
+            // Non-weak evaluations are final
+            return default_result
+        };
+        let Some(symbol_key) = w.weak.upgrade(&st!()) else {
+            return default_result;
+        };
+        let symbol = get_sym!(st!(), symbol_key);
+        if stop_on_value {
+            if let Some(evals) = symbol.evaluations() {
+                for eval in evals.iter() {
+                    if eval.value.is_some() {
+                        return default_result;
+                    }
+                }
+            }
+        }
+        let can_eval_external = !symbol.is_external();
+        //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
+        let mut work_queue: VecDeque<_> = Self::next_refs(session, symbol_key, context, &w.context, stop_on_type).into_iter().collect();
+        if work_queue.is_empty() {
+            return default_result;
+        }
+        if w.instance.is_some_and(|v| v) {
+            //if the previous evaluation was set to True, we want to keep it
+            work_queue = work_queue.into_iter().map(|mut r| {
+                if let EvaluationSymbolPtr::WEAK(ref mut weak) = r {
+                    weak.instance = Some(true);
+                }
+                r
+            }).collect();
+        }
+        let mut results = Vec::new();
+        let mut visited = HashSet::new();
+        while let Some(current_eval) = work_queue.pop_front() {
+            let EvaluationSymbolPtr::WEAK(next_ref_weak) = &current_eval else  {
+                // Non-weak references are final
+                results.push(current_eval);
+                continue;
+            };
+            let Some(sym_key) = next_ref_weak.weak.upgrade(&st!()) else {
+                // Discard evaluation to expired reference
+                continue;
+            };
+            // Avoid cycles
+            if visited.contains(&sym_key) {
+                continue;
+            }
+            visited.insert(sym_key);
+            let next_ref_weak_instance = next_ref_weak.instance.clone();
+            match sym_key {
+                SymbolKey::Variable(v) => {
+                    // let sym = sym_key.borrow();
+                    // let var = sym.as_variable();
+                    let var = &st!()[v];
+                    if (stop_on_type && matches!(next_ref_weak.is_instance(), Some(false)) && !var.is_import_variable) ||
+                        (stop_on_value && var.evaluations.len() == 1 && var.evaluations[0].value.is_some()) ||
+                        (max_scope.is_some() && !st!().has_in_parents(sym_key, max_scope.unwrap(), true)) {
+                        // current evaluation is final
                         results.push(current_eval);
                         continue;
                     }
-                }
-                if var.evaluations.is_empty() && var.name != "__all__" && can_eval_external {
-                    //no evaluation? let's check that the file has been evaluated
-                    let file_symbol = st!().get_file(sym_key);
-                    if let Some(file_symbol) = file_symbol {
-                        SyncOdoo::build_now(session, file_symbol, BuildSteps::ARCH_EVAL);
-                    }
-                }
-                let mut next_sym_refs = next_refs_variable(session, v, context, &next_ref_weak.context);
-                if next_sym_refs.is_empty() {
-                    // keep current evaluation
-                    results.push(current_eval);
-                    continue;
-                }
-                // /!\ we want to keep instance = True if previous evaluation was set to True!
-                if next_ref_weak_instance.is_some_and(|v| v) {
-                    next_sym_refs = next_sym_refs.into_iter().map(|mut next_results| {
-                        if let EvaluationSymbolPtr::WEAK(weak) = &mut next_results {
-                            weak.instance = Some(true);
+                    if let Some(stop_on_tree_syms) = stop_on_tree_syms.as_ref() {
+                        if stop_on_tree_syms.iter().any(|s| *s == sym_key) {
+                            results.push(current_eval);
+                            continue;
                         }
-                        next_results
-                    }).collect();
-                }
-                // enqueue evaluations to follow, replacing current evaluation
-                work_queue.extend(next_sym_refs);
-            },
-            SymbolKey::Class(c) if !stop_on_type => {
-                //On class, follow descriptor declarations
-                let next_sym_refs = next_refs_class(session, c, context, &next_ref_weak.context);
-                if next_sym_refs.is_empty() {
-                    // keep current evaluation
-                    results.push(current_eval);
-                } else {
+                    }
+                    if var.evaluations.is_empty() && var.name != "__all__" && can_eval_external {
+                        //no evaluation? let's check that the file has been evaluated
+                        let file_symbol = st!().get_file(sym_key);
+                        if let Some(file_symbol) = file_symbol {
+                            SyncOdoo::build_now(session, file_symbol, BuildSteps::ARCH_EVAL);
+                        }
+                    }
+                    let mut next_sym_refs = Self::next_refs_variable(session, v, context, &next_ref_weak.context);
+                    if next_sym_refs.is_empty() {
+                        // keep current evaluation
+                        results.push(current_eval);
+                        continue;
+                    }
+                    // /!\ we want to keep instance = True if previous evaluation was set to True!
+                    if next_ref_weak_instance.is_some_and(|v| v) {
+                        next_sym_refs = next_sym_refs.into_iter().map(|mut next_results| {
+                            if let EvaluationSymbolPtr::WEAK(weak) = &mut next_results {
+                                weak.instance = Some(true);
+                            }
+                            next_results
+                        }).collect();
+                    }
                     // enqueue evaluations to follow, replacing current evaluation
                     work_queue.extend(next_sym_refs);
-                }
-            },
-            _ => {
-                results.push(current_eval);
-            }
-        }
-    }
-    if let Some(stop_on_tree_syms) = stop_on_tree_syms.as_ref() {
-        results.retain(|r| {
-            match r {
-                EvaluationSymbolPtr::WEAK(weak) => {
-                    if let Some(key) = weak.weak.upgrade(&st!()) {
-                        stop_on_tree_syms.iter().any(|&s| s == key)
+                },
+                SymbolKey::Class(c) if !stop_on_type => {
+                    //On class, follow descriptor declarations
+                    let next_sym_refs = Self::next_refs_class(session, c, context, &next_ref_weak.context);
+                    if next_sym_refs.is_empty() {
+                        // keep current evaluation
+                        results.push(current_eval);
                     } else {
-                        false
+                        // enqueue evaluations to follow, replacing current evaluation
+                        work_queue.extend(next_sym_refs);
                     }
                 },
-                _ => false
+                _ => {
+                    results.push(current_eval);
+                }
             }
-        });
+        }
+        if let Some(stop_on_tree_syms) = stop_on_tree_syms.as_ref() {
+            results.retain(|r| {
+                match r {
+                    EvaluationSymbolPtr::WEAK(weak) => {
+                        if let Some(key) = weak.weak.upgrade(&st!()) {
+                            stop_on_tree_syms.iter().any(|&s| s == key)
+                        } else {
+                            false
+                        }
+                    },
+                    _ => false
+                }
+            });
+        }
+        results
     }
-    results
-}
 
-pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildSteps) {
-    macro_rules! st { () => { session.sync_odoo.symbol_table } }
-    //signals that a change occurred to this symbol. "step" indicates which level of change occurred.
-    //It will trigger rebuild on all dependencies
-    let mut vec_to_invalidate = VecDeque::from([symbol]);
-    while let Some(ref_to_inv) = vec_to_invalidate.pop_front() {
-        let ref_to_inv_view = get_sym!(st!(), ref_to_inv);
-        let sym_to_inv_type = ref_to_inv_view.typ();
-        let dependents_len = ref_to_inv_view.dependents().len();
-        if matches!(sym_to_inv_type, SymType::FILE | SymType::PACKAGE(_) | SymType::XML_FILE | SymType::CSV_FILE) {
-            if *step == BuildSteps::ARCH && dependents_len > 0 {
-                let sym_to_inv = get_sym!(st!(), ref_to_inv);
-                let arch_dependents = &sym_to_inv.dependents()[BuildSteps::ARCH as usize];
-                let mut build_queue = vec![];
-                for (index, hashset) in arch_dependents.iter().enumerate() {
-                    let Some(hashset) = hashset else {
-                        continue;
-                    };
-                    for sym in hashset.iter_valid(|&k| st!().contains_key(k)) {
-                        if !st!().is_symbol_in_parents(sym, ref_to_inv) {
-                            build_queue.push((index, sym));
+
+    pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildSteps) {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        //signals that a change occurred to this symbol. "step" indicates which level of change occurred.
+        //It will trigger rebuild on all dependencies
+        let mut vec_to_invalidate = VecDeque::from([symbol]);
+        while let Some(ref_to_inv) = vec_to_invalidate.pop_front() {
+            let ref_to_inv_view = get_sym!(st!(), ref_to_inv);
+            let sym_to_inv_type = ref_to_inv_view.typ();
+            let dependents_len = ref_to_inv_view.dependents().len();
+            if matches!(sym_to_inv_type, SymType::FILE | SymType::PACKAGE(_) | SymType::XML_FILE | SymType::CSV_FILE) {
+                if *step == BuildSteps::ARCH && dependents_len > 0 {
+                    let sym_to_inv = get_sym!(st!(), ref_to_inv);
+                    let arch_dependents = &sym_to_inv.dependents()[BuildSteps::ARCH as usize];
+                    let mut build_queue = vec![];
+                    for (index, hashset) in arch_dependents.iter().enumerate() {
+                        let Some(hashset) = hashset else {
+                            continue;
+                        };
+                        for sym in hashset.iter_valid(|&k| st!().contains_key(k)) {
+                            if !st!().is_symbol_in_parents(sym, ref_to_inv) {
+                                build_queue.push((index, sym));
+                            }
+                        }
+                    }
+                    for (index, sym) in build_queue {
+                        if index == BuildSteps::ARCH as usize {
+                            session.sync_odoo.add_to_rebuild_arch(sym);
+                        } else if index == BuildSteps::ARCH_EVAL as usize {
+                            session.sync_odoo.add_to_rebuild_arch_eval(sym);
+                        } else if index == BuildSteps::VALIDATION as usize {
+                            st!().invalidate_sub_functions(sym);
+                            session.sync_odoo.add_to_validations(sym);
                         }
                     }
                 }
-                for (index, sym) in build_queue {
-                    if index == BuildSteps::ARCH as usize {
-                        session.sync_odoo.add_to_rebuild_arch(sym);
-                    } else if index == BuildSteps::ARCH_EVAL as usize {
-                        session.sync_odoo.add_to_rebuild_arch_eval(sym);
-                    } else if index == BuildSteps::VALIDATION as usize {
+                if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL].contains(step) && dependents_len > 1 {
+                    let sym_to_inv = get_sym!(st!(), ref_to_inv);
+                    let arch_eval_dependents = &sym_to_inv.dependents()[BuildSteps::ARCH_EVAL as usize];
+                    let mut build_queue = vec![];
+                    for (index, hashset) in arch_eval_dependents.iter().enumerate() {
+                        let Some(hashset) = hashset else {
+                            continue;
+                        };
+                        for sym in hashset.iter_valid(|&k| st!().contains_key(k)) {
+                            if !st!().is_symbol_in_parents(sym, ref_to_inv) {
+                                build_queue.push((index, sym));
+                            }
+                        }
+                    }
+                    for (index, sym) in build_queue {
+                        if index + 1 == BuildSteps::ARCH_EVAL as usize {
+                            session.sync_odoo.add_to_rebuild_arch_eval(sym);
+                        } else if index + 1 == BuildSteps::VALIDATION as usize {
+                            st!().invalidate_sub_functions(sym);
+                            session.sync_odoo.add_to_validations(sym);
+                        }
+                    }
+                    for class in st!().iter_classes(ref_to_inv) {
+                        let class_sym = &st!()[class];
+                        if let Some(model_data) = &class_sym._model {
+                            let model = session.sync_odoo.models.get(&model_data.name).cloned();
+                            if let Some(model) = model {
+                                let from_module = st!().find_module(class);
+                                // @arena: todo: check if this mutates the dependents of sym_to_inv
+                                model.borrow().add_dependents_to_validation(session, from_module);
+                            }
+                        }
+                    }
+                }
+            }
+            if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::VALIDATION].contains(step) && dependents_len > 2 {
+                let sym_to_inv = get_sym!(st!(), ref_to_inv);
+                let validation_dependents = &sym_to_inv.dependents()[BuildSteps::VALIDATION as usize];
+                for sym in validation_dependents.iter().flatten()
+                        .flat_map(|s| s.iter_valid(|&k| st!().contains_key(k)))
+                        .collect::<Vec<_>>() {
+                    if !st!().is_symbol_in_parents(sym, ref_to_inv) {
                         st!().invalidate_sub_functions(sym);
                         session.sync_odoo.add_to_validations(sym);
                     }
                 }
             }
-            if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL].contains(step) && dependents_len > 1 {
-                let sym_to_inv = get_sym!(st!(), ref_to_inv);
-                let arch_eval_dependents = &sym_to_inv.dependents()[BuildSteps::ARCH_EVAL as usize];
-                let mut build_queue = vec![];
-                for (index, hashset) in arch_eval_dependents.iter().enumerate() {
-                    let Some(hashset) = hashset else {
-                        continue;
-                    };
-                    for sym in hashset.iter_valid(|&k| st!().contains_key(k)) {
-                        if !st!().is_symbol_in_parents(sym, ref_to_inv) {
-                            build_queue.push((index, sym));
-                        }
-                    }
-                }
-                for (index, sym) in build_queue {
-                    if index + 1 == BuildSteps::ARCH_EVAL as usize {
-                        session.sync_odoo.add_to_rebuild_arch_eval(sym);
-                    } else if index + 1 == BuildSteps::VALIDATION as usize {
-                        st!().invalidate_sub_functions(sym);
-                        session.sync_odoo.add_to_validations(sym);
-                    }
-                }
-                for class in st!().iter_classes(ref_to_inv) {
-                    let class_sym = &st!()[class];
-                    if let Some(model_data) = &class_sym._model {
-                        let model = session.sync_odoo.models.get(&model_data.name).cloned();
-                        if let Some(model) = model {
-                            let from_module = st!().find_module(class);
-                            // @arena: todo: check if this mutates the dependents of sym_to_inv
-                            model.borrow().add_dependents_to_validation(session, from_module);
-                        }
-                    }
-                }
-            }
-        }
-        if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::VALIDATION].contains(step) && dependents_len > 2 {
             let sym_to_inv = get_sym!(st!(), ref_to_inv);
-            let validation_dependents = &sym_to_inv.dependents()[BuildSteps::VALIDATION as usize];
-            for sym in validation_dependents.iter().flatten()
-                    .flat_map(|s| s.iter_valid(|&k| st!().contains_key(k)))
-                    .collect::<Vec<_>>() {
-                if !st!().is_symbol_in_parents(sym, ref_to_inv) {
-                    st!().invalidate_sub_functions(sym);
-                    session.sync_odoo.add_to_validations(sym);
+            if sym_to_inv.has_modules() {
+                for &sym in sym_to_inv.all_module_symbol() {
+                    vec_to_invalidate.push_back(sym);
                 }
-            }
-        }
-        let sym_to_inv = get_sym!(st!(), ref_to_inv);
-        if sym_to_inv.has_modules() {
-            for &sym in sym_to_inv.all_module_symbol() {
-                vec_to_invalidate.push_back(sym);
             }
         }
     }

@@ -8,7 +8,6 @@ use lsp_types::{Diagnostic, Position, Range};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation::ContextValue;
 use crate::core::symbols::symbol_table::{ClassKey, ModuleKey, SymbolKey, SymbolTable, get_sym};
-use crate::core::symbols::symbol_table_ops::{follow_ref, get_member_symbol};
 use crate::{constants::*, oyarn, Sy};
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::module_symbol::ModuleSymbol;
@@ -417,7 +416,7 @@ impl PythonValidator {
             let evals = st!()[v].evaluations.clone();
             for eval in evals.iter() {
                 let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
-                let eval_weaks = follow_ref(&symbol, session, &mut None, true, false, None, None);
+                let eval_weaks = SymbolTable::follow_ref(&symbol, session, &mut None, true, false, None, None);
                 for eval_weak in eval_weaks.iter() {
                     let Some(symbol) = st!().upgrade_weak(eval_weak) else {continue};
                     if !SymbolTable::is_field_class(session, symbol) {
@@ -438,8 +437,7 @@ impl PythonValidator {
                                 }
                                 break 'related_check;
                             }
-                            let Some(field_type) = get_member_symbol(session, symbol, &S!("type"), None, false, false, false, false, false)
-                                .0.first()
+                            let Some(field_type) = SymbolTable::get_member_symbol(session, symbol, &S!("type"), None, false, false, false, false, false) .0.first()
                                 .and_then(|field_type_var| st!().evaluations(*field_type_var).cloned())
                                 .and_then(|evals| evals.first().cloned())
                                 .and_then(|eval| eval.value.clone())
@@ -450,7 +448,7 @@ impl PythonValidator {
                                 break 'related_check;
                             };
                             let found_same_type_match = syms.iter().any(|&sym| {
-                                let related_eval_weaks = follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
+                                let related_eval_weaks = SymbolTable::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
                                     sym,
                                     None,
                                     false,
@@ -460,7 +458,7 @@ impl PythonValidator {
                                         return false
                                     };
                                     let found =
-                                        get_member_symbol(session, related_field_class_sym, &S!("type"), None, false, false, false, false, false)
+                                        SymbolTable::get_member_symbol(session, related_field_class_sym, &S!("type"), None, false, false, false, false, false)
                                         .0.first()
                                         .and_then(|field_type_var| st!().evaluations(*field_type_var).cloned())
                                         .and_then(|evals| evals.first().cloned())
@@ -524,7 +522,7 @@ impl PythonValidator {
                         let Some(module) = maybe_from_module else {
                             continue;
                         };
-                        let (symbols, _diagnostics) = get_member_symbol(session, class.into(),
+                        let (symbols, _diagnostics) = SymbolTable::get_member_symbol(session, class.into(),
                             &method_name.to_string(),
                             Some(module),
                             false,
@@ -559,7 +557,7 @@ impl PythonValidator {
                         };
                         let main_syms = model.borrow().get_main_symbols(session, Some(module));
                         let symbols: Vec<_> = main_syms.iter().flat_map(|&main_sym|
-                            get_member_symbol(session, main_sym.into(), &inverse_name, Some(module), false, true, false, true, false).0
+                            SymbolTable::get_member_symbol(session, main_sym.into(), &inverse_name, Some(module), false, true, false, true, false).0
                         ).collect();
                         if symbols.is_empty() {
                             let Some(arg_range) = eval_weak.as_weak().context.get(&format!("inverse_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
@@ -589,7 +587,7 @@ impl PythonValidator {
                                 // @arena: borrow error expected (clone evals)
                                 let evals = st!().evaluations(sym).cloned().unwrap();
                                 for eval in evals {
-                                    let followed = follow_ref(
+                                    let followed = SymbolTable::follow_ref(
                                         &eval.symbol.get_symbol(session, &mut None, &mut vec![], None),
                                         session,
                                         &mut None,

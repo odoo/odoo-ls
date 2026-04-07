@@ -8,7 +8,6 @@ use std::collections::{HashMap, HashSet};
 use std::i32;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::symbols::symbol_table::{get_sym, FunctionKey, ModuleKey, SymbolKey, SymbolTable, Weak};
-use crate::core::symbols::symbol_table_ops::{follow_ref, get_member_symbol};
 use crate::core::symbols::variable_symbol::VariableSymbol;
 use crate::{constants::*, Sy};
 use crate::core::odoo::SyncOdoo;
@@ -430,7 +429,7 @@ impl Evaluation {
             EvaluationSymbolPtr::WEAK(_) => {
                 //take the weak by get_symbol instead of the match
                 let symbol_eval = self.symbol.get_symbol(session, &mut None, &mut vec![], Some(function.into()));
-                let out_of_scope = follow_ref(&symbol_eval, session, &mut None, false, false, None, Some(function.into()));
+                let out_of_scope = SymbolTable::follow_ref(&symbol_eval, session, &mut None, false, false, None, Some(function.into()));
                 for sym in out_of_scope {
                     if !session.sync_odoo.symbol_table.is_expired_if_weak(&sym) {
                         res.push(Evaluation {
@@ -460,7 +459,7 @@ impl Evaluation {
         if st!().is_expired_if_weak(&eval_symbol) {
             return None;
         }
-        let evals = follow_ref(&eval_symbol, session, context, false, true, None, None);
+        let evals = SymbolTable::follow_ref(&eval_symbol, session, context, false, true, None, None);
         if evals.len() != 1 { return None; }
         let eval = &evals[0];
         let EvaluationSymbolPtr::WEAK(w) = eval else { return None; };
@@ -759,7 +758,7 @@ impl Evaluation {
                 }
                 let base_eval_ptrs: Vec<EvaluationSymbolPtr> = base_evals.iter().map(|base_eval| {
                     let base_sym_weak_eval_base = base_eval.symbol.get_symbol_weak_transformed(session, context, &mut diagnostics, None);
-                    follow_ref(&base_sym_weak_eval_base, session, context, true, false, None, None)
+                    SymbolTable::follow_ref(&base_sym_weak_eval_base, session, context, true, false, None, None)
                 }).flatten().collect();
 
                 let parent_file_or_func = st!().parent_file_or_function(parent).unwrap();
@@ -790,7 +789,7 @@ impl Evaluation {
                                     }
                                     let class_sym_weak_eval= class_eval[0].symbol.get_symbol_as_weak(session, context, &mut diagnostics, None);
                                     let res = st!().upgrade(class_sym_weak_eval.weak).and_then(|class_sym|{
-                                        let class_sym_weak_eval = &follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
+                                        let class_sym_weak_eval = &SymbolTable::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
                                             class_sym, None, false
                                         )), session, &mut None, false, false, None, None)[0];
                                         if !matches!(st!().upgrade_weak(class_sym_weak_eval).unwrap(), SymbolKey::Class(_)) {
@@ -818,7 +817,7 @@ impl Evaluation {
                                                 if object_or_type_eval.len() != 1 {
                                                     return Some((class_sym_weak_eval.weak.clone(), Some(default_instance)))
                                                 }
-                                                let object_or_type_weak_eval = &follow_ref(
+                                                let object_or_type_weak_eval = &SymbolTable::follow_ref(
                                                     &object_or_type_eval[0].symbol.get_symbol(
                                                         session, context, &mut diagnostics, Some(parent)),
                                                         session, &mut None, false, false, None, None)[0];
@@ -885,7 +884,7 @@ impl Evaluation {
                                     }
                                 }
                                 //1: find __init__ method
-                                let init = get_member_symbol(session, base_sym, &S!("__init__"), module, true, false, false, false, false);
+                                let init = SymbolTable::get_member_symbol(session, base_sym, &S!("__init__"), module, true, false, false, false, false);
                                 let mut found_hook = false;
                                 if let Some(&init) = init.0.first() {
                                     let init_file = st!().get_file(init).unwrap();
@@ -1028,7 +1027,7 @@ impl Evaluation {
                     if st!().is_expired_if_weak(&base_ref ) {
                         return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                     }
-                    let bases = follow_ref(&base_ref, session, context, false, false, None, None);
+                    let bases = SymbolTable::follow_ref(&base_ref, session, context, false, false, None, None);
                     for ibase in bases.iter() {
                         let base_loc = st!().upgrade_weak(ibase);
                         if let Some(base_loc) = base_loc {
@@ -1044,7 +1043,7 @@ impl Evaluation {
                                 }
                             }
                             let is_super = ibase.is_weak() && ibase.as_weak().is_super;
-                            let (attributes, mut attributes_diagnostics) = get_member_symbol(session, base_loc, &expr.attr.to_string(), module, false, false, false, true, is_super);
+                            let (attributes, mut attributes_diagnostics) = SymbolTable::get_member_symbol(session, base_loc, &expr.attr.to_string(), module, false, false, false, true, is_super);
                             for diagnostic in attributes_diagnostics.iter_mut(){
                                 diagnostic.range = FileMgr::textRange_to_temporary_Range(&expr.range())
                             }
@@ -1149,7 +1148,7 @@ impl Evaluation {
                 if st!().is_expired_if_weak(base) {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let bases = follow_ref(&base, session, &mut None, false, false, None, None);
+                let bases = SymbolTable::follow_ref(&base, session, &mut None, false, false, None, None);
                 let value = Evaluation::expr_to_str(session, &sub.slice, parent, max_infer, false, &mut diagnostics);
                 diagnostics.extend(value.1);
                 for base in bases.iter() {
@@ -1179,7 +1178,7 @@ impl Evaluation {
                         continue;
                     }
                     let base = st!().upgrade_weak(base).unwrap();
-                    let get_item_symbols = get_member_symbol(
+                    let get_item_symbols = SymbolTable::get_member_symbol(
                         session,
                         base,
                         &S!("__getitem__"),
@@ -1287,11 +1286,11 @@ impl Evaluation {
                 diagnostics.extend(diags);
                 for base in bases.into_iter(){
                     let base_sym_weak_eval= base.symbol.get_symbol_weak_transformed(session, context, &mut diagnostics, None);
-                    let base_eval_ptrs = follow_ref(&base_sym_weak_eval, session, context, true, false, None, None);
+                    let base_eval_ptrs = SymbolTable::follow_ref(&base_sym_weak_eval, session, context, true, false, None, None);
                     for base_eval_ptr in base_eval_ptrs.iter() {
                         let EvaluationSymbolPtr::WEAK(base_sym_weak_eval) = base_eval_ptr else {continue};
                         let Some(base_sym) = st!().upgrade(base_sym_weak_eval.weak) else {continue};
-                        let (operator_functions, diags) = get_member_symbol(session, base_sym, &S!(method), module, true, false, true, false, false);
+                        let (operator_functions, diags) = SymbolTable::get_member_symbol(session, base_sym, &S!(method), module, true, false, true, false, false);
                         diagnostics.extend(diags);
                         for operator_function in operator_functions.into_iter() {
                             for eval in get_sym!(st!(), operator_function).evaluations().unwrap_or(&vec![]).clone() {
@@ -1643,7 +1642,7 @@ impl Evaluation {
                     break;
                 }
                 if let Some(object) = obj {
-                    let (symbols, _diagnostics) = get_member_symbol(session,
+                    let (symbols, _diagnostics) = SymbolTable::get_member_symbol(session,
                         object,
                         &name.to_string(),
                         from_module,

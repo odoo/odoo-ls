@@ -13,7 +13,6 @@ use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 use crate::core::symbols::symbol_table::{get_sym, SymbolKey, SymbolTable};
-use crate::core::symbols::symbol_table_ops::follow_ref;
 use crate::threads::SessionInfo;
 use crate::{oyarn, S};
 
@@ -193,7 +192,7 @@ impl PythonArchBuilder {
                 let mut name_filter: Vec<OYarn> = vec![];
                 for import_symbol in import_result.symbols {
                     if let Some(all) = st!().get_content_symbol(import_symbol, "__all__", u32::MAX).symbols.first().copied() {
-                        let all_value = follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
+                        let all_value = SymbolTable::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
                             all, None, false
                         )), session, &mut None, false, true, None, None);
                         if let Some(all_value_first) = all_value.get(0) {

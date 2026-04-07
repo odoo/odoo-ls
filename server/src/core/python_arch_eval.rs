@@ -12,7 +12,6 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::symbols::symbol_mgr::SymbolMgr;
 use crate::core::symbols::symbol_table::{get_sym, ClassKey, FunctionKey, ModuleKey, SymbolKey, SymbolTable};
-use crate::core::symbols::symbol_table_ops::{follow_ref, get_member_symbol};
 use crate::core::symbols::variable_symbol::VariableSymbol;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::import_resolver::resolve_import_stmt;
@@ -380,7 +379,7 @@ impl PythonArchEval {
     ///Follow the evaluations of sym_ref, evaluate files if needed, and return true if the end evaluation contains from_sym
     fn check_for_loop_evaluation(&mut self, session: &mut SessionInfo, sym_ref: SymbolKey, from_sym: SymbolKey) -> bool {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
-        let syms_followed = follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
+        let syms_followed = SymbolTable::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
             sym_ref, None, false
         )), session, &mut None, false, false, None, None);
         for sym in syms_followed.iter() {
@@ -685,7 +684,7 @@ impl PythonArchEval {
             }
             let eval_base = &eval_base[0];
             let eval_symbol = eval_base.symbol.get_symbol(session, &mut None, &mut vec![], None);
-            let ref_sym = follow_ref(&eval_symbol, session, &mut None, false, true, None, None);
+            let ref_sym = SymbolTable::follow_ref(&eval_symbol, session, &mut None, false, true, None, None);
             if ref_sym.len() > 1 {
                 if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01003, &[&flatten_expr(base)]) {
                     self.diagnostics.push(Diagnostic {
@@ -863,10 +862,10 @@ impl PythonArchEval {
             let eval = &eval_iter_node[0];
             let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
             if !st!().is_expired_if_weak(&eval_symbol) {
-                let symbol_eval = follow_ref(&eval_symbol, session, &mut None, false, false, None, None);
+                let symbol_eval = SymbolTable::follow_ref(&eval_symbol, session, &mut None, false, false, None, None);
                 if symbol_eval.len() == 1 && let Some(symbol_type) = st!().upgrade_weak(&symbol_eval[0]) {
                     if matches!(symbol_type, SymbolKey::Class(_)) {
-                        let (iter, _) = get_member_symbol(session, symbol_type, &S!("__iter__"), None, true, false, false, false, false);
+                        let (iter, _) = SymbolTable::get_member_symbol(session, symbol_type, &S!("__iter__"), None, true, false, false, false, false);
                         if iter.len() == 1 {
                             if !st!().is_external(iter[0]) { //we can't rebuild functions of external files
                                 SyncOdoo::build_now(session, iter[0], BuildSteps::ARCH);
@@ -1029,7 +1028,7 @@ impl PythonArchEval {
             // Check for type annotation `typing.Self`, if so, return a `self` evaluation
             // And give it priority over other evaluations
             if evaluations.iter().any(|evaluation|
-                follow_ref(
+                SymbolTable::follow_ref(
                     &evaluation.symbol.get_symbol(session, &mut None, diagnostics, None),
                     session,
                     &mut None,
@@ -1096,7 +1095,7 @@ impl PythonArchEval {
             if parent_object.is_none() {
                 break;
             }
-            let (symbols, _diagnostics) = get_member_symbol(session,
+            let (symbols, _diagnostics) = SymbolTable::get_member_symbol(session,
                 parent_object.unwrap().into(),
                 name,
                 from_module,

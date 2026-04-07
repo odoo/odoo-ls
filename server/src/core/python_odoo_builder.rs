@@ -10,7 +10,6 @@ use crate::constants::OYarn;
 use crate::core::model::{Model, ModelData};
 use crate::core::symbols::class_symbol::ClassSymbol;
 use crate::core::symbols::symbol_table::{ClassKey, SymbolKey, SymbolTable, get_sym};
-use crate::core::symbols::symbol_table_ops::{all_members, follow_ref, get_member_symbol};
 use crate::core::xml_data::{OdooData, OdooDataRecord};
 use crate::threads::SessionInfo;
 use crate::utils::compare_semver;
@@ -181,7 +180,7 @@ impl PythonOdooBuilder {
             }
         }
         //Add inherits from delegate=True from fields
-        let all_fields = all_members(self.symbol.into(), session, false, true, false, None, false);
+        let all_fields = SymbolTable::all_members(self.symbol.into(), session, false, true, false, None, false);
         for (field_name, symbols) in all_fields.iter() {
             for (symbol, _deps) in symbols.iter() {
                 let Some(evals) = st!().evaluations(*symbol) else { continue };
@@ -202,7 +201,7 @@ impl PythonOdooBuilder {
 
     fn _get_attribute(session: &mut SessionInfo, loc_sym: ClassKey, attr: &String, diagnostics: &mut Vec<Diagnostic>) -> Option<EvaluationValue> {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
-        let (attr_sym, _) = get_member_symbol(session, loc_sym.into(), attr, None, true, false, false, false, false);
+        let (attr_sym, _) = SymbolTable::get_member_symbol(session, loc_sym.into(), attr, None, true, false, false, false, false);
         let &attr_sym = attr_sym.first()?;
         for eval in st!().evaluations(attr_sym).unwrap().clone() {
             let eval = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
@@ -405,7 +404,7 @@ impl PythonOdooBuilder {
             };
             for eval in evals.clone() {
                 let eval_sym_ptr = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
-                let eval_ptrs = follow_ref(&eval_sym_ptr, session, &mut None, true, false, None, None);
+                let eval_ptrs = SymbolTable::follow_ref(&eval_sym_ptr, session, &mut None, true, false, None, None);
                 for eval_ptr in eval_ptrs.iter() {
                     let eval_weak = match &eval_ptr {
                         EvaluationSymbolPtr::WEAK(w) => w,

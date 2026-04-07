@@ -3,8 +3,7 @@ use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet}, rc::Rc}
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{info, trace};
 
-use crate::{constants::{BuildSteps, OYarn, DEBUG_STEPS}, core::{diagnostics::{create_diagnostic, DiagnosticCode}, entry_point::{EntryPoint, EntryPointType}, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol_table::{ModuleKey, SymbolKey, XmlFileKey}, xml_data::{OdooData, OdooDataRecord, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver, Sy};
-use crate::core::symbols::symbol_table_ops::all_fields;
+use crate::{Sy, constants::{BuildSteps, DEBUG_STEPS, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::{EntryPoint, EntryPointType}, file_mgr::FileInfo, model::Model, odoo::SyncOdoo, symbols::symbol_table::{ModuleKey, SymbolKey, SymbolTable, XmlFileKey}, xml_data::{OdooData, OdooDataRecord, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver};
 
 
 
@@ -107,7 +106,7 @@ impl XmlValidator {
             dependencies.push(st!().get_file(main_sym.into()).unwrap());
         }
         let Some(&main_symbol) = main_symbols.get(0) else { return; };
-        let all_fields = all_fields(main_symbol.into(), session, Some(module));
+        let all_fields = SymbolTable::all_fields(main_symbol.into(), session, Some(module));
         self.validate_fields(session, xml_data_record, &all_fields, diagnostics, missing_model_dependencies);
     }
 

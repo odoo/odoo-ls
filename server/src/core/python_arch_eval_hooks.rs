@@ -15,8 +15,6 @@ use crate::core::evaluation::GetSymbolHook;
 use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation::Context;
 use crate::constants::*;
-use crate::core::symbols::symbol_table_ops::follow_ref;
-use crate::core::symbols::symbol_table_ops::get_member_symbol;
 use crate::core::symbols::symbol_table::get_sym;
 use crate::core::symbols::symbol_table::FunctionKey;
 use crate::core::symbols::symbol_table::SymbolKey;
@@ -732,7 +730,7 @@ impl PythonArchEvalHooks {
             diagnostics.extend(diags);
             let mut followed_evals = vec![];
             for eval in dec_evals {
-                followed_evals.extend(follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, None));
+                followed_evals.extend(SymbolTable::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, None));
             }
             for decorator_eval in followed_evals {
                 let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval else {
@@ -1198,7 +1196,7 @@ impl PythonArchEvalHooks {
         for arg in arguments.args.iter() {
             let Expr::StringLiteral(expr) = arg else {return diagnostics};
             let field_name = expr.value.to_string();
-            let (syms, _) = get_member_symbol(session, class_sym, &field_name, from_module, false, true, false, true, false);
+            let (syms, _) = SymbolTable::get_member_symbol(session, class_sym, &field_name, from_module, false, true, false, true, false);
             if syms.is_empty() {
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03014, &[&field_name, &model_name]) {
                     diagnostics.push(Diagnostic {
