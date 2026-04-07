@@ -757,7 +757,7 @@ impl SymbolTable {
     // @arena: originally method on EvaluationSymbolPtr
     pub fn upgrade_weak(&self, eval_ptr: &EvaluationSymbolPtr) -> Option<SymbolKey> {
         match eval_ptr {
-            EvaluationSymbolPtr::WEAK(w) => self.upgrade(w.weak),
+            EvaluationSymbolPtr::WEAK(w) => w.weak.upgrade(self),
             _ => None,
         }
     }

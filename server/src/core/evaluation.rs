@@ -775,7 +775,7 @@ impl Evaluation {
                 for base_eval_ptr in base_eval_ptrs.iter() {
                     call_argument_diagnostics.push(Vec::new()); //one list per evaluation
                     let EvaluationSymbolPtr::WEAK(base_sym_weak_eval) = base_eval_ptr else {continue};
-                    let Some(base_sym) = st!().upgrade(base_sym_weak_eval.weak) else {continue};
+                    let Some(base_sym) = base_sym_weak_eval.weak.upgrade(&st!()) else {continue};
                     if let SymbolKey::Class(_) = base_sym {
                         if base_sym_weak_eval.instance.unwrap_or(false) {
                             //TODO handle call on class instance
@@ -789,7 +789,7 @@ impl Evaluation {
                                         return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                                     }
                                     let class_sym_weak_eval= class_eval[0].symbol.get_symbol_as_weak(session, context, &mut diagnostics, None);
-                                    let res = st!().upgrade(class_sym_weak_eval.weak).and_then(|class_sym|{
+                                    let res = class_sym_weak_eval.weak.upgrade(&st!()).and_then(|class_sym|{
                                         let class_sym_weak_eval = &SymbolTable::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
                                             class_sym, None, false
                                         )), session, &mut None, false, false, None, None)[0];
@@ -1290,7 +1290,7 @@ impl Evaluation {
                     let base_eval_ptrs = SymbolTable::follow_ref(&base_sym_weak_eval, session, context, true, false, None, None);
                     for base_eval_ptr in base_eval_ptrs.iter() {
                         let EvaluationSymbolPtr::WEAK(base_sym_weak_eval) = base_eval_ptr else {continue};
-                        let Some(base_sym) = st!().upgrade(base_sym_weak_eval.weak) else {continue};
+                        let Some(base_sym) = base_sym_weak_eval.weak.upgrade(&st!()) else {continue};
                         let (operator_functions, diags) = SymbolTable::get_member_symbol(session, base_sym, &S!(method), module, true, false, true, false, false);
                         diagnostics.extend(diags);
                         for operator_function in operator_functions.into_iter() {
@@ -1614,7 +1614,7 @@ impl Evaluation {
     fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: Weak<SymbolKey>, from_module: Option<ModuleKey>, elt1: &Expr, elt2: &Expr, _elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         //parameter 1
-        let Some(on_object) = st!().upgrade(on_object) else { return }; //if weak is not set, we didn't manage to evalue base object. Do not validate in this case
+        let Some(on_object) = on_object.upgrade(&st!()) else { return }; //if weak is not set, we didn't manage to evalue base object. Do not validate in this case
         if let Expr::StringLiteral(s) = elt1 {
             let value = s.value.to_string();
             let split_expr = value.split(".");

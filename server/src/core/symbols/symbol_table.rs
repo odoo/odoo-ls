@@ -885,15 +885,6 @@ impl SymbolTable {
 }
 
 
-
-// @arena: remove me
-impl SymbolTable {
-    pub fn upgrade(&self, weak_key: Weak<SymbolKey>) -> Option<SymbolKey> {
-        weak_key.upgrade(self)
-    }
-}
-
-
 impl ContainsKey<ClassKey> for SymbolTable {
     fn contains_key(&self, key: ClassKey) -> bool {
         self.classes.contains_key(key)
