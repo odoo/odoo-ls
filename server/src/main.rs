@@ -94,8 +94,8 @@ fn main() {
             info!("starting server");
             Server::new_stdio()
         };
-        serv.initialize().expect("Error while initializing server");
         serv.set_config_cli_args(cli.config_path, cli.selected_config);
+        serv.initialize().expect("Error while initializing server");
         let sender_panic = serv.connection.as_ref().unwrap().sender.clone();
         std::panic::set_hook(Box::new(move |panic_info| {
             let backtrace = std::backtrace::Backtrace::capture();
