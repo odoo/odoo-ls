@@ -16,7 +16,6 @@ use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation::Context;
 use crate::constants::*;
 use crate::core::symbols::symbol_table_ops::follow_ref;
-use crate::core::symbols::symbol_table_ops::get_main_entry_tree;
 use crate::core::symbols::symbol_table_ops::get_member_symbol;
 use crate::core::symbols::symbol_table::get_sym;
 use crate::core::symbols::symbol_table::FunctionKey;
@@ -660,7 +659,7 @@ impl PythonArchEvalHooks {
     pub fn on_file_eval(session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: SymbolKey) {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let tree = st!().get_tree(symbol);
-        let odoo_tree = get_main_entry_tree(session, symbol);
+        let odoo_tree = SymbolTable::get_main_entry_tree(session, symbol);
         let name = st!().name(symbol).clone();
         for hook in arch_eval_file_hooks.iter() {
             for (min_version, max_version, hook_tree) in hook.trees.iter() {
@@ -687,7 +686,7 @@ impl PythonArchEvalHooks {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let symbol_key: SymbolKey = function.into();
         let tree = st!().get_tree(symbol_key);
-        let odoo_tree = get_main_entry_tree(session, symbol_key);
+        let odoo_tree = SymbolTable::get_main_entry_tree(session, symbol_key);
         let name = st!().name(symbol_key).clone();
         for hook in arch_eval_function_hooks.iter() {
             for hook_tree in hook.tree.iter() {
@@ -790,7 +789,7 @@ impl PythonArchEvalHooks {
                         st!().add_model_dependencies(scope_file, &model);
                     }
                 } else {
-                    let tree = get_main_entry_tree(session, scope_file);
+                    let tree = SymbolTable::get_main_entry_tree(session, scope_file);
                     if !tree.0.starts_with(&[Sy!("odoo"), Sy!("orm")]) {
                         st!().add_model_dependencies(scope_file, &model);
                     }

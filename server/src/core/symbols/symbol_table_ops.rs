@@ -27,7 +27,7 @@ impl SymbolTable {
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") || FileMgr::is_untitled(&path_str) {
             return Some(symbol_table.add_new_file(parent, &name, &path_str).into());
         }
-        let main_entry_tree = get_main_entry_tree(session, parent);
+        let main_entry_tree = SymbolTable::get_main_entry_tree(session, parent);
         if main_entry_tree == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
             let module = Self::add_new_module_package(session, parent, &name, path);
             let symbol_table = &mut session.sync_odoo.symbol_table;
@@ -65,7 +65,7 @@ impl SymbolTable {
     }
     
     pub fn create_module_from_path(session: &mut SessionInfo, path: &PathBuf, parent: SymbolKey) -> Option<ModuleKey> {
-        let main_entry_tree = get_main_entry_tree(session, parent);
+        let main_entry_tree = SymbolTable::get_main_entry_tree(session, parent);
         if !(main_entry_tree == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists()) {
             return None;
         }
@@ -1105,70 +1105,71 @@ impl SymbolTable {
             _ => {}
         }
     }
-}
 
 
-//infer a name, given a position
-pub fn infer_name(odoo: &SyncOdoo, on_symbol_key: SymbolKey, name: &String, position: Option<u32>) -> ContentSymbols {
-    let symbol_table = &odoo.symbol_table;
-    let results = symbol_table.get_content_symbol(on_symbol_key, name, position.unwrap_or(u32::MAX));
-    if !results.symbols.is_empty() {
-        return results;
-    }
-    let on_symbol = symbol_table.get_symbol_view(on_symbol_key).expect("valid key");
-    if !matches!(&on_symbol.typ(), SymType::FILE | SymType::PACKAGE(_) | SymType::ROOT) {
-        let mut parent = on_symbol.parent().unwrap();
-        while let SymbolKey::Class(c) = parent {
-            parent = symbol_table[c].parent();
+    //infer a name, given a position
+    pub fn infer_name(odoo: &SyncOdoo, on_symbol_key: SymbolKey, name: &String, position: Option<u32>) -> ContentSymbols {
+        let symbol_table = &odoo.symbol_table;
+        let results = symbol_table.get_content_symbol(on_symbol_key, name, position.unwrap_or(u32::MAX));
+        if !results.symbols.is_empty() {
+            return results;
         }
-        // A function can reference another name from the full outer scope so no position is needed
-        infer_name(odoo, parent, name, None)
-    } else if on_symbol.name() != "builtins" || on_symbol.typ() != SymType::FILE {
-        let builtins = odoo.get_symbol("", &(vec![Sy!("builtins")], vec![]), u32::MAX)[0];
-        infer_name(odoo, builtins, name, None)
-    } else {
-        ContentSymbols::default()
+        let on_symbol = symbol_table.get_symbol_view(on_symbol_key).expect("valid key");
+        if !matches!(&on_symbol.typ(), SymType::FILE | SymType::PACKAGE(_) | SymType::ROOT) {
+            let mut parent = on_symbol.parent().unwrap();
+            while let SymbolKey::Class(c) = parent {
+                parent = symbol_table[c].parent();
+            }
+            // A function can reference another name from the full outer scope so no position is needed
+            Self::infer_name(odoo, parent, name, None)
+        } else if on_symbol.name() != "builtins" || on_symbol.typ() != SymType::FILE {
+            let builtins = odoo.get_symbol("", &(vec![Sy!("builtins")], vec![]), u32::MAX)[0];
+            Self::infer_name(odoo, builtins, name, None)
+        } else {
+            ContentSymbols::default()
+        }
     }
-}
 
-// @arena: make this a method of SyncOdoo?
-pub fn get_main_entry_tree(session: &SessionInfo, symbol_key: SymbolKey) -> Tree {
-    let symbol_table = &session.sync_odoo.symbol_table;
-    let mut tree = symbol_table.get_tree(symbol_key);
-    let len_first_part = tree.0.len();
-    let odoo_tree = &session.sync_odoo.main_entry_tree;
-    if len_first_part >= odoo_tree.len() {
-        for component in odoo_tree.iter() {
-            if tree.0.len() > 0 && &tree.0[0] == component {
-                tree.0.remove(0);
-            } else {
-                return symbol_table.get_tree(symbol_key);
+    // @arena: make this a method of SyncOdoo?
+    pub fn get_main_entry_tree(session: &SessionInfo, symbol_key: SymbolKey) -> Tree {
+        let symbol_table = &session.sync_odoo.symbol_table;
+        let mut tree = symbol_table.get_tree(symbol_key);
+        let len_first_part = tree.0.len();
+        let odoo_tree = &session.sync_odoo.main_entry_tree;
+        if len_first_part >= odoo_tree.len() {
+            for component in odoo_tree.iter() {
+                if tree.0.len() > 0 && &tree.0[0] == component {
+                    tree.0.remove(0);
+                } else {
+                    return symbol_table.get_tree(symbol_key);
+                }
             }
         }
+        tree
     }
-    tree
-}
-
-// @arena: make this a method of SyncOdoo?
-pub fn match_tree_from_any_entry(session: &SessionInfo, symbol_key: SymbolKey, tree: &Tree) -> bool {
-    let symbol_table = &session.sync_odoo.symbol_table;
-    let (mut self_tree, entry) = symbol_table.get_tree_and_entry(symbol_key);
-    'outer: for entry in session.sync_odoo.entry_point_mgr.borrow().iter_for_import(&entry.unwrap()) {
-        if entry.borrow().tree.len() > self_tree.0.len() {
-            continue;
-        }
-        for (index, tree_el) in entry.borrow().tree.iter().enumerate() {
-            if &self_tree.0[index] != tree_el {
-                continue 'outer;
+    
+    // @arena: make this a method of SyncOdoo?
+    pub fn match_tree_from_any_entry(session: &SessionInfo, symbol_key: SymbolKey, tree: &Tree) -> bool {
+        let symbol_table = &session.sync_odoo.symbol_table;
+        let (mut self_tree, entry) = symbol_table.get_tree_and_entry(symbol_key);
+        'outer: for entry in session.sync_odoo.entry_point_mgr.borrow().iter_for_import(&entry.unwrap()) {
+            if entry.borrow().tree.len() > self_tree.0.len() {
+                continue;
             }
+            for (index, tree_el) in entry.borrow().tree.iter().enumerate() {
+                if &self_tree.0[index] != tree_el {
+                    continue 'outer;
+                }
+            }
+            return (self_tree.0.split_off(entry.borrow().tree.len()), self_tree.1) == *tree;
         }
-        return (self_tree.0.split_off(entry.borrow().tree.len()), self_tree.1) == *tree;
+        false
     }
-    false
+
 }
 
 pub fn is_inheriting_from_field(session: &SessionInfo, class_key: ClassKey) -> bool {
-    let tree = flatten_tree(&get_main_entry_tree(session, class_key.into()));
+    let tree = flatten_tree(&SymbolTable::get_main_entry_tree(session, class_key.into()));
     if compare_semver(&session.sync_odoo.full_version, "18.0") <= Ordering::Equal {
         // @arena: originally:
         // if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
@@ -1221,7 +1222,7 @@ pub fn is_field_class(session: &SessionInfo, symbol_key: SymbolKey) -> bool {
 }
 
 fn is_field_class_uncached(session: &SessionInfo, class_key: ClassKey) -> bool {
-    let tree = &get_main_entry_tree(session, class_key.into());
+    let tree = &SymbolTable::get_main_entry_tree(session, class_key.into());
     if compare_semver(session.sync_odoo.full_version.as_str(), "18.1.0") >= Ordering::Equal {
         if tree.0.len() == 3 && tree.1.len() == 1 && tree.0[0] == "odoo" && tree.0[1] == "orm" && (
                 tree.0[2] == "fields_misc" && tree.1[0] == "Boolean" ||
@@ -1850,7 +1851,7 @@ pub fn follow_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, c
 
 // @arena: might panic on last().unwrap()
 pub fn is_specific_field_class(session: &SessionInfo, target: SymbolKey, field_names: &[&str]) -> bool {
-    let tree = flatten_tree(&get_main_entry_tree(session, target));
+    let tree = flatten_tree(&SymbolTable::get_main_entry_tree(session, target));
     return is_field_class(session, target) && field_names.iter().any(|&name| {
         tree.last().unwrap() == name
     })

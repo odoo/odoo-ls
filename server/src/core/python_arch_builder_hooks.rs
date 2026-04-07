@@ -8,7 +8,6 @@ use tracing::{info, warn};
 use crate::core::entry_point::EntryPoint;
 use crate::core::import_resolver::manual_import;
 use crate::core::symbols::symbol_table::{get_sym, ClassKey, SymbolKey, SymbolTable};
-use crate::core::symbols::symbol_table_ops::get_main_entry_tree;
 use crate::threads::SessionInfo;
 use crate::utils::compare_semver;
 use crate::{Sy, S};
@@ -161,7 +160,7 @@ impl PythonArchBuilderHooks {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let symbol_key: SymbolKey = class_key.into();
         let tree = st!().get_tree(symbol_key);
-        let odoo_tree = get_main_entry_tree(session, symbol_key);
+        let odoo_tree = SymbolTable::get_main_entry_tree(session, symbol_key);
         let name = st!().name(symbol_key).clone();
         for hook in arch_class_hooks.iter() {
             for hook_tree in hook.trees.iter() {
@@ -182,7 +181,7 @@ impl PythonArchBuilderHooks {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
         let name = st!().name(symbol).clone();
         if name == "release" {
-            if get_main_entry_tree(session, symbol) == (vec![Sy!("odoo"), Sy!("release")], vec![]) {
+            if SymbolTable::get_main_entry_tree(session, symbol) == (vec![Sy!("odoo"), Sy!("release")], vec![]) {
                 let file_path = &st!()[symbol.unwrap_file_key()].path;
                 let (maj, min, mic) = SyncOdoo::read_version(session, PathBuf::from(file_path));
                 if maj != session.sync_odoo.version_major || min != session.sync_odoo.version_minor || mic != session.sync_odoo.version_micro {
@@ -191,7 +190,7 @@ impl PythonArchBuilderHooks {
             }
         } else if name == "init" {
             if compare_semver(session.sync_odoo.full_version.as_str(), "18.1") != Ordering::Less {
-                if get_main_entry_tree(session, symbol) == (vec![Sy!("odoo"), Sy!("init")], vec![]) {
+                if SymbolTable::get_main_entry_tree(session, symbol) == (vec![Sy!("odoo"), Sy!("init")], vec![]) {
                     let file_path = &st!()[symbol.unwrap_file_key()].path;
                     let odoo_namespace = session.sync_odoo.get_symbol(file_path, &(vec![Sy!("odoo")], vec![]), u32::MAX);
                     if let Some(&odoo_namespace) = odoo_namespace.get(0) {
@@ -205,7 +204,7 @@ impl PythonArchBuilderHooks {
                 }
             }
         } else if name == "werkzeug" {
-            if get_main_entry_tree(session, symbol) == (vec![Sy!("odoo"), Sy!("_monkeypatches"), Sy!("werkzeug")], vec![]) {
+            if SymbolTable::get_main_entry_tree(session, symbol) == (vec![Sy!("odoo"), Sy!("_monkeypatches"), Sy!("werkzeug")], vec![]) {
                 //doing this patch like this imply that an odoo project will make these functions available for all entrypoints, but heh
                 let file_path = &st!()[symbol.unwrap_file_key()].path;
                 let werkzeug_url = session.sync_odoo.get_symbol(file_path, &(vec![Sy!("werkzeug"), Sy!("urls")], vec![]), u32::MAX);

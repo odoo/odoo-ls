@@ -10,7 +10,6 @@ use std::path::{Path, PathBuf};
 use ruff_text_size::{TextRange, TextSize};
 use ruff_python_ast::{Alias, AtomicNodeIndex, Identifier};
 use crate::core::symbols::symbol_table::{get_sym, ModuleKey, SymbolKey, SymbolTable};
-use crate::core::symbols::symbol_table_ops::get_main_entry_tree;
 use crate::{constants::*, oyarn, Sy, S};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::threads::SessionInfo;
@@ -41,7 +40,7 @@ fn resolve_import_stmt_hook(alias: &Alias, from_symbols: &Option<Vec<SymbolKey>>
         return None;
     }
     for &from_symbol in from_symbols.iter().flatten() {
-        if get_main_entry_tree(session, from_symbol).0 != vec!["odoo", "tests", "common"] {
+        if SymbolTable::get_main_entry_tree(session, from_symbol).0 != vec!["odoo", "tests", "common"] {
             continue;
         }
         let mut results = resolve_import_stmt(session, source_file_symbol, Some(&Identifier::new(S!("odoo.tests"), from_stmt.unwrap().range)), &[alias.clone()], level, &mut None);

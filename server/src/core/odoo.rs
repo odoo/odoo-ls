@@ -5,7 +5,6 @@ use crate::core::file_mgr::AstType;
 use crate::core::module_load_order::sort_by_load_order;
 use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::core::symbols::symbol_table::{get_sym, ContainsKey, ModuleKey, SymbolKey, SymbolTable, Weak};
-use crate::core::symbols::symbol_table_ops::get_main_entry_tree;
 use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
 use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
@@ -677,7 +676,7 @@ impl SyncOdoo {
             let Some(parent) = weak_sym.upgrade(&st!()) else {
                 continue;
             };
-            let in_addons = get_main_entry_tree(session, parent) == tree(vec!["odoo", "addons"], vec![]);
+            let in_addons = SymbolTable::get_main_entry_tree(session, parent) == tree(vec!["odoo", "addons"], vec![]);
             let new_symbol = SymbolTable::create_from_path(session, &PathBuf::from(path), parent, in_addons);
             let Some(new_symbol) = new_symbol else {
                 continue;

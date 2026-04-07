@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::i32;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::symbols::symbol_table::{get_sym, FunctionKey, ModuleKey, SymbolKey, SymbolTable, Weak};
-use crate::core::symbols::symbol_table_ops::{follow_ref, get_member_symbol, infer_name, is_specific_field, match_tree_from_any_entry};
+use crate::core::symbols::symbol_table_ops::{follow_ref, get_member_symbol, is_specific_field};
 use crate::core::symbols::variable_symbol::VariableSymbol;
 use crate::{constants::*, Sy};
 use crate::core::odoo::SyncOdoo;
@@ -780,7 +780,7 @@ impl Evaluation {
                         if base_sym_weak_eval.instance.unwrap_or(false) {
                             //TODO handle call on class instance
                         } else {
-                            if match_tree_from_any_entry(session, base_sym, &(vec![Sy!("builtins")], vec![Sy!("super")])) {
+                            if SymbolTable::match_tree_from_any_entry(session, base_sym, &(vec![Sy!("builtins")], vec![Sy!("super")])) {
                                 //  - If 1st argument exists, we add that class with symbol_type Super
                                 let super_class = if !expr.arguments.is_empty() {
                                     let (class_eval, diags) = Evaluation::eval_from_ast(session, &expr.arguments.args[0], parent, max_infer, false, required_dependencies);
@@ -1084,24 +1084,24 @@ impl Evaluation {
                 let (inferred_syms, name) = match ast {
                     ExprOrIdent::Expr(Expr::Name(expr))  =>  {
                         let name = expr.id.to_string();
-                        (infer_name(odoo, parent, &name, Some( max_infer.to_u32())), name)
+                        (SymbolTable::infer_name(odoo, parent, &name, Some( max_infer.to_u32())), name)
                     },
                     ExprOrIdent::Expr(Expr::Named(expr))  => {
                         match *expr.target {
                             Expr::Name(ref expr) => {
                                 let name = expr.id.to_string();
-                                (infer_name(odoo, parent, &name, Some(expr.range.end().to_u32())), name)
+                                (SymbolTable::infer_name(odoo, parent, &name, Some(expr.range.end().to_u32())), name)
                             },
                             _ => return AnalyzeAstResult::from_only_diagnostics(diagnostics)
                         }
                     },
                     ExprOrIdent::Ident(expr) => {
                         let name = expr.id.to_string();
-                        (infer_name(odoo, parent, &name, Some( max_infer.to_u32())), name)
+                        (SymbolTable::infer_name(odoo, parent, &name, Some( max_infer.to_u32())), name)
                     },
                     ExprOrIdent::Parameter(expr) => {
                         let name = expr.name.id.to_string();
-                        (infer_name(odoo, parent, &name, Some( max_infer.to_u32())), name)
+                        (SymbolTable::infer_name(odoo, parent, &name, Some( max_infer.to_u32())), name)
                     }
                     _ => {
                         unreachable!();
