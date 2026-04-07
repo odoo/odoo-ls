@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3.1] - 2026/04/07 - Deadlock fix
+
+### Fix
+
+- Fixed a deadlock that could occur during startup.
+
 ## [1.3.0] - 2026/04/07 - Go to References
 
 This update is refactoring the way "Goto" features are working, as well as adding the new Go to References feature.
