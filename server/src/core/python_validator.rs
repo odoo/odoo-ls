@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use lsp_types::{Diagnostic, Position, Range};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation::ContextValue;
-use crate::core::symbols::symbol_table::{get_sym, ClassKey, ModuleKey, SymbolKey};
-use crate::core::symbols::symbol_table_ops::{follow_ref, get_member_symbol, is_field_class, is_specific_field};
+use crate::core::symbols::symbol_table::{ClassKey, ModuleKey, SymbolKey, SymbolTable, get_sym};
+use crate::core::symbols::symbol_table_ops::{follow_ref, get_member_symbol};
 use crate::{constants::*, oyarn, Sy};
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::module_symbol::ModuleSymbol;
@@ -420,7 +420,7 @@ impl PythonValidator {
                 let eval_weaks = follow_ref(&symbol, session, &mut None, true, false, None, None);
                 for eval_weak in eval_weaks.iter() {
                     let Some(symbol) = st!().upgrade_weak(eval_weak) else {continue};
-                    if !is_field_class(session, symbol) {
+                    if !SymbolTable::is_field_class(session, symbol) {
                         continue;
                     }
                     'related_check: {
@@ -572,7 +572,7 @@ impl PythonValidator {
                                 });
                             }
                         }
-                        if symbols.iter().any(|&sym| !is_specific_field(session, sym, &["Many2one", "Many2oneReference"])) {
+                        if symbols.iter().any(|&sym| !SymbolTable::is_specific_field(session, sym, &["Many2one", "Many2oneReference"])) {
                             let Some(arg_range) = eval_weak.as_weak().context.get(&format!("inverse_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                 continue;
                             };

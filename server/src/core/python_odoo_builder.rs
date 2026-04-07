@@ -9,8 +9,8 @@ use tracing::error;
 use crate::constants::OYarn;
 use crate::core::model::{Model, ModelData};
 use crate::core::symbols::class_symbol::ClassSymbol;
-use crate::core::symbols::symbol_table::{get_sym, ClassKey, SymbolKey};
-use crate::core::symbols::symbol_table_ops::{all_members, follow_ref, get_member_symbol, is_field_class};
+use crate::core::symbols::symbol_table::{ClassKey, SymbolKey, SymbolTable, get_sym};
+use crate::core::symbols::symbol_table_ops::{all_members, follow_ref, get_member_symbol};
 use crate::core::xml_data::{OdooData, OdooDataRecord};
 use crate::threads::SessionInfo;
 use crate::utils::compare_semver;
@@ -414,7 +414,7 @@ impl PythonOdooBuilder {
                     let Some(member_symbol) = eval_weak.weak.upgrade(&st!()) else {
                         continue;
                     };
-                    if !is_field_class(session, member_symbol) {
+                    if !SymbolTable::is_field_class(session, member_symbol) {
                         continue;
                     }
                     if let Some(ContextValue::STRING(compute_ctx_val)) = eval_weak.context.get("compute") {

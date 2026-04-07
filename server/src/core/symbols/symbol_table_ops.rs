@@ -1166,121 +1166,149 @@ impl SymbolTable {
         false
     }
 
-}
-
-pub fn is_inheriting_from_field(session: &SessionInfo, class_key: ClassKey) -> bool {
-    let tree = flatten_tree(&SymbolTable::get_main_entry_tree(session, class_key.into()));
-    if compare_semver(&session.sync_odoo.full_version, "18.0") <= Ordering::Equal {
-        // @arena: originally:
-        // if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
-        //     if tree[2].as_str() == "Field" {
-        //         return true;
-        //     }
-        // }
-        if tree.as_slice() == ["odoo", "fields", "Field"] {
-            return true;
-        }
-
-    } else {
-        // @arena: originally:
-        // if tree.len() == 4 && tree[0] == "odoo" && tree[1] == "orm" && (
-        //         tree[2] == "fields" && tree[3] == "Field"
-        // ){
-        //     return true;
-        // }
-        if tree.as_slice() == ["odoo", "orm", "fields", "Field"] {
-            return true;
-        }
-    }
-    // Follow class inheritance
-    let symbol_table = &session.sync_odoo.symbol_table;
-    let class_symbol = &symbol_table[class_key];
-    // @arena: ClassSymbol.bases are weak refs
-    for base_key in class_symbol.bases.iter().filter_map(|w| w.upgrade(symbol_table)) {
-        if is_inheriting_from_field(session, base_key) {
-            return true;
-        }
-    }
-    false
-}
-
-/// @arena: this shoud probably be an associated function of ClassSymbol
-pub fn is_field_class(session: &SessionInfo, symbol_key: SymbolKey) -> bool {
-    // if not class return false
-    let SymbolKey::Class(class_key) = symbol_key else {
-        return false;
-    };
-    let symbol_table = &session.sync_odoo.symbol_table;
-    let class_symbol = &symbol_table[class_key];
-    let cache = &class_symbol._is_field_class;
-    if let Some(is_field_class) = *cache.borrow() {
-        return is_field_class;
-    }
-    let result = is_field_class_uncached(session, class_key);
-    cache.borrow_mut().replace(result);
-    result
-}
-
-fn is_field_class_uncached(session: &SessionInfo, class_key: ClassKey) -> bool {
-    let tree = &SymbolTable::get_main_entry_tree(session, class_key.into());
-    if compare_semver(session.sync_odoo.full_version.as_str(), "18.1.0") >= Ordering::Equal {
-        if tree.0.len() == 3 && tree.1.len() == 1 && tree.0[0] == "odoo" && tree.0[1] == "orm" && (
-                tree.0[2] == "fields_misc" && tree.1[0] == "Boolean" ||
-                tree.0[2] == "fields_numeric" && tree.1[0] == "Integer" ||
-                tree.0[2] == "fields_numeric" && tree.1[0] == "Float" ||
-                tree.0[2] == "fields_numeric" && tree.1[0] == "Monetary" ||
-                tree.0[2] == "fields_textual" && tree.1[0] == "Char" ||
-                tree.0[2] == "fields_textual" && tree.1[0] == "Text" ||
-                tree.0[2] == "fields_textual" && tree.1[0] == "Html" ||
-                tree.0[2] == "fields_temporal" && tree.1[0] == "Date" ||
-                tree.0[2] == "fields_temporal" && tree.1[0] == "Datetime" ||
-                tree.0[2] == "fields_binary" && tree.1[0] == "Binary" ||
-                tree.0[2] == "fields_binary" && tree.1[0] == "Image" ||
-                tree.0[2] == "fields_selection" && tree.1[0] == "Selection" ||
-                tree.0[2] == "fields_reference" && tree.1[0] == "Reference" ||
-                tree.0[2] == "fields_relational" && tree.1[0] == "Many2one" ||
-                tree.0[2] == "fields_reference" && tree.1[0] == "Many2oneReference" ||
-                tree.0[2] == "fields_misc" && tree.1[0] == "Json" ||
-                tree.0[2] == "fields_properties" && tree.1[0] == "Properties" ||
-                tree.0[2] == "fields_properties" && tree.1[0] == "PropertiesDefinition" ||
-                tree.0[2] == "fields_relational" && tree.1[0] == "One2many" ||
-                tree.0[2] == "fields_relational" && tree.1[0] == "Many2many" ||
-                tree.0[2] == "fields_misc" && tree.1[0] == "Id"
-        ){
-            return true;
-        }
-    } else {
-        if tree.0.len() == 2 && tree.1.len() == 1 && tree.0[0] == "odoo" && tree.0[1] == "fields" {
-            if matches!(tree.1[0].as_str(), "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
-        "Binary" | "Image" | "Selection" | "Reference" | "Json" | "Properties" | "PropertiesDefinition" | "Id" | "Many2one" | "One2many" | "Many2many" | "Many2oneReference") {
+    pub fn is_inheriting_from_field(session: &SessionInfo, class_key: ClassKey) -> bool {
+        let tree = flatten_tree(&SymbolTable::get_main_entry_tree(session, class_key.into()));
+        if compare_semver(&session.sync_odoo.full_version, "18.0") <= Ordering::Equal {
+            // @arena: originally:
+            // if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
+            //     if tree[2].as_str() == "Field" {
+            //         return true;
+            //     }
+            // }
+            if tree.as_slice() == ["odoo", "fields", "Field"] {
+                return true;
+            }
+    
+        } else {
+            // @arena: originally:
+            // if tree.len() == 4 && tree[0] == "odoo" && tree[1] == "orm" && (
+            //         tree[2] == "fields" && tree[3] == "Field"
+            // ){
+            //     return true;
+            // }
+            if tree.as_slice() == ["odoo", "orm", "fields", "Field"] {
                 return true;
             }
         }
+        // Follow class inheritance
+        let symbol_table = &session.sync_odoo.symbol_table;
+        let class_symbol = &symbol_table[class_key];
+        // @arena: ClassSymbol.bases are weak refs
+        for base_key in class_symbol.bases.iter().filter_map(|w| w.upgrade(symbol_table)) {
+            if Self::is_inheriting_from_field(session, base_key) {
+                return true;
+            }
+        }
+        false
     }
-    if is_inheriting_from_field(session, class_key) {
-        return true;
-    }
-    false
-}
 
-pub fn is_field(session: &mut SessionInfo, target: SymbolKey) -> bool {
-    let SymbolKey::Variable(v) = target else {
-        return false;
-    };
-    let var_symbol = &session.sync_odoo.symbol_table[v];
-    let evaluations = var_symbol.evaluations.clone();
-    for eval in evaluations {
-        let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
-        let eval_weaks = follow_ref(&symbol, session, &mut None, true, false, None, None);
-        for eval_weak in eval_weaks.iter() {
-            if let Some(key) = session.sync_odoo.symbol_table.upgrade_weak(eval_weak) {
-                if is_field_class(session, key) {
+    /// @arena: this shoud probably be an associated function of ClassSymbol
+    pub fn is_field_class(session: &SessionInfo, symbol_key: SymbolKey) -> bool {
+        // if not class return false
+        let SymbolKey::Class(class_key) = symbol_key else {
+            return false;
+        };
+        let symbol_table = &session.sync_odoo.symbol_table;
+        let class_symbol = &symbol_table[class_key];
+        let cache = &class_symbol._is_field_class;
+        if let Some(is_field_class) = *cache.borrow() {
+            return is_field_class;
+        }
+        let result = Self::is_field_class_uncached(session, class_key);
+        cache.borrow_mut().replace(result);
+        result
+    }
+    
+    fn is_field_class_uncached(session: &SessionInfo, class_key: ClassKey) -> bool {
+        let tree = &SymbolTable::get_main_entry_tree(session, class_key.into());
+        if compare_semver(session.sync_odoo.full_version.as_str(), "18.1.0") >= Ordering::Equal {
+            if tree.0.len() == 3 && tree.1.len() == 1 && tree.0[0] == "odoo" && tree.0[1] == "orm" && (
+                    tree.0[2] == "fields_misc" && tree.1[0] == "Boolean" ||
+                    tree.0[2] == "fields_numeric" && tree.1[0] == "Integer" ||
+                    tree.0[2] == "fields_numeric" && tree.1[0] == "Float" ||
+                    tree.0[2] == "fields_numeric" && tree.1[0] == "Monetary" ||
+                    tree.0[2] == "fields_textual" && tree.1[0] == "Char" ||
+                    tree.0[2] == "fields_textual" && tree.1[0] == "Text" ||
+                    tree.0[2] == "fields_textual" && tree.1[0] == "Html" ||
+                    tree.0[2] == "fields_temporal" && tree.1[0] == "Date" ||
+                    tree.0[2] == "fields_temporal" && tree.1[0] == "Datetime" ||
+                    tree.0[2] == "fields_binary" && tree.1[0] == "Binary" ||
+                    tree.0[2] == "fields_binary" && tree.1[0] == "Image" ||
+                    tree.0[2] == "fields_selection" && tree.1[0] == "Selection" ||
+                    tree.0[2] == "fields_reference" && tree.1[0] == "Reference" ||
+                    tree.0[2] == "fields_relational" && tree.1[0] == "Many2one" ||
+                    tree.0[2] == "fields_reference" && tree.1[0] == "Many2oneReference" ||
+                    tree.0[2] == "fields_misc" && tree.1[0] == "Json" ||
+                    tree.0[2] == "fields_properties" && tree.1[0] == "Properties" ||
+                    tree.0[2] == "fields_properties" && tree.1[0] == "PropertiesDefinition" ||
+                    tree.0[2] == "fields_relational" && tree.1[0] == "One2many" ||
+                    tree.0[2] == "fields_relational" && tree.1[0] == "Many2many" ||
+                    tree.0[2] == "fields_misc" && tree.1[0] == "Id"
+            ){
+                return true;
+            }
+        } else {
+            if tree.0.len() == 2 && tree.1.len() == 1 && tree.0[0] == "odoo" && tree.0[1] == "fields" {
+                if matches!(tree.1[0].as_str(), "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
+            "Binary" | "Image" | "Selection" | "Reference" | "Json" | "Properties" | "PropertiesDefinition" | "Id" | "Many2one" | "One2many" | "Many2many" | "Many2oneReference") {
                     return true;
                 }
             }
         }
+        if Self::is_inheriting_from_field(session, class_key) {
+            return true;
+        }
+        false
     }
-    false
+
+    pub fn is_field(session: &mut SessionInfo, target: SymbolKey) -> bool {
+        let SymbolKey::Variable(v) = target else {
+            return false;
+        };
+        let var_symbol = &session.sync_odoo.symbol_table[v];
+        let evaluations = var_symbol.evaluations.clone();
+        for eval in evaluations {
+            let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
+            let eval_weaks = follow_ref(&symbol, session, &mut None, true, false, None, None);
+            for eval_weak in eval_weaks.iter() {
+                if let Some(key) = session.sync_odoo.symbol_table.upgrade_weak(eval_weak) {
+                    if Self::is_field_class(session, key) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    // @arena: might panic on last().unwrap()
+    pub fn is_specific_field_class(session: &SessionInfo, target: SymbolKey, field_names: &[&str]) -> bool {
+        let tree = flatten_tree(&SymbolTable::get_main_entry_tree(session, target));
+        return Self::is_field_class(session, target) && field_names.iter().any(|&name| {
+            tree.last().unwrap() == name
+        })
+    }
+    
+    pub fn is_specific_field(session: &mut SessionInfo, target: SymbolKey, field_names: &[&str]) -> bool {
+        macro_rules! st { () => { session.sync_odoo.symbol_table } }
+        let SymbolKey::Variable(v) = target else {
+            return false;
+        };
+        let evaluations = st!()[v].evaluations.clone();
+        for eval in evaluations.iter() {
+            let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
+            let eval_weaks = follow_ref(&symbol, session, &mut None, true, false, None, None);
+            for eval_weak in eval_weaks.iter() {
+                if let Some(symbol) = st!().upgrade_weak(eval_weak) {
+                    if Self::is_specific_field_class(session, symbol, field_names){
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
 }
 
 // @arena: helper for get_member_symbol
@@ -1368,7 +1396,7 @@ fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut H
             // Skip current class symbols for super
             if !is_super{
                 for symbol in get_sym!(st!(), symbol_key).all_symbols() {
-                    if (only_fields && !is_field(session, symbol)) || (only_methods && !matches!(symbol, SymbolKey::Function(_))) {
+                    if (only_fields && !SymbolTable::is_field(session, symbol)) || (only_methods && !matches!(symbol, SymbolKey::Function(_))) {
                         continue;
                     }
                     let name = get_sym!(st!(), symbol).name().clone();
@@ -1392,7 +1420,7 @@ fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut H
                     let all_symbols = iter_symbol_keys(model_sym).copied().collect::<Vec<_>>();
                     let model_name = model_sym.name.clone();
                     for s in all_symbols {
-                        if (only_fields && !is_field(session, s)) || (only_methods && !matches!(s, SymbolKey::Function(_))) {
+                        if (only_fields && !SymbolTable::is_field(session, s)) || (only_methods && !matches!(s, SymbolKey::Function(_))) {
                             continue;
                         }
                         let name = st!().name(s).clone();
@@ -1407,7 +1435,7 @@ fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut H
                     // for inherits symbols, we only add fields
                     let all_symbols = iter_symbol_keys(model_sym).copied().collect::<Vec<_>>();
                     let model_name = model_sym.name.clone();
-                    let fields = all_symbols.into_iter().filter(|&s| is_field(session, s)).collect::<Vec<_>>();
+                    let fields = all_symbols.into_iter().filter(|&s| SymbolTable::is_field(session, s)).collect::<Vec<_>>();
                     for s in fields {
                         let name = st!().name(s).clone();
                         append_result(name, s, Some(model_name.clone()));
@@ -1429,7 +1457,7 @@ fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut H
         // if not class just add it to result
         _ => {
             get_sym!(st!(), symbol_key).all_symbols().for_each(|s|
-                if !(only_fields && !is_field(session, s)) {
+                if !(only_fields && !SymbolTable::is_field(session, s)) {
                     let name = st!().name(s).clone();
                     append_result(name, s, None);
                 }
@@ -1502,7 +1530,7 @@ fn _get_member_symbol_helper(
     if !is_super {
         let mut content_syms = st!().get_sub_symbol(target, name, u32::MAX).symbols;
         if only_fields {
-            content_syms = content_syms.iter().filter(|&&x| is_field(session, x)).copied().collect();
+            content_syms = content_syms.iter().filter(|&&x| SymbolTable::is_field(session, x)).copied().collect();
         }
         if only_methods {
             content_syms = content_syms.iter().filter(|&&x| is_method(session, x)).copied().collect();
@@ -1847,34 +1875,6 @@ pub fn follow_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, c
         });
     }
     results
-}
-
-// @arena: might panic on last().unwrap()
-pub fn is_specific_field_class(session: &SessionInfo, target: SymbolKey, field_names: &[&str]) -> bool {
-    let tree = flatten_tree(&SymbolTable::get_main_entry_tree(session, target));
-    return is_field_class(session, target) && field_names.iter().any(|&name| {
-        tree.last().unwrap() == name
-    })
-}
-
-pub fn is_specific_field(session: &mut SessionInfo, target: SymbolKey, field_names: &[&str]) -> bool {
-    macro_rules! st { () => { session.sync_odoo.symbol_table } }
-    let SymbolKey::Variable(v) = target else {
-        return false;
-    };
-    let evaluations = st!()[v].evaluations.clone();
-    for eval in evaluations.iter() {
-        let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-        let eval_weaks = follow_ref(&symbol, session, &mut None, true, false, None, None);
-        for eval_weak in eval_weaks.iter() {
-            if let Some(symbol) = st!().upgrade_weak(eval_weak) {
-                if is_specific_field_class(session, symbol, field_names){
-                    return true;
-                }
-            }
-        }
-    }
-    false
 }
 
 pub fn invalidate(session: &mut SessionInfo, symbol: SymbolKey, step: &BuildSteps) {

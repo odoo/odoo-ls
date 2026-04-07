@@ -12,7 +12,7 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::symbols::symbol_mgr::SymbolMgr;
 use crate::core::symbols::symbol_table::{get_sym, ClassKey, FunctionKey, ModuleKey, SymbolKey, SymbolTable};
-use crate::core::symbols::symbol_table_ops::{follow_ref, get_member_symbol, is_field, is_field_class, is_specific_field};
+use crate::core::symbols::symbol_table_ops::{follow_ref, get_member_symbol};
 use crate::core::symbols::variable_symbol::VariableSymbol;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::import_resolver::resolve_import_stmt;
@@ -512,7 +512,7 @@ impl PythonArchEval {
                                 let evaluation = &val_eval[0];
                                 let sym_weak = evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], Some(parent));
                                 if let Some(sym_key) = sym_weak.weak.upgrade(&st!()) {
-                                    if is_field_class(session, sym_key) {
+                                    if SymbolTable::is_field_class(session, sym_key) {
                                         take_value = true;
                                     }
                                 }
@@ -611,7 +611,7 @@ impl PythonArchEval {
                             let Some(sym_key) = st!().upgrade_weak(&evaluation_symbol_ptr) else {
                                 continue;
                             };
-                            if !is_field(session, sym_key) {
+                            if !SymbolTable::is_field(session, sym_key) {
                                 continue;
                             }
                             let field_name = get_sym!(st!(), sym_key).name().clone();
@@ -1113,7 +1113,7 @@ impl PythonArchEval {
             }
             parent_object = None;
             for s in symbols {
-                if !is_specific_field(session, s, &["Many2one", "One2many", "Many2many"]) {
+                if !SymbolTable::is_specific_field(session, s, &["Many2one", "One2many", "Many2many"]) {
                     break;
                 }
                 let models = VariableSymbol::get_relational_model(s.unwrap_variable_key(), session, from_module);

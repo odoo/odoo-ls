@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::i32;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::symbols::symbol_table::{get_sym, FunctionKey, ModuleKey, SymbolKey, SymbolTable, Weak};
-use crate::core::symbols::symbol_table_ops::{follow_ref, get_member_symbol, is_specific_field};
+use crate::core::symbols::symbol_table_ops::{follow_ref, get_member_symbol};
 use crate::core::symbols::variable_symbol::VariableSymbol;
 use crate::{constants::*, Sy};
 use crate::core::odoo::SyncOdoo;
@@ -1663,7 +1663,7 @@ impl Evaluation {
                     }
                     obj = None;
                     for s in symbols {
-                        if is_specific_field(session, s, &["Many2one", "One2many", "Many2many"]) {
+                        if SymbolTable::is_specific_field(session, s, &["Many2one", "One2many", "Many2many"]) {
                             // if s.borrow().typ() == SymType::VARIABLE {
                             if let SymbolKey::Variable(v) = s {
                                 let models = VariableSymbol::get_relational_model(v, session, from_module);
@@ -1673,12 +1673,12 @@ impl Evaluation {
                                 }
                             }
                         }
-                        if is_specific_field(session, s, &["Properties"]) {
+                        if SymbolTable::is_specific_field(session, s, &["Properties"]) {
                             //TODO handle properties field
                             //property field, not handled for now. Skip the parsing to not generate diagnostics
                             break 'split_name
                         }
-                        if is_specific_field(session, s, &["Date"]) {
+                        if SymbolTable::is_specific_field(session, s, &["Date"]) {
                             date_mode = true;
                         }
                     }
