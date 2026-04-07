@@ -6,11 +6,76 @@ use ruff_text_size::{TextRange, TextSize};
 use slotmap::{Key, SlotMap, new_key_type};
 use tracing::{info, trace};
 
-use crate::{S, Sy, constants::{BuildStatus, BuildSteps, DEBUG_MEMORY, OYarn, PackageType, SymType, Tree, flatten_tree}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPoint, evaluation::{Context, ContextValue,
-Evaluation, EvaluationSymbolPtr}, file_mgr::NoqaInfo, model::Model, odoo::SyncOdoo, python_validator::PythonValidator, symbols::{ class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::{Buildable, Dependencies}, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PythonPackageSymbol, root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, symbol_table::{ClassKey, ContainsKey, FunctionKey, ModuleKey, RootKey, SymbolKey, SymbolTable, SymbolView, VariableKey, get_sym}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol }, xml_data::OdooData}, oyarn, threads::SessionInfo, utils::{PathSanitizer, compare_semver}, weak_hash_set::WeakSet};
+use crate::{S, Sy, constants::{BuildStatus, BuildSteps, DEBUG_MEMORY, OYarn, PackageType, SymType, Tree, flatten_tree, tree}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPoint, evaluation::{Context, ContextValue,
+Evaluation, EvaluationSymbolPtr}, file_mgr::{FileMgr, NoqaInfo}, model::Model, odoo::SyncOdoo, python_validator::PythonValidator, symbols::{ class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::{Buildable, Dependencies}, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PythonPackageSymbol, root_symbol::RootSymbol, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, symbol_table::{ClassKey, ContainsKey, FunctionKey, ModuleKey, RootKey, SymbolKey, SymbolTable, SymbolView, VariableKey, get_sym}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol }, xml_data::OdooData}, oyarn, threads::SessionInfo, utils::{PathSanitizer, compare_semver}, weak_hash_set::WeakSet};
 
 impl SymbolTable {
 
+    // @arena: associated function in SymbolTable?
+    ///Given a path, create the appropriated symbol and attach it to the given parent
+    pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: SymbolKey, require_module: bool) -> Option<SymbolKey> {
+        if require_module {
+            return Self::create_module_from_path(session, path, parent).map(SymbolKey::from)
+        }
+        let symbol_table = &mut session.sync_odoo.symbol_table;
+        let name: String = if path.is_dir() {
+            path.components().last().unwrap().as_os_str().to_str().unwrap().to_string()
+        } else {
+            path.with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string()
+        };
+        let path_str = path.sanitize();
+        if path_str.ends_with(".py") || path_str.ends_with(".pyi") || FileMgr::is_untitled(&path_str) {
+            return Some(symbol_table.add_new_file(parent, &name, &path_str).into());
+        }
+        let main_entry_tree = get_main_entry_tree(session, parent);
+        if main_entry_tree == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
+            let module = Self::add_new_module_package(session, parent, &name, path);
+            let symbol_table = &mut session.sync_odoo.symbol_table;
+            if let Some(module) = module {
+                let dir_name = symbol_table[module].dir_name.clone();
+                session.sync_odoo.modules.insert(dir_name, module.into());
+                return Some(module.into());
+            } else {
+                if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
+                    let i_ext = if path.join("__init__.py").exists() { "" } else { "i" };
+                    let package_key = symbol_table.add_new_python_package(parent, &name, &path_str, i_ext);
+                    return Some(package_key.into());
+                } else {
+                    return None;
+                }
+            }
+        } else {
+            let symbol_table = &mut session.sync_odoo.symbol_table;
+            if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
+                if main_entry_tree == tree(vec!["odoo"], vec![]) && path_str.ends_with("addons") {
+                    //Force namespace for odoo/addons
+                    let namespace_key = symbol_table.add_new_namespace(parent, &name, &path_str);
+                    return Some(namespace_key.into());
+                } else {
+                    let i_ext = if path.join("__init__.py").exists() { "" } else { "i" };
+                    let package_key = symbol_table.add_new_python_package(parent, &name, &path_str, i_ext);
+                    return Some(package_key.into());
+                }
+            } else if path.is_dir() {
+                let namespace_key = symbol_table.add_new_namespace(parent, &name, &path_str);
+                return Some(namespace_key.into());
+            }
+        }
+        None
+    }
+    
+    pub fn create_module_from_path(session: &mut SessionInfo, path: &PathBuf, parent: SymbolKey) -> Option<ModuleKey> {
+        let main_entry_tree = get_main_entry_tree(session, parent);
+        if !(main_entry_tree == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists()) {
+            return None;
+        }
+        let name = path.components().last().unwrap().as_os_str().to_str().unwrap();
+        let module = Self::add_new_module_package(session, parent, &name, path)?;
+        let dir_name = session.sync_odoo.symbol_table[module].dir_name.clone();
+        session.sync_odoo.modules.insert(dir_name, module.into());
+        return Some(module);
+    }
+    
     // ========= former Symbol methods =========
 
     // @arena get_symbol + expect is the equivalent of upgrade + unwrap on a weak ref

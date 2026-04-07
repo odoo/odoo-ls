@@ -2,7 +2,7 @@ use std::{cell::RefCell, cmp, collections::HashMap, path::PathBuf, rc::{Rc}, u32
 
 use tracing::{error, info, warn};
 
-use crate::{constants::{flatten_tree, BuildSteps, OYarn, Tree}, core::symbols::{symbol_table::{get_sym, ContainsKey, FileKey, RootKey, SymbolKey, SymbolTable, Weak}, symbol_table_create::create_from_path}, threads::SessionInfo, utils::PathSanitizer, warn_or_panic, weak_hash_set::WeakSet};
+use crate::{constants::{flatten_tree, BuildSteps, OYarn, Tree}, core::symbols::symbol_table::{get_sym, ContainsKey, FileKey, RootKey, SymbolKey, SymbolTable, Weak}, threads::SessionInfo, utils::PathSanitizer, warn_or_panic, weak_hash_set::WeakSet};
 
 use super::{odoo::SyncOdoo};
 
@@ -73,7 +73,7 @@ impl EntryPointMgr {
                 return None;
             }
         }
-        create_from_path(session, path, current_sym, false)
+        SymbolTable::create_from_path(session, path, current_sym, false)
     }
 
     /* Create a new main entry_point.

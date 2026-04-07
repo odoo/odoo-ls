@@ -6,7 +6,6 @@ use crate::core::module_load_order::sort_by_load_order;
 use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::core::symbols::symbol_table::{get_sym, ContainsKey, ModuleKey, SymbolKey, SymbolTable, Weak};
 use crate::core::symbols::symbol_table_ops::get_main_entry_tree;
-use crate::core::symbols::symbol_table_create::{create_from_path, create_module_from_path};
 use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
 use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
@@ -317,7 +316,7 @@ impl SyncOdoo {
         if disk_dir_builtins.is_empty() {
             panic!("Unable to find builtins disk dir symbol");
         }
-        let _builtins_rc_symbol = create_from_path(session, &builtins_path, disk_dir_builtins[0], false);
+        let _builtins_rc_symbol = SymbolTable::create_from_path(session, &builtins_path, disk_dir_builtins[0], false);
         session.sync_odoo.add_to_rebuild_arch(_builtins_rc_symbol.unwrap());
         SyncOdoo::process_rebuilds(session, false)
     }
@@ -452,7 +451,7 @@ impl SyncOdoo {
             panic!("Odoo root symbol not found")
         };
         st!().set_is_external(odoo_sym, false);
-        let odoo_odoo = create_from_path(session, &config_odoo_path.join("odoo"), odoo_sym, false);
+        let odoo_odoo = SymbolTable::create_from_path(session, &config_odoo_path.join("odoo"), odoo_sym, false);
         let Some(odoo_odoo) = odoo_odoo else {
             panic!("Not able to find odoo with given path. Aborting...");
         };
@@ -463,7 +462,7 @@ impl SyncOdoo {
             },
             SymbolKey::Namespace(_) => {
                 //starting from > 18.0, odoo is now a namespace. Start import project from odoo/__main__.py
-                let main_file = create_from_path(session, &PathBuf::from(config_odoo_path.clone()).join("odoo").join("__main__.py"),  odoo_odoo, false);
+                let main_file = SymbolTable::create_from_path(session, &PathBuf::from(config_odoo_path.clone()).join("odoo").join("__main__.py"),  odoo_odoo, false);
                 let Some(main_file) = main_file else {
                     panic!("Not able to find odoo/__main__.py. Aborting...");
                 };
@@ -487,7 +486,7 @@ impl SyncOdoo {
                 return false;
             }
             //if we are > 18.1, odoo.addons is not imported automatically anymore. Let's try to import it manually
-            let addons_folder = create_from_path(session, &PathBuf::from(config_odoo_path).join("odoo").join("addons"), odoo_odoo, false);
+            let addons_folder = SymbolTable::create_from_path(session, &PathBuf::from(config_odoo_path).join("odoo").join("addons"), odoo_odoo, false);
             if let Some(addons) = addons_folder {
                 addon_symbol = vec![addons];
             } else {
@@ -536,7 +535,7 @@ impl SyncOdoo {
                 for item in PathBuf::from(addon_path).read_dir().expect("Unable to browse and odoo addon directory") {
                     if let Ok(item) = item {
                         if item.file_type().unwrap().is_dir() && !session.sync_odoo.modules.contains_key(&oyarn!("{}", item.file_name().to_str().unwrap())) {
-                            if let Some(module_symbol) = create_module_from_path(session, &item.path(), addons_symbol) {
+                            if let Some(module_symbol) = SymbolTable::create_module_from_path(session, &item.path(), addons_symbol) {
                                 modules.push(module_symbol);
                             }
                         }
@@ -679,7 +678,7 @@ impl SyncOdoo {
                 continue;
             };
             let in_addons = get_main_entry_tree(session, parent) == tree(vec!["odoo", "addons"], vec![]);
-            let new_symbol = create_from_path(session, &PathBuf::from(path), parent, in_addons);
+            let new_symbol = SymbolTable::create_from_path(session, &PathBuf::from(path), parent, in_addons);
             let Some(new_symbol) = new_symbol else {
                 continue;
             };
@@ -1633,7 +1632,7 @@ impl Odoo {
             let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
             for entry in ep_mgr.borrow().addons_entry_points.iter() {
                 if entry.borrow().path == parent_path.sanitize() {
-                    let module_symbol = create_from_path(session, &path_for_tree, entry.borrow().get_symbol(&st!()).unwrap(), true);
+                    let module_symbol = SymbolTable::create_from_path(session, &path_for_tree, entry.borrow().get_symbol(&st!()).unwrap(), true);
                     if module_symbol.is_some() {
                         session.sync_odoo.add_to_rebuild_arch(module_symbol.unwrap());
                     }
@@ -1646,7 +1645,7 @@ impl Odoo {
                 );
                 match addons_symbol {
                     Some(addons_symbol) if !addons_symbol.is_empty() => {
-                        let module_symbol = create_from_path(session, &path_for_tree, addons_symbol[0], true);
+                        let module_symbol = SymbolTable::create_from_path(session, &path_for_tree, addons_symbol[0], true);
                         if module_symbol.is_some() {
                             session.sync_odoo.add_to_rebuild_arch(module_symbol.unwrap());
                         }

@@ -11,7 +11,6 @@ use ruff_text_size::{TextRange, TextSize};
 use ruff_python_ast::{Alias, AtomicNodeIndex, Identifier};
 use crate::core::symbols::symbol_table::{get_sym, ModuleKey, SymbolKey, SymbolTable};
 use crate::core::symbols::symbol_table_ops::get_main_entry_tree;
-use crate::core::symbols::symbol_table_create::{create_from_path, create_module_from_path};
 use crate::{constants::*, oyarn, Sy, S};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::threads::SessionInfo;
@@ -242,7 +241,7 @@ pub fn find_module(session: &mut SessionInfo, odoo_addons: SymbolKey, name: &OYa
         if !is_dir_cs(full_path.sanitize()) {
             continue;
         }
-        let Some(module) = create_module_from_path(session, &full_path, odoo_addons) else {
+        let Some(module) = SymbolTable::create_module_from_path(session, &full_path, odoo_addons) else {
             continue;
         };
         // @arena: double insertion in the map
@@ -428,21 +427,21 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
         if is_dir_cs(full_path.sanitize()) && (is_file_cs(full_path.join("__init__").with_extension("py").sanitize()) ||
         is_file_cs(full_path.join("__init__").with_extension("pyi").sanitize())) {
             //module directory
-            let _rc_symbol = create_from_path(session, &full_path, parent, false);
+            let _rc_symbol = SymbolTable::create_from_path(session, &full_path, parent, false);
             if _rc_symbol.is_some() {
                 let _arc_symbol = _rc_symbol.unwrap();
                 SyncOdoo::build_now(session, _arc_symbol, BuildSteps::ARCH);
                 return Ok(_arc_symbol);
             }
         } else if is_file_cs(full_path.with_extension("py").sanitize()) {
-            let _arc_symbol = create_from_path(session, &full_path.with_extension("py"), parent, false);
+            let _arc_symbol = SymbolTable::create_from_path(session, &full_path.with_extension("py"), parent, false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
                 SyncOdoo::build_now(session, _arc_symbol, BuildSteps::ARCH);
                 return Ok(_arc_symbol);
             }
         } else if is_file_cs(full_path.with_extension("pyi").sanitize()) {
-            let _arc_symbol = create_from_path(session, &full_path.with_extension("pyi"), parent, false);
+            let _arc_symbol = SymbolTable::create_from_path(session, &full_path.with_extension("pyi"), parent, false);
             if _arc_symbol.is_some() {
                 let _arc_symbol = _arc_symbol.unwrap();
                 SyncOdoo::build_now(session, _arc_symbol, BuildSteps::ARCH);
@@ -450,7 +449,7 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
             }
         } else if is_dir_cs(full_path.sanitize()) {
             //namespace directory
-            let _rc_symbol = create_from_path(session, &full_path, parent, false);
+            let _rc_symbol = SymbolTable::create_from_path(session, &full_path, parent, false);
             if _rc_symbol.is_some() {
                 let _arc_symbol = _rc_symbol.unwrap();
                 SyncOdoo::build_now(session, _arc_symbol, BuildSteps::ARCH);

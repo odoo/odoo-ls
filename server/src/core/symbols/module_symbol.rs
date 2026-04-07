@@ -9,7 +9,6 @@ use std::ffi::OsStr;
 use crate::core::csv_arch_builder::CsvArchBuilder;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::symbols::symbol_table::{ModuleKey, SymbolKey, SymbolTable};
-use crate::core::symbols::symbol_table_create::create_from_path;
 use crate::core::xml_arch_builder::XmlArchBuilder;
 use crate::core::xml_data::OdooData;
 use crate::weak_hash_set::WeakSet;
@@ -464,7 +463,7 @@ impl ModuleSymbol {
         let root_path = module_symbol.root_path.clone();
         let tests_path = PathBuf::from(root_path).join("tests");
         if tests_path.exists() {
-            let symbol = create_from_path(session, &tests_path, module_key.into(), false);
+            let symbol = SymbolTable::create_from_path(session, &tests_path, module_key.into(), false);
             if let Some(sym) = symbol && !matches!(sym, SymbolKey::Namespace(_)) {
                 session.sync_odoo.add_to_rebuild_arch(sym);
             }
