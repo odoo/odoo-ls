@@ -27,7 +27,7 @@ impl SymbolTable {
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") || FileMgr::is_untitled(&path_str) {
             return Some(symbol_table.add_new_file(parent, &name, &path_str).into());
         }
-        let main_entry_tree = SymbolTable::get_main_entry_tree(session, parent);
+        let main_entry_tree = Self::get_main_entry_tree(session, parent);
         if main_entry_tree == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
             let module = Self::add_new_module_package(session, parent, &name, path);
             let symbol_table = &mut session.sync_odoo.symbol_table;
@@ -65,7 +65,7 @@ impl SymbolTable {
     }
     
     pub fn create_module_from_path(session: &mut SessionInfo, path: &PathBuf, parent: SymbolKey) -> Option<ModuleKey> {
-        let main_entry_tree = SymbolTable::get_main_entry_tree(session, parent);
+        let main_entry_tree = Self::get_main_entry_tree(session, parent);
         if !(main_entry_tree == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists()) {
             return None;
         }
@@ -1167,7 +1167,7 @@ impl SymbolTable {
     }
 
     pub fn is_inheriting_from_field(session: &SessionInfo, class_key: ClassKey) -> bool {
-        let tree = flatten_tree(&SymbolTable::get_main_entry_tree(session, class_key.into()));
+        let tree = flatten_tree(&Self::get_main_entry_tree(session, class_key.into()));
         if compare_semver(&session.sync_odoo.full_version, "18.0") <= Ordering::Equal {
             // @arena: originally:
             // if tree.len() == 3 && tree[0] == "odoo" && tree[1] == "fields" {
@@ -1220,7 +1220,7 @@ impl SymbolTable {
     }
     
     fn is_field_class_uncached(session: &SessionInfo, class_key: ClassKey) -> bool {
-        let tree = &SymbolTable::get_main_entry_tree(session, class_key.into());
+        let tree = &Self::get_main_entry_tree(session, class_key.into());
         if compare_semver(session.sync_odoo.full_version.as_str(), "18.1.0") >= Ordering::Equal {
             if tree.0.len() == 3 && tree.1.len() == 1 && tree.0[0] == "odoo" && tree.0[1] == "orm" && (
                     tree.0[2] == "fields_misc" && tree.1[0] == "Boolean" ||
@@ -1283,7 +1283,7 @@ impl SymbolTable {
 
     // @arena: might panic on last().unwrap()
     pub fn is_specific_field_class(session: &SessionInfo, target: SymbolKey, field_names: &[&str]) -> bool {
-        let tree = flatten_tree(&SymbolTable::get_main_entry_tree(session, target));
+        let tree = flatten_tree(&Self::get_main_entry_tree(session, target));
         return Self::is_field_class(session, target) && field_names.iter().any(|&name| {
             tree.last().unwrap() == name
         })
