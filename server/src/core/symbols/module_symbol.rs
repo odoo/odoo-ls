@@ -580,7 +580,9 @@ impl ModuleSymbol {
                 }
                 let data = file_info.file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
                 let mut csv_builder = CsvArchBuilder::new();
-                csv_builder.load_csv(session, csv_sym, &data);
+                let diagnostics = csv_builder.load_csv(session, csv_sym, &data);
+                file_info.replace_diagnostics(BuildSteps::SYNTAX, diagnostics);
+                file_info.publish_diagnostics(session);
             } else if !file_name.ends_with(".sql") { // Do nothing for sql files for now, but also no error log
                 error!("Unsupported data file type: {}", file_name);
             }

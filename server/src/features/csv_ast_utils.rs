@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use csv::{Reader, StringRecord};
-use lsp_types::{Range, Position};
+use lsp_types::Range;
 
 use crate::{S, constants::{OYarn, SymType}, core::{odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{OdooData, OdooDataRecord}}, features::goto_utils::{GotoSource, GotoSourceType}, oyarn, threads::SessionInfo};
 
@@ -51,6 +51,50 @@ impl<'a> Iterator for CsvFieldIter<'a> {
         self.start = end + 1;
         self.field_idx += 1;
         Some((start, end, field))
+    }
+}
+
+pub struct CsvRecordIter<'a> {
+    content: &'a str,
+    records: csv::StringRecordsIter<'a, &'a [u8]>,
+    first_record: Option<Result<StringRecord, csv::Error>>,
+    // We keep a window of two records, because errors only have position
+    // not range. So to give a range for an error we need to know where the next record starts.
+    // If the error is on the last record, we give a range until the end of the file.
+    second_record: Option<Result<StringRecord, csv::Error>>,
+}
+
+impl<'a> CsvRecordIter<'a> {
+    pub fn new(renderer: &'a mut csv::Reader<&'a [u8]>, content: &'a str) -> Self {
+        let mut records = renderer.records();
+        let first_record = records.next();
+        let second_record = records.next();
+        Self { records, content, first_record, second_record }
+    }
+}
+
+impl<'a> Iterator for CsvRecordIter<'a> {
+    // (start, end, record or error)
+    // start and end are byte offsets in the file, used for diagnostics range
+    type Item = (u32, u32, Result<StringRecord, csv::Error>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let record = self.first_record.take()?;
+        let mut start = match record {
+            Ok(ref rec) => rec.position()?.byte() as u32,
+            Err(ref err) => err.position()?.byte() as u32,
+        };
+        if self.content.as_bytes().get(start as usize) == Some(&b'\n') {
+            start += 1;
+        }
+        let end = match self.second_record {
+            Some(Ok(ref rec)) => rec.position()?.byte() as u32,
+            Some(Err(ref err)) => err.position()?.byte() as u32,
+            None => self.content.as_bytes().len() as u32,
+        };
+        self.first_record = self.second_record.take();
+        self.second_record = self.records.next();
+        Some((start, end, record))
     }
 }
 

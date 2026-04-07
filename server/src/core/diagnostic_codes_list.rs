@@ -529,4 +529,12 @@ OLS05067, DiagnosticSetting::Error, "Path node in asset cannot be empty",
  * Unknown language code
  */
 OLS05068, DiagnosticSetting::Warning, "Unknown language code: '{0}'. Additional languages can be set in the configuration file.",
+/**
+* CSV record has more fields than the header row.
+*/
+OLS05069, DiagnosticSetting::Warning, "CSV record has {0} fields but expected {1}",
+/**
+* CSV parsing error, typically caused by unclosed quotes or malformed field data.
+*/
+OLS05070, DiagnosticSetting::Error, "CSV parsing error: {0}",
 }

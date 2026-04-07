@@ -1,11 +1,11 @@
 use std::{cell::RefCell, path::PathBuf, rc::{Rc, Weak}};
 
 use csv::StringRecord;
-use lsp_types::Diagnostic;
+use lsp_types::{Diagnostic, Position, Range};
 use weak_table::PtrWeakHashSet;
 use tracing::{error};
 
-use crate::{Sy, constants::{BuildStatus, BuildSteps, OYarn}, core::{data_hooks, xml_data::{OdooData, OdooDataField, OdooDataRecord}}, features::csv_ast_utils::CsvFieldIter, oyarn, threads::SessionInfo};
+use crate::{Sy, constants::{BuildStatus, BuildSteps, OYarn}, core::{data_hooks, diagnostics::{DiagnosticCode, create_diagnostic}, xml_data::{OdooData, OdooDataField, OdooDataRecord}}, features::csv_ast_utils::{CsvFieldIter, CsvRecordIter}, oyarn, threads::SessionInfo};
 
 use super::{symbols::{symbol::Symbol}};
 
@@ -20,7 +20,7 @@ impl CsvArchBuilder {
     }
 
     pub fn load_csv(&mut self, session: &mut SessionInfo, csv_symbol: Rc<RefCell<Symbol>>, content: &String) -> Vec<Diagnostic> {
-        let diagnostics = vec![];
+        let mut diagnostics = vec![];
         csv_symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
         let model_name_pb = PathBuf::from(&csv_symbol.borrow().paths()[0]);
         let model_name = Sy!(model_name_pb.file_stem().unwrap().to_str().unwrap().to_string());
@@ -40,7 +40,7 @@ impl CsvArchBuilder {
                 }
             }
             if csv.headers.contains(&Sy!("id")) {
-                for result in rdr.records() {
+                for (start, end, result) in CsvRecordIter::new(&mut rdr, content) {
                     match result {
                         Ok(result) => {
                             let record = self.extract_record(Rc::downgrade(&csv_symbol), model_name.clone(), &csv.headers, &result, content);
@@ -48,7 +48,12 @@ impl CsvArchBuilder {
                                 if let Some(xml_id) = record.xml_id.as_ref() {
                                     let id_split = xml_id.split(".").collect::<Vec<&str>>();
                                     if id_split.len() > 2 {
-                                        //TODO diagnostic
+                                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05051, &[xml_id.as_str()]) {
+                                            diagnostics.push(Diagnostic {
+                                                range: Range { start: Position::new(start, 0), end: Position::new(end, 1) },
+                                                ..diagnostic.clone()
+                                            });
+                                        }
                                         continue;
                                     }
                                     let mut csv_module = csv_module.clone();
@@ -64,8 +69,27 @@ impl CsvArchBuilder {
                                 }
                             }
                         }
-                        Err(err) => {
-                            error!("Could not read record in CSV file {:?}. Error: {:?}", model_name_pb, err);
+                         Err(err) => {
+                            match err.kind() {
+                                csv::ErrorKind::UnequalLengths { pos: _, expected_len, len } => {
+                                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05069, &[&len.to_string(), &expected_len.to_string()]) {
+                                        diagnostics.push(Diagnostic {
+                                            range: Range { start: Position::new(start, 0), end: Position::new(end, 1) },
+                                            ..diagnostic.clone()
+                                        });
+                                    }
+                                }
+                                _ => {
+                                // Use OLS05070 for CSV parsing errors
+                                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05070, &[&err.to_string()]) {
+                                    diagnostics.push(Diagnostic {
+                                        range: Range { start: Position::new(start, 0), end: Position::new(end, 0) },
+                                        ..diagnostic.clone()
+                                    });
+                                }
+                                error!("Could not read record in CSV file {:?}. Error: {:?}", model_name_pb, err);
+                                }
+                            }
                         }
                     }
                 }
