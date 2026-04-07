@@ -4,7 +4,7 @@ use lsp_types::Diagnostic;
 use roxmltree::{Attribute, Node};
 use tracing::warn;
 
-use crate::{core::{diagnostics::{create_diagnostic, DiagnosticCode}, odoo::SyncOdoo, symbols::{dependency_mgr::Buildable, symbol_table::XmlFileKey}}, weak_hash_set::WeakSet};
+use crate::{core::{diagnostics::{create_diagnostic, DiagnosticCode}, odoo::SyncOdoo, symbols::{dependency_mgr::Buildable, symbol_keys::XmlFileKey}}, weak_hash_set::WeakSet};
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{entry_point::EntryPointType, xml_data::OdooData}, threads::SessionInfo, Sy};
 
 use super::{file_mgr::FileInfo};

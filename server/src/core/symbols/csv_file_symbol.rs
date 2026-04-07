@@ -2,7 +2,7 @@ use weak_table::PtrWeakHashSet;
 
 use crate::core::symbols::dependency_mgr::Buildable;
 use crate::weak_hash_set::WeakSet;
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_table::SymbolKey, xml_data::OdooData}, oyarn};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_keys::SymbolKey, xml_data::OdooData}, oyarn};
 use std::{cell::RefCell, collections::HashMap, rc::Weak};
 
 #[derive(Debug)]

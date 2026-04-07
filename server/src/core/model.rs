@@ -8,12 +8,11 @@ use std::collections::HashSet;
 use crate::constants::BuildStatus;
 use crate::constants::BuildSteps;
 use crate::constants::OYarn;
-use crate::core::symbols::symbol_table::ClassKey;
-use crate::core::symbols::symbol_table::ContainsKey;
-use crate::core::symbols::symbol_table::ModuleKey;
-use crate::core::symbols::symbol_table::SymbolKey;
+use crate::core::symbols::symbol_keys::ClassKey;
+use crate::core::symbols::symbol_keys::ModuleKey;
+use crate::core::symbols::symbol_keys::SymbolKey;
+use crate::core::symbols::symbol_keys::ContainsKey;
 use crate::core::symbols::symbol_table::SymbolTable;
-use crate::core::symbols::symbol_table::get_sym;
 use crate::threads::SessionInfo;
 use crate::weak_hash_set::WeakSet;
 

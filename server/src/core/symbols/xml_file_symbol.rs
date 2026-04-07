@@ -2,7 +2,7 @@ use lsp_types::Diagnostic;
 use roxmltree::Error;
 use weak_table::PtrWeakHashSet;
 
-use crate::core::symbols::symbol_table::SymbolKey;
+use crate::core::symbols::symbol_keys::SymbolKey;
 use crate::core::symbols::dependency_mgr::Buildable;
 use crate::weak_hash_set::WeakSet;
 use crate::{core::diagnostics::DiagnosticCode, threads::SessionInfo};

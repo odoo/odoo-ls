@@ -8,7 +8,8 @@ use std::ffi::OsStr;
 
 use crate::core::csv_arch_builder::CsvArchBuilder;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
-use crate::core::symbols::symbol_table::{ModuleKey, SymbolKey, SymbolTable};
+use crate::core::symbols::symbol_table::{SymbolTable};
+use crate::core::symbols::symbol_keys::{ModuleKey, SymbolKey};
 use crate::core::xml_arch_builder::XmlArchBuilder;
 use crate::core::xml_data::OdooData;
 use crate::weak_hash_set::WeakSet;
@@ -26,7 +27,7 @@ use std::cell::RefCell;
 
 use super::symbol_mgr::SectionRange;
 use super::xml_file_symbol::XmlFileSymbol;
-use crate::core::symbols::symbol_table::ContainsKey;
+use crate::core::symbols::symbol_keys::ContainsKey;
 
 
 #[derive(Debug)]

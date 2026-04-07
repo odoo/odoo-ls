@@ -1,5 +1,5 @@
 use crate::constants::{BuildStatus, BuildSteps};
-use crate::core::symbols::{csv_file_symbol::CsvFileSymbol, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PythonPackageSymbol, symbol_table::SymbolKey, xml_file_symbol::XmlFileSymbol};
+use crate::core::symbols::{csv_file_symbol::CsvFileSymbol, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PythonPackageSymbol, symbol_keys::SymbolKey, xml_file_symbol::XmlFileSymbol};
 use crate::weak_hash_set::WeakSet;
 
 type DepSet = WeakSet<SymbolKey>;

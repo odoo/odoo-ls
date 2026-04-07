@@ -3,7 +3,7 @@ use std::{collections::HashSet, path::PathBuf};
 use csv::StringRecord;
 use lsp_types::Diagnostic;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{symbols::{dependency_mgr::Buildable, symbol_table::{CsvFileKey, SymbolKey, Weak}}, xml_data::{OdooData, OdooDataField, OdooDataRecord}}, oyarn, threads::SessionInfo, weak_hash_set::WeakSet, Sy};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{symbols::{dependency_mgr::Buildable, symbol_keys::{CsvFileKey, SymbolKey, Weak}}, xml_data::{OdooData, OdooDataField, OdooDataRecord}}, oyarn, threads::SessionInfo, weak_hash_set::WeakSet, Sy};
 
 
 pub struct CsvArchBuilder {

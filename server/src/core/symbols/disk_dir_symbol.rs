@@ -1,7 +1,7 @@
 
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::{constants::OYarn, core::symbols::symbol_table::SymbolKey, oyarn, utils::PathSanitizer};
+use crate::{constants::OYarn, core::symbols::symbol_keys::SymbolKey, oyarn, utils::PathSanitizer};
 
 
 /*

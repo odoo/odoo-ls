@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 
-use crate::{constants::OYarn, core::symbols::symbol_table::SymbolKey, oyarn};
+use crate::{constants::OYarn, oyarn};
+use crate::core::symbols::symbol_keys::SymbolKey;
 
 #[derive(Debug)]
 pub struct CompiledSymbol {

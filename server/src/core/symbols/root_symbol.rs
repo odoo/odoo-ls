@@ -1,4 +1,4 @@
-use crate::{constants::OYarn, core::{entry_point::EntryPoint, symbols::symbol_table::SymbolKey}, oyarn};
+use crate::{constants::OYarn, core::{entry_point::EntryPoint, symbols::symbol_keys::SymbolKey}, oyarn};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 #[derive(Debug)]

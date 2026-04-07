@@ -1,5 +1,6 @@
 use std::ops::Range;
-use crate::{constants::OYarn, core::symbols::symbol_table::{SymbolKey, SymbolTable, Weak, XmlFileKey}};
+use crate::{constants::OYarn, core::symbols::symbol_keys::{SymbolKey, Weak, XmlFileKey}};
+use crate::core::symbols::symbol_table::SymbolTable;
 
 #[derive(Debug, Clone)]
 pub enum OdooData {

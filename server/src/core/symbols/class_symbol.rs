@@ -6,7 +6,8 @@ use crate::constants::OYarn;
 use crate::core::file_mgr::NoqaInfo;
 use crate::core::model::ModelData;
 use crate::oyarn;
-use crate::core::symbols::symbol_table::{ClassKey, SymbolKey, SymbolTable, Weak};
+use crate::core::symbols::symbol_table::{SymbolTable};
+use crate::core::symbols::symbol_keys::{ClassKey, SymbolKey, Weak};
 
 use super::symbol_mgr::{SectionRange, SymbolMgr};
 

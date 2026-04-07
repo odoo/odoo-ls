@@ -5,7 +5,7 @@ use ruff_python_ast::{AtomicNodeIndex, Expr};
 use ruff_text_size::{TextRange, TextSize};
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{evaluation::{Context, Evaluation}, file_mgr::NoqaInfo, model::Model, symbols::symbol_table::{FunctionKey, SymbolKey}}, oyarn, threads::SessionInfo};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{evaluation::{Context, Evaluation}, file_mgr::NoqaInfo, model::Model, symbols::symbol_keys::{FunctionKey, SymbolKey}}, oyarn, threads::SessionInfo};
 
 use super::{symbol_mgr::{SectionRange, SymbolMgr}};
 
