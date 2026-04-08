@@ -1037,12 +1037,12 @@ impl SyncOdoo {
                 let parent = st!().parent(path_symbol).unwrap();
                 if clean_cache {
                     FileMgr::delete_path(session, &path.sanitize());
-                    let mut to_del = Vec::from_iter(get_sym!(st!(), path_symbol).all_module_symbol().copied());
+                    let mut to_del = st!().all_module_symbol(path_symbol);
                     let mut index = 0;
                     while index < to_del.len() {
                         // @arena: shouldn't it be using get_symbol_first_path?
                         FileMgr::delete_path(session, &st!().paths(to_del[index])[0]);
-                        let mut to_del_child = Vec::from_iter(get_sym!(st!(), to_del[index]).all_module_symbol().copied());
+                        let mut to_del_child = st!().all_module_symbol(to_del[index]);
                         to_del.append(&mut to_del_child);
                         index += 1;
                     }

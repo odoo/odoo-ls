@@ -209,39 +209,6 @@ impl SymbolView<'_> {
         }
     }
 
-    pub fn as_root(&self) -> &RootSymbol {
-        match self {
-            Self::Root(r) => r,
-            _ => {panic!("Not a Root")}
-        }
-    }
-
-    pub fn has_modules(&self) -> bool {
-        match self {
-            Self::Root(_) | Self::Namespace(_) | Self::PythonPackage(_) | Self::Module(_) | Self::DiskDir(_) => true,
-            _ => {false}
-        }
-    }
-    // @arena: it would be simpler to return a Vec<SymbolKey> instead
-    pub fn all_module_symbol(&self) -> Box<dyn Iterator<Item = &SymbolKey> + '_> {
-        match self {
-            Self::Root(r) => Box::new(r.module_symbols.values()),
-            Self::Namespace(n) => {
-                Box::new(n.directories.iter().flat_map(|x| x.module_symbols.values()))
-            },
-            Self::DiskDir(d) => Box::new(d.module_symbols.values()),
-            Self::Module(m) => Box::new(m.module_symbols.values()),
-            Self::PythonPackage(p) => Box::new(p.module_symbols.values()),
-            Self::File(_) => panic!("No module symbol on File"),
-            Self::Compiled(_) => panic!("No module symbol on Compiled"),
-            Self::Class(_c) => panic!("No module symbol on Class"),
-            Self::Function(_) => panic!("No module symbol on Function"),
-            Self::Variable(_) => panic!("No module symbol on Variable"),
-            Self::XmlFileSymbol(_) => panic!("No module symbol on XmlFileSymbol"),
-            Self::CsvFileSymbol(_) => panic!("No module symbol on CsvFileSymbol"),
-        }
-    }
-
     pub fn get_xml_id(&self, xml_id: &OYarn) -> Option<Vec<OdooData>> {
         match self {
             Self::XmlFileSymbol(xml_file) => xml_file.xml_ids.get(xml_id).cloned(),

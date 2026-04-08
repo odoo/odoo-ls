@@ -1071,6 +1071,13 @@ impl SymbolTable {
         }
     }
     
+    pub fn has_modules(&self, target: SymbolKey) -> bool {
+        match target {
+            SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::DiskDir(_) => true,
+            _ => false
+        }
+    }
+    
     pub fn range(&self, target: SymbolKey) -> &TextRange {
         match target {
             SymbolKey::Root(_) => panic!(),
@@ -1174,6 +1181,28 @@ impl SymbolTable {
                 self[package].xml_ids.entry(xml_id).or_insert(vec![]).push(xml_data);
             },
             _ => {}
+        }
+    }
+    
+    pub fn all_module_symbol(&self, target: SymbolKey) -> Vec<SymbolKey> {
+        match target {
+            SymbolKey::Root(r) => self[r].module_symbols.values().copied().collect(),
+            SymbolKey::Namespace(n) => {
+                self[n].directories.iter()
+                    .flat_map(|x| x.module_symbols.values())
+                    .copied()
+                    .collect()
+            },
+            SymbolKey::DiskDir(d) => self[d].module_symbols.values().copied().collect(),
+            SymbolKey::Module(m) => self[m].module_symbols.values().copied().collect(),
+            SymbolKey::PythonPackage(p) => self[p].module_symbols.values().copied().collect(),
+            SymbolKey::File(_) => panic!("No module symbol on File"),
+            SymbolKey::Compiled(_) => panic!("No module symbol on Compiled"),
+            SymbolKey::Class(_c) => panic!("No module symbol on Class"),
+            SymbolKey::Function(_) => panic!("No module symbol on Function"),
+            SymbolKey::Variable(_) => panic!("No module symbol on Variable"),
+            SymbolKey::XmlFile(_) => panic!("No module symbol on XmlFileSymbol"),
+            SymbolKey::CsvFile(_) => panic!("No module symbol on CsvFileSymbol"),
         }
     }
     
@@ -2059,9 +2088,8 @@ impl SymbolTable {
                     }
                 }
             }
-            let sym_to_inv = get_sym!(st!(), ref_to_inv);
-            if sym_to_inv.has_modules() {
-                for &sym in sym_to_inv.all_module_symbol() {
+            if st!().has_modules(ref_to_inv) {
+                for sym in st!().all_module_symbol(ref_to_inv) {
                     vec_to_invalidate.push_back(sym);
                 }
             }
