@@ -157,7 +157,7 @@ impl PythonArchEval {
             PythonArchEvalHooks::on_function_eval(session, &self.entry_point, f);
         }
         st!().set_build_status(self.sym_stack[0], BuildSteps::ARCH_EVAL, BuildStatus::DONE);
-        if get_sym!(st!(), self.sym_stack[0]).is_external() && (!self.file_mode  || !file_info_rc.borrow().opened) {
+        if st!().is_external(self.sym_stack[0]) && (!self.file_mode  || !file_info_rc.borrow().opened) {
             if self.file_mode {
                 FileMgr::delete_path(session, &path);
             }

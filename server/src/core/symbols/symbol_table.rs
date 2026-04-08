@@ -54,6 +54,7 @@ impl SymbolView<'_> {
         }
     }
 
+    // @arena deprecated
     pub fn is_external(&self) -> bool {
         match self {
             Self::Root(_) => false,
@@ -89,6 +90,7 @@ impl SymbolView<'_> {
         }
     }
 
+    // @arena: deprecated
     pub fn in_workspace(&self) -> bool {
         match self {
             Self::Root(_) => false,
@@ -405,7 +407,7 @@ impl SymbolTable {
     fn parent_is_external(&self, parent: SymbolKey) -> bool {
         match parent {
             SymbolKey::Root(_) => true,
-            _ => self.get_symbol_view(parent).expect("valid key").is_external(),
+            _ => self.is_external(parent),
         }
     }
 
@@ -446,14 +448,14 @@ impl SymbolTable {
     // @arena: consider taking &str for name
     pub fn add_new_variable(&mut self, parent: impl Into<SymbolKey>, name: OYarn, range: &TextRange) -> VariableKey {
         let parent = parent.into();
-        let is_external = self.get_symbol_view(parent).expect("valid key").is_external();
+        let is_external = self.is_external(parent);
         let variable_symbol = VariableSymbol::new(name.clone(), parent, range.clone(), is_external);
         let variable_key = self.variables.insert(variable_symbol);
         self.add_to_parent_symbols(parent, variable_key.into(), &name, range.start().to_u32());
         variable_key
     }
     pub fn add_new_function(&mut self, parent: SymbolKey, name: &str, range: &TextRange, body_start: &TextSize) -> FunctionKey {
-        let is_external = self.get_symbol_view(parent).expect("valid key").is_external();
+        let is_external = self.is_external(parent);
         let function_symbol = FunctionSymbol::new(name, parent, range.clone(), body_start.clone(), is_external);
         let function_key = self.functions.insert(function_symbol);
         self.add_to_parent_symbols(parent, function_key.into(), name, range.start().to_u32());
@@ -461,7 +463,7 @@ impl SymbolTable {
     }
 
     pub fn add_new_class(&mut self, parent: SymbolKey, name: &String, range: &TextRange, body_start: &TextSize) -> ClassKey {
-        let is_external = self.get_symbol_view(parent).expect("valid key").is_external();
+        let is_external = self.is_external(parent);
         let class_symbol = ClassSymbol::new(name, parent, range.clone(), body_start.clone(), is_external);
         let class_key = self.classes.insert(class_symbol);
         self.add_to_parent_symbols(parent, class_key.into(), name, range.start().to_u32());

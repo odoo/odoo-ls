@@ -880,7 +880,7 @@ impl Evaluation {
                                 if required_dependencies.len() >= 2 {
                                     let class_file = st!().get_file(base_sym).unwrap();
                                     SyncOdoo::build_now(session, class_file, BuildSteps::ARCH_EVAL);
-                                    if !get_sym!(st!(), class_file).is_external() {
+                                    if !st!().is_external(class_file) {
                                         required_dependencies[1].push(class_file);
                                     }
                                 }
@@ -893,7 +893,7 @@ impl Evaluation {
 
                                     if init_evaluations.is_some()
                                     && init_evaluations.unwrap().len() == 0
-                                    && !get_sym!(st!(), init_file).is_external()
+                                    && !st!().is_external(init_file)
                                     && st!().build_status(init_file, BuildSteps::ARCH_EVAL) == BuildStatus::DONE
                                     && st!().build_status(init,BuildSteps::ARCH) != BuildStatus::IN_PROGRESS
                                     && st!().build_status(init, BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS
@@ -967,7 +967,7 @@ impl Evaluation {
                         let base_sym_evaluations = &st!()[f].evaluations;
 
                         if base_sym_evaluations.len() == 0
-                        && !get_sym!(st!(), base_sym_file).is_external()
+                        && !st!().is_external(base_sym_file)
                         && st!().build_status(base_sym_file, BuildSteps::ARCH_EVAL) == BuildStatus::DONE
                         && st!().build_status(base_sym, BuildSteps::ARCH) != BuildStatus::IN_PROGRESS
                         && st!().build_status(base_sym, BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS

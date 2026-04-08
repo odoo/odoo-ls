@@ -538,9 +538,7 @@ impl SymbolTable {
         if dep_level > step {
             panic!("Can't add dependency for step {:?} and level {:?}", step, dep_level)
         }
-        let target_sym = self.get_symbol_view(target).expect("valid key");
-        let dependency_sym = self.get_symbol_view(dependency).expect("valid key");
-        if !target_sym.in_workspace() || !dependency_sym.in_workspace() {
+        if !self.in_workspace(target) || !self.in_workspace(dependency) {
             return;
         }
         let step_i = step as usize;
@@ -745,6 +743,23 @@ impl SymbolTable {
         match eval_ptr {
             EvaluationSymbolPtr::WEAK(w) => w.weak.is_expired(self),
             _ => false,
+        }
+    }
+    
+    pub fn in_workspace(&self, target: SymbolKey) -> bool {
+        match target {
+            SymbolKey::Root(_) => false,
+            SymbolKey::Namespace(n) => self[n].is_in_workspace(),
+            SymbolKey::DiskDir(d) => self[d].in_workspace,
+            SymbolKey::Module(m) => self[m].in_workspace,
+            SymbolKey::PythonPackage(p) => self[p].in_workspace,
+            SymbolKey::File(f) => self[f].is_in_workspace(),
+            SymbolKey::Compiled(_) => panic!(),
+            SymbolKey::Class(_) => panic!(),
+            SymbolKey::Function(_) => panic!(),
+            SymbolKey::Variable(_) => panic!(),
+            SymbolKey::XmlFile(x) => self[x].is_in_workspace(),
+            SymbolKey::CsvFile(c) => self[c].is_in_workspace(),
         }
     }
 

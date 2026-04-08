@@ -42,6 +42,7 @@ macro_rules! impl_dependencies {
             // fn dependencies_mut(&mut self) -> &mut DepTable { &mut self.dependencies }
             fn dependents(&self) -> &DepTable { &self.dependents }
             // fn dependents_mut(&mut self) -> &mut DepTable { &mut self.dependents }
+            // @arena: maybe we don't need this?
             fn is_in_workspace(&self) -> bool { self.in_workspace }
 
             fn set_in_workspace(&mut self, in_workspace: bool) {

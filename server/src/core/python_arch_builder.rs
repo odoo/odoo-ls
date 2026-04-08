@@ -73,8 +73,7 @@ impl PythonArchBuilder {
         let path = get_sym!(st!(), self.file).get_symbol_first_path();
         if self.file_mode {
             let in_workspace = st!().parent(self.file)
-                .and_then(|p| st!().get_symbol_view(p))
-                .is_some_and(|parent_sym| parent_sym.in_workspace()) ||
+                .is_some_and(|parent| st!().in_workspace(parent)) ||
                 SyncOdoo::is_in_workspace_or_entry(session, &path);
             st!().set_in_workspace(self.file, in_workspace);
         }
@@ -571,7 +570,7 @@ impl PythonArchBuilder {
                         st!()[variable_key].evaluations = eval.0;
                         self.diagnostics.extend(eval.1);
                         if let Some(evaluation) = st!()[variable_key].evaluations.get(0) {
-                            if get_sym!(st!(), *self.sym_stack.last().unwrap()).is_external() {
+                            if st!().is_external(*self.sym_stack.last().unwrap()) {
                                 // external packages often import symbols from compiled files
                                 // or with meta programmation like globals["var"] = __get_func().
                                 // we don't want to handle that, so just declare __all__ content

@@ -93,9 +93,9 @@ impl PythonValidator {
                 if st!().build_status(symbol, BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
                     return;
                 }
-                let symbol_view = get_sym!(st!(), symbol);
-                if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !symbol_view.is_external()) {
-                trace!("Validating {}", symbol_view.paths().first().unwrap_or(&S!("No path found")));
+                if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !st!().is_external(symbol)) {
+                    let symbol_view = get_sym!(st!(), symbol);
+                    trace!("Validating {}", symbol_view.paths().first().unwrap_or(&S!("No path found")));
                 }
                 st!().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 file_info_rc.borrow_mut().replace_diagnostics(BuildSteps::VALIDATION, vec![]);
