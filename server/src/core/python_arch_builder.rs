@@ -158,7 +158,7 @@ impl PythonArchBuilder {
                 session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0]);
             }
         } else if self.file_mode {
-            if get_sym!(st!(), symbol).typ() == SymType::PACKAGE(PackageType::MODULE) {
+            if matches!(symbol, SymbolKey::Module(_)) {
                 //even if there is no __init__.py, we need to go to rebuild_arch and validation to validate the manifest
                 session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0]);
             } else {

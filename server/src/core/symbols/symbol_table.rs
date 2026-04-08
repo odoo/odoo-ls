@@ -71,23 +71,6 @@ impl SymbolView<'_> {
         }
     }
 
-    pub fn typ(&self) -> SymType {
-        match self {
-            Self::Root(_) => SymType::ROOT,
-            Self::Namespace(_) => SymType::NAMESPACE,
-            Self::DiskDir(_) => SymType::DISK_DIR,
-            Self::Module(_) => SymType::PACKAGE(PackageType::MODULE),
-            Self::PythonPackage(_) => SymType::PACKAGE(PackageType::PYTHON_PACKAGE),
-            Self::File(_) => SymType::FILE,
-            Self::Compiled(_) => SymType::COMPILED,
-            Self::Class(_) => SymType::CLASS,
-            Self::Function(_) => SymType::FUNCTION,
-            Self::Variable(_) => SymType::VARIABLE,
-            Self::XmlFileSymbol(_) => SymType::XML_FILE,
-            Self::CsvFileSymbol(_) => SymType::CSV_FILE,
-        }
-    }
-
     pub fn name(&self) -> &OYarn {
         match self {
             Self::Root(s) => &s.name,
@@ -119,22 +102,6 @@ impl SymbolView<'_> {
             Self::Variable(v) => &v.doc_string,
             Self::XmlFileSymbol(_) => &None,
             Self::CsvFileSymbol(_) => &None,
-        }
-    }
-
-    // @arena deprecated
-    pub fn is_file_content(&self) -> bool {
-        match self {
-            Self::Root(_)
-            | Self::Namespace(_)
-            | Self::DiskDir(_)
-            | Self::PythonPackage(_)
-            | Self::Module(_)
-            | Self::File(_)
-            | Self::Compiled(_)
-            | Self::XmlFileSymbol(_)
-            | Self::CsvFileSymbol(_) => false,
-            Self::Class(_) | Self::Function(_) | Self::Variable(_) => true,
         }
     }
 
@@ -528,10 +495,7 @@ impl SymbolTable {
                 self.disk_dirs[d].module_symbols.insert(oyarn!("{}", name), child);
             },
             _ => {
-                panic!("Impossible to add a {} to a {}",
-                    self.get_symbol_view(child).unwrap().typ(),
-                    self.get_symbol_view(parent).unwrap().typ()
-                );
+                panic!("Impossible to add a {} to a {}", child.typ(), parent.typ());
             }
         }
     }
@@ -610,10 +574,7 @@ impl SymbolTable {
                     .push(content);
             }
             _ => {
-                panic!("Impossible to add a {} to a {}",
-                    self.get_symbol_view(content).unwrap().typ(),
-                    self.get_symbol_view(parent).unwrap().typ()
-                );
+                panic!("Impossible to add a {} to a {}", content.typ(), parent.typ());
             }
         }
     }
@@ -656,28 +617,27 @@ impl SymbolTable {
     }
     
     // @arena: assumes owner as valid key (formerly a strong Rc)
-    // @arena TODO: fix this weird API (take &str instead of OYarn)
     pub fn add_new_ext_symbol(
         &mut self,
         target: SymbolKey,
-        name: OYarn,
+        name: &str,
         range: &TextRange,
         owner: SymbolKey,
     ) -> SymbolKey {
-        let target_sym = self.get_symbol_view(target).expect("valid key");
         // validate target can host an external symbol
-        if !matches!(target_sym.typ(),
+        if !matches!(target.typ(),
             SymType::FILE | SymType::PACKAGE(PackageType::MODULE)
                 | SymType::PACKAGE(PackageType::PYTHON_PACKAGE)
                 | SymType::CLASS | SymType::FUNCTION | SymType::NAMESPACE
         ) {
-            panic!("Impossible to add an external symbol to a {}", target_sym.typ());
+            panic!("Impossible to add an external symbol to a {}", target.typ());
         }
+        let name = oyarn!("{}", name);
         let variable_symbol = VariableSymbol::new(
             name.clone(),
             target,
             range.clone(),
-            target_sym.is_external(),
+            self.is_external(target),
         );
         let variable_key: SymbolKey = self.variables.insert(variable_symbol).into();
         let section = self.get_section_for_key(owner, range.start().to_u32());
@@ -695,10 +655,7 @@ impl SymbolTable {
             SymbolKey::PythonPackage(p) => self[p].get_section_for(position).index,
             SymbolKey::Class(c) => self[c].get_section_for(position).index,
             SymbolKey::Function(f) => self[f].get_section_for(position).index,
-            _ => panic!(
-                "Impossible to add a declaration of external symbol to a {}",
-                self.get_symbol_view(owner).unwrap().typ()
-            ),
+            _ => panic!("Impossible to add a declaration of external symbol to a {}", owner.typ()),
         }
     }
     
@@ -726,7 +683,7 @@ impl SymbolTable {
         let child_symbol = self.get_symbol_view(child).expect("valid key");
         let child_name = child_symbol.name().clone();
         let parent = child_symbol.parent().expect("symbol should have a parent");
-        if child_symbol.is_file_content() {
+        if self.is_file_content(child) {
             match parent {
                 SymbolKey::Class(c) => { self.classes[c].symbols.remove(&child_name); },
                 SymbolKey::File(f) => { self.files[f].symbols.remove(&child_name); },
@@ -773,7 +730,6 @@ impl SymbolTable {
                 SymbolKey::CsvFile(_) => { panic!("A CSV file symbol can not contain a file structure") }
             };
         }
-        // self.set_parent(child, None);
     } 
     
     //unload a symbol and subsymbols.
@@ -798,7 +754,7 @@ impl SymbolTable {
                 continue;
             }
             vec_to_unload.pop_front();
-            if DEBUG_MEMORY && (sym_ref.typ() == SymType::FILE || matches!(sym_ref.typ(), SymType::PACKAGE(_))) {
+            if DEBUG_MEMORY && matches!(ref_to_unload.typ(), SymType::FILE  | SymType::PACKAGE(_)) {
                 info!("Unloading symbol {:?} at {:?}", sym_ref.name(), sym_ref.paths());
             }
             let module = st!().find_module(ref_to_unload);

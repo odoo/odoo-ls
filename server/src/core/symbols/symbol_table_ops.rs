@@ -118,34 +118,26 @@ impl SymbolTable {
         tree
     }
 
-    // @arena
-    // formerly a method on Symbol, so valid target expected
-    // original code unwrapped the upgrade() of weak without checking
     pub fn get_in_parents(&self, target: SymbolKey, sym_types: &[SymType], stop_same_file: bool) -> Option<SymbolKey> {
-        let target_symbol = self.get_symbol_view(target).expect("valid key");
-        let target_type = target_symbol.typ();
-
+        let target_type = target.typ();
         if sym_types.contains(&target_type) {
             return Some(target);
         }
         if stop_same_file && matches!(target_type, SymType::FILE | SymType::PACKAGE(_)) {
             return None;
         }
-        let Some(parent) = target_symbol.parent() else {
-            return None;
-        };
+        let parent = self.parent(target)?;
         return self.get_in_parents(parent, sym_types, stop_same_file);
     }
 
 
-    pub fn get_root(&self, target: SymbolKey) -> Option<SymbolKey> {
-        self.get_in_parents(target, &[SymType::ROOT], false)
+    pub fn get_root(&self, target: SymbolKey) -> RootKey {
+        self.get_in_parents(target, &[SymType::ROOT], false).unwrap().unwrap_root_key()
     }
 
     pub fn get_entry(&self, target: SymbolKey) -> Option<Rc<RefCell<EntryPoint>>> {
-        self.get_root(target)
-            .and_then(|root_key| self.get_symbol_view(root_key))
-            .and_then(|root_symbol| root_symbol.as_root().entry_point.clone())
+        let root = self.get_root(target);
+        self[root].entry_point.clone()
     }
 
     pub fn get_file(&self, target: SymbolKey) -> Option<SymbolKey> {
@@ -185,11 +177,10 @@ impl SymbolTable {
         if symbol == to_test {
             return true;
         }
-        let symbol_view = self.get_symbol_view(symbol).expect("valid key");
-        if stop_same_file && matches!(symbol_view.typ(), SymType::FILE | SymType::PACKAGE(_)) {
+        if stop_same_file && matches!(symbol.typ(), SymType::FILE | SymType::PACKAGE(_)) {
             return false;
         }
-        let Some(parent) = symbol_view.parent() else {
+        let Some(parent) = self.parent(symbol) else {
             return false;
         };
         self.is_symbol_in_parents(parent, to_test)
@@ -1143,21 +1134,21 @@ impl SymbolTable {
 
 
     //infer a name, given a position
-    pub fn infer_name(odoo: &SyncOdoo, on_symbol_key: SymbolKey, name: &String, position: Option<u32>) -> ContentSymbols {
+    pub fn infer_name(odoo: &SyncOdoo, on_symbol: SymbolKey, name: &String, position: Option<u32>) -> ContentSymbols {
         let symbol_table = &odoo.symbol_table;
-        let results = symbol_table.get_content_symbol(on_symbol_key, name, position.unwrap_or(u32::MAX));
+        let results = symbol_table.get_content_symbol(on_symbol, name, position.unwrap_or(u32::MAX));
         if !results.symbols.is_empty() {
             return results;
         }
-        let on_symbol = symbol_table.get_symbol_view(on_symbol_key).expect("valid key");
-        if !matches!(&on_symbol.typ(), SymType::FILE | SymType::PACKAGE(_) | SymType::ROOT) {
-            let mut parent = on_symbol.parent().unwrap();
+        let on_symbol_type = on_symbol.typ();
+        if !matches!(on_symbol_type, SymType::FILE | SymType::PACKAGE(_) | SymType::ROOT) {
+            let mut parent = symbol_table.parent(on_symbol).unwrap();
             while let SymbolKey::Class(c) = parent {
                 parent = symbol_table[c].parent();
             }
             // A function can reference another name from the full outer scope so no position is needed
             Self::infer_name(odoo, parent, name, None)
-        } else if on_symbol.name() != "builtins" || on_symbol.typ() != SymType::FILE {
+        } else if symbol_table.name(on_symbol) != "builtins" || on_symbol_type != SymType::FILE {
             let builtins = odoo.get_symbol("", &(vec![Sy!("builtins")], vec![]), u32::MAX)[0];
             Self::infer_name(odoo, builtins, name, None)
         } else {
@@ -1920,7 +1911,7 @@ impl SymbolTable {
         let mut vec_to_invalidate = VecDeque::from([symbol]);
         while let Some(ref_to_inv) = vec_to_invalidate.pop_front() {
             let ref_to_inv_view = get_sym!(st!(), ref_to_inv);
-            let sym_to_inv_type = ref_to_inv_view.typ();
+            let sym_to_inv_type = ref_to_inv.typ();
             let dependents_len = ref_to_inv_view.dependents().len();
             if matches!(sym_to_inv_type, SymType::FILE | SymType::PACKAGE(_) | SymType::XML_FILE | SymType::CSV_FILE) {
                 if *step == BuildSteps::ARCH && dependents_len > 0 {

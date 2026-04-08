@@ -84,7 +84,7 @@ pub fn resolve_from_stmt(
     session: &mut SessionInfo, source_file_symbol: SymbolKey, from_stmt: Option<&Identifier>, level: u32
 ) -> (Option<Vec<SymbolKey>>, Option<Vec<SymbolKey>>, Vec<OYarn>) {
     let symbol_table = &session.sync_odoo.symbol_table;
-    let source_root = symbol_table.get_root(source_file_symbol).unwrap();
+    let source_root: SymbolKey = symbol_table.get_root(source_file_symbol).into();
     let entry = symbol_table.get_entry(source_root).unwrap();
     let file_tree = resolve_packages(
         symbol_table,
@@ -111,7 +111,7 @@ pub fn resolve_from_stmt(
 pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: SymbolKey, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: u32, diagnostics: &mut Option<&mut Vec<Diagnostic>>) -> Vec<ImportResult> {
     macro_rules! st { () => { session.sync_odoo.symbol_table } }
     //A: search base of different imports
-    let source_root = st!().get_root(source_file_symbol).unwrap();
+    let source_root: SymbolKey = st!().get_root(source_file_symbol).into();
     let entry = st!().get_entry(source_root).unwrap();
     let (from_symbols, fallback_syms, file_tree) = resolve_from_stmt(session, source_file_symbol, from_stmt, level);
     let mut result = vec![];
@@ -501,8 +501,7 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: Symbol
         },
         None => (None, import.split(".").last().unwrap().to_string()),
     };
-    let source_root = st!().get_root(source_file_symbol).unwrap();
-    let entry = st!().get_entry(source_root).unwrap();
+    let entry = st!().get_entry(source_file_symbol).unwrap();
     let (mut from_symbol, _fallback_sym, file_tree) = resolve_from_stmt(session, source_file_symbol, identifier_from.as_ref(), level);
     let source_path = get_sym!(st!(), source_file_symbol).paths()[0].clone();
     let mut result = HashMap::new();
@@ -641,7 +640,7 @@ fn valid_name_from_symbol(symbol_table: &SymbolTable, symbol: SymbolKey, start_f
             if let Some(a_section) = a_section {
                 let last = a_section.1.last();
                 if let Some(&last) = last {
-                    typ = get_sym!(symbol_table, last).typ();
+                    typ = last.typ();
                 }
             }
             res.insert(s.0.clone(), typ);

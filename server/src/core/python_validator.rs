@@ -189,8 +189,8 @@ impl PythonValidator {
         }
         let symbol = self.sym_stack[0];
         st!().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::DONE);
-        let symbol_view = get_sym!(st!(), symbol);
-        if matches!(symbol_view.typ(), SymType::FILE | SymType::PACKAGE(_)) {
+        if matches!(symbol.typ(), SymType::FILE | SymType::PACKAGE(_)) {
+            let symbol_view = get_sym!(st!(), symbol);
             if !symbol_view.in_workspace() {
                 if !symbol_view.is_external() {
                     return;

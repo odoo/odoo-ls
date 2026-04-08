@@ -1,5 +1,7 @@
 use slotmap::{Key, new_key_type};
 
+use crate::constants::{PackageType, SymType};
+
 new_key_type! { pub struct RootKey; }
 new_key_type! { pub struct DiskDirKey; }
 new_key_type! { pub struct NamespaceKey; }
@@ -57,6 +59,23 @@ impl_from_key! {
 }
 
 impl SymbolKey {
+    pub fn typ(&self) -> SymType {
+        match self {
+            Self::Root(_) => SymType::ROOT,
+            Self::Namespace(_) => SymType::NAMESPACE,
+            Self::DiskDir(_) => SymType::DISK_DIR,
+            Self::Module(_) => SymType::PACKAGE(PackageType::MODULE),
+            Self::PythonPackage(_) => SymType::PACKAGE(PackageType::PYTHON_PACKAGE),
+            Self::File(_) => SymType::FILE,
+            Self::Compiled(_) => SymType::COMPILED,
+            Self::Class(_) => SymType::CLASS,
+            Self::Function(_) => SymType::FUNCTION,
+            Self::Variable(_) => SymType::VARIABLE,
+            Self::XmlFile(_) => SymType::XML_FILE,
+            Self::CsvFile(_) => SymType::CSV_FILE,
+        }
+    }
+
     pub fn unwrap_function_key(&self) -> FunctionKey {
         match self {
             SymbolKey::Function(k) => *k,

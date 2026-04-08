@@ -486,10 +486,10 @@ impl Evaluation {
         let section = parent_sym_mgr.get_section_for(u32::MAX);
         let content_symbols = symbol_table._get_loc_symbol(parent_sym_mgr, sections, u32::MAX, &SectionIndex::INDEX(section.index), &mut HashSet::new());
         for sym_key in content_symbols.symbols {
-            let symbol = symbol_table.get_symbol_view(sym_key).expect("valid key");
             let mut is_instance = None;
-            if matches!(symbol.typ(), SymType::VARIABLE | SymType::FUNCTION) {
-                for eval in symbol.evaluations().unwrap().iter() {
+            let sym_type = sym_key.typ();
+            if matches!(sym_type, SymType::VARIABLE | SymType::FUNCTION) {
+                for eval in symbol_table.evaluations(sym_key).unwrap().iter() {
                     match eval.symbol.is_instance() {
                         Some(instance) => {
                             if is_instance.is_some() && is_instance.unwrap() != instance {
@@ -501,7 +501,7 @@ impl Evaluation {
                         None => {is_instance = None; continue},
                     }
                 }
-            } else if matches!(symbol.typ(), SymType::CLASS) {
+            } else if matches!(sym_type, SymType::CLASS) {
                 is_instance = Some(false);
             }
             res.push(Evaluation::eval_from_symbol(symbol_table, sym_key, is_instance));

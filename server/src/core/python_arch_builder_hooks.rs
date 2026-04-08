@@ -197,10 +197,10 @@ impl PythonArchBuilderHooks {
                     if let Some(&odoo_namespace) = odoo_namespace.get(0) {
                         // create _ and Command as ext_symbols
                         let owner = symbol;
-                        st!().add_new_ext_symbol(odoo_namespace, Sy!("SUPERUSER_ID"), &TextRange::new(TextSize::new(0), TextSize::new(0)), owner);
-                        st!().add_new_ext_symbol(odoo_namespace, Sy!("_"), &TextRange::new(TextSize::new(0), TextSize::new(0)), owner);
-                        st!().add_new_ext_symbol(odoo_namespace, Sy!("_lt"), &TextRange::new(TextSize::new(0), TextSize::new(0)), owner);
-                        st!().add_new_ext_symbol(odoo_namespace, Sy!("Command"), &TextRange::new(TextSize::new(0), TextSize::new(0)), owner);
+                        st!().add_new_ext_symbol(odoo_namespace, "SUPERUSER_ID", &TextRange::new(TextSize::new(0), TextSize::new(0)), owner);
+                        st!().add_new_ext_symbol(odoo_namespace, "_", &TextRange::new(TextSize::new(0), TextSize::new(0)), owner);
+                        st!().add_new_ext_symbol(odoo_namespace, "_lt", &TextRange::new(TextSize::new(0), TextSize::new(0)), owner);
+                        st!().add_new_ext_symbol(odoo_namespace, "Command", &TextRange::new(TextSize::new(0), TextSize::new(0)), owner);
                     }
                 }
             }
