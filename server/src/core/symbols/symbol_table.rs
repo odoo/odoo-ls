@@ -71,6 +71,7 @@ impl SymbolView<'_> {
         }
     }
 
+    // @arena deprecated
     pub fn name(&self) -> &OYarn {
         match self {
             Self::Root(s) => &s.name,
@@ -88,23 +89,6 @@ impl SymbolView<'_> {
         }
     }
 
-    pub fn doc_string(&self) -> &Option<String> {
-        match self {
-            Self::Root(_) => &None,
-            Self::DiskDir(_) => &None,
-            Self::Namespace(_) => &None,
-            Self::PythonPackage(_) => &None,
-            Self::Module(_) => &None,
-            Self::File(_) => &None,
-            Self::Compiled(_) => &None,
-            Self::Class(c) => &c.doc_string,
-            Self::Function(f) => &f.doc_string,
-            Self::Variable(v) => &v.doc_string,
-            Self::XmlFileSymbol(_) => &None,
-            Self::CsvFileSymbol(_) => &None,
-        }
-    }
-
     pub fn in_workspace(&self) -> bool {
         match self {
             Self::Root(_) => false,
@@ -119,23 +103,6 @@ impl SymbolView<'_> {
             Self::Variable(_) => panic!(),
             Self::XmlFileSymbol(x) => x.is_in_workspace(),
             Self::CsvFileSymbol(c) => c.is_in_workspace(),
-        }
-    }
-
-    pub fn has_range(&self) -> bool {
-        match self {
-            Self::Root(_) => false,
-            Self::DiskDir(_) => false,
-            Self::Namespace(_) => false,
-            Self::PythonPackage(_) => false,
-            Self::Module(_) => false,
-            Self::File(_) => false,
-            Self::Compiled(_) => false,
-            Self::Class(_) => true,
-            Self::Function(_) => true,
-            Self::Variable(_) => true,
-            Self::XmlFileSymbol(_) => false,
-            Self::CsvFileSymbol(_) => false,
         }
     }
 

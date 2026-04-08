@@ -125,9 +125,8 @@ impl PythonValidator {
                 file_info.replace_diagnostics(BuildSteps::VALIDATION, self.diagnostics.clone());
             },
             SymbolKey::Function(f) => {
-                let symbol_view = get_sym!(st!(), symbol);
-                if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !symbol_view.is_external()) {
-                    trace!("Validating function {}", symbol_view.name());
+                if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !st!().is_external(symbol)) {
+                    trace!("Validating function {}", st!().name(symbol));
                 }
                 self.file_mode = false;
                 let func = symbol;

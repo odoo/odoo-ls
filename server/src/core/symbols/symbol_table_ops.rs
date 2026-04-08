@@ -481,8 +481,7 @@ impl SymbolTable {
 
         if let Some(keyword) = call_arg_keyword {
             for arg in func.args.iter() {
-                let arg_sym = self.get_symbol_view(arg.symbol).expect("valid key");
-                if *arg_sym.name() == keyword.arg.as_ref().unwrap().id {
+                if *self.name(arg.symbol) == keyword.arg.as_ref().unwrap().id {
                     return Some(arg);
                 }
             }
@@ -1439,7 +1438,7 @@ impl SymbolTable {
                         if (only_fields && !Self::is_field(session, symbol)) || (only_methods && !matches!(symbol, SymbolKey::Function(_))) {
                             continue;
                         }
-                        let name = get_sym!(st!(), symbol).name().clone();
+                        let name = st!().name(symbol).clone();
                         append_result(name, symbol, None);
                     }
                 }

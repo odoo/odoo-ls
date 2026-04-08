@@ -88,9 +88,8 @@ impl PythonArchEval {
         self.file_mode = file == symbol;
         self.current_step = if self.file_mode {BuildSteps::ARCH_EVAL} else {BuildSteps::VALIDATION};
 
-        let symbol_view = get_sym!(st!(), symbol);
-        if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !symbol_view.is_external()) {
-            trace!("evaluating {} - {}", get_sym!(st!(), self.file).paths().first().unwrap_or(&S!("No path found")), symbol_view.name());
+        if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !st!().is_external(symbol)) {
+            trace!("evaluating {} - {}", get_sym!(st!(), self.file).paths().first().unwrap_or(&S!("No path found")), st!().name(symbol));
         }
         st!().set_build_status(symbol, BuildSteps::ARCH_EVAL, BuildStatus::IN_PROGRESS);
         let file_view = get_sym!(st!(), self.file);
@@ -541,7 +540,7 @@ impl PythonArchEval {
                                 if sym == variable_key {
                                     // TODO: investigate deps, and fix cyclic evals
                                     let file_path = st!().get_file(parent).and_then(|file| get_sym!(st!(), file).paths().first().cloned());
-                                    warn!("Found cyclic evaluation symbol: {}, parent: {}, file: {}", var_name, get_sym!(st!(), parent).name(), file_path.unwrap_or(S!("N/A")));
+                                    warn!("Found cyclic evaluation symbol: {}, parent: {}, file: {}", var_name, st!().name(parent), file_path.unwrap_or(S!("N/A")));
                                     to_remove.push(ix);
                                     continue;
                                 }
@@ -591,7 +590,7 @@ impl PythonArchEval {
                         continue;
                     };
                     let model_classes = model.borrow().all_symbols(session, st!().find_module(parent_class), false);
-                    let fn_name = get_sym!(st!(),self.sym_stack[0]).name().clone();
+                    let fn_name = st!().name(self.sym_stack[0]).clone();
                     let allowed_fields: HashSet<_> = model_classes.iter().filter_map(|(sym, _)|
                         st!()[*sym]._model.as_ref().unwrap().computes.get(&fn_name).cloned()
                     ).flatten().collect();
@@ -614,7 +613,7 @@ impl PythonArchEval {
                             if !SymbolTable::is_field(session, sym_key) {
                                 continue;
                             }
-                            let field_name = get_sym!(st!(), sym_key).name().clone();
+                            let field_name = st!().name(sym_key).clone();
                             if allowed_fields.contains(&field_name){
                                 valid_field = true;
                                 break 'while_block;

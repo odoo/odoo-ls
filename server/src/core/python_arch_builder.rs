@@ -66,9 +66,8 @@ impl PythonArchBuilder {
         self.file = file;
         self.file_mode = file == symbol;
         self.current_step = if self.file_mode {BuildSteps::ARCH} else {BuildSteps::VALIDATION};
-        let symbol_view = get_sym!(st!(), symbol);
-        if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !symbol_view.is_external()) {
-            trace!("building {} - {}", get_sym!(st!(), self.file).paths().first().unwrap_or(&S!("No path found")), symbol_view.name());
+        if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !st!().is_external(symbol)) {
+            trace!("building {} - {}", get_sym!(st!(), self.file).paths().first().unwrap_or(&S!("No path found")), st!().name(symbol));
         }
         st!().set_build_status(symbol, BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
         let path = get_sym!(st!(), self.file).get_symbol_first_path();

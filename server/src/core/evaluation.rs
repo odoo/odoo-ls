@@ -1423,7 +1423,7 @@ impl Evaluation {
                 let mut found_one = false;
                 let function = &st!()[function_key];
                 for func_arg in function.args.iter().skip(to_skip as usize).cloned() {
-                    let func_arg_name  = st!().get_symbol_view(func_arg.symbol).unwrap().name().to_string();
+                    let func_arg_name  = st!().name(func_arg.symbol).to_string();
                     if func_arg_name == arg_identifier.id {
                         diagnostics.extend(Evaluation::validate_func_arg(session, &func_arg, &arg.value, on_object, from_module));
                         if func_arg.arg_type == ArgumentType::ARG {
@@ -1460,7 +1460,7 @@ impl Evaluation {
         let mut kword_only_arg_missing = vec![]; // missing kword_only args without default value
         for kword_only_arg in kword_only_args.iter() {
             if kword_only_arg.default_value.is_none() {
-                let name = st!().get_symbol_view(kword_only_arg.symbol).unwrap().name().clone();
+                let name = st!().name(kword_only_arg.symbol).clone();
                 kword_only_arg_missing.push(name);
             }
         }
@@ -1651,7 +1651,7 @@ impl Evaluation {
                         true,
                         false);
                     if symbols.is_empty() {
-                        if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03011, &[&name, &get_sym!(st!(), object).name()]) {
+                        if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03011, &[name, st!().name(object)]) {
                             diagnostics.push(Diagnostic {
                                 range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
                                 ..diagnostic_base
