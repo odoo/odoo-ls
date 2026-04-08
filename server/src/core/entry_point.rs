@@ -62,7 +62,7 @@ impl EntryPointMgr {
         for component in path.components().take(component_count - 1) {
             iter_path.push(component);
             if let Some(name) = component.as_os_str().to_str() {
-                let sym = get_sym!(st!(), current_sym).get_module_symbol(name);
+                let sym = st!().get_module_symbol(current_sym, name);
                 if let Some(existing_sym) = sym {
                     current_sym = existing_sym;
                 } else {

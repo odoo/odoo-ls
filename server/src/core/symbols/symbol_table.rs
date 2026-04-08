@@ -329,36 +329,6 @@ impl SymbolView<'_> {
         }
     }
 
-    /*
-    Return a symbol that is in module symbols (symbol that represent something on disk - file, package, namespace)
-     */
-    pub fn get_module_symbol(&self, name: &str) -> Option<SymbolKey> {
-        match self {
-            Self::Namespace(n) => {
-                for dir in n.directories.iter() {
-                    let result = dir.module_symbols.get(name);
-                    if result.is_some() {
-                        return result.copied();
-                    }
-                }
-                None
-            },
-            Self::Module(m) => {
-                m.module_symbols.get(name).copied()
-            },
-            Self::PythonPackage(p) => {
-                p.module_symbols.get(name).copied()
-            }
-            Self::Root(r) => {
-                r.module_symbols.get(name).copied()
-            },
-            Self::DiskDir(d) => {
-                d.module_symbols.get(name).copied()
-            }
-            _ => {None}
-        }
-    }
-
     pub fn has_modules(&self) -> bool {
         match self {
             Self::Root(_) | Self::Namespace(_) | Self::PythonPackage(_) | Self::Module(_) | Self::DiskDir(_) => true,
@@ -951,5 +921,3 @@ impl_index!(VariableKey, VariableSymbol, variables);
 impl_index!(XmlFileKey, XmlFileSymbol, xml_files);
 impl_index!(CsvFileKey, CsvFileSymbol, csv_files);
 
-//  implement  also a Strong<> variant. Slotmap operations with a Strong would panic (with expect message), and
-//  the programmer would skip the check.

@@ -372,19 +372,18 @@ impl SymbolTable {
 
     // @arena: there's probably a bug here (return in last loop)
     pub fn get_symbol(&self, target: SymbolKey, tree: &Tree, position: u32) -> Vec<SymbolKey> {
-        let target_sym = self.get_symbol_view(target).expect("valid key");
         let symbol_tree_files: &Vec<OYarn> = &tree.0;
         let symbol_tree_content: &Vec<OYarn> = &tree.1;
         let mut iter_sym: Vec<SymbolKey>;
         if symbol_tree_files.len() != 0 {
-            let _mod_iter_sym = target_sym.get_module_symbol(&symbol_tree_files[0]);
+            let _mod_iter_sym = self.get_module_symbol(target, &symbol_tree_files[0]);
             if _mod_iter_sym.is_none() {
                 return vec![];
             }
             iter_sym = vec![_mod_iter_sym.unwrap()];
             if symbol_tree_files.len() > 1 {
                 for fk in symbol_tree_files[1..symbol_tree_files.len()].iter() {
-                    if let Some(s) = self.get_symbol_view(*iter_sym.last().unwrap()).expect("valid key").get_module_symbol(fk) {
+                    if let Some(s) = self.get_module_symbol(*iter_sym.last().unwrap(), fk) {
                         iter_sym = vec![s];
                     } else {
                         return vec![];
@@ -1105,6 +1104,36 @@ impl SymbolTable {
             _ => {}
         }
     }
+    
+    /*
+    Return a symbol that is in module symbols (symbol that represent something on disk - file, package, namespace)
+     */
+    pub fn get_module_symbol(&self, target: SymbolKey, name: &str) -> Option<SymbolKey> {
+        match target {
+            SymbolKey::Namespace(n) => {
+                for dir in self[n].directories.iter() {
+                    let result = dir.module_symbols.get(name);
+                    if result.is_some() {
+                        return result.copied();
+                    }
+                }
+                None
+            },
+            SymbolKey::Module(m) => {
+                self[m].module_symbols.get(name).copied()
+            },
+            SymbolKey::PythonPackage(p) => {
+                self[p].module_symbols.get(name).copied()
+            }
+            SymbolKey::Root(r) => {
+                self[r].module_symbols.get(name).copied()
+            },
+            SymbolKey::DiskDir(d) => {
+                self[d].module_symbols.get(name).copied()
+            }
+            _ => {None}
+        }
+    } 
 
 
     //infer a name, given a position
@@ -1517,7 +1546,7 @@ impl SymbolTable {
         };
         let mut diagnostics: Vec<Diagnostic> = vec![];
         Self::member_symbol_hook(session, target, name, &mut diagnostics);
-        let mod_sym = get_sym!(st!(), target).get_module_symbol(name);
+        let mod_sym = st!().get_module_symbol(target, name);
         if let Some(mod_sym) = mod_sym {
             if !only_fields {
                 if all {
