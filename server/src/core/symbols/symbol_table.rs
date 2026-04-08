@@ -8,22 +8,6 @@ use crate::{constants::{BuildSteps, DEBUG_MEMORY, OYarn, PackageType, SymType}, 
 use std::ops::{Index, IndexMut};
 
 #[derive(Debug)]
-pub enum SymbolView<'a> {
-    Root(&'a RootSymbol),
-    DiskDir(&'a DiskDirSymbol),
-    Namespace(&'a NamespaceSymbol),
-    PythonPackage(&'a PythonPackageSymbol),
-    Module(&'a ModuleSymbol),
-    File(&'a FileSymbol),
-    Compiled(&'a CompiledSymbol),
-    Class(&'a ClassSymbol),
-    Function(&'a FunctionSymbol),
-    Variable(&'a VariableSymbol),
-    XmlFileSymbol(&'a XmlFileSymbol),
-    CsvFileSymbol(&'a CsvFileSymbol),
-}
-
-#[derive(Debug)]
 pub struct SymbolTable {
     // slotmaps per symbol type
     roots: SlotMap<RootKey, RootSymbol>,
@@ -58,24 +42,6 @@ impl SymbolTable {
             xml_files: SlotMap::with_key(),
             csv_files: SlotMap::with_key(),
             ext_symbols: ExtSymbolStore::new(),
-        }
-    }
-    
-    // @arena: temp (remove me)
-    pub fn get_symbol_view(&self, key: SymbolKey) -> Option<SymbolView<'_>> {
-        match key {
-            SymbolKey::Root(k) => self.roots.get(k).map(SymbolView::Root),
-            SymbolKey::DiskDir(k) => self.disk_dirs.get(k).map(SymbolView::DiskDir),
-            SymbolKey::Namespace(k) => self.namespaces.get(k).map(SymbolView::Namespace),
-            SymbolKey::PythonPackage(k) => self.python_packages.get(k).map(SymbolView::PythonPackage),
-            SymbolKey::Module(k) => self.modules.get(k).map(SymbolView::Module),
-            SymbolKey::File(k) => self.files.get(k).map(SymbolView::File),
-            SymbolKey::Compiled(k) => self.compiled.get(k).map(SymbolView::Compiled),
-            SymbolKey::Class(k) => self.classes.get(k).map(SymbolView::Class),
-            SymbolKey::Function(k) => self.functions.get(k).map(SymbolView::Function),
-            SymbolKey::Variable(k) => self.variables.get(k).map(SymbolView::Variable),
-            SymbolKey::XmlFile(k) => self.xml_files.get(k).map(SymbolView::XmlFileSymbol),
-            SymbolKey::CsvFile(k) => self.csv_files.get(k).map(SymbolView::CsvFileSymbol),
         }
     }
     

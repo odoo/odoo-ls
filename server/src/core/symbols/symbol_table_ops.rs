@@ -7,7 +7,7 @@ use slotmap::{Key, SlotMap, new_key_type};
 use tracing::{info, trace};
 
 use crate::{S, Sy, constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree, tree}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPoint, evaluation::{Context, ContextValue,
-Evaluation, EvaluationSymbolPtr}, file_mgr::{FileMgr, NoqaInfo}, model::Model, odoo::SyncOdoo, python_validator::PythonValidator, symbols::{ dependency_mgr::{Buildable, Dependencies}, function_symbol::Argument, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, symbol_keys::{ClassKey, ContainsKey, FunctionKey, ModuleKey, RootKey, SymbolKey, VariableKey}, symbol_table::{SymbolTable, SymbolView} }, xml_data::OdooData}, threads::SessionInfo, utils::{PathSanitizer, compare_semver}, weak_hash_set::WeakSet};
+Evaluation, EvaluationSymbolPtr}, file_mgr::{FileMgr, NoqaInfo}, model::Model, odoo::SyncOdoo, python_validator::PythonValidator, symbols::{ dependency_mgr::{Buildable, Dependencies}, function_symbol::Argument, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, symbol_keys::{ClassKey, ContainsKey, FunctionKey, ModuleKey, RootKey, SymbolKey, VariableKey}, symbol_table::SymbolTable }, xml_data::OdooData}, threads::SessionInfo, utils::{PathSanitizer, compare_semver}, weak_hash_set::WeakSet};
 
 impl SymbolTable {
 
@@ -331,13 +331,12 @@ impl SymbolTable {
     /// get a Symbol that has the same given range and name
     /// @arena: could use symbol_mgr trait
     pub fn get_positioned_symbol(&self, target: SymbolKey, name: &OYarn, range: &TextRange) -> Option<SymbolKey> {
-        let target_sym = self.get_symbol_view(target).expect("valid key");
-        if let Some(symbols) = match target_sym {
-            SymbolView::Class(c) => { c.symbols.get(name) },
-            SymbolView::File(f) => {f.symbols.get(name)},
-            SymbolView::Function(f) => {f.symbols.get(name)},
-            SymbolView::Module(m) => {m.symbols.get(name)},
-            SymbolView::PythonPackage(p) => {p.symbols.get(name)},
+        if let Some(symbols) = match target {
+            SymbolKey::Class(c) => { self[c].symbols.get(name) },
+            SymbolKey::File(f) => {self[f].symbols.get(name)},
+            SymbolKey::Function(f) => {self[f].symbols.get(name)},
+            SymbolKey::Module(m) => {self[m].symbols.get(name)},
+            SymbolKey::PythonPackage(p) => {self[p].symbols.get(name)},
             _ => {None}
         } {
             for sym_list in symbols.values() {
@@ -412,34 +411,31 @@ impl SymbolTable {
         let file_sym_mgr = self.get_as_symbol_mgr(file); // formely Rc (strong)
         let section_id = file_sym_mgr.get_section_for(offset);
         for (_, sym_map) in file_sym_mgr.symbols() {
-            match sym_map.get(&section_id.index) {
-                Some(symbols) => {
-                    for &key in symbols {
-                        let symbol = self.get_symbol_view(key).expect("valid key");
-                        match symbol {
-                            SymbolView::Class(c) => {
-                                let range = match is_param {
-                                    true => c.range.start().to_u32(),
-                                    false => c.body_range.start().to_u32(),
-                                };
-                                if range <= offset && c.body_range.end().to_u32() > offset {
-                                    result = self.get_scope_symbol(key, offset, is_param);
-                                }
-                            },
-                            SymbolView::Function(f) => {
-                                let range = match is_param {
-                                    true => f.range.start().to_u32(),
-                                    false => f.body_range.start().to_u32(),
-                                };
-                                if range <= offset && f.body_range.end().to_u32() > offset {
-                                    result = self.get_scope_symbol(key, offset, is_param);
-                                }
-                            }
-                            _ => {}
+            let Some(symbols) = sym_map.get(&section_id.index) else { continue };
+            for &key in symbols {
+                match key {
+                    SymbolKey::Class(c) => {
+                        let class = &self[c];
+                        let range = match is_param {
+                            true => class.range.start().to_u32(),
+                            false => class.body_range.start().to_u32(),
+                        };
+                        if range <= offset && class.body_range.end().to_u32() > offset {
+                            result = self.get_scope_symbol(key, offset, is_param);
+                        }
+                    },
+                    SymbolKey::Function(f) => {
+                        let function = &self[f];
+                        let range = match is_param {
+                            true => function.range.start().to_u32(),
+                            false => function.body_range.start().to_u32(),
+                        };
+                        if range <= offset && function.body_range.end().to_u32() > offset {
+                            result = self.get_scope_symbol(key, offset, is_param);
                         }
                     }
-                },
-                None => {}
+                    _ => {}
+                }
             }
         }
         result
@@ -693,33 +689,33 @@ impl SymbolTable {
         let mut res = vec![];
 
         fn iter_recursive(table: &SymbolTable, key: SymbolKey, res: &mut Vec<FunctionKey>) {
-            match table.get_symbol_view(key).expect("valid key") {
-                SymbolView::Class(c) => {
-                    for child_key in iter_symbol_keys(c) {
+            match key {
+                SymbolKey::Class(c) => {
+                    for child_key in iter_symbol_keys(&table[c]) {
                         if let SymbolKey::Function(fk) = child_key {
                             res.push(*fk);
                         }
                     }
                 },
-                SymbolView::File(f) => {
-                    for child_key in iter_symbol_keys(f) {
+                SymbolKey::File(f) => {
+                    for child_key in iter_symbol_keys(&table[f]) {
                         iter_recursive(table, *child_key, res);
                     }
                 },
-                SymbolView::Function(f) => {
-                    for child_key in iter_symbol_keys(f) {
+                SymbolKey::Function(f) => {
+                    for child_key in iter_symbol_keys(&table[f]) {
                         iter_recursive(table, *child_key, res);
                     }
                 },
-                SymbolView::DiskDir(_)
-                | SymbolView::Root(_)
-                | SymbolView::Namespace(_)
-                | SymbolView::PythonPackage(_)
-                | SymbolView::Module(_)
-                | SymbolView::Compiled(_)
-                | SymbolView::Variable(_)
-                | SymbolView::XmlFileSymbol(_)
-                | SymbolView::CsvFileSymbol(_) => {},
+                SymbolKey::DiskDir(_)
+                | SymbolKey::Root(_)
+                | SymbolKey::Namespace(_)
+                | SymbolKey::PythonPackage(_)
+                | SymbolKey::Module(_)
+                | SymbolKey::Compiled(_)
+                | SymbolKey::Variable(_)
+                | SymbolKey::XmlFile(_)
+                | SymbolKey::CsvFile(_) => {},
             }
         }
 
@@ -1004,9 +1000,8 @@ impl SymbolTable {
         }
     }
 
-    // ======= Duplicates of SymbolView methods =============
-    //
-    // @arena: consider removing the one from SymbolView
+    // ======= Accessors =============
+ 
     pub fn evaluations(&self, target: SymbolKey) -> Option<&Vec<Evaluation>> {
         match target {
             SymbolKey::File(_) => { None },
@@ -1024,7 +1019,6 @@ impl SymbolTable {
         }
     }
 
-    // @arena: consider replacing the calls to symbol view by this one
     pub fn is_external(&self, target: SymbolKey) -> bool {
         match target {
             SymbolKey::Root(_) => false,
