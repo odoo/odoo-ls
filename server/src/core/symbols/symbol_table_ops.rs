@@ -511,6 +511,23 @@ impl SymbolTable {
             | SymbolKey::Variable(_) => panic!("No dependencies on {:?}", valid_key),
         }
     }
+    
+    pub fn dependents(&self, target: SymbolKey) -> &Vec<Vec<Option<WeakSet<SymbolKey>>>> {
+        match target {
+            SymbolKey::Root(_) => panic!("No dependencies on Root"),
+            SymbolKey::Namespace(n) => self[n].dependents(),
+            SymbolKey::DiskDir(_) => panic!("No dependencies on DiskDir"),
+            SymbolKey::PythonPackage(p) => self[p].dependents(),
+            SymbolKey::Module(m) => self[m].dependents(),
+            SymbolKey::File(f) => self[f].dependents(),
+            SymbolKey::Compiled(_) => panic!("No dependencies on Compiled"),
+            SymbolKey::Class(_) => panic!("No dependencies on Class"),
+            SymbolKey::Function(_) => panic!("No dependencies on Function"),
+            SymbolKey::Variable(_) => panic!("No dependencies on Variable"),
+            SymbolKey::XmlFile(x) => self[x].dependents(),
+            SymbolKey::CsvFile(c) => self[c].dependents(),
+        }
+    }
 
     fn dependents_as_mut(&mut self, valid_key: SymbolKey) -> &mut Vec<Vec<Option<WeakSet<SymbolKey>>>> {
         match valid_key {
@@ -587,6 +604,26 @@ impl SymbolTable {
             _ => { return; }
         }
         model.borrow_mut().add_dependent(target);
+    }
+    
+    pub fn get_all_dependencies(&self, target: SymbolKey, step: BuildSteps) -> Option<&Vec<Option<WeakSet<SymbolKey>>>> {
+        if step == BuildSteps::SYNTAX {
+            panic!("Can't get dependencies for syntax step")
+        }
+        match target {
+            SymbolKey::Root(_) => panic!("There is no dependencies on Root Symbol"),
+            SymbolKey::Namespace(n) => self[n].get_all_dependencies(step as usize),
+            SymbolKey::DiskDir(_) => panic!("There is no dependencies on DiskDir Symbol"),
+            SymbolKey::Module(m) => self[m].get_all_dependencies(step as usize),
+            SymbolKey::PythonPackage(p) => self[p].get_all_dependencies(step as usize),
+            SymbolKey::File(f) => self[f].get_all_dependencies(step as usize),
+            SymbolKey::Compiled(_) => panic!("There is no dependencies on Compiled Symbol"),
+            SymbolKey::Class(_) => panic!("There is no dependencies on Class Symbol"),
+            SymbolKey::Function(_) => panic!("There is no dependencies on Function Symbol"),
+            SymbolKey::Variable(_) => panic!("There is no dependencies on Variable Symbol"),
+            SymbolKey::XmlFile(x) => self[x].get_all_dependencies(step as usize),
+            SymbolKey::CsvFile(c) => self[c].get_all_dependencies(step as usize),
+        }
     }
 
     pub fn build_status(&self, target: SymbolKey, step: BuildSteps) -> BuildStatus {
@@ -2051,13 +2088,11 @@ impl SymbolTable {
         //It will trigger rebuild on all dependencies
         let mut vec_to_invalidate = VecDeque::from([symbol]);
         while let Some(ref_to_inv) = vec_to_invalidate.pop_front() {
-            let ref_to_inv_view = get_sym!(st!(), ref_to_inv);
             let sym_to_inv_type = ref_to_inv.typ();
-            let dependents_len = ref_to_inv_view.dependents().len();
+            let dependents_len = st!().dependents(ref_to_inv).len();
             if matches!(sym_to_inv_type, SymType::FILE | SymType::PACKAGE(_) | SymType::XML_FILE | SymType::CSV_FILE) {
                 if *step == BuildSteps::ARCH && dependents_len > 0 {
-                    let sym_to_inv = get_sym!(st!(), ref_to_inv);
-                    let arch_dependents = &sym_to_inv.dependents()[BuildSteps::ARCH as usize];
+                    let arch_dependents = &st!().dependents(ref_to_inv)[BuildSteps::ARCH as usize];
                     let mut build_queue = vec![];
                     for (index, hashset) in arch_dependents.iter().enumerate() {
                         let Some(hashset) = hashset else {
@@ -2081,8 +2116,7 @@ impl SymbolTable {
                     }
                 }
                 if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL].contains(step) && dependents_len > 1 {
-                    let sym_to_inv = get_sym!(st!(), ref_to_inv);
-                    let arch_eval_dependents = &sym_to_inv.dependents()[BuildSteps::ARCH_EVAL as usize];
+                    let arch_eval_dependents = &st!().dependents(ref_to_inv)[BuildSteps::ARCH_EVAL as usize];
                     let mut build_queue = vec![];
                     for (index, hashset) in arch_eval_dependents.iter().enumerate() {
                         let Some(hashset) = hashset else {
@@ -2116,8 +2150,7 @@ impl SymbolTable {
                 }
             }
             if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::VALIDATION].contains(step) && dependents_len > 2 {
-                let sym_to_inv = get_sym!(st!(), ref_to_inv);
-                let validation_dependents = &sym_to_inv.dependents()[BuildSteps::VALIDATION as usize];
+                let validation_dependents = &st!().dependents(ref_to_inv)[BuildSteps::VALIDATION as usize];
                 for sym in validation_dependents.iter().flatten()
                         .flat_map(|s| s.iter_valid(|&k| st!().contains_key(k)))
                         .collect::<Vec<_>>() {

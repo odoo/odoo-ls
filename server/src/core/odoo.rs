@@ -629,8 +629,7 @@ impl SyncOdoo {
         for sym in set.iter_valid(|&k| self.symbol_table.contains_key(k)) {
             current_count = 0;
             let file = self.symbol_table.get_file(sym).unwrap();
-            let file = self.symbol_table.get_symbol_view(file).unwrap();
-            let all_dep = file.get_all_dependencies(step);
+            let all_dep = self.symbol_table.get_all_dependencies(file, step);
             if let Some(all_dep) = all_dep {
                 for (index, dep_set) in all_dep.iter().enumerate() {
                     if let Some(dep_set) = dep_set {
@@ -937,8 +936,7 @@ impl SyncOdoo {
         }
         for step_to_build in 0..2 {
             let step_to_build = BuildSteps::from(step_to_build);
-            let symbol_view = get_sym!(st!(), symbol);
-            let all_dep = symbol_view.get_all_dependencies(step_to_build);
+            let all_dep = st!().get_all_dependencies(symbol, step_to_build);
             if let Some(all_dep) = all_dep {
                 let mut build_queue = vec![];
                 for (index, dep_set) in all_dep.iter().enumerate() {

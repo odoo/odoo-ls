@@ -125,45 +125,7 @@ impl SymbolView<'_> {
             Self::CsvFileSymbol(c) => vec![c.path.clone()],
         }
     }
-
-    pub fn dependents(&self) -> &Vec<Vec<Option<WeakSet<SymbolKey>>>> {
-        match self {
-            Self::Root(_) => panic!("No dependencies on Root"),
-            Self::Namespace(n) => n.dependents(),
-            Self::DiskDir(_) => panic!("No dependencies on DiskDir"),
-            Self::PythonPackage(p) => p.dependents(),
-            Self::Module(m) => m.dependents(),
-            Self::File(f) => f.dependents(),
-            Self::Compiled(_) => panic!("No dependencies on Compiled"),
-            Self::Class(_) => panic!("No dependencies on Class"),
-            Self::Function(_) => panic!("No dependencies on Function"),
-            Self::Variable(_) => panic!("No dependencies on Variable"),
-            Self::XmlFileSymbol(x) => x.dependents(),
-            Self::CsvFileSymbol(c) => c.dependents(),
-        }
-    }
-
-    pub fn get_all_dependencies(&self, step: BuildSteps) -> Option<&Vec<Option<WeakSet<SymbolKey>>>> {
-        if step == BuildSteps::SYNTAX {
-            panic!("Can't get dependencies for syntax step")
-        }
-        match self {
-            Self::Root(_) => panic!("There is no dependencies on Root Symbol"),
-            Self::Namespace(n) => n.get_all_dependencies(step as usize),
-            Self::DiskDir(_) => panic!("There is no dependencies on DiskDir Symbol"),
-            Self::Module(m) => m.get_all_dependencies(step as usize),
-            Self::PythonPackage(p) => p.get_all_dependencies(step as usize),
-            Self::File(f) => f.get_all_dependencies(step as usize),
-            Self::Compiled(_) => panic!("There is no dependencies on Compiled Symbol"),
-            Self::Class(_) => panic!("There is no dependencies on Class Symbol"),
-            Self::Function(_) => panic!("There is no dependencies on Function Symbol"),
-            Self::Variable(_) => panic!("There is no dependencies on Variable Symbol"),
-            Self::XmlFileSymbol(x) => x.get_all_dependencies(step as usize),
-            Self::CsvFileSymbol(c) => c.get_all_dependencies(step as usize),
-        }
-    }
 }
-
 
 #[derive(Debug)]
 pub struct SymbolTable {
