@@ -9,7 +9,7 @@ use tracing::error;
 use crate::constants::OYarn;
 use crate::core::model::{Model, ModelData};
 use crate::core::symbols::class_symbol::ClassSymbol;
-use crate::core::symbols::symbol_table::{SymbolTable, get_sym};
+use crate::core::symbols::symbol_table::SymbolTable;
 use crate::core::symbols::symbol_keys::{ClassKey, SymbolKey};
 use crate::core::xml_data::{OdooData, OdooDataRecord};
 use crate::threads::SessionInfo;

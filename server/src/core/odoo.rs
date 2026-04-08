@@ -4,7 +4,7 @@ use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
 use crate::core::module_load_order::sort_by_load_order;
 use crate::core::symbols::module_symbol::ModuleSymbol;
-use crate::core::symbols::symbol_table::{get_sym, SymbolTable};
+use crate::core::symbols::symbol_table::SymbolTable;
 use crate::core::symbols::symbol_keys::{ModuleKey, SymbolKey, Weak, ContainsKey};
 use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;

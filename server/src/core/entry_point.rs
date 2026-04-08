@@ -2,7 +2,7 @@ use std::{cell::RefCell, cmp, collections::HashMap, path::PathBuf, rc::{Rc}, u32
 
 use tracing::{error, info, warn};
 
-use crate::{constants::{BuildSteps, OYarn, Tree, flatten_tree}, core::symbols::symbol_table::{SymbolTable, get_sym}, threads::SessionInfo, utils::PathSanitizer, warn_or_panic, weak_hash_set::WeakSet};
+use crate::{constants::{BuildSteps, OYarn, Tree, flatten_tree}, core::symbols::symbol_table::SymbolTable, threads::SessionInfo, utils::PathSanitizer, warn_or_panic, weak_hash_set::WeakSet};
 use crate::core::symbols::symbol_keys::{FileKey, RootKey, SymbolKey, Weak, ContainsKey};
 
 use super::{odoo::SyncOdoo};

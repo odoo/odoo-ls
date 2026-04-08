@@ -11,7 +11,7 @@ use tracing::{debug, trace, warn};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::symbols::symbol_mgr::SymbolMgr;
-use crate::core::symbols::symbol_table::{SymbolTable, get_sym};
+use crate::core::symbols::symbol_table::SymbolTable;
 use crate::core::symbols::symbol_keys::{ClassKey, FunctionKey, ModuleKey, SymbolKey};
 use crate::core::symbols::variable_symbol::VariableSymbol;
 use crate::{constants::*, oyarn, Sy};

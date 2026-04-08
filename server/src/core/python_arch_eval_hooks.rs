@@ -15,7 +15,6 @@ use crate::core::evaluation::GetSymbolHook;
 use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation::Context;
 use crate::constants::*;
-use crate::core::symbols::symbol_table::get_sym;
 use crate::core::symbols::symbol_keys::FunctionKey;
 use crate::core::symbols::symbol_keys::SymbolKey;
 use crate::core::symbols::symbol_keys::Weak;

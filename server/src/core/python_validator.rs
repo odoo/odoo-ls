@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use lsp_types::{Diagnostic, Position, Range};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation::ContextValue;
-use crate::core::symbols::symbol_table::{SymbolTable, get_sym};
+use crate::core::symbols::symbol_table::SymbolTable;
 use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey, SymbolKey};
 use crate::{constants::*, oyarn, Sy};
 use crate::core::odoo::SyncOdoo;
@@ -188,12 +188,11 @@ impl PythonValidator {
         let symbol = self.sym_stack[0];
         st!().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::DONE);
         if matches!(symbol.typ(), SymType::FILE | SymType::PACKAGE(_)) {
-            let symbol_view = get_sym!(st!(), symbol);
-            if !symbol_view.in_workspace() {
-                if !symbol_view.is_external() {
+            if !st!().in_workspace(symbol) {
+                if !st!().is_external(symbol) {
                     return;
                 }
-                FileMgr::delete_path(session, &symbol_view.paths()[0]);
+                FileMgr::delete_path(session, &st!().paths(symbol)[0]);
             } else {
                 self.file_info.as_ref().unwrap().borrow_mut().publish_diagnostics(session);
             }

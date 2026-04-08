@@ -1,13 +1,11 @@
-use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet, VecDeque, hash_map}, ops::{Index, IndexMut}, path::PathBuf, rc::Rc};
-
-use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
-use ruff_python_ast::ExprCall;
+use std::{collections::VecDeque, path::PathBuf};
 use ruff_text_size::{TextRange, TextSize};
-use slotmap::{Key, SlotMap, new_key_type};
-use tracing::{info, trace};
+use slotmap::SlotMap;
+use tracing::info;
 
-use crate::{S, Sy, constants::{BuildStatus, BuildSteps, DEBUG_MEMORY, OYarn, PackageType, SymType, Tree, flatten_tree}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPoint, evaluation::{Context, ContextValue,
-Evaluation, EvaluationSymbolPtr}, file_mgr::NoqaInfo, model::Model, odoo::SyncOdoo, python_validator::PythonValidator, symbols::{ class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::{Buildable, Dependencies}, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::{Argument, FunctionSymbol}, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PythonPackageSymbol, root_symbol::RootSymbol, symbol_keys::{ClassKey, CompiledKey, ContainsKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SymbolKey, VariableKey, Weak, XmlFileKey}, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol }, xml_data::OdooData}, oyarn, threads::SessionInfo, utils::{PathSanitizer, compare_semver}, weak_hash_set::WeakSet};
+use crate::{constants::{BuildSteps, DEBUG_MEMORY, OYarn, PackageType, SymType}, core::symbols::{ class_symbol::ClassSymbol, compiled_symbol::CompiledSymbol, csv_file_symbol::CsvFileSymbol, dependency_mgr::Dependencies, disk_dir_symbol::DiskDirSymbol, ext_symbol_store::ExtSymbolStore, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, namespace_symbol::NamespaceSymbol, package_symbol::PythonPackageSymbol, root_symbol::RootSymbol, symbol_keys::{ClassKey, CompiledKey, ContainsKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SymbolKey, VariableKey, XmlFileKey}, symbol_mgr::SymbolMgr, variable_symbol::VariableSymbol, xml_file_symbol::XmlFileSymbol }, oyarn, threads::SessionInfo, utils::PathSanitizer};
+
+use std::ops::{Index, IndexMut};
 
 #[derive(Debug)]
 pub enum SymbolView<'a> {
@@ -23,108 +21,6 @@ pub enum SymbolView<'a> {
     Variable(&'a VariableSymbol),
     XmlFileSymbol(&'a XmlFileSymbol),
     CsvFileSymbol(&'a CsvFileSymbol),
-}
-
-/// @arena: temporary. symbol_rc.borrow() -> get_sym!(symbol_key).
-/// Assumes `symbol_table` is in scope
-macro_rules! get_sym {
-    ($st:expr, $key:expr) => {
-        $st.get_symbol_view($key).expect("valid key (formerly Rc)")
-    };
-}
-
-pub(crate) use get_sym;
-
-impl SymbolView<'_> {
-    // @arena deprecated
-    pub fn parent(&self) -> Option<SymbolKey> {
-        match self {
-            Self::Root(_) => None,
-            Self::DiskDir(s) => Some(s.parent()),
-            Self::Namespace(s) => Some(s.parent()),
-            Self::PythonPackage(s) => Some(s.parent()),
-            Self::Module(s) => Some(s.parent()),
-            Self::File(s) => Some(s.parent()),
-            Self::Compiled(s) => Some(s.parent()),
-            Self::Class(s) => Some(s.parent()),
-            Self::Function(s) => Some(s.parent()),
-            Self::Variable(s) => Some(s.parent()),
-            Self::XmlFileSymbol(s) => Some(s.parent()),
-            Self::CsvFileSymbol(s) => Some(s.parent()),
-        }
-    }
-
-    // @arena deprecated
-    pub fn is_external(&self) -> bool {
-        match self {
-            Self::Root(_) => false,
-            Self::DiskDir(d) => d.is_external,
-            Self::Namespace(n) => n.is_external,
-            Self::PythonPackage(p) => p.is_external,
-            Self::Module(p) => p.is_external,
-            Self::File(f) => f.is_external,
-            Self::Compiled(c) => c.is_external,
-            Self::Class(c) => c.is_external,
-            Self::Function(f) => f.is_external,
-            Self::Variable(v) => v.is_external,
-            Self::XmlFileSymbol(x) => x.is_external,
-            Self::CsvFileSymbol(c) => c.is_external,
-        }
-    }
-
-    // @arena deprecated
-    pub fn name(&self) -> &OYarn {
-        match self {
-            Self::Root(s) => &s.name,
-            Self::DiskDir(s) => &s.name,
-            Self::Namespace(s) => &s.name,
-            Self::PythonPackage(p) => &p.name,
-            Self::Module(p) => &p.name,
-            Self::File(f) => &f.name,
-            Self::Compiled(c) => &c.name,
-            Self::Class(c) => &c.name,
-            Self::Function(f) => &f.name,
-            Self::Variable(v) => &v.name,
-            Self::XmlFileSymbol(x) => &x.name,
-            Self::CsvFileSymbol(c) => &c.name,
-        }
-    }
-
-    // @arena: deprecated
-    pub fn in_workspace(&self) -> bool {
-        match self {
-            Self::Root(_) => false,
-            Self::Namespace(n) => n.is_in_workspace(),
-            Self::DiskDir(d) => d.in_workspace,
-            Self::Module(m) => m.in_workspace,
-            Self::PythonPackage(p) => p.in_workspace,
-            Self::File(f) => f.is_in_workspace(),
-            Self::Compiled(_) => panic!(),
-            Self::Class(_) => panic!(),
-            Self::Function(_) => panic!(),
-            Self::Variable(_) => panic!(),
-            Self::XmlFileSymbol(x) => x.is_in_workspace(),
-            Self::CsvFileSymbol(c) => c.is_in_workspace(),
-        }
-    }
-
-    // @arena: depreacated
-    pub fn paths(&self) -> Vec<String> {
-        match self {
-            Self::Root(_) => vec![],
-            Self::Namespace(n) => n.paths(),
-            Self::DiskDir(d) => vec![d.path.clone()],
-            Self::PythonPackage(p) => vec![p.path.clone()],
-            Self::Module(m) => vec![m.path.clone()],
-            Self::File(f) => vec![f.path.clone()],
-            Self::Compiled(c) => vec![c.path.clone()],
-            Self::Class(_) => vec![],
-            Self::Function(_) => vec![],
-            Self::Variable(_) => vec![],
-            Self::XmlFileSymbol(x) => vec![x.path.clone()],
-            Self::CsvFileSymbol(c) => vec![c.path.clone()],
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -470,9 +366,8 @@ impl SymbolTable {
     // @arena: removes a symbol from its parent (not yet from the symbol table)
     // original code in unload + remove symbol: unwraps Option(parent) and the weak.upgrade.
     fn remove_symbol(&mut self, child: SymbolKey) {
-        let child_symbol = self.get_symbol_view(child).expect("valid key");
-        let child_name = child_symbol.name().clone();
-        let parent = child_symbol.parent().expect("symbol should have a parent");
+        let child_name = self.name(child).clone();
+        let parent = self.parent(child).expect("symbol should have a parent");
         if self.is_file_content(child) {
             match parent {
                 SymbolKey::Class(c) => { self.classes[c].symbols.remove(&child_name); },
@@ -533,7 +428,6 @@ impl SymbolTable {
         let mut vec_to_unload = VecDeque::from([symbol]);
         while !vec_to_unload.is_empty() {
             let ref_to_unload = *vec_to_unload.front().unwrap();
-            let sym_ref = get_sym!(st!(), ref_to_unload);
             // Unload children first
             let mut found_one = false;
             for sym in st!().all_symbols(ref_to_unload) {
@@ -549,7 +443,7 @@ impl SymbolTable {
             }
             let module = st!().find_module(ref_to_unload);
             //unload symbol
-            let parent = *sym_ref.parent().as_ref().unwrap();
+            let parent = st!().parent(ref_to_unload).unwrap();
             st!().remove_symbol(ref_to_unload);
             if matches!(ref_to_unload, SymbolKey::File(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::XmlFile(_) | SymbolKey::CsvFile(_)) {
                 Self::invalidate(session, ref_to_unload, &BuildSteps::ARCH);
