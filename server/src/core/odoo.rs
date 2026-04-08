@@ -9,7 +9,13 @@ use crate::core::symbols::symbol_keys::{ModuleKey, SymbolKey, Weak, ContainsKey}
 use crate::core::xml_data::OdooData;
 use crate::core::xml_validation::XmlValidator;
 use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
+// use crate::features::document_symbols::DocumentSymbolFeature;
+// use crate::features::references::ReferenceFeature;
+// use crate::features::workspace_symbols::WorkspaceSymbolFeature;
 use crate::threads::SessionInfo;
+// use crate::features::completion::CompletionFeature;
+// use crate::features::definition::DefinitionFeature;
+// use crate::features::hover::HoverFeature;
 use std::collections::HashMap;
 use std::cell::RefCell;
 use std::rc::{Rc};
@@ -1416,6 +1422,223 @@ impl Odoo {
         info!("Registered Capabilities");
     }
 
+    pub fn handle_hover(session: &mut SessionInfo, params: HoverParams) -> Result<Option<Hover>, ResponseError> {
+        todo!()
+        /*
+        if session.sync_odoo.state_init == InitState::NOT_READY {
+            return Ok(None);
+        }
+        session.log_message(MessageType::INFO, format!("Hover requested on {} at {} - {}",
+            params.text_document_position_params.text_document.uri.to_string(),
+            params.text_document_position_params.position.line,
+            params.text_document_position_params.position.character));
+        let path = match params.text_document_position_params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
+            Some(schema) if schema == "file" => {
+                let uri = params.text_document_position_params.text_document.uri.to_string();
+                if !uri.ends_with(".py") && !uri.ends_with(".xml") && !uri.ends_with(".csv") {
+                    return Ok(None);
+                }
+                match params.text_document_position_params.text_document.uri.to_file_path(){
+                    Ok(path) => path.sanitize(),
+                    Err(_) => return Err(
+                        ResponseError {
+                            code: ErrorCode::InvalidParams as i32,
+                            message: format!("Invalid file URI: {}", params.text_document_position_params.text_document.uri.to_string()),
+                            data: None,
+                        }
+                    ),
+                }
+            },
+            Some(schema) if schema == "untitled" => params.text_document_position_params.text_document.uri.to_string(),
+            _ => return Ok(None),
+        };
+        let file_path_buf = PathBuf::from(path.clone());
+        if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &file_path_buf) {
+            if SyncOdoo::is_non_main_manifest_file(&file_symbol, &file_path_buf) {
+                //If the file is not in main entry, and is a manifest file, we skip it
+                return Ok(None);
+            }
+            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
+            if let Some(file_info) = file_info {
+                if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                    file_info.borrow_mut().prepare_ast(session);
+                }
+                let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
+                match ast_type {
+                    AstType::Python => {
+                        if file_info.borrow_mut().file_info_ast.borrow().indexed_module.is_some() {
+                            return Ok(HoverFeature::hover_python(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                        }
+                    },
+                    AstType::Xml => {
+                        return Ok(HoverFeature::hover_xml(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                    },
+                    AstType::Csv => {
+                        return Ok(HoverFeature::hover_csv(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                    },
+                }
+            }
+        }
+        Ok(None)
+        */
+    }
+
+    pub fn handle_goto_definition(session: &mut SessionInfo, params: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>, ResponseError> {
+        todo!()
+        /*
+        if session.sync_odoo.state_init == InitState::NOT_READY {
+            return Ok(None);
+        }
+        session.log_message(MessageType::INFO, format!("GoToDefinition requested on {} at {} - {}",
+            params.text_document_position_params.text_document.uri.to_string(),
+            params.text_document_position_params.position.line,
+            params.text_document_position_params.position.character));
+        let path = match params.text_document_position_params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
+            Some(schema) if schema == "file" => {
+                let uri = params.text_document_position_params.text_document.uri.to_string();
+                if !uri.ends_with(".py") && !uri.ends_with(".xml") && !uri.ends_with(".csv") {
+                    return Ok(None);
+                }
+                match params.text_document_position_params.text_document.uri.to_file_path(){
+                    Ok(path) => path.sanitize(),
+                    Err(_) => return Err(
+                        ResponseError {
+                            code: ErrorCode::InvalidParams as i32,
+                            message: format!("Invalid file URI: {}", params.text_document_position_params.text_document.uri.to_string()),
+                            data: None,
+                        }
+                    ),
+                }
+            },
+            Some(schema) if schema == "untitled" => params.text_document_position_params.text_document.uri.to_string(),
+            _ => return Ok(None),
+        };
+        let file_path_buf = PathBuf::from(path.clone());
+        if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &file_path_buf) {
+            if SyncOdoo::is_non_main_manifest_file(&file_symbol, &file_path_buf) {
+                //If the file is not in main entry, and is a manifest file, we skip it
+                return Ok(None);
+            }
+            let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
+            if let Some(file_info) = file_info {
+                if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                    file_info.borrow_mut().prepare_ast(session);
+                }
+                let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
+                match ast_type {
+                    AstType::Python => {
+                        if file_info.borrow().file_info_ast.borrow().indexed_module.is_some() {
+                            return Ok(DefinitionFeature::get_location(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                        }
+                    },
+                    AstType::Xml => {
+                        return Ok(DefinitionFeature::get_location_xml(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                    },
+                    AstType::Csv => {
+                        return Ok(DefinitionFeature::get_location_csv(session, &file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                    },
+                }
+            }
+        }
+        Ok(None)
+        */
+    }
+
+    pub fn handle_references(session: &mut SessionInfo, params: ReferenceParams) -> Result<Option<Vec<Location>>, ResponseError> {
+        todo!()
+        /*
+        if session.sync_odoo.state_init == InitState::NOT_READY {
+            return Ok(None);
+        }
+        session.log_message(MessageType::INFO, format!("References requested on {} at {} - {}",
+            params.text_document_position.text_document.uri.to_string(),
+            params.text_document_position.position.line,
+            params.text_document_position.position.character));
+        let uri = params.text_document_position.text_document.uri.to_string();
+        let path = FileMgr::uri2pathname(uri.as_str());
+        let file_path_buf = PathBuf::from(path.clone());
+        if uri.ends_with(".py") || uri.ends_with(".pyi") || uri.ends_with(".xml") || uri.ends_with(".csv") {
+            if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &file_path_buf) {
+                if SyncOdoo::is_non_main_manifest_file(&file_symbol, &file_path_buf) {
+                    //If the file is not in main entry, and is a manifest file, we skip it
+                    return Ok(None);
+                }
+                let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
+                if let Some(file_info) = file_info {
+                    if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                        file_info.borrow_mut().prepare_ast(session);
+                    }
+                    let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
+                    match ast_type {
+                        AstType::Python => {
+                            if file_info.borrow_mut().file_info_ast.borrow().indexed_module.is_some() {
+                                return Ok(ReferenceFeature::get_references(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
+                            }
+                        },
+                        AstType::Xml => {
+                            return Ok(ReferenceFeature::get_references_xml(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
+                        },
+                        AstType::Csv => {
+                            return Ok(ReferenceFeature::get_references_csv(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
+                        },
+                    }
+                }
+            }
+        }
+        Ok(None)
+        */
+    }
+
+    pub fn handle_autocomplete(session: &mut SessionInfo ,params: CompletionParams) -> Result<Option<CompletionResponse>, ResponseError> {
+        todo!()
+        /*
+        if session.sync_odoo.state_init == InitState::NOT_READY {
+            return Ok(None);
+        }
+        session.log_message(MessageType::INFO, format!("Completion requested at {}:{}-{}",
+            params.text_document_position.text_document.uri.as_str(),
+            params.text_document_position.position.line,
+            params.text_document_position.position.character
+            ));
+        let (schema, path) = match params.text_document_position.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
+            Some(schema) if schema == "file" => {
+                let uri = params.text_document_position.text_document.uri.to_string();
+                if !uri.ends_with(".py") && !uri.ends_with(".xml") && !uri.ends_with(".csv") {
+                    return Ok(None);
+                }
+                match params.text_document_position.text_document.uri.to_file_path(){
+                    Ok(path) => (schema, path.sanitize()),
+                    Err(_) => return Err(
+                        ResponseError {
+                            code: ErrorCode::InvalidParams as i32,
+                            message: format!("Invalid file URI: {}", params.text_document_position.text_document.uri.to_string()),
+                            data: None,
+                        }
+                    ),
+                }
+            },
+            Some(schema) if schema == "untitled" => (schema, params.text_document_position.text_document.uri.to_string()),
+            _ => return Ok(None)
+        };
+        let path_buf = PathBuf::from(path.clone());
+        if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &path_buf) {
+            if SyncOdoo::is_non_main_manifest_file(&file_symbol, &path_buf) {
+                //If the file is not in main entry, and is a manifest file, we skip it
+                return Ok(None);
+            }
+            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
+            if let Some(file_info) = file_info {
+                if schema != "untitled" && file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                    file_info.borrow_mut().prepare_ast(session);
+                }
+                if file_info.borrow_mut().file_info_ast.borrow().indexed_module.is_some() {
+                    return Ok(CompletionFeature::autocomplete(session, &file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
+                }
+            }
+        }
+        Ok(None)
+        */
+    }
 
     pub fn handle_did_change_configuration(_session: &mut SessionInfo, _params: DidChangeConfigurationParams) {
         return;
@@ -1789,6 +2012,67 @@ impl Odoo {
         if ["py", "xml", "csv"].contains(&extension) || Odoo::is_config_workspace_file(session, &path){
             SessionInfo::request_update_file_index(session, &path, force_delay);
         }
+    }
+
+    pub(crate) fn handle_document_symbols(session: &mut SessionInfo<'_>, params: DocumentSymbolParams) -> Result<Option<DocumentSymbolResponse>, ResponseError> {
+        todo!();
+        /*
+        session.log_message(MessageType::INFO, format!("Document symbol requested for {}",
+            params.text_document.uri.as_str(),
+        ));
+        let (schema, path) = match params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
+            Some(schema) if schema == "file" => {
+                let uri = params.text_document.uri.to_string();
+                if !uri.ends_with(".py") && !uri.ends_with(".pyi") && !uri.ends_with(".xml") && !uri.ends_with(".csv") {
+                    return Ok(None);
+                }
+                match params.text_document.uri.to_file_path(){
+                    Ok(path) => (schema, path.sanitize()),
+                    Err(_) => {
+                        warn!("Invalid file URI: {}", params.text_document.uri.to_string());
+                        return Ok(None);
+                    }
+                }
+            },
+            Some(schema) if schema == "untitled" => (schema, params.text_document.uri.to_string()),
+            Some(scheme) => {
+                warn!("Unsupported URI scheme: {}", scheme);
+                return Ok(None);
+            },
+            None => {
+                warn!("No URI scheme found");
+                return Ok(None);
+            }
+        };
+        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
+        if let Some(file_info) = file_info {
+            if schema != "untitled" && file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                file_info.borrow_mut().prepare_ast(session);
+            }
+            return Ok(DocumentSymbolFeature::get_symbols(session, &file_info));
+        }
+        Ok(None)
+         */
+    }
+
+    pub fn handle_workspace_symbols(session: &mut SessionInfo<'_>, params: WorkspaceSymbolParams) -> Result<Option<WorkspaceSymbolResponse>, ResponseError> {
+        todo!()
+        /*
+        session.log_message(MessageType::INFO, format!("Workspace Symbol requested with query {}",
+            params.query,
+        ));
+        WorkspaceSymbolFeature::get_workspace_symbols(session, params.query)
+         */
+    }
+
+    pub fn handle_workspace_symbols_resolve(session: &mut SessionInfo<'_>, symbol: WorkspaceSymbol) -> Result<WorkspaceSymbol, ResponseError> {
+        todo!()
+        /*
+        session.log_message(MessageType::INFO, format!("Workspace Symbol Resolve for symbol {}",
+            symbol.name,
+        ));
+        WorkspaceSymbolFeature::resolve_workspace_symbol(session, &symbol)
+         */
     }
 
     /// Checks if the given path is a configuration file under one of the workspace folders.

@@ -306,6 +306,165 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
     }
 }
 
+pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>, generic_receiver: Receiver<Message>, sender: Sender<Message>, receiver: Receiver<Message>, delayed_process_sender: Sender<DelayedProcessingMessage>, running_request_ids: Arc<Mutex<Vec<RequestId>>>) {
+    todo!();
+    /*
+    let mut buffer = VecDeque::new();
+    loop {
+        // Drain all available messages into buffer
+        loop {
+            let maybe_msg = generic_receiver.try_recv();
+            match maybe_msg {
+                Ok(msg) => {
+                    // Check for shutdown
+                    if matches!(&msg, Message::Notification(n) if n.method.as_str() == Shutdown::METHOD) {
+                        warn!("Main thread - got shutdown.");
+                        return;
+                    }
+                    buffer.push_back(msg);
+                },
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    error!("Generic channel disconnected, exiting thread");
+                    return;
+                }
+            }
+        }
+        // If buffer is empty, block for next message so we do not busy wait
+        if buffer.is_empty() {
+            match generic_receiver.recv() {
+                Ok(msg) => {
+                    // Check for shutdown
+                    if matches!(&msg, Message::Notification(n) if n.method.as_str() == Shutdown::METHOD) {
+                        warn!("Main thread - got shutdown.");
+                        return;
+                    }
+                    buffer.push_back(msg);
+                },
+                Err(_) => {
+                    error!("Got an RecvError, exiting thread");
+                    break;
+                }
+            }
+        }
+        // Process buffered messages
+        if let Some(msg) = buffer.pop_front() {
+            match msg {
+                Message::Request(r) => {
+                    sync_odoo.lock().unwrap().current_request_id = Some(r.id.clone());
+                    let (value, error) = match r.method.as_str() {
+                        HoverRequest::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, true);
+                            to_value::<Hover>(Odoo::handle_hover(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
+                        GotoDefinition::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, true);
+                            to_value::<GotoTypeDefinitionResponse>(Odoo::handle_goto_definition(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
+                        References::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, true);
+                            to_value::<Vec<Location>>(Odoo::handle_references(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
+                        DocumentSymbolRequest::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            to_value::<DocumentSymbolResponse>(Odoo::handle_document_symbols(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
+                        WorkspaceSymbolRequest::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            to_value::<WorkspaceSymbolResponse>(Odoo::handle_workspace_symbols(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
+                        WorkspaceSymbolResolve::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            to_value_not_null::<WorkspaceSymbol>(Odoo::handle_workspace_symbols_resolve(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
+                        Completion::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, true);
+                            to_value::<CompletionResponse>(Odoo::handle_autocomplete(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
+                        _ => {error!("Request not handled by main thread: {}", r.method); (None, Some(ResponseError{
+                            code: 1,
+                            message: S!("Request not handled by the server"),
+                            data: None
+                        }))}
+                    };
+                    sync_odoo.lock().unwrap().current_request_id = None;
+                    running_request_ids.lock().unwrap().retain(|id| id != &r.id);
+                    sender.send(Message::Response(Response { id: r.id, result: value, error: error })).unwrap();
+                },
+                Message::Notification(n) => {
+                    match n.method.as_str() {
+                        DidOpenTextDocument::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, true);
+                            Odoo::handle_did_open(&mut session, serde_json::from_value(n.params).unwrap());
+                        }
+                        DidChangeConfiguration::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            Odoo::handle_did_change_configuration(&mut session, serde_json::from_value(n.params).unwrap())
+                        }
+                        DidChangeWorkspaceFolders::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            Odoo::handle_did_change_workspace_folders(&mut session, serde_json::from_value(n.params).unwrap())
+                        }
+                        DidChangeTextDocument::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            Odoo::handle_did_change(&mut session, serde_json::from_value(n.params).unwrap());
+                        }
+                        DidCloseTextDocument::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            Odoo::handle_did_close(&mut session, serde_json::from_value(n.params).unwrap());
+                        }
+                        DidSaveTextDocument::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, false);
+                            Odoo::handle_did_save(&mut session, serde_json::from_value(n.params).unwrap());
+                        }
+                        DidRenameFiles::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, true);
+                            Odoo::handle_did_rename(&mut session, serde_json::from_value(n.params).unwrap());
+                        }
+                        DidCreateFiles::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, true);
+                            Odoo::handle_did_create(&mut session, serde_json::from_value(n.params).unwrap());
+                        }
+                        DidDeleteFiles::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, true);
+                            Odoo::handle_did_delete(&mut session, serde_json::from_value(n.params).unwrap());
+                        }
+                        DidChangeWatchedFiles::METHOD => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, true);
+                            Odoo::handle_did_change_watched_files(&mut session, serde_json::from_value(n.params).unwrap());
+                        }
+                        "custom/server/register_capabilities" => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            Odoo::register_capabilities(&mut session);
+                        }
+                        "custom/server/init" => {
+                            let mut session = create_session!(sender, receiver, sync_odoo, delayed_process_sender);
+                            Odoo::init(&mut session);
+                        }
+                        Shutdown::METHOD => { warn!("Main thread - got shutdown."); return;} // should be already caught
+                        _ => {error!("Notification not handled by main thread: {}", n.method)}
+                    }
+                },
+                Message::Response(_) => {
+                    error!("Error: Responses should not arrives in generic channel. Exiting thread");
+                    return;
+                }
+            }
+        }
+    }
+     */
+}
+
 #[macro_export]
 macro_rules! create_session {
     ($sender:expr, $receiver:expr, $sync_odoo:expr, $delayed_sender:expr) => {{
