@@ -200,8 +200,7 @@ impl PythonArchBuilder {
                             if !st!().is_expired_if_weak(all_value_first) {
                                 let all_upgraded = st!().upgrade_weak(all_value_first);
                                 if let Some(all_upgraded_unwrapped) = all_upgraded {
-                                    let all_upgraded_unwrapped_bw = get_sym!(st!(), all_upgraded_unwrapped);
-                                    let evaluations = all_upgraded_unwrapped_bw.evaluations();
+                                    let evaluations = st!().evaluations(all_upgraded_unwrapped);
                                     if let Some(evals) = evaluations && evals.len() == 1 {
                                         let value = &evals[0].value;
                                         if value.is_some() {

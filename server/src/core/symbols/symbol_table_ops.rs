@@ -249,8 +249,7 @@ impl SymbolTable {
                 //take index and try to find an evaluation. if no evaluation is found, search in previous index, and mix evaluation if there is multiple precedences
                 if let Some(symbols) = map.get(index) {
                     for &sym_key in symbols.iter().rev() {
-                        let loc_sym = self.get_symbol_view(sym_key).expect("valid key");
-                        if loc_sym.range().start().to_u32() < position {
+                        if self.range(sym_key).start().to_u32() < position {
                             res.symbols.push(sym_key);
                             break;
                         }
@@ -342,8 +341,7 @@ impl SymbolTable {
         } {
             for sym_list in symbols.values() {
                 for &key in sym_list.iter() {
-                    let sym = self.get_symbol_view(key).expect("valid key");
-                    if sym.range().start() == range.start() {
+                    if self.range(key).start() == range.start() {
                         return Some(key);
                     }
                 }
@@ -1057,6 +1055,23 @@ impl SymbolTable {
             SymbolKey::Class(_) | SymbolKey::Function(_) | SymbolKey::Variable(_) => true,
         }
     }
+    
+    pub fn range(&self, target: SymbolKey) -> &TextRange {
+        match target {
+            SymbolKey::Root(_) => panic!(),
+            SymbolKey::DiskDir(_) => panic!(),
+            SymbolKey::Namespace(_) => panic!(),
+            SymbolKey::PythonPackage(_) => panic!(),
+            SymbolKey::Module(_) => panic!(),
+            SymbolKey::File(_) => panic!(),
+            SymbolKey::Compiled(_) => panic!(),
+            SymbolKey::Class(c) => &self[c].range,
+            SymbolKey::Function(f) => &self[f].range,
+            SymbolKey::Variable(v) => &self[v].range,
+            SymbolKey::XmlFile(_) => panic!(),
+            SymbolKey::CsvFile(_) => panic!(),
+        }
+    }
 
     // @arena: maybe create a FileLikeKey for files and packages?
     // @arena: not sure if good idea. Maybe just access directly when the key type is known?
@@ -1671,11 +1686,10 @@ impl SymbolTable {
         };
     
         let get_sym_file = st!().get_file(get_method).unwrap();
-        let get_method_sym = st!().get_symbol_view(get_method).expect("valid key from get_member_symbol");
+        let get_method_evaluations = st!().evaluations(get_method);
     
-        if get_method_sym.evaluations().is_some()
-        && get_method_sym.evaluations().unwrap().len() == 0
-        && !get_sym!(st!(), get_sym_file).is_external()
+        if get_method_evaluations.is_some_and(|evals| evals.is_empty())
+        && !st!().is_external(get_sym_file)
         && st!().build_status(get_sym_file, BuildSteps::ARCH_EVAL) == BuildStatus::DONE
         && st!().build_status(get_method, BuildSteps::ARCH) != BuildStatus::IN_PROGRESS
         && st!().build_status(get_method, BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS
@@ -1684,7 +1698,7 @@ impl SymbolTable {
             let mut v = PythonValidator::new(entry_point, get_method);
             v.validate(session);
         }
-        let Some(evaluations) = get_sym!(st!(), get_method).evaluations().cloned() else {
+        let Some(evaluations) = st!().evaluations(get_method).cloned() else {
             return res;
         };
         if context.is_none() {
@@ -1784,9 +1798,8 @@ impl SymbolTable {
         let Some(symbol_key) = w.weak.upgrade(&st!()) else {
             return default_result;
         };
-        let symbol = get_sym!(st!(), symbol_key);
         if stop_on_value {
-            if let Some(evals) = symbol.evaluations() {
+            if let Some(evals) = st!().evaluations(symbol_key) {
                 for eval in evals.iter() {
                     if eval.value.is_some() {
                         return default_result;
@@ -1794,7 +1807,7 @@ impl SymbolTable {
                 }
             }
         }
-        let can_eval_external = !symbol.is_external();
+        let can_eval_external = !st!().is_external(symbol_key);
         //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
         let mut work_queue: VecDeque<_> = Self::next_refs(session, symbol_key, context, &w.context, stop_on_type).into_iter().collect();
         if work_queue.is_empty() {

@@ -139,41 +139,6 @@ impl SymbolView<'_> {
         }
     }
 
-    pub fn range(&self) -> &TextRange {
-        match self {
-            Self::Root(_) => panic!(),
-            Self::DiskDir(_) => panic!(),
-            Self::Namespace(_) => panic!(),
-            Self::PythonPackage(_) => panic!(),
-            Self::Module(_) => panic!(),
-            Self::File(_) => panic!(),
-            Self::Compiled(_) => panic!(),
-            Self::Class(c) => &c.range,
-            Self::Function(f) => &f.range,
-            Self::Variable(v) => &v.range,
-            Self::XmlFileSymbol(_) => panic!(),
-            Self::CsvFileSymbol(_) => panic!(),
-        }
-    }
-
-    pub fn evaluations(&self) -> Option<&Vec<Evaluation>> {
-        match self {
-            Self::File(_) => { None },
-            Self::Root(_) => { None },
-            Self::Namespace(_) => { None },
-            Self::DiskDir(_) => { None },
-            Self::PythonPackage(_) => { None },
-            Self::Module(_) => { None },
-            Self::Compiled(_) => { None },
-            Self::Class(_) => { None },
-            Self::Function(f) => Some(&f.evaluations),
-            Self::Variable(v) => Some(&v.evaluations),
-            Self::XmlFileSymbol(_) => None,
-            Self::CsvFileSymbol(_) => None,
-        }
-    }
-
-
     // @arena: like the original, this is not lazy iteration (might as well just return the Vec)
     pub fn all_symbols(&self) -> impl Iterator<Item = SymbolKey> + use<> {
         //return an iterator on all symbols of self. only symbols in symbols and module_symbols will

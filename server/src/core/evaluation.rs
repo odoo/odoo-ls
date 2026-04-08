@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::i32;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::symbols::symbol_table::{get_sym, SymbolTable};
-use crate::core::symbols::symbol_keys::{FunctionKey, ModuleKey, SymbolKey, Weak};
+use crate::core::symbols::symbol_keys::{ContainsKey, FunctionKey, ModuleKey, SymbolKey, Weak};
 use crate::core::symbols::variable_symbol::VariableSymbol;
 use crate::{constants::*, Sy};
 use crate::core::odoo::SyncOdoo;
@@ -889,8 +889,7 @@ impl Evaluation {
                                 let mut found_hook = false;
                                 if let Some(&init) = init.0.first() {
                                     let init_file = st!().get_file(init).unwrap();
-                                    let init_sym = get_sym!(st!(), init);
-                                    let init_evaluations = init_sym.evaluations();
+                                    let init_evaluations = st!().evaluations(init);
 
                                     if init_evaluations.is_some()
                                     && init_evaluations.unwrap().len() == 0
@@ -902,7 +901,7 @@ impl Evaluation {
                                         let mut v = PythonValidator::new(st!().get_entry(init).unwrap(), init);
                                         v.validate(session);
                                     }
-                                    if let Some(init_eval) = get_sym!(st!(), init).evaluations() {
+                                    if let Some(init_eval) = st!().evaluations(init) {
                                         //init will always return an instance of the class, so we are not searching the method to check its return type, but rather to check if there is
                                         //an hook on it. Hooks, can be used to use parameters for context (see relational fields for example).
                                         if init_eval.len() == 1 && init_eval[0].symbol.get_symbol_hook.is_some() {
@@ -1191,8 +1190,7 @@ impl Evaluation {
                         false,
                     ).0;
                     for get_item in get_item_symbols {
-                        let get_item = get_sym!(st!(), get_item);
-                        let Some(evaluations) = get_item.evaluations() else {
+                        let Some(evaluations) = st!().evaluations(get_item) else {
                             continue;
                         };
                         for get_item_eval in evaluations.clone() {
@@ -1294,7 +1292,7 @@ impl Evaluation {
                         let (operator_functions, diags) = SymbolTable::get_member_symbol(session, base_sym, &S!(method), module, true, false, true, false, false);
                         diagnostics.extend(diags);
                         for operator_function in operator_functions.into_iter() {
-                            for eval in get_sym!(st!(), operator_function).evaluations().unwrap_or(&vec![]).clone() {
+                            for eval in st!().evaluations(operator_function).unwrap_or(&vec![]).clone() {
                                 let eval_ptr = eval.symbol.get_symbol_weak_transformed(session, context, &mut diagnostics, Some(st!().get_file(parent).unwrap()));
                                 evals.push(Evaluation {
                                     symbol: EvaluationSymbol {
@@ -1708,8 +1706,11 @@ impl Evaluation {
     fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg: &Argument, arg: &Expr, on_object: Weak<SymbolKey>, from_module: Option<ModuleKey>) -> Vec<Diagnostic> {
         let st = &session.sync_odoo.symbol_table;
         let mut diagnostics = vec![];
-        let Some(symbol) = st.get_symbol_view(function_arg.symbol) else { return diagnostics };
-        if let Some(evaluations) = symbol.evaluations() && evaluations.len() == 1 {
+        // @arena: change this after changing arg to Weak<SymbolKey> in Argument struct
+        if !st.contains_key(function_arg.symbol) {
+            return diagnostics;
+        }
+        if let Some(evaluations) = st.evaluations(function_arg.symbol) && evaluations.len() == 1 {
             if let EvaluationSymbolPtr::DOMAIN = evaluations[0].symbol.sym {
                 diagnostics.extend(Evaluation::validate_domain(session, on_object, from_module, arg));
             }

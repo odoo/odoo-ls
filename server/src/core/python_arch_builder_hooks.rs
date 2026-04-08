@@ -41,7 +41,7 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
                 let mut range = symbol_table[class].range.clone();
                 let slots = symbol_table.get_symbol(symbol_key, &(vec![], vec![Sy!("__slots__")]), u32::MAX);
                 if slots.len() == 1 {
-                    range = get_sym!(symbol_table, slots[0]).range().clone();
+                    range = symbol_table.range(slots[0]).clone();
                 }
                 symbol_table.add_new_variable(symbol_key, Sy!("env"), &range);
             }
@@ -57,7 +57,7 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
             let new_sym = symbol_table.get_symbol(class.into(), &(vec![], vec![Sy!("__new__")]), u32::MAX);
             let mut range = symbol_table[class].range.clone();
             if new_sym.len() == 1 {
-                range = get_sym!(symbol_table, new_sym[0]).range().clone();
+                range = symbol_table.range(new_sym[0]).clone();
             }
             // ----------- env.cr ------------
             symbol_table.add_new_variable(class, Sy!("cr"), &range);
