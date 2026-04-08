@@ -105,6 +105,13 @@ impl SymbolKey {
             _ => panic!("Not a NamespaceKey"),
         }
     }
+    
+    pub fn unwrap_root_key(&self) -> RootKey {
+        match self {
+            SymbolKey::Root(k) => *k,
+            _ => panic!("Not a RootKey"),
+        }
+    }
 
 }
 

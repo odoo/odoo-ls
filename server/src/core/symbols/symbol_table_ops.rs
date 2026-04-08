@@ -78,26 +78,18 @@ impl SymbolTable {
     
     // ========= former Symbol methods =========
 
-    // @arena get_symbol + expect is the equivalent of upgrade + unwrap on a weak ref
-    // @arena, to check possibly weird things:
-    // - loop stops if symbol has no parent, without including it.
-    fn get_tree_helper(&self, symbol_key: SymbolKey) -> (Tree, Option<RootKey>) {
+    fn get_tree_helper(&self, symbol_key: SymbolKey) -> (Tree, RootKey) {
         let mut tree = (vec![], vec![]);
         let mut current_key = symbol_key;
-        let mut current_sym = self.get_symbol_view(current_key).expect("valid key");
-        while current_sym.typ() != SymType::ROOT && current_sym.parent().is_some() {
-            if current_sym.is_file_content() {
-                tree.1.insert(0, current_sym.name().clone());
+        while !matches!(current_key, SymbolKey::Root(_)) {
+            if self.is_file_content(current_key) {
+                tree.1.insert(0, self.name(current_key).clone());
             } else {
-                tree.0.insert(0, current_sym.name().clone());
+                tree.0.insert(0, self.name(current_key).clone());
             }
-            current_key = current_sym.parent().unwrap();
-            current_sym = self.get_symbol_view(current_key).expect("valid key");
+            current_key = self.parent(current_key).unwrap();
         }
-        let root = match current_key {
-            SymbolKey::Root(root_key) => Some(root_key),
-            _ => None,
-        };
+        let root = current_key.unwrap_root_key();
         (tree, root)
     }
 
@@ -108,8 +100,7 @@ impl SymbolTable {
 
     pub fn get_tree_and_entry(&self, symbol_key: SymbolKey) -> (Tree, Option<Rc<RefCell<EntryPoint>>>) {
         let (tree, root_key) = self.get_tree_helper(symbol_key);
-        let entry = root_key
-            .and_then(|rk| self[rk].entry_point.clone());
+        let entry = self[root_key].entry_point.clone();
         (tree, entry)
     }
 
@@ -1058,6 +1049,21 @@ impl SymbolTable {
             SymbolKey::Variable(k) => Some(self[k].parent()),
             SymbolKey::XmlFile(x) => Some(self[x].parent()),
             SymbolKey::CsvFile(c) => Some(self[c].parent()),
+        }
+    }
+    
+    pub fn is_file_content(&self, target: SymbolKey) -> bool {
+        match target {
+            SymbolKey::Root(_)
+            | SymbolKey::Namespace(_)
+            | SymbolKey::DiskDir(_)
+            | SymbolKey::PythonPackage(_)
+            | SymbolKey::Module(_)
+            | SymbolKey::File(_)
+            | SymbolKey::Compiled(_)
+            | SymbolKey::XmlFile(_)
+            | SymbolKey::CsvFile(_) => false,
+            SymbolKey::Class(_) | SymbolKey::Function(_) | SymbolKey::Variable(_) => true,
         }
     }
 

@@ -73,7 +73,7 @@ impl PythonArchBuilder {
         st!().set_build_status(symbol, BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
         let path = get_sym!(st!(), self.file).get_symbol_first_path();
         if self.file_mode {
-            let in_workspace = get_sym!(st!(), self.file).parent()
+            let in_workspace = st!().parent(self.file)
                 .and_then(|p| st!().get_symbol_view(p))
                 .is_some_and(|parent_sym| parent_sym.in_workspace()) ||
                 SyncOdoo::is_in_workspace_or_entry(session, &path);

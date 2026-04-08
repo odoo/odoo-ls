@@ -4,6 +4,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 #[derive(Debug)]
 pub struct RootSymbol {
     pub name: OYarn,
+    // @arena: entry_point is always Some. Remove option?
     pub entry_point: Option<Rc<RefCell<EntryPoint>>>,
     pub(super) module_symbols: HashMap<OYarn, SymbolKey>,
 }

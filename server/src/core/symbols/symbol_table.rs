@@ -36,6 +36,7 @@ macro_rules! get_sym {
 pub(crate) use get_sym;
 
 impl SymbolView<'_> {
+    // @arena deprecated
     pub fn parent(&self) -> Option<SymbolKey> {
         match self {
             Self::Root(_) => None,
@@ -121,6 +122,7 @@ impl SymbolView<'_> {
         }
     }
 
+    // @arena deprecated
     pub fn is_file_content(&self) -> bool {
         match self {
             Self::Root(_)
