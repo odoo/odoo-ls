@@ -1,10 +1,9 @@
-use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet, VecDeque, hash_map}, ops::{Index, IndexMut}, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet, VecDeque, hash_map}, path::PathBuf, rc::Rc};
 
 use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
 use ruff_python_ast::ExprCall;
-use ruff_text_size::{TextRange, TextSize};
-use slotmap::{Key, SlotMap, new_key_type};
-use tracing::{info, trace};
+use ruff_text_size::TextRange;
+use tracing::trace;
 
 use crate::{S, Sy, constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree, tree}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPoint, evaluation::{Context, ContextValue,
 Evaluation, EvaluationSymbolPtr}, file_mgr::{FileMgr, NoqaInfo}, model::Model, odoo::SyncOdoo, python_validator::PythonValidator, symbols::{ dependency_mgr::{Buildable, Dependencies}, function_symbol::Argument, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, symbol_keys::{ClassKey, ContainsKey, FunctionKey, ModuleKey, RootKey, SymbolKey, VariableKey}, symbol_table::SymbolTable }, xml_data::OdooData}, threads::SessionInfo, utils::{PathSanitizer, compare_semver}, weak_hash_set::WeakSet};

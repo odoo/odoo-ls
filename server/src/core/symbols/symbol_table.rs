@@ -528,4 +528,3 @@ impl_index!(ClassKey, ClassSymbol, classes);
 impl_index!(VariableKey, VariableSymbol, variables);
 impl_index!(XmlFileKey, XmlFileSymbol, xml_files);
 impl_index!(CsvFileKey, CsvFileSymbol, csv_files);
-

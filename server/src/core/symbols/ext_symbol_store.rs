@@ -1,8 +1,5 @@
 use std::collections::HashMap;
-
-use ruff_text_size::TextRange;
-
-use crate::{constants::{OYarn, PackageType, SymType}, core::symbols::{symbol_mgr::SymbolMgr, symbol_table::{SymbolTable}, variable_symbol::VariableSymbol}, weak_hash_set::WeakSet};
+use crate::{constants::OYarn, core::symbols::symbol_table::{SymbolTable}, weak_hash_set::WeakSet};
 use crate::core::symbols::symbol_keys::{ContainsKey, SymbolKey};
 
 /// section index → [variable keys]

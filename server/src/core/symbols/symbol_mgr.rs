@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use ruff_text_size::TextSize;
 
-use crate::{constants::OYarn, core::symbols::symbol_keys::SymbolKey, oyarn};
+use crate::{constants::OYarn, core::symbols::symbol_keys::SymbolKey};
 
 use super::{class_symbol::ClassSymbol, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, package_symbol::PythonPackageSymbol};
 
