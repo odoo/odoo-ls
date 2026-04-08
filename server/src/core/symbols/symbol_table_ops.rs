@@ -1184,6 +1184,35 @@ impl SymbolTable {
         }
     }
     
+    pub fn all_symbols(&self, target: SymbolKey) -> Vec<SymbolKey> {
+        //return an iterator on all symbols of self. only symbols in symbols and module_symbols will
+        //be returned.
+        let mut iter: Vec<SymbolKey> = Vec::new();
+        match target {
+            SymbolKey::File(f) => iter.extend(iter_symbol_keys(&self[f])),
+            SymbolKey::Class(c) => iter.extend(iter_symbol_keys(&self[c])),
+            SymbolKey::Function(f) => iter.extend(iter_symbol_keys(&self[f])),
+            SymbolKey::Module(m) => {
+                let module = &self[m];
+                iter.extend(iter_symbol_keys(module));
+                iter.extend(module.module_symbols.values());
+            },
+            SymbolKey::PythonPackage(p) => {
+                let package = &self[p];
+                iter.extend(iter_symbol_keys(package));
+                iter.extend(package.module_symbols.values());
+            },
+            SymbolKey::Namespace(n) => {
+                let symbols = self[n].directories.iter().flat_map(|d| d.module_symbols.values());
+                iter.extend(symbols);
+            },
+            SymbolKey::Root(r) => iter.extend(self[r].module_symbols.values()),
+            SymbolKey::DiskDir(d) => iter.extend(self[d].module_symbols.values()),
+            _ => {}
+        }
+        iter
+    }
+    
     pub fn all_module_symbol(&self, target: SymbolKey) -> Vec<SymbolKey> {
         match target {
             SymbolKey::Root(r) => self[r].module_symbols.values().copied().collect(),
@@ -1534,7 +1563,7 @@ impl SymbolTable {
             SymbolKey::Class(class_key) => {
                 // Skip current class symbols for super
                 if !is_super{
-                    for symbol in get_sym!(st!(), symbol_key).all_symbols() {
+                    for symbol in st!().all_symbols(symbol_key) {
                         if (only_fields && !Self::is_field(session, symbol)) || (only_methods && !matches!(symbol, SymbolKey::Function(_))) {
                             continue;
                         }
@@ -1595,7 +1624,7 @@ impl SymbolTable {
             },
             // if not class just add it to result
             _ => {
-                get_sym!(st!(), symbol_key).all_symbols().for_each(|s|
+                st!().all_symbols(symbol_key).into_iter().for_each(|s|
                     if !(only_fields && !Self::is_field(session, s)) {
                         let name = st!().name(s).clone();
                         append_result(name, s, None);

@@ -399,7 +399,7 @@ impl PythonOdooBuilder {
 
     fn process_fields(&self, session: &mut SessionInfo, symbol: ClassKey) {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
-        for field in get_sym!(st!(), symbol.into()).all_symbols() {
+        for field in st!().all_symbols(symbol.into()) {
             let Some(evals) = st!().evaluations(field) else {
                 continue;
             };

@@ -108,34 +108,6 @@ impl SymbolView<'_> {
         }
     }
 
-    // @arena: like the original, this is not lazy iteration (might as well just return the Vec)
-    pub fn all_symbols(&self) -> impl Iterator<Item = SymbolKey> + use<> {
-        //return an iterator on all symbols of self. only symbols in symbols and module_symbols will
-        //be returned.
-        let mut iter: Vec<SymbolKey> = Vec::new();
-        match self {
-            Self::File(f) => iter.extend(iter_symbol_keys(*f)),
-            Self::Class(c) => iter.extend(iter_symbol_keys(*c)),
-            Self::Function(f) => iter.extend(iter_symbol_keys(*f)),
-            Self::Module(m) => {
-                iter.extend(iter_symbol_keys(*m));
-                iter.extend(m.module_symbols.values());
-            },
-            Self::PythonPackage(p) => {
-                iter.extend(iter_symbol_keys(*p));
-                iter.extend(p.module_symbols.values());
-            },
-            Self::Namespace(n) => {
-                let symbols = n.directories.iter().flat_map(|d| d.module_symbols.values());
-                iter.extend(symbols);
-            },
-            Self::Root(r) => iter.extend(r.module_symbols.values()),
-            Self::DiskDir(d) => iter.extend(d.module_symbols.values()),
-            _ => {}
-        }
-        iter.into_iter()
-    }
-
     // @arena: depreacated
     pub fn paths(&self) -> Vec<String> {
         match self {
@@ -151,24 +123,6 @@ impl SymbolView<'_> {
             Self::Variable(_) => vec![],
             Self::XmlFileSymbol(x) => vec![x.path.clone()],
             Self::CsvFileSymbol(c) => vec![c.path.clone()],
-        }
-    }
-
-    // @arena: depreacated
-    pub fn get_symbol_first_path(&self) -> String {
-        match self{
-            Self::PythonPackage(p) => PathBuf::from(&p.path).join("__init__.py").sanitize() + p.i_ext,
-            Self::Module(m) => PathBuf::from(&m.path).join("__init__.py").sanitize() + m.i_ext,
-            Self::File(f) => f.path.clone(),
-            Self::DiskDir(_) => panic!("invalid symbol type to extract path"),
-            Self::Root(_) => panic!("invalid symbol type to extract path"),
-            Self::Namespace(_) => panic!("invalid symbol type to extract path"),
-            Self::Compiled(_) => panic!("invalid symbol type to extract path"),
-            Self::Class(_) => panic!("invalid symbol type to extract path"),
-            Self::Function(_) => panic!("invalid symbol type to extract path"),
-            Self::Variable(_) => panic!("invalid symbol type to extract path"),
-            Self::XmlFileSymbol(x) => x.path.clone(),
-            Self::CsvFileSymbol(c) => c.path.clone(),
         }
     }
 
@@ -620,7 +574,7 @@ impl SymbolTable {
             let sym_ref = get_sym!(st!(), ref_to_unload);
             // Unload children first
             let mut found_one = false;
-            for sym in sym_ref.all_symbols() {
+            for sym in st!().all_symbols(ref_to_unload) {
                 found_one = true;
                 vec_to_unload.push_front(sym);
             }

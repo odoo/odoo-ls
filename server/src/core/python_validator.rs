@@ -54,7 +54,7 @@ impl PythonValidator {
     // _init_.py(i) for package) for both get_file_info and update_file_info
     fn get_file_info(&mut self, session: &mut SessionInfo) -> Option<Rc<RefCell<FileInfo>>> {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
-        let path = get_sym!(st!(), self.file).get_symbol_first_path();
+        let path = st!().get_symbol_first_path(self.file);
         let file_info_rc = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
         let file_info_rc = match file_info_rc {
             Some(f) => f,
@@ -408,7 +408,7 @@ impl PythonValidator {
         }
         let maybe_from_module = st!().find_module(class);
         // Check fields, check related and comodel arguments
-        for symbol in get_sym!(st!(), class.into()).all_symbols() {
+        for symbol in st!().all_symbols(class.into()) {
             let SymbolKey::Variable(v) = symbol else {
                 continue;
             };
