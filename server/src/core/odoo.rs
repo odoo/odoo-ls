@@ -847,8 +847,7 @@ impl SyncOdoo {
 
     pub fn add_to_rebuild_arch(&mut self, symbol: SymbolKey) {
         if DEBUG_THREADS {
-            let sym = get_sym!(self.symbol_table, symbol);
-            trace!("ADDED TO ARCH - {}", sym.paths().first().unwrap_or(&sym.name().to_string()));
+            trace!("ADDED TO ARCH - {}", self.symbol_table.debug_path(symbol));
         }
         if self.symbol_table.build_status(symbol, BuildSteps::ARCH) != BuildStatus::IN_PROGRESS {
             self.symbol_table.set_build_status(symbol, BuildSteps::ARCH, BuildStatus::PENDING);
@@ -860,8 +859,7 @@ impl SyncOdoo {
 
     pub fn add_to_rebuild_arch_eval(&mut self, symbol: SymbolKey) {
         if DEBUG_THREADS {
-            let sym = get_sym!(self.symbol_table, symbol);
-            trace!("ADDED TO EVAL - {}", sym.paths().first().unwrap_or(&sym.name().to_string()));
+            trace!("ADDED TO EVAL - {}", self.symbol_table.debug_path(symbol));
         }
         if self.symbol_table.build_status(symbol, BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS {
             self.symbol_table.set_build_status(symbol, BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
@@ -872,8 +870,7 @@ impl SyncOdoo {
 
     pub fn add_to_validations(&mut self, symbol: SymbolKey) {
         if DEBUG_THREADS {
-            let sym = get_sym!(self.symbol_table, symbol);
-            trace!("ADDED TO VALIDATION - {}", sym.paths().first().unwrap_or(&sym.name().to_string()));
+            trace!("ADDED TO VALIDATION - {}", self.symbol_table.debug_path(symbol));
         }
         if self.symbol_table.build_status(symbol, BuildSteps::VALIDATION) != BuildStatus::IN_PROGRESS {
             self.symbol_table.set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::PENDING);
@@ -891,12 +888,11 @@ impl SyncOdoo {
             _ => {}
         }
         if DEBUG_REBUILD_NOW {
-            let sym = get_sym!(st!(), symbol);
             if st!().build_status(symbol, step) == BuildStatus::INVALID {
-                panic!("Trying to build an invalid symbol: {}", sym.paths().first().unwrap_or(&sym.name().to_string()));
+                panic!("Trying to build an invalid symbol: {}", st!().debug_path(symbol));
             }
             if st!().build_status(symbol, step) == BuildStatus::IN_PROGRESS && !session.sync_odoo.is_in_rebuild(symbol, step) {
-                error!("Trying to build a symbol that is NOT in the queue: {}", sym.paths().first().unwrap_or(&sym.name().to_string()));
+                error!("Trying to build a symbol that is NOT in the queue: {}", st!().debug_path(symbol));
             }
         }
         if st!().build_status(symbol, step) == BuildStatus::PENDING && st!().previous_step_done(symbol, step) {
@@ -910,8 +906,7 @@ impl SyncOdoo {
             } else if step == BuildSteps::ARCH_EVAL {
                 if DEBUG_REBUILD_NOW {
                     if st!().build_status(symbol, BuildSteps::ARCH) != BuildStatus::DONE {
-                        let sym = get_sym!(st!(), symbol);
-                        panic!("An evaluation has been requested on a non-arched symbol: {}", sym.paths().first().unwrap_or(&sym.name().to_string()));
+                        panic!("An evaluation has been requested on a non-arched symbol: {}", st!().debug_path(symbol));
                     }
                 }
                 let mut builder = PythonArchEval::new(entry_point, symbol);
@@ -920,8 +915,7 @@ impl SyncOdoo {
             } else if step == BuildSteps::VALIDATION {
                 if DEBUG_REBUILD_NOW {
                     if st!().build_status(symbol, BuildSteps::ARCH) != BuildStatus::DONE || st!().build_status(symbol, BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
-                        let sym = get_sym!(st!(), symbol);
-                        panic!("An evaluation has been requested on a non-arched symbol: {}", sym.paths().first().unwrap_or(&sym.name().to_string()));
+                        panic!("An evaluation has been requested on a non-arched symbol: {}", st!().debug_path(symbol));
                     }
                 }
                 let mut validator = PythonValidator::new(entry_point, symbol.clone());
@@ -1047,7 +1041,7 @@ impl SyncOdoo {
                     let mut index = 0;
                     while index < to_del.len() {
                         // @arena: shouldn't it be using get_symbol_first_path?
-                        FileMgr::delete_path(session, &get_sym!(st!(),to_del[index]).paths()[0]);
+                        FileMgr::delete_path(session, &st!().paths(to_del[index])[0]);
                         let mut to_del_child = Vec::from_iter(get_sym!(st!(), to_del[index]).all_module_symbol().copied());
                         to_del.append(&mut to_del_child);
                         index += 1;

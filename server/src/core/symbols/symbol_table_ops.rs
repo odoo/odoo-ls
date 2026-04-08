@@ -140,6 +140,7 @@ impl SymbolTable {
         self[root].entry_point.clone()
     }
 
+    // @arena: consider returning a key type that represent these types
     pub fn get_file(&self, target: SymbolKey) -> Option<SymbolKey> {
         self.get_in_parents(
             target,
@@ -1085,6 +1086,51 @@ impl SymbolTable {
             SymbolKey::XmlFile(_) => panic!(),
             SymbolKey::CsvFile(_) => panic!(),
         }
+    }
+    
+    // @arena: consider returning Vec<&str> instead
+    pub fn paths(&self, target: SymbolKey) -> Vec<String> {
+        match target {
+            SymbolKey::Root(_) => vec![],
+            SymbolKey::Namespace(n) => self[n].paths(),
+            SymbolKey::DiskDir(d) => vec![self[d].path.clone()],
+            SymbolKey::PythonPackage(p) => vec![self[p].path.clone()],
+            SymbolKey::Module(m) => vec![self[m].path.clone()],
+            SymbolKey::File(f) => vec![self[f].path.clone()],
+            SymbolKey::Compiled(c) => vec![self[c].path.clone()],
+            SymbolKey::Class(_) => vec![],
+            SymbolKey::Function(_) => vec![],
+            SymbolKey::Variable(_) => vec![],
+            SymbolKey::XmlFile(x) => vec![self[x].path.clone()],
+            SymbolKey::CsvFile(c) => vec![self[c].path.clone()],
+        }
+    }
+
+    pub fn get_symbol_first_path(&self, target: SymbolKey) -> String {
+        match target {
+            SymbolKey::PythonPackage(p) => {
+                let package = &self[p];
+                PathBuf::from(&package.path).join("__init__.py").sanitize() + package.i_ext
+            },
+            SymbolKey::Module(m) => {
+                let module = &self[m];
+                PathBuf::from(&module.path).join("__init__.py").sanitize() + module.i_ext
+            },
+            SymbolKey::File(f) => self[f].path.clone(),
+            SymbolKey::DiskDir(_) => panic!("invalid symbol type to extract path"),
+            SymbolKey::Root(_) => panic!("invalid symbol type to extract path"),
+            SymbolKey::Namespace(_) => panic!("invalid symbol type to extract path"),
+            SymbolKey::Compiled(_) => panic!("invalid symbol type to extract path"),
+            SymbolKey::Class(_) => panic!("invalid symbol type to extract path"),
+            SymbolKey::Function(_) => panic!("invalid symbol type to extract path"),
+            SymbolKey::Variable(_) => panic!("invalid symbol type to extract path"),
+            SymbolKey::XmlFile(x) => self[x].path.clone(),
+            SymbolKey::CsvFile(c) => self[c].path.clone(),
+        }
+    }
+    
+    pub fn debug_path(&self, target: SymbolKey) -> String {
+        self.paths(target).first().cloned().unwrap_or(self.name(target).to_string())
     }
 
     // @arena: maybe create a FileLikeKey for files and packages?

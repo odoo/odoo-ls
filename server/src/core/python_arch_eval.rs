@@ -89,14 +89,14 @@ impl PythonArchEval {
         self.current_step = if self.file_mode {BuildSteps::ARCH_EVAL} else {BuildSteps::VALIDATION};
 
         if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !st!().is_external(symbol)) {
-            trace!("evaluating {} - {}", get_sym!(st!(), self.file).paths().first().unwrap_or(&S!("No path found")), st!().name(symbol));
+            trace!("evaluating {} - {}", st!().paths(self.file).first().unwrap_or(&S!("No path found")), st!().name(symbol));
         }
         st!().set_build_status(symbol, BuildSteps::ARCH_EVAL, BuildStatus::IN_PROGRESS);
-        let file_view = get_sym!(st!(), self.file);
-        if file_view.paths().len() != 1 {
-            panic!("Trying to eval_arch a symbol without any path")
-        }
-        let path = file_view.get_symbol_first_path();
+        // @arena: not possible due to get_file(), always len 1
+        // if file_view.paths().len() != 1 {
+        //     panic!("Trying to eval_arch a symbol without any path")
+        // }
+        let path = st!().get_symbol_first_path(self.file);
         let Some(file_info_rc) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).clone() else {
             warn!("File info not found for {}", path);
             return;
@@ -539,7 +539,7 @@ impl PythonArchEval {
                             if let Some(sym) = evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, None).weak.upgrade(&st!()) {
                                 if sym == variable_key {
                                     // TODO: investigate deps, and fix cyclic evals
-                                    let file_path = st!().get_file(parent).and_then(|file| get_sym!(st!(), file).paths().first().cloned());
+                                    let file_path = st!().get_file(parent).and_then(|file| st!().paths(file).first().cloned());
                                     warn!("Found cyclic evaluation symbol: {}, parent: {}, file: {}", var_name, st!().name(parent), file_path.unwrap_or(S!("N/A")));
                                     to_remove.push(ix);
                                     continue;

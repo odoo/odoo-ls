@@ -1034,7 +1034,7 @@ impl Evaluation {
                             let file = st!().get_file(base_loc);
                             if let Some(base_loc_file) = file {
                                 SyncOdoo::build_now(session, base_loc_file, BuildSteps::ARCH_EVAL);
-                                if get_sym!(st!(), base_loc_file).in_workspace() {
+                                if st!().in_workspace(base_loc_file) {
                                     if required_dependencies.len() == 2 {
                                         required_dependencies[1].push(base_loc_file);
                                     } else if required_dependencies.len() == 3 {

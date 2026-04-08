@@ -11,7 +11,6 @@ DiskDir symbol represent a directory on disk we didn't parse yet. So it can eith
 pub struct DiskDirSymbol {
     pub name: OYarn,
     pub path: String,
-    // @todo: this name is confusing. Maybe just "children"?
     pub(super) module_symbols: HashMap<OYarn, SymbolKey>,
     pub is_external: bool,
     parent: SymbolKey,

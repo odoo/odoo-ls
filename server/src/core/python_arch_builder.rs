@@ -67,10 +67,10 @@ impl PythonArchBuilder {
         self.file_mode = file == symbol;
         self.current_step = if self.file_mode {BuildSteps::ARCH} else {BuildSteps::VALIDATION};
         if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !st!().is_external(symbol)) {
-            trace!("building {} - {}", get_sym!(st!(), self.file).paths().first().unwrap_or(&S!("No path found")), st!().name(symbol));
+            trace!("building {} - {}", st!().paths(self.file).first().unwrap_or(&S!("No path found")), st!().name(symbol));
         }
         st!().set_build_status(symbol, BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
-        let path = get_sym!(st!(), self.file).get_symbol_first_path();
+        let path = st!().get_symbol_first_path(self.file);
         if self.file_mode {
             let in_workspace = st!().parent(self.file)
                 .is_some_and(|parent| st!().in_workspace(parent)) ||
@@ -204,24 +204,24 @@ impl PythonArchBuilder {
                                         if value.is_some() {
                                             let (nf, parse_error) = self.extract_all_symbol_eval_values(&value.as_ref());
                                             if parse_error {
-                                                warn!("error during parsing __all__ import in file {}", get_sym!(st!(), import_symbol).paths()[0] )
+                                                warn!("error during parsing __all__ import in file {}", st!().paths(import_symbol)[0] )
                                             }
                                             name_filter = nf;
                                             all_name_allowed = false;
                                         } else {
-                                            warn!("invalid __all__ import in file {} - no value found", get_sym!(st!(), import_symbol).paths()[0])
+                                            warn!("invalid __all__ import in file {} - no value found", st!().paths(import_symbol)[0])
                                         }
                                     } else {
-                                        warn!("invalid __all__ import in file {} - multiple evaluation found", get_sym!(st!(), import_symbol).paths()[0])
+                                        warn!("invalid __all__ import in file {} - multiple evaluation found", st!().paths(import_symbol)[0])
                                     }
                                 } else {
-                                    warn!("invalid __all__ import in file {} - localizedSymbol not found", get_sym!(st!(), import_symbol).paths()[0])
+                                    warn!("invalid __all__ import in file {} - localizedSymbol not found", st!().paths(import_symbol)[0])
                                 }
                             } else {
-                                warn!("invalid __all__ import in file {} - expired symbol", get_sym!(st!(), import_symbol).paths()[0])
+                                warn!("invalid __all__ import in file {} - expired symbol", st!().paths(import_symbol)[0])
                             }
                         } else {
-                            warn!("invalid __all__ import in file {} - no symbol found", get_sym!(st!(), import_symbol).paths()[0])
+                            warn!("invalid __all__ import in file {} - no symbol found", st!().paths(import_symbol)[0])
                         }
                     }
                     if !matches!(import_symbol, SymbolKey::Compiled(_)) {

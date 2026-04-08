@@ -136,24 +136,7 @@ impl SymbolView<'_> {
         iter.into_iter()
     }
 
-    pub fn body_range(&self) -> &TextRange {
-        match self {
-            Self::Root(_) => panic!(),
-            Self::DiskDir(_) => panic!(),
-            Self::Namespace(_) => panic!(),
-            Self::PythonPackage(_) => panic!(),
-            Self::Module(_) => panic!(),
-            Self::File(_) => panic!(),
-            Self::Compiled(_) => panic!(),
-            Self::Class(c) => &c.body_range,
-            Self::Function(f) => &f.body_range,
-            Self::Variable(_) => panic!(),
-            Self::XmlFileSymbol(_) => panic!(),
-            Self::CsvFileSymbol(_) => panic!(),
-        }
-    }
-
-    // @arena: consider returning Vec<&str> instead
+    // @arena: depreacated
     pub fn paths(&self) -> Vec<String> {
         match self {
             Self::Root(_) => vec![],
@@ -171,6 +154,7 @@ impl SymbolView<'_> {
         }
     }
 
+    // @arena: depreacated
     pub fn get_symbol_first_path(&self) -> String {
         match self{
             Self::PythonPackage(p) => PathBuf::from(&p.path).join("__init__.py").sanitize() + p.i_ext,
@@ -689,7 +673,7 @@ impl SymbolTable {
             }
             vec_to_unload.pop_front();
             if DEBUG_MEMORY && matches!(ref_to_unload.typ(), SymType::FILE  | SymType::PACKAGE(_)) {
-                info!("Unloading symbol {:?} at {:?}", sym_ref.name(), sym_ref.paths());
+                info!("Unloading symbol {:?} at {:?}", st!().name(ref_to_unload), st!().paths(ref_to_unload));
             }
             let module = st!().find_module(ref_to_unload);
             //unload symbol

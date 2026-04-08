@@ -91,7 +91,7 @@ pub fn resolve_from_stmt(
         source_file_symbol,
         level,
         from_stmt);
-    let source_path = get_sym!(symbol_table,source_file_symbol).paths()[0].clone();
+    let source_path = symbol_table.paths(source_file_symbol)[0].clone();
     let mut start_symbol = None;
     if level != 0 {
         //if level is *not* 0 (relative import), resolve_packages already built a full tree, so we can start from root
@@ -149,7 +149,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
         } else {
             vec![]
         };
-        let source_path = get_sym!(st!(), source_file_symbol).paths()[0].clone();
+        let source_path = st!().paths(source_file_symbol)[0].clone();
         let name_last_name: Vec<OYarn> = vec![name_split.last().unwrap().clone()];
         let (mut next_symbol, mut fallback_sym) = get_or_create_symbol(
             session,
@@ -235,7 +235,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
 // @arena: actually CREATES a module
 pub fn find_module(session: &mut SessionInfo, odoo_addons: SymbolKey, name: &OYarn) -> Option<ModuleKey> {
     let st = &session.sync_odoo.symbol_table;
-    let paths = st.get_symbol_view(odoo_addons).expect("valid key").paths().clone();
+    let paths = st.paths(odoo_addons).clone();
     for path in paths.iter() {
         let full_path = Path::new(path).join(name.as_str());
         if !is_dir_cs(full_path.sanitize()) {
@@ -256,7 +256,7 @@ fn resolve_packages(symbol_table: &SymbolTable, from_file: SymbolKey, level: u32
     let mut first_part_tree: Vec<OYarn> = vec![];
     if level > 0 {
         let mut lvl = level;
-        let paths = get_sym!(symbol_table, from_file).paths();
+        let paths = symbol_table.paths(from_file);
         if lvl > Path::new(&paths[0]).components().count() as u32 {
             panic!("Level is too high!")
         }
@@ -416,7 +416,7 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
         return Ok(st!().add_new_compiled(parent, &sym_name, "").into());
     }
     // ROOT, NAMESPACE, PACKAGE or DISK_DIR: we can search on disk
-    let paths = get_sym!(st!(), parent).paths();
+    let paths = st!().paths(parent);
     for path in paths.iter() {
         let mut full_path = Path::new(path.as_str()).join(imported_name.to_string());
         for stub in session.sync_odoo.stubs_dirs.iter() {
@@ -503,7 +503,7 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: Symbol
     };
     let entry = st!().get_entry(source_file_symbol).unwrap();
     let (mut from_symbol, _fallback_sym, file_tree) = resolve_from_stmt(session, source_file_symbol, identifier_from.as_ref(), level);
-    let source_path = get_sym!(st!(), source_file_symbol).paths()[0].clone();
+    let source_path = st!().paths(source_file_symbol)[0].clone();
     let mut result = HashMap::new();
     let mut symbols_to_browse = vec![];
     if from_symbol.is_none() {
@@ -575,12 +575,12 @@ fn valid_names_for_a_symbol(symbol_table: &SymbolTable, symbol: SymbolKey, start
             res.extend(valid_name_from_symbol(symbol_table, symbol, start_filter));
         },
         SymbolKey::Namespace(_) | SymbolKey::DiskDir(_) => {
-            for path in get_sym!(symbol_table, symbol).paths().iter() {
+            for path in symbol_table.paths(symbol).iter() {
                 res.extend(valid_name_from_disk(path, start_filter));
             }
         },
         SymbolKey::PythonPackage(_) | SymbolKey::Module(_) => {
-            for path in get_sym!(symbol_table, symbol).paths().iter() {
+            for path in symbol_table.paths(symbol).iter() {
                 res.extend(valid_name_from_disk(path, start_filter));
             }
             if only_on_disk {
