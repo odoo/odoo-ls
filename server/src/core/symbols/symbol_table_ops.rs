@@ -1236,6 +1236,16 @@ impl SymbolTable {
         }
     } 
 
+    pub fn get_xml_id(&self, target: SymbolKey, xml_id: &OYarn) -> Option<Vec<OdooData>> {
+        match target {
+            SymbolKey::XmlFile(x) => self[x].xml_ids.get(xml_id).cloned(),
+            SymbolKey::Module(m) => self[m].xml_ids.get(xml_id).cloned(),
+            SymbolKey::PythonPackage(p) => self[p].xml_ids.get(xml_id).cloned(),
+            SymbolKey::File(f) => self[f].xml_ids.get(xml_id).cloned(),
+            SymbolKey::CsvFile(c) => self[c].xml_ids.get(xml_id).cloned(),
+            _ => None,
+        }
+    }
 
     //infer a name, given a position
     pub fn infer_name(odoo: &SyncOdoo, on_symbol: SymbolKey, name: &String, position: Option<u32>) -> ContentSymbols {

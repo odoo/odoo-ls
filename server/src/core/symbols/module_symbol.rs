@@ -529,8 +529,7 @@ impl ModuleSymbol {
         let mut res = vec![];
         if let Some(xml_file_set) = target_module.xml_id_locations.get(xml_id) {
             for xml_file_key in xml_file_set.iter_valid(|&k| symbol_table.contains_key(k)) {
-                let xml_file = symbol_table.get_symbol_view(xml_file_key).unwrap();
-                if let Some(xml_data) = xml_file.get_xml_id(xml_id) {
+                if let Some(xml_data) = symbol_table.get_xml_id(xml_file_key, xml_id) {
                     res.extend(xml_data.iter().cloned());
                 }
             }

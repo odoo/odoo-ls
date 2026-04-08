@@ -208,17 +208,6 @@ impl SymbolView<'_> {
             Self::CsvFileSymbol(c) => c.get_all_dependencies(step as usize),
         }
     }
-
-    pub fn get_xml_id(&self, xml_id: &OYarn) -> Option<Vec<OdooData>> {
-        match self {
-            Self::XmlFileSymbol(xml_file) => xml_file.xml_ids.get(xml_id).cloned(),
-            Self::Module(module) => module.xml_ids.get(xml_id).cloned(),
-            Self::PythonPackage(package) => package.xml_ids.get(xml_id).cloned(),
-            Self::File(file) => file.xml_ids.get(xml_id).cloned(),
-            Self::CsvFileSymbol(file) => file.xml_ids.get(xml_id).cloned(),
-            _ => None,
-        }
-    }
 }
 
 
