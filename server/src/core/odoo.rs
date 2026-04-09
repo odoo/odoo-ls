@@ -3,7 +3,6 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
 use crate::core::module_load_order::sort_by_load_order;
-use crate::core::symbols::function_symbol;
 use crate::core::symbols::module_symbol::ModuleSymbol;
 use crate::core::symbols::symbol_table::SymbolTable;
 use crate::core::symbols::symbol_keys::{ContainsKey, FunctionKey, ModuleKey, SymbolKey, Weak};
@@ -943,12 +942,8 @@ impl SyncOdoo {
     }
 
     /// Ensure that a function symbol's evaluations are as fully populated
-    /// @arena: change symbol type to FunctionKey if call sites allow
-    pub fn ensure_func_evaluations(session: &mut SessionInfo, symbol: SymbolKey) {
+    pub fn ensure_func_evaluations(session: &mut SessionInfo, function_key: FunctionKey) {
         macro_rules! st { () => { session.sync_odoo.symbol_table } }
-        let SymbolKey::Function(function_key) = symbol else {
-            return;
-        };
         let Some(func_file) = st!().get_file(function_key.into()) else {
             return;
         };

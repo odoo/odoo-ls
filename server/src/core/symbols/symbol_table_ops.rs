@@ -1836,13 +1836,11 @@ impl SymbolTable {
         }
         //TODO shouldn't we set the from_module in the call to get_member_symbol?
         let get_method = Self::get_member_symbol(session, class_key.into(), &S!("__get__"), None, true, false, false, true, false).0.first().copied();
-        let Some(get_method) = get_method else {
+        let Some(SymbolKey::Function(get_method)) = get_method else {
             return res;
         };
         SyncOdoo::ensure_func_evaluations(session, get_method); 
-        let Some(evaluations) = st!().evaluations(get_method).cloned() else {
-            return res;
-        };
+        let evaluations = st!()[get_method].evaluations.clone();
         if context.is_none() {
             *context = Some(HashMap::new());
         }

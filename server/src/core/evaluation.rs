@@ -887,40 +887,39 @@ impl Evaluation {
                                 //1: find __init__ method
                                 let init = SymbolTable::get_member_symbol(session, base_sym, &S!("__init__"), module, true, false, false, false, false);
                                 let mut found_hook = false;
-                                if let Some(&init) = init.0.first() {
+                                if let Some(&SymbolKey::Function(init)) = init.0.first() {
                                     SyncOdoo::ensure_func_evaluations(session, init);
-                                    if let Some(init_eval) = st!().evaluations(init) {
-                                        //init will always return an instance of the class, so we are not searching the method to check its return type, but rather to check if there is 
-                                        //an hook on it. Hooks, can be used to use parameters for context (see relational fields for example).
-                                        if init_eval.len() == 1 && init_eval[0].symbol.get_symbol_hook.is_some() {
-                                            context.as_mut().unwrap().insert(S!("constructing_class"), ContextValue::SYMBOL(base_sym.into()));
-                                            context.as_mut().unwrap().insert(S!("parameters"), ContextValue::ARGUMENTS(expr.arguments.clone()));
-                                            found_hook = true;
-                                            let init_eval_sym = init_eval[0].symbol.clone();
-                                            let init_result = init_eval_sym.get_symbol_as_weak(session, context, &mut diagnostics, Some(st!().get_file(parent).unwrap()));
-                                            context.as_mut().unwrap().remove(&S!("parameters"));
-                                            context.as_mut().unwrap().remove(&S!("constructing_class"));
-                                            evals.push(Evaluation {
-                                                symbol: EvaluationSymbol {
-                                                    sym: EvaluationSymbolPtr::WEAK(init_result),
-                                                    get_symbol_hook: None,
-                                                },
-                                                value: None,
-                                                range: Some(expr.range)
-                                            });
-                                        }
-                                        //It allows us to check parameters validity too if we are in validation step
-                                        /*let parent_file_or_func = parent.borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
-                                        if is_in_validation {
-                                            let from_module = parent.borrow().find_module();
-                                            diagnostics.extend(Evaluation::validate_call_arguments(session,
-                                                &init.borrow().as_func(),
-                                                expr,
-                                                context.as_ref().unwrap().get_key_value(&S!("parent")).unwrap_or((&S!(""), &ContextValue::SYMBOL(Weak::new()))).1.as_symbol(),
-                                                from_module,
-                                                false));
-                                        }*/
+                                    let init_eval = &st!()[init].evaluations;
+                                    //init will always return an instance of the class, so we are not searching the method to check its return type, but rather to check if there is 
+                                    //an hook on it. Hooks, can be used to use parameters for context (see relational fields for example).
+                                    if init_eval.len() == 1 && init_eval[0].symbol.get_symbol_hook.is_some() {
+                                        context.as_mut().unwrap().insert(S!("constructing_class"), ContextValue::SYMBOL(base_sym.into()));
+                                        context.as_mut().unwrap().insert(S!("parameters"), ContextValue::ARGUMENTS(expr.arguments.clone()));
+                                        found_hook = true;
+                                        let init_eval_sym = init_eval[0].symbol.clone();
+                                        let init_result = init_eval_sym.get_symbol_as_weak(session, context, &mut diagnostics, Some(st!().get_file(parent).unwrap()));
+                                        context.as_mut().unwrap().remove(&S!("parameters"));
+                                        context.as_mut().unwrap().remove(&S!("constructing_class"));
+                                        evals.push(Evaluation {
+                                            symbol: EvaluationSymbol {
+                                                sym: EvaluationSymbolPtr::WEAK(init_result),
+                                                get_symbol_hook: None,
+                                            },
+                                            value: None,
+                                            range: Some(expr.range)
+                                        });
                                     }
+                                    //It allows us to check parameters validity too if we are in validation step
+                                    /*let parent_file_or_func = parent.borrow().parent_file_or_function().as_ref().unwrap().upgrade().unwrap();
+                                    if is_in_validation {
+                                        let from_module = parent.borrow().find_module();
+                                        diagnostics.extend(Evaluation::validate_call_arguments(session,
+                                            &init.borrow().as_func(),
+                                            expr,
+                                            context.as_ref().unwrap().get_key_value(&S!("parent")).unwrap_or((&S!(""), &ContextValue::SYMBOL(Weak::new()))).1.as_symbol(),
+                                            from_module,
+                                            false));
+                                    }*/
                                 }
                                 if !found_hook {
                                     evals.push(Evaluation{
@@ -947,7 +946,7 @@ impl Evaluation {
                         }
                         // Ensure return-type evaluations are available: resolves type annotations
                         // (ARCH_EVAL) and, if still empty, infers from body (VALIDATION).
-                        SyncOdoo::ensure_func_evaluations(session, base_sym);
+                        SyncOdoo::ensure_func_evaluations(session, f);
 
                       
                         if required_dependencies.len() >= 3 && in_class {

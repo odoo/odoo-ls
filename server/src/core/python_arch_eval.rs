@@ -868,9 +868,10 @@ impl PythonArchEval {
                 if symbol_eval.len() == 1 && let Some(symbol_type) = st!().upgrade_weak(&symbol_eval[0]) {
                     if matches!(symbol_type, SymbolKey::Class(_)) {
                         let (iters, _) = SymbolTable::get_member_symbol(session, symbol_type, &S!("__iter__"), None, true, false, false, false, false);
-                        if let Some(&iter) = iters.first() && iters.len() == 1 {
+                        if let Some(&SymbolKey::Function(iter)) = iters.first() && iters.len() == 1 {
                             SyncOdoo::ensure_func_evaluations(session, iter);
-                            if let Some(evals) = st!().evaluations(iter) && evals.len() == 1 {
+                            let evals = &st!()[iter].evaluations;
+                            if evals.len() == 1 {
                                 let eval_iter = evals[0].clone();
                                 if for_stmt.target.is_name_expr() { //only handle simple variable for now
                                     let variable = st!().get_positioned_symbol(*self.sym_stack.last().unwrap(), &OYarn::from(for_stmt.target.as_name_expr().unwrap().id.to_string()), &for_stmt.target.range());
@@ -952,9 +953,8 @@ impl PythonArchEval {
                 match var.as_ref() {
                     Expr::Name(expr_name) => {
                         let variable = st!().get_positioned_symbol(*self.sym_stack.last().unwrap(), &OYarn::from(expr_name.id.to_string()), &expr_name.range());
-                        if let Some(variable_key) = variable {
-                            let v = variable_key.unwrap_variable_key();
-                            let parent = st!()[v].parent();
+                        if let Some(SymbolKey::Variable(variable_key)) = variable {
+                            let parent = st!()[variable_key].parent();
                             let mut deps = vec![vec![], vec![]];
                             if !self.file_mode {
                                 deps.push(vec![]);
@@ -964,18 +964,16 @@ impl PythonArchEval {
                             // The expression name in with <> [as <name>], is the result of __enter__.
                             let mut enter_evals = vec![];
                             for context_mgr_eval in context_mgr_evals.iter() {
-                                let symbol = context_mgr_eval.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, Some(st!().parent_file_or_function(variable_key).unwrap()));
+                                let symbol = context_mgr_eval.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, Some(st!().parent_file_or_function(variable_key.into()).unwrap()));
                                 if let Some(symbol) = symbol.weak.upgrade(&st!()) {
                                     let _enter_ = st!().get_symbol(symbol, &(vec![], vec![Sy!("__enter__")]), u32::MAX);
-                                    if let Some(&_enter_) = _enter_.last() {
+                                    if let Some(&SymbolKey::Function(_enter_)) = _enter_.last() {
                                         SyncOdoo::ensure_func_evaluations(session, _enter_);
-                                        if let SymbolKey::Function(f) = _enter_ {
-                                            enter_evals.extend(st!()[f].evaluations.clone());
-                                        }
+                                        enter_evals.extend(st!()[_enter_].evaluations.clone());
                                     }
                                 }
                             }
-                            st!()[v].evaluations = enter_evals;
+                            st!()[variable_key].evaluations = enter_evals;
                             self.diagnostics.extend(diags);
                         }
                     },
