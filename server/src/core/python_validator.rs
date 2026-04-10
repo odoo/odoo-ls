@@ -416,7 +416,7 @@ impl PythonValidator {
                 let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
                 let eval_weaks = SymbolTable::follow_ref(&symbol, session, &mut None, true, false, None, None);
                 for eval_weak in eval_weaks.iter() {
-                    let Some(symbol) = st!().upgrade_weak(eval_weak) else {continue};
+                    let Some(symbol) = eval_weak.upgrade_weak(&st!()) else {continue};
                     if !SymbolTable::is_field_class(session, symbol) {
                         continue;
                     }
@@ -452,7 +452,7 @@ impl PythonValidator {
                                     false,
                                 )), session, &mut None, true, true, None, None);
                                 related_eval_weaks.iter().any(|related_eval_weak|{
-                                    let Some(related_field_class_sym) = st!().upgrade_weak(related_eval_weak) else {
+                                    let Some(related_field_class_sym) = related_eval_weak.upgrade_weak(&st!()) else {
                                         return false
                                     };
                                     let found =

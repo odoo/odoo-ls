@@ -393,7 +393,7 @@ impl PythonArchEval {
             sym_ref, None, false
         )), session, &mut None, false, false, None, None);
         for sym in syms_followed.iter() {
-            let Some(sym) = st!().upgrade_weak(sym) else { continue };
+            let Some(sym) = sym.upgrade_weak(&st!()) else { continue };
             if st!().evaluations(sym).is_some_and(|e| e.is_empty()) {
                 if let Some(file_sym) = st!().get_file(sym_ref) {
                     if SyncOdoo::build_now(session, file_sym, BuildSteps::ARCH_EVAL) {
@@ -617,7 +617,7 @@ impl PythonArchEval {
                         let assignee = Evaluation::eval_from_ast(session, &expr, *self.sym_stack.last().unwrap(), &attr_expr.range.start(), false, &mut vec![]);
                         for evaluation in assignee.0 {
                             let evaluation_symbol_ptr = evaluation.symbol.get_symbol_weak_transformed(session, &mut None, &mut vec![], None);
-                            let Some(sym_key) = st!().upgrade_weak(&evaluation_symbol_ptr) else {
+                            let Some(sym_key) = evaluation_symbol_ptr.upgrade_weak(&st!()) else {
                                 continue;
                             };
                             if !SymbolTable::is_field(session, sym_key) {
@@ -704,7 +704,7 @@ impl PythonArchEval {
                 }
                 continue;
             }
-            let symbol = st!().upgrade_weak(&ref_sym[0]);
+            let symbol = ref_sym[0].upgrade_weak(&st!());
             let Some(symbol) = symbol else {
                 continue;
             };
@@ -873,9 +873,9 @@ impl PythonArchEval {
         if eval_iter_node.len() == 1 { //Only handle values that we are sure about
             let eval = &eval_iter_node[0];
             let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-            if !st!().is_expired_if_weak(&eval_symbol) {
+            if !eval_symbol.is_expired_if_weak(&st!()) {
                 let symbol_eval = SymbolTable::follow_ref(&eval_symbol, session, &mut None, false, false, None, None);
-                if symbol_eval.len() == 1 && let Some(symbol_type) = st!().upgrade_weak(&symbol_eval[0]) {
+                if symbol_eval.len() == 1 && let Some(symbol_type) = symbol_eval[0].upgrade_weak(&st!()) {
                     if matches!(symbol_type, SymbolKey::Class(_)) {
                         let (iters, _) = SymbolTable::get_member_symbol(session, symbol_type, &S!("__iter__"), None, true, false, false, false, false);
                         if let Some(&SymbolKey::Function(iter)) = iters.first() && iters.len() == 1 {

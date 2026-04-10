@@ -769,22 +769,6 @@ impl SymbolTable {
         res
     }
 
-    // @arena: originally method on EvaluationSymbolPtr
-    pub fn upgrade_weak(&self, eval_ptr: &EvaluationSymbolPtr) -> Option<SymbolKey> {
-        match eval_ptr {
-            EvaluationSymbolPtr::WEAK(w) => w.weak.upgrade(self),
-            _ => None,
-        }
-    }
-
-    // @arena: originally method on EvaluationSymbolPtr
-    pub fn is_expired_if_weak(&self, eval_ptr: &EvaluationSymbolPtr) -> bool {
-        match eval_ptr {
-            EvaluationSymbolPtr::WEAK(w) => w.weak.is_expired(self),
-            _ => false,
-        }
-    }
-    
     pub fn in_workspace(&self, target: SymbolKey) -> bool {
         match target {
             SymbolKey::Root(_) => false,
@@ -1489,7 +1473,7 @@ impl SymbolTable {
             let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
             let eval_weaks = Self::follow_ref(&symbol, session, &mut None, true, false, None, None);
             for eval_weak in eval_weaks.iter() {
-                if let Some(key) = session.sync_odoo.symbol_table.upgrade_weak(eval_weak) {
+                if let Some(key) = eval_weak.upgrade_weak(&session.sync_odoo.symbol_table) {
                     if Self::is_field_class(session, key) {
                         return true;
                     }
@@ -1517,7 +1501,7 @@ impl SymbolTable {
             let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
             let eval_weaks = Self::follow_ref(&symbol, session, &mut None, true, false, None, None);
             for eval_weak in eval_weaks.iter() {
-                if let Some(symbol) = st!().upgrade_weak(eval_weak) {
+                if let Some(symbol) = eval_weak.upgrade_weak(&st!()) {
                     if Self::is_specific_field_class(session, symbol, field_names){
                         return true;
                     }
@@ -1542,7 +1526,7 @@ impl SymbolTable {
             let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
             let eval_weaks = Self::follow_ref(&symbol, session, &mut None, true, false, None, None);
             for eval_weak in eval_weaks.iter() {
-                if let Some(key) = session.sync_odoo.symbol_table.upgrade_weak(eval_weak) {
+                if let Some(key) = eval_weak.upgrade_weak(&session.sync_odoo.symbol_table) {
                     if matches!(key, SymbolKey::Function(_)) {
                         return true;
                     }
@@ -1905,7 +1889,7 @@ impl SymbolTable {
                     }
                 }
             }
-            if !session.sync_odoo.symbol_table.is_expired_if_weak(&sym) {
+            if !sym.is_expired_if_weak(&session.sync_odoo.symbol_table) {
                 res.push(sym);
             }
         }

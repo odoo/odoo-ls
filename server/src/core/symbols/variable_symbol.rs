@@ -67,7 +67,7 @@ impl VariableSymbol {
             context.as_mut().unwrap().insert(S!("base_attr"), ContextValue::SYMBOL(parent.into()));
             let eval_weaks = SymbolTable::follow_ref(&symbol, session, &mut context, false, false, None, None);
             for eval_weak in eval_weaks.iter() {
-                if let Some(symbol) = st!().upgrade_weak(eval_weak) {
+                if let Some(symbol) = eval_weak.upgrade_weak(&st!()) {
                     if ["Many2one", "One2many", "Many2many"].contains(&st!().name(symbol).as_str()) {
                         let Some(comodel) = eval_weak.as_weak().context.get("comodel_name") else {
                             continue;

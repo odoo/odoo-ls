@@ -429,7 +429,7 @@ impl Evaluation {
                 let symbol_eval = self.symbol.get_symbol(session, &mut None, &mut vec![], Some(function.into()));
                 let out_of_scope = SymbolTable::follow_ref(&symbol_eval, session, &mut None, false, false, None, Some(function.into()));
                 for sym in out_of_scope {
-                    if !session.sync_odoo.symbol_table.is_expired_if_weak(&sym) {
+                    if !sym.is_expired_if_weak(&session.sync_odoo.symbol_table) {
                         res.push(Evaluation {
                             symbol: EvaluationSymbol {
                                 sym: sym,
@@ -454,7 +454,7 @@ impl Evaluation {
             return Some(self.value.as_ref().unwrap().clone())
         }
         let eval_symbol = self.symbol.get_symbol(session, &mut None, diagnostics, None);
-        if st!().is_expired_if_weak(&eval_symbol) {
+        if eval_symbol.is_expired_if_weak(&st!()) {
             return None;
         }
         let evals = SymbolTable::follow_ref(&eval_symbol, session, context, false, true, None, None);
@@ -848,7 +848,7 @@ impl Evaluation {
                                         let class_sym_weak_eval = &SymbolTable::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
                                             class_sym, None, false
                                         )), session, &mut None, false, false, None, None)[0];
-                                        if !matches!(st!().upgrade_weak(class_sym_weak_eval).unwrap(), SymbolKey::Class(_)) {
+                                        if !matches!(class_sym_weak_eval.upgrade_weak(&st!()).unwrap(), SymbolKey::Class(_)) {
                                             return None;
                                         }
                                         let class_sym_weak_eval = class_sym_weak_eval.as_weak();
@@ -1060,12 +1060,12 @@ impl Evaluation {
                 }
                 for base_eval in base_evals.iter() {
                     let base_ref = base_eval.symbol.get_symbol(session, context, &mut diagnostics, Some(parent));
-                    if st!().is_expired_if_weak(&base_ref ) {
+                    if base_ref.is_expired_if_weak(&st!()) {
                         return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                     }
                     let bases = SymbolTable::follow_ref(&base_ref, session, context, false, false, None, None);
                     for ibase in bases.iter() {
-                        let base_loc = st!().upgrade_weak(ibase);
+                        let base_loc = ibase.upgrade_weak(&st!());
                         if let Some(base_loc) = base_loc {
                             let file = st!().get_file(base_loc);
                             if let Some(base_loc_file) = file {
@@ -1181,7 +1181,7 @@ impl Evaluation {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 let base = &eval_left[0].symbol.get_symbol(session, context, &mut diagnostics, Some(parent));
-                if st!().is_expired_if_weak(base) {
+                if base.is_expired_if_weak(&st!()) {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
                 let bases = SymbolTable::follow_ref(&base, session, &mut None, false, false, None, None);
@@ -1190,7 +1190,7 @@ impl Evaluation {
                 for base in bases.iter() {
                     match base {
                         EvaluationSymbolPtr::WEAK(base_sym_weak_eval) if base_sym_weak_eval.instance == Some(false) => {
-                            if let Some(SymbolKey::Class(_)) = st!().upgrade_weak(base) {
+                            if let Some(SymbolKey::Class(_)) = base.upgrade_weak(&st!()) {
                                 // This is a Generic type (Field[int], or List[int]), for now we just return the main type/Class (Field/List)
                                 // TODO: handle generic types
                                 let mut new_base = base.clone();
@@ -1213,7 +1213,7 @@ impl Evaluation {
                     if !base.is_weak() {
                         continue;
                     }
-                    let base = st!().upgrade_weak(base).unwrap();
+                    let base = base.upgrade_weak(&st!()).unwrap();
                     let get_item_symbols = SymbolTable::get_member_symbol(
                         session,
                         base,
@@ -2103,6 +2103,20 @@ impl EvaluationSymbol {
 }
 
 impl EvaluationSymbolPtr {
+    
+    pub fn is_expired_if_weak(&self, table: &impl ContainsKey<SymbolKey>) -> bool {
+        match self {
+            EvaluationSymbolPtr::WEAK(w) => w.weak.is_expired(table),
+            _ => false,
+        }
+    }
+    
+    pub fn upgrade_weak(&self, table: &impl ContainsKey<SymbolKey>) -> Option<SymbolKey> {
+        match self {
+            EvaluationSymbolPtr::WEAK(w) => w.weak.upgrade(table),
+            _ => None,
+        }
+    }
 
     pub(crate) fn is_weak(&self) -> bool {
         match self {

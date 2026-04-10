@@ -195,8 +195,8 @@ impl PythonArchBuilder {
                             all, None, false
                         )), session, &mut None, false, true, None, None);
                         if let Some(all_value_first) = all_value.get(0) {
-                            if !st!().is_expired_if_weak(all_value_first) {
-                                let all_upgraded = st!().upgrade_weak(all_value_first);
+                            if !all_value_first.is_expired_if_weak(&st!()) {
+                                let all_upgraded = all_value_first.upgrade_weak(&st!());
                                 if let Some(all_upgraded_unwrapped) = all_upgraded {
                                     let evaluations = st!().evaluations(all_upgraded_unwrapped);
                                     if let Some(evals) = evaluations && evals.len() == 1 {
