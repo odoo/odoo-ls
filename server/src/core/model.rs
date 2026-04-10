@@ -11,7 +11,7 @@ use crate::constants::OYarn;
 use crate::core::symbols::symbol_keys::{ClassKey, ContainsKey, ModuleKey, SymbolKey};
 use crate::core::symbols::symbol_table::SymbolTable;
 use crate::threads::SessionInfo;
-use crate::weak_hash_set::WeakSet;
+use crate::weak_collections::WeakSet;
 
 use super::symbols::module_symbol::ModuleSymbol;
 

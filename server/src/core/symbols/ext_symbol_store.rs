@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::{constants::OYarn, core::symbols::symbol_table::{SymbolTable}, weak_hash_set::WeakSet};
+use crate::{constants::OYarn, core::symbols::symbol_table::{SymbolTable}, weak_collections::WeakSet};
 use crate::core::symbols::symbol_keys::{ContainsKey, SymbolKey};
 
 /// section index → [variable keys]

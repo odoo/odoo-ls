@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashSet, hash::Hash};
+use std::{cell::RefCell, collections::{HashMap, HashSet, hash_map}, hash::Hash};
 
 #[derive(Debug, Clone)]
 pub struct WeakSet<K: Eq + Hash + Copy> {
@@ -41,5 +41,32 @@ impl<K: Eq + Hash + Copy> WeakSet<K> {
 
     pub fn retain(&mut self, f: impl Fn(&K) -> bool) {
         self.set.get_mut().retain(|k| f(k));
+    }
+}
+
+/// Map with weak keys
+#[derive(Debug, Clone)]
+pub struct WeakMap<K: Eq + Hash + Copy, V> {
+    map: HashMap<K, V>,
+}
+
+impl<K: Eq + Hash + Copy, V> WeakMap<K, V> {
+    pub fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+        }
+    }
+
+    pub fn entry(&mut self, key: K) -> hash_map::Entry<'_, K, V> {
+        self.map.entry(key)
+    }
+
+    pub fn remove(&mut self, key: &K) -> Option<V> {
+        self.map.remove(key)
+    }
+
+    pub fn values_valid(&mut self, is_valid: impl Fn(&K) -> bool) -> Vec<&V> {
+        self.map.retain(|k, _| is_valid(k));
+        self.map.values().collect()
     }
 }

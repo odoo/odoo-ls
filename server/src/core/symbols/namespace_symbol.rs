@@ -1,7 +1,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::{constants::OYarn, core::symbols::symbol_keys::SymbolKey, oyarn, weak_hash_set::WeakSet};
+use crate::{constants::OYarn, core::symbols::symbol_keys::SymbolKey, oyarn, weak_collections::WeakSet};
 
 
 

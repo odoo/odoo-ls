@@ -6,7 +6,7 @@ use ruff_text_size::TextRange;
 use tracing::trace;
 
 use crate::{S, Sy, constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree, tree}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPoint, evaluation::{Context, ContextValue,
-Evaluation, EvaluationSymbolPtr}, file_mgr::{FileMgr, NoqaInfo}, model::Model, odoo::SyncOdoo, python_validator::PythonValidator, symbols::{ dependency_mgr::{Buildable, Dependencies}, function_symbol::Argument, symbol_keys::{ClassKey, ContainsKey, FunctionKey, ModuleKey, RootKey, SymbolKey, VariableKey}, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, symbol_table::SymbolTable }, xml_data::OdooData}, threads::SessionInfo, utils::{NoHashBuilder, PathSanitizer, compare_semver}, weak_hash_set::WeakSet};
+Evaluation, EvaluationSymbolPtr}, file_mgr::{FileMgr, NoqaInfo}, model::Model, odoo::SyncOdoo, python_validator::PythonValidator, symbols::{ dependency_mgr::{Buildable, Dependencies}, function_symbol::Argument, symbol_keys::{ClassKey, ContainsKey, FunctionKey, ModuleKey, RootKey, SymbolKey, VariableKey}, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}, symbol_table::SymbolTable }, xml_data::OdooData}, threads::SessionInfo, utils::{NoHashBuilder, PathSanitizer, compare_semver}, weak_collections::WeakSet};
 
 impl SymbolTable {
 

@@ -1,6 +1,6 @@
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_keys::SymbolKey, xml_data::OdooData}, oyarn, utils::NoHashBuilder, weak_hash_set::WeakSet};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_keys::SymbolKey, xml_data::OdooData}, oyarn, utils::NoHashBuilder, weak_collections::WeakSet};
 use std::{cell::RefCell, collections::HashMap, rc::Weak};
 
 use super::symbol_mgr::{SectionRange, SymbolMgr};

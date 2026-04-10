@@ -14,7 +14,7 @@ use crate::core::symbols::symbol_keys::{ClassKey, SymbolKey};
 use crate::core::xml_data::{OdooData, OdooDataRecord};
 use crate::threads::SessionInfo;
 use crate::utils::compare_semver;
-use crate::weak_hash_set::WeakSet;
+use crate::weak_collections::WeakSet;
 use crate::{oyarn, Sy, S};
 
 use super::evaluation::{ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationValue};

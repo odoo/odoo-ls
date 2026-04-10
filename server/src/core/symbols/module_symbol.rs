@@ -12,7 +12,7 @@ use crate::core::symbols::symbol_table::{SymbolTable};
 use crate::core::symbols::symbol_keys::{ModuleKey, SymbolKey};
 use crate::core::xml_arch_builder::XmlArchBuilder;
 use crate::core::xml_data::OdooData;
-use crate::weak_hash_set::WeakSet;
+use crate::weak_collections::WeakSet;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::file_mgr::{FileInfo, FileMgr, NoqaInfo};
 use crate::core::import_resolver::find_module;

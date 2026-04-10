@@ -4,7 +4,7 @@ use weak_table::PtrWeakHashSet;
 
 use crate::core::symbols::symbol_keys::SymbolKey;
 use crate::core::symbols::dependency_mgr::Buildable;
-use crate::weak_hash_set::WeakSet;
+use crate::weak_collections::WeakSet;
 use crate::{core::diagnostics::DiagnosticCode, threads::SessionInfo};
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::{FileInfo, NoqaInfo}, model::Model, xml_data::OdooData}, oyarn};
 use std::{cell::RefCell, collections::HashMap, rc::Weak};
