@@ -3,7 +3,7 @@ use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet}, rc::Rc}
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{info, trace};
 
-use crate::{Sy, constants::{BuildSteps, DEBUG_STEPS, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::{EntryPoint, EntryPointType}, file_mgr::FileInfo, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{OdooData, OdooDataRecord, XmlDataAsset, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver};
+use crate::{Sy, S, constants::{BuildSteps, DEBUG_STEPS, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::{EntryPoint, EntryPointType}, evaluation::ContextValue, file_mgr::FileInfo, odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{OdooData, OdooDataRecord, XmlDataAsset, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo, utils::compare_semver};
 
 
 
@@ -118,28 +118,30 @@ impl XmlValidator {
     }
 
     fn validate_fields(&self, session: &mut SessionInfo, xml_data_record: &OdooDataRecord, all_fields: &HashMap<OYarn, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>>, diagnostics: &mut Vec<Diagnostic>, missing_model_dependencies: &mut HashSet<OYarn>) {
-        //Compute mandatory fields
-        // let mut mandatory_fields: Vec<String> = vec![];
-        // for (field_name, field_sym) in all_fields.iter() {
-        //     for (fs, deps) in field_sym.iter() {
-        //         if deps.is_none() {
-        //             let has_required = fs.borrow().evaluations().unwrap_or(&vec![]).iter()
-        //             .any(|eval|
-        //                 eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, None)
-        //                 .context.get("required").unwrap_or(&ContextValue::BOOLEAN(false)).as_bool()
-        //             );
-        //             let has_default = fs.borrow().evaluations().unwrap_or(&vec![]).iter()
-        //             .any(|eval|
-        //                 eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, None)
-        //                 .context.contains_key("default")
-        //             );
-        //             if has_required && !has_default {
-        //                 mandatory_fields.push(field_name.to_string());
-        //             }
-        //         }
-        //     }
-        // }
-        //check each field in the record
+        let mut mandatory_fields = HashSet::new();
+        for (field_name, field_symbols) in all_fields.iter() {
+            if xml_data_record.model.0.as_str() == "ir.ui.view" && field_name.as_str() == "name" {
+                continue; // "Name" gets calculated in create if missing
+            }
+            for (field_sym, deps) in field_symbols.iter() {
+                if deps.is_none() {
+                    let has_required = field_sym.borrow().evaluations().unwrap_or(&vec![]).iter()
+                        .any(|eval| {
+                            eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, None)
+                                .context.get(&S!("required")).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool()
+                        });
+                    let has_default = field_sym.borrow().evaluations().unwrap_or(&vec![]).iter()
+                        .any(|eval| {
+                            eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, None)
+                                .context.contains_key(&S!("default"))
+                        });
+                    if has_required && !has_default {
+                        mandatory_fields.insert(field_name.clone());
+                    }
+                }
+            }
+        }
+
         for field in &xml_data_record.fields {
             let mut field_name = Sy!(field.name.clone());
             let mut has_translation = false;
@@ -198,9 +200,10 @@ impl XmlValidator {
                     }
                 }
             }
-            //Check that the field belong to the model
+            // Check that the field belongs to the model
             if all_fields.contains_key(&field_name) {
-                // mandatory_fields.retain(|f| f != &field_name.to_string());
+                // Remove from mandatory fields since it's provided in the record
+                mandatory_fields.remove(&field_name);
                 //Check specific attributes
                 let (Some(field_text), Some(field_text_range)) = (field.text.as_ref(), field.text_range.as_ref()) else {
                     continue;
@@ -248,19 +251,15 @@ impl XmlValidator {
                 }
             }
         }
-        //Diagnostic if some mandatory fields are not detected
-        // if !mandatory_fields.is_empty() {
-        // We have to check  that remaining fields are not declared in an inherited record or is automatically field (delegate=True)
-        //     diagnostics.push(Diagnostic::new(
-        //         Range::new(Position::new(xml_data_record.range.start.try_into().unwrap(), 0), Position::new(xml_data_record.range.end.try_into().unwrap(), 0)),
-        //         Some(lsp_types::DiagnosticSeverity::ERROR),
-        //         Some(lsp_types::NumberOrString::String(S!("OLS30452"))),
-        //         Some(EXTENSION_NAME.to_string()),
-        //         format!("Some mandatory fields are not declared in the record: {:?}", mandatory_fields),
-        //         None,
-        //         None
-        //     ));
-        // }
+        // Diagnostic if some mandatory fields are not provided
+        for field_name in mandatory_fields.iter() {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05069, &[field_name]) {
+                diagnostics.push(Diagnostic {
+                    range: Range { start: Position::new(xml_data_record.range.start.try_into().unwrap(), 0), end: Position::new(xml_data_record.range.end.try_into().unwrap(), 0) },
+                    ..diagnostic
+                });
+            }
+        }
     }
 
     fn validate_menu_item(&self, _session: &mut SessionInfo, _xml_data_menu_item: &XmlDataMenuItem, _diagnostics: &mut Vec<Diagnostic>, _dependencies: &mut Vec<Rc<RefCell<Symbol>>>, _missing_model_dependencies: &mut HashSet<OYarn>) {

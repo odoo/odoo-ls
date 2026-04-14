@@ -82,16 +82,16 @@
     <function name="name" model="model" eval="eval"><function name="name" model="model" eval="some_data"/></function> <!-- OLS05047 -->
     <function name="name" model="model"/>
     <function name="name" model="model" eval="eval"><invalid_node /></function> <!-- OLS05048 -->
-    <record id="bike_5" model="bikes.bike"><field name="wheel_id" ref=""/></record> <!-- OLS05039 -->
-    <record id="bike_6" model="bikes.bike"><field name="wheel_id" ref="module_for_diagnostics.bike_wheel_6.too.many.dots"/></record> <!-- OLS05051 -->
+    <record id="bike_5" model="bikes.bike"><field name="name">name 5</field><field name="wheel_id" ref=""/></record> <!-- OLS05039 -->
+    <record id="bike_6" model="bikes.bike"><field name="name">name 6</field><field name="wheel_id" ref="module_for_diagnostics.bike_wheel_6.too.many.dots"/></record> <!-- OLS05051 -->
     <menuitem id="whoopla" parent="missing_parent"/> <!-- OLS05052 -->
     <menuitem id="whoopla" action="missing_action"/> <!-- OLS05053 -->
     <menuitem id="whoopla" groups="missing_group1,missing_group2"/> <!-- OLS05054 -->
     <record id="bikes.bike" model="module_2.empty_model"/> <!-- OLS05055 -->
     <record id="bikes.bike" model="wrong.model"/> <!-- OLS05056 -->
-    <record id="bikes.bike" model="bikes.bike"><field name="fine"/></record> <!-- OLS05057 -->
-    <record id="bikes.bike" model="ir.ui.view"><field name="model">module_2.empty_model</field></record> <!-- OLS05055 -->
-    <record id="bikes.bike" model="ir.ui.view"><field name="model">wrong.model</field></record> <!-- OLS05056 -->
+    <record id="bikes.bike" model="bikes.bike"><field name="name">name 7</field><field name="fine"/></record> <!-- OLS05057 -->
+    <record id="bikes.bike" model="ir.ui.view"><field name="name">name 8</field><field name="model">module_2.empty_model</field></record> <!-- OLS05055 -->
+    <record id="bikes.bike" model="ir.ui.view"><field name="name">name 9</field><field name="model">wrong.model</field></record> <!-- OLS05056 -->
     <asset invalid="invalid" id="id" name="name"> <!-- OLS05058 -->
         <bundle>data</bundle>
         <path>ols_tests/tests/something.scss</path>
@@ -119,5 +119,6 @@
         <bundle></bundle> <!-- OLS05066 -->
         <path></path> <!-- OLS05067 -->
     </asset>
-    <record id="bike_translation_1" model="bikes.bike"><field name="name@nl_WV">Da's gin geldige taal, jonge.</field></record> <!-- West Flemish is not a valid language, unfortunately (OLS05068: unknown language code) -->
+    <record id="bike_translation_1" model="bikes.bike"><field name="name">name 10</field><field name="name@nl_WV">Da's gin geldige taal, jonge.</field></record> <!-- West Flemish is not a valid language, unfortunately (OLS05068: unknown language code) -->
+    <record id="bike_wheel_missing_fields" model="bike_parts.wheel"><field name="name">Incomplete Wheel</field></record> <!-- OLS05069: missing mandatory field "price" -->
 </odoo>

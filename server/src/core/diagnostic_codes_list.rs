@@ -529,4 +529,8 @@ OLS05067, DiagnosticSetting::Error, "Path node in asset cannot be empty",
  * Unknown language code
  */
 OLS05068, DiagnosticSetting::Warning, "Unknown language code: '{0}'. Additional languages can be set in the configuration file.",
+/**
+ * Mandatory field is not provided in the record
+ */
+OLS05069, DiagnosticSetting::Warning, "Mandatory field '{0}' is not provided in record",
 }
