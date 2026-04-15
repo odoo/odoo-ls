@@ -1367,14 +1367,16 @@ impl PythonArchEvalHooks {
         let Some(module_rc) = module.unwrap().upgrade() else {
             return None;
         };
-        let mut module_rc_bw = module_rc.borrow_mut();
         if let Some(scope) = scope {
             let file = scope.borrow().get_file();
             if let Some(file) = file.and_then(|f| f.upgrade()) {
-                file.borrow_mut().add_dependency(&mut module_rc_bw, BuildSteps::VALIDATION, BuildSteps::ARCH);
+                if !Rc::ptr_eq(&module_rc, &file) {
+                    let mut module_rc_bw = module_rc.borrow_mut();
+                    file.borrow_mut().add_dependency(&mut module_rc_bw, BuildSteps::VALIDATION, BuildSteps::ARCH);
+                }
             }
         }
-        let Some(_symbol) = module_rc_bw.as_module_package().xml_id_locations.get(xml_id.as_str()) else {
+        let Some(_symbol) = module_rc.borrow().as_module_package().xml_id_locations.get(xml_id.as_str()) else {
             if in_validation {
                 /*if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05001, &[]) {
                     diagnostics.push(Diagnostic {
