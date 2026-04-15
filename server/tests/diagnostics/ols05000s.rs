@@ -109,6 +109,7 @@ fn test_ols05000s_xml_file() {
     check_xml_diag("OLS05066", 118);
     check_xml_diag("OLS05067", 119);
     check_xml_warning("OLS05068", 121);
+    check_xml_warning("OLS05069", 122);
 }
 
 #[test]
