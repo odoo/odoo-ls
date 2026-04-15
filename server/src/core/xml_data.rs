@@ -59,6 +59,16 @@ pub struct XmlDataDelete {
     pub model: OYarn,
 }
 
+impl OdooDataRecord {
+
+    pub fn get_file_symbol(&self) -> Option<Weak<RefCell<Symbol>>> {
+        if let Some(upgraded) = self.symbol.upgrade() {
+            return upgraded.borrow().get_file();
+        } else {
+            return None;
+        }
+    }
+}
 impl OdooData {
 
     pub fn set_file_symbol(&mut self, xml_symbol: &Rc<RefCell<Symbol>>) {
@@ -135,13 +145,7 @@ impl OdooData {
     /* Warning: the returned symbol can of a different type than an XML_SYMBOL */
     pub fn get_file_symbol(&self) -> Option<Weak<RefCell<Symbol>>> {
         match self {
-            OdooData::RECORD(record) => {
-                if let Some(upgraded) = record.symbol.upgrade() {
-                    return upgraded.borrow().get_file();
-                } else {
-                    return None;
-                }
-            },
+            OdooData::RECORD(record) => record.get_file_symbol(),
             OdooData::MENUITEM(menu_item) => {
                 Some(menu_item.file_symbol.clone())
             },

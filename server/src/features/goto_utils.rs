@@ -294,7 +294,10 @@ impl GotoUtils {
                         }
                     },
                     XmlAstResult::XML_DATA(record) => {
-                        let xml_file = record.symbol.upgrade().unwrap();
+                        let maybe_file = record.get_file_symbol().and_then(|file| file.upgrade());
+                        let Some(xml_file) = maybe_file else {
+                            continue;
+                        };
                         let full_path = xml_file.borrow().paths()[0].clone();
                         GotoSource {
                             source: GotoSourceType::OdooData(OdooData::RECORD(record)),
