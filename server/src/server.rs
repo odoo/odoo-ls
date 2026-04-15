@@ -264,8 +264,9 @@ impl Server {
             method: Shutdown::METHOD.to_string(),
             params: serde_json::Value::Null,
         });
-        self.req_sender_s_to_main.send(shutdown_notification.clone()).unwrap();
-        self.res_sender_s_to_main.send(shutdown_notification.clone()).unwrap();
+        // Threads may already be dead during shutdown, so ignore send errors
+        let _ = self.req_sender_s_to_main.send(shutdown_notification.clone());
+        let _ = self.res_sender_s_to_main.send(shutdown_notification.clone());
         info!(message);
     }
 

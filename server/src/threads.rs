@@ -34,12 +34,16 @@ impl <'a> SessionInfo<'a> {
         }
     }
     pub fn log_message(&self, msg_type: MessageType, msg: String) {
-        self.sender.send(
+        if let Err(e) = self.sender.send(
             Message::Notification(lsp_server::Notification{
                 method: LogMessage::METHOD.to_string(),
                 params: serde_json::to_value(&LogMessageParams{typ: msg_type, message: msg}).unwrap()
             })
-        ).unwrap();
+        ) {
+            if !self.sync_odoo.terminate_rebuild.load(std::sync::atomic::Ordering::SeqCst) {
+                panic!("Failed to send log_message ({:?}), but server is not shutting down", e);
+            }
+        }
     }
 
     pub fn send_notification<T: Serialize>(&self, method: &str, params: T) {
@@ -48,30 +52,40 @@ impl <'a> SessionInfo<'a> {
             error!("Unable to serialize parameters for method {}", method);
             return;
         };
-        self.sender.send(
+        if let Err(e) = self.sender.send(
             Message::Notification(lsp_server::Notification{
                 method: method.to_string(),
                 params: param
             })
-        ).unwrap();
+        ) {
+            if !self.sync_odoo.terminate_rebuild.load(std::sync::atomic::Ordering::SeqCst) {
+                panic!("Failed to send_notification({}), error: {:?}, but server is not shutting down", method, e);
+            }
+        }
     }
 
     pub fn show_message(&self, msg_type: MessageType, msg: String) {
-        self.sender.send(
+        if let Err(e) = self.sender.send(
             Message::Notification(lsp_server::Notification{
                 method: ShowMessage::METHOD.to_string(),
                 params: serde_json::to_value(&ShowMessageParams{typ: msg_type, message: msg}).unwrap()
             })
-        ).unwrap();
+        ) {
+            if !self.sync_odoo.terminate_rebuild.load(std::sync::atomic::Ordering::SeqCst) {
+                panic!("Failed to send show_message ({:?}), but server is not shutting down", e);
+            }
+        }
     }
 
     pub fn send_request<T: Serialize, U: DeserializeOwned>(&self, method: &str, params: T) -> Result<Option<U>, ServerError> {
         let param = serde_json::to_value(params)?;
-        self.sender.send(Message::Request(lsp_server::Request{
+        if let Err(e) = self.sender.send(Message::Request(lsp_server::Request{
                 id: RequestId::from(0), //will be set by Server
                 method: S!(method),
                 params: param
-        })).unwrap();
+        })) {
+            return Err(ServerError::ServerError(format!("Failed to send request ({:?}) ", e)));
+        }
         match self.receiver.recv() {
             Ok(Message::Response(r)) => {
                 //We can't check the response ID because it is set by Server. This is the reason Server must check that the id is correct.
@@ -213,7 +227,13 @@ fn restart_server(sync_odoo: &Arc<Mutex<SyncOdoo>>, sender_session: &Sender<Mess
         let session = SessionInfo{
             sender: sender_session.clone(),
             receiver: receiver_session.clone(),
-            sync_odoo: &mut sync_odoo.lock().unwrap(),
+            sync_odoo: &mut sync_odoo.lock().unwrap_or_else(|e| {
+                if sync_odoo.is_poisoned() && e.get_ref().terminate_rebuild.load(std::sync::atomic::Ordering::SeqCst) {
+                    e.into_inner()
+                } else {
+                    panic!("sync_odoo lock poisoned: {}", e)
+                }
+            }),
             delayed_process_sender: Some(delayed_process_sender.clone()),
             noqas_stack: vec![],
             current_noqa: NoqaInfo::None,
