@@ -1,13 +1,11 @@
 use std::cmp::Ordering;
 use std::path::PathBuf;
-use std::rc::Rc;
-use std::cell::RefCell;
 use once_cell::sync::Lazy;
-use ruff_text_size::{TextRange, TextSize};
+use ruff_text_size::TextRange;
 use tracing::{info, warn};
-use crate::core::entry_point::EntryPoint;
 use crate::core::import_resolver::manual_import;
-use crate::core::symbols::symbol::Symbol;
+use crate::core::symbols::storage::SymbolTable;
+use crate::core::symbols::symbol_keys::{ClassKey, SourceFileKey, SymbolKey};
 use crate::threads::SessionInfo;
 use crate::utils::compare_semver;
 use crate::{Sy, S};
@@ -15,7 +13,7 @@ use crate::constants::OYarn;
 
 use super::odoo::SyncOdoo;
 
-type PythonArchClassHookFn = fn (session: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>);
+type PythonArchClassHookFn = fn (symbol_table: &mut SymbolTable, class: ClassKey);
 
 pub struct PythonArchClassHook {
     pub odoo_entry: bool,
@@ -31,16 +29,17 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
             (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel")])),
             (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel")]))
         ],
-        func: |session: &mut SessionInfo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
+        func: |symbol_table: &mut SymbolTable, class: ClassKey| {
             // ----------- env ------------
-            let env = symbol.borrow().get_symbol(&(vec![], vec![Sy!("env")]), u32::MAX);
+            let symbol_key: SymbolKey = class.into();
+            let env = symbol_table.get_symbol(symbol_key, &(vec![], vec![Sy!("env")]), u32::MAX);
             if env.is_empty() {
-                let mut range = symbol.borrow().range().clone();
-                let slots = symbol.borrow().get_symbol(&(vec![], vec![Sy!("__slots__")]), u32::MAX);
+                let mut range = symbol_table[class].range.clone();
+                let slots = symbol_table.get_symbol(symbol_key, &(vec![], vec![Sy!("__slots__")]), u32::MAX);
                 if slots.len() == 1 {
-                    range = slots[0].borrow().range().clone();
+                    range = symbol_table.range(slots[0]).clone();
                 }
-                symbol.borrow_mut().add_new_variable(session, Sy!("env"), &range);
+                symbol_table.add_new_variable(symbol_key, "env", &range);
             }
         }
     },
@@ -50,14 +49,14 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
             (Sy!("15.3"), Sy!("19.2"), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("Request")])),
             (Sy!("19.2"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("http"), Sy!("requestlib")], vec![Sy!("Request")]))
         ],
-        func: |session: &mut SessionInfo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
+        func: |symbol_table: &mut SymbolTable, class: ClassKey| {
             // ----------- Request.env ------------
-            let has_env = !symbol.borrow().get_content_symbol(&Sy!("env"), u32::MAX).symbols.is_empty();
+            let has_env = !symbol_table.get_content_symbol(class.into(), &Sy!("env"), u32::MAX).symbols.is_empty();
             if has_env {
                 return;
             }
-            let range = symbol.borrow().range().clone();
-            symbol.borrow_mut().add_new_variable(session, Sy!("env"), &range);
+            let range = symbol_table[class].range.clone();
+            symbol_table.add_new_variable(class, "env", &range);
         }
     },
     PythonArchClassHook {
@@ -66,25 +65,25 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
             (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("Environment")])),
             (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("environments")], vec![Sy!("Environment")]))
         ],
-        func: |session: &mut SessionInfo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
-            let new_sym = symbol.borrow().get_symbol(&(vec![], vec![Sy!("__new__")]), u32::MAX);
-            let mut range = symbol.borrow().range().clone();
+        func: |symbol_table: &mut SymbolTable, class: ClassKey| {
+            let new_sym = symbol_table.get_symbol(class.into(), &(vec![], vec![Sy!("__new__")]), u32::MAX);
+            let mut range = symbol_table[class].range.clone();
             if new_sym.len() == 1 {
-                range = new_sym[0].borrow().range().clone();
+                range = symbol_table.range(new_sym[0]).clone();
             }
             // ----------- env.cr ------------
-            symbol.borrow_mut().add_new_variable(session, Sy!("cr"), &range);
+            symbol_table.add_new_variable(class, "cr", &range);
             // ----------- env.uid ------------
-            let uid_sym = symbol.borrow_mut().add_new_variable(session, Sy!("uid"), &range);
-            uid_sym.borrow_mut().as_variable_mut().doc_string = Some(S!("The current user id (for access rights checks)"));
+            let uid_sym = symbol_table.add_new_variable(class, "uid", &range);
+            symbol_table[uid_sym].doc_string = Some(S!("The current user id (for access rights checks)"));
             // ----------- env.context ------------
-            let context_sym = symbol.borrow_mut().add_new_variable(session, Sy!("context"), &range);
-            context_sym.borrow_mut().as_variable_mut().doc_string = Some(S!("The current context"));
+            let context_sym = symbol_table.add_new_variable(class, "context", &range);
+            symbol_table[context_sym].doc_string = Some(S!("The current context"));
             // ----------- env.su ------------
-            let su_sym = symbol.borrow_mut().add_new_variable(session, Sy!("su"), &range);
-            su_sym.borrow_mut().as_variable_mut().doc_string = Some(S!("whether in superuser mode"));
+            let su_sym = symbol_table.add_new_variable(class, "su", &range);
+            symbol_table[su_sym].doc_string = Some(S!("whether in superuser mode"));
             // ----------- env.registry -----------
-            let _ = symbol.borrow_mut().add_new_variable(session, Sy!("registry"), &range);
+            let _ = symbol_table.add_new_variable(class, "registry", &range);
         }
     },
     PythonArchClassHook {
@@ -92,10 +91,10 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
         trees: vec![
             (Sy!("15.0"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("addons"), Sy!("base"), Sy!("models"), Sy!("ir_rule")], vec![Sy!("IrRule")])),
         ],
-        func: |session: &mut SessionInfo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
-            let range = symbol.borrow().range().clone();
+        func: |symbol_table: &mut SymbolTable, class: ClassKey| {
+            let range = symbol_table[class].range.clone();
             // ----------- global ------------
-            symbol.borrow_mut().add_new_variable(session, Sy!("global"), &range);
+            symbol_table.add_new_variable(class, "global", &range);
         }
     },
     PythonArchClassHook {
@@ -144,22 +143,23 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
             (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_relational")], vec![Sy!("Many2many")])),
             (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_misc")], vec![Sy!("Id")])),
         ],
-        func: |session: &mut SessionInfo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>| {
+        func: |symbol_table: &mut SymbolTable, class: ClassKey| {
+            let symbol_key: SymbolKey = class.into();
+            let range = symbol_table[class].range.clone();
             // ----------- __get__ ------------
-            let get_sym = symbol.borrow().get_symbol(&(vec![], vec![Sy!("__get__")]), u32::MAX);
+            let get_sym = symbol_table.get_symbol(symbol_key, &(vec![], vec![Sy!("__get__")]), u32::MAX);
             if get_sym.is_empty() {
-                let range = symbol.borrow().range().clone();
-                symbol.borrow_mut().add_new_function(session, &S!("__get__"), &range, &range.end());
+                symbol_table.add_new_function(symbol_key, &S!("__get__"), &range, &range.end());
             } else {
-                if !["Id", "One2many"].contains(&symbol.borrow().name().as_str()){
-                    warn!("Found __get__ function for field of name ({})", symbol.borrow().name());
+                let name = &symbol_table[class].name;
+                if !["Id", "One2many"].contains(&name.as_str()) {
+                    warn!("Found __get__ function for field of name ({})", name);
                 }
             }
             // ----------- __init__ ------------
-            let get_sym = symbol.borrow().get_symbol(&(vec![], vec![Sy!("__init__")]), u32::MAX);
+            let get_sym = symbol_table.get_symbol(symbol_key, &(vec![], vec![Sy!("__init__")]), u32::MAX);
             if get_sym.is_empty() {
-                let range = symbol.borrow().range().clone();
-                symbol.borrow_mut().add_new_function(session, &S!("__init__"), &range, &range.end());
+                symbol_table.add_new_function(symbol_key, &S!("__init__"), &range, &range.end());
             }
         }
     },
@@ -169,82 +169,86 @@ pub struct PythonArchBuilderHooks {}
 
 impl PythonArchBuilderHooks {
 
-    pub fn on_class_def(session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>) {
-        let tree = symbol.borrow().get_tree();
-        let odoo_tree = symbol.borrow().get_main_entry_tree(session);
-        let name = symbol.borrow().name().clone();
+    pub fn on_class_def(session: &mut SessionInfo, class_key: ClassKey) {
+        let symbol_key: SymbolKey = class_key.into();
+        let tree = session.st().get_tree(symbol_key);
+        let odoo_tree = session.sync_odoo.get_main_entry_tree(symbol_key);
+        let name = session.st().name(symbol_key).clone();
         for hook in arch_class_hooks.iter() {
             for hook_tree in hook.trees.iter() {
                 if compare_semver(session.sync_odoo.full_version.as_str(), hook_tree.0.as_str()) >= Ordering::Equal &&
                     compare_semver(session.sync_odoo.full_version.as_str(), hook_tree.1.as_str()) == Ordering::Less {
                     if name.eq(hook_tree.2.1.last().unwrap()) {
                         if (hook.odoo_entry && session.sync_odoo.has_main_entry && odoo_tree == hook_tree.2) || (!hook.odoo_entry && tree == hook_tree.2) {
-                            (hook.func)(session, entry_point, symbol.clone());
+                            (hook.func)(&mut session.sync_odoo.symbol_table, class_key);
                         }
                     }
-                    }
+                }
             }
         }
     }
 
-    pub fn on_done(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>) {
-        let name = symbol.borrow().name().clone();
+    pub fn on_file_done(session: &mut SessionInfo, symbol: SourceFileKey) {
+        let name = session.st().name(symbol).clone();
         if name == "release" {
-            if symbol.borrow().get_main_entry_tree(session) == (vec![Sy!("odoo"), Sy!("release")], vec![]) {
-                let (maj, min, mic) = SyncOdoo::read_version(session, PathBuf::from(symbol.borrow().paths()[0].clone()));
+            if session.sync_odoo.get_main_entry_tree(symbol) == (vec![Sy!("odoo"), Sy!("release")], vec![]) {
+                let file_path = session.st().path(symbol);
+                let (maj, min, mic) = SyncOdoo::read_version(session, PathBuf::from(file_path));
                 if maj != session.sync_odoo.version_major || min != session.sync_odoo.version_minor || mic != session.sync_odoo.version_micro {
                     session.sync_odoo.need_rebuild = true;
                 }
             }
         } else if name == "init" {
             if compare_semver(session.sync_odoo.full_version.as_str(), "18.1") != Ordering::Less {
-                if symbol.borrow().get_main_entry_tree(session) == (vec![Sy!("odoo"), Sy!("init")], vec![]) {
-                    let odoo_namespace = session.sync_odoo.get_symbol(symbol.borrow().paths()[0].as_str(), &(vec![Sy!("odoo")], vec![]), u32::MAX);
-                    if let Some(odoo_namespace) = odoo_namespace.get(0) {
+                if session.sync_odoo.get_main_entry_tree(symbol) == (vec![Sy!("odoo"), Sy!("init")], vec![]) {
+                    let file_path = session.st().path(symbol);
+                    let odoo_namespace = session.sync_odoo.get_symbol(file_path, &(vec![Sy!("odoo")], vec![]), u32::MAX);
+                    if let Some(&odoo_namespace) = odoo_namespace.get(0) {
                         // create _ and Command as ext_symbols
-                        let owner = symbol.clone();
-                        odoo_namespace.borrow_mut().add_new_ext_symbol(session, Sy!("SUPERUSER_ID"), &TextRange::new(TextSize::new(0), TextSize::new(0)), &owner);
-                        odoo_namespace.borrow_mut().add_new_ext_symbol(session, Sy!("_"), &TextRange::new(TextSize::new(0), TextSize::new(0)), &owner);
-                        odoo_namespace.borrow_mut().add_new_ext_symbol(session, Sy!("_lt"), &TextRange::new(TextSize::new(0), TextSize::new(0)), &owner);
-                        odoo_namespace.borrow_mut().add_new_ext_symbol(session, Sy!("Command"), &TextRange::new(TextSize::new(0), TextSize::new(0)), &owner);
+                        let owner = symbol.into();
+                        session.st_mut().add_new_ext_symbol(odoo_namespace, "SUPERUSER_ID", &TextRange::default(), owner);
+                        session.st_mut().add_new_ext_symbol(odoo_namespace, "_", &TextRange::default(), owner);
+                        session.st_mut().add_new_ext_symbol(odoo_namespace, "_lt", &TextRange::default(), owner);
+                        session.st_mut().add_new_ext_symbol(odoo_namespace, "Command", &TextRange::default(), owner);
                     }
                 }
             }
         } else if name == "werkzeug" {
-            if symbol.borrow().get_main_entry_tree(session) == (vec![Sy!("odoo"), Sy!("_monkeypatches"), Sy!("werkzeug")], vec![]) {
+            if session.sync_odoo.get_main_entry_tree(symbol) == (vec![Sy!("odoo"), Sy!("_monkeypatches"), Sy!("werkzeug")], vec![]) {
                 //doing this patch like this imply that an odoo project will make these functions available for all entrypoints, but heh
-                let werkzeug_url = session.sync_odoo.get_symbol(symbol.borrow().paths()[0].as_str(), &(vec![Sy!("werkzeug"), Sy!("urls")], vec![]), u32::MAX);
-                if let Some(werkzeug_url) = werkzeug_url.first() {
-                    let url_join = werkzeug_url.borrow().get_symbol(&(vec![], vec![Sy!("url_join")]), u32::MAX);
+                let file_path = session.st().path(symbol);
+                let werkzeug_url = session.sync_odoo.get_symbol(file_path, &(vec![Sy!("werkzeug"), Sy!("urls")], vec![]), u32::MAX);
+                if let Some(&werkzeug_url) = werkzeug_url.first() {
+                    let url_join = session.st().get_symbol(werkzeug_url, &(vec![], vec![Sy!("url_join")]), u32::MAX);
                     if url_join.is_empty() { //else, installed version is already patched
                         //fake variable, as ext_symbols are not seen through get_symbol, etc...
-                        werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_decode"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
-                        werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_encode"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
-                        werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_join"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
-                        werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_parse"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
-                        werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_quote"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
-                        werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_unquote"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
-                        werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_quote_plus"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
-                        werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_unquote_plus"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
-                        werkzeug_url.borrow_mut().add_new_variable(session, Sy!("url_unparse"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
-                        werkzeug_url.borrow_mut().add_new_variable(session, Sy!("URL"), &TextRange::new(TextSize::new(0), TextSize::new(0)));
+                        session.st_mut().add_new_variable(werkzeug_url, "url_decode", &TextRange::default());
+                        session.st_mut().add_new_variable(werkzeug_url, "url_encode", &TextRange::default());
+                        session.st_mut().add_new_variable(werkzeug_url, "url_join", &TextRange::default());
+                        session.st_mut().add_new_variable(werkzeug_url, "url_parse", &TextRange::default());
+                        session.st_mut().add_new_variable(werkzeug_url, "url_quote", &TextRange::default());
+                        session.st_mut().add_new_variable(werkzeug_url, "url_unquote", &TextRange::default());
+                        session.st_mut().add_new_variable(werkzeug_url, "url_quote_plus", &TextRange::default());
+                        session.st_mut().add_new_variable(werkzeug_url, "url_unquote_plus", &TextRange::default());
+                        session.st_mut().add_new_variable(werkzeug_url, "url_unparse", &TextRange::default());
+                        session.st_mut().add_new_variable(werkzeug_url, "URL", &TextRange::default());
                     }
                 } else {
                     warn!("Unable to find werkzeug.urls to monkeypatch it");
                 }
             }
         } else if name == "urls" {
-            if symbol.borrow().get_local_tree() == (vec![Sy!("werkzeug"), Sy!("urls")], vec![]) {
+            if session.st().get_local_tree(symbol.into()) == (vec![Sy!("werkzeug"), Sy!("urls")], vec![]) {
                 //manually load patch, as a manual dependency
                 let full_path_monkeypatches = S!("odoo._monkeypatches");
                 let mut main_odoo_symbol = None;
                 if let Some(main_ep) = session.sync_odoo.entry_point_mgr.borrow().main_entry_point.as_ref() {
                     //To import from main entry point, we have to import 'from' a symbol coming from main entry point.
                     //We then use the main symbol of the main entry point to achieve that, instead of the werkzeug symbol
-                    main_odoo_symbol = main_ep.borrow().get_symbol();
+                    main_odoo_symbol = main_ep.borrow().get_symbol(session.st());
                 }
                 if let Some(main_odoo_symbol) = main_odoo_symbol {
-                    let werkzeug_patch = manual_import(session, &main_odoo_symbol, Some(full_path_monkeypatches), "werkzeug", None, 0, &mut None);
+                    let werkzeug_patch = manual_import(session, main_odoo_symbol, Some(full_path_monkeypatches), "werkzeug", None, 0, &mut None);
                     for werkzeug_patch in werkzeug_patch {
                         if werkzeug_patch.found {
                             info!("monkeypatch manually found");

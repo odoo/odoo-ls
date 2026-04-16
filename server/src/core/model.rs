@@ -1,20 +1,18 @@
+use lsp_types::MessageType;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::rc::Rc;
-use std::rc::Weak;
-use lsp_types::MessageType;
-use weak_table::PtrWeakHashSet;
-use std::collections::HashSet;
 
-use crate::constants::BuildStatus;
-use crate::constants::BuildSteps;
 use crate::constants::OYarn;
-use crate::constants::SymType;
+use crate::core::symbols::symbol_keys::SourceFileKey;
+use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey};
+use crate::core::symbols::storage::SymbolTable;
 use crate::threads::SessionInfo;
+use crate::weak_collections::WeakSet;
 
-use super::symbols::module_symbol::ModuleSymbol;
-use super::symbols::symbol::Symbol;
+use super::symbols::ModuleSymbol;
 
 #[derive(Debug)]
 pub struct ModelData {
@@ -72,68 +70,78 @@ impl ModelData {
 #[derive(Debug)]
 pub struct Model {
     name: OYarn,
-    symbols: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
-    pub dependents: PtrWeakHashSet<Weak<RefCell<Symbol>>>,
+    symbols: WeakSet<ClassKey>,
+    pub dependents: WeakSet<SourceFileKey>,
 }
 
 impl Model {
-    pub fn new(name: OYarn, symbol: Rc<RefCell<Symbol>>) -> Self {
+    pub fn new(name: OYarn, symbol: ClassKey) -> Self {
         let mut res = Self {
             name,
-            symbols: PtrWeakHashSet::new(),
-            dependents: PtrWeakHashSet::new(),
+            symbols: WeakSet::new(),
+            dependents: WeakSet::new(),
         };
         res.symbols.insert(symbol);
         res
     }
 
-    pub fn add_symbol(&mut self, session: &mut SessionInfo, symbol: Rc<RefCell<Symbol>>) {
+    pub fn add_symbol(&mut self, session: &mut SessionInfo, symbol: ClassKey) {
         if self.symbols.contains(&symbol) {
             return;
         }
-        self.symbols.insert(symbol.clone());
-        let from_module = symbol.borrow().find_module();
+        self.symbols.insert(symbol);
+        let from_module = session.sync_odoo.symbol_table.find_module(symbol);
         self.add_dependents_to_validation(session, from_module);
     }
 
-    pub fn remove_symbol(&mut self, session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, from_module: Option<Rc<RefCell<Symbol>>>) {
-        self.symbols.remove(symbol);
+    pub fn remove_symbol(&mut self, session: &mut SessionInfo, symbol: ClassKey, from_module: Option<ModuleKey>) {
+        self.symbols.remove(&symbol);
         self.add_dependents_to_validation(session, from_module);
     }
 
-    pub fn get_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Symbol>>> {
+    pub fn get_symbols(&self, symbol_table: &SymbolTable, from_module: Option<ModuleKey>) -> Vec<ClassKey> {
         let mut symbol = Vec::new();
-        for s in self.symbols.iter() {
-            let module = s.borrow().find_module().expect("Unreachable: Model should be declared in a module");
-            if from_module.is_none() || ModuleSymbol::is_in_deps(session, from_module.as_ref().unwrap(), &module.borrow().as_module_package().dir_name) {
+        for s in self.symbols.iter_valid(symbol_table) {
+            let module = symbol_table.find_module(s).expect("Unreachable: Model should be declared in a module");
+            let module_sym = &symbol_table[module];
+            if from_module.is_none() || ModuleSymbol::is_in_deps(symbol_table, from_module.unwrap(), &module_sym.dir_name) {
                 symbol.push(s);
             }
         }
         symbol
     }
 
-    pub fn get_main_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Symbol>>> {
-        let mut res: Vec<Rc<RefCell<Symbol>>> = vec![];
-        for sym in self.symbols.iter() {
-            if !sym.borrow().as_class_sym()._model.as_ref().unwrap().inherit.contains(&sym.borrow().as_class_sym()._model.as_ref().unwrap().name) {
-                if from_module.is_none() || sym.as_ref().borrow().find_module().is_none() {
-                    res.push(sym);
-                } else {
-                    let dir_name = sym.borrow().find_module().unwrap().borrow().as_module_package().dir_name.clone();
-                    if ModuleSymbol::is_in_deps(session, from_module.as_ref().unwrap(), &dir_name) {
-                        res.push(sym);
-                    }
-                }
+    pub fn get_main_symbols(&self, session: &SessionInfo, from_module: Option<ModuleKey>) -> Vec<ClassKey> {
+        let st = &session.sync_odoo.symbol_table;
+        let mut res = vec![];
+        let symbols = self.symbols.iter_valid(st).filter(|&key| {
+            let model = st[key]._model.as_ref().unwrap();
+            !model.inherit.contains(&model.name)
+        });
+        let Some(dependent) = from_module else {
+            return symbols.collect();
+        };
+        for key in symbols {
+            let Some(dependency) = st.find_module(key) else {
+                res.push(key);
+                continue;
+            };
+            let dependency_name = &st[dependency].dir_name;
+            if ModuleSymbol::is_in_deps(st, dependent, dependency_name) {
+                res.push(key);
             }
         }
         res
     }
 
-    pub fn model_in_deps(&self, session: &mut SessionInfo, from_module: &Rc<RefCell<Symbol>>) -> bool {
-        for sym in self.symbols.iter() {
-            if !sym.borrow().as_class_sym()._model.as_ref().unwrap().inherit.contains(&sym.borrow().as_class_sym()._model.as_ref().unwrap().name) {
-                let dir_name = sym.borrow().find_module().unwrap().borrow().as_module_package().dir_name.clone();
-                if ModuleSymbol::is_in_deps(session, from_module, &dir_name) {
+    pub fn model_in_deps(&self, session: &mut SessionInfo, from_module: ModuleKey) -> bool {
+        let st = &session.sync_odoo.symbol_table;
+        for key in self.symbols.iter_valid(st) {
+            let model = st[key]._model.as_ref().unwrap();
+            if !model.inherit.contains(&model.name) {
+                let module = st.find_module(key).unwrap();
+                let dir_name = &st[module].dir_name;
+                if ModuleSymbol::is_in_deps(st, from_module, dir_name) {
                     return true;
                 }
             }
@@ -141,16 +149,16 @@ impl Model {
         false
     }
 
-    pub fn get_full_model_symbols(model_rc: Rc<RefCell<Model>>, session: &mut SessionInfo, from_module: Rc<RefCell<Symbol>>) -> PtrWeakHashSet<Weak<RefCell<Symbol>>> {
-        let mut symbol_set  = PtrWeakHashSet::new();
+    pub fn get_full_model_symbols(model_rc: Rc<RefCell<Model>>, session: &SessionInfo, from_module: ModuleKey) -> HashSet<ClassKey> {
+        let st = &session.sync_odoo.symbol_table;
+        let mut symbol_set  = HashSet::new();
         let mut already_in = HashSet::new();
         let mut queue = VecDeque::from([model_rc]);
-        while let Some(current_model_rc) = queue.pop_front(){
+        while let Some(current_model_rc) = queue.pop_front() {
             let current_model = current_model_rc.borrow();
-            let symbols = current_model.get_symbols(session, Some(from_module.clone()));
-            for symbol in symbols.iter() {
-                let sym_ref = symbol.borrow();
-                let Some(model_data) = &sym_ref.as_class_sym()._model else {continue};
+            let symbols = current_model.get_symbols(st, Some(from_module));
+            for &key in symbols.iter() {
+                let Some(model_data) = &st[key]._model else {continue};
                 for inherit in model_data.inherit.iter() {
                     if let Some(model) = session.sync_odoo.models.get(inherit).cloned() {
                         if !already_in.contains(&model.borrow().name) {
@@ -165,20 +173,20 @@ impl Model {
         symbol_set
     }
 
-    pub fn get_inherits_models(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> Vec<Rc<RefCell<Model>>> {
+    pub fn get_inherits_models(&self, session: &mut SessionInfo, from_module: ModuleKey) -> Vec<Rc<RefCell<Model>>> {
+        let st = &session.sync_odoo.symbol_table;
         let mut res = vec![];
         let mut already_in = HashSet::new();
-        if let Some(from_module) = from_module {
-            let symbols = self.get_symbols(session, Some(from_module));
-            for symbol in symbols {
-                if let Some(model_data) = &symbol.borrow().as_class_sym()._model {
-                    for (model_name, _field) in model_data.inherits.iter() {
-                        if let Some(model) = session.sync_odoo.models.get(model_name).cloned() {
-                            if !already_in.contains(&model.borrow().name) {
-                                res.push(model.clone());
-                                already_in.insert(model.borrow().name.clone());
-                            }
-                        }
+        let symbols = self.get_symbols(st, Some(from_module));
+        for symbol_key in symbols {
+            let Some(model_data) = &st[symbol_key]._model else {
+                continue;
+            };
+            for (model_name, _field) in model_data.inherits.iter() {
+                if let Some(model) = session.sync_odoo.models.get(model_name).cloned() {
+                    if !already_in.contains(&model.borrow().name) {
+                        res.push(model.clone());
+                        already_in.insert(model.borrow().name.clone());
                     }
                 }
             }
@@ -186,8 +194,8 @@ impl Model {
         res
     }
 
-    pub fn has_symbols(&mut self) -> bool {
-        self.symbols.remove_expired();
+    pub fn has_symbols(&mut self, symbol_table: &SymbolTable) -> bool {
+        self.symbols.clear_invalid(symbol_table);
         !self.symbols.is_empty()
     }
 
@@ -195,36 +203,38 @@ impl Model {
         It returns the symbol and an optional string that represents the module name that should be added to dependencies to be used.
         if with_inheritance is true, it will also return symbols from inherited models (NOT Base classes).
     */
-    pub fn all_symbols(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>, with_inheritance: bool) -> Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)> {
+    pub fn all_symbols(&self, session: &SessionInfo, from_module: Option<ModuleKey>, with_inheritance: bool) -> Vec<(ClassKey, Option<OYarn>)> {
         self.all_symbols_helper(session, from_module, with_inheritance, &mut HashSet::new())
     }
 
-    fn all_symbols_helper(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>, with_inheritance: bool, seen_inherited_models: &mut HashSet<OYarn>) -> Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)> {
+    fn all_symbols_helper(&self, session: &SessionInfo, from_module: Option<ModuleKey>, with_inheritance: bool, seen_inherited_models: &mut HashSet<OYarn>) -> Vec<(ClassKey, Option<OYarn>)> {
+        let st = &session.sync_odoo.symbol_table;
         let mut symbols = Vec::new();
-        for s in self.symbols.iter() {
-            if let Some(from_module) = from_module.as_ref() {
-                let module = s.borrow().find_module();
+        for s in self.symbols.iter_valid(st) { // filter stale keys
+            if let Some(from_module) = from_module {
+                let module = st.find_module(s);
                 if let Some(module) = module {
-                    if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name) {
-                        symbols.push((s.clone(), None));
+                    let dir_name = &st[module].dir_name;
+                    if ModuleSymbol::is_in_deps(st, from_module, dir_name) {
+                        symbols.push((s, None));
                     } else {
-                        symbols.push((s.clone(), Some(module.borrow().as_module_package().dir_name.clone())));
+                        symbols.push((s, Some(dir_name.clone())));
                     }
                 } else {
                     session.log_message(MessageType::WARNING, "A model should be declared in a module.".to_string());
                 }
             } else {
-                symbols.push((s.clone(), None));
+                symbols.push((s, None));
             }
             if !with_inheritance {
                 continue;
             }
-            let inherited_models = s.borrow().as_class_sym()._model.as_ref().unwrap().inherit.clone();
+            let inherited_models = &st[s]._model.as_ref().unwrap().inherit;
             for inherited_model in inherited_models.iter() {
                 if !seen_inherited_models.contains(inherited_model) {
                     seen_inherited_models.insert(inherited_model.clone());
                     if let Some(model) = session.sync_odoo.models.get(inherited_model).cloned() {
-                        symbols.extend(model.borrow().all_symbols_helper(session, from_module.clone(), true, seen_inherited_models));
+                        symbols.extend(model.borrow().all_symbols_helper(session, from_module, true, seen_inherited_models));
                     }
                 }
             }
@@ -232,47 +242,49 @@ impl Model {
         symbols
     }
 
-    pub fn all_symbols_inherits(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>) -> (Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>) {
+    pub fn all_symbols_inherits(&self, session: &SessionInfo, from_module: Option<ModuleKey>) -> (Vec<(ClassKey, Option<OYarn>)>, Vec<(ClassKey, Option<OYarn>)>) {
         let mut visited_models = HashSet::new();
         self.all_inherits_helper(session, from_module, &mut visited_models)
     }
 
-    fn all_inherits_helper(&self, session: &mut SessionInfo, from_module: Option<Rc<RefCell<Symbol>>>, visited_models: &mut HashSet<String>) -> (Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>, Vec<(Rc<RefCell<Symbol>>, Option<OYarn>)>) {
-        if visited_models.contains(&self.name.to_string()) {
+    fn all_inherits_helper(&self, session: &SessionInfo, from_module: Option<ModuleKey>, visited_models: &mut HashSet<OYarn>) -> (Vec<(ClassKey, Option<OYarn>)>, Vec<(ClassKey, Option<OYarn>)>) {
+        if visited_models.contains(&self.name) {
             return (Vec::new(), Vec::new());
         }
-        visited_models.insert(self.name.to_string());
+        visited_models.insert(self.name.clone());
+        let st = &session.sync_odoo.symbol_table;
         let mut symbols = Vec::new();
         let mut inherits_symbols = Vec::new();
-        for s in self.symbols.iter() {
-            if let Some(from_module) = from_module.as_ref() {
-                let module = s.borrow().find_module();
+        for s in self.symbols.iter_valid(st) {
+            if let Some(from_module) = from_module {
+                let module = st.find_module(s);
                 if let Some(module) = module {
-                    if ModuleSymbol::is_in_deps(session, &from_module, &module.borrow().as_module_package().dir_name) {
-                        symbols.push((s.clone(), None));
+                    let dir_name = &st[module].dir_name;
+                    if ModuleSymbol::is_in_deps(st, from_module, dir_name) {
+                        symbols.push((s, None));
                     } else {
-                        symbols.push((s.clone(), Some(module.borrow().as_module_package().dir_name.clone())));
+                        symbols.push((s, Some(dir_name.clone())));
                     }
                 } else {
                     session.log_message(MessageType::WARNING, "A model should be declared in a module.".to_string());
                 }
             } else {
-                symbols.push((s.clone(), None));
+                symbols.push((s, None));
             }
             // First get results from normal inherit
             // To make sure we visit all of inherit before inherits, since it is DFS
             // Only inherits in the tree that are not already visited will be processed in the next iteration
-            let inherited_models = s.borrow().as_class_sym()._model.as_ref().unwrap().inherit.clone();
-            for inherited_model in inherited_models.iter() {
+            let model_data = st[s]._model.as_ref().unwrap();
+            for inherited_model in &model_data.inherit {
                 if let Some(model) = session.sync_odoo.models.get(inherited_model).cloned() {
-                    let (main_result, inherits_result) = model.borrow().all_inherits_helper(session, from_module.clone(), visited_models);
+                    let (main_result, inherits_result) = model.borrow().all_inherits_helper(session, from_module, visited_models);
                     symbols.extend(main_result);
                     inherits_symbols.extend(inherits_result);
                 }
             }
-            for (inherits_model, _) in s.borrow().as_class_sym()._model.as_ref().unwrap().inherits.clone() {
-                if let Some(model) = session.sync_odoo.models.get(&inherits_model).cloned() {
-                    let (main_result, inherits_result) = model.borrow().all_inherits_helper(session, from_module.clone(), visited_models);
+            for (inherits_model, _) in &model_data.inherits {
+                if let Some(model) = session.sync_odoo.models.get(inherits_model).cloned() {
+                    let (main_result, inherits_result) = model.borrow().all_inherits_helper(session, from_module, visited_models);
                     // Everything that is in inherits should be added to inherits_symbols, regardless of whether
                     // it was in inherit or inherits. Since we need that distinction to later only get fields
                     inherits_symbols.extend(main_result);
@@ -283,38 +295,30 @@ impl Model {
         (symbols, inherits_symbols)
     }
 
-    pub fn add_dependent(&mut self, symbol: &Rc<RefCell<Symbol>>) {
-        self.dependents.insert(symbol.clone());
+    pub fn add_dependent(&mut self, symbol: SourceFileKey) {
+        self.dependents.insert(symbol);
     }
 
-    pub fn add_dependents_to_validation(&self, session: &mut SessionInfo, module_change: Option<Rc<RefCell<Symbol>>>) {
-        for dep in self.dependents.iter() {
-            dep.borrow_mut().invalidate_sub_functions(session);
-            let module = dep.borrow().find_module();
-            if module_change.is_none() || module.is_none() || ModuleSymbol::is_in_deps(session, &module.as_ref().unwrap(), &module_change.as_ref().unwrap().borrow().as_module_package().dir_name) {
-                let typ = dep.borrow().typ().clone();
-                match typ {
-                    SymType::FUNCTION => {
-                        dep.borrow_mut().set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
-                        session.sync_odoo.add_to_validations(dep.clone());
-                    },
-                    _ => {
-                        session.sync_odoo.add_to_validations(dep.clone());
-                    }
-                }
+    pub fn add_dependents_to_validation(&self, session: &mut SessionInfo, module_change: Option<ModuleKey>) {
+        for dep in self.dependents.iter_valid(session.st()) {
+            let st = session.st_mut();
+            st.invalidate_sub_functions(dep);
+            let module = st.find_module(dep);
+            if module_change.is_none() || module.is_none() || ModuleSymbol::is_in_deps(st, module.unwrap(), &st[module_change.unwrap()].dir_name) {
+                session.sync_odoo.add_to_validations(dep);
             }
         }
     }
 
-    pub fn inherits_from(&self, session: &mut SessionInfo, base: &Rc<RefCell<Model>>) -> bool {
-        fn inner(this: &Model, session: &mut SessionInfo, base: &Rc<RefCell<Model>>, checked: &mut HashSet<OYarn>) -> bool {
+    pub fn inherits_from(&self, session: &SessionInfo, base: &Rc<RefCell<Model>>) -> bool {
+        fn inner(this: &Model, session: &SessionInfo, base: &Rc<RefCell<Model>>, checked: &mut HashSet<OYarn>) -> bool {
             if checked.contains(&this.name) {
                 return false;
             }
             checked.insert(this.name.clone());
-            for symbol in this.symbols.iter() {
-                let sym_ref = symbol.borrow();
-                let Some(model_data) = &sym_ref.as_class_sym()._model else {continue};
+            let symbol_table = &session.sync_odoo.symbol_table;
+            for symbol in this.symbols.iter_valid(symbol_table) {
+                let Some(model_data) = &symbol_table[symbol]._model else {continue};
                 for inherit in model_data.inherit.iter() {
                     if inherit == &base.borrow().name {
                         return true;
