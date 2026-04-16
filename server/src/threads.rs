@@ -8,7 +8,7 @@ use lsp_types::{CompletionResponse, DocumentSymbolResponse, GotoDefinitionRespon
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tracing::{error, info, warn};
-use crate::{constants::MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART, create_session};
+use crate::{constants::MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART, core::symbols::storage::SymbolTable, create_session};
 
 use crate::{core::{file_mgr::NoqaInfo, odoo::{Odoo, SyncOdoo}}, server::ServerError, utils::PathSanitizer, S};
 
@@ -33,6 +33,7 @@ impl <'a> SessionInfo<'a> {
             current_noqa: NoqaInfo::None,
         }
     }
+
     pub fn log_message(&self, msg_type: MessageType, msg: String) {
         if let Err(e) = self.sender.send(
             Message::Notification(lsp_server::Notification{
@@ -129,7 +130,7 @@ impl <'a> SessionInfo<'a> {
             let _ = session.delayed_process_sender.as_ref().unwrap().send(DelayedProcessingMessage::RESTART);
             return;
         }
-        let _ = SyncOdoo::unload_path(session, &path, false);
+        SyncOdoo::unload_path(session, &path);
         Odoo::search_symbols_to_rebuild(session, &path.sanitize());
         if (!forced_delay || session.delayed_process_sender.is_none()) && !session.sync_odoo.need_rebuild {
             if session.sync_odoo.get_rebuild_queue_size() < 10 {
@@ -177,6 +178,17 @@ impl <'a> SessionInfo<'a> {
             }
         }
     }
+
+    /// Get a immutable reference to the symbol table
+    pub fn st(&self) -> &SymbolTable {
+        &self.sync_odoo.symbol_table
+    }
+
+    /// Get a mutable reference to the symbol table
+    pub fn st_mut(&mut self) -> &mut SymbolTable {
+        &mut self.sync_odoo.symbol_table
+    }
+
 }
 
 fn to_value<T: Serialize + std::fmt::Debug>(result: Result<Option<T>, ResponseError>) -> (Option<Value>, Option<ResponseError>) {

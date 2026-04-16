@@ -87,7 +87,7 @@ fn _link_tuples(targets: Vec<Expr>, values: Vec<Expr>) -> Vec<Assign> {
     res
 }
 
-pub fn unpack_assign(targets: &Vec<Expr>, annotation: Option<&Expr>, value: Option<&Expr>) -> Vec<Assign> {
+pub fn unpack_assign(targets: &[Expr], annotation: Option<&Expr>, value: Option<&Expr>) -> Vec<Assign> {
     //Given the target, the annotation and the values, return a list of tuples (variable: ExprName, annotation, value)
     //for each variable, associating annotation and value for the right variable
     // Ex: for "a = b = 1", return [("a", None, 1), ("b", , None, 1)]
@@ -99,7 +99,7 @@ pub fn unpack_assign(targets: &Vec<Expr>, annotation: Option<&Expr>, value: Opti
     // Ex: for "a, *b, c, d = 1, 2, 3, 4, 5" return [("a", None, 1), ("b", None, (2, 3)), ("c", None, 4), ("d", None, 5)] //TODO
     let mut res: Vec<Assign> = Vec::new();
 
-    for target in targets.iter() {
+    for target in targets {
         match target {
             Expr::Attribute(expr) => {
                 match value {

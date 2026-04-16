@@ -1,13 +1,13 @@
+#![allow(dead_code)]
 use core::str;
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::{env, fs};
 
 use std::path::PathBuf;
 
 
 use lsp_server::Message;
-use lsp_types::{Diagnostic, PublishDiagnosticsParams, TextDocumentContentChangeEvent, Uri};
+use lsp_types::{Diagnostic, PublishDiagnosticsParams, TextDocumentContentChangeEvent};
 use lsp_types::notification::{Notification, PublishDiagnostics};
 use odoo_ls_server::S;
 use odoo_ls_server::core::file_mgr::FileMgr;
@@ -73,12 +73,13 @@ pub fn create_init_session<'a>(odoo: &'a mut SyncOdoo, config: ConfigEntry) -> S
 pub fn prepare_custom_entry_point(session: &mut SessionInfo, path: &str){
     let ep_path = PathBuf::from(path).sanitize();
     let text = fs::read_to_string(path).expect("unable to read provided path");
-    let content = Some(vec![TextDocumentContentChangeEvent{
+    let event = [TextDocumentContentChangeEvent{
         range: None,
         range_length: None,
-            text: text}]);
+        text: text}];
+    let content = Some(event.as_slice());
     EntryPointMgr::create_new_custom_entry_for_path(session, &ep_path, &ep_path);
-    let (file_updated, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path, content.as_ref(), Some(1), false);
+    let (_file_updated, _file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path, content, Some(1), false);
     SyncOdoo::process_rebuilds(session, false);
 }
 
