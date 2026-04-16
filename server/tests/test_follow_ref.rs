@@ -2,8 +2,8 @@ mod setup;
 mod test_utils;
 use odoo_ls_server::core::file_mgr::FileInfo;
 use odoo_ls_server::core::odoo::SyncOdoo;
-use odoo_ls_server::core::symbols::symbol::Symbol;
 use odoo_ls_server::constants::OYarn;
+use odoo_ls_server::core::symbols::symbol_keys::{SourceFileKey};
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 use odoo_ls_server::Sy;
@@ -28,15 +28,15 @@ fn test_follow_ref() {
     let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, &PathBuf::from(&path))
         .expect("Failed to get file symbol");
 
-    test_variable_type_resolution(&mut session, &file_info, &file_symbol);
+    test_variable_type_resolution(&mut session, &file_info, file_symbol);
 }
 
 fn test_variable_type_resolution(
     session: &mut SessionInfo<'_>,
     file_info: &Rc<RefCell<FileInfo>>,
-    file_symbol: &Rc<RefCell<Symbol>>,
+    file_symbol: SourceFileKey,
 ) {
-    let test_class = file_symbol.borrow().get_sub_symbol("TestClass", u32::MAX).symbols[0].clone();
+    let test_class = session.st().get_sub_symbol(file_symbol.into(), "TestClass", u32::MAX).symbols[0].clone();
     let int_type = session.sync_odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("int")]), u32::MAX)[0].clone();
     let str_type = session.sync_odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("str")]), u32::MAX)[0].clone();
 
@@ -56,11 +56,11 @@ fn test_variable_type_resolution(
 
         assert!(
             resolved_types.len() == expected_types.len() &&
-            resolved_types.iter().zip(&expected_types).all(|(a, b)| Rc::ptr_eq(a, b)),
+            resolved_types.iter().zip(&expected_types).all(|(a, &b)| a == b ),
             "Variable '{}' at line {} should have types {:?}, but got {:?}",
-            var_name, line, 
-            expected_types.iter().map(|s| s.borrow().name().to_string()).collect::<Vec<_>>(),
-            resolved_types.iter().map(|s| s.borrow().name().to_string()).collect::<Vec<_>>()
+            var_name, line,
+            expected_types.iter().map(|&s| session.st().name(*s).to_string()).collect::<Vec<_>>(),
+            resolved_types.iter().map(|&s| session.st().name(s).to_string()).collect::<Vec<_>>()
         );
     }
 }

@@ -1,8 +1,18 @@
+#![allow(dead_code)]
 use lsp_types::{Diagnostic, NumberOrString};
+use odoo_ls_server::{
+    S, core::{
+        file_mgr::FileInfo,
+        symbols::{storage::SymbolTable, symbol_keys::{SourceFileKey, SymbolKey}},
+    }, features::ast_utils::AstUtils, threads::SessionInfo, utils::compare_semver
+};
 use once_cell::sync::Lazy;
-use std::{cell::RefCell, cmp::Ordering, collections::{HashMap, HashSet}, rc::Rc};
-
-use odoo_ls_server::{S, core::{file_mgr::{AstType, FileInfo}, symbols::symbol::Symbol}, features::ast_utils::AstUtils, threads::SessionInfo, utils::compare_semver};
+use std::{
+    cell::RefCell,
+    cmp::Ordering,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 
 /// Returns the correct class name for Partner/ResPartner depending on Odoo version
@@ -29,7 +39,7 @@ pub static COUNTRY_CLASS_NAME: Lazy<fn(&str) -> &'static str> = Lazy::new(|| {
 
 
 /// Helper to get hover markdown string at a given (line, character)
-pub fn get_hover_markdown(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<String> {
+pub fn get_hover_markdown(session: &mut SessionInfo, file_symbol: SourceFileKey, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<String> {
     let hover = odoo_ls_server::features::hover::HoverFeature::hover_python(
         session,
         file_symbol,
@@ -45,7 +55,7 @@ pub fn get_hover_markdown(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Sy
 }
 
 /// Helper to get hover markdown string at a given (line, character)
-pub fn get_definition_locs(session: &mut SessionInfo, f_sym: &Rc<RefCell<Symbol>>, f_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Vec<lsp_types::LocationLink> {
+pub fn get_definition_locs(session: &mut SessionInfo, f_sym: SourceFileKey, f_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Vec<lsp_types::LocationLink> {
     let locations = odoo_ls_server::features::definition::DefinitionFeature::get_location(
                     session,
                     f_sym,
@@ -133,11 +143,11 @@ pub fn verify_diagnostics_against_doc(
 
 pub fn get_resolved_symbols_at_position(
     session: &mut SessionInfo,
-    file_symbol: &Rc<RefCell<Symbol>>,
+    file_symbol: SourceFileKey,
     file_info: &Rc<RefCell<FileInfo>>,
     line: u32,
     character: u32,
-) -> Vec<Rc<RefCell<Symbol>>> {
+) -> Vec<SymbolKey> {
     // Get evaluations at the given position
     let offset = file_info
         .borrow()
@@ -156,7 +166,7 @@ pub fn get_resolved_symbols_at_position(
     evals
         .iter()
         .flat_map(|eval| {
-            Symbol::follow_ref(
+            SymbolTable::follow_ref(
                 eval.symbol.get_symbol_ptr(),
                 session,
                 &mut None,
@@ -166,7 +176,7 @@ pub fn get_resolved_symbols_at_position(
                 None,
             )
         })
-        .filter_map(|ev| ev.upgrade_weak())
+        .collect::<Vec<_>>()
+        .iter().filter_map(|ev| ev.upgrade_weak(session.st()))
         .collect()
 }
-
