@@ -1,9 +1,6 @@
 //! Hooks for XML/CSV data file events.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use crate::core::symbols::symbol::Symbol;
+use crate::core::symbols::symbol_keys::SourceFileKey;
 use crate::core::xml_data::OdooDataRecord;
 use crate::threads::SessionInfo;
 use once_cell::sync::Lazy;
@@ -13,7 +10,7 @@ use once_cell::sync::Lazy;
 // ============================================================================
 
 pub type RecordCreationHookFn =
-    fn(session: &mut SessionInfo, source_file: &Rc<RefCell<Symbol>>, record: &OdooDataRecord);
+    fn(session: &mut SessionInfo, source_file: SourceFileKey, record: &OdooDataRecord);
 
 /// A hook that triggers when records of specific models are created.
 pub struct RecordCreationHook {
@@ -47,7 +44,7 @@ static record_creation_hooks: Lazy<Vec<RecordCreationHook>> = Lazy::new(|| {
 /// Called from xml_arch_builder.rs and csv_arch_builder.rs.
 pub fn on_record_creation(
     session: &mut SessionInfo,
-    source_file: &Rc<RefCell<Symbol>>,
+    source_file: SourceFileKey,
     record: &OdooDataRecord,
 ) {
     let model_name = record.model.0.as_str();
@@ -63,7 +60,7 @@ pub fn on_record_creation(
 // Data File Unload Hooks
 // ============================================================================
 
-pub type FileUnloadHookFn = fn(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>);
+pub type FileUnloadHookFn = fn(session: &mut SessionInfo, file: SourceFileKey);
 
 /// A hook that triggers when a data file (XML/CSV) symbol is unloaded.
 pub struct FileUnloadHook {
@@ -82,7 +79,7 @@ static file_unload_hooks: Lazy<Vec<FileUnloadHook>> = Lazy::new(|| {
 });
 
 /// Dispatch to all hooks when data file (XML/CSV) is unloaded
-pub fn on_file_unload(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>) {
+pub fn on_file_unload(session: &mut SessionInfo, file: SourceFileKey) {
     for hook in file_unload_hooks.iter() {
         (hook.func)(session, file);
     }
