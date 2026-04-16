@@ -1,26 +1,33 @@
-use std::{cell::RefCell, rc::Rc};
-
+use super::file_mgr::FileInfo;
+use crate::{
+    constants::{BuildStatus, BuildSteps, OYarn},
+    core::{entry_point::EntryPointType, xml_data::OdooData},
+    threads::SessionInfo,
+    Sy,
+};
+use crate::{
+    core::{
+        data_hooks,
+        diagnostics::{create_diagnostic, DiagnosticCode},
+        odoo::SyncOdoo,
+        symbols::{Buildable, symbol_keys::XmlFileKey},
+    },
+};
 use lsp_types::Diagnostic;
 use roxmltree::{Attribute, Node};
 use tracing::warn;
-use weak_table::PtrWeakHashSet;
-
-use crate::core::{data_hooks, diagnostics::{create_diagnostic, DiagnosticCode}, odoo::SyncOdoo};
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{entry_point::EntryPointType, xml_data::OdooData}, threads::SessionInfo, Sy};
-
-use super::{file_mgr::FileInfo, symbols::{symbol::Symbol}};
 
 /*
 Struct made to load RelaxNG Odoo schemas and add hooks and specific OdooLS behavior on particular nodes.
 */
 pub struct XmlArchBuilder {
     pub is_in_main_ep: bool,
-    pub xml_symbol: Rc<RefCell<Symbol>>,
+    pub xml_symbol: XmlFileKey,
 }
 
 impl XmlArchBuilder {
 
-    pub fn new(xml_symbol: Rc<RefCell<Symbol>>) -> Self {
+    pub fn new(xml_symbol: XmlFileKey) -> Self {
         Self {
             is_in_main_ep: false,
             xml_symbol
@@ -29,15 +36,13 @@ impl XmlArchBuilder {
 
     pub fn load_arch(&mut self, session: &mut SessionInfo, file_info: &mut FileInfo, node: &Node) {
         let mut diagnostics = vec![];
-        self.xml_symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
-        let ep = self.xml_symbol.borrow().get_entry();
-        if let Some(ep) = ep {
-            self.is_in_main_ep = ep.borrow().typ == EntryPointType::MAIN || ep.borrow().typ == EntryPointType::ADDON;
-        }
+        session.st_mut()[self.xml_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
+        let ep = session.st().get_entry(self.xml_symbol);
+        self.is_in_main_ep = ep.borrow().typ == EntryPointType::MAIN || ep.borrow().typ == EntryPointType::ADDON;
         self.load_odoo_openerp_data(session, node, &mut diagnostics);
-        self.xml_symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
+        session.st_mut()[self.xml_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
         file_info.replace_diagnostics(BuildSteps::ARCH, diagnostics);
-        session.sync_odoo.add_to_validations(self.xml_symbol.clone());
+        session.sync_odoo.add_to_validations(self.xml_symbol);
     }
 
     pub fn on_operation_creation(
@@ -52,12 +57,11 @@ impl XmlArchBuilder {
             return;
         }
         if let Some(id) = id {
-            let module = self.xml_symbol.borrow().find_module();
-            if module.is_none() {
+            let module = session.st().find_module(self.xml_symbol);
+            let Some(module) = module else {
                 warn!("Module not found for id: {}", id);
                 return;
-            }
-            let module = module.unwrap();
+            };
             let id_split = id.split(".").collect::<Vec<&str>>();
             if id_split.len() > 2 {
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05051, &[&id]) {
@@ -72,33 +76,30 @@ impl XmlArchBuilder {
                 return;
             }
             let id = id_split.last().unwrap().to_string();
-            let mut xml_module = module.clone();
+            let mut xml_module = module;
             if id_split.len() == 2 {
                 let module_name = Sy!(id_split.first().unwrap().to_string());
-                if let Some(m) = session.sync_odoo.modules.get(&module_name) {
-                    xml_module = m.upgrade().unwrap();
+                if let Some(module) = session.sync_odoo.modules.get(&module_name).and_then(|m| m.upgrade(session.st())) {
+                    xml_module = module;
                 }
             }
-            xml_data.set_file_symbol(&self.xml_symbol);
-            xml_module.borrow_mut().as_module_package_mut().xml_id_locations.entry(Sy!(id.clone())).or_insert(PtrWeakHashSet::new()).insert(self.xml_symbol.clone());
+            xml_data.set_file_symbol(self.xml_symbol);
+            session.st_mut()[xml_module].xml_id_locations.entry(Sy!(id.clone())).or_default().insert(self.xml_symbol.into());
             if let OdooData::RECORD(ref record) = xml_data {
-                data_hooks::on_record_creation(session, &self.xml_symbol, record);
+                data_hooks::on_record_creation(session, self.xml_symbol.into(), record);
             }
-            self.xml_symbol.borrow_mut().as_xml_file_sym_mut().xml_ids.entry(Sy!(id.clone())).or_insert(vec![]).push(xml_data);
+            session.st_mut()[self.xml_symbol].xml_ids.entry(Sy!(id)).or_insert(vec![]).push(xml_data);
         }
     }
 
     pub fn get_group_ids(&self, session: &mut SessionInfo, xml_id: &str, attr: &Attribute, diagnostics: &mut Vec<Diagnostic>) -> Vec<OdooData> {
-        let xml_ids = SyncOdoo::get_xml_ids(session, &self.xml_symbol, xml_id, &attr.range(), diagnostics);
+        let xml_ids = SyncOdoo::get_xml_ids(session, self.xml_symbol.into(), xml_id, &attr.range(), diagnostics);
         let mut res = vec![];
         for data in xml_ids.iter() {
-            match data {
-                OdooData::RECORD(r) => {
-                    if r.model.0 == "res.groups" {
-                        res.push(data.clone());
-                    }
-                },
-                _ => {}
+            if let OdooData::RECORD(r) = data {
+                if r.model.0 == "res.groups" {
+                    res.push(data.clone());
+                }
             }
         }
         res

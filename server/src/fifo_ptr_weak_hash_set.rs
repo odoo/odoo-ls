@@ -1,32 +1,33 @@
-use std::{collections::VecDeque, hash::RandomState, rc::{Rc, Weak}};
-use weak_table::{PtrWeakHashSet};
+use std::{collections::{HashSet, VecDeque}, hash::Hash};
+
+use crate::core::symbols::symbol_keys::KeyValidator;
 
 #[derive(Debug)]
-pub struct FifoPtrWeakHashSet<T> {
-    set: PtrWeakHashSet<Weak<T>, RandomState>,
-    queue: VecDeque<Weak<T>>,
+pub struct FifoWeakHashSet<T: Copy + Eq + Hash> {
+    set: HashSet<T>,
+    queue: VecDeque<T>,
 }
 
-impl<T> FifoPtrWeakHashSet<T>
-{
+impl<T: Copy + Eq + Hash> FifoWeakHashSet<T> {
     pub fn new() -> Self {
         Self {
-            set: PtrWeakHashSet::new(),
+            set: HashSet::new(),
             queue: VecDeque::new(),
         }
     }
 
-    pub fn insert(&mut self, v: Rc<T>) {
-        if !self.set.insert(v.clone()) { //it returns true if absent (wrong doc)
-            self.queue.push_back(Rc::downgrade(&v));
+    pub fn insert(&mut self, v: T) {
+        if self.set.insert(v) {
+            self.queue.push_back(v);
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = Rc<T>> {
-        self.queue.iter().filter_map(|weak| weak.upgrade())
+    /// Iterate over valid keys. This does not remove invalid keys from the set.
+    pub fn iter_valid(&self, table: &impl KeyValidator<T>) -> impl Iterator<Item = T> {
+        self.queue.iter().filter(|&&weak| table.is_key_valid(weak)).copied()
     }
 
-    pub fn contains(&self, v: &Rc<T>) -> bool {
+    pub fn contains(&self, v: &T) -> bool {
         self.set.contains(v)
     }
 
@@ -35,11 +36,9 @@ impl<T> FifoPtrWeakHashSet<T>
         self.queue.clear();
     }
 
-    pub fn remove(&mut self, v: &Rc<T>) -> bool {
+    pub fn remove(&mut self, v: &T) -> bool {
         if self.set.remove(v) {
-            let weak = Rc::downgrade(v);
-            let pos = self.queue.iter().position(|x| Weak::ptr_eq(x, &weak));
-            if let Some(pos) = pos {
+            if let Some(pos) = self.queue.iter().position(|x| x == v) {
                 self.queue.remove(pos);
             }
             return true
@@ -47,10 +46,16 @@ impl<T> FifoPtrWeakHashSet<T>
         false
     }
 
+    /// Returns true if the set is empty. Note that this does not consider
+    /// whether the keys are valid or not, so it may return false even if all
+    /// keys are expired.
     pub fn is_empty(&self) -> bool {
         self.set.is_empty()
     }
 
+    /// Returns the number of elements in the set. Note that this does not consider
+    /// whether the keys are valid or not, so it may return a non-zero value even if all
+    /// keys are expired.
     pub fn len(&self) -> usize {
         self.set.len()
     }

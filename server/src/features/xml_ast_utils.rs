@@ -1,19 +1,27 @@
-use std::{cell::RefCell, collections::HashMap, ops::Range, rc::Rc};
-
+use crate::{
+    S, core::{
+        evaluation::ContextValue,
+        odoo::SyncOdoo,
+        symbols::{
+            ModuleSymbol,
+            symbol_keys::{ModuleKey, SourceFileKey, SymbolKey},
+        },
+        xml_data::{OdooData, OdooDataRecord},
+    }, threads::SessionInfo
+};
 use roxmltree::Node;
-
-use crate::{S, Sy, constants::OYarn, core::{evaluation::ContextValue, odoo::SyncOdoo, symbols::{module_symbol::ModuleSymbol, symbol::Symbol}, xml_data::{OdooData, OdooDataRecord}}, threads::SessionInfo};
+use std::{collections::HashMap, ops::Range};
 
 pub enum XmlAstResult {
-    SYMBOL(Rc<RefCell<Symbol>>),
+    SYMBOL(SymbolKey),
     #[allow(non_camel_case_types)]
     XML_DATA(OdooDataRecord),
 }
 
 impl XmlAstResult {
-    pub fn as_symbol(&self) -> Rc<RefCell<Symbol>> {
+    pub fn as_symbol(&self) -> SymbolKey {
         match self {
-            XmlAstResult::SYMBOL(sym) => sym.clone(),
+            XmlAstResult::SYMBOL(sym) => *sym,
             XmlAstResult::XML_DATA(_) =>panic!("Xml Data is not a symbol"),
         }
     }
@@ -30,34 +38,34 @@ pub struct XmlAstUtils {}
 
 impl XmlAstUtils {
 
-    pub fn get_symbols(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, root: roxmltree::Node, offset: usize, on_dep_only: bool) -> (Vec<XmlAstResult>, Option<Range<usize>>) {
+    pub fn get_symbols(session: &mut SessionInfo, file_symbol: SourceFileKey, root: roxmltree::Node, offset: usize, on_dep_only: bool) -> (Vec<XmlAstResult>, Option<Range<usize>>) {
         let mut results = (vec![], None);
-        let from_module = file_symbol.borrow().find_module();
+        let from_module = session.sync_odoo.symbol_table.find_module(file_symbol);
         let mut context_xml = HashMap::new();
         for node in root.children() {
-            XmlAstUtils::visit_node(session, &node, offset, from_module.clone(), &mut context_xml, &mut results, on_dep_only);
+            XmlAstUtils::visit_node(session, &node, offset, from_module, &mut context_xml, &mut results, on_dep_only);
         }
         results
     }
 
-    fn visit_node(session: &mut SessionInfo<'_>, node: &Node, offset: usize, from_module: Option<Rc<RefCell<Symbol>>>, ctxt: &mut HashMap<String, ContextValue>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
+    fn visit_node(session: &mut SessionInfo<'_>, node: &Node, offset: usize, from_module: Option<ModuleKey>, ctxt: &mut HashMap<String, ContextValue>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
         if node.is_element() {
             match node.tag_name().name()  {
                 "record" => {
-                    XmlAstUtils::visit_record(session, &node, offset, from_module.clone(), ctxt, results, on_dep_only);
+                    XmlAstUtils::visit_record(session, &node, offset, from_module, ctxt, results, on_dep_only);
                 }
                 "field" => {
-                    XmlAstUtils::visit_field(session, &node, offset, from_module.clone(), ctxt, results, on_dep_only);
+                    XmlAstUtils::visit_field(session, &node, offset, from_module, ctxt, results, on_dep_only);
                 },
                 "menuitem" => {
-                    XmlAstUtils::visit_menu_item(session, &node, offset, from_module.clone(), ctxt, results, on_dep_only);
+                    XmlAstUtils::visit_menu_item(session, &node, offset, from_module, ctxt, results, on_dep_only);
                 },
                 "template" => {
-                    XmlAstUtils::visit_template(session, &node, offset, from_module.clone(), ctxt, results, on_dep_only);
+                    XmlAstUtils::visit_template(session, &node, offset, from_module, ctxt, results, on_dep_only);
                 }
                 _ => {
                     for child in node.children() {
-                        XmlAstUtils::visit_node(session, &child, offset, from_module.clone(), ctxt, results, on_dep_only);
+                        XmlAstUtils::visit_node(session, &child, offset, from_module, ctxt, results, on_dep_only);
                     }
                 }
             }
@@ -66,53 +74,53 @@ impl XmlAstUtils {
         }
     }
 
-    fn visit_record(session: &mut SessionInfo<'_>, node: &Node, offset: usize, from_module: Option<Rc<RefCell<Symbol>>>, ctxt: &mut HashMap<String, ContextValue>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
+    fn visit_record(session: &mut SessionInfo<'_>, node: &Node, offset: usize, from_module: Option<ModuleKey>, ctxt: &mut HashMap<String, ContextValue>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
         for attr in node.attributes() {
             if attr.name() == "model" {
                 let model_name = attr.value().to_string();
                 ctxt.insert(S!("record_model"), ContextValue::STRING(model_name.clone()));
                 if attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    if let Some(model) = session.sync_odoo.models.get(&Sy!(model_name)).cloned() {
+                    if let Some(model) = session.sync_odoo.models.get(model_name.as_str()).cloned() {
                         let from_module = match on_dep_only {
-                            true => from_module.clone(),
+                            true => from_module,
                             false => None,
                         };
-                        results.0.extend(model.borrow().all_symbols(session, from_module, false).iter().filter(|s| s.1.is_none()).map(|s| XmlAstResult::SYMBOL(s.0.clone())));
+                        results.0.extend(model.borrow().all_symbols(session, from_module, false).iter().filter(|s| s.1.is_none()).map(|s| XmlAstResult::SYMBOL(s.0.into())));
                         results.1 = Some(attr.range_value());
                     }
                 }
             } else if attr.name() == "id" {
                 if attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    XmlAstUtils::add_xml_id_result(session, attr.value(), &from_module.as_ref().unwrap(), attr.range_value(), results, on_dep_only);
+                    XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
                     results.1 = Some(attr.range_value());
                 }
             }
         }
         for child in node.children() {
-            XmlAstUtils::visit_node(session, &child, offset, from_module.clone(), ctxt, results, on_dep_only);
+            XmlAstUtils::visit_node(session, &child, offset, from_module, ctxt, results, on_dep_only);
         }
-        ctxt.remove(&S!("record_model"));
+        ctxt.remove("record_model");
     }
 
-    fn visit_field(session: &mut SessionInfo<'_>, node: &Node, offset: usize, from_module: Option<Rc<RefCell<Symbol>>>, ctxt: &mut HashMap<String, ContextValue>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
+    fn visit_field(session: &mut SessionInfo<'_>, node: &Node, offset: usize, from_module: Option<ModuleKey>, ctxt: &mut HashMap<String, ContextValue>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
         for attr in node.attributes() {
             if attr.name() == "name" {
                 ctxt.insert(S!("field_name"), ContextValue::STRING(attr.value().to_string()));
                 if attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    let model_name = ctxt.get(&S!("record_model")).cloned().unwrap_or(ContextValue::STRING(S!(""))).as_string();
+                    let model_name = ctxt.get("record_model").map(ContextValue::as_str).unwrap_or_default();
                     if model_name.is_empty() {
                         continue;
                     }
-                    if let Some(model) = session.sync_odoo.models.get(&Sy!(model_name)).cloned() {
+                    if let Some(model) = session.sync_odoo.models.get(model_name).cloned() {
                         let from_module = match on_dep_only {
-                            true => from_module.clone(),
+                            true => from_module,
                             false => None,
                         };
-                        for symbol in model.borrow().all_symbols(session, from_module, true) {
-                            if symbol.1.is_none() {
-                                let content = symbol.0.borrow().get_content_symbol(attr.value(), u32::MAX);
+                        for (class_key, missing_dep) in model.borrow().all_symbols(session, from_module, true) {
+                            if missing_dep.is_none() {
+                                let content = session.sync_odoo.symbol_table.get_content_symbol(class_key.into(), attr.value(), u32::MAX);
                                 for symbol in content.symbols.iter() {
-                                    results.0.push(XmlAstResult::SYMBOL(symbol.clone()));
+                                    results.0.push(XmlAstResult::SYMBOL(*symbol));
                                 }
                             }
                         }
@@ -121,21 +129,21 @@ impl XmlAstUtils {
                 }
             } else if attr.name() == "ref" {
                 if attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    XmlAstUtils::add_xml_id_result(session, attr.value(), &from_module.as_ref().unwrap(), attr.range_value(), results, on_dep_only);
+                    XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
                     results.1 = Some(attr.range_value());
                 }
             }
         }
         for child in node.children() {
-            XmlAstUtils::visit_node(session, &child, offset, from_module.clone(), ctxt, results, on_dep_only);
+            XmlAstUtils::visit_node(session, &child, offset, from_module, ctxt, results, on_dep_only);
         }
-        ctxt.remove(&S!("field_name"));
+        ctxt.remove("field_name");
     }
 
-    fn visit_text(session: &mut SessionInfo, node: &Node, offset: usize, from_module: Option<Rc<RefCell<Symbol>>>, ctxt: &mut HashMap<String, ContextValue>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
+    fn visit_text(session: &mut SessionInfo, node: &Node, offset: usize, from_module: Option<ModuleKey>, ctxt: &mut HashMap<String, ContextValue>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
         if node.range().start <= offset && node.range().end >= offset {
-            let model = ctxt.get(&S!("record_model")).cloned().unwrap_or(ContextValue::STRING(S!(""))).as_string();
-            let field = ctxt.get(&S!("field_name")).cloned().unwrap_or(ContextValue::STRING(S!(""))).as_string();
+            let model = ctxt.get("record_model").map(ContextValue::as_str).unwrap_or_default();
+            let field = ctxt.get("field_name").map(ContextValue::as_str).unwrap_or_default();
             if model.is_empty() || field.is_empty() {
                 return;
             }
@@ -145,70 +153,66 @@ impl XmlAstUtils {
         }
     }
 
-    fn visit_menu_item(session: &mut SessionInfo<'_>, node: &Node, offset: usize, from_module: Option<Rc<RefCell<Symbol>>>, ctxt: &mut HashMap<String, ContextValue>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
+    fn visit_menu_item(session: &mut SessionInfo<'_>, node: &Node, offset: usize, from_module: Option<ModuleKey>, ctxt: &mut HashMap<String, ContextValue>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
         for attr in node.attributes() {
             if attr.name() == "action" {
                 if attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    XmlAstUtils::add_xml_id_result(session, attr.value(), &from_module.as_ref().unwrap(), attr.range_value(), results, on_dep_only);
+                    XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
                     results.1 = Some(attr.range_value());
                 }
             } else if attr.name() == "groups" {
                 if attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    XmlAstUtils::add_xml_id_result(session, attr.value(), &from_module.as_ref().unwrap(), attr.range_value(), results, on_dep_only);
+                    XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
                     results.1 = Some(attr.range_value());
                 }
             }
         }
         for child in node.children() {
-            XmlAstUtils::visit_node(session, &child, offset, from_module.clone(), ctxt, results, on_dep_only);
+            XmlAstUtils::visit_node(session, &child, offset, from_module, ctxt, results, on_dep_only);
         }
     }
 
-    fn visit_template(session: &mut SessionInfo<'_>, node: &Node, offset: usize, from_module: Option<Rc<RefCell<Symbol>>>, ctxt: &mut HashMap<String, ContextValue>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
+    fn visit_template(session: &mut SessionInfo<'_>, node: &Node, offset: usize, from_module: Option<ModuleKey>, ctxt: &mut HashMap<String, ContextValue>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
         for attr in node.attributes() {
             if attr.name() == "inherit_id" {
                 if attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    XmlAstUtils::add_xml_id_result(session, attr.value(), &from_module.as_ref().unwrap(), attr.range_value(), results, on_dep_only);
+                    XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
                     results.1 = Some(attr.range_value());
                 }
             } else if attr.name() == "groups" {
                 if attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    XmlAstUtils::add_xml_id_result(session, attr.value(), &from_module.as_ref().unwrap(), attr.range_value(), results, on_dep_only);
+                    XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
                     results.1 = Some(attr.range_value());
                 }
             }
         }
         for child in node.children() {
-            XmlAstUtils::visit_node(session, &child, offset, from_module.clone(), ctxt, results, on_dep_only);
+            XmlAstUtils::visit_node(session, &child, offset, from_module, ctxt, results, on_dep_only);
         }
     }
 
-    fn add_model_result(session: &mut SessionInfo, node: &Node, from_module: Option<Rc<RefCell<Symbol>>>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
+    fn add_model_result(session: &mut SessionInfo, node: &Node, from_module: Option<ModuleKey>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
         if let Some(model) = session.sync_odoo.models.get(node.text().unwrap()).cloned() {
             let from_module = match on_dep_only {
-                true => from_module.clone(),
+                true => from_module,
                 false => None,
             };
-            results.0.extend(model.borrow().all_symbols(session, from_module, false).iter().filter(|s| s.1.is_none()).map(|s| XmlAstResult::SYMBOL(s.0.clone())));
+            results.0.extend(model.borrow().all_symbols(session, from_module, false).iter().filter(|s| s.1.is_none()).map(|s| XmlAstResult::SYMBOL(s.0.into())));
             results.1 = Some(node.range());
         }
     }
 
-    fn add_xml_id_result(session: &mut SessionInfo, xml_id: &str, file_symbol: &Rc<RefCell<Symbol>>, range: Range<usize>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
+    fn add_xml_id_result(session: &mut SessionInfo, xml_id: &str, file_symbol: SourceFileKey, range: Range<usize>, results: &mut (Vec<XmlAstResult>, Option<Range<usize>>), on_dep_only: bool) {
         let mut xml_ids = SyncOdoo::get_xml_ids(session, file_symbol, xml_id, &range, &mut vec![]);
         if on_dep_only {
-            xml_ids = xml_ids.into_iter().filter(|x| 
-                {
-                    let file = x.get_file_symbol();
-                    if let Some(file) = file {
-                        if let Some(file) = file.upgrade() {
-                            let module = file.borrow().find_module();
-                            if let Some(module) = module {
-                                return ModuleSymbol::is_in_deps(session, &file_symbol.borrow().find_module().unwrap(), module.borrow().name());
-                            }
-                        }
-                    }
-                        return false;
+            let st = &session.sync_odoo.symbol_table;
+            xml_ids = xml_ids.into_iter().filter(|x|
+                if let Some(file_weak) = x.get_file_symbol(st)
+                && let Some(file) = file_weak.upgrade(st)
+                && let Some(module) = st.find_module(file) {
+                    ModuleSymbol::is_in_deps(st, st.find_module(file_symbol).unwrap(), &st[module].name)
+                } else {
+                    false
                 }
             ).collect::<Vec<_>>();
         }
