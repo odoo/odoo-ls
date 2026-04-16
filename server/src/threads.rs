@@ -273,7 +273,6 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
     const MAX_DELAY: u64 = 15000;
     const MIN_DELAY: u64 = 1000;
     let mut config_delay = std::time::Duration::from_millis(std::cmp::max(MIN_DELAY, std::cmp::min(sync_odoo.lock().unwrap().config.auto_refresh_delay, MAX_DELAY)));
-    let mut messages = VecDeque::new();
     let mut to_wait = config_delay.clone();
     let mut got_process = false;
     let mut waiting_restart = false;
@@ -305,7 +304,6 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
             }
             Ok(DelayedProcessingMessage::PROCESS(p)) => {
                 got_process = true;
-                messages.push_back(DelayedProcessingMessage::PROCESS(p));
                 to_wait = p + config_delay - std::time::Instant::now();
                 continue;
             }
@@ -319,6 +317,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
             }
             Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
                 // inactivity timeout, process messages
+                to_wait = config_delay.clone(); //reset timer, as maybe a previous process call set it to 0
             },
             Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
                 error!("Delayed processing channel disconnected, exiting thread");
