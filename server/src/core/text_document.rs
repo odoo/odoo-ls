@@ -120,7 +120,7 @@ impl TextDocument {
 
     pub fn apply_changes(
         &mut self,
-        changes: Vec<lsp_types::TextDocumentContentChangeEvent>,
+        changes: &[lsp_types::TextDocumentContentChangeEvent],
         new_version: DocumentVersion,
         encoding: PositionEncoding,
     ) {
@@ -128,7 +128,7 @@ impl TextDocument {
             lsp_types::TextDocumentContentChangeEvent {
                 range: None, text, ..
             },
-        ] = changes.as_slice()
+        ] = changes
         {
             tracing::debug!("Fast path - replacing entire document");
             self.modify(|contents, version| {
@@ -155,7 +155,7 @@ impl TextDocument {
                     &change,
                 );
             } else {
-                new_contents = change;
+                new_contents = change.to_string();
             }
 
             active_index = LineIndex::from_source_text(&new_contents);

@@ -1,10 +1,8 @@
-use std::{cell::{Ref, RefCell}, rc::Rc};
-
 use lsp_server::{ErrorCode, ResponseError};
 use lsp_types::{Location, WorkspaceLocation, WorkspaceSymbol, WorkspaceSymbolResponse};
 use ruff_text_size::{TextRange, TextSize};
 
-use crate::{S, constants::{PackageType, SymType}, core::{entry_point::EntryPointType, file_mgr::FileMgr, symbols::symbol::Symbol}, threads::SessionInfo, utils::string_fuzzy_contains};
+use crate::{S, constants::SymType, core::{entry_point::EntryPointType, file_mgr::FileMgr, symbols::{ModuleSymbol, symbol_keys::SymbolKey, storage::SymbolTable}}, threads::SessionInfo, utils::string_fuzzy_contains};
 
 pub struct WorkspaceSymbolFeature;
 
@@ -30,7 +28,7 @@ impl WorkspaceSymbolFeature {
             if entry.borrow().typ == EntryPointType::BUILTIN || entry.borrow().typ == EntryPointType::PUBLIC { //We don't want to search in builtins
                 continue;
             }
-            if WorkspaceSymbolFeature::browse_symbol(session, &entry.borrow().root, &query, None, None, can_resolve_location_range, &mut symbols) {
+            if WorkspaceSymbolFeature::browse_symbol(session, entry.borrow().root.into(), &query, None, None, can_resolve_location_range, &mut symbols) {
                 return Err(ResponseError {
                     code: ErrorCode::RequestCanceled as i32,
                     message: S!("Workspace Symbol request cancelled"),
@@ -44,12 +42,11 @@ impl WorkspaceSymbolFeature {
     /**
      * Return true if the request has been cancelled and the cancellation should be propagated
      */
-    fn browse_symbol(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, query: &String, parent: Option<String>, parent_path: Option<&String>, can_resolve_location_range: bool, results: &mut Vec<WorkspaceSymbol>) -> bool {
-        let symbol_borrowed = symbol.borrow();
-        if symbol_borrowed.typ() == SymType::VARIABLE {
+    fn browse_symbol(session: &mut SessionInfo, symbol: SymbolKey, query: &String, parent: Option<String>, parent_path: Option<&String>, can_resolve_location_range: bool, results: &mut Vec<WorkspaceSymbol>) -> bool {
+        if symbol.typ() == SymType::VARIABLE {
             return false;
         }
-        if symbol_borrowed.typ() == SymType::FILE { //to avoid too many locks
+        if symbol.typ() == SymType::FILE { //to avoid too many locks
             if session.sync_odoo.is_request_cancelled() {
                 return true;
             }
@@ -58,7 +55,7 @@ impl WorkspaceSymbolFeature {
             Some(p) => Some(p.clone()),
             None => None,
         };
-        let path = symbol_borrowed.paths();
+        let path = session.st().paths(symbol);
         let path = if path.len() == 1 {
             Some(&path[0])
         } else if path.len() == 0{
@@ -66,48 +63,51 @@ impl WorkspaceSymbolFeature {
         } else {
             None
         };
-        if path.is_some() && symbol_borrowed.has_range() {
+        if path.is_some() && session.st().has_range(symbol) {
             //Test if symbol should be returned
-            if string_fuzzy_contains(&symbol_borrowed.name(), &query) {
-                WorkspaceSymbolFeature::add_symbol_to_results(session, &symbol_borrowed, &symbol_borrowed.name().to_string(), path.unwrap(), container_name.clone(), Some(symbol_borrowed.range()), can_resolve_location_range, results);
+            if string_fuzzy_contains(&session.st().name(symbol), &query) {
+                let name = session.st().name(symbol).to_string();
+                let range = session.st().range(symbol).clone();
+                WorkspaceSymbolFeature::add_symbol_to_results(session, symbol, &name, path.unwrap(), container_name.clone(), Some(&range), can_resolve_location_range, results);
             }
             //Test if symbol is a model
-            if symbol_borrowed.typ() == SymType::CLASS && symbol_borrowed.as_class_sym()._model.is_some() {
-                let model_data = symbol_borrowed.as_class_sym()._model.as_ref().unwrap();
-                let model_name = S!("\"") + &model_data.name.to_string() + "\"";
+            if let SymbolKey::Class(class_key) = symbol && let Some(model_data) = session.st()[class_key]._model.as_ref() {
+                let model_name = S!("\"") + &model_data.name + "\"";
+                let range = session.st().range(symbol).clone();
                 if string_fuzzy_contains(&model_name, &query) {
-                    WorkspaceSymbolFeature::add_symbol_to_results(session, &symbol_borrowed, &model_name, path.unwrap(), container_name.clone(), Some(symbol_borrowed.range()), can_resolve_location_range, results);
+                    WorkspaceSymbolFeature::add_symbol_to_results(session, symbol, &model_name, path.unwrap(), container_name.clone(), Some(&range), can_resolve_location_range, results);
                 }
             }
         }
-        if symbol_borrowed.typ() == SymType::PACKAGE(PackageType::MODULE) {
-            let module = symbol_borrowed.as_module_package();
-            for xml_id_name in module.xml_id_locations.keys() {
+        if let SymbolKey::Module(module_key) = symbol {
+            let xml_id_names = session.st()[module_key].xml_id_locations.keys().cloned().collect::<Vec<_>>();
+            for xml_id_name in &xml_id_names {
                 let xml_name = S!("xmlid.") + xml_id_name;
                 if string_fuzzy_contains(&xml_name, &query) {
-                    let xml_data = module.get_xml_id(xml_id_name);
+                    let xml_data = ModuleSymbol::get_xml_id(session.st(), module_key, xml_id_name);
                     for data in xml_data {
-                        let xml_file_symbol = data.get_xml_file_symbol();
-                        if let Some(xml_file_symbol) = xml_file_symbol {
-                            if let Some(path) = xml_file_symbol.borrow().paths().get(0) {
-                                let range = data.get_range();
-                                let text_range = TextRange::new(TextSize::new(range.start as u32), TextSize::new(range.end as u32));
-                                WorkspaceSymbolFeature::add_symbol_to_results(session, &xml_file_symbol.borrow(), &xml_name, path, Some(symbol_borrowed.name().to_string()), Some(&text_range), can_resolve_location_range, results);
-                            }
+                        let xml_file_symbol = data.get_xml_file_symbol(session.st());
+                        if let Some(xml_file_key) = xml_file_symbol {
+                            let xml_file = &session.st()[xml_file_key];
+                            let name = xml_file.name.to_string();
+                            let path = xml_file.path.clone();
+                            let range = data.get_range();
+                            let text_range = TextRange::new(TextSize::new(range.start as u32), TextSize::new(range.end as u32));
+                            WorkspaceSymbolFeature::add_symbol_to_results(session, xml_file_key.into(), &xml_name, &path, Some(name), Some(&text_range), can_resolve_location_range, results);
                         }
                     }
                 }
             }
         }
-        for sym in symbol_borrowed.all_symbols() {
-            if WorkspaceSymbolFeature::browse_symbol(session, &sym, query, Some(symbol_borrowed.name().to_string()), path, can_resolve_location_range, results) {
+        for sym in session.st().all_symbols(symbol) {
+            if WorkspaceSymbolFeature::browse_symbol(session, sym, query, Some(session.st().name(symbol).to_string()), path, can_resolve_location_range, results) {
                 return true;
             }
         }
         false
     }
 
-    fn add_symbol_to_results(session: &mut SessionInfo, symbol: &Ref<Symbol>, name: &String, path: &String, container_name: Option<String>, range: Option<&TextRange>, can_resolve_location_range: bool, results: &mut Vec<WorkspaceSymbol>) {
+    fn add_symbol_to_results(session: &mut SessionInfo, symbol: SymbolKey, name: &String, path: &String, container_name: Option<String>, range: Option<&TextRange>, can_resolve_location_range: bool, results: &mut Vec<WorkspaceSymbol>) {
         let location = if can_resolve_location_range {
             lsp_types::OneOf::Right(WorkspaceLocation {
                 uri: FileMgr::pathname2uri(path)
@@ -136,7 +136,7 @@ impl WorkspaceSymbolFeature {
         };
         results.push(WorkspaceSymbol {
             name: name.clone(),
-            kind: symbol.get_lsp_symbol_kind(),
+            kind: SymbolTable::get_lsp_symbol_kind(symbol),
             tags: None,
             container_name,
             location: location,

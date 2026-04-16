@@ -1,11 +1,22 @@
-use std::{cell::RefCell, rc::Rc};
-
 use csv::{Reader, StringRecord};
 use lsp_types::Range;
 
-use crate::{S, constants::{OYarn, SymType}, core::{odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{OdooData, OdooDataRecord}}, features::goto_utils::{GotoSource, GotoSourceType}, oyarn, threads::SessionInfo};
-
-
+use crate::core::symbols::symbol_keys::SourceFileKey;
+use crate::features::goto_utils::{GotoSource, GotoSourceType};
+use crate::{
+    constants::OYarn,
+    core::{
+        odoo::SyncOdoo,
+        symbols::{
+            symbol_keys::{ModuleKey, SymbolKey},
+            storage::SymbolTable,
+            VariableSymbol,
+        },
+        xml_data::{OdooData, OdooDataRecord},
+    },
+    oyarn,
+    threads::SessionInfo,
+};
 
 pub struct CsvFieldIter<'a> {
     content: &'a str,
@@ -104,32 +115,32 @@ impl CsvAstUtils {
 
     pub fn get_symbols(
         session: &mut SessionInfo,
-        file_symbol: &Rc<RefCell<Symbol>>,
+        file_symbol: SourceFileKey,
         csv_reader: &mut Reader<&[u8]>,
         model_name: &OYarn,
         offset: usize,
         content: &str,
     ) -> Vec<GotoSource> {
         let mut results = vec![];
-        let module = file_symbol.borrow().find_module();
+        let module = session.st().find_module(file_symbol);
         let Some(model) = session.sync_odoo.models.get(model_name).cloned() else {return vec![];};
-        let model_syms = model.borrow().get_main_symbols(session, module.clone());
-        let Some(main_symbol) = model_syms.first().cloned() else {return results;};
+        let model_syms = model.borrow().get_main_symbols(session, module);
+        let Some(&main_symbol) = model_syms.first() else {return results;};
         drop(model_syms);
         let mut headers = vec![];
         if !csv_reader.has_headers() {
             return results;
         }
-        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&file_symbol.borrow().get_symbol_first_path()).unwrap();
+        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(session.st().file_path(file_symbol)).unwrap();
         let Ok(header) = csv_reader.headers() else { return results;};
         for (h_start, end, h) in CsvFieldIter::new(header, content).unwrap() {
             let has_quotes = end - h_start - h.len() == 2; // Range is bigger than field length by 2, meaning field is quoted
             headers.push(oyarn!("{}", h));
             if offset >= h_start && offset <= end {
                 let header_elts = h.splitn(2, [':', '/']).collect::<Vec<_>>();
-                let symbols = main_symbol.borrow().get_member_symbol(session, &S!(header_elts[0]), module.clone(), false, true, false, true, false);
+                let symbols = SymbolTable::get_member_symbol(session, main_symbol.into(), header_elts[0], module, false, true, false, true, false);
                 if offset <= h_start + has_quotes as usize + header_elts[0].len() { // Offset is on the field name, not on the relational part
-                    for sym in symbols.0.iter() {
+                    for sym in symbols.0 {
                         let substring_end = if header_elts.len() > 1 {
                             // start + field_name + initial quote + 1 to make end inclusive
                             (h_start + header_elts[0].len() + has_quotes as usize + 1) as u32
@@ -137,7 +148,7 @@ impl CsvAstUtils {
                             end as u32
                         };
                         results.push(GotoSource {
-                            source: GotoSourceType::Symbol(sym.clone()),
+                            source: GotoSourceType::Symbol(sym),
                             origin_selection_range: Some(Range {
                                 start: file_info.borrow().offset_to_position(h_start as u32, session.sync_odoo.encoding),
                                 end: file_info.borrow().offset_to_position(substring_end, session.sync_odoo.encoding),
@@ -145,23 +156,27 @@ impl CsvAstUtils {
                         })
                     }
                 } else { // Offset is on the relational part
-                    for sym in symbols.0.iter() {
-                        if sym.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"]) && sym.borrow().typ() == SymType::VARIABLE{
-                            let models = sym.borrow().as_variable().get_relational_model(session, module.clone());
-                            if models.len() == 1 {
-                                let model = models[0].clone();
-                                let sub_symbols = model.borrow().get_member_symbol(session, &S!(header_elts[1]), module.clone(), false, true, false, true, false);
-                                for sym in sub_symbols.0.iter() {
-                                    // start + quotes + field name + separator
-                                    let substring_start = (h_start + header_elts[0].len() + has_quotes as usize + 1) as u32;
-                                    results.push(GotoSource {
-                                        source: GotoSourceType::Symbol(sym.clone()),
-                                        origin_selection_range: Some(Range {
-                                            start: file_info.borrow().offset_to_position(substring_start, session.sync_odoo.encoding),
-                                            end: file_info.borrow().offset_to_position(end as u32, session.sync_odoo.encoding),
-                                        }),
-                                    })
-                                }
+                    for sym in symbols.0 {
+                        let SymbolKey::Variable(variable_key) = sym else {
+                            continue;
+                        };
+                        if !SymbolTable::is_specific_field(session, sym, &["Many2one", "One2many", "Many2many"]) {
+                            continue;
+                        }
+                        let models = VariableSymbol::get_relational_model(variable_key, session, module);
+                        if models.len() == 1 {
+                            let model = models[0];
+                            let sub_symbols = SymbolTable::get_member_symbol(session, model.into(), header_elts[1], module, false, true, false, true, false);
+                            for sym in sub_symbols.0 {
+                                // start + quotes + field name + separator
+                                let substring_start = (h_start + header_elts[0].len() + has_quotes as usize + 1) as u32;
+                                results.push(GotoSource {
+                                    source: GotoSourceType::Symbol(sym),
+                                    origin_selection_range: Some(Range {
+                                        start: file_info.borrow().offset_to_position(substring_start, session.sync_odoo.encoding),
+                                        end: file_info.borrow().offset_to_position(end as u32, session.sync_odoo.encoding),
+                                    }),
+                                })
                             }
                         }
                     }
@@ -170,7 +185,7 @@ impl CsvAstUtils {
         }
         if headers.contains(&oyarn!("id")) {
             for record in csv_reader.records().filter_map(Result::ok) {
-                    CsvAstUtils::get_symbols_in_record(session, offset, &headers, &record, &mut results, &file_symbol, model_name.clone(), &main_symbol, module.clone(), content);
+                    CsvAstUtils::get_symbols_in_record(session, offset, &headers, &record, &mut results, file_symbol, model_name.clone(), main_symbol.into(), module, content);
             }
         }
         results
@@ -182,10 +197,10 @@ impl CsvAstUtils {
         headers: &Vec<OYarn>,
         record: &StringRecord,
         results: &mut Vec<GotoSource>,
-        csv_symbol: &Rc<RefCell<Symbol>>,
+        csv_symbol: SourceFileKey,
         model_name: OYarn,
-        main_symbol: &Rc<RefCell<Symbol>>,
-        module: Option<Rc<RefCell<Symbol>>>,
+        main_symbol: SymbolKey,
+        module: Option<ModuleKey>,
         content: &str,
     ) {
         let Some(field_iter) = CsvFieldIter::new(record, content) else { return; };
@@ -203,7 +218,7 @@ impl CsvAstUtils {
             if field_name == "id" {
                 results.push(GotoSource {
                     source: GotoSourceType::OdooData(OdooData::RECORD(OdooDataRecord {
-                        symbol: Rc::downgrade(csv_symbol),
+                        symbol: csv_symbol.into(),
                         model: (model_name.clone(), std::ops::Range::<usize> {
                             start: 0,
                             end: 1,
@@ -217,30 +232,32 @@ impl CsvAstUtils {
                     })),
                     origin_selection_range: None,
                 })
-            } else if let Some(relational_field) = relational_field {
+            } else if let Some(&relational_field) = relational_field {
                 // 1. find relational field in current model
-                let field_syms = main_symbol.borrow().get_member_symbol(session, &S!(field_name), module.clone(), false, true, false, true, false).0;
-                for field_sym in field_syms.iter() {
-                    if field_sym.borrow().is_specific_field(session, &["Many2one", "One2many", "Many2many"])
-                        && field_sym.borrow().typ() == SymType::VARIABLE
-                    {
-                        // 2. find related model
-                        let related_models = field_sym.borrow().as_variable().get_relational_model(session, module.clone());
-                        for related_model in related_models.iter() {
-                            // 3. find related field in related model
-                            let related_syms = related_model.borrow().get_member_symbol(session, &S!(*relational_field), module.clone(), false, true, false, true, false).0;
-                            // 4. push result in results
-                            if !related_syms.is_empty() {
-                                results.extend(SyncOdoo::get_xml_ids(session,
-                                    &csv_symbol,
-                                    field_data.as_str(),
-                                    &std::ops::Range::default(), //we don't care about range as it's used only for diagnostic
-                                    &mut vec![]
-                                ).iter().map(|odoo_data| GotoSource {
-                                    source: GotoSourceType::OdooData(odoo_data.clone()),
-                                    origin_selection_range: None,
-                                }));
-                            }
+                let field_syms = SymbolTable::get_member_symbol(session, main_symbol, field_name, module, false, true, false, true, false).0;
+                for field_sym in field_syms {
+                    let SymbolKey::Variable(variable_key) = field_sym else {
+                        continue;
+                    };
+                    if !SymbolTable::is_specific_field(session, field_sym, &["Many2one", "One2many", "Many2many"]) {
+                        continue;
+                    }
+                    // 2. find related model
+                    let related_models = VariableSymbol::get_relational_model(variable_key, session, module);
+                    for related_model in related_models {
+                        // 3. find related field in related model
+                        let related_syms = SymbolTable::get_member_symbol(session, related_model.into(), relational_field, module, false, true, false, true, false).0;
+                        // 4. push result in results
+                        if !related_syms.is_empty() {
+                            results.extend(SyncOdoo::get_xml_ids(session,
+                                csv_symbol,
+                                field_data.as_str(),
+                                &std::ops::Range::default(), //we don't care about range as it's used only for diagnostic
+                                &mut vec![]
+                            ).iter().map(|odoo_data| GotoSource {
+                                source: GotoSourceType::OdooData(odoo_data.clone()),
+                                origin_selection_range: None,
+                            }));
                         }
                     }
                 }

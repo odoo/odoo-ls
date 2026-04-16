@@ -1,11 +1,9 @@
 use std::collections::HashMap;
-use std::rc::Rc;
-use std::cell::RefCell;
 use crate::constants::{BuildStatus, BuildSteps, SymType};
 use crate::core::evaluation::{AnalyzeAstResult, Context, ContextValue, Evaluation, ExprOrIdent};
 use crate::core::odoo::SyncOdoo;
+use crate::core::symbols::symbol_keys::{SourceFileKey, SymbolKey};
 use crate::core::import_resolver::{resolve_from_stmt, resolve_import_stmt};
-use crate::core::symbols::symbol::Symbol;
 use crate::core::file_mgr::FileInfoAst;
 use crate::threads::SessionInfo;
 use crate::S;
@@ -20,7 +18,7 @@ pub struct AstUtils {}
 impl AstUtils {
 
 
-    pub fn get_symbols<'a>(session: &mut SessionInfo, file_info_ast: &'a FileInfoAst, file_symbol: &Rc<RefCell<Symbol>>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>, Option<ExprOrIdent<'a>>, Option<ExprCall>) {
+    pub fn get_symbols<'a>(session: &mut SessionInfo, file_info_ast: &'a FileInfoAst, file_symbol: SourceFileKey, offset: u32) -> (AnalyzeAstResult, Option<TextRange>, Option<ExprOrIdent<'a>>, Option<ExprCall>) {
         let mut expr: Option<ExprOrIdent<'a>> = None;
         let mut call_expr: Option<ExprCall> = None;
         for stmt in file_info_ast.get_stmts().unwrap().iter() {
@@ -41,12 +39,12 @@ impl AstUtils {
         (result, range, Some(expr), call_expr)
     }
 
-    pub fn get_symbol_from_expr<'a>(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, expr: &ExprOrIdent<'a>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>) {
-        let parent_symbol = Symbol::get_scope_symbol(file_symbol.clone(), offset, matches!(expr, ExprOrIdent::Parameter(_)));
-        AstUtils::build_scope(session, &parent_symbol);
+    pub fn get_symbol_from_expr<'a>(session: &mut SessionInfo, file_symbol: SourceFileKey, expr: &ExprOrIdent<'a>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>) {
+        let parent_symbol = session.st().get_scope_symbol(file_symbol, offset, matches!(expr, ExprOrIdent::Parameter(_)));
+        AstUtils::build_scope(session, parent_symbol);
         let from_module;
-        if let Some(module) = file_symbol.borrow().find_module() {
-            from_module = ContextValue::MODULE(Rc::downgrade(&module));
+        if let Some(module) = session.st().find_module(file_symbol) {
+            from_module = ContextValue::MODULE(module.into());
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }
@@ -54,7 +52,7 @@ impl AstUtils {
             (S!("module"), from_module),
             (S!("range"), ContextValue::RANGE(expr.range()))
         ]));
-        let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(session, &expr, parent_symbol.clone(), &expr.range().end(), &mut context,false, &mut vec![]);
+        let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(session, &expr, parent_symbol, &expr.range().end(), &mut context,false, &mut vec![]);
         (analyse_ast_result, Some(expr.range()))
     }
 
@@ -70,21 +68,21 @@ impl AstUtils {
         }
     }
 
-    pub fn build_scope(session: &mut SessionInfo<'_>, scope: &Rc<RefCell<Symbol>>) {
-        if scope.borrow().typ() == SymType::FUNCTION {
-            let parent_func = scope.borrow().get_in_parents(&vec![SymType::FUNCTION], true);
-            let scope_to_test = parent_func.and_then(|w| w.upgrade());
-            let scope_to_test = scope_to_test.as_ref().unwrap_or(scope);
-            if scope_to_test.borrow().as_func().arch_status == BuildStatus::PENDING {
-                SyncOdoo::build_now(session, scope_to_test, BuildSteps::ARCH);
-            }
-            if scope_to_test.borrow().as_func().arch_eval_status == BuildStatus::PENDING {
-                SyncOdoo::build_now(session, scope_to_test, BuildSteps::ARCH_EVAL);
-            }
+    pub fn build_scope(session: &mut SessionInfo<'_>, scope: SymbolKey) {
+        let SymbolKey::Function(scope) = scope else {
+            return;
+        };
+        let parent_func = session.st().get_in_parents(scope.into(), &[SymType::FUNCTION], true);
+        let scope_to_test = parent_func.map(|p| p.unwrap_function_key()).unwrap_or(scope);
+        if session.st()[scope_to_test].arch_status == BuildStatus::PENDING {
+            SyncOdoo::build_now(session, scope_to_test, BuildSteps::ARCH);
+        }
+        if session.st()[scope_to_test].arch_eval_status == BuildStatus::PENDING {
+            SyncOdoo::build_now(session, scope_to_test, BuildSteps::ARCH_EVAL);
         }
     }
 
-    fn get_symbol_in_import(session: &mut SessionInfo, file_symbol: &Rc<RefCell<Symbol>>, offset: u32, stmt: &Stmt) -> Option<(AnalyzeAstResult, Option<TextRange>)> {
+    fn get_symbol_in_import(session: &mut SessionInfo, file_symbol: SourceFileKey, offset: u32, stmt: &Stmt) -> Option<(AnalyzeAstResult, Option<TextRange>)> {
         match stmt {
             //for all imports, the idea will be to check if we are on the last name of the import (then it has been imported already and we can fallback on it),
             //or then take the full tree to the offset symbol and resolve_import on it as it was in a 'from' clause.
@@ -111,28 +109,30 @@ impl AstUtils {
                         };
                         if !is_last {
                             //we import as a from_stmt, to refuse import of variables, as the import stmt is not complete
-                            let to_analyze = Identifier { id: Name::new(to_analyze), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::default() };
-                            let (from_symbol, _fallback_sym, _file_tree) = resolve_from_stmt(session, file_symbol, Some(&to_analyze), 0);
+                            let to_analyze = Identifier { id: Name::new(to_analyze), range: TextRange::default(), node_index: AtomicNodeIndex::default() };
+                            let (from_symbol, _fallback_sym, _file_tree) = resolve_from_stmt(session, file_symbol.into(), Some(&to_analyze), 0);
                             if let Some(symbols) = from_symbol {
+                                let st = &session.sync_odoo.symbol_table;
                                 let result = AnalyzeAstResult {
-                                    evaluations: symbols.iter().map(|symbol| Evaluation::eval_from_symbol(&Rc::downgrade(symbol), None)).collect(),
+                                    evaluations: symbols.iter().map(|&symbol| Evaluation::eval_from_symbol(st, symbol, None)).collect(),
                                     diagnostics: vec![],
                                 };
                                 return Some((result, Some(range)));
                             }
                         } else {
-                            let res = resolve_import_stmt(session, file_symbol, None, &[
+                            let res = resolve_import_stmt(session, file_symbol.into(), None, &[
                                 Alias { //create a dummy alias with a asname to force full import
-                                    name: Identifier { id: Name::new(to_analyze), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::default() },
+                                    name: Identifier { id: Name::new(to_analyze), range: TextRange::default(), node_index: AtomicNodeIndex::default() },
                                     asname: Some(Identifier { id: Name::new("fake_name"), range: alias.name.range().clone(), node_index: AtomicNodeIndex::default() }),
                                     range: alias.range(),
                                     node_index: AtomicNodeIndex::default()
                                 }], 0, &mut None);
                             let res = res.into_iter().filter(|s| s.found).collect::<Vec<_>>();
                             if !res.is_empty() {
+                                let st = &session.sync_odoo.symbol_table;
                                 let result = AnalyzeAstResult {
                                     evaluations: res.iter().flat_map(
-                                        |s| s.symbols.iter().map(|symbol| Evaluation::eval_from_symbol(&Rc::downgrade(symbol), None))
+                                        |s| s.symbols.iter().map(|&symbol| Evaluation::eval_from_symbol(st, symbol, None))
                                     ).collect(),
                                     diagnostics: vec![],
                                 };
@@ -160,11 +160,12 @@ impl AstUtils {
                     } else {
                         return None;
                     };
-                    let to_analyze = Identifier { id: Name::new(to_analyze), range: TextRange::new(TextSize::new(0), TextSize::new(0)), node_index: AtomicNodeIndex::default() };
-                    let (from_symbol, _fallback_sym, _file_tree) = resolve_from_stmt(session, file_symbol, Some(&to_analyze), 0);
+                    let to_analyze = Identifier { id: Name::new(to_analyze), range: TextRange::default(), node_index: AtomicNodeIndex::default() };
+                    let (from_symbol, _fallback_sym, _file_tree) = resolve_from_stmt(session, file_symbol.into(), Some(&to_analyze), 0);
                     if let Some(symbols) = from_symbol {
+                        let st = &session.sync_odoo.symbol_table;
                         let result = AnalyzeAstResult {
-                            evaluations: symbols.iter().map(|symbol| Evaluation::eval_from_symbol(&Rc::downgrade(symbol), None)).collect(),
+                            evaluations: symbols.iter().map(|&symbol| Evaluation::eval_from_symbol(st, symbol, None)).collect(),
                             diagnostics: vec![],
                         };
                         return Some((result, Some(range)));
@@ -341,4 +342,3 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
         }
     }
 }
-

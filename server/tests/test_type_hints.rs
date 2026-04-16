@@ -4,7 +4,7 @@ mod test_utils;
 use odoo_ls_server::constants::OYarn;
 use odoo_ls_server::core::file_mgr::FileInfo;
 use odoo_ls_server::core::odoo::SyncOdoo;
-use odoo_ls_server::core::symbols::symbol::Symbol;
+use odoo_ls_server::core::symbols::symbol_keys::{SourceFileKey, SymbolKey};
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 use odoo_ls_server::Sy;
@@ -18,7 +18,7 @@ use test_utils::get_resolved_symbols_at_position;
 /// the session, file info, file symbol, and `MyClass` symbol.
 fn with_type_hints_fixture<F>(f: F)
 where
-    F: FnOnce(&mut SessionInfo, &Rc<RefCell<FileInfo>>, &Rc<RefCell<Symbol>>, &Rc<RefCell<Symbol>>),
+    F: FnOnce(&mut SessionInfo, &Rc<RefCell<FileInfo>>, SourceFileKey, SymbolKey),
 {
     let (mut odoo, config) = setup::setup::setup_server(false);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
@@ -37,7 +37,7 @@ where
     assert!(!my_class.is_empty(), "MyClass should be found in the test file");
     let my_class = my_class[0].clone();
 
-    f(&mut session, &file_info, &file_symbol, &my_class);
+    f(&mut session, &file_info, file_symbol, my_class);
 }
 
 /// Test that a function with a return type hint and `pass` body is recognized as returning
@@ -50,9 +50,9 @@ fn test_function_return_type_hint() {
         // the type hint rather than any inferred return statement.
         let resolved = get_resolved_symbols_at_position(session, file_symbol, file_info, 14, 0);
         assert!(
-            resolved.len() == 1 && Rc::ptr_eq(&resolved[0], my_class),
+            resolved.len() == 1 && resolved[0] == my_class,
             "result of get_my_class() should resolve to MyClass via return type hint, got: {:?}",
-            resolved.iter().map(|s| s.borrow().name().to_string()).collect::<Vec<_>>()
+            resolved.iter().map(|&s| session.st().name(s).to_string()).collect::<Vec<_>>()
         );
     });
 }
@@ -66,9 +66,9 @@ fn test_with_statement_type_from_enter() {
         // MyContextManager.__enter__ has `-> MyClass`, so ctx should resolve to MyClass.
         let resolved = get_resolved_symbols_at_position(session, file_symbol, file_info, 17, 4);
         assert!(
-            resolved.len() == 1 && Rc::ptr_eq(&resolved[0], my_class),
+            resolved.len() == 1 && resolved[0] == my_class,
             "ctx in with statement should resolve to MyClass via __enter__ return type, got: {:?}",
-            resolved.iter().map(|s| s.borrow().name().to_string()).collect::<Vec<_>>()
+            resolved.iter().map(|&s| session.st().name(s).to_string()).collect::<Vec<_>>()
         );
     });
 }

@@ -1,19 +1,25 @@
-use std::rc::Rc;
-use std::cell::RefCell;
-use std::vec;
 use anyhow::Error;
-use ruff_text_size::{Ranged, TextRange, TextSize};
-use ruff_python_ast::{Alias, AnyRootNodeRef, CmpOp, Expr, ExprNamed, ExprTuple, FStringPart, Identifier, Parameters, Pattern, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf, StmtMatch, StmtTry, StmtWhile, StmtWith};
 use lsp_types::Diagnostic;
+use ruff_python_ast::{
+    Alias, AnyRootNodeRef, CmpOp, Expr, ExprNamed, ExprTuple, FStringPart, Identifier, Parameters,
+    Pattern, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf,
+    StmtMatch, StmtTry, StmtWhile, StmtWith,
+};
+use ruff_text_size::{Ranged, TextRange, TextSize};
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::vec;
 use tracing::{trace, warn};
-use weak_table::traits::WeakElement;
 
-use crate::constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, DEBUG_STEPS, DEBUG_STEPS_ONLY_INTERNAL};
-use crate::core::python_utils;
-use crate::core::import_resolver::resolve_import_stmt;
-use crate::core::symbols::symbol::Symbol;
+use crate::constants::{
+    BuildStatus, BuildSteps, OYarn, SymType, DEBUG_STEPS, DEBUG_STEPS_ONLY_INTERNAL,
+};
 use crate::core::evaluation::{Evaluation, EvaluationValue};
+use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
+use crate::core::python_utils;
+use crate::core::symbols::symbol_keys::{FunctionKey, SourceFileKey, SymbolKey};
+use crate::core::symbols::storage::SymbolTable;
 use crate::threads::SessionInfo;
 use crate::{oyarn, S};
 
@@ -24,69 +30,62 @@ use super::import_resolver::ImportResult;
 use super::odoo::SyncOdoo;
 use super::python_utils::AssignTargetType;
 use super::symbols::function_symbol::{Argument, ArgumentType};
-use super::symbols::module_symbol::ModuleSymbol;
+use super::symbols::ModuleSymbol;
 use super::symbols::symbol_mgr::SectionIndex;
-
 
 #[derive(Debug)]
 pub struct PythonArchBuilder {
     entry_point: Rc<RefCell<EntryPoint>>,
-    file: Rc<RefCell<Symbol>>,
+    file: SourceFileKey,
     file_mode: bool,
     current_step: BuildSteps,
-    sym_stack: Vec<Rc<RefCell<Symbol>>>,
+    sym_stack: Vec<SymbolKey>,
     __all_symbols_to_add: Vec<(String, TextRange)>,
     diagnostics: Vec<Diagnostic>,
     file_info: Option<Rc<RefCell<FileInfo>>>,
 }
 
 impl PythonArchBuilder {
-    pub fn new(entry_point: Rc<RefCell<EntryPoint>>, symbol: Rc<RefCell<Symbol>>) -> PythonArchBuilder {
-        PythonArchBuilder {
+    pub fn new(symbol_table: &SymbolTable, entry_point: Rc<RefCell<EntryPoint>>, symbol: SymbolKey) -> Option<Self> {
+        if matches!(symbol, SymbolKey::Namespace(_) | SymbolKey::Root(_) | SymbolKey::Compiled(_) | SymbolKey::Variable(_) | SymbolKey::Class(_)) {
+            return None; // nothing to extract
+        }
+        let file = symbol_table.get_file(symbol).unwrap();
+        let file_mode = symbol == file;
+
+        Some(PythonArchBuilder {
             entry_point: entry_point,
-            file: symbol.clone(), //dummy, evaluated in load_arch
-            file_mode: false, //dummy, evaluated in load_arch
-            current_step: BuildSteps::ARCH, //dummy, evaluated in load_arch
+            file,
+            file_mode,
+            current_step: if file_mode {BuildSteps::ARCH} else {BuildSteps::VALIDATION},
             sym_stack: vec![symbol],
             __all_symbols_to_add: Vec::new(),
             diagnostics: vec![],
             file_info: None,
-        }
+        })
     }
 
     pub fn load_arch(&mut self, session: &mut SessionInfo) {
-        let symbol = &self.sym_stack[0];
-        if [SymType::NAMESPACE, SymType::ROOT, SymType::COMPILED, SymType::VARIABLE, SymType::CLASS].contains(&symbol.borrow().typ()) {
-            return; // nothing to extract
+        let symbol = self.sym_stack[0];
+        if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !session.st().is_external(symbol)) {
+            trace!("building {} - {}", session.st().path(self.file), session.st().name(symbol));
         }
-        {
-            let file = symbol.borrow();
-            let file = file.get_file().unwrap();
-            let file = file.upgrade().unwrap();
-            self.file = file.clone();
-            self.file_mode = Rc::ptr_eq(&file, &symbol);
-            self.current_step = if self.file_mode {BuildSteps::ARCH} else {BuildSteps::VALIDATION};
-        }
-        if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !symbol.borrow().is_external()) {
-            trace!("building {} - {}", self.file.borrow().paths().first().unwrap_or(&S!("No path found")), symbol.borrow().name());
-        }
-        symbol.borrow_mut().set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
-        let path = self.file.borrow().get_symbol_first_path();
+        session.st_mut().set_build_status(symbol, BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
+        let path = session.st().file_path(self.file).to_string();
         if self.file_mode {
-            let in_workspace = (self.file.borrow().parent().is_some() &&
-                self.file.borrow().parent().as_ref().unwrap().upgrade().is_some() &&
-                self.file.borrow().parent().as_ref().unwrap().upgrade().unwrap().borrow().in_workspace()) ||
-                SyncOdoo::is_in_workspace_or_entry(session, path.as_str());
-            self.file.borrow_mut().set_in_workspace(in_workspace);
+            let in_workspace = session.st().parent(self.file)
+                .is_some_and(|parent| session.st().in_workspace(parent)) ||
+                SyncOdoo::is_in_workspace_or_entry(session, &path);
+            session.st_mut().set_in_workspace(self.file.into(), in_workspace);
         }
-        if symbol.borrow().typ() == SymType::PACKAGE(PackageType::MODULE) {
-            let odoo_addons = symbol.borrow().parent().as_ref().and_then(|p| p.upgrade()).unwrap();
-            ModuleSymbol::load_module_info(symbol, session, odoo_addons);
-            ModuleSymbol::load_data(symbol, session);
+        if let SymbolKey::Module(m) = symbol  {
+            let odoo_addons = session.st()[m].parent();
+            ModuleSymbol::load_module_info(m, session, odoo_addons);
+            ModuleSymbol::load_data(m, session);
         }
         let file_info_rc = match self.file_mode {
             true => {
-                let (_, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path.as_str(), None, None, false); //create ast if not in cache
+                let (_, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path, None, None, false); //create ast if not in cache
                 file_info
                 },
             false => {session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).unwrap()}
@@ -113,7 +112,8 @@ impl PythonArchBuilder {
             let ast = if self.file_mode {
                 file_info_ast.get_stmts().unwrap()
             } else {
-                let ast_index = self.sym_stack[0].borrow().node_index().unwrap().load();
+                let f = self.sym_stack[0].unwrap_function_key();
+                let ast_index = session.st()[f].node_index.load();
                 if ast_index.as_u32().is_some() {
                     let func = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(ast_index);
                     match func {
@@ -133,15 +133,17 @@ impl PythonArchBuilder {
                 if let Some(file_noqa) = file_noqa {
                     session.noqas_stack.push(file_noqa);
                 }
-                symbol.borrow_mut().set_noqas(combine_noqa_info(&session.noqas_stack)); //only set for file, functions are set in visit_func_def
+                let new_noqa = combine_noqa_info(&session.noqas_stack);
+                session.st_mut().set_noqas(symbol, new_noqa.clone()); //only set for file, functions are set in visit_func_def
                 let old = session.current_noqa.clone();
-                session.current_noqa = symbol.borrow().get_noqas().clone();
-                symbol.borrow_mut().set_processed_text_hash(file_info_ast.text_hash);
+                session.current_noqa = new_noqa;
+                session.st_mut().set_processed_text_hash(self.file, file_info_ast.text_hash);
                 old
             } else {
-                session.noqas_stack.push(symbol.borrow().get_noqas().clone());
+                let noqas = session.st().get_noqas(symbol);
+                session.noqas_stack.push(noqas.clone());
                 let old = session.current_noqa.clone();
-                session.current_noqa = symbol.borrow().get_noqas().clone();
+                session.current_noqa = noqas;
                 old
             };
             let _ = self.visit_node(session, &ast);
@@ -149,20 +151,21 @@ impl PythonArchBuilder {
             session.noqas_stack = old_stack_noqa;
             self._resolve_all_symbols(session);
             if self.file_mode {
-                session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
+                session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0]);
             }
         } else if self.file_mode {
-            if symbol.borrow().typ() == SymType::PACKAGE(PackageType::MODULE) {
+            if matches!(symbol, SymbolKey::Module(_)) {
                 //even if there is no __init__.py, we need to go to rebuild_arch and validation to validate the manifest
-                session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0].clone());
+                session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0]);
             } else {
                 let mut file_info = file_info_rc.borrow_mut();
                 file_info.publish_diagnostics(session);
             }
         }
-        PythonArchBuilderHooks::on_done(session, &self.sym_stack[0]);
-        let mut symbol = self.sym_stack[0].borrow_mut();
-        symbol.set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
+        if self.file_mode {
+            PythonArchBuilderHooks::on_file_done(session, self.file);
+        }
+        session.st_mut().set_build_status(self.sym_stack[0], BuildSteps::ARCH, BuildStatus::DONE);
     }
 
     fn create_local_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: u32, _range: &TextRange) -> Result<(), Error> {
@@ -173,94 +176,89 @@ impl PythonArchBuilder {
                 }
                 let import_result: ImportResult = resolve_import_stmt(
                     session,
-                    self.sym_stack.last().unwrap(),
+                    *self.sym_stack.last().unwrap(),
                     from_stmt,
                     name_aliases,
                     level,
                     &mut None).remove(0); //we don't need the vector with this call as there will be 1 result.
                 if !import_result.found {
-                    self.entry_point.borrow_mut().not_found_symbols.insert(self.file.clone());
-                    self.file.borrow_mut().not_found_paths_mut().push((self.current_step, import_result.file_tree.clone()));
+                    self.entry_point.borrow_mut().not_found_symbols.insert(self.file);
+                    session.st_mut().not_found_paths_mut(self.file).push((self.current_step, import_result.file_tree.clone()));
                     continue;
                 }
                 let mut all_name_allowed = true;
                 let mut name_filter: Vec<OYarn> = vec![];
-                for import_symbol in import_result.symbols{
-                    if let Some(all) = import_symbol.borrow().get_content_symbol("__all__", u32::MAX).symbols.first().cloned() {
-                        let all_value = Symbol::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
-                            Rc::downgrade(&all), None, false
+                for import_symbol in import_result.symbols {
+                    if let Some(all) = session.st().get_content_symbol(import_symbol, "__all__", u32::MAX).symbols.first().copied() {
+                        let all_value = SymbolTable::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
+                            all, None, false
                         )), session, &mut None, false, true, None, None);
                         if let Some(all_value_first) = all_value.get(0) {
-                            if !all_value_first.is_expired_if_weak() {
-                                let all_upgraded = all_value_first.upgrade_weak();
+                            if !all_value_first.is_expired_if_weak(session.st()) {
+                                let all_upgraded = all_value_first.upgrade_weak(session.st());
                                 if let Some(all_upgraded_unwrapped) = all_upgraded {
-                                    let all_upgraded_unwrapped_bw = (*all_upgraded_unwrapped).borrow();
-                                    if all_upgraded_unwrapped_bw.evaluations().is_some() && all_upgraded_unwrapped_bw.evaluations().unwrap().len() == 1 {
-                                        let value = &all_upgraded_unwrapped_bw.evaluations().unwrap()[0].value;
+                                    let evaluations = session.st().evaluations(all_upgraded_unwrapped);
+                                    if let Some(evals) = evaluations && evals.len() == 1 {
+                                        let value = &evals[0].value;
                                         if value.is_some() {
                                             let (nf, parse_error) = self.extract_all_symbol_eval_values(&value.as_ref());
                                             if parse_error {
-                                                warn!("error during parsing __all__ import in file {}", import_symbol.borrow().paths()[0] )
+                                                warn!("error during parsing __all__ import in file {}", session.st().paths(import_symbol)[0] )
                                             }
                                             name_filter = nf;
                                             all_name_allowed = false;
                                         } else {
-                                            warn!("invalid __all__ import in file {} - no value found", import_symbol.borrow().paths()[0])
+                                            warn!("invalid __all__ import in file {} - no value found", session.st().paths(import_symbol)[0])
                                         }
                                     } else {
-                                        warn!("invalid __all__ import in file {} - multiple evaluation found", import_symbol.borrow().paths()[0])
+                                        warn!("invalid __all__ import in file {} - multiple evaluation found", session.st().paths(import_symbol)[0])
                                     }
                                 } else {
-                                    warn!("invalid __all__ import in file {} - localizedSymbol not found", import_symbol.borrow().paths()[0])
+                                    warn!("invalid __all__ import in file {} - localizedSymbol not found", session.st().paths(import_symbol)[0])
                                 }
                             } else {
-                                warn!("invalid __all__ import in file {} - expired symbol", import_symbol.borrow().paths()[0])
+                                warn!("invalid __all__ import in file {} - expired symbol", session.st().paths(import_symbol)[0])
                             }
                         } else {
-                            warn!("invalid __all__ import in file {} - no symbol found", import_symbol.borrow().paths()[0])
+                            warn!("invalid __all__ import in file {} - no symbol found", session.st().paths(import_symbol)[0])
                         }
                     }
-                    let mut dep_to_add = vec![];
-                    let sym_type = import_symbol.borrow().typ();
-                    if ![SymType::COMPILED, SymType::DISK_DIR].contains(&sym_type) // DISK_DIR does not have iter_symbols and is a symptom of unresolved dirs in custom EPs
-                    && !Rc::ptr_eq(self.sym_stack.last().unwrap(), &import_symbol) { /*We have to check that the imported symbol is not the current one. It can
+                    if !matches!(import_symbol, SymbolKey::Compiled(_) | SymbolKey::DiskDir(_)) // DISK_DIR does not have iter_symbols and is a symptom of unresolved dirs in custom EPs
+                    && *self.sym_stack.last().unwrap() != import_symbol { /*We have to check that the imported symbol is not the current one. It can
                         happen for example in a .pyi that is importing the .pyd file with the same name. As both exists, odools will try to import the pyi a second time in the same file,
                         and so create a borrow error here
                         */
-                        let symbol = import_symbol.borrow();
-                        for (name, loc_syms) in symbol.iter_symbols() {
-                            if all_name_allowed || name_filter.contains(&name) {
-                                let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, OYarn::from(name.clone()), &import_result.range);
-                                let mut loc = variable.borrow_mut();
-                                loc.as_variable_mut().is_import_variable = true;
-                                loc.as_variable_mut().evaluations = Evaluation::from_sections(&symbol, loc_syms);
-                                dep_to_add.push(variable.clone());
+                        let mut import_variables_to_create = vec![];
+                        for (name, loc_syms) in session.st().iter_symbols(import_symbol) {
+                            if all_name_allowed || name_filter.contains(name) {
+                                let evaluations = Evaluation::from_sections(session.st(), import_symbol, loc_syms);
+                                import_variables_to_create.push((name.clone(), evaluations));
                             }
                         }
-                    }
-                    for sym in dep_to_add {
-                        let mut sym_bw = sym.borrow_mut();
-                        let evaluation = &sym_bw.as_variable_mut().evaluations[0];
-                        let evaluated_type = &evaluation.symbol;
-                        let evaluated_type = evaluated_type.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, None).weak;
-                        if !evaluated_type.is_expired() {
-                            let evaluated_type = evaluated_type.upgrade().unwrap();
-                            let evaluated_type_file = evaluated_type.borrow().get_file().unwrap().clone().upgrade().unwrap();
-                            if !Rc::ptr_eq(&self.file, &evaluated_type_file) {
-                                self.file.borrow_mut().add_dependency(&mut evaluated_type_file.borrow_mut(), self.current_step, BuildSteps::ARCH);
+                        for (name, evaluations) in import_variables_to_create {
+                            let evaluated_type = &evaluations[0].symbol;
+                            let evaluated_type = evaluated_type.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, None).weak;
+                            if let Some(evaluated_type) = evaluated_type.upgrade(session.st()) {
+                                let evaluated_type_file = session.st().get_file(evaluated_type).unwrap();
+                                if !(self.file == evaluated_type_file) {
+                                    session.st_mut().add_dependency(self.file, evaluated_type_file, self.current_step, BuildSteps::ARCH);
+                                }
                             }
+                            let variable_key = session.st_mut().add_new_variable(*self.sym_stack.last().unwrap(), &name, &import_result.range);
+                            let variable = &mut session.st_mut()[variable_key];
+                            variable.is_import_variable = true;
+                            variable.evaluations = evaluations;
                         }
                     }
                 }
-
             } else {
-                let var_name = if import_name.asname.is_none() {
-                    S!(import_name.name.split(".").next().unwrap())
+                let var_name = if let Some(asname) = &import_name.asname {
+                    asname.as_str()
                 } else {
-                    import_name.asname.as_ref().unwrap().clone().to_string()
+                    import_name.name.split(".").next().unwrap()
                 };
-                let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, OYarn::from(var_name), &import_name.range);
-                variable.borrow_mut().as_variable_mut().is_import_variable = true;
+                let variable_key = session.st_mut().add_new_variable(*self.sym_stack.last().unwrap(), var_name, &import_name.range);
+                session.st_mut()[variable_key].is_import_variable = true;
             }
         }
         Ok(())
@@ -354,18 +352,18 @@ impl PythonArchBuilder {
 
                 // one section per value
                 // one succeeding section with all the value sections in OR
-                let scope = self.sym_stack.last().unwrap().clone();
-                let mut prev_section = scope.borrow().as_symbol_mgr().get_last_index();
+                let scope = *self.sym_stack.last().unwrap();
+                let mut prev_section = session.st().as_symbol_mgr(scope).get_last_index();
                 let cond_sections = bool_op_expr.values.iter().map(|expr|{
-                    scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                    session.st_mut().as_mut_symbol_mgr(scope).add_section(
                         expr.range().start(),
                         Some(SectionIndex::INDEX(prev_section))
                     ).index;
                     self.visit_expr(session, &expr);
-                    prev_section = scope.borrow().as_symbol_mgr().get_last_index();
+                    prev_section = session.st().as_symbol_mgr(scope).get_last_index();
                     SectionIndex::INDEX(prev_section)
                 }).collect::<Vec<_>>();
-                scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                session.st_mut().as_mut_symbol_mgr(scope).add_section(
                     bool_op_expr.range().end() + TextSize::new(1),
                     Some(SectionIndex::OR(cond_sections))
                 );
@@ -456,13 +454,13 @@ impl PythonArchBuilder {
             },
             // Expressions that cannot contained a named expressions are not traversed
             Expr::Lambda(lambda_expr) => {
-                let sym = self.sym_stack.last().unwrap().borrow_mut().add_new_function(
-                    session, &S!("<lambda>"), &lambda_expr.range, &lambda_expr.body.range().start()
+                let function_key = session.st_mut().add_new_function(
+                    *self.sym_stack.last().unwrap(), &S!("<lambda>"), &lambda_expr.range, &lambda_expr.body.range().start()
                 );
                 if let Some(parameters) = &lambda_expr.parameters {
-                    PythonArchBuilder::handle_func_args(&sym, session, &parameters);
+                    PythonArchBuilder::handle_func_args(function_key, session, &parameters);
                 }
-                self.sym_stack.push(sym.clone());
+                self.sym_stack.push(function_key.into());
                 self.visit_expr(session, &lambda_expr.body);
                 self.sym_stack.pop();
             },
@@ -538,8 +536,8 @@ impl PythonArchBuilder {
 
     fn _visit_ann_assign(&mut self, session: &mut SessionInfo, ann_assign_stmt: &StmtAnnAssign) {
         let assigns = match ann_assign_stmt.value.as_ref() {
-            Some(value) => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), Some(value)),
-            None => python_utils::unpack_assign(&vec![*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), None)
+            Some(value) => python_utils::unpack_assign(&[*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), Some(value)),
+            None => python_utils::unpack_assign(&[*ann_assign_stmt.target.clone()], Some(&ann_assign_stmt.annotation), None)
         };
         for assign in assigns.iter() { //should only be one
             if let Some(ref expr) = assign.value{
@@ -547,7 +545,7 @@ impl PythonArchBuilder {
             }
             match assign.target {
                 AssignTargetType::Name(ref name_expr) => {
-                    self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", name_expr.id), &name_expr.range);
+                    session.sync_odoo.symbol_table.add_new_variable(*self.sym_stack.last().unwrap(), &name_expr.id, &name_expr.range);
                 },
                 AssignTargetType::Attribute(ref _attr_expr) => {
                 }
@@ -563,36 +561,25 @@ impl PythonArchBuilder {
             }
             match assign.target {
                 AssignTargetType::Name(ref name_expr) => {
-                    let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", name_expr.id), &name_expr.range);
-                    let mut variable = variable.borrow_mut();
-                    if self.file_mode && variable.name() == "__all__" && assign.value.is_some() && variable.parent().is_some() {
-                        let parent = variable.parent().as_ref().unwrap().upgrade();
-                        if parent.is_some() {
-                            let parent = parent.unwrap();
-                            let mut deps = vec![vec![]]; //only arch level
-                            let eval = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), parent, &assign_stmt.range.start(), false, &mut deps);
-                            Symbol::insert_dependencies(&self.file, &mut deps, BuildSteps::ARCH);
-                            variable.as_variable_mut().evaluations = eval.0;
-                            self.diagnostics.extend(eval.1);
-                            if !variable.as_variable().evaluations.is_empty() {
-                                if (*self.sym_stack.last().unwrap()).borrow().is_external() {
-                                    // external packages often import symbols from compiled files
-                                    // or with meta programmation like globals["var"] = __get_func().
-                                    // we don't want to handle that, so just declare __all__ content
-                                    // as symbols to not raise any error.
-                                    let evaluation = variable.as_variable_mut().evaluations.get(0).unwrap();
-                                    match &evaluation.value {
-                                        Some(EvaluationValue::LIST(list)) => {
-                                            for item in list.iter() {
-                                                match item {
-                                                    Expr::StringLiteral(s) => {
-                                                        self.__all_symbols_to_add.push((s.value.to_string(), evaluation.range.unwrap()));
-                                                    },
-                                                    _ => {}
-                                                }
-                                            }
-                                        },
-                                        _ => {}
+                    let variable_key = session.st_mut().add_new_variable(*self.sym_stack.last().unwrap(), &name_expr.id, &name_expr.range);
+                    let variable = &session.st()[variable_key];
+                    if self.file_mode && variable.name == "__all__" && assign.value.is_some() {
+                        let mut deps = vec![vec![]]; //only arch level
+                        let eval = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), variable.parent(), &assign_stmt.range.start(), false, &mut deps);
+                        session.st_mut().insert_dependencies(self.file, &deps, BuildSteps::ARCH);
+                        session.st_mut()[variable_key].evaluations = eval.0;
+                        self.diagnostics.extend(eval.1);
+                        if let Some(evaluation) = session.st()[variable_key].evaluations.get(0) {
+                            if session.st().is_external(*self.sym_stack.last().unwrap()) {
+                                // external packages often import symbols from compiled files
+                                // or with meta programmation like globals["var"] = __get_func().
+                                // we don't want to handle that, so just declare __all__ content
+                                // as symbols to not raise any error.
+                                if let Some(EvaluationValue::LIST(list)) = &evaluation.value {
+                                    for item in list.iter() {
+                                        if let Expr::StringLiteral(s) = item {
+                                            self.__all_symbols_to_add.push((s.value.to_string(), evaluation.range.unwrap()));
+                                        }
                                     }
                                 }
                             }
@@ -660,64 +647,64 @@ impl PythonArchBuilder {
     fn visit_named_expr(&mut self, session: &mut SessionInfo, named_expr: &ExprNamed) {
         self.visit_expr(session, &named_expr.value);
         if let Some(name_expr) = named_expr.target.as_name_expr() { // Only handle valid named expressions
-            self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", name_expr.id), &named_expr.target.range());
+            session.sync_odoo.symbol_table.add_new_variable(*self.sym_stack.last().unwrap(), &name_expr.id, &named_expr.target.range());
         }
     }
 
-    fn handle_func_args(fun_sym: &Rc<RefCell<Symbol>>, session: &mut SessionInfo, parameters: &Parameters) {
+    fn handle_func_args(function_key: FunctionKey, session: &mut SessionInfo, parameters: &Parameters) {
         for arg in parameters.posonlyargs.iter() {
-            let param = fun_sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.parameter.name.id), &arg.range);
-            param.borrow_mut().as_variable_mut().is_parameter = true;
+            let param = session.st_mut().add_new_variable(function_key, &arg.parameter.name.id, &arg.range);
+            session.st_mut()[param].is_parameter = true;
             let mut default = None;
             if arg.default.is_some() {
                 default = Some(Evaluation::new_none()); //TODO evaluate default? actually only used to know if there is a default or not
             }
-            fun_sym.borrow_mut().as_func_mut().args.push(Argument {
-                symbol: Rc::downgrade(&param),
+            session.st_mut()[function_key].args.push(Argument {
+                symbol: param.into(),
                 default_value: default,
                 arg_type: ArgumentType::POS_ONLY,
                 annotation: arg.parameter.annotation.clone(),
             });
         }
         for arg in parameters.args.iter() {
-            let param = fun_sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.parameter.name.id), &arg.range);
-            param.borrow_mut().as_variable_mut().is_parameter = true;
+            let param = session.st_mut().add_new_variable(function_key, &arg.parameter.name.id, &arg.range);
+            session.st_mut()[param].is_parameter = true;
             let mut default = None;
             if arg.default.is_some() {
                 default = Some(Evaluation::new_none()); //TODO evaluate default? actually only used to know if there is a default or not
             }
-            fun_sym.borrow_mut().as_func_mut().args.push(Argument {
-                symbol: Rc::downgrade(&param),
+            session.st_mut()[function_key].args.push(Argument {
+                symbol: param.into(),
                 default_value: default,
                 arg_type: ArgumentType::ARG,
                 annotation: arg.parameter.annotation.clone(),
             });
         }
         if let Some(arg) = &parameters.vararg {
-            let param = fun_sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.name.id), &arg.range);
-            param.borrow_mut().as_variable_mut().is_parameter = true;
-            fun_sym.borrow_mut().as_func_mut().args.push(Argument {
-                symbol: Rc::downgrade(&param),
+            let param = session.st_mut().add_new_variable(function_key, &arg.name.id, &arg.range);
+            session.st_mut()[param].is_parameter = true;
+            session.st_mut()[function_key].args.push(Argument {
+                symbol: param.into(),
                 default_value: None,
                 arg_type: ArgumentType::VARARG,
                 annotation: arg.annotation.clone(),
             });
         }
         for arg in parameters.kwonlyargs.iter() {
-            let param = fun_sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.parameter.name.id), &arg.range);
-            param.borrow_mut().as_variable_mut().is_parameter = true;
-            fun_sym.borrow_mut().as_func_mut().args.push(Argument {
-                symbol: Rc::downgrade(&param),
+            let param = session.st_mut().add_new_variable(function_key, &arg.parameter.name.id, &arg.range);
+            session.st_mut()[param].is_parameter = true;
+            session.st_mut()[function_key].args.push(Argument {
+                symbol: param.into(),
                 default_value: arg.default.as_ref().map(|_default| Evaluation::new_none()),
                 arg_type: ArgumentType::KWORD_ONLY,
                 annotation: arg.parameter.annotation.clone(),
             });
         }
         if let Some(arg) = &parameters.kwarg {
-            let param = fun_sym.borrow_mut().add_new_variable(session, oyarn!("{}", arg.name.id), &arg.range);
-            param.borrow_mut().as_variable_mut().is_parameter = true;
-            fun_sym.borrow_mut().as_func_mut().args.push(Argument {
-                symbol: Rc::downgrade(&param),
+            let param = session.st_mut().add_new_variable(function_key, &arg.name.id, &arg.range);
+            session.st_mut()[param].is_parameter = true;
+            session.st_mut()[function_key].args.push(Argument {
+                symbol: param.into(),
                 default_value: None,
                 arg_type: ArgumentType::KWARG,
                 annotation: arg.annotation.clone(),
@@ -729,13 +716,10 @@ impl PythonArchBuilder {
         if func_def.body.is_empty() {
             return Ok(()) //if body is empty, it usually means that the ast of the class is invalid. Skip it
         }
-        let sym = self.sym_stack.last().unwrap().borrow_mut().add_new_function(
-            session, &func_def.name.id.to_string(), &func_def.range, &func_def.body.get(0).unwrap().range().start());
-        let mut sym_bw = sym.borrow_mut();
-
-        sym_bw.node_index_mut().set(func_def.node_index.load());
-
-        let func_sym = sym_bw.as_func_mut();
+        let function_key = session.st_mut().add_new_function(*self.sym_stack.last().unwrap(),
+            &func_def.name.id, &func_def.range, &func_def.body.get(0).unwrap().range().start());
+        let func_sym = &mut session.st_mut()[function_key];
+        func_sym.node_index.set(func_def.node_index.load());
         for decorator in func_def.decorator_list.iter() {
             if decorator.expression.is_name_expr() {
                 if decorator.expression.as_name_expr().unwrap().id.to_string() == "staticmethod" {
@@ -768,23 +752,23 @@ impl PythonArchBuilder {
                 func_sym.doc_string = Some(s.value.to_string())
             }
         }
-        drop(sym_bw);
         //add params
-        PythonArchBuilder::handle_func_args(&sym, session, &func_def.parameters);
+        PythonArchBuilder::handle_func_args(function_key, session, &func_def.parameters);
         let mut add_noqa = false;
         if let Some(noqa_bloc) = self.file_info.as_ref().unwrap().borrow().noqas_blocs.get(&func_def.range.start().to_u32()) {
             session.noqas_stack.push(noqa_bloc.clone());
             add_noqa = true;
         }
-        sym.borrow_mut().set_noqas(combine_noqa_info(&session.noqas_stack));
-        session.current_noqa = sym.borrow().get_noqas().clone();
+        let noqa = combine_noqa_info(&session.noqas_stack);
+        session.st_mut()[function_key].noqas = noqa.clone();
+        session.current_noqa = noqa;
         //visit body
-        if !self.file_mode || sym.borrow().get_in_parents(&vec![SymType::CLASS], true).is_none() {
-            sym.borrow_mut().as_func_mut().arch_status = BuildStatus::IN_PROGRESS;
-            self.sym_stack.push(sym.clone());
+        if !self.file_mode || session.st().get_in_parents(function_key.into(), &[SymType::CLASS], true).is_none() {
+            session.st_mut()[function_key].arch_status = BuildStatus::IN_PROGRESS;
+            self.sym_stack.push(function_key.into());
             self.visit_node(session, &func_def.body)?;
             self.sym_stack.pop();
-            sym.borrow_mut().as_func_mut().arch_status = BuildStatus::DONE;
+            session.st_mut()[function_key].arch_status = BuildStatus::DONE;
         }
         if add_noqa {
             session.noqas_stack.pop();
@@ -796,11 +780,11 @@ impl PythonArchBuilder {
         if class_def.body.is_empty() {
             return Ok(()) //if body is empty, it usually means that the ast of the class is invalid. Skip it
         }
-        let sym = self.sym_stack.last().unwrap().borrow_mut().add_new_class(
-            session, &class_def.name.id.to_string(), &class_def.range, &class_def.body.get(0).unwrap().range().start());
-        let mut sym_bw = sym.borrow_mut();
+        let parent = *self.sym_stack.last().unwrap();
+        let class_key = session.st_mut().add_new_class(
+            parent, class_def.name.id.as_str(), &class_def.range, &class_def.body.get(0).unwrap().range().start());
+        let class_sym = &mut session.sync_odoo.symbol_table[class_key];
 
-        let class_sym = sym_bw.as_class_sym_mut();
         if class_def.body.len() > 0 && class_def.body[0].is_expr_stmt() {
             let expr = class_def.body[0].as_expr_stmt().unwrap();
             if expr.value.is_literal_expr() {
@@ -810,28 +794,29 @@ impl PythonArchBuilder {
                 }
             }
         }
-        drop(sym_bw);
         let mut add_noqa = false;
         if let Some(noqa_bloc) = self.file_info.as_ref().unwrap().borrow().noqas_blocs.get(&class_def.range.start().to_u32()) {
             session.noqas_stack.push(noqa_bloc.clone());
             add_noqa = true;
         }
-        sym.borrow_mut().set_noqas(combine_noqa_info(&session.noqas_stack));
-        session.current_noqa = sym.borrow().get_noqas().clone();
-        self.sym_stack.push(sym.clone());
+        let noqas = combine_noqa_info(&session.noqas_stack);
+        class_sym.noqas = noqas.clone();
+        session.current_noqa = noqas;
+        self.sym_stack.push(class_key.into());
         self.visit_node(session, &class_def.body)?;
         self.sym_stack.pop();
         if add_noqa {
             session.noqas_stack.pop();
         }
-        PythonArchBuilderHooks::on_class_def(session, &self.entry_point, sym);
+        PythonArchBuilderHooks::on_class_def(session, class_key);
         Ok(())
     }
 
     fn _resolve_all_symbols(&mut self, session: &mut SessionInfo) {
+        let parent = *self.sym_stack.last().unwrap();
         for (symbol_name, range) in self.__all_symbols_to_add.drain(..) {
-            if self.sym_stack.last().unwrap().borrow().get_content_symbol(&symbol_name, u32::MAX).symbols.is_empty() {
-                self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, oyarn!("{}", symbol_name), &range);
+            if session.st().get_content_symbol(parent, &symbol_name, u32::MAX).symbols.is_empty() {
+                session.st_mut().add_new_variable(parent, &symbol_name, &range);
             }
         }
     }
@@ -934,9 +919,10 @@ impl PythonArchBuilder {
 
     fn visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) -> Result<(), Error> {
         //TODO check platform condition (sys.version > 3.12, etc...)
-        let scope = self.sym_stack.last().unwrap().clone();
-        let prefix_section = scope.borrow().as_symbol_mgr().get_last_index();
-        let test_section = scope.borrow_mut().as_mut_symbol_mgr().add_section(
+        let scope = *self.sym_stack.last().unwrap();
+        let scope_as_sym_mgr = session.st_mut().as_mut_symbol_mgr(scope);
+        let prefix_section = scope_as_sym_mgr.get_last_index();
+        let test_section = scope_as_sym_mgr.add_section(
             if_stmt.test.range().start(),
             None // Take preceding section (before if stmt)
         );
@@ -947,17 +933,17 @@ impl PythonArchBuilder {
         let mut stmt_sections = if if_stmt.body.is_empty() {
             vec![]
         } else {
-                scope.borrow_mut().as_mut_symbol_mgr().add_section( // first body section
-                    if_stmt.body[0].range().start(),
-                    None // Take preceding section (if test)
-                );
+            session.st_mut().as_mut_symbol_mgr(scope).add_section( // first body section
+                if_stmt.body[0].range().start(),
+                None // Take preceding section (if test)
+            );
             let check_version = self._check_sys_version_condition(session, if_stmt.test.as_ref());
             if check_version.0 {
                 if check_version.1 {
                     body_version_ok = true;
                 }
                 self.visit_node(session, &if_stmt.body)?;
-                vec![ SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index())]
+                vec![ SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index())]
             } else {
                 vec![]
             }
@@ -968,7 +954,7 @@ impl PythonArchBuilder {
         let stmt_clauses_iter = if_stmt.elif_else_clauses.iter().map(|elif_else_clause|{
             match elif_else_clause.test {
                 Some(ref test_clause) => {
-                    last_test_section = scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                    last_test_section = session.st_mut().as_mut_symbol_mgr(scope).add_section(
                         test_clause.range().start(),
                         Some(SectionIndex::INDEX(last_test_section))
                     ).index;
@@ -979,7 +965,7 @@ impl PythonArchBuilder {
             if elif_else_clause.body.is_empty() {
                 return Ok::<Option<SectionIndex>, Error>(None);
             }
-            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            session.st_mut().as_mut_symbol_mgr(scope).add_section(
                 elif_else_clause.body[0].range().start(),
                 Some(SectionIndex::INDEX(last_test_section))
             );
@@ -995,7 +981,7 @@ impl PythonArchBuilder {
             else if !body_version_ok { //else clause
                 self.visit_node(session, &elif_else_clause.body)?;
             }
-            let clause_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+            let clause_section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
             Ok::<Option<SectionIndex>, Error>(Some(clause_section))
         });
 
@@ -1010,7 +996,7 @@ impl PythonArchBuilder {
             // If there are no valid bodies or tests, point to the section before the if-stmt
             stmt_sections.push(SectionIndex::INDEX(prefix_section));
         }
-        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+        session.st_mut().as_mut_symbol_mgr(scope).add_section(
             if_stmt.range().end() + TextSize::new(1),
             Some(SectionIndex::OR(stmt_sections))
         );
@@ -1019,43 +1005,44 @@ impl PythonArchBuilder {
 
     fn visit_for(&mut self, session: &mut SessionInfo, for_stmt: &StmtFor) -> Result<(), Error> {
         // TODO: Handle breaks for sections
-        let scope = self.sym_stack.last().unwrap().clone();
-        let unpacked = python_utils::unpack_assign(&vec![*for_stmt.target.clone()], None, None);
+        let scope = *self.sym_stack.last().unwrap();
+        let unpacked = python_utils::unpack_assign(&[*for_stmt.target.clone()], None, None);
         for assign in unpacked {
             if let Some(ref expr) = assign.value {
                 self.visit_expr(session, expr);
             }
-            match assign.target{
+            match assign.target {
                 AssignTargetType::Name(ref name_expr) => {
-                    scope.borrow_mut().add_new_variable(session, oyarn!("{}", name_expr.id), &name_expr.range);
+                    session.st_mut().add_new_variable(scope, &name_expr.id, &name_expr.range);
                 },
                 AssignTargetType::Attribute(_) => {
                 }
             }
         }
-        let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+        let scope_as_sym_mgr = session.st_mut().as_mut_symbol_mgr(scope);
+        let previous_section = SectionIndex::INDEX(scope_as_sym_mgr.get_last_index());
         if let Some(first_body_stmt) = for_stmt.body.first() {
-            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            scope_as_sym_mgr.add_section(
                 first_body_stmt.range().start(),
                 None
             );
         }
 
         self.visit_node(session, &for_stmt.body)?;
-        let mut stmt_sections = vec![SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index())];
+        let mut stmt_sections = vec![SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index())];
 
         if !for_stmt.orelse.is_empty(){
-            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            session.st_mut().as_mut_symbol_mgr(scope).add_section(
                 for_stmt.orelse[0].range().start(),
                 Some(previous_section.clone())
             );
             self.visit_node(session, &for_stmt.orelse)?;
-            stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
+            stmt_sections.push(SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index()));
         } else {
             stmt_sections.push(previous_section.clone());
         }
 
-        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+        session.st_mut().as_mut_symbol_mgr(scope).add_section(
             for_stmt.range().end() + TextSize::new(1),
             Some(SectionIndex::OR(stmt_sections))
         );
@@ -1066,13 +1053,13 @@ impl PythonArchBuilder {
         // Try sections:
         // try block is always executed, so it has the same section as the one preceding it.
         // Finally is always executed if it exists, so it belongs to the lower section
-        let scope = self.sym_stack.last().unwrap().clone();
+        let scope = *self.sym_stack.last().unwrap();
         self.visit_node(session, &try_stmt.body)?;
         if !try_stmt.handlers.is_empty(){
             // Branching around except _T, except, and else act similar to if-elif-else
             // The direct link (eq. to empty section) to previous scope is always there
             // Unless both catch-all except and else clauses exist.
-            let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+            let previous_section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
             let mut stmt_sections = vec![previous_section.clone()];
             let mut catch_all_except_exists = false;
             for handler in try_stmt.handlers.iter() {
@@ -1082,12 +1069,12 @@ impl PythonArchBuilder {
                         if h.body.is_empty() {
                             continue;
                         }
-                        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                        session.st_mut().as_mut_symbol_mgr(scope).add_section(
                             h.body[0].range().start(),
                             Some(previous_section.clone())
                         );
                         self.visit_node(session, &h.body)?;
-                        stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
+                        stmt_sections.push(SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index()));
                     }
                 }
             }
@@ -1095,16 +1082,16 @@ impl PythonArchBuilder {
                 if catch_all_except_exists{
                     stmt_sections.remove(0);
                 }
-                scope.borrow_mut().as_mut_symbol_mgr().add_section(
+                session.st_mut().as_mut_symbol_mgr(scope).add_section(
                     try_stmt.orelse[0].range().start(),
                     Some(previous_section.clone())
                 );
                 self.visit_node(session, &try_stmt.orelse)?;
-                stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
+                stmt_sections.push(SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index()));
             }
             // Next section is either the start of the finally block, or right after the try block if finally does not exist
             let next_section_start = try_stmt.finalbody.first().map(|stmt| stmt.range().start()).unwrap_or(try_stmt.range().end() + TextSize::new(1));
-            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            session.st_mut().as_mut_symbol_mgr(scope).add_section(
                 next_section_start,
                 Some(SectionIndex::OR(stmt_sections))
             );
@@ -1119,8 +1106,8 @@ impl PythonArchBuilder {
             if let Some(var) = item.optional_vars.as_ref() {
                 match &**var {
                     Expr::Name(expr_name) => {
-                        self.sym_stack.last().unwrap().borrow_mut().add_new_variable(
-                            session, oyarn!("{}", expr_name.id), &var.range());
+                        let parent = *self.sym_stack.last().unwrap();
+                        session.sync_odoo.symbol_table.add_new_variable(parent, &expr_name.id, &var.range());
                     },
                     Expr::Tuple(_) => {continue;},
                     Expr::List(_) => {continue;},
@@ -1133,53 +1120,54 @@ impl PythonArchBuilder {
     }
 
     fn visit_match(&mut self, session: &mut SessionInfo, match_stmt: &StmtMatch) -> Result<(), Error> {
-        fn traverse_match(pattern: &Pattern, session: &mut SessionInfo, scope: &Rc<RefCell<Symbol>>){
+        fn traverse_match(pattern: &Pattern, symbol_table: &mut SymbolTable, scope: SymbolKey){
             match pattern {
                 Pattern::MatchValue(_) => {},
                 Pattern::MatchSingleton(_) => {},
                 Pattern::MatchSequence(match_sequence) => {
-                    match_sequence.patterns.iter().for_each(|sequence_pattern| traverse_match(sequence_pattern, session, scope));
+                    match_sequence.patterns.iter().for_each(|sequence_pattern| traverse_match(sequence_pattern, symbol_table, scope));
                 },
                 Pattern::MatchMapping(match_mapping) => {
-                    match_mapping.patterns.iter().for_each(|mapping_value_pattern| traverse_match(mapping_value_pattern, session, scope));
+                    match_mapping.patterns.iter().for_each(|mapping_value_pattern| traverse_match(mapping_value_pattern, symbol_table, scope));
                 },
                 Pattern::MatchClass(match_class) => {
-                    match_class.arguments.patterns.iter().for_each(|class_arg_pattern| traverse_match(class_arg_pattern, session, scope));
+                    match_class.arguments.patterns.iter().for_each(|class_arg_pattern| traverse_match(class_arg_pattern, symbol_table, scope));
                 },
                 Pattern::MatchStar(pattern_match_star) => {
                     if let Some(name) = &pattern_match_star.name { //if name is None, this is a wildcard pattern (*_)
-                        scope.borrow_mut().add_new_variable(
-                            session, oyarn!("{}", name), &pattern_match_star.range());
+                        symbol_table.add_new_variable(
+                            scope, name, &pattern_match_star.range());
                     }
                 },
                 Pattern::MatchAs(pattern_match_as) => {
                     if let Some(name) = &pattern_match_as.name { //if name is None, this is a wildcard pattern (_)
-                        scope.borrow_mut().add_new_variable(
-                            session, oyarn!("{}", name), &pattern_match_as.range());
+                        symbol_table.add_new_variable(
+                            scope, name, &pattern_match_as.range());
                     }
                 },
                 Pattern::MatchOr(match_or) => {
-                    match_or.patterns.iter().for_each(|pattern| traverse_match(pattern, session, scope));
+                    match_or.patterns.iter().for_each(|pattern| traverse_match(pattern, symbol_table, scope));
                 },
             }
         }
-        let scope = self.sym_stack.last().unwrap().clone();
-        let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+
+        let scope = *self.sym_stack.last().unwrap();
+        let previous_section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
         let mut stmt_sections = vec![previous_section.clone()];
         for case in match_stmt.cases.iter() {
             case.guard.as_ref().map(|test_clause| self.visit_expr(session, test_clause));
             if matches!(&case.pattern, ruff_python_ast::Pattern::MatchAs(_)){
                 stmt_sections.remove(0); // When we have a wildcard pattern, previous section is shadowed
             }
-            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            session.st_mut().as_mut_symbol_mgr(scope).add_section(
                 case.range().start(),
                 Some(previous_section.clone())
             );
-            traverse_match(&case.pattern, session, &scope);
+            traverse_match(&case.pattern, session.st_mut(), scope);
             self.visit_node(session, &case.body)?;
-            stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
+            stmt_sections.push(SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index()));
         }
-        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+        session.st_mut().as_mut_symbol_mgr(scope).add_section(
             match_stmt.range().end() + TextSize::new(1),
             Some(SectionIndex::OR(stmt_sections))
         );
@@ -1188,30 +1176,32 @@ impl PythonArchBuilder {
 
     fn visit_while(&mut self, session: &mut SessionInfo, while_stmt: &StmtWhile) -> Result<(), Error> {
         // TODO: Handle breaks for sections
-        let scope = self.sym_stack.last().unwrap().clone();
-        let previous_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+        let scope = *self.sym_stack.last().unwrap();
+        let scope_as_sym_mgr = session.st_mut().as_mut_symbol_mgr(scope);
+        let previous_section = SectionIndex::INDEX(scope_as_sym_mgr.get_last_index());
         if let Some(first_body_stmt) = while_stmt.body.first() {
-            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            scope_as_sym_mgr.add_section(
                 first_body_stmt.range().start(),
                 None
             );
         }
         self.visit_expr(session, &while_stmt.test);
         self.visit_node(session, &while_stmt.body)?;
-        let body_section = SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index());
+        let scope_as_sym_mgr = session.st_mut().as_mut_symbol_mgr(scope);
+        let body_section = SectionIndex::INDEX(scope_as_sym_mgr.get_last_index());
         let mut stmt_sections = vec![body_section];
         if !while_stmt.orelse.is_empty(){
-            scope.borrow_mut().as_mut_symbol_mgr().add_section(
+            scope_as_sym_mgr.add_section(
                 while_stmt.orelse[0].range().start(),
                 Some(previous_section.clone())
             );
             self.visit_node(session, &while_stmt.orelse)?;
-            stmt_sections.push(SectionIndex::INDEX(scope.borrow().as_symbol_mgr().get_last_index()));
+            stmt_sections.push(SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index()));
         } else {
             stmt_sections.push(previous_section.clone());
         }
 
-        scope.borrow_mut().as_mut_symbol_mgr().add_section(
+        session.st_mut().as_mut_symbol_mgr(scope).add_section(
             while_stmt.range().end() + TextSize::new(1),
             Some(SectionIndex::OR(stmt_sections))
         );

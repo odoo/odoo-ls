@@ -2,7 +2,7 @@ use lsp_types::{GotoDefinitionResponse};
 use std::{cell::RefCell, rc::Rc};
 
 use crate::core::file_mgr::{AstType, FileInfo};
-use crate::core::symbols::symbol::Symbol;
+use crate::core::symbols::symbol_keys::SourceFileKey;
 use crate::features::goto_utils::{GotoRequest, GotoUtils};
 use crate::threads::SessionInfo;
 
@@ -11,7 +11,7 @@ pub struct DefinitionFeature {}
 impl DefinitionFeature {
 
     pub fn get_location(session: &mut SessionInfo,
-        file_symbol: &Rc<RefCell<Symbol>>,
+        file_symbol: SourceFileKey,
         file_info: &Rc<RefCell<FileInfo>>,
         line: u32,
         character: u32

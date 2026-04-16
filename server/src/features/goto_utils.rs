@@ -3,7 +3,31 @@ use std::{cell::RefCell, path::PathBuf, rc::Rc};
 use lsp_types::{LocationLink, Range};
 use ruff_python_ast::{Expr, ExprCall};
 
-use crate::{S, Sy, constants::{PackageType, SymType, OYarn}, core::{evaluation::{Evaluation, EvaluationValue, ExprOrIdent}, file_mgr::{FileInfo, FileMgr}, odoo::SyncOdoo, python_odoo_builder::MAGIC_FIELDS, symbols::symbol::Symbol, xml_data::OdooData}, features::{ast_utils::AstUtils, csv_ast_utils::CsvAstUtils, features_utils::FeaturesUtils, xml_ast_utils::{XmlAstResult, XmlAstUtils}}, oyarn, threads::SessionInfo, utils::PathSanitizer};
+use crate::core::symbols::symbol_keys::SourceFileKey;
+use crate::features::features_utils::FeaturesUtils;
+use crate::{
+    constants::{OYarn, SymType},
+    core::{
+        evaluation::{Evaluation, EvaluationValue, ExprOrIdent},
+        file_mgr::{FileInfo, FileMgr},
+        odoo::SyncOdoo,
+        python_odoo_builder::MAGIC_FIELDS,
+        symbols::{
+            symbol_keys::{ModuleKey, SymbolKey},
+            storage::SymbolTable,
+        },
+        xml_data::OdooData,
+    },
+    features::{
+        ast_utils::AstUtils,
+        csv_ast_utils::CsvAstUtils,
+        xml_ast_utils::{XmlAstResult, XmlAstUtils},
+    },
+    oyarn,
+    threads::SessionInfo,
+    utils::PathSanitizer,
+    Sy,
+};
 
 pub enum GotoRequest {
     Definition,
@@ -11,22 +35,23 @@ pub enum GotoRequest {
 }
 
 pub enum GotoSourceType {
-    Symbol(Rc<RefCell<Symbol>>),
+    Symbol(SymbolKey),
     OdooData(OdooData),
-    Module(Rc<RefCell<Symbol>>),
+    Module(ModuleKey),
 }
 
 pub struct GotoSource {
     pub source: GotoSourceType,
     pub origin_selection_range: Option<Range>,
 }
+
 pub struct GotoUtils {}
 
 impl GotoUtils {
-    fn check_for_domain_field(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, call_expr: &Option<ExprCall>, offset: usize, sources: &mut Vec<GotoSource>) -> bool {
+    fn check_for_domain_field(session: &mut SessionInfo, eval: &Evaluation, file_symbol: SourceFileKey, call_expr: &Option<ExprCall>, offset: usize, sources: &mut Vec<GotoSource>) -> bool {
         let (field_name, field_range) = if let Some(eval_value) = eval.value.as_ref() {
             if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
-                (expr.value.to_string(), expr.range)
+                (expr.value.to_str(), expr.range)
             } else {
                 return false;
             }
@@ -34,28 +59,30 @@ impl GotoUtils {
             return false;
         };
         let Some(call_expr) = call_expr else { return false };
-        let module = file_symbol.borrow().find_module();
+        let module = session.st().find_module(file_symbol);
+        let scope = session.st().get_scope_symbol(file_symbol, offset as u32, false);
         let string_domain_fields = FeaturesUtils::find_argument_symbols(
-            session, Symbol::get_scope_symbol(file_symbol.clone(), offset as u32, false), module, &field_name, call_expr, offset, field_range
+            session, scope, module, field_name, call_expr, offset, field_range
         );
         let mut domain_found = false;
-        string_domain_fields.iter().for_each(|(field, field_range)|{
-            if let Some(_) = field.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
+        string_domain_fields.iter().for_each(|(field, field_range)| {
+            if let Some(_) = session.st().get_file(*field) {
                 domain_found = true;
+                let path = session.st().path(file_symbol).to_string();
                 sources.push(GotoSource {
                     source:
-                    GotoSourceType::Symbol(field.clone()),
-                    origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), &field_range))
+                    GotoSourceType::Symbol(*field),
+                    origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &field_range))
                 });
             }
         });
         domain_found
     }
 
-    fn check_for_model_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, sources: &mut Vec<GotoSource>) -> bool {
+    fn check_for_model_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: SourceFileKey, sources: &mut Vec<GotoSource>) -> bool {
         let value = if let Some(eval_value) = eval.value.as_ref() {
             if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
-                oyarn!("{}", expr.value.to_string())
+                oyarn!("{}", expr.value.to_str())
             } else {
                 return false;
             }
@@ -67,56 +94,60 @@ impl GotoUtils {
             return false;
         };
         let mut model_found = false;
-        let from_module = file_symbol.borrow().find_module();
-        let classes = model.borrow().get_symbols(session, from_module.clone());
+        let from_module = session.st().find_module(file_symbol);
+        let classes = model.borrow().get_symbols(session.st(), from_module);
         let len_classes = classes.len();
-        for class_symbol_rc in classes {
-            let class_symbol = class_symbol_rc.borrow();
-            if let (Some(eval_range), Some(class_file)) = (eval.range, class_symbol.get_file().and_then(|file_sym_weak| file_sym_weak.upgrade())) {
-                if Rc::ptr_eq(file_symbol, &class_file) && class_symbol.range().contains(eval_range.start()) && len_classes > 1{
+        for class_key in classes {
+            if let (Some(eval_range), Some(class_file)) = (eval.range, session.st().get_file(class_key.into())) {
+                if (file_symbol == class_file) && session.st()[class_key].range.contains(eval_range.start()) && len_classes > 1 {
                     continue; // if we are already on the class, skip, unless it is the only result
                 }
             }
             model_found = true;
+            let path = session.st().path(file_symbol).to_string();
             sources.push(GotoSource {
-                source: GotoSourceType::Symbol(class_symbol_rc.clone()),
-                origin_selection_range: eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), &r))
+                source: GotoSourceType::Symbol(class_key.into()),
+                origin_selection_range: eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &r))
             });
         }
         model_found
     }
 
-    fn check_for_module_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, file_path: &String, sources: &mut Vec<GotoSource>) -> bool {
-        if file_symbol.borrow().typ() != SymType::PACKAGE(PackageType::MODULE) || !file_path.ends_with("__manifest__.py") {
-            // If not on manifest, we don't check for modules
+    fn check_for_module_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: SourceFileKey, file_path: &String, sources: &mut Vec<GotoSource>) -> bool {
+        let SourceFileKey::Module(module_key) = file_symbol else {
             return false;
         };
+        if !file_path.ends_with("__manifest__.py") {
+            // If not on manifest, we don't check for modules
+            return false;
+        }
         let mut value = if let Some(eval_value) = eval.value.as_ref() {
             if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
-                oyarn!("{}", expr.value.to_string())
+                oyarn!("{}", expr.value.to_str())
             } else {
                 return false;
             }
         } else {
             return false;
         };
-        if value == file_symbol.borrow().as_module_package().module_name {
-            value = file_symbol.borrow().as_module_package().dir_name.clone();
+        let module_symbol = &session.st()[module_key];
+        if value == module_symbol.module_name {
+            value = module_symbol.dir_name.clone();
         }
-        let Some(module) = session.sync_odoo.modules.get(&oyarn!("{}", value)).and_then(|m| m.upgrade()) else {
+        let Some(module) = session.sync_odoo.modules.get(&value).copied().and_then(|m| m.upgrade(session.st())) else {
             return false;
         };
         sources.push(GotoSource{
-            source: GotoSourceType::Module(module.clone()),
+            source: GotoSourceType::Module(module),
             origin_selection_range: None,
         });
         true
     }
 
-    fn check_for_xml_id_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, sources: &mut Vec<GotoSource>) -> bool {
+    fn check_for_xml_id_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: SourceFileKey, sources: &mut Vec<GotoSource>) -> bool {
         let value = if let Some(eval_value) = eval.value.as_ref() {
             if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
-                oyarn!("{}", expr.value.to_string())
+                oyarn!("{}", expr.value.to_str())
             } else {
                 return false;
             }
@@ -126,13 +157,14 @@ impl GotoUtils {
         let mut xml_found = false;
         let xml_ids = SyncOdoo::get_xml_ids(session, file_symbol, value.as_str(), &std::ops::Range{start: 0, end: 0}, &mut vec![]);
         for xml_id in xml_ids {
-            let file = xml_id.get_file_symbol();
+            let file = xml_id.get_file_symbol(session.st());
             if let Some(file) = file {
-                if let Some(_file) = file.upgrade() { //test that file is valid to set xml_found to true
+                if let Some(_file) = file.upgrade(session.st()) { //test that file is valid to set xml_found to true
                     xml_found = true;
+                    let path = session.st().path(file_symbol).to_string();
                     sources.push(GotoSource{
                         source: GotoSourceType::OdooData(xml_id.clone()),
-                        origin_selection_range: eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), &r))
+                        origin_selection_range: eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &r))
                     });
                 }
             }
@@ -140,10 +172,10 @@ impl GotoUtils {
         xml_found
     }
 
-    fn check_for_compute_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: &Rc<RefCell<Symbol>>, call_expr: &Option<ExprCall>, offset: usize, sources: &mut Vec<GotoSource>) -> bool {
+    fn check_for_compute_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: SourceFileKey, call_expr: &Option<ExprCall>, offset: usize, sources: &mut Vec<GotoSource>) -> bool {
         let value = if let Some(eval_value) = eval.value.as_ref() {
             if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
-                expr.value.to_string()
+                expr.value.to_str()
             } else {
                 return false;
             }
@@ -151,42 +183,45 @@ impl GotoUtils {
             return  false;
         };
         let Some(call_expr) = call_expr else { return false };
+        let scope = session.st().get_scope_symbol(file_symbol, offset as u32, false);
+        let module = session.st().find_module(file_symbol);
         let method_symbols = FeaturesUtils::find_kwarg_methods_symbols(
-            session, Symbol::get_scope_symbol(file_symbol.clone(), offset as u32, false), file_symbol.borrow().find_module(), &value, call_expr, &offset
+            session, scope, module, value, call_expr, &offset
         );
         let mut method_found = false;
-        method_symbols.iter().for_each(|field|{
-            if let Some(file_sym) = field.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
+        method_symbols.iter().for_each(|&field|{
+            if let Some(file_sym) = session.st().get_file(field) {
                 method_found = true;
+                let path = session.st().path(file_sym).to_string();
                 sources.push(GotoSource {
-                    source: GotoSourceType::Symbol(field.clone()),
-                    origin_selection_range: eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, file_sym.borrow().paths().first().as_ref().unwrap(), &r))
+                    source: GotoSourceType::Symbol(field),
+                    origin_selection_range: eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &r))
                 });
             }
         });
         method_found
     }
 
-    pub fn add_display_name_compute_methods(session: &mut SessionInfo, sources: &mut Vec<GotoSource>, expr: &ExprOrIdent, file_symbol: &Rc<RefCell<Symbol>>, offset: usize) {
+    pub fn add_display_name_compute_methods(session: &mut SessionInfo, sources: &mut Vec<GotoSource>, expr: &ExprOrIdent, file_symbol: SourceFileKey, offset: usize) {
         // now we want `_compute_display_name` definition(s)
         // we need the symbol of the model/ then we run get member symbol
         // to do that, we need the expr, match it to attribute, get the value, get its evals
         // with those evals, we run get_member_symbol on `_compute_display_name`
-        let crate::core::evaluation::ExprOrIdent::Expr(Expr::Attribute(attr_expr)) = expr else {
+        let ExprOrIdent::Expr(Expr::Attribute(attr_expr)) = expr else {
             return;
         };
-        let (analyse_ast_result, _range) = AstUtils::get_symbol_from_expr(session, file_symbol, &crate::core::evaluation::ExprOrIdent::Expr(&attr_expr.value), offset as u32);
-        let eval_ptrs = analyse_ast_result.evaluations.iter().flat_map(|eval| Symbol::follow_ref(eval.symbol.get_symbol_ptr(), session, &mut None, false, false, None, None)).collect::<Vec<_>>();
-        let maybe_module = file_symbol.borrow().find_module();
+        let (analyse_ast_result, _range) = AstUtils::get_symbol_from_expr(session, file_symbol, &ExprOrIdent::Expr(&attr_expr.value), offset as u32);
+        let eval_ptrs = analyse_ast_result.evaluations.iter().flat_map(|eval| SymbolTable::follow_ref(eval.symbol.get_symbol_ptr(), session, &mut None, false, false, None, None)).collect::<Vec<_>>();
+        let maybe_module = session.st().find_module(file_symbol);
         let symbols = eval_ptrs.iter().flat_map(|eval_ptr| {
-            let Some(symbol) = eval_ptr.upgrade_weak() else {
+            let Some(symbol) = eval_ptr.upgrade_weak(session.st()) else {
                 return  vec![];
             };
-            symbol.borrow().get_member_symbol(session, &S!("_compute_display_name"), maybe_module.clone(), false, false, true, true, false).0
+            SymbolTable::get_member_symbol(session, symbol, "_compute_display_name", maybe_module, false, false, true, true, false).0
         }).collect::<Vec<_>>();
         for symbol in symbols {
             sources.push(GotoSource {
-                source: GotoSourceType::Symbol(symbol.clone()),
+                source: GotoSourceType::Symbol(symbol),
                 origin_selection_range: None,
             });
         }
@@ -194,7 +229,7 @@ impl GotoUtils {
 
     pub fn get_symbols(session: &mut SessionInfo,
         goto_request: GotoRequest,
-        file_symbol: &Rc<RefCell<Symbol>>,
+        file_symbol: SourceFileKey,
         file_info: &Rc<RefCell<FileInfo>>,
         line: u32,
         character: u32
@@ -207,24 +242,29 @@ impl GotoUtils {
             return vec![];
         }
         let mut definition_sources = vec![];
-        let mut evaluations = analyse_ast_result.evaluations.clone();
+        let mut evaluations = analyse_ast_result.evaluations;
         // Filter out magic fields
         let mut dislay_name_found = false;
         evaluations.retain(|eval| {
             // Filter out, variables, whose parents are a class, whose name is one of the magic fields, and have the same range as their parent
             let eval_sym = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-            let Some(eval_sym) = eval_sym.upgrade_weak() else { return true; };
-            if !MAGIC_FIELDS.contains(&eval_sym.borrow().name().as_str()) || eval_sym.borrow().typ() != SymType::VARIABLE || !eval_sym.borrow().is_field(session) {
+            let Some(eval_sym) = eval_sym.upgrade_weak(session.st()) else { return true; };
+            let SymbolKey::Variable(variable_key) = eval_sym else {
+                return true;
+            };
+            let eval_sym_name = session.st()[variable_key].name.clone();
+            if !MAGIC_FIELDS.contains(&eval_sym_name.as_str()) || !SymbolTable::is_field(session, eval_sym) {
                 return true;
             }
-            if eval_sym.borrow().name() == "display_name" {
+            if eval_sym_name == "display_name" {
                 dislay_name_found = true;
             }
-            let Some(parent_sym) = eval_sym.borrow().parent().and_then(|parent| parent.upgrade()) else { return true; };
-            if parent_sym.borrow().typ() != SymType::CLASS {
+            let Some(parent_sym) = session.st().parent(eval_sym) else { return true; };
+            let SymbolKey::Class(class_key) = parent_sym else {
                 return true;
-            }
-            eval_sym.borrow().range() != parent_sym.borrow().range()
+            };
+            let st: &SymbolTable = session.st();
+            st[variable_key].range != st[class_key].range
         });
         if let Some(expr) = expr && dislay_name_found {
             GotoUtils::add_display_name_compute_methods(session, &mut definition_sources, &expr, file_symbol, offset);
@@ -232,12 +272,12 @@ impl GotoUtils {
         drop(file_info_ast_ref);
         let mut index = 0;
         while index < evaluations.len() {
-            let eval = evaluations[index].clone();
-            if GotoUtils::check_for_domain_field(session, &eval, file_symbol, &call_expr, offset, &mut definition_sources) ||
-              GotoUtils::check_for_compute_string(session, &eval, file_symbol,&call_expr, offset, &mut definition_sources) ||
-              GotoUtils::check_for_module_string(session, &eval, file_symbol, &file_info.borrow().uri, &mut definition_sources) ||
-              GotoUtils::check_for_model_string(session, &eval, file_symbol, &mut definition_sources) ||
-              GotoUtils::check_for_xml_id_string(session, &eval, file_symbol, &mut definition_sources) {
+            let eval = &evaluations[index];
+            if GotoUtils::check_for_domain_field(session, eval, file_symbol, &call_expr, offset, &mut definition_sources) ||
+              GotoUtils::check_for_compute_string(session, eval, file_symbol,&call_expr, offset, &mut definition_sources) ||
+              GotoUtils::check_for_module_string(session, eval, file_symbol, &file_info.borrow().uri, &mut definition_sources) ||
+              GotoUtils::check_for_model_string(session, eval, file_symbol, &mut definition_sources) ||
+              GotoUtils::check_for_xml_id_string(session, eval, file_symbol, &mut definition_sources) {
                 index += 1;
                 continue;
             }
@@ -248,22 +288,22 @@ impl GotoUtils {
             }
             if matches!(goto_request, GotoRequest::Definition) {
                 let eval_ptr = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-                let end_symbols = Symbol::follow_imported_ref(&eval_ptr, session, &mut None);
+                let end_symbols = SymbolTable::follow_imported_ref(&eval_ptr, session, &mut None);
                 for end_symbol in end_symbols.iter() {
-                    if let Some(symbol) = end_symbol.upgrade_weak() {
+                    if let Some(symbol) = end_symbol.upgrade_weak(session.st()) {
                         definition_sources.push(GotoSource{
-                            source: GotoSourceType::Symbol(symbol.clone()),
+                            source: GotoSourceType::Symbol(symbol),
                             origin_selection_range: None
                         });
                     }
                 }
             } else {
-                let Some(symbol) = eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None).weak.upgrade() else {
+                let Some(symbol) = eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None).weak.upgrade(session.st()) else {
                     index += 1;
                     continue;
                 };
                 definition_sources.push(GotoSource{
-                    source: GotoSourceType::Symbol(symbol.clone()),
+                    source: GotoSourceType::Symbol(symbol),
                     origin_selection_range: None
                 });
             }
@@ -273,7 +313,7 @@ impl GotoUtils {
     }
 
     pub fn get_symbols_xml(session: &mut SessionInfo,
-        file_symbol: &Rc<RefCell<Symbol>>,
+        file_symbol: SourceFileKey,
         file_info: &Rc<RefCell<FileInfo>>,
         line: u32,
         character: u32
@@ -287,18 +327,18 @@ impl GotoUtils {
             let (xml_ast_results, origin_range) = XmlAstUtils::get_symbols(session, file_symbol, root, offset, true);
             for xml_ast_result in xml_ast_results {
                 sources.push(match xml_ast_result {
-                    XmlAstResult ::SYMBOL(s) => {
+                    XmlAstResult::SYMBOL(s) => {
+                        let path = session.sync_odoo.symbol_table.path(file_symbol).to_string();
                         GotoSource {
                             source: GotoSourceType::Symbol(s),
-                            origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, file_symbol.borrow().paths().first().as_ref().unwrap(), origin_range.as_ref().unwrap()))
+                            origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, origin_range.as_ref().unwrap()))
                         }
                     },
                     XmlAstResult::XML_DATA(record) => {
-                        let maybe_file = record.get_file_symbol().and_then(|file| file.upgrade());
-                        let Some(xml_file) = maybe_file else {
+                        let Some(xml_file) = record.get_file_symbol(session.st()) else {
                             continue;
                         };
-                        let full_path = xml_file.borrow().paths()[0].clone();
+                        let full_path = session.st().path(xml_file).to_string();
                         GotoSource {
                             source: GotoSourceType::OdooData(OdooData::RECORD(record)),
                             origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, origin_range.as_ref().unwrap()))
@@ -311,12 +351,12 @@ impl GotoUtils {
     }
 
     pub fn get_symbols_csv(session: &mut SessionInfo,
-        file_symbol: &Rc<RefCell<Symbol>>,
+        file_symbol: SourceFileKey,
         file_info: &Rc<RefCell<FileInfo>>,
         line: u32,
         character: u32
     ) -> Vec<GotoSource> {
-        let model_name_pb = PathBuf::from(&file_symbol.borrow().paths()[0]);
+        let model_name_pb = PathBuf::from(session.st().path(file_symbol));
         let model_name = Sy!(model_name_pb.file_stem().unwrap().to_str().unwrap().to_string());
         let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
         let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
@@ -328,30 +368,25 @@ impl GotoUtils {
     pub fn goto_source_to_location(session: &mut SessionInfo, def: &GotoSource) -> Vec<LocationLink> {
         let mut res = vec![];
         match &def.source {
-            GotoSourceType::Symbol(symbol) => {
-                if let Some(file_symbol) = symbol.borrow().get_file().and_then(|file_sym_weak| file_sym_weak.upgrade()){
-                    let paths = file_symbol.borrow().paths();
-                    for path in paths.iter() {
-                        let full_path = match file_symbol.borrow().typ() {
-                            SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file_symbol.borrow().as_package().i_ext())).sanitize(),
-                            _ => path.clone()
-                        };
-                        let symbol_range = if symbol.borrow().has_range() {
-                            session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &symbol.borrow().range())
-                        } else {
-                            Range::default()
-                        };
-                        res.push(LocationLink{
-                            origin_selection_range: def.origin_selection_range.clone(),
-                            target_uri: FileMgr::pathname2uri(&full_path),
-                            target_selection_range: symbol_range,
-                            target_range: symbol_range,
-                        });
-                    }
+            &GotoSourceType::Symbol(symbol) => {
+                if let Some(file_symbol) = session.st().get_file(symbol) {
+                    let full_path = session.st().file_path(file_symbol).to_string();
+                    let symbol_range = if session.st().has_range(symbol) {
+                        let range = session.st().range(symbol).clone();
+                        session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &range)
+                    } else {
+                        Range::default()
+                    };
+                    res.push(LocationLink{
+                        origin_selection_range: def.origin_selection_range.clone(),
+                        target_uri: FileMgr::pathname2uri(&full_path),
+                        target_selection_range: symbol_range,
+                        target_range: symbol_range,
+                    });
                 }
             },
-            GotoSourceType::Module(module) => {
-                let path = PathBuf::from(module.borrow().paths()[0].clone()).join("__manifest__.py").sanitize();
+            &GotoSourceType::Module(module) => {
+                let path = PathBuf::from(&session.st()[module].path).join("__manifest__.py").sanitize();
                 res.push(LocationLink{
                     origin_selection_range: None,
                     target_uri: FileMgr::pathname2uri(&path),
@@ -360,16 +395,12 @@ impl GotoUtils {
                 });
             },
             GotoSourceType::OdooData(xml_id) => {
-                let file = xml_id.get_file_symbol();
+                let file = xml_id.get_file_symbol(session.st());
                 if let Some(file) = file {
-                    if let Some(file) = file.upgrade() {
+                    if let Some(file) = file.upgrade(session.st()) {
                         //in case of OdooData declared in python or at least "not xml" file
-                        let path = file.borrow().paths()[0].clone();
-                        let full_path = match file.borrow().typ() {
-                            SymType::PACKAGE(_) => PathBuf::from(path).join(format!("__init__.py{}", file.borrow().as_package().i_ext())).sanitize(),
-                            _ => path.clone()
-                        };
-                        let symbol_range = match xml_id.get_symbol().upgrade().unwrap().borrow().typ() {
+                        let full_path = session.st().file_path(file).to_string();
+                        let symbol_range = match xml_id.get_symbol().upgrade(session.st()).unwrap().typ() {
                             SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
                             _ => session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, &xml_id.get_range()),
                         };
