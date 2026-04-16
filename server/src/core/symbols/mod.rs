@@ -1,14 +1,23 @@
-pub mod class_symbol;
-pub mod compiled_symbol;
-pub mod csv_file_symbol;
-pub mod disk_dir_symbol;
-pub mod file_symbol;
-pub mod function_symbol;
-pub mod module_symbol;
-pub mod namespace_symbol;
-pub mod package_symbol;
-pub mod root_symbol;
-pub mod symbol;
-pub mod symbol_mgr;
-pub mod variable_symbol;
-pub mod xml_file_symbol;
+
+pub mod symbol_keys;
+pub mod storage;
+pub mod symbol_table_impl;
+pub mod module_load;
+
+pub use storage::{
+    class_symbol::ClassSymbol,
+    compiled_symbol::CompiledSymbol,
+    csv_file_symbol::CsvFileSymbol,
+    dependency_mgr::{Buildable, Dependencies},
+    disk_dir_symbol::DiskDirSymbol,
+    file_symbol::FileSymbol,
+    function_symbol::{self, FunctionSymbol},
+    module_symbol::ModuleSymbol,
+    namespace_symbol::NamespaceSymbol,
+    package_symbol::PythonPackageSymbol,
+    root_symbol::RootSymbol,
+    symbol_mgr::{self, SymbolMgr},
+    variable_symbol::VariableSymbol,
+    xml_file_symbol::XmlFileSymbol,
+    SymbolTable,
+};

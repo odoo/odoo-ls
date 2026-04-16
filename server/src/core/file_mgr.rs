@@ -39,7 +39,7 @@ pub enum NoqaInfo {
     Codes(Vec<String>),
 }
 
-pub fn combine_noqa_info(noqas: &Vec<NoqaInfo>) -> NoqaInfo {
+pub fn combine_noqa_info(noqas: &[NoqaInfo]) -> NoqaInfo {
     let mut codes = HashSet::new();
     for noqa in noqas.iter() {
         match noqa {
@@ -115,7 +115,7 @@ impl FileInfo {
             diag_test_comments: vec![],
         }
     }
-    pub fn update(&mut self, session: &mut SessionInfo, path: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, is_external: bool, force: bool, is_untitled: bool) -> bool {
+    pub fn update(&mut self, session: &mut SessionInfo, path: &str, content: Option<&[TextDocumentContentChangeEvent]>, version: Option<i32>, is_external: bool, force: bool, is_untitled: bool) -> bool {
         // update the file info with the given information.
         // path: indicates the path of the file
         // content: if content is given, it will be used to update the ast and text_rope, if not, the loading will be from the disk
@@ -151,7 +151,7 @@ impl FileInfo {
             if content.len() == 1 && content[0].range.is_none() {
                 self.file_info_ast.borrow_mut().text_document = Some(TextDocument::new(content[0].text.clone(), self.version.expect("Expected version on file did Open")));
             } else {
-                self.file_info_ast.borrow_mut().text_document.as_mut().unwrap().apply_changes(content.clone(), version.unwrap(), session.sync_odoo.encoding);
+                self.file_info_ast.borrow_mut().text_document.as_mut().unwrap().apply_changes(content, version.unwrap(), session.sync_odoo.encoding);
             }
         } else if is_untitled {
             session.log_message(MessageType::ERROR, format!("Attempt to update untitled file {}, without changes", path));
@@ -308,9 +308,9 @@ impl FileInfo {
 
     fn add_noqa_bloc(&mut self, index: u32, noqa_to_add: NoqaInfo) {
         if let Some(noqa_bloc) = self.noqas_blocs.remove(&index) {
-            self.noqas_blocs.insert(index, combine_noqa_info(&vec![noqa_bloc, noqa_to_add]));
+            self.noqas_blocs.insert(index, combine_noqa_info(&[noqa_bloc, noqa_to_add]));
         } else {
-            self.noqas_blocs.insert(index, noqa_to_add.clone());
+            self.noqas_blocs.insert(index, noqa_to_add);
         }
     }
 
@@ -321,8 +321,8 @@ impl FileInfo {
 
     pub fn update_validation_diagnostics(&mut self, diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>) {
         self.need_push = true;
-        for (key, value) in diagnostics.iter() {
-            self.diagnostics.entry(*key).or_insert_with(|| vec![]).extend(value.clone());
+        for (key, value) in diagnostics {
+            self.diagnostics.entry(key).or_default().extend(value);
         }
     }
 
@@ -498,7 +498,7 @@ impl FileMgr {
             Position::new(range.end().to_u32(), 0))
     }
 
-    pub fn get_file_info(&self, path: &String) -> Option<Rc<RefCell<FileInfo>>> {
+    pub fn get_file_info(&self, path: &str) -> Option<Rc<RefCell<FileInfo>>> {
         if Self::is_untitled(path) {
             self.untitled_files.get(path).cloned()
         } else {
@@ -536,9 +536,9 @@ impl FileMgr {
         };
         Range::default()
     }
-    
 
-    pub fn std_range_to_range(&self, session: &mut SessionInfo, path: &String, range: &std::ops::Range<usize>) -> Range {
+
+    pub fn std_range_to_range(&self, session: &mut SessionInfo, path: &str, range: &std::ops::Range<usize>) -> Range {
         let file = if Self::is_untitled(path) {
             self.untitled_files.get(path)
         } else {
@@ -575,7 +575,7 @@ impl FileMgr {
         path.starts_with("untitled:")
     }
 
-    pub fn update_file_info(&mut self, session: &mut SessionInfo, uri: &str, content: Option<&Vec<TextDocumentContentChangeEvent>>, version: Option<i32>, force: bool) -> (bool, Rc<RefCell<FileInfo>>) {
+    pub fn update_file_info(&mut self, session: &mut SessionInfo, uri: &str, content: Option<&[TextDocumentContentChangeEvent]>, version: Option<i32>, force: bool) -> (bool, Rc<RefCell<FileInfo>>) {
         let is_untitled = Self::is_untitled(uri);
         let entry = if is_untitled {
             self.untitled_files.entry(uri.to_string())
@@ -607,7 +607,7 @@ impl FileMgr {
         }
     }
 
-    pub fn delete_path(session: &mut SessionInfo, uri: &String) {
+    pub fn delete_path(session: &mut SessionInfo, uri: &str) {
         //delete all files that are the uri or in subdirectory
         let matching_keys: Vec<String> = session.sync_odoo.get_file_mgr().borrow_mut().files.keys().filter(|k| PathBuf::from(k).starts_with(uri)).cloned().collect();
         for key in matching_keys {
@@ -757,4 +757,3 @@ impl FileMgr {
         }
     }
 }
-

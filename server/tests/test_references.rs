@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use lsp_types::{Location, PartialResultParams, Position, WorkDoneProgressParams};
 use odoo_ls_server::{core::file_mgr::FileMgr, threads::SessionInfo, utils::PathSanitizer};
-use tracing::error;
 
 use crate::setup::setup::{create_init_session, setup_server};
 

@@ -119,12 +119,12 @@ impl DocumentSymbolFeature {
     }
 
     fn visit_aug_assign(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_aug_assign: &StmtAugAssign) {
-        let assigns = unpack_assign(&vec![*stmt_aug_assign.target.clone()], None, None);
+        let assigns = unpack_assign(&[*stmt_aug_assign.target.clone()], None, None);
         DocumentSymbolFeature::build_assign_results(session, results, file_info, assigns);
     }
 
     fn visit_ann_assign(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_ann_assign: &StmtAnnAssign) {
-        let assigns = unpack_assign(&vec![*stmt_ann_assign.target.clone()], None, None);
+        let assigns = unpack_assign(&[*stmt_ann_assign.target.clone()], None, None);
         DocumentSymbolFeature::build_assign_results(session, results, file_info, assigns);
     }
 
@@ -170,7 +170,7 @@ impl DocumentSymbolFeature {
     }
 
     fn visit_for(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_for: &StmtFor) {
-        let unpacked = unpack_assign(&vec![*stmt_for.target.clone()], None, None);
+        let unpacked = unpack_assign(&[*stmt_for.target.clone()], None, None);
         DocumentSymbolFeature::build_assign_results(session, results, file_info, unpacked);
         for child in stmt_for.body.iter() {
             DocumentSymbolFeature::visit_stmt(session, child, results, file_info);

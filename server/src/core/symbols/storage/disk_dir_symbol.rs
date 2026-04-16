@@ -1,9 +1,8 @@
 
-use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::{Rc, Weak}};
+use std::{collections::HashMap, path::PathBuf};
 
-use crate::{constants::OYarn, oyarn, utils::PathSanitizer};
+use crate::{constants::OYarn, core::symbols::symbol_keys::SymbolKey, oyarn, utils::PathSanitizer};
 
-use super::symbol::Symbol;
 
 /*
 DiskDir symbol represent a directory on disk we didn't parse yet. So it can either be a namespace or a package later.
@@ -12,31 +11,39 @@ DiskDir symbol represent a directory on disk we didn't parse yet. So it can eith
 pub struct DiskDirSymbol {
     pub name: OYarn,
     pub path: String,
-    pub module_symbols: HashMap<OYarn, Rc<RefCell<Symbol>>>,
     pub is_external: bool,
-    pub weak_self: Option<Weak<RefCell<Symbol>>>,
-    pub parent: Option<Weak<RefCell<Symbol>>>,
     pub in_workspace: bool,
+    
+    // parent / child symbols
+    parent: SymbolKey,
+    pub(super) module_symbols: HashMap<OYarn, SymbolKey>,
 }
 
 impl DiskDirSymbol {
 
-    pub fn new(name: String, path: String, is_external: bool) -> Self {
+    pub fn new(name: &str, path: &str, parent: SymbolKey, is_external: bool) -> Self {
         Self {
             name: oyarn!("{}", name),
             path: PathBuf::from(path).sanitize(),
             is_external,
-            weak_self: None,
-            parent: None,
+            parent,
             in_workspace: false,
             module_symbols: HashMap::new()
         }
     }
 
-    pub fn add_file(&mut self, file: &Rc<RefCell<Symbol>>) {
-        self.module_symbols.insert(file.borrow().name().clone(), file.clone());
+    pub fn module_symbols(&self) -> &HashMap<OYarn, SymbolKey> {
+        &self.module_symbols
     }
 
+    pub fn parent(&self) -> SymbolKey {
+        self.parent
+    }
+    
+    pub fn children(&self) -> Vec<SymbolKey> {
+        self.module_symbols.values().copied().collect()
+    }
+    
     /*pub fn load(sesion: &mut SessionInfo, dir: &Rc<RefCell<Symbol>>) -> Rc<RefCell<Symbol>> {
         let path = dir.borrow().as_disk_dir_sym().path.clone();
     }*/
