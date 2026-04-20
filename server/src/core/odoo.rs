@@ -259,6 +259,9 @@ impl SyncOdoo {
     }
 
     pub fn init(session: &mut SessionInfo, config: ConfigEntry) {
+        #[cfg(debug_assertions)]
+        crate::constants::install_debug_ptr(&session.sync_odoo.symbol_table);
+
         session.sync_odoo.symbol_table.pre_allocate();
         info!("Initializing odoo");
         info!("Full Config: {:?}", config);
