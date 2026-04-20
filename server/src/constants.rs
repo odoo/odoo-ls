@@ -141,3 +141,27 @@ pub static IS_RELEASE: LazyLock<bool> = LazyLock::new(|| {
     }
     false
 });
+
+#[cfg(debug_assertions)]
+use crate::core::symbols::storage::SymbolTable;
+
+/// Debug-only global pointer to the active `SymbolTable`, consumed by the
+/// GDB helper script (`server/debug_tools/symbol_table_gdb_script.py`) so
+/// it can find the table from any frame without walking locals.
+///
+/// Null until `install_debug_ptr` is called on an already-placed instance.
+/// Must not be registered before the `SymbolTable` reaches its final
+/// memory location (e.g. not from inside `SymbolTable::new`, whose return
+/// value moves into the caller's slot and would leave a dangling address).
+#[cfg(debug_assertions)]
+#[unsafe(no_mangle)]
+#[used]
+pub static mut ODOOLS_DEBUG_SYMBOL_TABLE: *const SymbolTable = std::ptr::null();
+
+/// Record `table`'s address in `ODOOLS_DEBUG_SYMBOL_TABLE` so the GDB
+/// helper script can locate it from any frame. Call once, after the
+/// `SymbolTable` reaches its final memory location.
+#[cfg(debug_assertions)]
+pub fn install_debug_ptr(table: &SymbolTable) {
+    unsafe { ODOOLS_DEBUG_SYMBOL_TABLE = table as *const SymbolTable; }
+}
