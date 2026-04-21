@@ -19,7 +19,7 @@ pub struct XmlFileSymbol {
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     pub not_found_models: HashMap<OYarn, BuildSteps>,
     pub xml_ids: HashMap<OYarn, Vec<OdooData>>,
-    pub (super) in_workspace: bool,
+    pub (in crate::core::symbols) in_workspace: bool,
     pub self_import: bool,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
     pub dependencies: DependenciesTable,
