@@ -12,7 +12,7 @@ use lsp_types::notification::{Notification, PublishDiagnostics};
 use odoo_ls_server::S;
 use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::utils::get_python_command;
-use odoo_ls_server::{core::{config::{ConfigEntry, DiagMissingImportsMode}, entry_point::EntryPointMgr, odoo::SyncOdoo}, threads::SessionInfo, utils::PathSanitizer as _};
+use odoo_ls_server::{core::{config::{ConfigKey, ConfigEntry}, entry_point::EntryPointMgr, odoo::SyncOdoo}, threads::SessionInfo, utils::PathSanitizer as _};
 
 use tracing::{info, level_filters::LevelFilter};
 use tracing_appender::rolling::RollingFileAppender;
@@ -51,14 +51,16 @@ pub fn setup_server(with_odoo: bool) -> (SyncOdoo, ConfigEntry) {
     info!("Test addons path: {:?}", test_addons_path);
 
     let mut config = ConfigEntry::new();
-    config.addons_paths = vec![test_addons_path.sanitize()].into_iter().collect();
+    config.set_string_list(ConfigKey::AddonsPaths, [test_addons_path.sanitize()]);
     server.get_file_mgr().borrow_mut().add_workspace_folder(S!("test_addons_path"), FileMgr::pathname2uri(&test_addons_path.sanitize()));
-    config.odoo_path = community_path.map(|x| PathBuf::from(x).sanitize());
+    if let Some(odoo_path) = community_path.map(|x| PathBuf::from(x).sanitize()) {
+        config.set_str(ConfigKey::OdooPath, odoo_path);
+    }
     let Some(python_cmd) = get_python_command() else {
         panic!("Python not found")
     };
-    config.python_path = python_cmd;
-    config.diag_missing_imports = DiagMissingImportsMode::All;
+    config.set_str(ConfigKey::PythonPath, python_cmd);
+    config.set_str(ConfigKey::DiagMissingImports, S!("all"));
     (server, config)
 }
 
