@@ -9,7 +9,7 @@ pub mod namespace_symbol;
 pub mod package_symbol;
 pub mod root_symbol;
 pub mod variable_symbol;
-pub mod xml_file_symbol;
+pub mod xml;
 pub mod lifecycle;
 pub mod symbol_mgr;
 pub mod dependency_mgr;
