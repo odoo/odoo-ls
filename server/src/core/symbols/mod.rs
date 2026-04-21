@@ -18,6 +18,6 @@ pub use storage::{
     root_symbol::RootSymbol,
     symbol_mgr::{self, SymbolMgr},
     variable_symbol::VariableSymbol,
-    xml_file_symbol::XmlFileSymbol,
+    xml::xml_file_symbol::XmlFileSymbol,
     SymbolTable,
 };
