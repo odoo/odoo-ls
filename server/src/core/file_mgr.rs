@@ -332,7 +332,7 @@ impl FileInfo {
         diagnostic
     }
     pub fn update_diagnostic_filters(&mut self, session: &SessionInfo) {
-        self.diagnostic_filters = session.sync_odoo.config.diagnostic_filters.iter().cloned().filter(|filter| {
+        self.diagnostic_filters = session.sync_odoo.config.diagnostic_filters().iter().cloned().filter(|filter| {
             match filter.path_type {
                 DiagnosticFilterPathType::In => {
                     filter.paths.iter().any(|p| p.matches(&self.uri))

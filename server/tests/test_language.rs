@@ -1,8 +1,8 @@
-use odoo_ls_server::utils::{HashMap, HashSet};
+use odoo_ls_server::utils::HashMap;
 use std::path::PathBuf;
 
 use lsp_types::{NumberOrString, TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier};
-use odoo_ls_server::core::config::ConfigFile;
+use odoo_ls_server::core::config::{ConfigView, ConfigKey};
 use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::Odoo;
 use odoo_ls_server::threads::SessionInfo;
@@ -222,7 +222,7 @@ fn test_language_validation() {
 #[test]
 fn test_additional_languages_config() {
     let (mut odoo, mut config) = setup_server(false);
-    config.additional_languages = HashSet::from_iter(["zz".to_string()]);
+    config.set_string_list(ConfigKey::AdditionalLanguages, ["zz".to_string()]);
     let session = create_init_session(&mut odoo, config);
 
     let languages = session.sync_odoo._get_languages();
@@ -296,8 +296,8 @@ fn test_config_additional_languages_updates_diagnostics() {
 
     // Add nl_WV and nl to additional_languages via config update
     let mut new_config = session.sync_odoo.config.clone();
-    new_config.additional_languages = HashSet::from_iter(["nl_WV".to_string(), "nl".to_string()]);
-    Odoo::handle_config_update(&mut session, new_config, ConfigFile::new());
+    new_config.set_string_list(ConfigKey::AdditionalLanguages, ["nl_WV".to_string(), "nl".to_string()]);
+    Odoo::handle_config_update(&mut session, new_config, ConfigView::new());
 
     // OLS05068 should be gone now
     // We need to force republish diagnostics to avoid a false negative, as the
@@ -312,8 +312,8 @@ fn test_config_additional_languages_updates_diagnostics() {
 
     // Restore original config (without nl_WV) and verify diagnostic reappears
     let mut restored_config = session.sync_odoo.config.clone();
-    restored_config.additional_languages = HashSet::default();
-    Odoo::handle_config_update(&mut session, restored_config, ConfigFile::new());
+    restored_config.set_string_list(ConfigKey::AdditionalLanguages, []);
+    Odoo::handle_config_update(&mut session, restored_config, ConfigView::new());
 
     let diagnostics = get_diagnostics_for_path(&mut session, &items_xml_path);
     assert!(

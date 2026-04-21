@@ -175,7 +175,7 @@ impl PythonValidator {
             } else {
                 self.file_info.as_ref().unwrap().borrow_mut().publish_diagnostics(session);
             }
-            if !session.sync_odoo.config.file_cache {
+            if !session.sync_odoo.config.file_cache() {
                 if let SymbolKey::Module(m) = symbol {
                     let manifest_path = PathBuf::from(&session.st()[m].path).join("__manifest__.py");
                     if let Some(manifest_file) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize_cow()) {
