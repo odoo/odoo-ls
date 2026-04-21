@@ -347,7 +347,7 @@ impl PythonArchEval {
     }
 
     fn _match_diag_config(&self, odoo: &mut SyncOdoo, symbol: SymbolKey) -> bool {
-        let import_diag_level = &odoo.config.diag_missing_imports;
+        let import_diag_level = &odoo.config.diag_missing_imports();
         if *import_diag_level == DiagMissingImportsMode::None {
             return false
         }
@@ -430,7 +430,7 @@ impl PythonArchEval {
             } else {
                 let mut file_tree = import_result.file_tree.clone();
                 file_tree.extend(import_result.name.split(".").map(|s| oyarn!("{}", s)));
-                if session.sync_odoo.config.diag_missing_imports != DiagMissingImportsMode::All && BUILT_IN_LIBS.contains(&file_tree[0].as_str()) {
+                if session.sync_odoo.config.diag_missing_imports() != DiagMissingImportsMode::All && BUILT_IN_LIBS.contains(&file_tree[0].as_str()) {
                     continue;
                 }
                 if !self.safe_import.last().unwrap() {

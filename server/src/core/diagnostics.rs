@@ -90,7 +90,7 @@ pub fn get_severity(
     code: DiagnosticCode,
     session: &SessionInfo,
 ) -> Option<DiagnosticSeverity> {
-    let setting = session.sync_odoo.config.diagnostic_settings.get(&code).cloned()
+    let setting = session.sync_odoo.config.diagnostic_settings().get(&code).cloned()
         .unwrap_or(DIAGNOSTIC_INFOS[&code].default_setting);
     match setting {
         DiagnosticSetting::Error => Some(DiagnosticSeverity::ERROR),

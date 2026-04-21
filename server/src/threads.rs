@@ -272,7 +272,7 @@ fn notify_git_lock(sync_odoo: &Arc<Mutex<SyncOdoo>>, sender_session: &Sender<Mes
 pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_session: Receiver<Message>, receiver: Receiver<DelayedProcessingMessage>, sync_odoo: Arc<Mutex<SyncOdoo>>, delayed_process_sender: Sender<DelayedProcessingMessage>) {
     const MAX_DELAY: u64 = 15000;
     const MIN_DELAY: u64 = 1000;
-    let mut config_delay = std::time::Duration::from_millis(std::cmp::max(MIN_DELAY, std::cmp::min(sync_odoo.lock().unwrap().config.auto_refresh_delay, MAX_DELAY)));
+    let mut config_delay = std::time::Duration::from_millis(std::cmp::max(MIN_DELAY, std::cmp::min(sync_odoo.lock().unwrap().config.auto_refresh_delay(), MAX_DELAY)));
     let mut to_wait = config_delay.clone();
     let mut got_process = false;
     let mut waiting_restart = false;
@@ -281,7 +281,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
         // Check if immediate reaction is needed, else add the message to the list
         match msg {
             Ok(DelayedProcessingMessage::RESTART) => {
-                let main_entry_path = sync_odoo.lock().unwrap().config.odoo_path.as_ref().cloned(); //avoid keeping lock
+                let main_entry_path = sync_odoo.lock().unwrap().config.odoo_path().as_ref().cloned(); //avoid keeping lock
                 if let Some(main_entry_path) = main_entry_path {
                     let index_lock_path = PathBuf::from(main_entry_path).join(".git").join("index.lock");
                     let mut notified = false;
