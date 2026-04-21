@@ -760,7 +760,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
                                 !ModuleSymbol::is_in_deps(session.st(), current_module, &session.st()[module].dir_name));
                             let dep_names: Vec<OYarn> = required_modules.map(|module| session.st()[module].dir_name.clone()).collect();
                             if !dep_names.is_empty() {
-                                if !session.sync_odoo.config.ac_filter_model_names{
+                                if !session.sync_odoo.config.ac_filter_model_names(){
                                     continue
                                 }
                                 label_details = Some(CompletionItemLabelDetails {

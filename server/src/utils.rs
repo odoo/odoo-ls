@@ -10,6 +10,7 @@ use std::{fs::{self, DirEntry}, path::{Path, PathBuf}, str::FromStr, sync::LazyL
 
 use crate::{tree::Tree, oyarn};
 
+/// Template for filling paths with variables. Variables are in the format ${var_name}.
 static TEMPLATE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\$\{([^}]+)\}").unwrap()
 });
@@ -38,6 +39,13 @@ pub fn get_python_command() -> Option<String> {
         }
     }
     None
+}
+
+/// `get_python_command()` memoized for the process lifetime
+pub fn default_python_command() -> String {
+    static CMD: std::sync::LazyLock<String> =
+        std::sync::LazyLock::new(|| get_python_command().unwrap_or_default());
+    CMD.clone()
 }
 
 #[cfg(target_os = "windows")]
