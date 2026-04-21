@@ -1,23 +1,26 @@
+use glob::Pattern;
+use itertools::Itertools;
+use regex::Regex;
+use ruff_python_ast::{Expr, Mod};
+use ruff_python_parser::{Mode, ParseOptions};
+use schemars::{JsonSchema, Schema, SchemaGenerator};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{fs, path::Path};
-use itertools::Itertools;
-use glob::Pattern;
-use regex::Regex;
-use ruff_python_ast::{Expr, Mod};
-use ruff_python_parser::{Mode, ParseOptions};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use schemars::{JsonSchema, Schema, SchemaGenerator};
 use tracing::error;
 
-use crate::constants::{CONFIG_WIKI_URL};
+use crate::S;
+use crate::constants::CONFIG_WIKI_URL;
 use crate::core::diagnostics::{DiagnosticCode, DiagnosticSetting, SchemaDiagnosticCodes};
 use crate::threads::SessionInfo;
-use crate::utils::{PathSanitizer, expand_language_code, fill_validate_path, get_python_command, has_template, is_addon_path, is_odoo_path, is_python_path};
-use crate::S;
+use crate::utils::{
+    PathSanitizer, expand_language_code, fill_validate_path, get_python_command, has_template,
+    is_addon_path, is_odoo_path, is_python_path,
+};
 
 
 static VERSION_REGEX: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
@@ -793,7 +796,7 @@ fn fill_or_canonicalize<F>(
     var_map: HashMap<String, String>
 ) -> Result<Sourced<String>, String>
 where
-F: Fn(&String) -> bool,
+F: Fn(&str) -> bool,
 {
     let Some(config_path) = sourced_path.sources.iter().next().map(PathBuf::from) else {
         unreachable!("Expected at least one source for sourced_path: {:?}", sourced_path);
@@ -838,6 +841,7 @@ fn process_paths(
             .ok()
         );
 
+    // Infer only if no addons paths are defined or if $autoDetectAddons is present
     let infer = entry.addons_paths.as_mut().map_or(true, |ps| {
         let initial_len = ps.len();
         ps.retain(|v| v.value != S!("$autoDetectAddons"));
@@ -872,18 +876,21 @@ fn process_paths(
                 .ok()
             }
         });
-    entry.stdlib.as_mut().map(|std|{
-        let maybe_value = std::fs::canonicalize(PathBuf::from(&std.value)).map(|p| p.sanitize());
-        match maybe_value {
-            Ok(path) => {
-                std.value = path;
-            }
-            Err(err) => {
-                std.value = S!("");
-                std.info = format!("Failed to canonicalize stdlib path: {}", err);
-            }
-        }
-    });
+    entry.additional_stubs = entry.additional_stubs.as_ref().map(|stubs|
+        stubs.iter().filter_map(|sourced| {
+            fill_or_canonicalize(
+                sourced, unique_ws_folders, current_ws, &|p: &str| Path::new(p).is_dir(), var_map.clone()
+            )
+            .map_err(|err| error!("Failed to process additional stubs path for variable {:?}: {}", sourced, err))
+            .ok()
+        }).collect()
+    );
+    entry.stdlib = entry.stdlib.as_ref()
+        .and_then(|p|
+            fill_or_canonicalize(p, unique_ws_folders, current_ws, &|p: &str| Path::new(p).is_dir(), var_map.clone())
+            .map_err(|err| error!("Failed to fill or canonicalize stdlib path for variable {:?}: {}", p, err))
+            .ok()
+        );
     entry.diagnostic_filters.iter_mut().for_each(|filter| {
         let Some(config_path) = filter.sources.iter().next().map(PathBuf::from) else {
             unreachable!("Expected at least one source for sourced_path: {:?}", filter);
@@ -891,7 +898,7 @@ fn process_paths(
         let config_dir = config_path.parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
         filter.value.paths = filter.value.paths.iter().filter_map(|pattern| {
             let pattern_string = pattern.to_string();
-            let processed_pattern = fill_validate_path(unique_ws_folders, current_ws, &pattern_string, &|_: &String| true, var_map.clone(), &config_dir)
+            let processed_pattern = fill_validate_path(unique_ws_folders, current_ws, &pattern_string, &|_: &str| true, var_map.clone(), &config_dir)
                 .and_then(|p| Pattern::new(&p)
                 .map_err(|e| e.to_string()));
             match processed_pattern {

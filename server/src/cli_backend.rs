@@ -18,7 +18,7 @@ use std::path::Path;
 
 fn canonicalize_and_validate(
     path: &str,
-    is_valid_str: Option<fn(&String) -> bool>,
+    is_valid_str: Option<fn(&str) -> bool>,
     is_valid_pb: Option<fn(&Path) -> bool>,
     error_msg: &str,
 ) -> Option<String> {

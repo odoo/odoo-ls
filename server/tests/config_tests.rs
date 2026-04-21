@@ -6,7 +6,6 @@ use odoo_ls_server::core::config::get_configuration;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
-use std::collections::HashMap;
 use std::collections::HashSet;
 use std::str::FromStr;
 
@@ -1934,4 +1933,184 @@ fn test_additional_languages_merge_and_base_expansion() {
     // Base languages should be auto-expanded
     assert!(config.additional_languages.contains("fr"), "base language fr should be expanded from fr_WA: {:?}", config.additional_languages);
     assert!(config.additional_languages.contains("nl"), "base language nl should be expanded from nl_WV: {:?}", config.additional_languages);
+}
+
+#[test]
+fn test_additional_stubs_basic_path_resolution() {
+    let temp = TempDir::new().unwrap();
+    let ws_folder = temp.child("workspace1");
+    ws_folder.create_dir_all().unwrap();
+
+    // Create a valid stubs directory with .pyi files
+    let stubs_dir = temp.child("stubs1");
+    stubs_dir.create_dir_all().unwrap();
+    stubs_dir.child("package.pyi").touch().unwrap();
+
+    let toml_content = format!(
+        r#"
+        [[config]]
+        name = "default"
+        additional_stubs = [
+            "{}"
+        ]
+    "#,
+        stubs_dir.path().sanitize()
+    );
+    ws_folder.child("odools.toml").write_str(&toml_content).unwrap();
+
+    let ws_folders = vec![(S!("ws1"), ws_folder.path().sanitize().to_string())];
+    let mut session = mock_session_with_workspaces(&ws_folders);
+    let (config_map, _config_file) = get_configuration(&mut session).unwrap();
+    let config = config_map.get("default").unwrap();
+
+    assert!(config.additional_stubs.iter().any(|p| p == &stubs_dir.path().sanitize()));
+}
+
+#[test]
+fn test_additional_stubs_template_variable_resolution() {
+    let temp = TempDir::new().unwrap();
+    let ws1 = temp.child("ws1");
+    let ws2 = temp.child("ws2");
+    ws1.create_dir_all().unwrap();
+    ws2.create_dir_all().unwrap();
+
+    // Create stubs directories with .pyi files directly (typeshed-like structure)
+    let stubs1 = temp.child("stubs1");
+    stubs1.create_dir_all().unwrap();
+    stubs1.child("stub1.pyi").touch().unwrap();
+
+    let stubs2 = temp.child("stubs2");
+    stubs2.create_dir_all().unwrap();
+    stubs2.child("stub2.pyi").touch().unwrap();
+
+    // Test template variable resolution using absolute paths
+    let toml_content = format!(
+        r#"
+        [[config]]
+        name = "default"
+        additional_stubs = [
+            "{}",
+            "${{workspaceFolder:ws2}}/../stubs2",
+        ]
+    "#,
+        stubs1.path().sanitize()
+    );
+    ws1.child("odools.toml").write_str(&toml_content).unwrap();
+
+    let ws_folders = vec![
+        (S!("ws1"), ws1.path().sanitize().to_string()),
+        (S!("ws2"), ws2.path().sanitize().to_string()),
+    ];
+    let mut session = mock_session_with_workspaces(&ws_folders);
+    let (config_map, _config_file) = get_configuration(&mut session).unwrap();
+    let config = config_map.get("default").unwrap();
+
+    // stubs1 should be resolved directly
+    assert!(config.additional_stubs.iter().any(|p| p == &stubs1.path().sanitize()));
+    // stubs2 should be resolved via template variable and relative path
+    assert!(config.additional_stubs.iter().any(|p| p == &stubs2.path().sanitize()));
+}
+
+#[test]
+fn test_additional_stubs_relative_path_canonicalization() {
+    let temp = TempDir::new().unwrap();
+    let ws_folder = temp.child("workspace1");
+    ws_folder.create_dir_all().unwrap();
+
+    // Create a stubs directory relative to the config
+    let stubs_dir = ws_folder.child("my_stubs");
+    stubs_dir.create_dir_all().unwrap();
+    stubs_dir.child("module.pyi").touch().unwrap();
+
+    // Use a relative path in the config
+    let toml_content = r#"
+        [[config]]
+        name = "default"
+        additional_stubs = [
+            "my_stubs"
+        ]
+    "#;
+    ws_folder.child("odools.toml").write_str(toml_content).unwrap();
+
+    let ws_folders = vec![(S!("ws1"), ws_folder.path().sanitize().to_string())];
+    let mut session = mock_session_with_workspaces(&ws_folders);
+    let (config_map, _config_file) = get_configuration(&mut session).unwrap();
+    let config = config_map.get("default").unwrap();
+
+    // The relative path should be canonicalized to an absolute path
+    assert!(config.additional_stubs.iter().any(|p| p == &stubs_dir.path().sanitize()));
+}
+
+#[test]
+fn test_additional_stubs_invalid_path_filtered() {
+    let temp = TempDir::new().unwrap();
+    let ws_folder = temp.child("workspace1");
+    ws_folder.create_dir_all().unwrap();
+
+    // Create a valid stubs directory
+    let stubs_dir = temp.child("stubs");
+    stubs_dir.create_dir_all().unwrap();
+    stubs_dir.child("package.pyi").touch().unwrap();
+
+    // Try to reference a non-existent path (will be filtered out)
+    let toml_content = format!(
+        r#"
+        [[config]]
+        name = "default"
+        additional_stubs = [
+            "{}",
+            "{}"
+        ]
+    "#,
+        stubs_dir.path().sanitize(),
+        "/nonexistent/path/to/stubs"
+    );
+    ws_folder.child("odools.toml").write_str(&toml_content).unwrap();
+
+    let ws_folders = vec![(S!("ws1"), ws_folder.path().sanitize().to_string())];
+    let mut session = mock_session_with_workspaces(&ws_folders);
+    let (config_map, _config_file) = get_configuration(&mut session).unwrap();
+    let config = config_map.get("default").unwrap();
+
+    // Valid path should be present
+    assert!(config.additional_stubs.iter().any(|p| p == &stubs_dir.path().sanitize()));
+    // Invalid path should be filtered out
+    assert!(!config.additional_stubs.iter().any(|p| p.contains("nonexistent")));
+}
+
+#[test]
+fn test_stdlib_path_template_variable_resolution() {
+    let temp = TempDir::new().unwrap();
+    let ws1 = temp.child("ws1");
+    let ws2 = temp.child("ws2");
+    ws1.create_dir_all().unwrap();
+    ws2.create_dir_all().unwrap();
+
+    // Create stdlib directories
+    let stdlib1 = temp.child("stdlib1");
+    stdlib1.create_dir_all().unwrap();
+
+    let stdlib2 = temp.child("stdlib2");
+    stdlib2.create_dir_all().unwrap();
+
+    // Test template variable resolution for stdlib
+    let toml_content = format!(
+        r#"
+        [[config]]
+        name = "default"
+        stdlib = "${{workspaceFolder:ws2}}/../stdlib2"
+    "#
+    );
+    ws1.child("odools.toml").write_str(&toml_content).unwrap();
+
+    let ws_folders = vec![
+        (S!("ws1"), ws1.path().sanitize().to_string()),
+        (S!("ws2"), ws2.path().sanitize().to_string()),
+    ];
+    let mut session = mock_session_with_workspaces(&ws_folders);
+    let (config_map, _config_file) = get_configuration(&mut session).unwrap();
+    let config = config_map.get("default").unwrap();
+
+    // stdlib path should be resolved via template variable and relative path
+    assert_eq!(config.stdlib, stdlib2.path().sanitize());
 }
