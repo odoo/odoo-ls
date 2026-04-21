@@ -304,7 +304,7 @@ pub fn fill_validate_path<F, P>(
     parent_path: P,
 ) -> Result<String, String>
 where
-    F: Fn(&String) -> bool,
+    F: Fn(&str) -> bool,
     P: AsRef<Path>
 {
     let mut pattern_map: HashMap<String, String> = build_pattern_map(unique_ws_folders).into_iter().chain(var_map.into_iter()).collect();
@@ -343,7 +343,7 @@ fn is_really_module(directory_path: &str, entry: &DirEntry) -> bool {
     full_path.exists() && full_path.is_file()
 }
 
-pub fn is_addon_path(directory_path: &String) -> bool {
+pub fn is_addon_path(directory_path: &str) -> bool {
     fs::read_dir(directory_path)
     .into_iter()
     .flatten()
@@ -351,12 +351,12 @@ pub fn is_addon_path(directory_path: &String) -> bool {
     .any(|entry| is_really_module(directory_path, &entry))
 }
 
-pub fn is_odoo_path(directory_path: &String) -> bool {
+pub fn is_odoo_path(directory_path: &str) -> bool {
     let odoo_release_path = Path::new(directory_path).join("odoo").join("release.py");
     odoo_release_path.exists() && odoo_release_path.is_file()
 }
 
-pub fn is_python_path(path: &String) -> bool {
+pub fn is_python_path(path: &str) -> bool {
     match Command::new(path).arg("--version").output() {
         Ok(output) => output.status.success(),
         Err(_) => false,
