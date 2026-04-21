@@ -43,7 +43,7 @@ use std::env;
 use regex::Regex;
 use crate::{constants::*, Sy};
 use crate::tree::{Tree, TreeStrSlice};
-use super::config::{self, DEFAULT_PROFILE_NAME, get_configuration, ConfigEntry, ConfigFile};
+use super::config::{self, DEFAULT_PROFILE_NAME, get_configuration, ConfigEntry, ConfigView};
 use super::entry_point::{EntryPoint, EntryPointMgr};
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportCache;
@@ -114,7 +114,7 @@ pub struct SyncOdoo {
     /// initialized to a platform default so non-Python init paths still work.
     pub python_ext_suffixes: Vec<String>,
     pub config: ConfigEntry,
-    pub config_file: Option<ConfigFile>,
+    pub config_file: Option<ConfigView>,
     pub config_path: Option<String>,
     pub selected_config: Option<String>,
     pub entry_point_mgr: Rc<RefCell<EntryPointMgr>>, //An Rc to be able to clone it and free session easily
@@ -268,14 +268,14 @@ impl SyncOdoo {
         session.sync_odoo.state_init = InitState::NOT_READY;
         session.send_notification("$Odoo/loadingStatusUpdate", "start");
         session.sync_odoo.config = config;
-        if session.sync_odoo.config.no_typeshed_stubs {
+        if session.sync_odoo.config.no_typeshed_stubs() {
             session.sync_odoo.stubs_dirs.clear();
         }
-        for stub in session.sync_odoo.config.additional_stubs.iter() {
+        for stub in session.sync_odoo.config.additional_stubs().iter() {
             session.sync_odoo.stubs_dirs.push(PathBuf::from(stub.clone()).sanitize());
         }
-        if !session.sync_odoo.config.stdlib.is_empty() {
-            session.sync_odoo.stdlib_dir = PathBuf::from(session.sync_odoo.config.stdlib.clone()).sanitize();
+        if !session.sync_odoo.config.stdlib().is_empty() {
+            session.sync_odoo.stdlib_dir = PathBuf::from(session.sync_odoo.config.stdlib().clone()).sanitize();
         }
         info!("Using stdlib path: {}", session.sync_odoo.stdlib_dir);
         for stub in session.sync_odoo.stubs_dirs.iter() {
@@ -291,9 +291,9 @@ impl SyncOdoo {
             for stub_dir in session.sync_odoo.stubs_dirs.clone().iter() {
                 EntryPointMgr::add_entry_to_public(session, stub_dir.clone());
             }
-            match Command::new(session.sync_odoo.config.python_path.clone()).args(&["-c", "import sys; import json; print(json.dumps(sys.path))"]).output() {
+            match Command::new(session.sync_odoo.config.python_path().clone()).args(&["-c", "import sys; import json; print(json.dumps(sys.path))"]).output() {
                 Err(err) => {
-                    warn!("Wrong python command: {}, error: {}", session.sync_odoo.config.python_path.clone(), err);
+                    warn!("Wrong python command: {}, error: {}", session.sync_odoo.config.python_path().clone(), err);
                     session.send_notification("$Odoo/invalid_python_path", ());
                     break 'python_check;
                 },
@@ -317,9 +317,9 @@ impl SyncOdoo {
                     }
                 }
             }
-            match Command::new(session.sync_odoo.config.python_path.clone()).args(&["-c", "import sys, importlib.machinery, json; print(json.dumps({'version_info': list(sys.version_info)[:3], 'ext_suffixes': list(importlib.machinery.EXTENSION_SUFFIXES)}))"]).output() {
+            match Command::new(session.sync_odoo.config.python_path().clone()).args(&["-c", "import sys, importlib.machinery, json; print(json.dumps({'version_info': list(sys.version_info)[:3], 'ext_suffixes': list(importlib.machinery.EXTENSION_SUFFIXES)}))"]).output() {
                 Err(err) => {
-                    warn!("Wrong python command: {}, error: {}", session.sync_odoo.config.python_path.clone(), err);
+                    warn!("Wrong python command: {}, error: {}", session.sync_odoo.config.python_path().clone(), err);
                     session.send_notification("$Odoo/invalid_python_path", ());
                 },
                 Ok(output) => {
@@ -432,7 +432,7 @@ impl SyncOdoo {
     }
 
     fn build_base(session: &mut SessionInfo) -> bool {
-        let odoo_path = session.sync_odoo.config.odoo_path.clone();
+        let odoo_path = session.sync_odoo.config.odoo_path().clone();
         let Some(odoo_path) = odoo_path.filter(|odoo_path| PathBuf::from(odoo_path.clone()).exists()) else {
             info!("Odoo path not provided or is not a valid path. Continuing in single file mode");
             return false;
@@ -520,7 +520,7 @@ impl SyncOdoo {
         } else {
             session.log_message(MessageType::WARNING, format!("Unable to find odoo addons path at {}. You can ignore this message if you use a nightly build or if your community addons are in another addon paths.", odoo_addon_path.sanitize()));
         }
-        for addon in session.sync_odoo.config.addons_paths.clone() {
+        for addon in session.sync_odoo.config.addons_paths().clone() {
             let addon_path = PathBuf::from(&addon);
             if addon_path.exists() {
                 session.st_mut()[addon_symbol].add_path(addon_path.sanitize());
@@ -534,7 +534,7 @@ impl SyncOdoo {
 
     fn build_modules(session: &mut SessionInfo) {
         let Some(&SymbolKey::Namespace(addons_symbol)) = session.sync_odoo.get_symbol(
-            session.sync_odoo.config.odoo_path.as_ref().unwrap(), (&["odoo", "addons"], &[]), u32::MAX
+            session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "addons"], &[]), u32::MAX
         ).first() else {
             let message = S!("OdooLS: Unable to find 'odoo/addons'. Check the addons_paths in your config or your file structure. Skipping addons loading...");
             warn!("{}", message);
@@ -1419,7 +1419,7 @@ impl SyncOdoo {
     pub fn check_language_and_track(&mut self, lang: &str, dependent: SymbolKey) -> bool {
         self.language_dependents.insert(dependent);
         self.languages_by_source.iter_valid_values(&self.symbol_table).any(|langs| langs.contains(lang))
-            || self.config.additional_languages.contains(lang)
+            || self.config.additional_languages().contains(lang)
     }
 
     /// For testing purposes only. Use `check_language_and_track` for actual
@@ -1428,7 +1428,7 @@ impl SyncOdoo {
         self.languages_by_source
             .iter_valid_values(&self.symbol_table)
             .flat_map(|langs| langs.iter().cloned())
-            .chain(self.config.additional_languages.iter().cloned())
+            .chain(self.config.additional_languages().iter().cloned())
             .collect()
     }
 
@@ -1497,8 +1497,8 @@ impl Odoo {
     pub fn send_all_configurations(session: &mut SessionInfo) {
         if let Some(ref config_file) = session.sync_odoo.config_file {
             let mut configs_map = serde_json::Map::new();
-            for entry in &config_file.config {
-                let html = crate::core::config::ConfigFile { config: vec![entry.clone()] }.to_html_string();
+            for entry in config_file.entries() {
+                let html = crate::core::config::ConfigView::single(entry.clone()).to_html_string();
                 configs_map.insert(entry.name.clone(), serde_json::Value::String(html));
             }
 
@@ -1560,11 +1560,11 @@ impl Odoo {
         });
         match config {
             Ok(config) => {
-                if config.abstract_ {
+                if config.is_abstract() {
                     session.show_message(MessageType::ERROR, format!("Selected configuration ({}) is abstract. Please select a valid configuration and restart.", config.name));
                     return;
                 }
-                session.update_delay_thread_delay_duration(config.auto_refresh_delay);
+                session.update_delay_thread_delay_duration(config.auto_refresh_delay());
                 SyncOdoo::init(session, config);
                 session.log_message(MessageType::LOG, format!("End building database in {} seconds. {} detected modules.",
                     (std::time::Instant::now() - start).as_secs(),
@@ -2046,7 +2046,7 @@ impl Odoo {
                     break;
                 }
             }
-            if parent_path.sanitize() == session.sync_odoo.config.odoo_path.as_deref().unwrap_or_default().to_string() + "/odoo/addons" {
+            if parent_path.sanitize() == session.sync_odoo.config.odoo_path().as_deref().unwrap_or_default().to_string() + "/odoo/addons" {
                 let addons_symbol = session.sync_odoo.get_main_entry().borrow().get_symbol(session.st()).map(|ep_sym_key|
                     session.st().get_symbol(ep_sym_key, (&["odoo", "addons"], &[]), u32::MAX)
                 );
@@ -2301,19 +2301,19 @@ impl Odoo {
         }
     }
 
-    pub fn handle_config_update(session: &mut SessionInfo, new_config: ConfigEntry, cfg_file: ConfigFile) {
+    pub fn handle_config_update(session: &mut SessionInfo, new_config: ConfigEntry, cfg_file: ConfigView) {
         if config::needs_restart(&session.sync_odoo.config, &new_config) {
             // Changes require a restart, ask the client to restart the server
             session.send_notification("$Odoo/restartNeeded", ());
             return;
         }
         // Changes can be applied without restart
-        let languages_changed = session.sync_odoo.config.additional_languages != new_config.additional_languages;
+        let languages_changed = session.sync_odoo.config.additional_languages() != new_config.additional_languages();
         session.sync_odoo.config_file = Some(cfg_file);
         // Recalculate diagnostic filters
         session.sync_odoo.config = new_config;
         session.sync_odoo.get_file_mgr().borrow_mut().update_all_file_diagnostic_filters(session);
-        session.update_delay_thread_delay_duration(session.sync_odoo.config.auto_refresh_delay);
+        session.update_delay_thread_delay_duration(session.sync_odoo.config.auto_refresh_delay());
         if languages_changed {
             session.sync_odoo.revalidate_language_dependents();
             SyncOdoo::process_rebuilds(session, false);

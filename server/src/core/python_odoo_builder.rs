@@ -287,14 +287,14 @@ impl PythonOdooBuilder {
         //id
         let range = session.st()[symbol].range.clone();
         let id = session.st_mut().add_new_variable(symbol, "id", &range);
-        let id_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), (&["odoo", "fields"], &["Id"]), u32::MAX);
+        let id_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Id"]), u32::MAX);
         if let Some(&id_field) = id_field.last() {
             let evaluation = Evaluation::eval_from_symbol(session.st(), id_field, Some(true));
             session.st_mut()[id].evaluations.push(evaluation);
         }
         //display_name
         let display_name = session.st_mut().add_new_variable(symbol, "display_name", &range);
-        let char_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), (&["odoo", "fields"], &["Char"]), u32::MAX);
+        let char_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Char"]), u32::MAX);
         if let Some(&char_field) = char_field.last() {
             let evaluation = Evaluation::eval_from_symbol(session.st(), char_field, Some(true));
             session.st_mut()[display_name].evaluations.push(evaluation);
@@ -303,28 +303,28 @@ impl PythonOdooBuilder {
         if session.st()[symbol]._model.as_ref().unwrap().log_access {
             //create_uid
             let create_uid = session.st_mut().add_new_variable(symbol, "create_uid", &range);
-            let many2one_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), (&["odoo", "fields"], &["Many2one"]), u32::MAX);
+            let many2one_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Many2one"]), u32::MAX);
             if let Some(&many2one_field) = many2one_field.last() {
                 let evaluation = Evaluation::eval_from_symbol(session.st(), many2one_field, Some(true));
                 session.st_mut()[create_uid].evaluations.push(evaluation);
             }
             //create_date
             let create_date = session.st_mut().add_new_variable(symbol, "create_date", &range);
-            let datetime_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), (&["odoo", "fields"], &["Datetime"]), u32::MAX);
+            let datetime_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Datetime"]), u32::MAX);
             if let Some(&datetime_field) = datetime_field.last() {
                 let evaluation = Evaluation::eval_from_symbol(session.st(), datetime_field, Some(true));
                 session.st_mut()[create_date].evaluations.push(evaluation);
             }
             //write_uid
             let write_uid = session.st_mut().add_new_variable(symbol, "write_uid", &range);
-            let many2one_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), (&["odoo", "fields"], &["Many2one"]), u32::MAX);
+            let many2one_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Many2one"]), u32::MAX);
             if let Some(&many2one_field) = many2one_field.last() {
                 let evaluation = Evaluation::eval_from_symbol(session.st(), many2one_field, Some(true));
                 session.st_mut()[write_uid].evaluations.push(evaluation);
             }
             //write_date
             let write_date = session.st_mut().add_new_variable(symbol, "write_date", &range);
-            let datetime_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), (&["odoo", "fields"], &["Datetime"]), u32::MAX);
+            let datetime_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Datetime"]), u32::MAX);
             if let Some(&datetime_field) = datetime_field.last() {
                 let evaluation = Evaluation::eval_from_symbol(session.st(), datetime_field, Some(true));
                 session.st_mut()[write_date].evaluations.push(evaluation);
@@ -344,7 +344,7 @@ impl PythonOdooBuilder {
         } else {
             (&["odoo", "models"], &["BaseModel"])
         };
-        let base_model_syms = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), base_model_tree, u32::MAX);
+        let base_model_syms = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path().as_ref().unwrap(), base_model_tree, u32::MAX);
         let Some(&SymbolKey::Class(base)) = base_model_syms.first() else {
             // base_model_syms empty so sym cannot be a model, otherwise we would have found it earlier
             return false;

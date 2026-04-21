@@ -44,7 +44,7 @@ fn get_base_model_symbol(odoo: &mut SyncOdoo) -> Option<SymbolKey> {
     } else {
         (&["odoo", "models"], &["BaseModel"])
     };
-    let base_model_symbol = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(), base_model_tree, u32::MAX);
+    let base_model_symbol = odoo.get_symbol(odoo.config.odoo_path().as_ref().unwrap(), base_model_tree, u32::MAX);
     base_model_symbol.first().copied()
 }
 pub struct PythonArchEvalFileHook {
@@ -61,7 +61,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                         ((18, 1), (999, 0), (&["odoo", "orm", "models"], &["BaseModel", "env"]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey| {
-        let env_files = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(), (&["odoo", "api"], &[]), u32::MAX);
+        let env_files = odoo.get_symbol(odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "api"], &[]), u32::MAX);
         let Some(env_file) = env_files.last().and_then(|&f| f.as_source_file_key()) else {
             return;
         };
@@ -120,7 +120,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey| {
         // --------- (Web)Request.env: Environment | None ---------
-        let env_file_syms = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(), (&["odoo", "api"], &[]), u32::MAX);
+        let env_file_syms = odoo.get_symbol(odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "api"], &[]), u32::MAX);
         let Some(env_file) = env_file_syms.last().and_then(|&f| f.as_source_file_key()) else {
             return;
         };
@@ -160,7 +160,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                                 ((18, 1), (999, 0), (&["odoo", "orm", "environments"], &["Environment", "registry"]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
-        let registry_sym = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(), (&["odoo", "modules", "registry"], &["Registry"]), u32::MAX);
+        let registry_sym = odoo.get_symbol(odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "modules", "registry"], &["Registry"]), u32::MAX);
         if !registry_sym.is_empty() {
             odoo.symbol_table.set_evaluations(symbol, vec![Evaluation {
                 symbol: EvaluationSymbol::new_with_symbol(
@@ -885,7 +885,7 @@ impl PythonArchEvalHooks {
             if let Some(scope_file) = scope.and_then(|s| session.st().get_file(s)) {
                 //exclude orm files
                 if session.sync_odoo.version < (18, 1) {
-                    let env_files = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), (&["odoo", "api"], &[]), u32::MAX);
+                    let env_files = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "api"], &[]), u32::MAX);
                     let env_file = *env_files.last().unwrap();
                     if env_file != scope_file {
                         session.st_mut().add_model_dependencies(scope_file, &model);
@@ -987,7 +987,7 @@ impl PythonArchEvalHooks {
     }
 
     fn _update_get_eval_func_level(odoo: &mut SyncOdoo, entry_point: &Rc<RefCell<EntryPoint>>, function: FunctionKey, tree: TreeStrSlice<'static>) {
-        let return_sym = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(), tree, u32::MAX);
+        let return_sym = odoo.get_symbol(odoo.config.odoo_path().as_ref().unwrap(), tree, u32::MAX);
         let Some(&return_sym) = return_sym.last() else {
             let file = odoo.symbol_table.get_file(function.into()).unwrap();
             odoo.symbol_table.not_found_paths_mut(file).push((BuildSteps::ARCH_EVAL, Tree::from(tree).flatten()));
@@ -1011,7 +1011,7 @@ impl PythonArchEvalHooks {
         let Some(&get_sym) = get_syms.last() else {
             return;
         };
-        let return_syms = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(), tree, u32::MAX);
+        let return_syms = odoo.get_symbol(odoo.config.odoo_path().as_ref().unwrap(), tree, u32::MAX);
         let Some(&return_sym) = return_syms.last() else {
             let file = odoo.symbol_table.get_file(symbol).unwrap();
             odoo.symbol_table.not_found_paths_mut(file).push((BuildSteps::ARCH_EVAL, Tree::from(tree).flatten()));
@@ -1034,7 +1034,7 @@ impl PythonArchEvalHooks {
         } else {
             (&["odoo", "orm", "fields"], &["Field", "__get__"])
         };
-        let Some(SymbolKey::Function(field_get)) = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(),  tree, u32::MAX).first().copied()
+        let Some(SymbolKey::Function(field_get)) = odoo.get_symbol(odoo.config.odoo_path().as_ref().unwrap(),  tree, u32::MAX).first().copied()
         else {
             return;
         };

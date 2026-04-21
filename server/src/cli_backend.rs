@@ -5,7 +5,7 @@ use tracing::{error, info};
 
 use crate::S;
 use crate::args::Cli;
-use crate::core::config::{ConfigEntry, DEFAULT_PROFILE_NAME, get_configuration};
+use crate::core::config::{ConfigEntry, ConfigKey, DEFAULT_PROFILE_NAME, get_configuration};
 use crate::core::file_mgr::FileMgr;
 use crate::core::odoo::SyncOdoo;
 use crate::threads::SessionInfo;
@@ -94,18 +94,21 @@ impl CliBackend {
         }
     }
 
-    fn reconcile_args_and_config_file(&self, config: &mut ConfigEntry){
-        config.no_typeshed_stubs |= self.cli.no_typeshed_stubs;
-        config
-            .addons_paths
-            .extend(self.cli.addons.iter().flatten().filter_map(|p| {
+    fn reconcile_args_and_config_file(&self, config: &mut ConfigEntry) {
+        if self.cli.no_typeshed_stubs {
+            config.set_bool(ConfigKey::NoTypeshedStubs, true);
+        }
+        config.extend_string_list(
+            ConfigKey::AddonsPaths,
+            self.cli.addons.iter().flatten().filter_map(|p| {
                 canonicalize_and_validate(
                     &p,
                     Some(is_addon_path),
                     None,
                     "Provided addons path is not a valid addon path",
                 )
-            }));
+            }),
+        );
 
         if let Some(community_path) = self.cli.community_path.clone() {
             if let Some(pb) = canonicalize_and_validate(
@@ -114,19 +117,22 @@ impl CliBackend {
                 None,
                 "Provided community path is not a valid Odoo path",
             ) {
-                config.odoo_path = Some(pb);
+                config.set_str(ConfigKey::OdooPath, pb);
             }
         }
 
         if let Some(stubs) = self.cli.stubs.clone() {
-            config.additional_stubs.extend(stubs.iter().filter_map(|s| {
-                canonicalize_and_validate(
-                    s,
-                    None,
-                    Some(Path::is_dir),
-                    "Provided stub path is not a valid directory",
-                )
-            }));
+            config.extend_string_list(
+                ConfigKey::AdditionalStubs,
+                stubs.iter().filter_map(|s| {
+                    canonicalize_and_validate(
+                        s,
+                        None,
+                        Some(Path::is_dir),
+                        "Provided stub path is not a valid directory",
+                    )
+                }),
+            );
         }
 
         if let Some(stdlib) = self.cli.stdlib.clone() {
@@ -136,7 +142,7 @@ impl CliBackend {
                 Some(Path::is_dir),
                 "Provided stdlib stubs path is not a valid directory",
             ) {
-                config.stdlib = pb;
+                config.set_str(ConfigKey::Stdlib, pb);
             }
         }
 
@@ -147,7 +153,7 @@ impl CliBackend {
                 None,
                 "Provided python path is not a valid Python executable",
             ) {
-                config.python_path = path;
+                config.set_str(ConfigKey::PythonPath, path);
             }
         }
     }
@@ -352,8 +358,8 @@ mod tests {
         let backend = CliBackend::new(cli);
         let (_, config) = setup_with_config(&backend).expect("Expected a config entry to be returned");
 
-        assert_eq!(config.auto_refresh_delay, 9999);
-        assert_eq!(config.file_cache, false);
+        assert_eq!(config.auto_refresh_delay(), 9999);
+        assert_eq!(config.file_cache(), false);
     }
 
     /// Without `--config-path`, setup should succeed and return the default `ConfigEntry`.
@@ -371,7 +377,7 @@ mod tests {
             .expect("Expected a default config entry when no config_path is set");
 
         // Default auto_refresh_delay is 1000 ms
-        assert_eq!(config.auto_refresh_delay, 1000);
+        assert_eq!(config.auto_refresh_delay(), 1000);
     }
 
     // -------------------------------------------------------------------------
@@ -420,9 +426,9 @@ mod tests {
         let ws1_expected = fs::canonicalize(ws1.path()).unwrap().sanitize();
 
         assert!(
-            config.addons_paths.contains(&ws1_expected),
+            config.addons_paths().contains(&ws1_expected),
             "Expected ws1 to be in addons_paths after resolving template variable, got: {:?}",
-            config.addons_paths
+            config.addons_paths()
         );
     }
 
@@ -457,9 +463,9 @@ mod tests {
 
         assert!(!ws_folders.is_empty(), "Workspace folder should be registered with numeric ID");
         assert!(
-            config.addons_paths.is_empty(),
+            config.addons_paths().is_empty(),
             "Expected no addons_paths when template variable references non-existent named workspace, got: {:?}",
-            config.addons_paths
+            config.addons_paths()
         );
     }
 
@@ -532,7 +538,7 @@ mod tests {
         let (_, config) = setup_with_config(&backend).expect("Expected successful setup");
 
         assert_eq!(
-            config.auto_refresh_delay, 2222,
+            config.auto_refresh_delay(), 2222,
             "profile_b should have auto_refresh_delay=2222"
         );
     }
@@ -568,7 +574,7 @@ mod tests {
             .expect("Expected setup to succeed using the default profile as fallback");
 
         assert_eq!(
-            config.auto_refresh_delay, 4242,
+            config.auto_refresh_delay(), 4242,
             "Should have loaded the default profile's settings"
         );
     }
@@ -656,7 +662,7 @@ mod tests {
         let (_, config) = setup_with_config(&backend).expect("Expected config entry");
 
         assert!(
-            config.no_typeshed_stubs,
+            config.no_typeshed_stubs(),
             "CLI --no-typeshed-stubs=true must win over config file's no_typeshed_stubs=false"
         );
     }
@@ -703,9 +709,9 @@ mod tests {
         let addons_expected = fs::canonicalize(addons_dir.path()).unwrap().sanitize();
 
         assert!(
-            config.addons_paths.contains(&addons_expected),
+            config.addons_paths().contains(&addons_expected),
             "CLI --addons should add the directory to addons_paths, got: {:?}",
-            config.addons_paths
+            config.addons_paths()
         );
     }
 
@@ -762,14 +768,14 @@ mod tests {
         let cli_addons_expected = fs::canonicalize(cli_addons.path()).unwrap().sanitize();
 
         assert!(
-            config.addons_paths.contains(&config_addons_expected),
+            config.addons_paths().contains(&config_addons_expected),
             "addons from config file must be present, got: {:?}",
-            config.addons_paths
+            config.addons_paths()
         );
         assert!(
-            config.addons_paths.contains(&cli_addons_expected),
+            config.addons_paths().contains(&cli_addons_expected),
             "addons from CLI must be present, got: {:?}",
-            config.addons_paths
+            config.addons_paths()
         );
     }
 }
