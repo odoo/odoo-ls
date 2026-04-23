@@ -1,7 +1,6 @@
 use std::{
     cell::RefCell,
-    cmp::Ordering,
-    collections::{hash_map, VecDeque},
+    collections::{VecDeque, hash_map},
     path::PathBuf,
     rc::Rc,
 };
@@ -24,7 +23,7 @@ use crate::{
                 ClassKey, FunctionKey, KeyValidator, ModuleKey, NamespaceKey, RootKey, SourceFileKey, SymbolKey, VariableKey, XmlDataKey
             }, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}
         },
-    }, threads::SessionInfo, utils::{PathSanitizer, compare_semver}, weak_collections::WeakSet
+    }, threads::SessionInfo, utils::{PathSanitizer}, weak_collections::WeakSet
 };
 
 impl SymbolTable {
@@ -1649,7 +1648,7 @@ impl SymbolTable {
     TODO Consider refactoring.
         */
     fn member_symbol_hook(session: &SessionInfo, target: SymbolKey, name: &str, diagnostics: &mut Vec<Diagnostic>){
-        if session.sync_odoo.version_major >= 17 && name == "Form"{
+        if session.sync_odoo.version.major >= 17 && name == "Form"{
             let tree = session.sync_odoo.symbol_table.get_tree(target);
             if tree.0.ends_with(&[Sy!("odoo"), Sy!("tests"), Sy!("common")]) && tree.1.is_empty() {
                 if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03301, &[]) {
@@ -1713,7 +1712,7 @@ impl SymbolTable {
 
     pub fn is_inheriting_from_field(session: &SessionInfo, class_key: ClassKey) -> bool {
         let tree = flatten_tree(&session.sync_odoo.get_main_entry_tree(class_key));
-        if compare_semver(&session.sync_odoo.full_version, "18.0") <= Ordering::Equal {
+        if session.sync_odoo.version <= (18, 0) {
             if tree.as_slice() == ["odoo", "fields", "Field"] {
                 return true;
             }
@@ -1752,7 +1751,7 @@ impl SymbolTable {
 
     fn is_field_class_uncached(session: &SessionInfo, class_key: ClassKey) -> bool {
         let tree = &session.sync_odoo.get_main_entry_tree(class_key);
-        if compare_semver(session.sync_odoo.full_version.as_str(), "18.1.0") >= Ordering::Equal {
+        if session.sync_odoo.version >= (18, 1) {
             if tree.0.len() == 3 && tree.1.len() == 1 && tree.0[0] == "odoo" && tree.0[1] == "orm" && (
                     tree.0[2] == "fields_misc" && tree.1[0] == "Boolean" ||
                     tree.0[2] == "fields_numeric" && tree.1[0] == "Integer" ||

@@ -13,7 +13,6 @@ use crate::core::symbols::VariableSymbol;
 use crate::features::ast_utils::AstUtils;
 use crate::features::features_utils::FeaturesUtils;
 use crate::threads::SessionInfo;
-use crate::utils::compare_semver;
 use crate::{Sy, S};
 use itertools::Itertools;
 use lsp_types::{
@@ -25,8 +24,7 @@ use ruff_python_ast::{
     ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal,
 };
 use ruff_text_size::{Ranged, TextSize};
-use std::cmp::Ordering;
-use crate::utils::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::{cell::RefCell, rc::Rc};
 
 
@@ -566,9 +564,9 @@ fn complete_decorator_call(
             continue;
         };
         let dec_sym_tree = session.st().get_tree(dec_sym);
-        let version_comparison = compare_semver(session.sync_odoo.full_version.as_str(), "18.1.0");
-        let expected_types = if (version_comparison < Ordering::Equal && dec_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("api")])) ||
-                (version_comparison >= Ordering::Equal && dec_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("orm"), Sy!("decorators")])) {
+        let is_18_1_or_later = session.sync_odoo.version >= (18, 1);
+        let expected_types = if (!is_18_1_or_later && dec_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("api")])) ||
+                (is_18_1_or_later && dec_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("orm"), Sy!("decorators")])) {
             if [vec![Sy!("onchange")], vec![Sy!("constrains")]].contains(&dec_sym_tree.1) && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0) {
                 &vec![ExpectedType::SIMPLE_FIELD(None)]
             } else if dec_sym_tree.1 == vec![Sy!("depends")] && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0){
@@ -804,7 +802,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
                     ("<", "e"), ("<=", "f"), ("=?", "g"),  ("like", "h"), ("=like", "i"), ("not like", "j"),
                     ("ilike", "k"), ("=ilike", "l"),  ("not ilike", "m"),  ("in", "n"),  ("not in", "o"),
                     ("child_of", "p"), ("parent_of", "q"), ("any", "r"), ("not any", "s")];
-                let extra: &[(&str, &str)] = if compare_semver(&session.sync_odoo.full_version, "19.3") >= Ordering::Equal {
+                let extra: &[(&str, &str)] = if session.sync_odoo.version >= (19, 3) {
                    &[("access", "t")]
                 } else {
                     &[]

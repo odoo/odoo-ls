@@ -7,8 +7,6 @@ use crate::core::symbols::function_symbol::Argument;
 use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey, SourceFileKey, SymbolKey, Wk};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::{FunctionSymbol, VariableSymbol};
-use crate::utils::compare_semver;
-use std::cmp::Ordering;
 use crate::utils::HashMap;
 
 use crate::constants::SymType;
@@ -261,9 +259,9 @@ impl FeaturesUtils {
                 // Check if we are in api.onchange/constrains/depends
                 let func_sym_tree = session.st().get_tree(callable_sym);
                 // TODO: account for change in tree after 18.1 odoo.orm.decorators
-                let version_comparison = compare_semver(session.sync_odoo.full_version.as_str(), "18.1.0");
-                if (version_comparison < Ordering::Equal && func_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("api")])) ||
-                    (version_comparison >= Ordering::Equal && func_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("orm"), Sy!("decorators")])) {
+                let is_18_1_or_later = session.sync_odoo.version >= (18, 1);
+                if (!is_18_1_or_later && func_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("api")])) ||
+                    (is_18_1_or_later && func_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("orm"), Sy!("decorators")])) {
                     if [vec![Sy!("onchange")], vec![Sy!("constrains")]].contains(&func_sym_tree.1) && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0) {
                         arg_symbols.extend(
                             FeaturesUtils::find_simple_decorator_field_symbol(session, scope, from_module, field_name)

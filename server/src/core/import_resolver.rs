@@ -37,7 +37,7 @@ pub struct ImportCache {
 }
 
 fn resolve_import_stmt_hook(alias: &Alias, from_symbols: &Option<Vec<SymbolKey>>, session: &mut SessionInfo, source_file_symbol: SymbolKey, from_stmt: Option<&Identifier>, level: u32, diagnostics: &mut Option<&mut Vec<Diagnostic>>) -> Option<ImportResult>{
-    if !(session.sync_odoo.version_major >= 17 && alias.name.as_str() == "Form"){
+    if !(session.sync_odoo.version.major >= 17 && alias.name.as_str() == "Form"){
         return None;
     }
     for &from_symbol in from_symbols.iter().flatten() {
