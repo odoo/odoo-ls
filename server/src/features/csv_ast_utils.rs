@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use csv::{Reader, StringRecord};
-use lsp_types::{Range, Position};
+use lsp_types::Range;
 
 use crate::{S, constants::{OYarn, SymType}, core::{odoo::SyncOdoo, symbols::symbol::Symbol, xml_data::{OdooData, OdooDataRecord}}, features::goto_utils::{GotoSource, GotoSourceType}, oyarn, threads::SessionInfo};
 
