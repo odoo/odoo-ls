@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::rc::Rc;
 use std::cell::RefCell;
 use ruff_python_ast::Expr;
@@ -11,7 +10,6 @@ use crate::core::symbols::{ClassSymbol, ModuleSymbol};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::symbol_keys::{ClassKey, SymbolKey, XmlId};
 use crate::threads::SessionInfo;
-use crate::utils::compare_semver;
 use crate::{oyarn, Sy, S};
 
 use super::evaluation::{ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationValue};
@@ -334,7 +332,7 @@ impl PythonOdooBuilder {
             // We only consider symbols that has inheritance base or defined in modules as models
             return false;
         }
-        let base_model_tree = if compare_semver(session.sync_odoo.full_version.as_str(), "18.1") >= Ordering::Equal {
+        let base_model_tree = if session.sync_odoo.version >= (18, 1) {
             (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel")])
         } else {
             (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel")])

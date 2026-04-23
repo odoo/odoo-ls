@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use crate::utils::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -22,7 +21,6 @@ use crate::core::symbols::symbol_keys::Wk;
 use crate::core::symbols::storage::SymbolTable;
 use crate::oyarn;
 use crate::threads::SessionInfo;
-use crate::utils::compare_semver;
 use crate::Sy;
 use crate::S;
 
@@ -32,9 +30,10 @@ use super::file_mgr::FileMgr;
 use super::python_arch_eval::PythonArchEval;
 
 type PythonArchEvalHookFile = fn (odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey);
+type Version = (u32, u32); // (major, minor)
 
 fn get_base_model_symbol(odoo: &mut SyncOdoo) -> Option<SymbolKey> {
-    let base_model_tree = if compare_semver(odoo.full_version.as_str(), "18.1") >= Ordering::Equal {
+    let base_model_tree = if odoo.version >= (18, 1) {
         (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel")])
     } else {
         (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel")])
@@ -44,7 +43,7 @@ fn get_base_model_symbol(odoo: &mut SyncOdoo) -> Option<SymbolKey> {
 }
 pub struct PythonArchEvalFileHook {
     pub odoo_entry: bool,
-    pub trees: Vec<(OYarn, OYarn, (Vec<OYarn>, Vec<OYarn>))>, //if tree content is set, will provide symbol in file content instead of the file symbol to func
+    pub trees: Vec<(Version, Version, (Vec<OYarn>, Vec<OYarn>))>, //if tree content is set, will provide symbol in file content instead of the file symbol to func
     pub if_exist_only: bool,
     pub func: PythonArchEvalHookFile
 }
@@ -52,8 +51,8 @@ pub struct PythonArchEvalFileHook {
 #[allow(non_upper_case_globals)]
 static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {vec![
     PythonArchEvalFileHook {odoo_entry: true,
-                        trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("env")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("env")]))],
+                        trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("env")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("env")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey| {
         let env_files = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("api")], vec![]), u32::MAX);
@@ -80,7 +79,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         odoo.symbol_table.add_dependency(file_symbol, env_file, BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                        trees: vec![(Sy!("0.0"), Sy!("15.3"), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("request")]))],
+                        trees: vec![((0, 0), (15, 3), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("request")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey| {
         // --------- request: WebRequest (before 15.3) ---------
@@ -93,8 +92,8 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                         trees: vec![
-                            (Sy!("15.3"), Sy!("19.2"), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("request")])),
-                            (Sy!("19.2"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("http"), Sy!("requestlib")], vec![Sy!("request")]))
+                            ((15, 3), (19, 2), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("request")])),
+                            ((19, 2), (999, 0), (vec![Sy!("odoo"), Sy!("http"), Sy!("requestlib")], vec![Sy!("request")]))
                         ],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey| {
@@ -108,9 +107,9 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                         trees: vec![
-                            (Sy!("0.0"), Sy!("15.3"), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("WebRequest"), Sy!("env")])),
-                            (Sy!("15.3"), Sy!("19.2"), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("Request"), Sy!("env")])),
-                            (Sy!("19.2"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("http"), Sy!("requestlib")], vec![Sy!("Request"), Sy!("env")]))
+                            ((0, 0), (15, 3), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("WebRequest"), Sy!("env")])),
+                            ((15, 3), (19, 2), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("Request"), Sy!("env")])),
+                            ((19, 2), (999, 0), (vec![Sy!("odoo"), Sy!("http"), Sy!("requestlib")], vec![Sy!("Request"), Sy!("env")]))
                         ],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey| {
@@ -132,8 +131,8 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         odoo.symbol_table.add_dependency(file_symbol, env_file, BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                        trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("ids")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("ids")]))],
+                        trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("ids")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("ids")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
         let values: Vec<ruff_python_ast::Expr> = Vec::new();
@@ -151,8 +150,8 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         id.set_evaluations(vec![Evaluation::eval_from_symbol(odoo, values, range.clone())]);
     }},*/
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("Environment"), Sy!("registry")])),
-                            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("environments")], vec![Sy!("Environment"), Sy!("registry")]))],
+                            trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("Environment"), Sy!("registry")])),
+                            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("environments")], vec![Sy!("Environment"), Sy!("registry")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
         let registry_sym = odoo.get_symbol(odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("modules"), Sy!("registry")], vec![Sy!("Registry")]), u32::MAX);
@@ -171,158 +170,158 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
     }},
     /* As __get__ doesn't exists in each class, the validator will not trigger hooks for them at function level, so we put it at file level. */
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Boolean")])),
-                            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_misc")], vec![Sy!("Boolean")]))],
+                            trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Boolean")])),
+                            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_misc")], vec![Sy!("Boolean")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
         PythonArchEvalHooks::_update_get_eval(odoo, entry, symbol, (vec![Sy!("builtins")], vec![Sy!("bool")]));
         PythonArchEvalHooks::_update_field_init(&mut odoo.symbol_table, symbol, None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Integer")])),
-                            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_numeric")], vec![Sy!("Integer")]))],
+                            trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Integer")])),
+                            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_numeric")], vec![Sy!("Integer")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
         PythonArchEvalHooks::_update_get_eval(odoo, entry, symbol, (vec![Sy!("builtins")], vec![Sy!("int")]));
         PythonArchEvalHooks::_update_field_init(&mut odoo.symbol_table, symbol, None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Float")])),
-                            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_numeric")], vec![Sy!("Float")]))],
+                            trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Float")])),
+                            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_numeric")], vec![Sy!("Float")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
         PythonArchEvalHooks::_update_get_eval(odoo, entry, symbol, (vec![Sy!("builtins")], vec![Sy!("float")]));
         PythonArchEvalHooks::_update_field_init(&mut odoo.symbol_table, symbol, None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Monetary")])),
-                            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_numeric")], vec![Sy!("Monetary")]))],
+                            trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Monetary")])),
+                            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_numeric")], vec![Sy!("Monetary")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
         PythonArchEvalHooks::_update_get_eval(odoo, entry, symbol, (vec![Sy!("builtins")], vec![Sy!("float")]));
         PythonArchEvalHooks::_update_field_init(&mut odoo.symbol_table, symbol, None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Char")])),
-                            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_textual")], vec![Sy!("Char")]))],
+                            trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Char")])),
+                            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_textual")], vec![Sy!("Char")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
         PythonArchEvalHooks::_update_get_eval(odoo, entry, symbol, (vec![Sy!("builtins")], vec![Sy!("str")]));
         PythonArchEvalHooks::_update_field_init(&mut odoo.symbol_table, symbol, None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Text")])),
-                            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_textual")], vec![Sy!("Text")]))],
+                            trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Text")])),
+                            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_textual")], vec![Sy!("Text")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
         PythonArchEvalHooks::_update_get_eval(odoo, entry, symbol, (vec![Sy!("builtins")], vec![Sy!("str")]));
         PythonArchEvalHooks::_update_field_init(&mut odoo.symbol_table, symbol, None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Html")])),
-                            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_textual")], vec![Sy!("Html")]))],
+                            trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Html")])),
+                            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_textual")], vec![Sy!("Html")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
         PythonArchEvalHooks::_update_get_eval(odoo, entry, symbol, (vec![Sy!("markupsafe")], vec![Sy!("Markup")]));
         PythonArchEvalHooks::_update_field_init(&mut odoo.symbol_table, symbol, None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Date")])),
-                            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_temporal")], vec![Sy!("Date")]))],
+                            trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Date")])),
+                            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_temporal")], vec![Sy!("Date")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
         PythonArchEvalHooks::_update_get_eval(odoo, entry, symbol, (vec![Sy!("datetime")], vec![Sy!("date")]));
         PythonArchEvalHooks::_update_field_init(&mut odoo.symbol_table, symbol, None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Datetime")])),
-                            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_temporal")], vec![Sy!("Datetime")]))],
+                            trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Datetime")])),
+                            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_temporal")], vec![Sy!("Datetime")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
         PythonArchEvalHooks::_update_get_eval(odoo, entry, symbol, (vec![Sy!("datetime")], vec![Sy!("datetime")]));
         PythonArchEvalHooks::_update_field_init(&mut odoo.symbol_table, symbol, None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Binary")])),
-                            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_binary")], vec![Sy!("Binary")]))],
+                            trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Binary")])),
+                            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_binary")], vec![Sy!("Binary")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
         PythonArchEvalHooks::_update_get_eval(odoo, entry, symbol, (vec![Sy!("builtins")], vec![Sy!("bytes")]));
         PythonArchEvalHooks::_update_field_init(&mut odoo.symbol_table, symbol, None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Image")])),
-                            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_binary")], vec![Sy!("Image")]))],
+                            trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Image")])),
+                            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_binary")], vec![Sy!("Image")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
         PythonArchEvalHooks::_update_get_eval(odoo, entry, symbol, (vec![Sy!("builtins")], vec![Sy!("bytes")]));
         PythonArchEvalHooks::_update_field_init(&mut odoo.symbol_table, symbol, None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Selection")])),
-                            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_selection")], vec![Sy!("Selection")]))],
+                            trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Selection")])),
+                            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_selection")], vec![Sy!("Selection")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
         PythonArchEvalHooks::_update_get_eval(odoo, entry, symbol, (vec![Sy!("builtins")], vec![Sy!("str")]));
         PythonArchEvalHooks::_update_field_init(&mut odoo.symbol_table, symbol, None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Reference")])),
-                            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_reference")], vec![Sy!("Reference")]))],
+                            trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Reference")])),
+                            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_reference")], vec![Sy!("Reference")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
         PythonArchEvalHooks::_update_get_eval(odoo, entry, symbol, (vec![Sy!("builtins")], vec![Sy!("str")]));
         PythonArchEvalHooks::_update_field_init(&mut odoo.symbol_table, symbol, None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Json")])),
-                            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_misc")], vec![Sy!("Json")]))],
+                            trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Json")])),
+                            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_misc")], vec![Sy!("Json")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
         PythonArchEvalHooks::_update_get_eval(odoo, entry, symbol, (vec![Sy!("builtins")], vec![Sy!("object")]));
         PythonArchEvalHooks::_update_field_init(&mut odoo.symbol_table, symbol, None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Properties")])),
-                            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_properties")], vec![Sy!("Properties")]))],
+                            trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Properties")])),
+                            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_properties")], vec![Sy!("Properties")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
         PythonArchEvalHooks::_update_get_eval(odoo, entry, symbol, (vec![Sy!("builtins")], vec![Sy!("object")]));
         PythonArchEvalHooks::_update_field_init(&mut odoo.symbol_table, symbol, None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("PropertiesDefinition")])),
-                            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_properties")], vec![Sy!("PropertiesDefinition")]))],
+                            trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("PropertiesDefinition")])),
+                            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_properties")], vec![Sy!("PropertiesDefinition")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
         PythonArchEvalHooks::_update_get_eval(odoo, entry, symbol, (vec![Sy!("builtins")], vec![Sy!("object")]));
         PythonArchEvalHooks::_update_field_init(&mut odoo.symbol_table, symbol, None);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2one")])),
-                            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_relational")], vec![Sy!("Many2one")]))],
+                            trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2one")])),
+                            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_relational")], vec![Sy!("Many2one")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
         PythonArchEvalHooks::_update_get_eval_relational(&mut odoo.symbol_table, symbol);
         PythonArchEvalHooks::_update_field_init(&mut odoo.symbol_table, symbol, Some(oyarn!("Many2one")));
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("One2many")])),
-                            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_relational")], vec![Sy!("One2many")]))],
+                            trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("One2many")])),
+                            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_relational")], vec![Sy!("One2many")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
                 PythonArchEvalHooks::_update_field_init(&mut odoo.symbol_table, symbol, Some(oyarn!("One2many")));
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2many")])),
-                            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_relational")], vec![Sy!("Many2many")]))],
+                            trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2many")])),
+                            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_relational")], vec![Sy!("Many2many")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, _file_symbol: SourceFileKey, symbol: SymbolKey| {
         PythonArchEvalHooks::_update_get_eval_relational(&mut odoo.symbol_table, symbol);
         PythonArchEvalHooks::_update_field_init(&mut odoo.symbol_table, symbol, Some(oyarn!("Many2many")));
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("init")], vec![Sy!("_")]))],
+                            trees: vec![((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("init")], vec![Sy!("_")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey| {
         let odoo_underscore = odoo.get_symbol(odoo.symbol_table.path(file_symbol), &(vec![Sy!("odoo")], vec![Sy!("_")]), u32::MAX);
@@ -331,7 +330,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         }
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("init")], vec![Sy!("SUPERUSER_ID")]))],
+                            trees: vec![((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("init")], vec![Sy!("SUPERUSER_ID")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey| {
         let odoo_superuser_id = odoo.get_symbol(odoo.symbol_table.path(file_symbol), &(vec![Sy!("odoo")], vec![Sy!("SUPERUSER_ID")]), u32::MAX);
@@ -340,7 +339,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         }
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("init")], vec![Sy!("_lt")]))],
+                            trees: vec![((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("init")], vec![Sy!("_lt")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey| {
         let odoo_lt = odoo.get_symbol(odoo.symbol_table.path(file_symbol), &(vec![Sy!("odoo")], vec![Sy!("_lt")]), u32::MAX);
@@ -349,7 +348,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         }
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("init")], vec![Sy!("Command")]))],
+                            trees: vec![((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("init")], vec![Sy!("Command")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey| {
         let odoo_command = odoo.get_symbol(odoo.symbol_table.path(file_symbol), &(vec![Sy!("odoo")], vec![Sy!("Command")]), u32::MAX);
@@ -358,11 +357,11 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         }
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("15.0"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("addons"), Sy!("base"), Sy!("models"), Sy!("ir_rule")], vec![Sy!("IrRule"), Sy!("global")]))],
+                            trees: vec![((15, 0), (999, 0), (vec![Sy!("odoo"), Sy!("addons"), Sy!("base"), Sy!("models"), Sy!("ir_rule")], vec![Sy!("IrRule"), Sy!("global")]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey| {
         let file_path = odoo.symbol_table.path(file_symbol);
-        let boolean_field = if compare_semver(odoo.full_version.as_str(), "18.1") >= Ordering::Equal {
+        let boolean_field = if odoo.version >= (18, 1) {
             odoo.get_symbol(file_path, &(vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_misc")], vec![Sy!("Boolean")]), u32::MAX)
         } else {
             odoo.get_symbol(file_path, &(vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Boolean")]), u32::MAX)
@@ -375,7 +374,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         }
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![(Sy!("0.0"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("_monkeypatches"), Sy!("werkzeug")], vec![]))],
+                            trees: vec![((0, 0), (999, 0), (vec![Sy!("odoo"), Sy!("_monkeypatches"), Sy!("werkzeug")], vec![]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey| {
         let file_path = odoo.symbol_table.path(file_symbol).to_string();
@@ -496,7 +495,7 @@ type PythonArchEvalHookFunc = fn (odoo: &mut SyncOdoo, entry_point: &Rc<RefCell<
 
 pub struct PythonArchEvalFunctionHook {
     pub odoo_entry: bool,
-    pub tree: Vec<(OYarn, OYarn, Tree)>, //min_version, max_version, tree
+    pub tree: Vec<(Version, Version, Tree)>, //min_version, max_version, tree
     pub if_exist_only: bool,
     pub func: PythonArchEvalHookFunc
 }
@@ -504,8 +503,8 @@ pub struct PythonArchEvalFunctionHook {
 #[allow(non_upper_case_globals)]
 static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::new(|| {vec![
     PythonArchEvalFunctionHook {odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("Environment"), Sy!("__getitem__")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("environments")], vec![Sy!("Environment"), Sy!("__getitem__")]))],
+                        tree: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("Environment"), Sy!("__getitem__")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("environments")], vec![Sy!("Environment"), Sy!("__getitem__")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
        odoo.symbol_table[symbol].evaluations = vec![Evaluation {
@@ -519,8 +518,8 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
         }];
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("modules"), Sy!("registry")], vec![Sy!("Registry"), Sy!("__getitem__")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("registry")], vec![Sy!("Registry"), Sy!("__getitem__")]))],
+                        tree: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("modules"), Sy!("registry")], vec![Sy!("Registry"), Sy!("__getitem__")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("registry")], vec![Sy!("Registry"), Sy!("__getitem__")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
         odoo.symbol_table[symbol].evaluations = vec![Evaluation {
@@ -534,64 +533,64 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
         }];
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("__iter__")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("__iter__")]))],
+                        tree: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("__iter__")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("__iter__")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
         let base_model = get_base_model_symbol(odoo);
         odoo.symbol_table[symbol].evaluations = vec![Evaluation::new_self(base_model.unwrap(), Some(true))];
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("__getitem__")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("__getitem__")]))],
+                        tree: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("__getitem__")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("__getitem__")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
         let base_model = get_base_model_symbol(odoo);
         odoo.symbol_table[symbol].evaluations = vec![Evaluation::new_self(base_model.unwrap(), Some(true))];
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("with_env")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("with_env")]))],
+                        tree: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("with_env")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("with_env")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
         let base_model = get_base_model_symbol(odoo);
         odoo.symbol_table[symbol].evaluations = vec![Evaluation::new_self(base_model.unwrap(), Some(true))];
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("sudo")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("sudo")]))],
+                        tree: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("sudo")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("sudo")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
         let base_model = get_base_model_symbol(odoo);
         odoo.symbol_table[symbol].evaluations = vec![Evaluation::new_self(base_model.unwrap(), Some(true))];
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("create")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("create")]))],
+                        tree: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("create")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("create")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
         let base_model = get_base_model_symbol(odoo);
         odoo.symbol_table[symbol].evaluations = vec![Evaluation::new_self(base_model.unwrap(), Some(true))];
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("filtered")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("filtered")]))],
+                        tree: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("filtered")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("filtered")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
         let base_model = get_base_model_symbol(odoo);
         odoo.symbol_table[symbol].evaluations = vec![Evaluation::new_self(base_model.unwrap(), Some(true))];
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("filtered_domain")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("filtered_domain")]))],
+                        tree: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("filtered_domain")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("filtered_domain")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
         let base_model = get_base_model_symbol(odoo);
         odoo.symbol_table[symbol].evaluations = vec![Evaluation::new_self(base_model.unwrap(), Some(true))];
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("search")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("search")]))],
+                        tree: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("search")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("search")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
         let base_model = get_base_model_symbol(odoo);
@@ -608,78 +607,78 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
         }
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("browse")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("browse")]))],
+                        tree: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("browse")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("browse")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
         let base_model = get_base_model_symbol(odoo);
         odoo.symbol_table[symbol].evaluations = vec![Evaluation::new_self(base_model.unwrap(), Some(true))];
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("with_company")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("with_company")]))],
+                        tree: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("with_company")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("with_company")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
         let base_model = get_base_model_symbol(odoo);
         odoo.symbol_table[symbol].evaluations = vec![Evaluation::new_self(base_model.unwrap(), Some(true))];
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("with_context")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("with_context")]))],
+                        tree: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("with_context")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("with_context")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
         let base_model = get_base_model_symbol(odoo);
         odoo.symbol_table[symbol].evaluations = vec![Evaluation::new_self(base_model.unwrap(), Some(true))];
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("with_prefetch")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("with_prefetch")]))],
+                        tree: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("with_prefetch")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("with_prefetch")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
         let base_model = get_base_model_symbol(odoo);
         odoo.symbol_table[symbol].evaluations = vec![Evaluation::new_self(base_model.unwrap(), Some(true))];
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("with_user")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("with_user")]))],
+                        tree: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("with_user")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("with_user")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
         let base_model = get_base_model_symbol(odoo);
         odoo.symbol_table[symbol].evaluations = vec![Evaluation::new_self(base_model.unwrap(), Some(true))];
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("exists")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("exists")]))],
+                        tree: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("exists")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel"), Sy!("exists")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
         let base_model = get_base_model_symbol(odoo);
         odoo.symbol_table[symbol].evaluations = vec![Evaluation::new_self(base_model.unwrap(), Some(true))];
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Id"), Sy!("__get__")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_misc")], vec![Sy!("Id"), Sy!("__get__")]))], //We have to put it at function level hook to remove evaluation from existing code
+                        tree: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Id"), Sy!("__get__")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_misc")], vec![Sy!("Id"), Sy!("__get__")]))], //We have to put it at function level hook to remove evaluation from existing code
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
         PythonArchEvalHooks::_update_get_eval_func_level(odoo, &entry_point, symbol, (vec![Sy!("builtins")], vec![Sy!("int")]));
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("One2many"), Sy!("__get__")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_relational")], vec![Sy!("One2many"), Sy!("__get__")]))],
+                        tree: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("One2many"), Sy!("__get__")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_relational")], vec![Sy!("One2many"), Sy!("__get__")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
         PythonArchEvalHooks::_update_get_eval_func_relational(&mut odoo.symbol_table, symbol);
     }},
     PythonArchEvalFunctionHook {
                         odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("Environment"), Sy!("ref")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("environments")], vec![Sy!("Environment"), Sy!("ref")]))],
+                        tree: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("Environment"), Sy!("ref")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("environments")], vec![Sy!("Environment"), Sy!("ref")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
         PythonArchEvalHooks::validation_env_ref(&mut odoo.symbol_table, symbol);
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
-                        tree: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Field"), Sy!("__init__")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields")], vec![Sy!("Field"), Sy!("__init__")]))],
+                        tree: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Field"), Sy!("__init__")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields")], vec![Sy!("Field"), Sy!("__init__")]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
         let Some(fields_class_sym) = odoo.symbol_table.get_in_parents(symbol.into(), &[SymType::CLASS], true) else {
@@ -702,28 +701,28 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
 type PythonArchEvalHookDecorator = fn (session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments) -> Vec<Diagnostic>;
 
 pub struct PythonArchEvalDecoratorHook {
-    pub trees: Vec<(OYarn, OYarn, Tree)>, //min_version, max_version, tree
+    pub trees: Vec<(Version, Version, Tree)>, //min_version, max_version, tree
     pub func: PythonArchEvalHookDecorator
 }
 
 #[allow(non_upper_case_globals)]
 static arch_eval_decorator_hooks: Lazy<Vec<PythonArchEvalDecoratorHook>> = Lazy::new(|| {vec![
-    PythonArchEvalDecoratorHook {trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("returns")]))], //disappear in 18.1
+    PythonArchEvalDecoratorHook {trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("returns")]))], //disappear in 18.1
                         func: |session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments| {
                             PythonArchEvalHooks::handle_api_returns_decorator(session, func_sym, arguments)
     }},
-    PythonArchEvalDecoratorHook {trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("onchange")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("decorators")], vec![Sy!("onchange")]))],
+    PythonArchEvalDecoratorHook {trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("onchange")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("decorators")], vec![Sy!("onchange")]))],
                         func: |session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments| {
                             PythonArchEvalHooks::handle_api_simple_field_decorator(session, func_sym, arguments)
     }},
-    PythonArchEvalDecoratorHook {trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("constrains")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("decorators")], vec![Sy!("constrains")]))],
+    PythonArchEvalDecoratorHook {trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("constrains")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("decorators")], vec![Sy!("constrains")]))],
                         func: |session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments| {
                             PythonArchEvalHooks::handle_api_simple_field_decorator(session, func_sym, arguments)
     }},
-    PythonArchEvalDecoratorHook {trees: vec![(Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("depends")])),
-                        (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("decorators")], vec![Sy!("depends")]))],
+    PythonArchEvalDecoratorHook {trees: vec![((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("depends")])),
+                        ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("decorators")], vec![Sy!("depends")]))],
                         func: |session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments| {
                             PythonArchEvalHooks::handle_api_nested_field_decorator(session, func_sym, arguments)
     }},
@@ -739,8 +738,7 @@ impl PythonArchEvalHooks {
         let name = session.st().name(symbol).clone();
         for hook in arch_eval_file_hooks.iter() {
             for (min_version, max_version, hook_tree) in hook.trees.iter() {
-                if compare_semver(min_version, &session.sync_odoo.full_version) == Ordering::Greater ||
-                    compare_semver(max_version, &session.sync_odoo.full_version) <= Ordering::Equal {
+                if session.sync_odoo.version < *min_version || session.sync_odoo.version >= *max_version {
                     continue; //skip if version not in range
                 }
                 if name.eq(hook_tree.0.last().unwrap()) &&
@@ -765,8 +763,7 @@ impl PythonArchEvalHooks {
         let name = session.st().name(symbol_key).clone();
         for hook in arch_eval_function_hooks.iter() {
             for hook_tree in hook.tree.iter() {
-                if compare_semver(hook_tree.0.as_str(), session.sync_odoo.full_version.as_str()) == Ordering::Greater ||
-                    compare_semver(hook_tree.1.as_str(), session.sync_odoo.full_version.as_str()) <= Ordering::Equal {
+                if session.sync_odoo.version < hook_tree.0 || session.sync_odoo.version >= hook_tree.1 {
                     continue; //skip if version not in range
                 }
                 if name.eq(hook_tree.2.1.last().unwrap()) {
@@ -819,8 +816,7 @@ impl PythonArchEvalHooks {
                 let dec_sym_tree = session.st().get_tree(dec_sym);
                 for hook in arch_eval_decorator_hooks.iter() {
                     for (min_version, max_version, hook_tree) in hook.trees.iter() {
-                        if compare_semver(min_version, &session.sync_odoo.full_version) == Ordering::Greater ||
-                            compare_semver(max_version,  &session.sync_odoo.full_version.as_str()) <= Ordering::Equal {
+                        if session.sync_odoo.version < *min_version || session.sync_odoo.version >= *max_version {
                             continue; //skip if version not in range
                         }
                         if !dec_sym_tree.0.ends_with(&hook_tree.0) || !dec_sym_tree.1.ends_with(&hook_tree.1) || !SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0) {
@@ -856,7 +852,7 @@ impl PythonArchEvalHooks {
             };
             if let Some(scope_file) = scope.and_then(|s| session.st().get_file(s)) {
                 //exclude orm files
-                if compare_semver(session.sync_odoo.full_version.as_str(), "18.1") < Ordering::Equal {
+                if session.sync_odoo.version < (18, 1) {
                     let env_files = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("api")], vec![]), u32::MAX);
                     let env_file = *env_files.last().unwrap();
                     if env_file != scope_file {
@@ -1001,7 +997,7 @@ impl PythonArchEvalHooks {
             range: None
         }]);
 
-        let tree = if compare_semver(odoo.full_version.as_str(), "18.1.0") == Ordering::Less {
+        let tree = if odoo.version < (18, 1) {
             (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Field"), Sy!("__get__")])
         } else {
             (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields")], vec![Sy!("Field"), Sy!("__get__")])
