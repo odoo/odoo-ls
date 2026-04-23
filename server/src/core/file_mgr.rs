@@ -697,9 +697,13 @@ impl FileMgr {
         self.workspace_folders.iter().any(|(_, uri)| path.starts_with(&FileMgr::uri2pathname(uri.as_str())))
     }
 
-    pub fn pathname2uri(s: &String) -> lsp_types::Uri {
+    pub fn pathname2uri(s: &str) -> lsp_types::Uri {
+        Self::try_pathname2uri(s).unwrap_or_else(|err| panic!("unable to transform pathname to uri: {s}, {}", err))
+    }
+
+    pub fn try_pathname2uri(s: &str) -> Result<lsp_types::Uri, anyhow::Error> {
         let pre_uri = if s.starts_with("untitled:"){
-            s.clone()
+            s.to_string()
         } else {
             let mut slash = "";
             if cfg!(windows) {
@@ -713,7 +717,7 @@ impl FileMgr {
                 slash = "";
                 (s.replacen("\\\\", "", 1), true)
             } else {
-                (s.clone(), false)
+                (s.to_string(), false)
             };
             // Use legacy UNC flag to determine if we need four slashes
             match url::Url::parse(&format!("file://{}{}", slash, replaced)) {
@@ -724,13 +728,10 @@ impl FileMgr {
                         pre_uri.to_string()
                     }
                 },
-                Err(err) => panic!("unable to transform pathname to uri: {s}, {}", err)
+                Err(err) => return Err(err.into())
             }
         };
-        match lsp_types::Uri::from_str(&pre_uri) {
-            Ok(url) => url,
-            Err(err) => panic!("unable to transform pathname to uri: {s}, {}", err)
-        }
+        lsp_types::Uri::from_str(&pre_uri).map_err(|err| err.into())
     }
 
     pub fn uri2pathname(s: &str) -> String {
@@ -739,13 +740,21 @@ impl FileMgr {
             legacy_unc_paths().store(true, Ordering::Relaxed);
         }
         let str_repr = s.replace("file:////", "file://");
-        if let Ok(url) = url::Url::parse(&str_repr) {
-            if let Ok(url) = url.to_file_path() {
-                return url.sanitize();
+        match url::Url::parse(&str_repr) {
+            Ok(url) => {
+                match url.to_file_path() {
+                    Ok(path) => path.sanitize(),
+                    Err(_) => {
+                        error!("Unable to convert url to file path: {s}");
+                        S!(s)
+                    }
+                }
+            },
+            Err(err) => {
+                error!("Unable to parse uri: {s}, {}", err);
+                S!(s)
             }
         }
-        error!("Unable to extract path from uri: {s}");
-        S!(s)
     }
 }
 

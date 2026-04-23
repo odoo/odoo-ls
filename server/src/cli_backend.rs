@@ -1,11 +1,12 @@
 use lsp_server::Message;
 use lsp_types::notification::{LogMessage, Notification, PublishDiagnostics};
-use lsp_types::{LogMessageParams, PublishDiagnosticsParams, Uri};
+use lsp_types::{LogMessageParams, PublishDiagnosticsParams};
 use tracing::{error, info};
 
 use crate::S;
 use crate::args::Cli;
 use crate::core::config::{ConfigEntry, DEFAULT_PROFILE_NAME, get_configuration};
+use crate::core::file_mgr::FileMgr;
 use crate::core::odoo::SyncOdoo;
 use crate::threads::SessionInfo;
 use crate::utils::{PathSanitizer, is_addon_path, is_odoo_path, is_python_path};
@@ -14,38 +15,37 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
-use std::str::FromStr;
 
-    fn canonicalize_and_validate(
-        path: &str,
-        is_valid_str: Option<fn(&String) -> bool>,
-        is_valid_pb: Option<fn(&Path) -> bool>,
-        error_msg: &str,
-    ) -> Option<String> {
-        match fs::canonicalize(path) {
-            Ok(pb) => {
-                let sanitized = pb.sanitize();
-                let valid = match (is_valid_str, is_valid_pb) {
-                    (Some(is_valid_str), Some(is_valid_pb)) => {
-                        is_valid_str(&sanitized) && is_valid_pb(&pb)
-                    }
-                    (Some(is_valid_str), None) => is_valid_str(&sanitized),
-                    (None, Some(is_valid_pb)) => is_valid_pb(&pb),
-                    (None, None) => true,
-                };
-                if valid {
-                    Some(sanitized)
-                } else {
-                    error!("{}: {:?}", error_msg, pb);
-                    None
+fn canonicalize_and_validate(
+    path: &str,
+    is_valid_str: Option<fn(&String) -> bool>,
+    is_valid_pb: Option<fn(&Path) -> bool>,
+    error_msg: &str,
+) -> Option<String> {
+    match fs::canonicalize(path) {
+        Ok(pb) => {
+            let sanitized = pb.sanitize();
+            let valid = match (is_valid_str, is_valid_pb) {
+                (Some(is_valid_str), Some(is_valid_pb)) => {
+                    is_valid_str(&sanitized) && is_valid_pb(&pb)
                 }
-            }
-            Err(e) => {
-                error!("Unable to resolve path: {}. Error: {}", path, e);
+                (Some(is_valid_str), None) => is_valid_str(&sanitized),
+                (None, Some(is_valid_pb)) => is_valid_pb(&pb),
+                (None, None) => true,
+            };
+            if valid {
+                Some(sanitized)
+            } else {
+                error!("{}: {:?}", error_msg, pb);
                 None
             }
         }
+        Err(e) => {
+            error!("Unable to resolve path: {}. Error: {}", path, e);
+            None
+        }
     }
+}
 
 /// Basic backend that is used for a single parse execution
 pub struct CliBackend {
@@ -153,7 +153,10 @@ impl CliBackend {
     }
 
     fn setup(&self) -> Option<HashMap<String, String>> {
-        let tracked_folders = self.cli.tracked_folders.clone().unwrap_or_default();
+        let Some(tracked_folders) = self.cli.tracked_folders.clone() else {
+            error!("No tracked folders provided. Please provide at least one tracked folder using the --tracked-folders argument. Exiting.");
+            return None;
+        };
         info!("Using tracked folders: {:?}", tracked_folders);
 
         let ws_folders: HashMap<String, String> = tracked_folders
@@ -186,7 +189,7 @@ impl CliBackend {
 
         // Add workspace folders once
         for (id, tf) in &ws_folders {
-            let uri = match Uri::from_str(tf) {
+            let uri = match FileMgr::try_pathname2uri(tf) {
                 Ok(uri) => uri,
                 Err(e) => {
                     error!("Unable to resolve tracked folder: {}, error: {}", tf, e);
@@ -302,7 +305,7 @@ mod tests {
 
         // Add workspace folders to session
         for (id, path) in &ws_folders {
-            if let Ok(uri) = Uri::from_str(path) {
+            if let Ok(uri) = FileMgr::try_pathname2uri(path) {
                 session
                     .sync_odoo
                     .get_file_mgr()
@@ -325,6 +328,9 @@ mod tests {
     #[test]
     fn test_config_toml_values_are_loaded() {
         let temp = TempDir::new().unwrap();
+        let ws1 = temp.child("ws1");
+        ws1.create_dir_all().unwrap();
+
         let toml_path = temp.child("odools.toml");
         toml_path
             .write_str(
@@ -340,6 +346,7 @@ mod tests {
         let cli = Cli {
             config_path: Some(toml_path.path().to_string_lossy().into_owned()),
             selected_config: Some(S!("default")),
+            tracked_folders: Some(vec![ws1.path().to_string_lossy().into_owned()]),
             ..default_cli()
         };
         let backend = CliBackend::new(cli);
@@ -422,6 +429,9 @@ mod tests {
     #[test]
     fn test_workspace_template_not_resolved_when_no_tracked_folders() {
         let temp = TempDir::new().unwrap();
+        let ws1 = temp.child("ws1");
+        ws1.create_dir_all().unwrap();
+
         let toml_path = temp.child("odools.toml");
         toml_path
             .write_str(
@@ -436,17 +446,17 @@ mod tests {
         let cli = Cli {
             config_path: Some(toml_path.path().to_string_lossy().into_owned()),
             selected_config: Some(S!("default")),
-            tracked_folders: None, // no workspace context
+            tracked_folders: Some(vec![ws1.path().to_string_lossy().into_owned()]),
             ..default_cli()
         };
         let backend = CliBackend::new(cli);
         let (ws_folders, config) = setup_with_config(&backend)
-            .expect("Config should still load even without tracked folders");
+            .expect("Config should still load");
 
-        assert!(ws_folders.is_empty(), "No tracked folders should be registered");
+        assert!(!ws_folders.is_empty(), "Workspace folder should be registered with numeric ID");
         assert!(
             config.addons_paths.is_empty(),
-            "Expected no addons_paths when no tracked folders are provided, got: {:?}",
+            "Expected no addons_paths when template variable references non-existent named workspace, got: {:?}",
             config.addons_paths
         );
     }
@@ -489,6 +499,9 @@ mod tests {
     #[test]
     fn test_selected_config_profile_is_loaded() {
         let temp = TempDir::new().unwrap();
+        let ws1 = temp.child("ws1");
+        ws1.create_dir_all().unwrap();
+
         let toml_path = temp.child("odools.toml");
         toml_path
             .write_str(
@@ -507,10 +520,11 @@ mod tests {
         let cli = Cli {
             config_path: Some(toml_path.path().to_string_lossy().into_owned()),
             selected_config: Some(S!("profile_b")),
+            tracked_folders: Some(vec![ws1.path().to_string_lossy().into_owned()]),
             ..default_cli()
         };
         let backend = CliBackend::new(cli);
-        let (ws_folders, config) = setup_with_config(&backend).expect("Expected successful setup");
+        let (_, config) = setup_with_config(&backend).expect("Expected successful setup");
 
         assert_eq!(
             config.auto_refresh_delay, 2222,
@@ -523,6 +537,9 @@ mod tests {
     #[test]
     fn test_omitting_selected_config_uses_default_profile() {
         let temp = TempDir::new().unwrap();
+        let ws1 = temp.child("ws1");
+        ws1.create_dir_all().unwrap();
+
         let toml_path = temp.child("odools.toml");
         toml_path
             .write_str(&format!(
@@ -538,6 +555,7 @@ mod tests {
         let cli = Cli {
             config_path: Some(toml_path.path().to_string_lossy().into_owned()),
             selected_config: None, // omitted — should fall back to DEFAULT_PROFILE_NAME
+            tracked_folders: Some(vec![ws1.path().to_string_lossy().into_owned()]),
             ..default_cli()
         };
         let backend = CliBackend::new(cli);
@@ -608,6 +626,9 @@ mod tests {
     #[test]
     fn test_cli_no_typeshed_stubs_overrides_config_file() {
         let temp = TempDir::new().unwrap();
+        let ws1 = temp.child("ws1");
+        ws1.create_dir_all().unwrap();
+
         let toml_path = temp.child("odools.toml");
         toml_path
             .write_str(
@@ -623,6 +644,7 @@ mod tests {
             config_path: Some(toml_path.path().to_string_lossy().into_owned()),
             selected_config: Some(S!("default")),
             no_typeshed_stubs: true, // CLI override
+            tracked_folders: Some(vec![ws1.path().to_string_lossy().into_owned()]),
             ..default_cli()
         };
         let backend = CliBackend::new(cli);
@@ -639,6 +661,8 @@ mod tests {
     #[test]
     fn test_cli_addons_arg_extends_config_file_addons() {
         let temp = TempDir::new().unwrap();
+        let ws1 = temp.child("ws1");
+        ws1.create_dir_all().unwrap();
 
         // An addons directory: must contain a sub-directory with __manifest__.py
         // so that `is_addon_path` returns true.
@@ -665,6 +689,7 @@ mod tests {
             config_path: Some(toml_path.path().to_string_lossy().into_owned()),
             selected_config: Some(S!("default")),
             addons: Some(vec![addons_dir.path().to_string_lossy().into_owned()]),
+            tracked_folders: Some(vec![ws1.path().to_string_lossy().into_owned()]),
             ..default_cli()
         };
         let backend = CliBackend::new(cli);
@@ -681,6 +706,8 @@ mod tests {
     #[test]
     fn test_cli_addons_arg_and_config_addons_are_merged() {
         let temp = TempDir::new().unwrap();
+        let ws1 = temp.child("ws1");
+        ws1.create_dir_all().unwrap();
 
         // Addon dir referenced in the TOML
         let config_addons = temp.child("config_addons");
@@ -718,6 +745,7 @@ mod tests {
             config_path: Some(toml_path.path().to_string_lossy().into_owned()),
             selected_config: Some(S!("default")),
             addons: Some(vec![cli_addons.path().to_string_lossy().into_owned()]),
+            tracked_folders: Some(vec![ws1.path().to_string_lossy().into_owned()]),
             ..default_cli()
         };
         let backend = CliBackend::new(cli);
