@@ -5,7 +5,6 @@ use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::{FunctionSymbol, VariableSymbol};
 use crate::features::references::ReferenceTarget;
 use crate::threads::SessionInfo;
-use crate::utils::compare_semver;
 use crate::S;
 use crate::{constants::*, Sy};
 use itertools::FoldWhile::{Continue, Done};
@@ -15,7 +14,7 @@ use ruff_python_ast::{
     Arguments, Expr, ExprCall, FStringPart, Identifier, Number, Parameter, UnaryOp,
 };
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use std::cmp::{Ordering, max, min};
+use std::cmp::{max, min};
 use crate::utils::{HashMap, HashSet};
 use std::i32;
 
@@ -1957,7 +1956,7 @@ impl Evaluation {
                     "=" | "!=" | ">" | ">=" | "<" | "<=" | "=?" | "=like" | "like" | "not like" | "ilike" |
                     "not ilike" | "=ilike" | "in" | "not in" | "child_of" | "parent_of" | "any" | "not any" => {},
                     "access" => {
-                        if compare_semver(&session.sync_odoo.full_version, "19.3") == Ordering::Less {
+                        if session.sync_odoo.version < (19, 3) {
                             if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03025, &[]) {
                                 diagnostics.push(Diagnostic {
                                     range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
