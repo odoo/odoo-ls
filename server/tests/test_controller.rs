@@ -107,7 +107,7 @@ fn test_request_env_subscript(
     file_symbol: SourceFileKey,
     file_info: &Rc<RefCell<FileInfo>>
 ) {
-    let partner_class = test_utils::PARTNER_CLASS_NAME(&session.sync_odoo.full_version);
+    let partner_class = test_utils::PARTNER_CLASS_NAME(session.sync_odoo.version);
 
     // Test 1: Hover over 'partner' variable (line 18: partner = request.env['res.partner'])
     // Should show Partner/ResPartner class
