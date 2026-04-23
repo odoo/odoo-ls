@@ -11,3 +11,4 @@ pub mod tasks;
 pub mod utils;
 pub mod crash_buffer;
 pub mod weak_collections;
+pub mod odoo_version;

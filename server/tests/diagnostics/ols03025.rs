@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use lsp_types::NumberOrString;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::core::symbols::symbol_keys::SourceFileKey;
+use odoo_ls_server::odoo_version::OdooVersion;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
@@ -33,7 +34,7 @@ fn test_ols03025_access_operator_version_gated() {
     let _ = get_diagnostics_for_path(&mut session, &path);
 
     // version < 19.3 → exactly one OLS03025 on the search line
-    session.sync_odoo.full_version = "19.2.0".to_string();
+    session.sync_odoo.version = OdooVersion::new(19, 2, 0);
     revalidate(&mut session, file_sym);
     let diagnostics = get_diagnostics_for_path(&mut session, &path);
     let on_line = diag_on_line(&diagnostics, ACCESS_LINE);
@@ -54,7 +55,7 @@ fn test_ols03025_access_operator_version_gated() {
 
     // version >= 19.3 → no diagnostic at all on that line: 'access' is a valid operator,
     // so no OLS03009 or OLS03025 should be raised
-    session.sync_odoo.full_version = "19.3.0".to_string();
+    session.sync_odoo.version = OdooVersion::new(19, 3, 0);
     revalidate(&mut session, file_sym);
     let diagnostics = get_diagnostics_for_path(&mut session, &path);
     let on_line = diag_on_line(&diagnostics, ACCESS_LINE);

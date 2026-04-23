@@ -4,21 +4,20 @@ use odoo_ls_server::{
     S, core::{
         file_mgr::FileInfo,
         symbols::{storage::SymbolTable, symbol_keys::{SourceFileKey, SymbolKey}},
-    }, features::ast_utils::AstUtils, threads::SessionInfo, utils::compare_semver
+    }, features::ast_utils::AstUtils, odoo_version::OdooVersion, threads::SessionInfo
 };
 use once_cell::sync::Lazy;
 use std::{
     cell::RefCell,
-    cmp::Ordering,
     collections::{HashMap, HashSet},
     rc::Rc,
 };
 
 
 /// Returns the correct class name for Partner/ResPartner depending on Odoo version
-pub static PARTNER_CLASS_NAME: Lazy<fn(&str) -> &'static str> = Lazy::new(|| {
-    |full_version: &str| {
-        if compare_semver(full_version, "18.1") >= Ordering::Equal {
+pub static PARTNER_CLASS_NAME: Lazy<fn(OdooVersion) -> &'static str> = Lazy::new(|| {
+    |version: OdooVersion| {
+        if version >= (18, 1) {
             "ResPartner"
         } else {
             "Partner"
@@ -27,9 +26,9 @@ pub static PARTNER_CLASS_NAME: Lazy<fn(&str) -> &'static str> = Lazy::new(|| {
 });
 
 /// Returns the correct class name for Country/ResCountry depending on Odoo version
-pub static COUNTRY_CLASS_NAME: Lazy<fn(&str) -> &'static str> = Lazy::new(|| {
-    |full_version: &str| {
-        if compare_semver(full_version, "18.1") >= Ordering::Equal {
+pub static COUNTRY_CLASS_NAME: Lazy<fn(OdooVersion) -> &'static str> = Lazy::new(|| {
+    |version: OdooVersion| {
+        if version >= (18, 1) {
             "ResCountry"
         } else {
             "Country"
