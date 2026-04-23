@@ -10,6 +10,7 @@ use crate::core::symbols::storage::metrics::{log_slotmap_capacities, log_symbol_
 use crate::core::symbols::symbol_keys::{FunctionKey, ModuleKey, SourceFileKey, SymbolKey, Wk, XmlId};
 use crate::core::xml_validation::XmlValidator;
 use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
+use crate::odoo_version::OdooVersion;
 use crate::features::document_symbols::DocumentSymbolFeature;
 use crate::features::references::{ReferenceFeature, ReferenceTarget};
 use crate::features::workspace_symbols::WorkspaceSymbolFeature;
@@ -103,10 +104,7 @@ impl TypeshedWeakReferences {
 
 #[derive(Debug)]
 pub struct SyncOdoo {
-    pub version_major: u32,
-    pub version_minor: u32,
-    pub version_micro: u32,
-    pub full_version: String,
+    pub version: OdooVersion,
     pub python_version: Vec<u32>,
     pub config: ConfigEntry,
     pub config_file: Option<ConfigFile>,
@@ -156,10 +154,7 @@ impl SyncOdoo {
 
     pub fn new() -> Self {
         let sync_odoo = Self {
-            version_major: 0,
-            version_minor: 0,
-            version_micro: 0,
-            full_version: "0.0.0".to_string(),
+            version: OdooVersion::default(),
             python_version: vec![0, 0, 0],
             config: ConfigEntry::new(),
             selected_config: None,
@@ -207,10 +202,7 @@ impl SyncOdoo {
     pub fn reset(session: &mut SessionInfo, config: ConfigEntry) {
         session.log_message(MessageType::INFO, S!("Resetting Database..."));
         info!("Resetting database...");
-        session.sync_odoo.version_major = 0;
-        session.sync_odoo.version_minor = 0;
-        session.sync_odoo.version_micro = 0;
-        session.sync_odoo.full_version = "0.0.0".to_string();
+        session.sync_odoo.version = OdooVersion::default();
         session.sync_odoo.config = ConfigEntry::new();
         FileMgr::clear(session);//only reset files, as workspace folders didn't change
         session.sync_odoo.stubs_dirs = SyncOdoo::default_stubs();
@@ -392,17 +384,14 @@ impl SyncOdoo {
         }
     }
 
-    pub fn read_version(session: &mut SessionInfo, release_path: PathBuf) -> (u32, u32, u32) {
-        let mut _version_major: u32 = 14;
-        let mut _version_minor: u32 = 0;
-        let mut _version_micro: u32 = 0;
-        // open release.py and get version
+    pub fn read_version(session: &mut SessionInfo, release_path: PathBuf) -> OdooVersion {
+        let mut version = OdooVersion::new(14, 0, 0);
         let release_file = fs::read_to_string(release_path.sanitize());
         let release_file = match release_file {
             Ok(release_file) => release_file,
             Err(_) => {
                 session.log_message(MessageType::INFO, String::from("Unable to read release.py - Aborting"));
-                return (0, 0, 0);
+                return OdooVersion::default();
             }
         };
         for line in release_file.lines() {
@@ -412,10 +401,12 @@ impl SyncOdoo {
                     Some(result) => {
                         let version_info = result.get(1).unwrap().as_str();
                         let version_info = version_info.split(", ").collect::<Vec<&str>>();
-                        let version_major = version_info[0].replace("saas~", "").replace("'", "").replace(r#"""#, "");
-                        _version_major = version_major.parse().unwrap();
-                        _version_minor = version_info[1].parse().unwrap();
-                        _version_micro = version_info[2].parse().unwrap();
+                        let major_str = version_info[0].replace("saas~", "").replace("'", "").replace(r#"""#, "");
+                        version = OdooVersion::new(
+                            major_str.parse().unwrap(),
+                            version_info[1].parse().unwrap(),
+                            version_info[2].parse().unwrap(),
+                        );
                         break;
                     },
                     None => {
@@ -425,7 +416,7 @@ impl SyncOdoo {
                 }
             }
         }
-        (_version_major, _version_minor, _version_micro)
+        version
     }
 
     fn build_base(session: &mut SessionInfo) -> bool {
@@ -444,20 +435,16 @@ impl SyncOdoo {
             session.log_message(MessageType::ERROR, String::from("Unable to find release.py - Aborting and switching to non-odoo mode"));
             return false;
         }
-        let (_version_major, _version_minor, _version_micro) = SyncOdoo::read_version(session, release_path);
-        if _version_major == 0 {
+        let version = SyncOdoo::read_version(session, release_path);
+        if version.major == 0 {
             return false;
         }
-        let _full_version = format!("{}.{}.{}", _version_major, _version_minor, _version_micro);
-        session.log_message(MessageType::INFO, format!("Odoo version: {}", _full_version));
-        if _version_major < 14 {
+        session.log_message(MessageType::INFO, format!("Odoo version: {}", version));
+        if version.major < 14 {
             session.log_message(MessageType::ERROR, String::from("Odoo version is less than 14. The tool only supports version 14 and above. Aborting and switching to non-odoo mode"));
             return false;
         }
-        session.sync_odoo.version_major = _version_major;
-        session.sync_odoo.version_minor = _version_minor;
-        session.sync_odoo.version_micro = _version_micro;
-        session.sync_odoo.full_version = _full_version;
+        session.sync_odoo.version = version;
         //build base
         let config_odoo_path = PathBuf::from(odoo_path.clone());
         let Some(odoo_sym) = odoo_sym else {
