@@ -1,6 +1,5 @@
 use std::{
     cell::RefCell,
-    cmp::Ordering,
     rc::Rc,
 };
 use crate::utils::{HashMap, HashSet};
@@ -19,7 +18,6 @@ use crate::{
         symbols::symbol_keys::{ModuleKey, SourceFileKey, SymbolKey, XmlFileKey},
     },
     threads::SessionInfo,
-    utils::compare_semver,
     Sy,
 };
 
@@ -137,7 +135,7 @@ impl XmlValidator {
         //check each field in the record
         for (field_name, field_key) in &fields {
             let mut has_translation = false;
-            if compare_semver(&session.sync_odoo.full_version, "18.2.0") >= Ordering::Equal {
+            if session.sync_odoo.version >= (18, 2) {
                 // Check for translation
                 // obs: some language codes contain "@", e.g. "sr@latin", so we only split once
                 if let Some((_fname, lang_code)) = field_name.split_once("@") {

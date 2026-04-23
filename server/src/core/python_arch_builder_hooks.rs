@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::path::PathBuf;
 use once_cell::sync::Lazy;
 use ruff_text_size::TextRange;
@@ -7,17 +6,17 @@ use crate::core::import_resolver::manual_import;
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::symbol_keys::{ClassKey, SourceFileKey, SymbolKey};
 use crate::threads::SessionInfo;
-use crate::utils::compare_semver;
 use crate::{Sy, S};
 use crate::constants::OYarn;
 
 use super::odoo::SyncOdoo;
 
 type PythonArchClassHookFn = fn (symbol_table: &mut SymbolTable, class: ClassKey);
+type Version = (u32, u32); // major, minor
 
 pub struct PythonArchClassHook {
     pub odoo_entry: bool,
-    pub trees: Vec<(OYarn, OYarn, (Vec<OYarn>, Vec<OYarn>))>,
+    pub trees: Vec<(Version, Version, (Vec<OYarn>, Vec<OYarn>))>,
     pub func: PythonArchClassHookFn
 }
 
@@ -26,8 +25,8 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
     PythonArchClassHook {
         odoo_entry: true,
         trees: vec![
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel")]))
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel")]))
         ],
         func: |symbol_table: &mut SymbolTable, class: ClassKey| {
             // ----------- env ------------
@@ -46,8 +45,8 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
     PythonArchClassHook {
         odoo_entry: true,
         trees: vec![
-            (Sy!("15.3"), Sy!("19.2"), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("Request")])),
-            (Sy!("19.2"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("http"), Sy!("requestlib")], vec![Sy!("Request")]))
+            ((15, 3), (19, 2), (vec![Sy!("odoo"), Sy!("http")], vec![Sy!("Request")])),
+            ((19, 2), (999, 0), (vec![Sy!("odoo"), Sy!("http"), Sy!("requestlib")], vec![Sy!("Request")]))
         ],
         func: |symbol_table: &mut SymbolTable, class: ClassKey| {
             // ----------- Request.env ------------
@@ -62,8 +61,8 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
     PythonArchClassHook {
         odoo_entry: true,
         trees: vec![
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("Environment")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("environments")], vec![Sy!("Environment")]))
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("api")], vec![Sy!("Environment")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("environments")], vec![Sy!("Environment")]))
         ],
         func: |symbol_table: &mut SymbolTable, class: ClassKey| {
             let new_sym = symbol_table.get_symbol(class.into(), &(vec![], vec![Sy!("__new__")]), u32::MAX);
@@ -89,7 +88,7 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
     PythonArchClassHook {
         odoo_entry: true,
         trees: vec![
-            (Sy!("15.0"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("addons"), Sy!("base"), Sy!("models"), Sy!("ir_rule")], vec![Sy!("IrRule")])),
+            ((15, 0), (999, 0), (vec![Sy!("odoo"), Sy!("addons"), Sy!("base"), Sy!("models"), Sy!("ir_rule")], vec![Sy!("IrRule")])),
         ],
         func: |symbol_table: &mut SymbolTable, class: ClassKey| {
             let range = symbol_table[class].range.clone();
@@ -100,48 +99,48 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
     PythonArchClassHook {
         odoo_entry: true,
         trees: vec![
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Boolean")])),
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Integer")])),
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Float")])),
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Monetary")])),
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Char")])),
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Text")])),
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Html")])),
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Date")])),
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Datetime")])),
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Binary")])),
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Image")])),
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Selection")])),
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Reference")])),
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2one")])),
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2oneReference")])),
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Json")])),
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Properties")])),
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("PropertiesDefinition")])),
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("One2many")])),
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2many")])),
-            (Sy!("0.0"), Sy!("18.1"), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Id")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_misc")], vec![Sy!("Boolean")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_numeric")], vec![Sy!("Integer")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_numeric")], vec![Sy!("Float")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_numeric")], vec![Sy!("Monetary")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_textual")], vec![Sy!("Char")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_textual")], vec![Sy!("Text")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_textual")], vec![Sy!("Html")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_temporal")], vec![Sy!("Date")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_temporal")], vec![Sy!("Datetime")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_binary")], vec![Sy!("Binary")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_binary")], vec![Sy!("Image")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_selection")], vec![Sy!("Selection")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_reference")], vec![Sy!("Reference")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_relational")], vec![Sy!("Many2one")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_reference")], vec![Sy!("Many2oneReference")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_misc")], vec![Sy!("Json")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_properties")], vec![Sy!("Properties")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_properties")], vec![Sy!("PropertiesDefinition")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_relational")], vec![Sy!("One2many")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_relational")], vec![Sy!("Many2many")])),
-            (Sy!("18.1"), Sy!("999.0"), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_misc")], vec![Sy!("Id")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Boolean")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Integer")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Float")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Monetary")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Char")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Text")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Html")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Date")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Datetime")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Binary")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Image")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Selection")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Reference")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2one")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2oneReference")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Json")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Properties")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("PropertiesDefinition")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("One2many")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2many")])),
+            ((0, 0), (18, 1), (vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Id")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_misc")], vec![Sy!("Boolean")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_numeric")], vec![Sy!("Integer")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_numeric")], vec![Sy!("Float")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_numeric")], vec![Sy!("Monetary")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_textual")], vec![Sy!("Char")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_textual")], vec![Sy!("Text")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_textual")], vec![Sy!("Html")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_temporal")], vec![Sy!("Date")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_temporal")], vec![Sy!("Datetime")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_binary")], vec![Sy!("Binary")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_binary")], vec![Sy!("Image")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_selection")], vec![Sy!("Selection")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_reference")], vec![Sy!("Reference")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_relational")], vec![Sy!("Many2one")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_reference")], vec![Sy!("Many2oneReference")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_misc")], vec![Sy!("Json")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_properties")], vec![Sy!("Properties")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_properties")], vec![Sy!("PropertiesDefinition")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_relational")], vec![Sy!("One2many")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_relational")], vec![Sy!("Many2many")])),
+            ((18, 1), (999, 0), (vec![Sy!("odoo"), Sy!("orm"), Sy!("fields_misc")], vec![Sy!("Id")])),
         ],
         func: |symbol_table: &mut SymbolTable, class: ClassKey| {
             let symbol_key: SymbolKey = class.into();
@@ -176,8 +175,7 @@ impl PythonArchBuilderHooks {
         let name = session.st().name(symbol_key).clone();
         for hook in arch_class_hooks.iter() {
             for hook_tree in hook.trees.iter() {
-                if compare_semver(session.sync_odoo.full_version.as_str(), hook_tree.0.as_str()) >= Ordering::Equal &&
-                    compare_semver(session.sync_odoo.full_version.as_str(), hook_tree.1.as_str()) == Ordering::Less {
+                if session.sync_odoo.version >= hook_tree.0 && session.sync_odoo.version < hook_tree.1 {
                     if name.eq(hook_tree.2.1.last().unwrap()) {
                         if (hook.odoo_entry && session.sync_odoo.has_main_entry && odoo_tree == hook_tree.2) || (!hook.odoo_entry && tree == hook_tree.2) {
                             (hook.func)(&mut session.sync_odoo.symbol_table, class_key);
@@ -193,13 +191,13 @@ impl PythonArchBuilderHooks {
         if name == "release" {
             if session.sync_odoo.get_main_entry_tree(symbol) == (vec![Sy!("odoo"), Sy!("release")], vec![]) {
                 let file_path = session.st().path(symbol);
-                let (maj, min, mic) = SyncOdoo::read_version(session, PathBuf::from(file_path));
-                if maj != session.sync_odoo.version_major || min != session.sync_odoo.version_minor || mic != session.sync_odoo.version_micro {
+                let new_version = SyncOdoo::read_version(session, PathBuf::from(file_path));
+                if new_version != session.sync_odoo.version {
                     session.sync_odoo.need_rebuild = true;
                 }
             }
         } else if name == "init" {
-            if compare_semver(session.sync_odoo.full_version.as_str(), "18.1") != Ordering::Less {
+            if session.sync_odoo.version >= (18, 1) {
                 if session.sync_odoo.get_main_entry_tree(symbol) == (vec![Sy!("odoo"), Sy!("init")], vec![]) {
                     let file_path = session.st().path(symbol);
                     let odoo_namespace = session.sync_odoo.get_symbol(file_path, &(vec![Sy!("odoo")], vec![]), u32::MAX);

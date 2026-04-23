@@ -22,8 +22,8 @@ fn test_hover_on_model_field_and_method() {
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
     // Use Lazy value for partner and country class names
-    let partner_class_name = test_utils::PARTNER_CLASS_NAME(session.sync_odoo.full_version.as_str());
-    let country_class_name = test_utils::COUNTRY_CLASS_NAME(session.sync_odoo.full_version.as_str());
+    let partner_class_name = test_utils::PARTNER_CLASS_NAME(session.sync_odoo.version);
+    let country_class_name = test_utils::COUNTRY_CLASS_NAME(session.sync_odoo.version);
     // Get file symbol and file info
     let file_mgr = session.sync_odoo.get_file_mgr();
     let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
@@ -269,8 +269,8 @@ fn test_definition() {
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
     // Use Lazy value for partner and Country class names
-    let partner_class_name = test_utils::PARTNER_CLASS_NAME(session.sync_odoo.full_version.as_str());
-    let country_class_name = test_utils::COUNTRY_CLASS_NAME(session.sync_odoo.full_version.as_str());
+    let partner_class_name = test_utils::PARTNER_CLASS_NAME(session.sync_odoo.version);
+    let country_class_name = test_utils::COUNTRY_CLASS_NAME(session.sync_odoo.version);
 
     // Get file symbol and file info
     let file_mgr = session.sync_odoo.get_file_mgr();
