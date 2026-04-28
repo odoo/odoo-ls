@@ -1745,6 +1745,8 @@ impl Evaluation {
             } else {
                 // if arg is None, it means that it is a **arg
                 found_pos_arg_with_kw = number_pos_arg;
+                // If we have **arg, then we can skip checking for missing kword_only args, since they can be passed through the **arg dictionary
+                kword_only_args.clear();
             }
         }
         if found_pos_arg_with_kw < number_pos_arg {

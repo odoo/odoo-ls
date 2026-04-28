@@ -22,3 +22,4 @@ c(z=5, y=5, x=5)
 c(y=5, z=5) # OLS01010
 c(x=5, z=5) # OLS01010
 c(x=5, y=5) # OLS01010
+c(**{"x": 5, "y": 6, "z": 7}) # No Diagnostics
