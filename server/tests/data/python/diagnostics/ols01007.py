@@ -72,7 +72,7 @@ def j(x, y, /):
 
 j(1, 2)
 j(1) # OLS01007
-j(x=1, y=2) # OLS01007
+j(x=1, y=2) # OLS01011
 j(1, 2, 3) # OLS01007
 
 def k(x, /, y, z=0):
@@ -82,7 +82,7 @@ k(1, 2)
 k(1, 2, 3)
 k(1) # OLS01007
 k(1, 2, 3, 4) # OLS01007
-k(x=1, y=2) # OLS01007
+k(x=1, y=2) # OLS01011
 
 # Keyword-only parameters (after a bare *)
 def l(*, x):
@@ -107,7 +107,7 @@ def n(a, b, /, c, *, d, e=0):
 n(1, 2, 3, d=4)
 n(1, 2, 3, d=4, e=5)
 n(1, 2, c=3, d=4)
-n(a=1, b=2, c=3, d=4) # OLS01007
+n(a=1, b=2, c=3, d=4) # OLS01011
 n(1, 2) # OLS01007
 n(1, 2, 3) # OLS01010
 n(1, 2, 3, 4, d=5) # OLS01007

@@ -1647,12 +1647,22 @@ impl Evaluation {
         //validate pos args first
         let mut arg_index = 0;
         let mut number_pos_arg = 0;
+        let mut pos_only_args = HashSet::new();
         let mut kword_only_args = Vec::new();
         let mut vararg_index = i32::MAX;
         let mut kwarg_index = i32::MAX;
         for (index, arg) in function.args.iter().enumerate() {
             match arg.arg_type {
-                ArgumentType::POS_ONLY | ArgumentType::ARG => {
+                ArgumentType::POS_ONLY => {
+                    if arg.default_value.is_none() {
+                        number_pos_arg += 1;
+                        if let Some(arg_symbol) = arg.symbol.upgrade() {
+                            let func_arg_name = arg_symbol.borrow().name().to_string();
+                            pos_only_args.insert(func_arg_name);
+                        }
+                    }
+                },
+                ArgumentType::ARG => {
                     if arg.default_value.is_none() {
                         number_pos_arg += 1;
                     }
@@ -1721,6 +1731,17 @@ impl Evaluation {
         let to_skip = min(min_arg_for_kword, vararg_index);
         for arg in expr_call.arguments.keywords.iter() {
             if let Some(arg_identifier) = &arg.arg { //if None, arg is a dictionary of keywords, like in self.func(a, b, **any_kwargs)
+                // First, check if the keyword matches a positional-only parameter
+                if pos_only_args.contains(&arg_identifier.id.to_string()) {
+                    found_pos_arg_with_kw += 1; // We do not want to double report 1011 with 1007
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01011, &[&function.name, &arg_identifier.id]) {
+                        diagnostics.push(Diagnostic {
+                            range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
+                            ..diagnostic
+                        });
+                    }
+                    continue;
+                }
                 let mut found_one = false;
                 for func_arg in function.args.iter().skip(to_skip as usize) {
                     if func_arg.symbol.upgrade().unwrap().borrow().name().to_string() == arg_identifier.id {
@@ -1743,9 +1764,8 @@ impl Evaluation {
                     }
                 }
             } else {
-                // if arg is None, it means that it is a **arg
-                found_pos_arg_with_kw = number_pos_arg;
-                // If we have **arg, then we can skip checking for missing kword_only args, since they can be passed through the **arg dictionary
+                // if arg is None, it means that it is a **arg, which could replace all args (except pos-only args)
+                found_pos_arg_with_kw = number_pos_arg - pos_only_args.len() as i32;
                 kword_only_args.clear();
             }
         }
@@ -1782,7 +1802,8 @@ impl Evaluation {
             let new_count = diags.iter().filter(|d|
                 d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01007.to_string())) ||
                 d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01008.to_string())) ||
-                d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01010.to_string()))
+                d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01010.to_string())) ||
+                d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01011.to_string()))
             ).count() as i32;
             match acc {
                 None => Continue(Some(new_count)),

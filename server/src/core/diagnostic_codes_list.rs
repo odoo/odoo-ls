@@ -59,6 +59,10 @@ OLS01009, DiagnosticSetting::Warning, "Arguments are not valid for all function 
  */
 OLS01010, DiagnosticSetting::Error, "Missing keyword-only argument(s): {0}",
 /**
+ * A positional-only parameter was passed as a keyword argument
+ */
+OLS01011, DiagnosticSetting::Error, "{0} got some positional-only arguments passed as keyword arguments: '{1}'",
+/**
 * Check your python environment, the effective your sys.path and your addon paths.
 */
 OLS02001, DiagnosticSetting::Warning, "{0} not found",
