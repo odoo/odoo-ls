@@ -137,7 +137,6 @@ pub struct SyncOdoo {
     pub import_cache: Option<ImportCache>,
     pub capabilities: lsp_types::ClientCapabilities,
     pub encoding: PositionEncoding,
-    pub opened_files: Vec<String>,
     pub evaluation_search: Option<ReferenceTarget>, //If set, any evaluation will be check against this value. If evaluation matches, location is kept in evaluation_locations
     pub evaluation_locations: Vec<Location>,
     pub typeshed_weak_cache: TypeshedWeakReferences, //cache of weak references to important typeshed symbols, to avoid having to look for them in the graph for each evaluation
@@ -189,7 +188,6 @@ impl SyncOdoo {
             import_cache: None,
             capabilities: lsp_types::ClientCapabilities::default(),
             encoding: PositionEncoding::Utf16,
-            opened_files: vec![],
             evaluation_search: None,
             evaluation_locations: vec![],
             typeshed_weak_cache: TypeshedWeakReferences::new(),
@@ -514,7 +512,7 @@ impl SyncOdoo {
             let addon_path = PathBuf::from(addon);
             if addon_path.exists() {
                 addon_symbol.borrow_mut().add_path(
-                    addon_path.sanitize()
+                    addon.clone()
                 );
                 EntryPointMgr::add_entry_to_addons(session, addon.clone(),
                     Some(odoo_entry.clone()),
@@ -1105,6 +1103,10 @@ impl SyncOdoo {
     pub fn get_symbol_of_opened_file(session: &mut SessionInfo, path: &PathBuf) -> Option<Rc<RefCell<Symbol>>> {
         let path_in_tree = path.to_tree_path();
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
+        if session.sync_odoo.file_mgr.borrow().get_file_info(&path.sanitize()).is_none() {
+            Odoo::search_symbols_to_rebuild(session, &path_in_tree.sanitize());
+            SyncOdoo::process_rebuilds(session, false);
+        }
         for entry in ep_mgr.borrow().iter_main() {
             let sym_in_data = entry.borrow().data_symbols.get(path.sanitize().as_str()).cloned();
             if let Some(sym) = sym_in_data {
@@ -1542,7 +1544,7 @@ impl Odoo {
             watchers: vec![
                 FileSystemWatcher {
                     glob_pattern: GlobPattern::String("**".to_string()),
-                    kind: Some(WatchKind::Change),
+                    kind: Some(WatchKind::Change | WatchKind::Create | WatchKind::Delete),
                 },
             ],
         };
@@ -1872,6 +1874,11 @@ impl Odoo {
                 match params.text_document.uri.to_file_path(){
                     Ok(path) => {
                         let sanitized_path = path.sanitize();
+                        let tree_path = path.to_tree_path().sanitize();
+                        if session.sync_odoo.file_mgr.borrow().get_file_info(&sanitized_path).is_none() {
+                            Odoo::search_symbols_to_rebuild(session, &tree_path);
+                            SyncOdoo::process_rebuilds(session, false);
+                        }
                         session.log_message(MessageType::INFO, format!("File opened: {}", sanitized_path));
                         let file_extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
                         let (valid, updated) = Odoo::update_file_cache(session, &sanitized_path, file_extension, Some(&vec![TextDocumentContentChangeEvent{
@@ -1880,27 +1887,25 @@ impl Odoo {
                             text: params.text_document.text
                         }]), params.text_document.version);
                         if valid {
-                            session.sync_odoo.opened_files.push(sanitized_path.clone());
                             if session.sync_odoo.state_init == InitState::NOT_READY {
                                 return
                             }
                             let tree = session.sync_odoo.path_to_main_entry_tree(&path);
-                            let tree_path = path.to_tree_path();
                             if tree.is_none() ||
                             (session.sync_odoo.get_main_entry().borrow().root.borrow().get_symbol(tree.as_ref().unwrap(), u32::MAX).is_empty()
-                            && session.sync_odoo.get_main_entry().borrow().data_symbols.get(&path.sanitize()).is_none())
+                            && session.sync_odoo.get_main_entry().borrow().data_symbols.get(&sanitized_path).is_none())
                             {
-                                //main entry doesn't handle this file. Let's test customs entries, or create a new one
+                                // main entry doesn't handle this file. Let's test customs entries, or create a new one
                                 let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
                                 for custom_entry in ep_mgr.borrow().custom_entry_points.iter() {
-                                    if custom_entry.borrow().path == tree_path.sanitize() {
+                                    if custom_entry.borrow().path == tree_path {
                                         if updated{
                                             Odoo::update_file_index(session, path.clone(), file_extension, true, false);
                                         }
                                         return;
                                     }
                                 }
-                                EntryPointMgr::create_new_custom_entry_for_path(session, &tree_path.sanitize(), &sanitized_path);
+                                EntryPointMgr::create_new_custom_entry_for_path(session, &tree_path, &sanitized_path);
                                 SyncOdoo::process_rebuilds(session, false);
                             } else if updated {
                                 Odoo::update_file_index(session, path.clone(), file_extension, true, false);
@@ -1927,7 +1932,6 @@ impl Odoo {
                     text: params.text_document.text
                 }]), params.text_document.version);
                 if valid {
-                    session.sync_odoo.opened_files.push(path.clone());
                     if session.sync_odoo.state_init == InitState::NOT_READY {
                         return
                     }
@@ -1969,7 +1973,6 @@ impl Odoo {
             }
         };
         session.log_message(MessageType::INFO, format!("File closed: {path}"));
-        session.sync_odoo.opened_files.retain(|x| x != &path);
         let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
         if let Some(file_info) = file_info {
             file_info.borrow_mut().opened = false;
@@ -1994,35 +1997,89 @@ impl Odoo {
                 entry.borrow_mut().search_symbols_to_rebuild(session, path, &tree);
             }
         }
-        //test if the new path is a new module
-        if let Some(parent_path) = path_for_tree.parent() {
-            let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
-            for entry in ep_mgr.borrow().addons_entry_points.iter() {
-                if entry.borrow().path == parent_path.sanitize() {
-                    let module_symbol = Symbol::create_from_path(session, &path_for_tree, entry.borrow().get_symbol().unwrap().clone(), true);
-                    if module_symbol.is_some() {
-                        session.sync_odoo.add_to_rebuild_arch(module_symbol.unwrap());
-                    }
-                    break;
-                }
+
+        // Collect all addons paths and their symbols
+        let mut addon_paths_syms = ep_mgr
+            .borrow()
+            .addons_entry_points
+            .iter()
+            .map(|entry| (PathBuf::from(entry.borrow().path.clone()), entry.borrow().get_symbol()))
+            .collect::<Vec<_>>();
+
+        // Find the main <ODOO_PATH>/odoo/addons
+        let maybe_main_addons_symbol = session.sync_odoo.get_main_entry().borrow().get_symbol().map(|ep_sym_rc|
+            ep_sym_rc.borrow().get_symbol(&(vec![Sy!("odoo"), Sy!("addons")], vec![]), u32::MAX)
+        ).and_then(|v| v.get(0).cloned());
+        if let Some(main_addons_symbol) = maybe_main_addons_symbol {
+            addon_paths_syms.push((PathBuf::from(
+                session
+                    .sync_odoo
+                    .config
+                    .odoo_path
+                    .as_ref()
+                    .unwrap_or(&"".to_string())
+                    .clone()
+                    + "/odoo/addons",
+            ), Some(main_addons_symbol)));
+        } else {
+            error!("Unable to find addons symbol to create new module");
+        }
+        // Check if the new path is part of a new module in an existing entry point
+        // that has not been created yet, if so, create it
+        for (addon_path, addon_symbol) in addon_paths_syms {
+            if !PathBuf::from(path).starts_with(&addon_path){
+                continue;
             }
-            if parent_path.sanitize() == session.sync_odoo.config.odoo_path.as_ref().unwrap_or(&"".to_string()).clone() + "/odoo/addons" {
-                let addons_symbol = session.sync_odoo.get_main_entry().borrow().get_symbol().map(|ep_sym_rc|
-                    ep_sym_rc.borrow().get_symbol(&(vec![Sy!("odoo"), Sy!("addons")], vec![]), u32::MAX)
-                );
-                match addons_symbol {
-                    Some(addons_symbol) if !addons_symbol.is_empty() => {
-                        let module_symbol = Symbol::create_from_path(session, &path_for_tree, addons_symbol[0].clone(), true);
-                        if module_symbol.is_some() {
-                            session.sync_odoo.add_to_rebuild_arch(module_symbol.unwrap());
-                        }
-                    }
-                    _ => {
-                        error!("Unable to find addons symbol to create new module");
-                    }
-                }
+            let Ok(relative) = path_for_tree.strip_prefix(&addon_path) else {
+                continue;
+            };
+            let components: Vec<_> = relative.components().collect();
+            if components.len() < 1 {
+                // We are on the addons itself, abort
+                continue;
+            }
+            let module_name = components[0].as_os_str().to_str().unwrap();
+            let module_dir = addon_path.join(module_name);
+            // If this is a new module, rebuild it and return
+            if !session.sync_odoo.modules.contains_key(&oyarn!("{}", module_name))
+                && module_dir.is_dir()
+                && module_dir.join("__manifest__.py").exists()
+                && let Some(addons_sym) = addon_symbol
+                && let Some(module_symbol) =
+                    Symbol::create_from_path(session, &module_dir, addons_sym, true)
+            {
+                session.sync_odoo.add_to_rebuild_arch(module_symbol);
+                return;
             }
         }
+        // if let Some(parent_path) = path_for_tree.parent() {
+        //     let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
+        //     for entry in ep_mgr.borrow().addons_entry_points.iter() {
+        //         if entry.borrow().path == parent_path.sanitize() {
+        //             let module_symbol = Symbol::create_from_path(session, &path_for_tree, entry.borrow().get_symbol().unwrap().clone(), true);
+        //             if module_symbol.is_some() {
+        //                 session.sync_odoo.add_to_rebuild_arch(module_symbol.unwrap());
+        //             }
+        //             break;
+        //         }
+        //     }
+        //     if parent_path.sanitize() == session.sync_odoo.config.odoo_path.as_ref().unwrap_or(&"".to_string()).clone() + "/odoo/addons" {
+        //         let addons_symbol = session.sync_odoo.get_main_entry().borrow().get_symbol().map(|ep_sym_rc|
+        //             ep_sym_rc.borrow().get_symbol(&(vec![Sy!("odoo"), Sy!("addons")], vec![]), u32::MAX)
+        //         );
+        //         match addons_symbol.and_then(|v| v.get(0).cloned()) {
+        //             Some(addons_symbol) => {
+        //                 let module_symbol = Symbol::create_from_path(session, &path_for_tree, addons_symbol, true);
+        //                 if module_symbol.is_some() {
+        //                     session.sync_odoo.add_to_rebuild_arch(module_symbol.unwrap());
+        //                 }
+        //             }
+        //             _ => {
+        //                 error!("Unable to find addons symbol to create new module");
+        //             }
+        //         }
+        //     }
+        // }
     }
 
     pub fn handle_did_rename(session: &mut SessionInfo, params: RenameFilesParams) {
@@ -2034,7 +2091,6 @@ impl Odoo {
             let new_path = FileMgr::uri2pathname(&f.new_uri);
             session.log_message(MessageType::INFO, format!("Renaming {} to {}", old_path, new_path));
             //1 - delete old uri
-            session.sync_odoo.opened_files.retain(|x| x != &old_path.clone());
             let _ = SyncOdoo::unload_path(session, &PathBuf::from(&old_path), false);
             FileMgr::delete_path(session, &old_path);
             session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&old_path);
@@ -2071,10 +2127,13 @@ impl Odoo {
         //Now let's test if the symbol has been added to main entry tree or not
         for f in params.files.iter() {
             let path = FileMgr::uri2pathname(&f.uri);
-            let path_updated = PathBuf::from(path.clone()).to_tree_path().sanitize();
-            let tree = session.sync_odoo.path_to_main_entry_tree(&PathBuf::from(path.clone()));
-            if PathBuf::from(&path).is_file() && (tree.is_none() || session.sync_odoo.get_main_entry().borrow().root.borrow().get_symbol(&tree.unwrap(), u32::MAX).is_empty()) {
-                //file has not been added to main entry. Let's build a new entry point
+            let path_pb = PathBuf::from(path.clone());
+            let path_updated = path_pb.to_tree_path().sanitize();
+            let tree = session.sync_odoo.path_to_main_entry_tree(&path_pb);
+            if path_pb.is_file() && (tree.is_none() ||
+            (session.sync_odoo.get_main_entry().borrow().root.borrow().get_symbol(tree.as_ref().unwrap(), u32::MAX).is_empty()
+            && session.sync_odoo.get_main_entry().borrow().data_symbols.get(&path_updated).is_none())) {
+                // file has not been added to main entry. Let's build a new entry point
                 EntryPointMgr::create_new_custom_entry_for_path(session, &path_updated, &path);
                 SyncOdoo::process_rebuilds(session, false);
             }

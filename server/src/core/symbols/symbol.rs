@@ -1300,7 +1300,8 @@ impl Symbol {
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") || FileMgr::is_untitled(&path_str) {
             return Some(parent.borrow_mut().add_new_file(session, &name, &path_str));
         }
-        if parent.borrow().get_main_entry_tree(session) == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
+        if parent.borrow().typ() == SymType::NAMESPACE
+        && parent.borrow().get_main_entry_tree(session) == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
             let module = parent.borrow_mut().add_new_module_package(session, &name, path);
             if let Some(module) = module {
                 session.sync_odoo.modules.insert(module.borrow().as_module_package().dir_name.clone(), Rc::downgrade(&module));
