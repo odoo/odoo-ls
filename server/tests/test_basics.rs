@@ -202,3 +202,11 @@ fn test_sections() {
     assert_get_int_eval_values("w", HashSet::from([71, 72, 74]));
 
 }
+
+#[test]
+fn test_star_import_on_disk_dir_does_not_panic() {
+    let (mut odoo, config) = setup::setup::setup_server(false);
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let path = env::current_dir().unwrap().join("tests/data/python/disk_dir_import/star_import.py").sanitize();
+    setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
+}
