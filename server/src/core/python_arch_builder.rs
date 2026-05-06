@@ -222,20 +222,19 @@ impl PythonArchBuilder {
                     }
                     let mut dep_to_add = vec![];
                     let sym_type = import_symbol.borrow().typ();
-                    if sym_type != SymType::COMPILED {
-                        if !Rc::ptr_eq(self.sym_stack.last().unwrap(), &import_symbol) { /*We have to check that the imported symbol is not the current one. It can
-                            happen for example in a .pyi that is importing the .pyd file with the same name. As both exists, odools will try to import the pyi a second time in the same file,
-                            and so create a borrow error here
-                            */
-                            let symbol = import_symbol.borrow();
-                            for (name, loc_syms) in symbol.iter_symbols() {
-                                if all_name_allowed || name_filter.contains(&name) {
-                                    let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, OYarn::from(name.clone()), &import_result.range);
-                                    let mut loc = variable.borrow_mut();
-                                    loc.as_variable_mut().is_import_variable = true;
-                                    loc.as_variable_mut().evaluations = Evaluation::from_sections(&symbol, loc_syms);
-                                    dep_to_add.push(variable.clone());
-                                }
+                    if ![SymType::COMPILED, SymType::DISK_DIR].contains(&sym_type) // DISK_DIR does not have iter_symbols and is a symptom of unresolved dirs in custom EPs
+                    && !Rc::ptr_eq(self.sym_stack.last().unwrap(), &import_symbol) { /*We have to check that the imported symbol is not the current one. It can
+                        happen for example in a .pyi that is importing the .pyd file with the same name. As both exists, odools will try to import the pyi a second time in the same file,
+                        and so create a borrow error here
+                        */
+                        let symbol = import_symbol.borrow();
+                        for (name, loc_syms) in symbol.iter_symbols() {
+                            if all_name_allowed || name_filter.contains(&name) {
+                                let variable = self.sym_stack.last().unwrap().borrow_mut().add_new_variable(session, OYarn::from(name.clone()), &import_result.range);
+                                let mut loc = variable.borrow_mut();
+                                loc.as_variable_mut().is_import_variable = true;
+                                loc.as_variable_mut().evaluations = Evaluation::from_sections(&symbol, loc_syms);
+                                dep_to_add.push(variable.clone());
                             }
                         }
                     }
