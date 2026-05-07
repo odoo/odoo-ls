@@ -7,8 +7,7 @@ use crate::core::module_load_order::sort_by_load_order;
 use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::storage::metrics::{log_slotmap_capacities, log_symbol_counts, log_memory_usage};
-use crate::core::symbols::symbol_keys::{FunctionKey, ModuleKey, SourceFileKey, SymbolKey, Wk};
-use crate::core::xml_data::OdooData;
+use crate::core::symbols::symbol_keys::{FunctionKey, ModuleKey, SourceFileKey, SymbolKey, Wk, XmlId};
 use crate::core::xml_validation::XmlValidator;
 use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
 use crate::features::document_symbols::DocumentSymbolFeature;
@@ -476,7 +475,7 @@ impl SyncOdoo {
             },
             SymbolKey::Namespace(_) => {
                 //starting from > 18.0, odoo is now a namespace. Start import project from odoo/__main__.py
-                let main_file = SymbolTable::create_from_path(session, &PathBuf::from(config_odoo_path.clone()).join("odoo").join("__main__.py"),  odoo_odoo, false);
+                let main_file = SymbolTable::create_from_path(session, &config_odoo_path.clone().join("odoo").join("__main__.py"),  odoo_odoo, false);
                 let Some(main_file) = main_file else {
                     panic!("Not able to find odoo/__main__.py. Aborting...");
                 };
@@ -502,7 +501,7 @@ impl SyncOdoo {
                 return false;
             }
             //if we are > 18.1, odoo.addons is not imported automatically anymore. Let's try to import it manually
-            let addons_folder = SymbolTable::create_from_path(session, &PathBuf::from(config_odoo_path).join("odoo").join("addons"), odoo_odoo, false);
+            let addons_folder = SymbolTable::create_from_path(session, &config_odoo_path.join("odoo").join("addons"), odoo_odoo, false);
             if let Some(SymbolKey::Namespace(addons_ns)) = addons_folder {
                 addons_ns
             } else {
@@ -1288,9 +1287,9 @@ impl SyncOdoo {
     /**
      * search for an xml_id in the already registered xml files.
      * */
-    pub fn get_xml_ids(session: &mut SessionInfo, from_file: SourceFileKey, xml_id: &str, range: &std::ops::Range<usize>, diagnostics: &mut Vec<Diagnostic>) -> Vec<OdooData> {
+    pub fn get_xml_ids(session: &mut SessionInfo, from_file: SourceFileKey, xml_id: &str, range: &std::ops::Range<usize>, diagnostics: &mut Vec<Diagnostic>) -> WeakSet<XmlId> {
         if !session.st().get_entry(from_file).borrow().is_main() {
-            return vec![];
+            return WeakSet::new();
         }
         let id_split = xml_id.split(".").collect::<Vec<&str>>();
         let mut module = None;
@@ -1312,13 +1311,13 @@ impl SyncOdoo {
                     ..diagnostic.clone()
                 });
             }
-            return vec![];
+            return WeakSet::new();
         }
         let Some(module_key) = module else {
             warn!("Module not found for id: {}", xml_id);
-            return vec![];
+            return WeakSet::new();
         };
-        ModuleSymbol::get_xml_id(session.st(), module_key, id_split.last().unwrap())
+        ModuleSymbol::get_xml_id(session.st(), module_key, *id_split.last().unwrap()).unwrap_or(WeakSet::new())
     }
 
     pub fn get_ts_dict(&mut self) -> Wk<SymbolKey> {

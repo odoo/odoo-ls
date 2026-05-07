@@ -1,7 +1,6 @@
 //! Hooks for XML/CSV data file events.
 
-use crate::core::symbols::symbol_keys::SourceFileKey;
-use crate::core::xml_data::OdooDataRecord;
+use crate::core::symbols::symbol_keys::{SourceFileKey, XmlRecordKey};
 use crate::threads::SessionInfo;
 use once_cell::sync::Lazy;
 
@@ -10,7 +9,7 @@ use once_cell::sync::Lazy;
 // ============================================================================
 
 pub type RecordCreationHookFn =
-    fn(session: &mut SessionInfo, source_file: SourceFileKey, record: &OdooDataRecord);
+    fn(session: &mut SessionInfo, source_file: SourceFileKey, record: XmlRecordKey);
 
 /// A hook that triggers when records of specific models are created.
 pub struct RecordCreationHook {
@@ -26,15 +25,15 @@ static record_creation_hooks: Lazy<Vec<RecordCreationHook>> = Lazy::new(|| {
         // Hook: Track res.lang records for language validation
         RecordCreationHook {
             models: vec!["res.lang"],
-            func: |session, source_file, record| {
-                // Find the "code" field and extract its value
-                let Some(code_field) = record.fields.iter().find(|f| f.name == "code") else {
+            func: |session, source_file, record_key| {
+                // Collect valid "code" field key
+                let Some(&field_key) = session.st()[record_key].fields().get("code") else {
                     return;
                 };
-                let Some(lang_code) = code_field.text.as_ref() else {
+                let Some(text) = session.st()[field_key].text.clone() else {
                     return;
                 };
-                session.sync_odoo.add_language(lang_code, source_file);
+                session.sync_odoo.add_language(&text, source_file);
             },
         },
     ]
@@ -45,12 +44,12 @@ static record_creation_hooks: Lazy<Vec<RecordCreationHook>> = Lazy::new(|| {
 pub fn on_record_creation(
     session: &mut SessionInfo,
     source_file: SourceFileKey,
-    record: &OdooDataRecord,
+    record: XmlRecordKey,
 ) {
-    let model_name = record.model.0.as_str();
+    let model_name = session.st()[record].model.0.clone();
     for hook in record_creation_hooks.iter() {
         // Check if hook applies to this model
-        if hook.models.iter().any(|m| *m == model_name) {
+        if hook.models.iter().any(|m| model_name == *m) {
             (hook.func)(session, source_file, record);
         }
     }

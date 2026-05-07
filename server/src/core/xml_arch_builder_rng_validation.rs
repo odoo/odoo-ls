@@ -1,7 +1,8 @@
 use lsp_types::{Diagnostic, Position, Range};
 use roxmltree::Node;
+use ruff_text_size::{TextRange, TextSize};
 
-use crate::{Sy, constants::OYarn, core::{diagnostics::{DiagnosticCode, create_diagnostic}, odoo::SyncOdoo, xml_data::{OdooData, OdooDataField, OdooDataRecord, XmlDataAsset, XmlDataDelete, XmlDataMenuItem, XmlDataTemplate}}, oyarn, threads::SessionInfo};
+use crate::{Sy, constants::OYarn, core::{diagnostics::{DiagnosticCode, create_diagnostic}, odoo::SyncOdoo, symbols::symbol_keys::{SymbolKey, XmlFieldKey}}, oyarn, threads::SessionInfo};
 
 use super::xml_arch_builder::XmlArchBuilder;
 
@@ -169,12 +170,12 @@ impl XmlArchBuilder {
                 self.load_menuitem(session, &child, true, diagnostics);
             }
         }
-        let data = OdooData::MENUITEM(XmlDataMenuItem {
-            file_symbol: self.xml_symbol.into(),
-            xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
-            range: node.range().clone()
-        });
-        self.on_operation_creation(session, found_id, node, data, diagnostics);
+        let data = session.st_mut().add_new_xml_menuitem(
+            self.xml_symbol,
+            found_id.clone().map(OYarn::from),
+            &TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32))
+        );
+        self.on_operation_creation(session, found_id, node, data.into(), diagnostics);
         true
     }
 
@@ -210,17 +211,14 @@ impl XmlArchBuilder {
             }
             return true;
         }
-        let mut data = OdooDataRecord {
-            symbol: self.xml_symbol.into(),
-            model: (oyarn!("{}", node.attribute("model").unwrap()), node.attribute_node("model").unwrap().range()),
-            xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
-            fields: vec![],
-            range: node.range().clone()
-        };
+        let record = session.st_mut().add_new_xml_record(
+            self.xml_symbol.into(),
+            (oyarn!("{}", node.attribute("model").unwrap()), node.attribute_node("model").unwrap().range()),
+            found_id.clone().map(|id| oyarn!("{}", id)),
+            &TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32))
+        );
         for child in node.children().filter(|n| n.is_element()) {
-            if let Some(field) = self.load_field(session, &child, diagnostics) {
-                data.fields.push(field);
-            } else if child.tag_name().name() != "field" {
+            if self.load_field(session, &child, record.into(), diagnostics).is_none() && child.tag_name().name() != "field" {
                 // Diagnostic only for non-field tags, not for invalid ones
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05015, &[child.tag_name().name()]) {
                     diagnostics.push(Diagnostic {
@@ -230,12 +228,12 @@ impl XmlArchBuilder {
                 }
             }
         }
-        let data = OdooData::RECORD(data);
-        self.on_operation_creation(session, found_id, node, data, diagnostics);
+        self.on_operation_creation(session, found_id, node, record.into(), diagnostics);
         true
     }
 
-    fn load_field(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> Option<OdooDataField> {
+    // load a field and add it to the parent symbol. Parent could be either XmlRecordKey or XmlAssetKey
+    fn load_field(&mut self, session: &mut SessionInfo, node: &Node, parent: SymbolKey, diagnostics: &mut Vec<Diagnostic>) -> Option<XmlFieldKey> {
         if node.tag_name().name() != "field" { return None; }
         let Some(node_name_node) = node.attribute_node("name") else {
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05016, &[]) {
@@ -248,7 +246,7 @@ impl XmlArchBuilder {
         };
 
         let has_type = node.attribute("type").is_some();
-        let ref_key = node.attribute_node("ref").map(|rk| (rk.value().to_string(), rk.range()));
+        let ref_key = node.attribute_node("ref").map(|rk| (rk.value().to_string(), TextRange::new(TextSize::new(rk.range().start as u32), TextSize::new(rk.range().end as u32))));
         let has_ref = ref_key.is_some();
         let has_eval = node.attribute("eval").is_some();
         let has_search = node.attribute("search").is_some();
@@ -379,13 +377,14 @@ impl XmlArchBuilder {
                 text_range = Some(child.range());
             }
         }
-        Some(OdooDataField {
-            name: oyarn!("{}", node_name_node.value()),
-            range: node_name_node.range(),
-            text: text,
-            text_range: text_range,
-            ref_key,
-        })
+        let field = session.st_mut().add_new_xml_field(
+            parent,
+            oyarn!("{}", node_name_node.value()),
+            &TextRange::new(TextSize::new(node_name_node.range().start as u32), TextSize::new(node_name_node.range().end as u32)),
+            text,
+            text_range.map(|r| TextRange::new(TextSize::new(r.start as u32), TextSize::new(r.end as u32))),
+            ref_key);
+        Some(field)
     }
 
     fn load_value(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
@@ -483,12 +482,12 @@ impl XmlArchBuilder {
         if node.tag_name().name() != "template" { return false; }
         //no interesting rule to check, as 'any' is valid
         let found_id = node.attribute("id").map(|s| s.to_string());
-        let data = OdooData::TEMPLATE(XmlDataTemplate {
-            file_symbol: self.xml_symbol.into(),
-            xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
-            range: node.range().clone(),
-        });
-        self.on_operation_creation(session, found_id, node, data, diagnostics);
+        let data = session.st_mut().add_new_xml_template(
+            self.xml_symbol,
+            found_id.clone().map(|id| oyarn!("{}", id)),
+            &TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32))
+        );
+        self.on_operation_creation(session, found_id, node, data.into(), diagnostics);
         true
     }
 
@@ -521,13 +520,13 @@ impl XmlArchBuilder {
                 });
             }
         }
-        let data = OdooData::DELETE(XmlDataDelete {
-            file_symbol: self.xml_symbol.into(),
-            xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
-            range: node.range().clone(),
-            model: Sy!(node.attribute("model").unwrap().to_string()),
-        });
-        self.on_operation_creation(session, found_id, node, data, diagnostics);
+        let data = session.st_mut().add_new_xml_delete(
+            self.xml_symbol,
+            found_id.clone().map(|id| oyarn!("{}", id)),
+            &TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32)),
+            Sy!(node.attribute("model").unwrap().to_string())
+        );
+        self.on_operation_creation(session, found_id, node, data.into(), diagnostics);
         true
     }
 
@@ -629,6 +628,10 @@ impl XmlArchBuilder {
                 });
             }
         }
+        let asset = session.st_mut().add_new_xml_asset(
+            self.xml_symbol,
+            found_id.clone().map(OYarn::from),
+            &TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32)));
         // Validate children: must be bundle, path, or field
         let (mut has_bundle, mut has_path) = (false, false);
         for child in node.children().filter(|n| n.is_element()) {
@@ -676,7 +679,7 @@ impl XmlArchBuilder {
                     }
                 },
                 "field" => {
-                    self.load_field(session, &child, diagnostics);
+                    self.load_field(session, &child, asset.into(), diagnostics);
                 },
                 "active" => {},
                 _ => {
@@ -705,12 +708,7 @@ impl XmlArchBuilder {
                 });
             }
         }
-        let data = OdooData::ASSET(XmlDataAsset {
-            file_symbol: self.xml_symbol.into(),
-            xml_id: found_id.clone().map(|id| oyarn!("{}", id)),
-            range: node.range().clone(),
-        });
-        self.on_operation_creation(session, found_id, node, data, diagnostics);
+        self.on_operation_creation(session, found_id, node, asset.into(), diagnostics);
         true
     }
 }
