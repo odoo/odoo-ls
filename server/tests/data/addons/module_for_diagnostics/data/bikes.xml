@@ -53,24 +53,24 @@
     <record model="bikes.bike"> <!-- OLS05014 -->
         <not_field name="name">Nope</not_field>  <!-- OLS05015 -->
         <field nam="watchouttypo!">Nope</field>  <!-- OLS05016 -->
-        <field name="fine" ref="ref" eval="andeval?">Nope</field>  <!-- OLS05017 -->
-        <field name="fine" type="int">3.14</field>  <!-- OLS05018 -->
-        <field name="fine" type="float">am_i_a_float?</field>  <!-- OLS05019 -->
-        <field name="fine" type="list"><not_value/></field>  <!-- OLS05020 -->
-        <field name="fine" type="base64" file="path/to/file">f</field>  <!-- OLS05021 -->
-        <field name="fine" ref="bike_4">f</field>  <!-- OLS05022 -->
-        <field name="fine" model="bike_4"/>  <!-- OLS05023 -->
-        <field name="fine" use="use"/>  <!-- OLS05024 -->
-        <field name="fine" invalid_attr="invalid_attr"/>  <!-- OLS05025 -->
-        <field name="fine"><not_field/></field>  <!-- OLS05026 -->
-        <field name="fine" type="list"><value type="type" search="s">text</value></field>  <!-- OLS05027 -->
-        <field name="fine" type="list"><value type="type" eval="s">text</value></field>  <!-- OLS05028 -->
-        <field name="fine" type="list"><value eval="eval" type="s"/></field>  <!-- OLS05029 -->
-        <field name="fine" type="list"><value file="s">text</value></field>  <!-- OLS05030 -->
-        <field name="fine" type="list"><value eval="eval" file="s"/></field>  <!-- OLS05031 -->
-        <field name="fine" type="list"><value bla="bla">text</value></field>  <!-- OLS05032 -->
-        <field name="fine" type="list"><value type="type"/></field>  <!-- OLS05058 -->
-        <field name="fine" type="list"><value/></field>  <!-- OLS05059 -->
+        <field name="name" ref="ref" eval="andeval?">Nope</field>  <!-- OLS05017 -->
+        <field name="name" type="int">3.14</field>  <!-- OLS05018 -->
+        <field name="name" type="float">am_i_a_float?</field>  <!-- OLS05019 -->
+        <field name="name" type="list"><not_value/></field>  <!-- OLS05020 -->
+        <field name="name" type="base64" file="path/to/file">f</field>  <!-- OLS05021 -->
+        <field name="name" ref="bike_4">f</field>  <!-- OLS05022 -->
+        <field name="name" model="bike_4"/>  <!-- OLS05023 -->
+        <field name="name" use="use"/>  <!-- OLS05024 -->
+        <field name="name" invalid_attr="invalid_attr"/>  <!-- OLS05025 -->
+        <field name="name"><not_field/></field>  <!-- OLS05026 -->
+        <field name="name" type="list"><value type="type" search="s">text</value></field>  <!-- OLS05027 -->
+        <field name="name" type="list"><value type="type" eval="s">text</value></field>  <!-- OLS05028 -->
+        <field name="name" type="list"><value eval="eval" type="s"/></field>  <!-- OLS05029 -->
+        <field name="name" type="list"><value file="s">text</value></field>  <!-- OLS05030 -->
+        <field name="name" type="list"><value eval="eval" file="s"/></field>  <!-- OLS05031 -->
+        <field name="name" type="list"><value bla="bla">text</value></field>  <!-- OLS05032 -->
+        <field name="name" type="list"><value type="type"/></field>  <!-- OLS05058 -->
+        <field name="name" type="list"><value/></field>  <!-- OLS05059 -->
     </record>
     <delete id="id" /> <!-- OLS05033 -->
     <delete model="bikes.bike" id="id" search="search"/> <!-- OLS05034 -->

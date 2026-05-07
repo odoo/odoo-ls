@@ -932,7 +932,7 @@ impl Evaluation {
                                     let class_file = session.st().get_file(base_sym).unwrap();
                                     SyncOdoo::build_now(session, class_file, BuildSteps::ARCH_EVAL);
                                     if !session.st().is_external(class_file.into()) {
-                                        required_dependencies[1].push(class_file.into());
+                                        required_dependencies[1].push(class_file);
                                     }
                                 }
                                 //1: find __init__ method

@@ -3,6 +3,7 @@ use std::{cell::RefCell, path::PathBuf, rc::Rc};
 use lsp_types::{LocationLink, Range};
 use ruff_python_ast::{Expr, ExprCall};
 
+use crate::constants::PackageType;
 use crate::core::symbols::symbol_keys::SourceFileKey;
 use crate::features::features_utils::FeaturesUtils;
 use crate::{
@@ -13,15 +14,14 @@ use crate::{
         odoo::SyncOdoo,
         python_odoo_builder::MAGIC_FIELDS,
         symbols::{
-            symbol_keys::{ModuleKey, SymbolKey},
+            symbol_keys::SymbolKey,
             storage::SymbolTable,
-        },
-        xml_data::OdooData,
+        }
     },
     features::{
         ast_utils::AstUtils,
         csv_ast_utils::CsvAstUtils,
-        xml_ast_utils::{XmlAstResult, XmlAstUtils},
+        xml_ast_utils::XmlAstUtils,
     },
     oyarn,
     threads::SessionInfo,
@@ -34,14 +34,8 @@ pub enum GotoRequest {
     Declaration,
 }
 
-pub enum GotoSourceType {
-    Symbol(SymbolKey),
-    OdooData(OdooData),
-    Module(ModuleKey),
-}
-
 pub struct GotoSource {
-    pub source: GotoSourceType,
+    pub source: SymbolKey,
     pub origin_selection_range: Option<Range>,
 }
 
@@ -70,8 +64,7 @@ impl GotoUtils {
                 domain_found = true;
                 let path = session.st().path(file_symbol).to_string();
                 sources.push(GotoSource {
-                    source:
-                    GotoSourceType::Symbol(*field),
+                    source: field.clone(),
                     origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &field_range))
                 });
             }
@@ -106,7 +99,7 @@ impl GotoUtils {
             model_found = true;
             let path = session.st().path(file_symbol).to_string();
             sources.push(GotoSource {
-                source: GotoSourceType::Symbol(class_key.into()),
+                source: class_key.into(),
                 origin_selection_range: eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &r))
             });
         }
@@ -138,7 +131,7 @@ impl GotoUtils {
             return false;
         };
         sources.push(GotoSource{
-            source: GotoSourceType::Module(module),
+            source: module.into(),
             origin_selection_range: None,
         });
         true
@@ -156,18 +149,17 @@ impl GotoUtils {
         };
         let mut xml_found = false;
         let xml_ids = SyncOdoo::get_xml_ids(session, file_symbol, value.as_str(), &std::ops::Range{start: 0, end: 0}, &mut vec![]);
-        for xml_id in xml_ids {
-            let file = xml_id.get_file_symbol(session.st());
-            if let Some(file) = file {
-                if let Some(_file) = file.upgrade(session.st()) { //test that file is valid to set xml_found to true
-                    xml_found = true;
-                    let path = session.st().path(file_symbol).to_string();
-                    sources.push(GotoSource{
-                        source: GotoSourceType::OdooData(xml_id.clone()),
-                        origin_selection_range: eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &r))
-                    });
-                }
+        for xml_id in xml_ids.iter_valid(session.st()) {
+            let file = session.st().get_file(xml_id.into());
+            if file.is_none() {
+                continue;
             }
+            xml_found = true;
+            let path = session.st().path(file_symbol).to_string();
+            sources.push(GotoSource{
+                source: xml_id.into(),
+                origin_selection_range: eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &r))
+            });
         }
         xml_found
     }
@@ -194,7 +186,7 @@ impl GotoUtils {
                 method_found = true;
                 let path = session.st().path(file_sym).to_string();
                 sources.push(GotoSource {
-                    source: GotoSourceType::Symbol(field),
+                    source: field,
                     origin_selection_range: eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &r))
                 });
             }
@@ -221,7 +213,7 @@ impl GotoUtils {
         }).collect::<Vec<_>>();
         for symbol in symbols {
             sources.push(GotoSource {
-                source: GotoSourceType::Symbol(symbol),
+                source: symbol,
                 origin_selection_range: None,
             });
         }
@@ -292,7 +284,7 @@ impl GotoUtils {
                 for end_symbol in end_symbols.iter() {
                     if let Some(symbol) = end_symbol.upgrade_weak(session.st()) {
                         definition_sources.push(GotoSource{
-                            source: GotoSourceType::Symbol(symbol),
+                            source: symbol,
                             origin_selection_range: None
                         });
                     }
@@ -303,7 +295,7 @@ impl GotoUtils {
                     continue;
                 };
                 definition_sources.push(GotoSource{
-                    source: GotoSourceType::Symbol(symbol),
+                    source: symbol,
                     origin_selection_range: None
                 });
             }
@@ -326,23 +318,12 @@ impl GotoUtils {
             let root = document.root_element();
             let (xml_ast_results, origin_range) = XmlAstUtils::get_symbols(session, file_symbol, root, offset, true);
             for xml_ast_result in xml_ast_results {
-                sources.push(match xml_ast_result {
-                    XmlAstResult::SYMBOL(s) => {
-                        let path = session.sync_odoo.symbol_table.path(file_symbol).to_string();
-                        GotoSource {
-                            source: GotoSourceType::Symbol(s),
-                            origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, origin_range.as_ref().unwrap()))
-                        }
-                    },
-                    XmlAstResult::XML_DATA(record) => {
-                        let Some(xml_file) = record.get_file_symbol(session.st()) else {
-                            continue;
-                        };
-                        let full_path = session.st().path(xml_file).to_string();
-                        GotoSource {
-                            source: GotoSourceType::OdooData(OdooData::RECORD(record)),
-                            origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, origin_range.as_ref().unwrap()))
-                        }
+                sources.push({
+                    let file = session.st().get_file(xml_ast_result).unwrap();
+                    let path = session.sync_odoo.symbol_table.path(file).to_string();
+                    GotoSource {
+                        source: xml_ast_result,
+                        origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, origin_range.as_ref().unwrap()))
                     }
                 });
             }
@@ -361,58 +342,45 @@ impl GotoUtils {
         let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
         let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
         let mut csv_reader = csv::ReaderBuilder::new().quoting(true).from_reader(data.as_bytes());
-        let sources = CsvAstUtils::get_symbols(session, file_symbol, &mut csv_reader, &model_name, offset, &data);
+        let sources = CsvAstUtils::get_symbols(session, file_symbol.unwrap_csv_file_key(), &mut csv_reader, &model_name, offset, &data);
         sources
     }
 
     pub fn goto_source_to_location(session: &mut SessionInfo, def: &GotoSource) -> Vec<LocationLink> {
-        let mut res = vec![];
-        match &def.source {
-            &GotoSourceType::Symbol(symbol) => {
-                if let Some(file_symbol) = session.st().get_file(symbol) {
-                    let full_path = session.st().file_path(file_symbol).to_string();
-                    let symbol_range = if session.st().has_range(symbol) {
-                        let range = session.st().range(symbol).clone();
-                        session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &full_path, &range)
+        let source = def.source;
+        let (path, range) = match source.typ() {
+            SymType::PACKAGE(PackageType::MODULE) => {
+                (
+                    Some(PathBuf::from(&session.st().path(source.as_source_file_key().unwrap())).join("__manifest__.py").sanitize()),
+                    Range::default()
+                )
+            },
+            _ => {
+                if let Some(file) = session.st().get_file(source) {
+                    let path = session.st().path(file).to_string();
+                    let range = if session.st().has_range(source) {
+                        let range = session.st().range(source).clone();
+                        session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &range)
                     } else {
                         Range::default()
                     };
-                    res.push(LocationLink{
-                        origin_selection_range: def.origin_selection_range.clone(),
-                        target_uri: FileMgr::pathname2uri(&full_path),
-                        target_selection_range: symbol_range,
-                        target_range: symbol_range,
-                    });
-                }
-            },
-            &GotoSourceType::Module(module) => {
-                let path = PathBuf::from(&session.st()[module].path).join("__manifest__.py").sanitize();
-                res.push(LocationLink{
-                    origin_selection_range: None,
-                    target_uri: FileMgr::pathname2uri(&path),
-                    target_selection_range: Range::default(),
-                    target_range: Range::default(),
-                });
-            },
-            GotoSourceType::OdooData(xml_id) => {
-                let file = xml_id.get_file_symbol(session.st());
-                if let Some(file) = file {
-                    if let Some(file) = file.upgrade(session.st()) {
-                        //in case of OdooData declared in python or at least "not xml" file
-                        let full_path = session.st().file_path(file).to_string();
-                        let symbol_range = match xml_id.get_symbol().upgrade(session.st()).unwrap().typ() {
-                            SymType::PACKAGE(_) | SymType::FILE | SymType::NAMESPACE | SymType::DISK_DIR => Range::default(),
-                            _ => session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &full_path, &xml_id.get_range()),
-                        };
-                        res.push(LocationLink {
-                            origin_selection_range: def.origin_selection_range.clone(),
-                            target_uri: FileMgr::pathname2uri(&full_path),
-                            target_range: symbol_range,
-                            target_selection_range: symbol_range });
-                    }
+                    (
+                        Some(path),
+                        range
+                    )
+                } else {
+                    (None, Range::default())
                 }
             }
-        }
-        res
+        };
+        let Some(path) = path else {
+            return vec![];
+        };
+        vec![LocationLink{
+            origin_selection_range: def.origin_selection_range.clone(),
+            target_uri: FileMgr::pathname2uri(&path),
+            target_selection_range: range,
+            target_range: range,
+        }]
     }
 }

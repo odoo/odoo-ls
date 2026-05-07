@@ -69,6 +69,12 @@ pub enum SymType{
     CLASS,
     FUNCTION,
     XML_FILE,
+    XML_RECORD,
+    XML_FIELD,
+    XML_MENUITEM,
+    XML_TEMPLATE,
+    XML_ASSET,
+    XML_DELETE,
     CSV_FILE,
 }
 

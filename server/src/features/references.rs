@@ -1,4 +1,4 @@
-use crate::constants::BuildSteps;
+use crate::constants::{BuildSteps, PackageType};
 use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr};
 use crate::core::file_mgr::AstType;
 use crate::core::odoo::SyncOdoo;
@@ -6,7 +6,7 @@ use crate::core::symbols::Dependencies;
 use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::symbol_keys::{ModuleKey, SourceFileKey, SymbolKey};
 use crate::core::symbols::storage::SymbolTable;
-use crate::features::goto_utils::{GotoRequest, GotoSourceType, GotoUtils};
+use crate::features::goto_utils::{GotoRequest, GotoUtils};
 use crate::features::references_csv::CsvAstReferenceVisitor;
 use crate::features::references_xml::XmlAstReferenceVisitor;
 use crate::{
@@ -21,6 +21,7 @@ use ruff_python_ast::{
     StmtClassDef, StmtIf, StmtMatch, StmtRaise, StmtReturn, StmtTry, StmtTypeAlias, StmtWith,
 };
 use ruff_text_size::{Ranged, TextRange, TextSize};
+use tracing::error;
 use std::collections::HashSet;
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
@@ -73,13 +74,28 @@ impl ReferenceFeature {
 
         let mut locations = Vec::new();
         for definition in def_sources.iter() {
-            match &definition.source {
-                &GotoSourceType::Symbol(target_symbol) => {
+            match &definition.source.typ() {
+                SymType::PACKAGE(PackageType::MODULE) => {
+                    let module_key = definition.source.unwrap_module_key();
+                    let module_name = session.st()[module_key].name.clone();
+                    let modules: Vec<_> = session.sync_odoo.modules.values().copied().collect();
+                    for module in modules {
+                        if let Some(module) = module.upgrade(session.st()) {
+                            if session.st()[module].name == module_name {
+                                locations.extend(ReferenceFeature::find_name_in_manifest(session, module));
+                            }
+                            if session.st()[module].depends.iter().any(|(dep, _range)| dep == &module_name) {
+                                locations.extend(ReferenceFeature::find_depend_in_manifest(session, module, &module_name));
+                            }
+                        }
+                    }
+                },
+                SymType::CLASS | SymType::FUNCTION | SymType::VARIABLE | SymType::FILE => {
                     let mut files_to_check = HashSet::new();
 
                     files_to_check.insert(file_symbol);
 
-                    if let Some(target_file) = session.st().get_file(target_symbol) {
+                    if let Some(target_file) = session.st().get_file(definition.source) {
                         let dependents = session.st().dependents(target_file);
                         //take arch and arch_eval dependents
                         for dep_level in [BuildSteps::ARCH, BuildSteps::ARCH_EVAL] {
@@ -91,10 +107,10 @@ impl ReferenceFeature {
                         }
                     }
                     //If the symbol is a model or a field, browse model dependents too
-                    let class_model_to_check = if target_symbol.typ() == SymType::CLASS {
-                        Some(target_symbol)
-                    } else if SymbolTable::is_field(session, target_symbol) {
-                        session.st().get_in_parents(target_symbol, &[SymType::CLASS], true)
+                    let class_model_to_check = if definition.source.typ() == SymType::CLASS {
+                        Some(definition.source)
+                    } else if SymbolTable::is_field(session, definition.source) {
+                        session.st().get_in_parents(definition.source, &[SymType::CLASS], true)
                     } else {
                         None
                     };
@@ -116,25 +132,25 @@ impl ReferenceFeature {
                         };
                         match file {
                             SourceFileKey::File(_) | SourceFileKey::PythonPackage(_) | SourceFileKey::Module(_) => {
-                                locations.extend(ReferenceFeature::references_in_file(session, file, &dep_file_info, &ReferenceTarget::Symbol(target_symbol)));
+                                locations.extend(ReferenceFeature::references_in_file(session, file, &dep_file_info, &ReferenceTarget::Symbol(definition.source)));
                             },
                             SourceFileKey::XmlFile(xml_file) => {
                                 let data = dep_file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
                                 let document = roxmltree::Document::parse(&data);
                                 if let Ok(document) = document {
                                     let root = document.root_element();
-                                    locations.extend(XmlAstReferenceVisitor::search_target(session, xml_file, root, &ReferenceTarget::Symbol(target_symbol)));
+                                    locations.extend(XmlAstReferenceVisitor::search_target(session, xml_file, root, &ReferenceTarget::Symbol(definition.source)));
                                 }
                             },
                             SourceFileKey::CsvFile(csv_file) => {
-                                if SymbolTable::is_field(session, target_symbol) {
+                                if SymbolTable::is_field(session, definition.source) {
                                     let data = dep_file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
                                     let mut csv_reader = csv::ReaderBuilder::new().from_reader(data.as_bytes());
-                                    let model_class = session.st().get_in_parents(target_symbol, &[SymType::CLASS], true);
+                                    let model_class = session.st().get_in_parents(definition.source, &[SymType::CLASS], true);
                                     if let Some(SymbolKey::Class(model_class)) = model_class {
                                         if let Some(model) = &session.st()[model_class]._model {
                                             let model_name = model.name.clone();
-                                            locations.extend(CsvAstReferenceVisitor::search_target(session, csv_file, &mut csv_reader, Some(&model_name), &ReferenceTarget::Symbol(target_symbol), &data));
+                                            locations.extend(CsvAstReferenceVisitor::search_target(session, csv_file, &mut csv_reader, Some(&model_name), &ReferenceTarget::Symbol(definition.source), &data));
                                         }
                                     }
                                 }
@@ -142,13 +158,13 @@ impl ReferenceFeature {
                         }
                     }
                     //add definition
-                    let sym_typ = target_symbol.typ();
+                    let sym_typ = definition.source.typ();
                     if matches!(sym_typ, SymType::CLASS | SymType::FUNCTION | SymType::VARIABLE) {
-                        let file = session.st().get_file(target_symbol).unwrap();
+                        let file = session.st().get_file(definition.source).unwrap();
                         let path = session.st().path(file);
                         let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(path);
                         if let Some(file_info) = file_info {
-                            let transformed_range = file_info.borrow().text_range_to_range(session.st().range(target_symbol), session.sync_odoo.encoding);
+                            let transformed_range = file_info.borrow().text_range_to_range(session.st().range(definition.source), session.sync_odoo.encoding);
                             let uri = FileMgr::pathname2uri(path);
                             locations.push(Location {
                                 uri: uri,
@@ -157,25 +173,12 @@ impl ReferenceFeature {
                         }
                     }
                 },
-                &GotoSourceType::Module(m) => {
-                    let module_name = session.st()[m].name.clone();
-                    let modules: Vec<_> = session.sync_odoo.modules.values().copied().collect();
-                    for module in modules {
-                        if let Some(module) = module.upgrade(session.st()) {
-                            if session.st()[module].name == module_name {
-                                locations.extend(ReferenceFeature::find_name_in_manifest(session, module));
-                            }
-                            if session.st()[module].depends.iter().any(|(dep, _range)| dep == &module_name) {
-                                locations.extend(ReferenceFeature::find_depend_in_manifest(session, module, &module_name));
-                            }
-                        }
-                    }
-                },
-                GotoSourceType::OdooData(data) => {
-                    let xml_id = data.get_xml_id();
+                SymType::XML_ASSET | SymType::XML_DELETE | SymType::XML_RECORD | SymType::XML_MENUITEM | SymType::XML_TEMPLATE => {
+                    let xml_data_key = definition.source.as_xml_data_key().unwrap();
+                    let xml_id = session.st().get_xml_id(xml_data_key);
                     let Some(xml_id) = xml_id else {continue;};
                     //we do not have any dependency for xml-id usage. So let's search in the current module and all modules that depend on it.
-                    let xml_id_file = data.get_file_symbol(session.st()).unwrap().upgrade(session.st()).unwrap();
+                    let xml_id_file = session.st().get_file(definition.source).unwrap();
                     let current_module = session.st().find_module(xml_id_file).unwrap();
                     let data_module_name = session.st()[current_module].dir_name.clone();
                     let mut files_to_process = HashSet::new();
@@ -223,6 +226,9 @@ impl ReferenceFeature {
                             }
                         }
                     }
+                },
+                _ => {
+                    error!("Unsupported definition source type for reference: {}", definition.source.typ());
                 }
             }
         }

@@ -3,10 +3,11 @@ use roxmltree::Error;
 use weak_table::PtrWeakHashSet;
 
 use crate::core::symbols::storage::dependency_mgr::{DependenciesTable, DependentsTable};
-use crate::core::symbols::symbol_keys::{ModuleKey, SymbolKey};
+use crate::core::symbols::symbol_keys::{ModuleKey, SymbolKey, XmlDataKey};
 use crate::core::symbols::Buildable;
 use crate::{core::diagnostics::DiagnosticCode, threads::SessionInfo};
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::{FileInfo, NoqaInfo}, model::Model, xml_data::OdooData}, oyarn};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::{FileInfo, NoqaInfo}, model::Model}, oyarn};
+use std::collections::HashSet;
 use std::{cell::RefCell, collections::HashMap, rc::Weak};
 
 #[derive(Debug)]
@@ -18,7 +19,7 @@ pub struct XmlFileSymbol {
     pub validation_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     pub not_found_models: HashMap<OYarn, BuildSteps>,
-    pub xml_ids: HashMap<OYarn, Vec<OdooData>>,
+    pub (in crate::core::symbols::storage) symbols: HashSet<XmlDataKey>,
     pub (in crate::core::symbols) in_workspace: bool,
     pub self_import: bool,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
@@ -43,7 +44,7 @@ impl XmlFileSymbol {
             validation_status: BuildStatus::PENDING,
             not_found_paths: vec![],
             not_found_models: HashMap::new(),
-            xml_ids: HashMap::new(),
+            symbols: HashSet::new(),
             in_workspace: false,
             self_import: false,
             model_dependencies: PtrWeakHashSet::new(),
@@ -58,9 +59,12 @@ impl XmlFileSymbol {
         self.parent
     }
 
-    /// no child symbols
     pub fn children(&self) -> Vec<SymbolKey> {
-        vec![]
+        self.symbols.iter().map(|k| k.as_symbol_key()).collect()
+    }
+
+    pub fn symbols(&self) -> &HashSet<XmlDataKey> {
+        &self.symbols
     }
 
 }
