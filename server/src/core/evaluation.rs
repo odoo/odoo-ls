@@ -4,14 +4,14 @@ use ruff_python_ast::{Arguments, Expr, ExprCall, FStringPart, Identifier, Number
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use lsp_types::{Diagnostic, Location, Position, Range};
 use weak_table::traits::WeakElement;
-use std::cmp::{max, min};
+use std::cmp::{Ordering, max, min};
 use std::collections::{HashMap, HashSet};
 use std::i32;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::features::references::ReferenceTarget;
-use crate::utils::NoHashBuilder;
+use crate::utils::{NoHashBuilder, compare_semver};
 use crate::{Sy, constants::*, oyarn};
 use crate::core::odoo::SyncOdoo;
 use crate::threads::SessionInfo;
@@ -570,7 +570,7 @@ impl Evaluation {
     * The result is a list, because some ast can give various possible results. For example: a = func()
     * required_dependencies will be filled with dependencies required to build the value, step by step.
     * You have to provide a vector with the length matching the available steps. For example, in arch_eval, required_dependencies
-    * should be equal to vec![vec![], vec![]] to be able to get arch and arch_eval deps at index 0 and 1. It means that if validation is 
+    * should be equal to vec![vec![], vec![]] to be able to get arch and arch_eval deps at index 0 and 1. It means that if validation is
     * not build but required during the eval_from_ast, it will NOT be built
     */
     pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: Rc<RefCell<Symbol>>, max_infer: &TextSize, for_annotation: bool, required_dependencies: &mut Vec<Vec<Rc<RefCell<Symbol>>>>) -> (Vec<Evaluation>, Vec<Diagnostic>) {
@@ -968,7 +968,7 @@ impl Evaluation {
                                 if let Some(init) = init.0.first() {
                                     SyncOdoo::ensure_func_evaluations(session, init);
                                     if let Some(init_eval) = init.borrow().evaluations() {
-                                        //init will always return an instance of the class, so we are not searching the method to check its return type, but rather to check if there is 
+                                        //init will always return an instance of the class, so we are not searching the method to check its return type, but rather to check if there is
                                         //an hook on it. Hooks, can be used to use parameters for context (see relational fields for example).
                                         if init_eval.len() == 1 && init_eval[0].symbol.get_symbol_hook.is_some() {
                                             context.as_mut().unwrap().insert(S!("constructing_class"), ContextValue::SYMBOL(Rc::downgrade(&base_sym)));
@@ -2010,11 +2010,21 @@ impl Evaluation {
                     match s.value.to_str() {
                         "=" | "!=" | ">" | ">=" | "<" | "<=" | "=?" | "=like" | "like" | "not like" | "ilike" |
                         "not ilike" | "=ilike" | "in" | "not in" | "child_of" | "parent_of" | "any" | "not any" => {},
+                        "access" => {
+                            if compare_semver(&session.sync_odoo.full_version, "19.3") == Ordering::Less {
+                                if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03025, &[]) {
+                                    diagnostics.push(Diagnostic {
+                                        range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
+                                        ..diagnostic_base
+                                    });
+                                }
+                            }
+                        }
                         _ => {
                             if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03009, &[]) {
                                 diagnostics.push(Diagnostic {
                                     range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
-                                    ..diagnostic_base.clone()
+                                    ..diagnostic_base
                                 });
                             }
                         }

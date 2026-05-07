@@ -181,6 +181,10 @@ OLS03023, DiagnosticSetting::Error, "Inverse field {0} is not pointing to the cu
  */
 OLS03024, DiagnosticSetting::Info, "Models declared in a function are not supported by OdooLS. OdooLS will use it as a normal class for the rest of the function only",
 /**
+* The 'access' operator in search domain tuples was introduced in 19.3. Thus it is only a valid operator from this version.
+*/
+OLS03025, DiagnosticSetting::Error, "Invalid comparison operator: 'access' is only available from Odoo version 19.3",
+/**
 * Form is no longer available on odoo.tests.common, thus it should not be imported from there.
 */
 OLS03301, DiagnosticSetting::Warning, "Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form",

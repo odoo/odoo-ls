@@ -792,8 +792,16 @@ fn complete_string_literal(session: &mut SessionInfo, file: &Rc<RefCell<Symbol>>
             },
             ExpectedType::DOMAIN_LIST(_) => {},
             ExpectedType::DOMAIN_COMPARATOR => {
-                for (operator, sort_text) in vec![("=", "a"), ("!=", "b"), (">", "c"), (">=", "d"), ("<", "e"), ("<=", "f"), ("=?", "g"),  ("like", "h"), ("=like", "i"), ("not like", "j"), ("ilike", "k"),
-                    ("=ilike", "l"),  ("not ilike", "m"),  ("in", "n"),  ("not in", "o"), ("child_of", "p"), ("parent_of", "q"), ("any", "r"), ("not any", "s")].iter() {
+                const BASE_OPERATORS: &[(&str, &str)] = &[("=", "a"), ("!=", "b"), (">", "c"), (">=", "d"),
+                    ("<", "e"), ("<=", "f"), ("=?", "g"),  ("like", "h"), ("=like", "i"), ("not like", "j"),
+                    ("ilike", "k"), ("=ilike", "l"),  ("not ilike", "m"),  ("in", "n"),  ("not in", "o"),
+                    ("child_of", "p"), ("parent_of", "q"), ("any", "r"), ("not any", "s")];
+                let extra: &[(&str, &str)] = if compare_semver(&session.sync_odoo.full_version, "19.3") >= Ordering::Equal {
+                   &[("access", "t")]
+                } else {
+                    &[]
+                };
+                for (operator, sort_text) in BASE_OPERATORS.iter().chain(extra) {
                     items.push(CompletionItem {
                         label: operator.to_string(),
                         insert_text: None,
