@@ -1366,17 +1366,6 @@ impl PythonArchEvalHooks {
                 session.st_mut().add_dependency(file, module_key.into(), BuildSteps::VALIDATION, BuildSteps::ARCH);
             }
         }
-        let Some(_symbol) = session.st()[module_key].xml_id_locations.get(xml_id.as_str()) else {
-            if in_validation {
-                /*if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05001, &[]) {
-                    diagnostics.push(Diagnostic {
-                        range: FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
-                        ..diagnostic
-                    });
-                }*/ //removed, because there is too many valid place where we can't evaluate it correctly (see stock tests)
-            }
-            return None;
-        };
         //TODO => csv xml_id
         //TODO check module dependencies
         //TODO in xml ONLY, ref can omit the 'module.' before the xml_id

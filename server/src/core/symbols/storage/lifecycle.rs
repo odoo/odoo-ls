@@ -10,11 +10,11 @@
 /// checks, unlike keys stored elsewhere (as Weak).
 
 use crate::{
-    constants::{PackageType, SymType},
+    constants::{OYarn, PackageType, SymType},
     core::{
         entry_point::{EntryPoint, EntryPointCleanupToken}, odoo::SyncOdoo, symbols::{
-            ClassSymbol, CompiledSymbol, CsvFileSymbol, Dependencies, DiskDirSymbol, FileSymbol, FunctionSymbol, ModuleSymbol, NamespaceSymbol, PythonPackageSymbol, RootSymbol, SymbolTable, VariableSymbol, XmlFileSymbol, symbol_keys::{
-                ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey, VariableKey, XmlFileKey
+            ClassSymbol, CompiledSymbol, CsvFileSymbol, Dependencies, DiskDirSymbol, FileSymbol, FunctionSymbol, ModuleSymbol, NamespaceSymbol, PythonPackageSymbol, RootSymbol, SymbolTable, VariableSymbol, XmlFileSymbol, storage::xml::{xml_asset_symbol::XmlAssetSymbol, xml_delete_symbol::XmlDeleteSymbol, xml_field_symbol::XmlFieldSymbol, xml_menuitem_symbol::XmlMenuItemSymbol, xml_record_symbol::XmlRecordSymbol, xml_template_symbol::XmlTemplateSymbol}, symbol_keys::{
+                ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey, VariableKey, XmlAssetKey, XmlDataKey, XmlDeleteKey, XmlFieldKey, XmlFileKey, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey
             }, symbol_mgr::SymbolMgr
         }
     },
@@ -22,7 +22,7 @@ use crate::{
     threads::SessionInfo,
 };
 use ruff_text_size::{TextRange, TextSize};
-use std::{cell::RefCell, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, ops::Range, path::PathBuf, rc::Rc};
 
 impl SymbolTable {
 
@@ -117,6 +117,60 @@ impl SymbolTable {
         xml_file_key
     }
 
+    pub fn add_new_xml_record(&mut self, parent: SymbolKey, model: (OYarn, Range<usize>) , xml_id: Option<OYarn>, range: &TextRange) -> XmlRecordKey {
+        let is_external = self.is_external(parent);
+        let xml_record_sym = XmlRecordSymbol::new(
+            model,
+            xml_id,
+            range.clone(),
+            parent,
+            is_external);
+        let xml_record_key = self.xml_records.insert(xml_record_sym);
+        self.add_xml_data_to_file(parent, xml_record_key.into());
+        xml_record_key
+    }
+
+    pub fn add_new_xml_menuitem(&mut self, parent: XmlFileKey, xml_id: Option<OYarn>, range: &TextRange) -> XmlMenuItemKey {
+        let is_external = self.is_external(parent.into());
+        let xml_menuitem_sym = XmlMenuItemSymbol::new(xml_id, range.clone(), parent.into(), is_external);
+        let xml_menuitem_key = self.xml_menuitems.insert(xml_menuitem_sym);
+        self.add_xml_data_to_file(parent.into(), xml_menuitem_key.into());
+        xml_menuitem_key
+    }
+
+    pub fn add_new_xml_asset(&mut self, parent: XmlFileKey, xml_id: Option<OYarn>, range: &TextRange) -> XmlAssetKey {
+        let is_external = self.is_external(parent.into());
+        let xml_asset_sym = XmlAssetSymbol::new(xml_id, range.clone(), parent.into(), is_external);
+        let xml_asset_key = self.xml_assets.insert(xml_asset_sym);
+        self.add_xml_data_to_file(parent.into(), xml_asset_key.into());
+        xml_asset_key
+    }
+
+    pub fn add_new_xml_delete(&mut self, parent: XmlFileKey, xml_id: Option<OYarn>, range: &TextRange, model: OYarn) -> XmlDeleteKey {
+        let is_external = self.is_external(parent.into());
+        let xml_delete_sym = XmlDeleteSymbol::new(xml_id, range.clone(), model, parent.into(), is_external);
+        let xml_delete_key = self.xml_deletes.insert(xml_delete_sym);
+        self.add_xml_data_to_file(parent.into(), xml_delete_key.into());
+        xml_delete_key
+    }
+
+    //parent should be either XmlRecord or XmlAsset
+    pub fn add_new_xml_field(&mut self, parent: SymbolKey, field_name: OYarn, range: &TextRange, text: Option<String>, text_range: Option<TextRange>, ref_key: Option<(String, TextRange)>) -> XmlFieldKey {
+        let is_external = self.is_external(parent);
+        let xml_field_sym = XmlFieldSymbol::new(field_name.clone(), range.clone(), text, text_range, ref_key, parent, is_external);
+        let xml_field_key = self.xml_fields.insert(xml_field_sym);
+        self.add_field_to_xml_record(parent, xml_field_key, field_name.as_str());
+        xml_field_key
+    }
+
+    pub fn add_new_xml_template(&mut self, parent: XmlFileKey, name: Option<OYarn>, range: &TextRange) -> XmlTemplateKey {
+        let is_external = self.is_external(parent.into());
+        let xml_template_sym = XmlTemplateSymbol::new(name, range.clone(), parent.into(), is_external);
+        let xml_template_key = self.xml_templates.insert(xml_template_sym);
+        self.add_xml_data_to_file(parent.into(), xml_template_key.into());
+        xml_template_key
+    }
+
     pub fn add_new_csv_file(&mut self, parent: ModuleKey, name: &str, path: &str) -> CsvFileKey {
         let parent_symbol = &self.modules[parent];
         let mut csv_file_symbol = CsvFileSymbol::new(name, path, parent, parent_symbol.is_external);
@@ -199,6 +253,42 @@ impl SymbolTable {
         ns.directories[best].module_symbols.insert(oyarn!("{}", name), file)
     }
 
+    fn add_field_to_xml_record(&mut self, parent: SymbolKey, field: XmlFieldKey, name: &str) {
+        match parent {
+            SymbolKey::XmlRecord(r) => {
+                let xml_record = &mut self.xml_records[r];
+                if let Some(replaced_key) = xml_record.fields.insert(oyarn!("{}", name), field) {
+                    self.remove(replaced_key.into());
+                }
+            },
+            SymbolKey::XmlAsset(k) => {
+                let xml_asset = &mut self.xml_assets[k];
+                if let Some(replaced_key) = xml_asset.fields.insert(oyarn!("{}", name), field) {
+                    self.remove(replaced_key.into());
+                }
+            }
+            _ => {
+                panic!("Impossible to add an XmlFieldKey to a {}", parent.typ());
+            }
+        }
+    }
+
+    fn add_xml_data_to_file(&mut self, parent: SymbolKey, content: XmlDataKey) {
+        match parent {
+            SymbolKey::XmlFile(f) => {
+                let xml_file = &mut self.xml_files[f];
+                xml_file.symbols.insert(content);
+            },
+            SymbolKey::CsvFile(f) => {
+                let csv_file = &mut self.csv_files[f];
+                csv_file.symbols.insert(content);
+            },
+            _ => {
+                panic!("Impossible to add an xml data key to a {}", parent.typ());
+            }
+        }
+    }
+
     fn add_to_parent_symbols(&mut self, parent: SymbolKey, content: SymbolKey, name: &str, position: u32) {
          match parent {
             SymbolKey::File(f) => {
@@ -235,7 +325,7 @@ impl SymbolTable {
                 function.symbols.entry(oyarn!("{}",name)).or_default()
                     .entry(section).or_default()
                     .push(content);
-            }
+            },
             _ => {
                 panic!("Impossible to add a {} to a {}", content.typ(), parent.typ());
             }
@@ -308,6 +398,12 @@ impl SymbolTable {
             SymbolKey::Function(k) => { self.functions.remove(k); }
             SymbolKey::Variable(k) => { self.variables.remove(k); }
             SymbolKey::XmlFile(k) => { self.xml_files.remove(k); }
+            SymbolKey::XmlRecord(k) => { self.xml_records.remove(k); }
+            SymbolKey::XmlField(k) => { self.xml_fields.remove(k); }
+            SymbolKey::XmlAsset(k) => { self.xml_assets.remove(k); }
+            SymbolKey::XmlMenuItem(k) => { self.xml_menuitems.remove(k); }
+            SymbolKey::XmlTemplate(k) => { self.xml_templates.remove(k); }
+            SymbolKey::XmlDelete(k) => { self.xml_deletes.remove(k); }
             SymbolKey::CsvFile(k) => { self.csv_files.remove(k); }
         }
     }
@@ -325,6 +421,12 @@ impl SymbolTable {
             SymbolKey::Function(f) => self[f].children(),
             SymbolKey::Variable(v) => self[v].children(),
             SymbolKey::XmlFile(x) => self[x].children(),
+            SymbolKey::XmlRecord(x) => self[x].children(),
+            SymbolKey::XmlField(x) => self[x].children(),
+            SymbolKey::XmlAsset(x) => self[x].children(),
+            SymbolKey::XmlMenuItem(x) => self[x].children(),
+            SymbolKey::XmlTemplate(x) => self[x].children(),
+            SymbolKey::XmlDelete(x) => self[x].children(),
             SymbolKey::CsvFile(c) => self[c].children(),
         }
     }
@@ -367,7 +469,13 @@ impl SymbolTable {
             SymbolKey::Class(c) => { self.classes[c].symbols.remove(&child_name); },
             SymbolKey::Function(f) => { self.functions[f].symbols.remove(&child_name); },
             SymbolKey::Variable(_) => { panic!("A variable cannot be a parent") },
-            SymbolKey::XmlFile(_) => { panic!("An XML file symbol cannot be a parent") },
+            SymbolKey::XmlFile(f) => { self.xml_files[f].symbols.remove(&child.as_xml_data_key().expect("Content of xmlfile should be an xml_data_key")); },
+            SymbolKey::XmlRecord(r) => { self.xml_records[r].fields.remove(&child_name); },
+            SymbolKey::XmlField(_) => { panic!("An XML field cannot be a parent") },
+            SymbolKey::XmlAsset(a) => { self.xml_assets[a].fields.remove(&child_name); },
+            SymbolKey::XmlMenuItem(_) => { panic!("An XML menu item cannot be a parent") },
+            SymbolKey::XmlTemplate(_) => { panic!("An XML template cannot be a parent") },
+            SymbolKey::XmlDelete(_) => { panic!("An XML delete cannot be a parent") },
             SymbolKey::CsvFile(_) => { panic!("A CSV file symbol cannot be a parent") },
         }
     }

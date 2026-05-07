@@ -5,12 +5,12 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::file_mgr::{FileInfo, FileMgr};
 use crate::core::import_resolver::create_module_from_name;
 use crate::core::odoo::SyncOdoo;
-use crate::core::symbols::symbol_keys::{ModuleKey, NamespaceKey, SourceFileKey, SymbolKey};
+use crate::core::symbols::symbol_keys::{ModuleKey, NamespaceKey, SourceFileKey, SymbolKey, XmlId};
 use crate::core::symbols::ModuleSymbol;
-use crate::core::xml_data::OdooData;
 use crate::core::{symbols::storage::SymbolTable, xml_arch_builder::XmlArchBuilder};
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer;
+use crate::weak_collections::WeakSet;
 use crate::{constants::*, oyarn, Sy};
 use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
 use ruff_python_ast::{Expr, ExprStringLiteral, Stmt};
@@ -541,19 +541,14 @@ impl ModuleSymbol {
         &self.all_depends
     }
 
+    pub fn insert_xml_id(symbol_table: &mut SymbolTable, target: ModuleKey, xml_id: OYarn, xml_data: XmlId) {
+        symbol_table[target].xml_ids.entry(xml_id).or_default().insert(xml_data);
+    }
+
     //given an xml_id without "module." part, return all XmlData that declare it ("this_module.xml_id"), regardless of the module declaring it.
-    //For example, stock could create an xml_id called "account.my_xml_id", and so be returned by this function called on "account" module with xml_id "my_xml_id"
-    pub fn get_xml_id(symbol_table: &SymbolTable, target: ModuleKey, xml_id: &str) -> Vec<OdooData> {
+    pub fn get_xml_id(symbol_table: &SymbolTable, target: ModuleKey, xml_id: &str) -> Option<WeakSet<XmlId>> {
         let target_module = &symbol_table[target];
-        let mut res = vec![];
-        if let Some(xml_file_set) = target_module.xml_id_locations.get(xml_id) {
-            for xml_file_key in xml_file_set.iter_valid(symbol_table) {
-                if let Some(xml_data) = symbol_table.get_xml_id(xml_file_key, xml_id) {
-                    res.extend(xml_data.iter().cloned());
-                }
-            }
-        }
-        res
+        return target_module.xml_ids.get(xml_id).cloned();
     }
 
 }

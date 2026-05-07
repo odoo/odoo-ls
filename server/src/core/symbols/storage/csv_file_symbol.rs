@@ -2,9 +2,10 @@ use weak_table::PtrWeakHashSet;
 
 use crate::core::symbols::Buildable;
 use crate::core::symbols::storage::dependency_mgr::{DependenciesTable, DependentsTable};
-use crate::core::symbols::symbol_keys::ModuleKey;
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_keys::SymbolKey, xml_data::OdooData}, oyarn};
-use std::{cell::RefCell, collections::HashMap, rc::Weak};
+use crate::core::symbols::symbol_keys::{ModuleKey, XmlDataKey};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_keys::SymbolKey}, oyarn};
+use std::collections::HashSet;
+use std::{cell::RefCell, rc::Weak};
 
 #[derive(Debug)]
 pub struct CsvFileSymbol {
@@ -15,7 +16,7 @@ pub struct CsvFileSymbol {
     pub validation_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     pub (super) in_workspace: bool,
-    pub xml_ids: HashMap<OYarn, Vec<OdooData>>,
+    pub (super) symbols: HashSet<XmlDataKey>,
     pub model_name: OYarn,
     pub headers: Vec<OYarn>,
     pub self_import: bool,
@@ -43,7 +44,7 @@ impl CsvFileSymbol {
             in_workspace: false,
             model_name: OYarn::default(),
             headers: Vec::new(),
-            xml_ids: HashMap::new(),
+            symbols: HashSet::new(),
             self_import: false,
             model_dependencies: PtrWeakHashSet::new(),
             dependencies: DependenciesTable::default(),
@@ -58,9 +59,12 @@ impl CsvFileSymbol {
         self.parent
     }
 
-    /// no child symbols
     pub fn children(&self) -> Vec<SymbolKey> {
-        vec![]
+        self.symbols.iter().map(|k| k.as_symbol_key()).collect()
+    }
+
+    pub fn symbols(&self) -> &HashSet<XmlDataKey> {
+        &self.symbols
     }
 
 }

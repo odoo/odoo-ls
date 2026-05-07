@@ -7,10 +7,9 @@ use tracing::error;
 
 use crate::constants::OYarn;
 use crate::core::model::{Model, ModelData};
-use crate::core::symbols::ClassSymbol;
+use crate::core::symbols::{ClassSymbol, ModuleSymbol};
 use crate::core::symbols::storage::SymbolTable;
-use crate::core::symbols::symbol_keys::{ClassKey, SymbolKey};
-use crate::core::xml_data::{OdooData, OdooDataRecord};
+use crate::core::symbols::symbol_keys::{ClassKey, SymbolKey, XmlId};
 use crate::threads::SessionInfo;
 use crate::utils::compare_semver;
 use crate::{oyarn, Sy, S};
@@ -55,24 +54,8 @@ impl PythonOdooBuilder {
         self._add_magic_fields(session);
         let model_name = session.st()[sym]._model.as_ref().unwrap().name.clone();
         if let Some(module) = session.st().find_module(sym) {
-            let file = session.st().get_file(self.symbol.into()).unwrap();
             let xml_id_model_name = oyarn!("model_{}", model_name.replace(".", "_").as_str());
-            let set = session.st_mut()[module].xml_id_locations.entry(xml_id_model_name.clone()).or_default();
-            set.insert(file);
-            let range = session.st()[self.symbol].range;
-            session.st_mut().insert_xml_id(file, xml_id_model_name.clone(), OdooData::RECORD(OdooDataRecord {
-                symbol: sym.into(),
-                model: (Sy!("ir.model"), std::ops::Range::<usize> {
-                    start: 0,
-                    end: 1,
-                }),
-                xml_id: Some(xml_id_model_name),
-                fields: vec![],
-                range: std::ops::Range::<usize> {
-                    start: range.start().to_usize(),
-                    end: range.end().to_usize(),
-                }
-            }));
+            ModuleSymbol::insert_xml_id(session.st_mut(), module, xml_id_model_name, XmlId::PythonClass(sym));
         }
         match session.sync_odoo.models.get(&model_name).cloned() {
             Some(model) => model.borrow_mut().add_symbol(session, sym),
