@@ -526,6 +526,30 @@ impl PythonArchEval {
                         for ix in to_remove.into_iter().rev() {
                             v_mut.evaluations.remove(ix);
                         }
+                        if let Some(_parent_as_file) = parent.as_source_file_key() { //if we are at top level
+                            if v_mut.name != "__all__" {
+                                let mut is_mutable = false;
+                                let range = v_mut.range.clone();
+                                let evaluations = v_mut.evaluations.clone();
+                                let list = session.sync_odoo.get_ts_list().clone();
+                                let dict = session.sync_odoo.get_ts_dict().clone();
+                                for evaluation in evaluations {
+                                    if evaluation.value.is_some() {
+                                        if [list, dict].contains(&evaluation.symbol.get_symbol_as_weak(session, None, &mut vec![], None).weak){
+                                            is_mutable = true;
+                                        }
+                                    }
+                                }
+                                if is_mutable {
+                                    if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS03026, &[]) {
+                                        self.diagnostics.push(Diagnostic {
+                                            range: Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
+                                            ..diagnostic
+                                        });
+                                    }
+                                }
+                            }
+                        }
                         for dep in dep_to_add {
                             session.st_mut().add_dependency(self.file, dep, self.current_step, BuildSteps::ARCH);
                         }
