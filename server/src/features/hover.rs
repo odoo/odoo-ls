@@ -1,8 +1,8 @@
 use lsp_types::{Hover, HoverContents, MarkupContent};
 use crate::core::evaluation::Evaluation;
 use crate::core::file_mgr::FileInfo;
-use crate::core::symbols::symbol_keys::SourceFileKey;
-use crate::features::xml_ast_utils::{XmlAstResult, XmlAstUtils};
+use crate::core::symbols::symbol_keys::{SourceFileKey, SymbolKey};
+use crate::features::xml_ast_utils::XmlAstUtils;
 use crate::threads::SessionInfo;
 use std::rc::Rc;
 use crate::features::ast_utils::AstUtils;
@@ -43,8 +43,8 @@ impl HoverFeature {
             let root = document.root_element();
             let (symbols, range) = XmlAstUtils::get_symbols(session, file_symbol, root, offset, true);
             let range = range.map(|r| file_info.borrow().std_range_to_range(&r, session.sync_odoo.encoding));
-            let evals = symbols.iter().filter(|s| matches!(s, XmlAstResult::SYMBOL(_)))
-                .map(|s| Evaluation::eval_from_symbol(session.st(), s.as_symbol(), Some(false))).collect::<Vec<Evaluation>>();
+            let evals = symbols.iter().filter(|s| matches!(s, SymbolKey::Class(_)))
+                .map(|s| Evaluation::eval_from_symbol(session.st(), *s, Some(false))).collect::<Vec<Evaluation>>();
             return Some(Hover { contents:
                 HoverContents::Markup(MarkupContent {
                     kind: lsp_types::MarkupKind::Markdown,

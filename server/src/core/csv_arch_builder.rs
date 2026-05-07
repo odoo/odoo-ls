@@ -1,21 +1,15 @@
 use crate::{
-    constants::{BuildStatus, BuildSteps, OYarn},
-    core::{
+    Sy, constants::{BuildStatus, BuildSteps, OYarn}, core::{
         data_hooks,
-        diagnostics::{create_diagnostic, DiagnosticCode},
+        diagnostics::{DiagnosticCode, create_diagnostic},
         symbols::{
-            symbol_keys::{CsvFileKey, SymbolKey, Wk},
-            Buildable,
+            Buildable, ModuleSymbol, symbol_keys::{CsvFileKey, XmlId, XmlRecordKey}
         },
-        xml_data::{OdooData, OdooDataField, OdooDataRecord},
-    },
-    features::csv_ast_utils::{CsvFieldIter, CsvRecordIter},
-    oyarn,
-    threads::SessionInfo,
-    Sy,
+    }, features::csv_ast_utils::{CsvFieldIter, CsvRecordIter}, oyarn, threads::SessionInfo
 };
 use csv::StringRecord;
 use lsp_types::{Diagnostic, Position, Range};
+use ruff_text_size::{TextRange, TextSize};
 use std::path::PathBuf;
 use tracing::error;
 
@@ -51,10 +45,9 @@ impl CsvArchBuilder {
             for (start, end, result) in CsvRecordIter::new(&mut rdr, content) {
                 match result {
                     Ok(result) => {
-                        let headers = &session.st()[csv_symbol].headers;
-                        let record = self.extract_record(csv_symbol.into(), model_name.clone(), headers, &result, content);
-                        let Some(record) = record else { continue };
-                        let Some(xml_id) = record.xml_id.as_ref() else { continue };
+                        let record = self.extract_record(session, csv_symbol, model_name.clone(), &result, content);
+                        let Some(record_key) = record else { continue };
+                        let Some(xml_id) = session.st()[record_key].xml_id.clone() else { continue };
                         let id_split = xml_id.split(".").collect::<Vec<&str>>();
                         if id_split.len() > 2 {
                             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05051, &[xml_id.as_str()]) {
@@ -72,9 +65,8 @@ impl CsvArchBuilder {
                                 csv_module = module;
                             }
                         }
-                        session.st_mut()[csv_module].xml_id_locations.entry(Sy!(id_split.last().unwrap().to_string())).or_default().insert(csv_symbol.into());
-                        data_hooks::on_record_creation(session, csv_symbol.into(), &record);
-                        session.st_mut()[csv_symbol].xml_ids.entry(Sy!(id_split.last().unwrap().to_string())).or_insert(vec![]).push(OdooData::RECORD(record));
+                        data_hooks::on_record_creation(session, csv_symbol.into(), record_key);
+                        ModuleSymbol::insert_xml_id(session.st_mut(), csv_module, Sy!(id_split.last().unwrap().to_string()), XmlId::XmlRecord(record_key));
                     },
                     Err(err) => {
                          match err.kind() {
@@ -106,45 +98,36 @@ impl CsvArchBuilder {
         diagnostics
     }
 
-    fn extract_record(&self, file_symbol: Wk<SymbolKey>, model_name: OYarn, headers: &Vec<OYarn>, record: &StringRecord, content: &String) -> Option<OdooDataRecord> {
+    fn extract_record(&self, session: &mut SessionInfo, file_symbol: CsvFileKey, model_name: OYarn, record: &StringRecord, content: &String) -> Option<XmlRecordKey> {
         let field_iter = CsvFieldIter::new(record, content)?;
-        let mut fields = vec![];
         let mut last_end = 0;
         let mut xml_id = None;
+        let record_key = session.st_mut().add_new_xml_record(
+            file_symbol.into(),
+            (model_name, core::ops::Range {
+                start: 0 as usize,
+                end: 1 as usize
+            }),
+            None, //dummy
+            &TextRange::new(TextSize::new(0), TextSize::new(0 as u32)) //dummy
+        );
+        let headers = &session.st()[file_symbol].headers.clone();
         for (idx, (start, end, field)) in field_iter.enumerate() {
             let field_name = headers.get(idx).unwrap().clone();
             if field_name == "id" {
                 xml_id = Some(oyarn!("{}", field));
             }
-            fields.push(
-                OdooDataField {
-                    name: field_name,
-                    range: core::ops::Range {
-                        start: start as usize,
-                        end: end as usize,
-                    },
-                    text: Some(field.to_string()),
-                    text_range: Some(core::ops::Range {
-                        start: start as usize,
-                        end: end as usize,
-                    }),
-                    ref_key: None,
-                }
-            );
+            session.st_mut().add_new_xml_field(record_key.into(),
+                field_name,
+                &TextRange::new(TextSize::new(start as u32), TextSize::new(end as u32)),
+                Some(field.to_string()),
+                Some(TextRange::new(TextSize::new(start as u32), TextSize::new(end as u32))),
+                None);
             last_end = end;
         }
-        Some(OdooDataRecord {
-            symbol: file_symbol,
-            fields: fields,
-            model: (model_name, core::ops::Range {
-                start: 0 as usize,
-                end: 1 as usize
-            }),
-            xml_id: xml_id,
-            range: core::ops::Range{
-                start: record.position().unwrap().byte() as usize,
-                end: last_end as usize
-            }
-        })
+        let rec = &mut session.st_mut()[record_key];
+        rec.xml_id = xml_id;
+        rec.range = TextRange::new(TextSize::new(record.position().unwrap().byte() as u32), TextSize::new(last_end as u32));
+        Some(record_key)
     }
 }

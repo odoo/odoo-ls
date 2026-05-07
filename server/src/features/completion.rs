@@ -1242,5 +1242,11 @@ fn get_completion_item_kind(typ: &SymType) -> CompletionItemKind {
         SymType::FUNCTION => CompletionItemKind::FUNCTION,
         SymType::XML_FILE => CompletionItemKind::FILE,
         SymType::CSV_FILE => CompletionItemKind::FILE,
+        SymType::XML_RECORD => CompletionItemKind::CONSTANT,
+        SymType::XML_FIELD => CompletionItemKind::CONSTANT,
+        SymType::XML_MENUITEM => CompletionItemKind::CONSTANT,
+        SymType::XML_TEMPLATE => CompletionItemKind::CONSTANT,
+        SymType::XML_ASSET => CompletionItemKind::CONSTANT,
+        SymType::XML_DELETE => CompletionItemKind::CONSTANT,
     }
 }

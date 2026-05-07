@@ -430,17 +430,18 @@ fn test_definition_csv() {
     assert!(base_au.len() >= 1, "Expected 1 location for record field 'base_au'");
     let path = session.st().file_path(res_country_file);
     assert_eq!(base_au[0].target_uri.to_file_path().unwrap().sanitize(), path, "Expected location to be at least in res_country_data.xml file");
-    let xml_id_data = session.st()[res_country_file.unwrap_xml_file_key()].xml_ids.get(&Sy!("au")).cloned();
-    assert!(xml_id_data.is_some(), "Expected 1 symbol for xml_id_data");
-    let xml_id_vec = xml_id_data.unwrap();
+    let xml_id_data = session.st()[base_module].xml_ids.get(&Sy!("au")).cloned();
+    assert!(xml_id_data.is_some(), "Expected 1 symbol set for xml_id_data");
+    let xml_id_vec: Vec<_> = xml_id_data.unwrap().iter_valid(session.st()).collect();
     assert!(xml_id_vec.len() == 1, "Expected 1 symbol for xml_id_data");
-    let xml_id = xml_id_vec[0].clone();
+    let xml_id = xml_id_vec[0];
     let mut found_one = false;
     for definition in base_au.iter() {
-        let file_symbol = xml_id.get_file_symbol(session.st()).unwrap().upgrade(session.st()).unwrap();
+        let file_symbol = session.st().get_file(xml_id.into()).unwrap();
         let path = session.st().file_path(file_symbol).to_string();
         if definition.target_uri.to_file_path().unwrap().sanitize() == path {
-            let range = session.sync_odoo.get_file_mgr().borrow().std_range_to_range(&mut session, &path, &xml_id.get_range());
+            let range = session.st().range(xml_id.into()).clone();
+            let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(&mut session, &path, &range);
             assert!(definition.target_range == range, "Expected base.au to be at the same location as the xml_id symbol");
             found_one = true;
         }
@@ -545,7 +546,7 @@ fn test_csv_quoted_commas() {
     // quoted field, the record must still be registered. With quoting=false
     // (old bug) the interior comma caused a field-count error → record skipped.
     assert!(
-        session.st()[module].xml_id_locations.contains_key("state_comma_1"),
+        session.st()[module].xml_ids.contains_key("state_comma_1"),
         "state_comma_1 not found in xml_id_locations — CSV record with comma in quoted field was skipped"
     );
 }
@@ -622,7 +623,7 @@ fn test_csv_ranges_unquoted_lf(session: &mut SessionInfo) {
         .upgrade(session.st())
         .unwrap();
     assert!(
-        session.st()[module].xml_id_locations.contains_key("state_unquoted_1"),
+        session.st()[module].xml_ids.contains_key("state_unquoted_1"),
         "state_unquoted_1 not found in xml_id_locations"
     );
 }
@@ -689,7 +690,7 @@ fn test_csv_ranges_quoted_lf(session: &mut SessionInfo) {
         .upgrade(session.st())
         .unwrap();
     assert!(
-        session.st()[module].xml_id_locations.contains_key("state_quoted_1"),
+        session.st()[module].xml_ids.contains_key("state_quoted_1"),
         "state_quoted_1 not found in xml_id_locations"
     );
 }
@@ -751,7 +752,7 @@ fn test_csv_ranges_unquoted_crlf(session: &mut SessionInfo) {
         .upgrade(session.st())
         .unwrap();
     assert!(
-        session.st()[module].xml_id_locations.contains_key("state_unquoted_crlf_1"),
+        session.st()[module].xml_ids.contains_key("state_unquoted_crlf_1"),
         "state_unquoted_crlf_1 not found in xml_id_locations — CRLF handling issue"
     );
 }
@@ -817,7 +818,7 @@ fn test_csv_ranges_quoted_crlf(session: &mut SessionInfo) {
         .upgrade(session.st())
         .unwrap();
     assert!(
-        session.st()[module].xml_id_locations.contains_key("state_quoted_crlf_1"),
+        session.st()[module].xml_ids.contains_key("state_quoted_crlf_1"),
         "state_quoted_crlf_1 not found in xml_id_locations — CRLF + quoting handling issue"
     );
 }
