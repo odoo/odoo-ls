@@ -13,6 +13,12 @@ new_key_type! { pub struct ClassKey; }
 new_key_type! { pub struct FunctionKey; }
 new_key_type! { pub struct VariableKey; }
 new_key_type! { pub struct XmlFileKey; }
+new_key_type! { pub struct XmlRecordKey; }
+new_key_type! { pub struct XmlFieldKey; }
+new_key_type! { pub struct XmlMenuItemKey; }
+new_key_type! { pub struct XmlTemplateKey; }
+new_key_type! { pub struct XmlAssetKey; }
+new_key_type! { pub struct XmlDeleteKey; }
 new_key_type! { pub struct CsvFileKey; }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -28,6 +34,12 @@ pub enum SymbolKey {
     Function(FunctionKey),
     Variable(VariableKey),
     XmlFile(XmlFileKey),
+    XmlRecord(XmlRecordKey),
+    XmlField(XmlFieldKey),
+    XmlMenuItem(XmlMenuItemKey),
+    XmlTemplate(XmlTemplateKey),
+    XmlAsset(XmlAssetKey),
+    XmlDelete(XmlDeleteKey),
     CsvFile(CsvFileKey),
 }
 
@@ -45,6 +57,12 @@ impl SymbolKey {
             Self::Function(_) => SymType::FUNCTION,
             Self::Variable(_) => SymType::VARIABLE,
             Self::XmlFile(_) => SymType::XML_FILE,
+            Self::XmlRecord(_) => SymType::XML_RECORD,
+            Self::XmlField(_) => SymType::XML_FIELD,
+            Self::XmlMenuItem(_) => SymType::XML_MENUITEM,
+            Self::XmlTemplate(_) => SymType::XML_TEMPLATE,
+            Self::XmlAsset(_) => SymType::XML_ASSET,
+            Self::XmlDelete(_) => SymType::XML_DELETE,
             Self::CsvFile(_) => SymType::CSV_FILE,
         }
     }
@@ -109,6 +127,48 @@ impl SymbolKey {
         match self {
             SymbolKey::XmlFile(k) => *k,
             _ => panic!("Not a XmlFileKey"),
+        }
+    }
+
+    pub fn unwrap_xml_record_key(&self) -> XmlRecordKey {
+        match self {
+            SymbolKey::XmlRecord(k) => *k,
+            _ => panic!("Not a XmlRecordKey"),
+        }
+    }
+
+    pub fn unwrap_xml_field_key(&self) -> XmlFieldKey {
+        match self {
+            SymbolKey::XmlField(k) => *k,
+            _ => panic!("Not a XmlFieldKey"),
+        }
+    }
+
+    pub fn unwrap_xml_menu_item_key(&self) -> XmlMenuItemKey {
+        match self {
+            SymbolKey::XmlMenuItem(k) => *k,
+            _ => panic!("Not a XmlMenuItemKey"),
+        }
+    }
+
+    pub fn unwrap_xml_template_key(&self) -> XmlTemplateKey {
+        match self {
+            SymbolKey::XmlTemplate(k) => *k,
+            _ => panic!("Not a XmlTemplateKey"),
+        }
+    }
+
+    pub fn unwrap_xml_asset_key(&self) -> XmlAssetKey {
+        match self {
+            SymbolKey::XmlAsset(k) => *k,
+            _ => panic!("Not a XmlAssetKey"),
+        }
+    }
+
+    pub fn unwrap_xml_delete_key(&self) -> XmlDeleteKey {
+        match self {
+            SymbolKey::XmlDelete(k) => *k,
+            _ => panic!("Not a XmlDeleteKey"),
         }
     }
 
@@ -191,6 +251,12 @@ impl_from_key! {
     Function(FunctionKey),
     Variable(VariableKey),
     XmlFile(XmlFileKey),
+    XmlRecord(XmlRecordKey),
+    XmlField(XmlFieldKey),
+    XmlMenuItem(XmlMenuItemKey),
+    XmlTemplate(XmlTemplateKey),
+    XmlAsset(XmlAssetKey),
+    XmlDelete(XmlDeleteKey),
     CsvFile(CsvFileKey),
 }
 
@@ -227,10 +293,88 @@ impl_weak_symbol_key_from! {
     FunctionKey,
     VariableKey,
     XmlFileKey,
+    XmlRecordKey,
+    XmlFieldKey,
+    XmlMenuItemKey,
+    XmlTemplateKey,
+    XmlAssetKey,
+    XmlDeleteKey,
     CsvFileKey,
     SourceFileKey,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum XmlDataKey {
+    RECORD(XmlRecordKey),
+    MENUITEM(XmlMenuItemKey),
+    TEMPLATE(XmlTemplateKey),
+    ASSET(XmlAssetKey),
+    DELETE(XmlDeleteKey),
+}
+
+impl XmlDataKey {
+    pub fn as_symbol_key(&self) -> SymbolKey {
+        match self {
+            XmlDataKey::RECORD(k) => SymbolKey::XmlRecord(*k),
+            XmlDataKey::MENUITEM(k) => SymbolKey::XmlMenuItem(*k),
+            XmlDataKey::TEMPLATE(k) => SymbolKey::XmlTemplate(*k),
+            XmlDataKey::ASSET(k) => SymbolKey::XmlAsset(*k),
+            XmlDataKey::DELETE(k) => SymbolKey::XmlDelete(*k),
+        }
+    }
+
+    pub fn as_xml_record_key(&self) -> Option<XmlRecordKey> {
+        match self {
+            XmlDataKey::RECORD(k) => Some(*k),
+            _ => None,
+        }
+    }
+}
+
+impl From<XmlDataKey> for SymbolKey {
+    fn from(key: XmlDataKey) -> Self {
+        match key {
+            XmlDataKey::RECORD(k) => k.into(),
+            XmlDataKey::MENUITEM(k) => k.into(),
+            XmlDataKey::TEMPLATE(k) => k.into(),
+            XmlDataKey::ASSET(k) => k.into(),
+            XmlDataKey::DELETE(k) => k.into(),
+        }
+    }
+}
+
+impl From<XmlRecordKey> for XmlDataKey {
+    fn from(key: XmlRecordKey) -> Self { XmlDataKey::RECORD(key) }
+}
+
+impl From<XmlMenuItemKey> for XmlDataKey {
+    fn from(key: XmlMenuItemKey) -> Self { XmlDataKey::MENUITEM(key ) }
+}
+
+impl From<XmlTemplateKey> for XmlDataKey {
+    fn from(key: XmlTemplateKey) -> Self { XmlDataKey::TEMPLATE(key) }
+}
+
+impl From<XmlAssetKey> for XmlDataKey {
+    fn from(key: XmlAssetKey) -> Self { XmlDataKey::ASSET(key) }
+}
+
+impl From<XmlDeleteKey> for XmlDataKey {
+    fn from(key: XmlDeleteKey) -> Self { XmlDataKey::DELETE(key) }
+}
+
+impl SymbolKey {
+    pub fn as_xml_data_key(&self) -> Option<XmlDataKey> {
+        match *self {
+            SymbolKey::XmlRecord(k) => Some(k.into()),
+            SymbolKey::XmlMenuItem(k) => Some(k.into()),
+            SymbolKey::XmlTemplate(k) => Some(k.into()),
+            SymbolKey::XmlAsset(k) => Some(k.into()),
+            SymbolKey::XmlDelete(k) => Some(k.into()),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SourceFileKey {
@@ -288,6 +432,13 @@ impl SourceFileKey {
             _ => panic!("Not a FileKey"),
         }
     }
+
+    pub fn unwrap_csv_file_key(&self) -> CsvFileKey {
+        match self {
+            SourceFileKey::CsvFile(k) => *k,
+            _ => panic!("Not a CsvFileKey"),
+        }
+    }
 }
 
 impl SymbolKey {
@@ -323,3 +474,63 @@ impl_symbol_key_partial_eq! {
     FileKey, CompiledKey, ClassKey, FunctionKey, VariableKey,
     XmlFileKey, CsvFileKey, SourceFileKey,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum XmlId {
+    PythonClass(ClassKey),
+    XmlRecord(XmlRecordKey),
+    XmlMenuitem(XmlMenuItemKey),
+    XmlTemplate(XmlTemplateKey),
+    XmlAsset(XmlAssetKey),
+    XmlDelete(XmlDeleteKey),
+}
+
+impl From<XmlDataKey> for XmlId {
+    fn from(key: XmlDataKey) -> Self {
+        match key {
+            XmlDataKey::RECORD(k) => XmlId::XmlRecord(k),
+            XmlDataKey::DELETE(k) => XmlId::XmlDelete(k),
+            XmlDataKey::MENUITEM(k) => XmlId::XmlMenuitem(k),
+            XmlDataKey::TEMPLATE(k) => XmlId::XmlTemplate(k),
+            XmlDataKey::ASSET(k) => XmlId::XmlAsset(k),
+        }
+    }
+}
+
+impl From<XmlId> for SymbolKey {
+    fn from(key: XmlId) -> Self {
+        match key {
+            XmlId::PythonClass(k) => k.into(),
+            XmlId::XmlRecord(k) => k.into(),
+            XmlId::XmlMenuitem(k) => k.into(),
+            XmlId::XmlTemplate(k) => k.into(),
+            XmlId::XmlAsset(k) => k.into(),
+            XmlId::XmlDelete(k) => k.into(),
+        }
+    }
+}
+
+impl From<ClassKey> for XmlId {
+    fn from(key: ClassKey) -> Self { XmlId::PythonClass(key) }
+}
+
+impl From<XmlRecordKey> for XmlId {
+    fn from(key: XmlRecordKey) -> Self { XmlId::XmlRecord(key) }
+}
+
+impl From<XmlMenuItemKey> for XmlId {
+    fn from(key: XmlMenuItemKey) -> Self { XmlId::XmlMenuitem(key) }
+}
+
+impl From<XmlTemplateKey> for XmlId {
+    fn from(key: XmlTemplateKey) -> Self { XmlId::XmlTemplate(key) }
+}
+
+impl From<XmlAssetKey> for XmlId {
+    fn from(key: XmlAssetKey) -> Self { XmlId::XmlAsset(key) }
+}
+
+impl From<XmlDeleteKey> for XmlId {
+    fn from(key: XmlDeleteKey) -> Self { XmlId::XmlDelete(key) }
+}
+

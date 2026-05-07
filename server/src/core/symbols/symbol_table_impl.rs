@@ -20,10 +20,9 @@ use crate::{
         odoo::SyncOdoo,
         symbols::{
             Buildable, Dependencies, storage::{SymbolTable, dependency_mgr::{DependenciesTable, DependentsTable}}, symbol_keys::{
-                ClassKey, FunctionKey, KeyValidator, ModuleKey, NamespaceKey, RootKey, SourceFileKey, SymbolKey, VariableKey
+                ClassKey, FunctionKey, KeyValidator, ModuleKey, NamespaceKey, RootKey, SourceFileKey, SymbolKey, VariableKey, XmlDataKey
             }, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}
         },
-        xml_data::OdooData,
     }, threads::SessionInfo, utils::{NoHashBuilder, PathSanitizer, compare_semver}, weak_collections::WeakSet
 };
 
@@ -51,7 +50,6 @@ impl SymbolTable {
             SymbolKey::Function(f) => &mut self[f],
             SymbolKey::Module(m) => &mut self[m],
             SymbolKey::PythonPackage(p) => &mut self[p],
-
             _ => {panic!("Not a symbol Mgr");}
         }
     }
@@ -69,6 +67,12 @@ impl SymbolTable {
             SymbolKey::Function(k) => &self[k].name,
             SymbolKey::Variable(k) => &self[k].name,
             SymbolKey::XmlFile(k) => &self[k].name,
+            SymbolKey::XmlRecord(_) => panic!("XmlRecord doesn't have a name"), //TODO do not have a panic?
+            SymbolKey::XmlField(_) => panic!("XmlField doesn't have a name"),
+            SymbolKey::XmlMenuItem(_) => panic!("XmlMenuItem doesn't have a name"),
+            SymbolKey::XmlTemplate(_) => panic!("XmlTemplate doesn't have a name"),
+            SymbolKey::XmlAsset(_) => panic!("XmlAsset doesn't have a name"),
+            SymbolKey::XmlDelete(_) => panic!("XmlDelete doesn't have a name"),
             SymbolKey::CsvFile(k) => &self[k].name,
         }
     }
@@ -86,6 +90,12 @@ impl SymbolTable {
             SymbolKey::Function(f) => self[f].is_external,
             SymbolKey::Variable(v) => self[v].is_external,
             SymbolKey::XmlFile(x) => self[x].is_external,
+            SymbolKey::XmlRecord(x) => self[x].is_external,
+            SymbolKey::XmlField(x) => self[x].is_external,
+            SymbolKey::XmlMenuItem(x) => self[x].is_external,
+            SymbolKey::XmlTemplate(x) => self[x].is_external,
+            SymbolKey::XmlAsset(x) => self[x].is_external,
+            SymbolKey::XmlDelete(x) => self[x].is_external,
             SymbolKey::CsvFile(c) => self[c].is_external,
         }
     }
@@ -103,6 +113,12 @@ impl SymbolTable {
             SymbolKey::Function(f) => self[f].is_external = external,
             SymbolKey::Variable(v) => self[v].is_external = external,
             SymbolKey::XmlFile(x) => self[x].is_external = external,
+            SymbolKey::XmlRecord(x) => self[x].is_external = external,
+            SymbolKey::XmlField(x) => self[x].is_external = external,
+            SymbolKey::XmlMenuItem(x) => self[x].is_external = external,
+            SymbolKey::XmlTemplate(x) => self[x].is_external = external,
+            SymbolKey::XmlAsset(x) => self[x].is_external = external,
+            SymbolKey::XmlDelete(x) => self[x].is_external = external,
             SymbolKey::CsvFile(c) => self[c].is_external = external,
         }
     }
@@ -120,6 +136,12 @@ impl SymbolTable {
             SymbolKey::Function(_) => true,
             SymbolKey::Variable(_) => true,
             SymbolKey::XmlFile(_) => false,
+            SymbolKey::XmlRecord(_) => true,
+            SymbolKey::XmlField(_) => true,
+            SymbolKey::XmlMenuItem(_) => true,
+            SymbolKey::XmlTemplate(_) => true,
+            SymbolKey::XmlAsset(_) => true,
+            SymbolKey::XmlDelete(_) => true,
             SymbolKey::CsvFile(_) => false,
         }
     }
@@ -137,6 +159,12 @@ impl SymbolTable {
             SymbolKey::Function(f) => &self[f].range,
             SymbolKey::Variable(v) => &self[v].range,
             SymbolKey::XmlFile(_) => panic!(),
+            SymbolKey::XmlRecord(x) => &self[x].range,
+            SymbolKey::XmlField(x) => &self[x].range,
+            SymbolKey::XmlMenuItem(x) => &self[x].range,
+            SymbolKey::XmlTemplate(x) => &self[x].range,
+            SymbolKey::XmlAsset(x) => &self[x].range,
+            SymbolKey::XmlDelete(x) => &self[x].range,
             SymbolKey::CsvFile(_) => panic!(),
         }
     }
@@ -154,6 +182,12 @@ impl SymbolTable {
             SymbolKey::Function(k) => Some(self[k].parent()),
             SymbolKey::Variable(k) => Some(self[k].parent()),
             SymbolKey::XmlFile(x) => Some(self[x].parent().into()),
+            SymbolKey::XmlRecord(x) => Some(self[x].parent()),
+            SymbolKey::XmlField(x) => Some(self[x].parent()),
+            SymbolKey::XmlMenuItem(x) => Some(self[x].parent()),
+            SymbolKey::XmlTemplate(x) => Some(self[x].parent()),
+            SymbolKey::XmlAsset(x) => Some(self[x].parent()),
+            SymbolKey::XmlDelete(x) => Some(self[x].parent()),
             SymbolKey::CsvFile(c) => Some(self[c].parent().into()),
         }
     }
@@ -171,6 +205,12 @@ impl SymbolTable {
             SymbolKey::Function(_) => vec![],
             SymbolKey::Variable(_) => vec![],
             SymbolKey::XmlFile(x) => vec![self[x].path.clone()],
+            SymbolKey::XmlRecord(_) => vec![],
+            SymbolKey::XmlField(_) => vec![],
+            SymbolKey::XmlMenuItem(_) => vec![],
+            SymbolKey::XmlTemplate(_) => vec![],
+            SymbolKey::XmlAsset(_) => vec![],
+            SymbolKey::XmlDelete(_) => vec![],
             SymbolKey::CsvFile(c) => vec![self[c].path.clone()],
         }
     }
@@ -252,6 +292,12 @@ impl SymbolTable {
             SymbolKey::Function(_) => panic!("No module symbol on Function"),
             SymbolKey::Variable(_) => panic!("No module symbol on Variable"),
             SymbolKey::XmlFile(_) => panic!("No module symbol on XmlFileSymbol"),
+            SymbolKey::XmlRecord(_) => panic!("No module symbol on XmlRecordSymbol"),
+            SymbolKey::XmlField(_) => panic!("No module symbol on XmlFieldSymbol"),
+            SymbolKey::XmlMenuItem(_) => panic!("No module symbol on XmlMenuItemSymbol"),
+            SymbolKey::XmlTemplate(_) => panic!("No module symbol on XmlTemplateSymbol"),
+            SymbolKey::XmlAsset(_) => panic!("No module symbol on XmlAssetSymbol"),
+            SymbolKey::XmlDelete(_) => panic!("No module symbol on XmlDeleteSymbol"),
             SymbolKey::CsvFile(_) => panic!("No module symbol on CsvFileSymbol"),
         }
     }
@@ -270,6 +316,12 @@ impl SymbolTable {
             SymbolKey::Function(_) => panic!(),
             SymbolKey::Variable(_) => panic!(),
             SymbolKey::XmlFile(x) => self[x].is_in_workspace(),
+            SymbolKey::XmlRecord(_) => panic!(),
+            SymbolKey::XmlField(_) => panic!(),
+            SymbolKey::XmlMenuItem(_) => panic!(),
+            SymbolKey::XmlTemplate(_) => panic!(),
+            SymbolKey::XmlAsset(_) => panic!(),
+            SymbolKey::XmlDelete(_) => panic!(),
             SymbolKey::CsvFile(c) => self[c].is_in_workspace(),
         }
     }
@@ -287,6 +339,12 @@ impl SymbolTable {
             SymbolKey::Function(_) => panic!(),
             SymbolKey::Variable(_) => panic!(),
             SymbolKey::XmlFile(x) => self[x].set_in_workspace(in_workspace),
+            SymbolKey::XmlRecord(_) => panic!(),
+            SymbolKey::XmlField(_) => panic!(),
+            SymbolKey::XmlMenuItem(_) => panic!(),
+            SymbolKey::XmlTemplate(_) => panic!(),
+            SymbolKey::XmlAsset(_) => panic!(),
+            SymbolKey::XmlDelete(_) => panic!(),
             SymbolKey::CsvFile(c) => self[c].set_in_workspace(in_workspace),
         }
     }
@@ -301,11 +359,17 @@ impl SymbolTable {
             SymbolKey::PythonPackage(k) => self[k].build_status(step),
             SymbolKey::Module(k) => self[k].build_status(step),
             SymbolKey::File(k) => self[k].build_status(step),
-            SymbolKey::Compiled(_) => todo!(),
-            SymbolKey::Class(_) => todo!(),
+            SymbolKey::Compiled(_) => panic!(),
+            SymbolKey::Class(_) => panic!(),
             SymbolKey::Function(k) => self[k].build_status(step),
-            SymbolKey::Variable(_) => todo!(),
+            SymbolKey::Variable(_) => panic!(),
             SymbolKey::XmlFile(k) => self[k].build_status(step),
+            SymbolKey::XmlRecord(_) => panic!(),
+            SymbolKey::XmlField(_) => panic!(),
+            SymbolKey::XmlMenuItem(_) => panic!(),
+            SymbolKey::XmlTemplate(_) => panic!(),
+            SymbolKey::XmlAsset(_) => panic!(),
+            SymbolKey::XmlDelete(_) => panic!(),
             SymbolKey::CsvFile(k) => self[k].build_status(step),
         }
     }
@@ -322,8 +386,14 @@ impl SymbolTable {
             SymbolKey::Compiled(_) => panic!(),
             SymbolKey::Class(_) => panic!(),
             SymbolKey::Function(k) => self[k].set_build_status(step, status),
-            SymbolKey::Variable(_) => todo!(),
+            SymbolKey::Variable(_) => panic!(),
             SymbolKey::XmlFile(k) => self[k].set_build_status(step, status),
+            SymbolKey::XmlRecord(_) => panic!(),
+            SymbolKey::XmlField(_) => panic!(),
+            SymbolKey::XmlMenuItem(_) => panic!(),
+            SymbolKey::XmlTemplate(_) => panic!(),
+            SymbolKey::XmlAsset(_) => panic!(),
+            SymbolKey::XmlDelete(_) => panic!(),
             SymbolKey::CsvFile(k) => self[k].set_build_status(step, status),
         }
     }
@@ -346,7 +416,13 @@ impl SymbolTable {
                 self[f].symbols().iter()
             },
             SymbolKey::Variable(_) => panic!(),
-            SymbolKey::XmlFile(_) => panic!(),
+            SymbolKey::XmlFile(_) => panic!("despite having symbols, XmlFileSymbol doesn't support sections"),
+            SymbolKey::XmlRecord(_) => panic!(),
+            SymbolKey::XmlField(_) => panic!(),
+            SymbolKey::XmlMenuItem(_) => panic!(),
+            SymbolKey::XmlTemplate(_) => panic!(),
+            SymbolKey::XmlAsset(_) => panic!(),
+            SymbolKey::XmlDelete(_) => panic!(),
             SymbolKey::CsvFile(_) => panic!(),
         }
     }
@@ -364,6 +440,12 @@ impl SymbolTable {
             SymbolKey::Function(f) => Some(&self[f].evaluations),
             SymbolKey::Variable(v) => Some(&self[v].evaluations),
             SymbolKey::XmlFile(_) => None,
+            SymbolKey::XmlRecord(_) => None,
+            SymbolKey::XmlField(_) => None,
+            SymbolKey::XmlMenuItem(_) => None,
+            SymbolKey::XmlTemplate(_) => None,
+            SymbolKey::XmlAsset(_) => None,
+            SymbolKey::XmlDelete(_) => None,
             SymbolKey::CsvFile(_) => None,
         }
     }
@@ -381,6 +463,12 @@ impl SymbolTable {
             SymbolKey::Function(f) => { self[f].evaluations = data; },
             SymbolKey::Variable(v) => { self[v].evaluations = data; },
             SymbolKey::XmlFile(_) => { panic!() },
+            SymbolKey::XmlRecord(_) => { panic!() },
+            SymbolKey::XmlField(_) => { panic!() },
+            SymbolKey::XmlMenuItem(_) => { panic!() },
+            SymbolKey::XmlTemplate(_) => { panic!() },
+            SymbolKey::XmlAsset(_) => { panic!() },
+            SymbolKey::XmlDelete(_) => { panic!() },
             SymbolKey::CsvFile(_) => { panic!() },
         }
     }
@@ -893,7 +981,15 @@ impl SymbolTable {
             | SymbolKey::Compiled(_)
             | SymbolKey::XmlFile(_)
             | SymbolKey::CsvFile(_) => false,
-            SymbolKey::Class(_) | SymbolKey::Function(_) | SymbolKey::Variable(_) => true,
+            SymbolKey::Class(_)
+            | SymbolKey::Function(_)
+            | SymbolKey::Variable(_)
+            | SymbolKey::XmlRecord(_)
+            | SymbolKey::XmlField(_)
+            | SymbolKey::XmlMenuItem(_)
+            | SymbolKey::XmlTemplate(_)
+            | SymbolKey::XmlAsset(_)
+            | SymbolKey::XmlDelete(_) => true,
         }
     }
 
@@ -937,6 +1033,12 @@ impl SymbolTable {
             SymbolKey::Class(c) => self[c].noqas = noqa,
             SymbolKey::Variable(_) => panic!("set_noqas called on Variable"),
             SymbolKey::XmlFile(x) => self[x].noqas = noqa,
+            SymbolKey::XmlRecord(_) => panic!("set_noqas called on XmlRecord"),
+            SymbolKey::XmlField(_) => panic!("set_noqas called on XmlField"),
+            SymbolKey::XmlMenuItem(_) => panic!("set_noqas called on XmlMenuItem"),
+            SymbolKey::XmlTemplate(_) => panic!("set_noqas called on XmlTemplate"),
+            SymbolKey::XmlAsset(_) => panic!("set_noqas called on XmlAsset"),
+            SymbolKey::XmlDelete(_) => panic!("set_noqas called on XmlDelete"),
             SymbolKey::CsvFile(c) => self[c].noqas = noqa,
         }
     }
@@ -954,6 +1056,12 @@ impl SymbolTable {
             SymbolKey::Class(c) => self[c].noqas.clone(),
             SymbolKey::Variable(_) => panic!("get_noqas called on Variable"),
             SymbolKey::XmlFile(x) => self[x].noqas.clone(),
+            SymbolKey::XmlRecord(_) => panic!("get_noqas called on XmlRecord"),
+            SymbolKey::XmlField(_) => panic!("set_noqas called on XmlField"),
+            SymbolKey::XmlMenuItem(_) => panic!("get_noqas called on XmlMenuItem"),
+            SymbolKey::XmlTemplate(_) => panic!("get_noqas called on XmlTemplate"),
+            SymbolKey::XmlAsset(_) => panic!("get_noqas called on XmlAsset"),
+            SymbolKey::XmlDelete(_) => panic!("get_noqas called on XmlDelete"),
             SymbolKey::CsvFile(c) => self[c].noqas.clone(),
         }
     }
@@ -1893,6 +2001,12 @@ impl SymbolTable {
                 | SymbolKey::Compiled(_)
                 | SymbolKey::Variable(_)
                 | SymbolKey::XmlFile(_)
+                | SymbolKey::XmlRecord(_)
+                | SymbolKey::XmlField(_)
+                | SymbolKey::XmlMenuItem(_)
+                | SymbolKey::XmlTemplate(_)
+                | SymbolKey::XmlAsset(_)
+                | SymbolKey::XmlDelete(_)
                 | SymbolKey::CsvFile(_) => {},
             }
         }
@@ -1933,6 +2047,12 @@ impl SymbolTable {
                 | SymbolKey::Compiled(_)
                 | SymbolKey::Variable(_)
                 | SymbolKey::XmlFile(_)
+                | SymbolKey::XmlRecord(_)
+                | SymbolKey::XmlField(_)
+                | SymbolKey::XmlMenuItem(_)
+                | SymbolKey::XmlTemplate(_)
+                | SymbolKey::XmlAsset(_)
+                | SymbolKey::XmlDelete(_)
                 | SymbolKey::CsvFile(_) => {},
             }
         }
@@ -1942,41 +2062,32 @@ impl SymbolTable {
         res
     }
 
-    pub fn get_xml_id(&self, target: SourceFileKey, xml_id: &str) -> Option<Vec<OdooData>> {
-        match target {
-            SourceFileKey::XmlFile(x) => self[x].xml_ids.get(xml_id).cloned(),
-            SourceFileKey::Module(m) => self[m].xml_ids.get(xml_id).cloned(),
-            SourceFileKey::PythonPackage(p) => self[p].xml_ids.get(xml_id).cloned(),
-            SourceFileKey::File(f) => self[f].xml_ids.get(xml_id).cloned(),
-            SourceFileKey::CsvFile(c) => self[c].xml_ids.get(xml_id).cloned(),
-        }
-    }
-
-    pub fn insert_xml_id(&mut self, target: SourceFileKey, xml_id: OYarn, xml_data: OdooData) {
-        match target {
-            SourceFileKey::File(file) => {
-                self[file].xml_ids.entry(xml_id).or_insert(vec![]).push(xml_data);
-            },
-            SourceFileKey::Module(module) => {
-                self[module].xml_ids.entry(xml_id).or_insert(vec![]).push(xml_data);
-            },
-            SourceFileKey::PythonPackage(package) => {
-                self[package].xml_ids.entry(xml_id).or_insert(vec![]).push(xml_data);
-            },
-            _ => {}
-        }
-    }
-
     pub fn get_lsp_symbol_kind(target: SymbolKey) -> SymbolKind {
         match target.typ() {
             SymType::CLASS => SymbolKind::CLASS,
             SymType::FUNCTION => SymbolKind::FUNCTION,
             SymType::VARIABLE => SymbolKind::VARIABLE,
             SymType::FILE | SymType::CSV_FILE | SymType::XML_FILE => SymbolKind::FILE,
+            SymType::XML_RECORD => SymbolKind::CONSTANT,
+            SymType::XML_FIELD => SymbolKind::CONSTANT,
+            SymType::XML_MENUITEM => SymbolKind::CONSTANT,
+            SymType::XML_TEMPLATE => SymbolKind::CONSTANT,
+            SymType::XML_ASSET => SymbolKind::CONSTANT,
+            SymType::XML_DELETE => SymbolKind::CONSTANT,
             SymType::PACKAGE(_) => SymbolKind::PACKAGE,
             SymType::NAMESPACE => SymbolKind::NAMESPACE,
             SymType::DISK_DIR | SymType::COMPILED => SymbolKind::FILE,
-            SymType::ROOT => SymbolKind::NAMESPACE
+            SymType::ROOT => SymbolKind::NAMESPACE,
+        }
+    }
+
+    pub fn get_xml_id(&self, xml_data_key: XmlDataKey) -> Option<OYarn> {
+        match xml_data_key {
+            XmlDataKey::RECORD(r) => self[r].xml_id.clone(),
+            XmlDataKey::MENUITEM(m) => self[m].xml_id.clone(),
+            XmlDataKey::TEMPLATE(t) => self[t].xml_id.clone(),
+            XmlDataKey::ASSET(a) => self[a].xml_id.clone(),
+            XmlDataKey::DELETE(d) => self[d].xml_id.clone(),
         }
     }
 

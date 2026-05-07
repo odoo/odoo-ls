@@ -1,6 +1,6 @@
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{storage::dependency_mgr::{DependenciesTable, DependentsTable}, symbol_keys::SymbolKey}, xml_data::OdooData}, oyarn, utils::{NoHashBuilder, PathSanitizer}};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{storage::dependency_mgr::{DependenciesTable, DependentsTable}, symbol_keys::SymbolKey}}, oyarn, utils::{NoHashBuilder, PathSanitizer}};
 use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Weak};
 
 use super::symbol_mgr::{SectionRange, SymbolMgr};
@@ -18,7 +18,6 @@ pub struct PythonPackageSymbol {
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     pub(super) in_workspace: bool,
     pub self_import: bool,
-    pub xml_ids: HashMap<OYarn, Vec<OdooData>>, //used for dynamic XML_ID records, like ir.models
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
     pub dependencies: DependenciesTable,
     pub dependents: DependentsTable,
@@ -49,7 +48,6 @@ impl PythonPackageSymbol {
             validation_status: BuildStatus::PENDING,
             not_found_paths: vec![],
             in_workspace: false,
-            xml_ids: HashMap::new(),
             self_import: false, //indicates that if unloaded, the symbol should be added in the rebuild automatically as nothing depends on it (used for root packages)
             module_symbols: HashMap::new(),
             sections: vec![],
