@@ -2,6 +2,7 @@ use crate::core::file_mgr::legacy_unc_paths;
 use path_slash::{PathBufExt, PathExt};
 use regex::Regex;
 use ruff_text_size::TextSize;
+use std::ffi::OsStr;
 use std::process::Command;
 use std::sync::atomic::Ordering;
 use std::{collections::HashMap, fs::{self, DirEntry}, path::{Path, PathBuf}, str::FromStr, sync::LazyLock};
@@ -182,14 +183,31 @@ impl PathSanitizer for PathBuf {
 
     /// Convert the path to a tree structure.
     fn to_tree(&self) -> Tree {
-        let mut tree = (vec![], vec![]);
-        self.components().for_each(|c| {
-            tree.0.push(oyarn!("{}", c.as_os_str().to_str().unwrap().replace(".py", "").replace(".pyi", "")));
-        });
-        if matches!(tree.0.last().map(|s| s.as_str()), Some("__init__" | "__manifest__")) {
-            tree.0.pop();
-        }
-        tree
+        // Drop extension it is .py or .pyi
+        let modified_path = if let Some(ext) = self.extension().and_then(OsStr::to_str)
+            && (ext == "py" || ext == "pyi")
+        {
+            let trimmed_path = self.with_extension("");
+            // Drop __init__ or __manifest__ if they are the file name
+            // Use the parent directory path
+            if matches!(
+                trimmed_path.file_name().and_then(OsStr::to_str),
+                Some("__init__") | Some("__manifest__")
+            ) {
+                trimmed_path.parent().map(Path::to_path_buf).unwrap_or(trimmed_path)
+            } else {
+                trimmed_path
+            }
+        } else {
+            self.clone()
+        };
+        (
+            modified_path
+                .components()
+                .map(|c| oyarn!("{}", c.as_os_str().to_str().unwrap()))
+                .collect(),
+            vec![],
+        )
     }
 
     /// Convert the path to a path valid for the tree structure (without __init__.py or __manifest__.py).
@@ -225,14 +243,7 @@ impl PathSanitizer for Path {
     }
 
     fn to_tree(&self) -> Tree {
-        let mut tree = (vec![], vec![]);
-        self.components().for_each(|c| {
-            tree.0.push(oyarn!("{}", c.as_os_str().to_str().unwrap().replace(".py", "").replace(".pyi", "")));
-        });
-        if matches!(tree.0.last().map(|s| s.as_str()), Some("__init__" | "__manifest__")) {
-            tree.0.pop();
-        }
-        tree
+        self.to_path_buf().to_tree()
     }
 
     /// Convert the path to a path valid for the tree structure (without __init__.py or __manifest__.py).
