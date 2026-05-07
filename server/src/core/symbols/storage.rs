@@ -17,8 +17,8 @@ pub mod metrics;
 mod ext_symbol_store;
 
 use crate::core::symbols::{
-    ClassSymbol, CompiledSymbol, CsvFileSymbol, DiskDirSymbol, FileSymbol, FunctionSymbol, ModuleSymbol, NamespaceSymbol, PythonPackageSymbol, RootSymbol, VariableSymbol, XmlFileSymbol, symbol_keys::{
-        ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, KeyValidator, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey, VariableKey, XmlFileKey
+    ClassSymbol, CompiledSymbol, CsvFileSymbol, DiskDirSymbol, FileSymbol, FunctionSymbol, ModuleSymbol, NamespaceSymbol, PythonPackageSymbol, RootSymbol, VariableSymbol, XmlFileSymbol, storage::xml::{xml_asset_symbol::XmlAssetSymbol, xml_delete_symbol::XmlDeleteSymbol, xml_field_symbol::XmlFieldSymbol, xml_menuitem_symbol::XmlMenuItemSymbol, xml_record_symbol::XmlRecordSymbol, xml_template_symbol::XmlTemplateSymbol}, symbol_keys::{
+        ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, KeyValidator, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey, VariableKey, XmlAssetKey, XmlDataKey, XmlDeleteKey, XmlFieldKey, XmlFileKey, XmlId, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey
     }
 };
 use ext_symbol_store::ExtSymbolStore;
@@ -40,6 +40,12 @@ pub struct SymbolTable {
     variables: SlotMap<VariableKey, VariableSymbol>,
     xml_files: SlotMap<XmlFileKey, XmlFileSymbol>,
     csv_files: SlotMap<CsvFileKey, CsvFileSymbol>,
+    xml_records: SlotMap<XmlRecordKey, XmlRecordSymbol>,
+    xml_fields: SlotMap<XmlFieldKey, XmlFieldSymbol>,
+    xml_menuitems: SlotMap<XmlMenuItemKey, XmlMenuItemSymbol>,
+    xml_templates: SlotMap<XmlTemplateKey, XmlTemplateSymbol>,
+    xml_assets: SlotMap<XmlAssetKey, XmlAssetSymbol>,
+    xml_deletes: SlotMap<XmlDeleteKey, XmlDeleteSymbol>,
     // external symbols
     ext_symbols: ExtSymbolStore,
 }
@@ -59,6 +65,12 @@ impl SymbolTable {
             variables: SlotMap::with_key(),
             xml_files: SlotMap::with_key(),
             csv_files: SlotMap::with_key(),
+            xml_records: SlotMap::with_key(),
+            xml_fields: SlotMap::with_key(),
+            xml_menuitems: SlotMap::with_key(),
+            xml_templates: SlotMap::with_key(),
+            xml_assets: SlotMap::with_key(),
+            xml_deletes: SlotMap::with_key(),
             ext_symbols: ExtSymbolStore::new(),
         }
     }
@@ -120,6 +132,12 @@ impl_index!(FunctionKey, FunctionSymbol, functions);
 impl_index!(ClassKey, ClassSymbol, classes);
 impl_index!(VariableKey, VariableSymbol, variables);
 impl_index!(XmlFileKey, XmlFileSymbol, xml_files);
+impl_index!(XmlRecordKey, XmlRecordSymbol, xml_records);
+impl_index!(XmlFieldKey, XmlFieldSymbol, xml_fields);
+impl_index!(XmlMenuItemKey, XmlMenuItemSymbol, xml_menuitems);
+impl_index!(XmlTemplateKey, XmlTemplateSymbol, xml_templates);
+impl_index!(XmlAssetKey, XmlAssetSymbol, xml_assets);
+impl_index!(XmlDeleteKey, XmlDeleteSymbol, xml_deletes);
 impl_index!(CsvFileKey, CsvFileSymbol, csv_files);
 
 
@@ -159,6 +177,12 @@ impl_key_validator!(ClassKey, classes);
 impl_key_validator!(FunctionKey, functions);
 impl_key_validator!(VariableKey, variables);
 impl_key_validator!(XmlFileKey, xml_files);
+impl_key_validator!(XmlRecordKey, xml_records);
+impl_key_validator!(XmlFieldKey, xml_fields);
+impl_key_validator!(XmlMenuItemKey, xml_menuitems);
+impl_key_validator!(XmlTemplateKey, xml_templates);
+impl_key_validator!(XmlAssetKey, xml_assets);
+impl_key_validator!(XmlDeleteKey, xml_deletes);
 impl_key_validator!(CsvFileKey, csv_files);
 
 impl KeyValidator<SymbolKey> for SymbolTable {
@@ -175,6 +199,12 @@ impl KeyValidator<SymbolKey> for SymbolTable {
             SymbolKey::Function(k) => self.functions.contains_key(k),
             SymbolKey::Variable(k) => self.variables.contains_key(k),
             SymbolKey::XmlFile(k) => self.xml_files.contains_key(k),
+            SymbolKey::XmlRecord(k) => self.xml_records.contains_key(k),
+            SymbolKey::XmlField(k) => self.xml_fields.contains_key(k),
+            SymbolKey::XmlMenuItem(k) => self.xml_menuitems.contains_key(k),
+            SymbolKey::XmlTemplate(k) => self.xml_templates.contains_key(k),
+            SymbolKey::XmlAsset(k) => self.xml_assets.contains_key(k),
+            SymbolKey::XmlDelete(k) => self.xml_deletes.contains_key(k),
             SymbolKey::CsvFile(k) => self.csv_files.contains_key(k),
         }
     }
@@ -188,6 +218,31 @@ impl KeyValidator<SourceFileKey> for SymbolTable {
             SourceFileKey::Module(k) => self.modules.contains_key(k),
             SourceFileKey::XmlFile(k) => self.xml_files.contains_key(k),
             SourceFileKey::CsvFile(k) => self.csv_files.contains_key(k),
+        }
+    }
+}
+
+impl KeyValidator<XmlDataKey> for SymbolTable {
+    fn is_key_valid(&self, key: XmlDataKey) -> bool {
+        match key {
+            XmlDataKey::RECORD(k) => self.xml_records.contains_key(k),
+            XmlDataKey::MENUITEM(k) => self.xml_menuitems.contains_key(k),
+            XmlDataKey::TEMPLATE(k) => self.xml_templates.contains_key(k),
+            XmlDataKey::ASSET(k) => self.xml_assets.contains_key(k),
+            XmlDataKey::DELETE(k) => self.xml_deletes.contains_key(k),
+        }
+    }
+}
+
+impl KeyValidator<XmlId> for SymbolTable {
+    fn is_key_valid(&self, key: XmlId) -> bool {
+        match key {
+            XmlId::PythonClass(k) => self.classes.contains_key(k),
+            XmlId::XmlRecord(k) => self.xml_records.contains_key(k),
+            XmlId::XmlMenuitem(k) => self.xml_menuitems.contains_key(k),
+            XmlId::XmlTemplate(k) => self.xml_templates.contains_key(k),
+            XmlId::XmlAsset(k) => self.xml_assets.contains_key(k),
+            XmlId::XmlDelete(k) => self.xml_deletes.contains_key(k),
         }
     }
 }

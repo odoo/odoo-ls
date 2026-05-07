@@ -125,7 +125,7 @@ impl CsvValidator {
                     continue;
                 };
                 let Some(module) = module_symbol.upgrade(session.st()) else {continue};
-                if session.st()[module].xml_id_locations.get(*id_split.last().unwrap()).is_none() {
+                if session.st()[module].xml_ids.get(*id_split.last().unwrap()).is_none() {
                     if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05001, &[]) {
                         diagnostics.push(Diagnostic {
                             range: Range { start: Position::new(start as u32, 0), end: Position::new(end as u32, 0) },
