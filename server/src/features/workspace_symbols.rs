@@ -2,7 +2,7 @@ use lsp_server::{ErrorCode, ResponseError};
 use lsp_types::{Location, WorkspaceLocation, WorkspaceSymbol, WorkspaceSymbolResponse};
 use ruff_text_size::{TextRange, TextSize};
 
-use crate::{S, constants::SymType, core::{entry_point::EntryPointType, file_mgr::FileMgr, symbols::{ModuleSymbol, symbol_keys::SymbolKey, storage::SymbolTable}}, threads::SessionInfo, utils::string_fuzzy_contains};
+use crate::{S, constants::SymType, core::{entry_point::EntryPointType, file_mgr::FileMgr, symbols::{storage::SymbolTable, symbol_keys::{SourceFileKey, SymbolKey}}}, threads::SessionInfo, utils::string_fuzzy_contains};
 
 pub struct WorkspaceSymbolFeature;
 
@@ -80,23 +80,24 @@ impl WorkspaceSymbolFeature {
             }
         }
         if let SymbolKey::Module(module_key) = symbol {
-            let xml_id_names = session.st()[module_key].xml_id_locations.keys().cloned().collect::<Vec<_>>();
-            for xml_id_name in &xml_id_names {
+            let mut res_to_add = vec![];
+            for (xml_id_name, data_set) in session.st()[module_key].xml_ids.iter() {
                 let xml_name = S!("xmlid.") + xml_id_name;
                 if string_fuzzy_contains(&xml_name, &query) {
-                    let xml_data = ModuleSymbol::get_xml_id(session.st(), module_key, xml_id_name);
-                    for data in xml_data {
-                        let xml_file_symbol = data.get_xml_file_symbol(session.st());
-                        if let Some(xml_file_key) = xml_file_symbol {
+                    for data in data_set.iter_valid(session.st()) {
+                        let xml_file_symbol = session.st().get_file(data.into());
+                        if let Some(SourceFileKey::XmlFile(xml_file_key)) = xml_file_symbol {
                             let xml_file = &session.st()[xml_file_key];
                             let name = xml_file.name.to_string();
                             let path = xml_file.path.clone();
-                            let range = data.get_range();
-                            let text_range = TextRange::new(TextSize::new(range.start as u32), TextSize::new(range.end as u32));
-                            WorkspaceSymbolFeature::add_symbol_to_results(session, xml_file_key.into(), &xml_name, &path, Some(name), Some(&text_range), can_resolve_location_range, results);
+                            let data_range = session.st().range(data.into()).clone();
+                            res_to_add.push((xml_file_key, xml_name.clone(), path, name, data_range));
                         }
                     }
                 }
+            }
+            for (xml_file_key, xml_name, path, name, text_range) in res_to_add {
+                WorkspaceSymbolFeature::add_symbol_to_results(session, xml_file_key.into(), &xml_name, &path, Some(name), Some(&text_range), can_resolve_location_range, results);
             }
         }
         for sym in session.st().all_symbols(symbol) {

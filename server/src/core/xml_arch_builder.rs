@@ -1,9 +1,6 @@
 use super::file_mgr::FileInfo;
 use crate::{
-    constants::{BuildStatus, BuildSteps, OYarn},
-    core::{entry_point::EntryPointType, xml_data::OdooData},
-    threads::SessionInfo,
-    Sy,
+    Sy, constants::{BuildStatus, BuildSteps, OYarn}, core::{entry_point::EntryPointType, symbols::{ModuleSymbol, symbol_keys::{XmlDataKey, XmlId}}}, threads::SessionInfo
 };
 use crate::{
     core::{
@@ -50,7 +47,7 @@ impl XmlArchBuilder {
         session: &mut SessionInfo,
         id: Option<String>,
         node: &Node,
-        mut xml_data: OdooData,
+        xml_data: XmlDataKey,
         diagnostics: &mut Vec<Diagnostic>
     ) {
         if !self.is_in_main_ep {
@@ -83,22 +80,21 @@ impl XmlArchBuilder {
                     xml_module = module;
                 }
             }
-            xml_data.set_file_symbol(self.xml_symbol);
-            session.st_mut()[xml_module].xml_id_locations.entry(Sy!(id.clone())).or_default().insert(self.xml_symbol.into());
-            if let OdooData::RECORD(ref record) = xml_data {
+            if let XmlDataKey::RECORD(record) = xml_data {
                 data_hooks::on_record_creation(session, self.xml_symbol.into(), record);
             }
-            session.st_mut()[self.xml_symbol].xml_ids.entry(Sy!(id)).or_insert(vec![]).push(xml_data);
+            ModuleSymbol::insert_xml_id(session.st_mut(), xml_module, Sy!(id), XmlId::from(xml_data));
         }
     }
 
-    pub fn get_group_ids(&self, session: &mut SessionInfo, xml_id: &str, attr: &Attribute, diagnostics: &mut Vec<Diagnostic>) -> Vec<OdooData> {
+    pub fn get_group_ids(&self, session: &mut SessionInfo, xml_id: &str, attr: &Attribute, diagnostics: &mut Vec<Diagnostic>) -> Vec<XmlId> {
         let xml_ids = SyncOdoo::get_xml_ids(session, self.xml_symbol.into(), xml_id, &attr.range(), diagnostics);
         let mut res = vec![];
-        for data in xml_ids.iter() {
-            if let OdooData::RECORD(r) = data {
-                if r.model.0 == "res.groups" {
-                    res.push(data.clone());
+        for data in xml_ids.iter_valid(session.st()) {
+            if let XmlId::XmlRecord(r) = data {
+                let record = &session.st()[r];
+                if record.model.0 == "res.groups" {
+                    res.push(data);
                 }
             }
         }

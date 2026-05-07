@@ -2,9 +2,8 @@ use super::symbol_mgr::SectionRange;
 use crate::core::file_mgr::NoqaInfo;
 use crate::core::model::Model;
 use crate::core::symbols::storage::dependency_mgr::{DependenciesTable, DependentsTable};
-use crate::core::symbols::symbol_keys::{NamespaceKey, SourceFileKey, SymbolKey};
+use crate::core::symbols::symbol_keys::{NamespaceKey, SourceFileKey, SymbolKey, XmlId};
 use super::symbol_mgr::SymbolMgr;
-use crate::core::xml_data::OdooData;
 use crate::threads::SessionInfo;
 use crate::utils::{NoHashBuilder, PathSanitizer};
 use crate::weak_collections::WeakSet;
@@ -30,8 +29,7 @@ pub struct ModuleSymbol {
     pub(in crate::core::symbols) all_depends: HashSet<OYarn>, //computed all depends to avoid too many recomputations
     pub(in crate::core::symbols) data: Vec<(String, TextRange)>, // TODO
     pub(in crate::core::symbols) assets: Vec<(String, TextRange)>,
-    pub xml_id_locations: HashMap<OYarn, WeakSet<SourceFileKey>>, //contains all xml_file_symbols that contains the xml_id. Needed because it can be in another module.
-    pub xml_ids: HashMap<OYarn, Vec<OdooData>>, //used for dynamic XML_ID records, like ir.models. normal ids are in their XmlFile
+    pub xml_ids: HashMap<OYarn, WeakSet<XmlId>>, //Reference to xmlNode declaring xml_id. Can be from python or xml file.
     pub arch_status: BuildStatus,
     pub arch_eval_status: BuildStatus,
     pub validation_status: BuildStatus,
@@ -77,7 +75,6 @@ impl ModuleSymbol {
             root_path: path,
             loaded: false,
             module_name: OYarn::from(""),
-            xml_id_locations: HashMap::new(),
             xml_ids: HashMap::new(),
             dir_name,
             depends,
