@@ -2073,7 +2073,10 @@ impl Odoo {
             let path = FileMgr::uri2pathname(&f.uri);
             let path_updated = PathBuf::from(path.clone()).to_tree_path().sanitize();
             let tree = session.sync_odoo.path_to_main_entry_tree(&PathBuf::from(path.clone()));
-            if PathBuf::from(&path).is_file() && (tree.is_none() || session.sync_odoo.get_main_entry().borrow().root.borrow().get_symbol(&tree.unwrap(), u32::MAX).is_empty()) {
+            if PathBuf::from(&path).is_file() && (tree.is_none() || (
+                session.sync_odoo.get_main_entry().borrow().root.borrow().get_symbol(&tree.unwrap(), u32::MAX).is_empty()
+                && session.sync_odoo.get_main_entry().borrow().data_symbols.get(&path_updated).is_none()
+            )) {
                 //file has not been added to main entry. Let's build a new entry point
                 EntryPointMgr::create_new_custom_entry_for_path(session, &path_updated, &path);
                 SyncOdoo::process_rebuilds(session, false);
