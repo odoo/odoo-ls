@@ -1542,7 +1542,7 @@ impl Odoo {
             watchers: vec![
                 FileSystemWatcher {
                     glob_pattern: GlobPattern::String("**".to_string()),
-                    kind: Some(WatchKind::Change),
+                    kind: Some(WatchKind::Change | WatchKind::Create | WatchKind::Delete),
                 },
             ],
         };
