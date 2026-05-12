@@ -239,19 +239,18 @@ impl AnalyzeAstResult {
     }
 }
 
-/// Record a hit for the active `evaluation_search` at `range` inside `parent`'s file.
-/// Innermost expressions are analyzed first, so the first record at a given start
-/// position wins; outer enclosing expressions starting at the same place are skipped.
-/// Different start positions on the same line are kept (for multiple uses of a name).
+/// Push a hit for the active `evaluation_search` at `range` inside `parent`'s
+/// file. Duplicates (e.g. a Name pushed by both its own analysis and the
+/// enclosing Attribute that contains it) are removed once at end-of-walk
+/// in `references_in_file`, which is cheaper than an O(N) scan per push.
+/// Returns `true` if the hit was pushed; `false` when the file or its file_info
+/// cannot be resolved, so callers can avoid claiming a match in that case.
 fn record_evaluation_hit(session: &mut SessionInfo, parent: SymbolKey, range: TextRange) -> bool {
     let Some(file) = session.st().get_file(parent) else { return false };
     let file_path = session.st().path(file).to_string();
     let Some(file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&file_path) else { return false };
     let transformed_range = file_info.borrow().text_range_to_range(&range, session.sync_odoo.encoding);
     let uri = FileMgr::pathname2uri(&file_path);
-    if session.sync_odoo.evaluation_locations.iter().any(|loc| loc.uri == uri && loc.range.start == transformed_range.start) {
-        return false;
-    }
     session.sync_odoo.evaluation_locations.push(Location { uri, range: transformed_range });
     true
 }

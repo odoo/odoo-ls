@@ -5,7 +5,7 @@ use crate::{
         symbols::{
             storage::SymbolTable, symbol_keys::{ModuleKey, SymbolKey, XmlFileKey}
         },
-    }, features::references::ReferenceTarget, threads::SessionInfo
+    }, features::{references::ReferenceTarget, xml_ast_utils::XmlAstUtils}, threads::SessionInfo
 };
 use lsp_types::Location;
 use roxmltree::Node;
@@ -148,10 +148,7 @@ impl XmlAstReferenceVisitor {
                 }
             }
         }
-        // Inside a `<field name="arch">…</field>`, sub-elements reference fields/methods
-        // on the view's target model (read from the sibling `<field name="model">X</field>`),
-        // not on the surrounding record's model (typically ir.ui.view).
-        let arch_model = XmlAstReferenceVisitor::pick_arch_target_model(node);
+        let arch_model = XmlAstUtils::arch_field_target_model(node);
         let prev_record_model = arch_model.as_ref()
             .map(|m| ctxt.insert(S!("record_model"), ContextValue::STRING(m.clone())));
         for child in node.children() {
@@ -164,27 +161,6 @@ impl XmlAstReferenceVisitor {
             }
         }
         ctxt.remove("field_name");
-    }
-
-    /// If `node` is `<field name="arch">`, return the text of its sibling
-    /// `<field name="model">…</field>` (the view's target model).
-    fn pick_arch_target_model(node: &Node) -> Option<String> {
-        if node.attribute("name") != Some("arch") {
-            return None;
-        }
-        let parent = node.parent()?;
-        for sibling in parent.children() {
-            if sibling.is_element()
-                && sibling.tag_name().name() == "field"
-                && sibling.attribute("name") == Some("model")
-            {
-                let model = sibling.text()?.trim();
-                if !model.is_empty() {
-                    return Some(model.to_string());
-                }
-            }
-        }
-        None
     }
 
     fn visit_text(session: &mut SessionInfo, node: &Node, _from_module: Option<ModuleKey>, ctxt: &mut HashMap<String, ContextValue>, results: &mut Vec<Range<usize>>, target: &ReferenceTarget) {
@@ -207,46 +183,25 @@ impl XmlAstReferenceVisitor {
         }
     }
 
-    /// Odoo lets you reference an action's database id inside an attribute via
-    /// `%(module.xml_id)d` / `%(module.xml_id)s` / `%(module.xml_id)i` syntax,
-    /// most commonly on `<button name="%(...)d" type="action"/>`. Scan every
-    /// attribute value on `node` for such embedded refs and push a range that
-    /// covers only the inner xml-id (excluding the `%(` and `)d` wrapper) so
-    /// the rename feature can rewrite just the id without corrupting the
-    /// surrounding format string.
     fn scan_format_xml_id_refs(symbol_table: &SymbolTable, node: &Node, from_module: Option<ModuleKey>, target: &ReferenceTarget, results: &mut Vec<Range<usize>>) {
         let ReferenceTarget::String(target_str) = target else { return };
+        let module_dir = from_module.map(|m| symbol_table[m].name.as_str());
         for attr in node.attributes() {
-            let value = attr.value();
-            let bytes = value.as_bytes();
-            let mut i = 0;
-            while i + 3 < bytes.len() {
-                if bytes[i] == b'%' && bytes[i+1] == b'(' {
-                    if let Some(close_off) = bytes[i+2..].iter().position(|&b| b == b')') {
-                        let inner_start = i + 2;
-                        let inner_end = i + 2 + close_off;
-                        let after = inner_end + 1;
-                        if after < bytes.len() && matches!(bytes[after], b'd' | b's' | b'i') {
-                            let inner = &value[inner_start..inner_end];
-                            let qualified = if inner.contains('.') {
-                                inner.to_string()
-                            } else if let Some(module) = from_module {
-                                format!("{}.{}", symbol_table[module].name, inner)
-                            } else {
-                                inner.to_string()
-                            };
-                            if qualified == *target_str {
-                                let abs_start = attr.range_value().start + inner_start;
-                                let abs_end = attr.range_value().start + inner_end;
-                                results.push(abs_start..abs_end);
-                            }
-                            i = after + 1;
-                            continue;
-                        }
-                    }
+            XmlAstUtils::for_each_format_xml_id_ref(&attr, |inner, range| {
+                let matches = if inner.contains('.') {
+                    inner == target_str.as_str()
+                } else if let Some(dir) = module_dir {
+                    target_str.len() == dir.len() + 1 + inner.len()
+                        && target_str.as_bytes().get(dir.len()) == Some(&b'.')
+                        && target_str.starts_with(dir)
+                        && target_str.ends_with(inner)
+                } else {
+                    false
+                };
+                if matches {
+                    results.push(range);
                 }
-                i += 1;
-            }
+            });
         }
     }
 
