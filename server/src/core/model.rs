@@ -208,6 +208,13 @@ impl Model {
     }
 
     fn all_symbols_helper(&self, session: &SessionInfo, from_module: Option<ModuleKey>, with_inheritance: bool, seen_inherited_models: &mut HashSet<OYarn>) -> Vec<(ClassKey, Option<OYarn>)> {
+        // Inheriting classes carry the current model in their own `_inherit`,
+        // so a naive recursion would re-walk this model's classes for every
+        // such class. Mark self as visited up front (mirrors all_inherits_helper).
+        if seen_inherited_models.contains(&self.name) {
+            return Vec::new();
+        }
+        seen_inherited_models.insert(self.name.clone());
         let st = &session.sync_odoo.symbol_table;
         let mut symbols = Vec::new();
         for s in self.symbols.iter_valid(st) { // filter stale keys
