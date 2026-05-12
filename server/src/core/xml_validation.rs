@@ -15,6 +15,7 @@ use crate::{
         entry_point::{EntryPoint, EntryPointType},
         symbols::symbol_keys::{ModuleKey, SourceFileKey, XmlFileKey},
     },
+    oyarn,
     threads::SessionInfo,
     Sy,
 };
@@ -151,6 +152,24 @@ impl XmlValidator {
         }
         let all_fields = self.fields_cache.get(&model_name).unwrap();
         self.validate_fields(session, xml_data_record, all_fields, diagnostics, missing_model_dependencies);
+
+        // If the record carries an inner `<field name="model">target.model</field>`
+        // (e.g. ir.ui.view, ir.actions.act_window), also register the XML file as
+        // a dependent of `target.model`. Without this, find-references on a
+        // Python method/field of `target.model` doesn't walk this XML even though
+        // the view's <button name="method_x"/> / <field name="field_x"/> point to it.
+        let inner_model_name = {
+            let xml_record = &session.st()[xml_data_record];
+            xml_record.fields().get(&Sy!("model")).copied()
+                .and_then(|key| session.st()[key].text.as_ref().map(|t| oyarn!("{}", t.trim())))
+        };
+        if let Some(inner_model_name) = inner_model_name {
+            if !inner_model_name.is_empty() && inner_model_name != model_name {
+                if let Some(target_model) = session.sync_odoo.models.get(&inner_model_name).cloned() {
+                    model_dependencies.push(target_model);
+                }
+            }
+        }
     }
 
     fn validate_fields(

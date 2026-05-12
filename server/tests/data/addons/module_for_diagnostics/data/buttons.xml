@@ -3,4 +3,14 @@
         <button name="%(module_for_diagnostics.bike_wheel_1)d" type="action" string="Qualified"/>
         <button name="%(bike_wheel_1)d" type="action" string="Prefix-less"/>
     </template>
+    <record id="bike_wheel_form_view" model="ir.ui.view">
+        <field name="name">bike.wheel.form</field>
+        <field name="model">bike_parts.wheel</field>
+        <field name="arch" type="xml">
+            <form>
+                <field name="name"/>
+                <button name="action_set_available" type="object" string="Make Available"/>
+            </form>
+        </field>
+    </record>
 </odoo>
