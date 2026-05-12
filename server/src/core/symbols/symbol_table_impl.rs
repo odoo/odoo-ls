@@ -595,19 +595,21 @@ impl SymbolTable {
         let mut current_key = symbol_key;
         while !matches!(current_key, SymbolKey::Root(_)) {
             if self.is_file_content(current_key) {
-                tree.1.insert(0, self.name(current_key).clone());
+                tree.1.push(self.name(current_key).clone());
             } else {
-                tree.0.insert(0, self.name(current_key).clone());
+                tree.0.push(self.name(current_key).clone());
             }
             current_key = self.parent(current_key).unwrap();
         }
         let root = current_key.unwrap_root_key();
+        tree.0.reverse();
+        tree.1.reverse();
         (tree, root)
     }
 
 
-    pub fn get_tree(&self, symbol_key: SymbolKey) -> Tree {
-        self.get_tree_helper(symbol_key).0
+    pub fn get_tree(&self, symbol_key: impl Into<SymbolKey>) -> Tree {
+        self.get_tree_helper(symbol_key.into()).0
     }
 
     pub fn get_tree_and_entry(&self, symbol_key: SymbolKey) -> (Tree, Rc<RefCell<EntryPoint>>) {
