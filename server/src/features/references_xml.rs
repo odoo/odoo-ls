@@ -118,10 +118,43 @@ impl XmlAstReferenceVisitor {
                 }
             }
         }
+        // Inside a `<field name="arch">…</field>`, sub-elements reference fields/methods
+        // on the view's target model (read from the sibling `<field name="model">X</field>`),
+        // not on the surrounding record's model (typically ir.ui.view).
+        let arch_model = XmlAstReferenceVisitor::pick_arch_target_model(node);
+        let prev_record_model = arch_model.as_ref()
+            .map(|m| ctxt.insert(S!("record_model"), ContextValue::STRING(m.clone())));
         for child in node.children() {
             XmlAstReferenceVisitor::visit_node(session, &child, from_module, ctxt, results, target);
         }
+        if arch_model.is_some() {
+            match prev_record_model.flatten() {
+                Some(prev) => { ctxt.insert(S!("record_model"), prev); }
+                None => { ctxt.remove("record_model"); }
+            }
+        }
         ctxt.remove("field_name");
+    }
+
+    /// If `node` is `<field name="arch">`, return the text of its sibling
+    /// `<field name="model">…</field>` (the view's target model).
+    fn pick_arch_target_model(node: &Node) -> Option<String> {
+        if node.attribute("name") != Some("arch") {
+            return None;
+        }
+        let parent = node.parent()?;
+        for sibling in parent.children() {
+            if sibling.is_element()
+                && sibling.tag_name().name() == "field"
+                && sibling.attribute("name") == Some("model")
+            {
+                let model = sibling.text()?.trim();
+                if !model.is_empty() {
+                    return Some(model.to_string());
+                }
+            }
+        }
+        None
     }
 
     fn visit_text(session: &mut SessionInfo, node: &Node, _from_module: Option<ModuleKey>, ctxt: &mut HashMap<String, ContextValue>, results: &mut Vec<Range<usize>>, target: &ReferenceTarget) {
