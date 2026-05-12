@@ -113,10 +113,11 @@ impl ReferenceFeature {
                             }
                         }
                     }
-                    //If the symbol is a model or a field, browse model dependents too
-                    let class_model_to_check = if definition_source.typ() == SymType::CLASS {
+                    //If the symbol is a model, a field, or a method on a model, browse model dependents too
+                    let target_typ = definition_source.typ();
+                    let class_model_to_check = if target_typ == SymType::CLASS {
                         Some(definition_source)
-                    } else if SymbolTable::is_field(session, definition_source) {
+                    } else if SymbolTable::is_field(session, definition_source) || target_typ == SymType::FUNCTION {
                         session.st().get_in_parents(definition_source, &[SymType::CLASS], true)
                     } else {
                         None
