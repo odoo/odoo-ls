@@ -38,6 +38,7 @@ impl XmlAstReferenceVisitor {
 
     fn visit_node(session: &mut SessionInfo<'_>, node: &Node, from_module: Option<ModuleKey>, ctxt: &mut HashMap<String, ContextValue>, results: &mut Vec<Range<usize>>, target: &ReferenceTarget) {
         if node.is_element() {
+            XmlAstReferenceVisitor::scan_format_xml_id_refs(session.st(), node, from_module, target, results);
             match node.tag_name().name()  {
                 "record" => {
                     XmlAstReferenceVisitor::visit_record(session, &node, from_module, ctxt, results, target);
@@ -140,6 +141,49 @@ impl XmlAstReferenceVisitor {
         }
         if field == "context" {
             //TODO
+        }
+    }
+
+    /// Odoo lets you reference an action's database id inside an attribute via
+    /// `%(module.xml_id)d` / `%(module.xml_id)s` / `%(module.xml_id)i` syntax,
+    /// most commonly on `<button name="%(...)d" type="action"/>`. Scan every
+    /// attribute value on `node` for such embedded refs and push a range that
+    /// covers only the inner xml-id (excluding the `%(` and `)d` wrapper) so
+    /// the rename feature can rewrite just the id without corrupting the
+    /// surrounding format string.
+    fn scan_format_xml_id_refs(symbol_table: &SymbolTable, node: &Node, from_module: Option<ModuleKey>, target: &ReferenceTarget, results: &mut Vec<Range<usize>>) {
+        let ReferenceTarget::String(target_str) = target else { return };
+        for attr in node.attributes() {
+            let value = attr.value();
+            let bytes = value.as_bytes();
+            let mut i = 0;
+            while i + 3 < bytes.len() {
+                if bytes[i] == b'%' && bytes[i+1] == b'(' {
+                    if let Some(close_off) = bytes[i+2..].iter().position(|&b| b == b')') {
+                        let inner_start = i + 2;
+                        let inner_end = i + 2 + close_off;
+                        let after = inner_end + 1;
+                        if after < bytes.len() && matches!(bytes[after], b'd' | b's' | b'i') {
+                            let inner = &value[inner_start..inner_end];
+                            let qualified = if inner.contains('.') {
+                                inner.to_string()
+                            } else if let Some(module) = from_module {
+                                format!("{}.{}", symbol_table[module].name, inner)
+                            } else {
+                                inner.to_string()
+                            };
+                            if qualified == *target_str {
+                                let abs_start = attr.range_value().start + inner_start;
+                                let abs_end = attr.range_value().start + inner_end;
+                                results.push(abs_start..abs_end);
+                            }
+                            i = after + 1;
+                            continue;
+                        }
+                    }
+                }
+                i += 1;
+            }
         }
     }
 

@@ -34,6 +34,7 @@ impl XmlAstUtils {
             return;
         }
         if node.is_element() {
+            XmlAstUtils::scan_format_xml_id_under_cursor(session, node, offset, from_module, results, on_dep_only);
             match node.tag_name().name()  {
                 "record" => {
                     XmlAstUtils::visit_record(session, &node, offset, from_module, ctxt, results, on_dep_only);
@@ -184,6 +185,42 @@ impl XmlAstUtils {
         }
         for child in node.children() {
             XmlAstUtils::visit_node(session, &child, offset, from_module, ctxt, results, on_dep_only);
+        }
+    }
+
+    /// Detect a `%(xml_id)d` / `%(xml_id)s` / `%(xml_id)i` format reference
+    /// in any attribute value on `node` and, if the cursor sits inside the
+    /// inner xml-id, resolve it like a normal xml-id reference (powering
+    /// goto-def / hover on `<button name="%(...)d">` and similar).
+    fn scan_format_xml_id_under_cursor(session: &mut SessionInfo, node: &Node, offset: usize, from_module: Option<ModuleKey>, results: &mut (Vec<SymbolKey>, Option<Range<usize>>), on_dep_only: bool) {
+        let Some(file_module) = from_module else { return };
+        for attr in node.attributes() {
+            let value = attr.value();
+            let bytes = value.as_bytes();
+            let attr_start = attr.range_value().start;
+            let mut i = 0;
+            while i + 3 < bytes.len() {
+                if bytes[i] == b'%' && bytes[i+1] == b'(' {
+                    if let Some(close_off) = bytes[i+2..].iter().position(|&b| b == b')') {
+                        let inner_start = i + 2;
+                        let inner_end = i + 2 + close_off;
+                        let after = inner_end + 1;
+                        if after < bytes.len() && matches!(bytes[after], b'd' | b's' | b'i') {
+                            let abs_start = attr_start + inner_start;
+                            let abs_end = attr_start + inner_end;
+                            if abs_start <= offset && offset <= abs_end {
+                                let inner = &value[inner_start..inner_end];
+                                XmlAstUtils::add_xml_id_result(session, inner, file_module.into(), abs_start..abs_end, results, on_dep_only);
+                                results.1 = Some(abs_start..abs_end);
+                                return;
+                            }
+                            i = after + 1;
+                            continue;
+                        }
+                    }
+                }
+                i += 1;
+            }
         }
     }
 

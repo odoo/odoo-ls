@@ -1,0 +1,6 @@
+<odoo>
+    <template id="bike_button_template">
+        <button name="%(module_for_diagnostics.bike_wheel_1)d" type="action" string="Qualified"/>
+        <button name="%(bike_wheel_1)d" type="action" string="Prefix-less"/>
+    </template>
+</odoo>
