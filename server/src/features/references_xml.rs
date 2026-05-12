@@ -52,6 +52,9 @@ impl XmlAstReferenceVisitor {
                 "template" => {
                     XmlAstReferenceVisitor::visit_template(session, &node, from_module, ctxt, results, target);
                 }
+                "button" => {
+                    XmlAstReferenceVisitor::visit_button(session, &node, from_module, ctxt, results, target);
+                }
                 _ => {
                     for child in node.children() {
                         XmlAstReferenceVisitor::visit_node(session, &child, from_module, ctxt, results, target);
@@ -60,6 +63,33 @@ impl XmlAstReferenceVisitor {
             }
         } else if node.is_text() {
             XmlAstReferenceVisitor::visit_text(session, &node, from_module, ctxt, results, target);
+        }
+    }
+
+    /// `<button name="method_x" type="object">` invokes a method on the current
+    /// record's model. When the rename/find-refs target is a method (Function on
+    /// a model class), match the button's `name` value against the method name
+    /// AND verify the surrounding `record_model` matches the method's class model.
+    fn visit_button(session: &mut SessionInfo<'_>, node: &Node, from_module: Option<ModuleKey>, ctxt: &mut HashMap<String, ContextValue>, results: &mut Vec<Range<usize>>, target: &ReferenceTarget) {
+        let is_action_type = node.attribute("type") == Some("action");
+        if !is_action_type {
+            if let &ReferenceTarget::Symbol(SymbolKey::Function(target_fn)) = target {
+                for attr in node.attributes() {
+                    if attr.name() != "name" { continue; }
+                    if session.st()[target_fn].name != attr.value() { continue; }
+                    let target_class = session.st().get_in_parents(target_fn.into(), &[SymType::CLASS], true);
+                    let Some(SymbolKey::Class(target_class)) = target_class else { continue; };
+                    let Some(target_model) = session.st()[target_class]._model.as_ref() else { continue; };
+                    let record_model = ctxt.get("record_model").map(ContextValue::as_str).unwrap_or_default();
+                    if record_model.is_empty() { continue; }
+                    if target_model.name == *record_model {
+                        results.push(attr.range_value());
+                    }
+                }
+            }
+        }
+        for child in node.children() {
+            XmlAstReferenceVisitor::visit_node(session, &child, from_module, ctxt, results, target);
         }
     }
 
