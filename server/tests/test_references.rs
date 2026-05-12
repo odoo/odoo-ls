@@ -115,6 +115,28 @@ fn test_references() {
     // prefix-less %(bike_wheel_1)d in buttons.xml
     assert_in_result(&mut references, "module_for_diagnostics/data/buttons.xml", 3, 24);
 
+    //references on a Python field exposed under <field name="arch">: should resolve against the
+    //view's target model and include the arch <field name="..."/> usage
+    let bike_wheel_py = test_addons_path.join("module_for_diagnostics").join("models").join("bike_parts_wheel.py").sanitize();
+    let mut references = get_references(&mut session, &bike_wheel_py, Position::new(7, 4));
+    // declaration on the model
+    assert_in_result(&mut references, "module_for_diagnostics/models/bike_parts_wheel.py", 7, 4);
+    // CSV header for the column
+    assert_in_result(&mut references, "module_for_diagnostics/data/bike_parts.wheel.csv", 0, 3);
+    // XML <field name="name">...</field> usages on bike_parts.wheel records in bikes.xml
+    assert_in_result(&mut references, "module_for_diagnostics/data/bikes.xml", 3, 21);
+    assert_in_result(&mut references, "module_for_diagnostics/data/bikes.xml", 7, 21);
+    assert_in_result(&mut references, "module_for_diagnostics/data/bikes.xml", 11, 21);
+    // arch <field name="name"/> resolves via sibling <field name="model">bike_parts.wheel</field>
+    assert_in_result(&mut references, "module_for_diagnostics/data/buttons.xml", 10, 29);
+
+    //references on a Python method invoked by <button name="..." type="object"/> inside arch
+    let mut references = get_references(&mut session, &bike_wheel_py, Position::new(12, 8));
+    // declaration of the method (reported at the `def` keyword position)
+    assert_in_result(&mut references, "module_for_diagnostics/models/bike_parts_wheel.py", 12, 4);
+    // button name="action_set_available" inside the arch
+    assert_in_result(&mut references, "module_for_diagnostics/data/buttons.xml", 11, 30);
+
     // for r in references.iter() {
     //     error!("Reference found at {}:{}:{}", r.uri.as_str(), r.range.start.line, r.range.start.character);
     // }
