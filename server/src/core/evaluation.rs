@@ -256,6 +256,23 @@ impl AnalyzeAstResult {
     }
 }
 
+/// Record a hit for the active `evaluation_search` at `range` inside `parent`'s file.
+/// Innermost expressions are analyzed first, so the first record at a given start
+/// position wins; outer enclosing expressions starting at the same place are skipped.
+/// Different start positions on the same line are kept (for multiple uses of a name).
+fn record_evaluation_hit(session: &mut SessionInfo, parent: SymbolKey, range: TextRange) -> bool {
+    let Some(file) = session.st().get_file(parent) else { return false };
+    let file_path = session.st().path(file).to_string();
+    let Some(file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&file_path) else { return false };
+    let transformed_range = file_info.borrow().text_range_to_range(&range, session.sync_odoo.encoding);
+    let uri = FileMgr::pathname2uri(&file_path);
+    if session.sync_odoo.evaluation_locations.iter().any(|loc| loc.uri == uri && loc.range.start == transformed_range.start) {
+        return false;
+    }
+    session.sync_odoo.evaluation_locations.push(Location { uri, range: transformed_range });
+    true
+}
+
 impl Evaluation {
 
     pub fn new_list(odoo: &mut SyncOdoo, values: Option<Vec<Expr>>, range: TextRange) -> Evaluation {
@@ -1521,7 +1538,8 @@ impl Evaluation {
             ExprOrIdent::Expr(Expr::Starred(_starred_expr)) => {},
             ExprOrIdent::Expr(Expr::IpyEscapeCommand(_ipy_escape_command_expr)) =>{},
         }
-        if let Some(evaluation_search) = session.sync_odoo.evaluation_search.as_ref() {
+        let evaluation_search = session.sync_odoo.evaluation_search.clone();
+        if let Some(evaluation_search) = evaluation_search.as_ref() {
             for eval in evals.iter() {
                 if found_one_reference {
                     //if we have multiple matches, it means that that ast can reference it multiple times, but we only want to know if that ast matches or not
@@ -1529,24 +1547,7 @@ impl Evaluation {
                 }
                 if eval.symbol.sym.has_weak() && let Some(weak) = eval.symbol.sym.get_weak().weak.upgrade(session.st()) {
                     if let Some(evaluation_search_sym) = evaluation_search.as_symbol() && weak == evaluation_search_sym {
-                        let file = session.st().get_file(parent).unwrap();
-                        let file_path = session.st().path(file);
-                        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(file_path);
-                        if let Some(file_info) = file_info {
-                            found_one_reference = true;
-                            let range= ast.range();
-                            let transformed_range = file_info.borrow().text_range_to_range(&range, session.sync_odoo.encoding);
-                            //check that a previous call to analyze_ast (recursively for ex) didn't already add this expression
-                            let uri = FileMgr::pathname2uri(file_path);
-                            if session.sync_odoo.evaluation_locations.is_empty() ||
-                            session.sync_odoo.evaluation_locations.last().unwrap().uri != uri ||
-                            session.sync_odoo.evaluation_locations.last().unwrap().range.start.line != transformed_range.start.line {
-                                session.sync_odoo.evaluation_locations.push(Location {
-                                    uri: uri,
-                                    range: transformed_range,
-                                });
-                            }
-                        }
+                        found_one_reference |= record_evaluation_hit(session, parent, ast.range());
                     }
                 }
                 if let Some(value) = eval.value.as_ref() {
@@ -1555,41 +1556,14 @@ impl Evaluation {
                             match evaluation_search {
                                 ReferenceTarget::String(evaluation_search_string) => {
                                     if constant.value.to_str() == evaluation_search_string {
-                                        let file = session.st().get_file(parent).unwrap();
-                                        let file_path = session.st().path(file);
-                                        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(file_path);
-                                        if let Some(file_info) = file_info {
-                                            found_one_reference = true;
-                                            let range = ast.range();
-                                            let transformed_range = file_info.borrow().text_range_to_range(&range, session.sync_odoo.encoding);
-                                            //check that a previous call to analyze_ast (recursively for ex) didn't already add this expression
-                                            let uri = FileMgr::pathname2uri(file_path);
-                                            if session.sync_odoo.evaluation_locations.is_empty() ||
-                                            session.sync_odoo.evaluation_locations.last().unwrap().uri != uri ||
-                                            session.sync_odoo.evaluation_locations.last().unwrap().range.start.line != transformed_range.start.line{
-                                                session.sync_odoo.evaluation_locations.push(Location {
-                                                    uri: uri,
-                                                    range: transformed_range,
-                                                });
-                                            }
-                                        }
+                                        found_one_reference |= record_evaluation_hit(session, parent, ast.range());
                                     }
                                 },
                                 ReferenceTarget::Symbol(evaluation_search_sym) => {
                                     if let SymbolKey::Class(class_key) = *evaluation_search_sym {
                                         if let Some(model_data) = session.st()[class_key]._model.as_ref() {
                                             if model_data.name == constant.value.to_str() {
-                                                let file = session.st().get_file(parent).unwrap();
-                                                let file_path = session.st().path(file);
-                                                let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(file_path);
-                                                if let Some(file_info) = file_info {
-                                                    let transformed_range = file_info.borrow().text_range_to_range(&constant.range, session.sync_odoo.encoding);
-                                                    let uri = FileMgr::pathname2uri(file_path);
-                                                    session.sync_odoo.evaluation_locations.push(Location {
-                                                        uri: uri,
-                                                        range: transformed_range,
-                                                    });
-                                                }
+                                                record_evaluation_hit(session, parent, constant.range);
                                             }
                                         }
                                     }
