@@ -48,6 +48,9 @@ impl XmlAstUtils {
                 "template" => {
                     XmlAstUtils::visit_template(session, &node, offset, from_module, ctxt, results, on_dep_only);
                 }
+                "button" => {
+                    XmlAstUtils::visit_button(session, &node, offset, from_module, ctxt, results, on_dep_only);
+                }
                 _ => {
                     for child in node.children() {
                         XmlAstUtils::visit_node(session, &child, offset, from_module, ctxt, results, on_dep_only);
@@ -56,6 +59,43 @@ impl XmlAstUtils {
             }
         } else if node.is_text() {
             XmlAstUtils::visit_text(session, &node, offset, from_module, ctxt, results, on_dep_only);
+        }
+    }
+
+    /// `<button name="method_x" type="object">` invokes `method_x` on the current
+    /// record's model. Implicit `type` is `object` in views, so we resolve `name`
+    /// against `record_model` whenever there's no `type="action"` (which would put
+    /// us in the xml-id case already handled by scan_format_xml_id_under_cursor /
+    /// the existing %(...)d path).
+    fn visit_button(session: &mut SessionInfo<'_>, node: &Node, offset: usize, from_module: Option<ModuleKey>, ctxt: &mut HashMap<String, ContextValue>, results: &mut (Vec<SymbolKey>, Option<Range<usize>>), on_dep_only: bool) {
+        let is_action_type = node.attribute("type") == Some("action");
+        for attr in node.attributes() {
+            if attr.name() == "name" && !is_action_type {
+                if attr.range_value().start <= offset && attr.range_value().end >= offset {
+                    let model_name = ctxt.get("record_model").map(ContextValue::as_str).unwrap_or_default();
+                    if model_name.is_empty() { continue; }
+                    if let Some(model) = session.sync_odoo.models.get(model_name).cloned() {
+                        let from_module = match on_dep_only { true => from_module, false => None };
+                        for (class_key, missing_dep) in model.borrow().all_symbols(session, from_module, true) {
+                            if missing_dep.is_none() {
+                                let content = session.sync_odoo.symbol_table.get_content_symbol(class_key.into(), attr.value(), u32::MAX);
+                                for symbol in content.symbols {
+                                    results.0.push(symbol);
+                                }
+                            }
+                        }
+                        results.1 = Some(attr.range_value());
+                    }
+                }
+            } else if attr.name() == "groups" {
+                if attr.range_value().start <= offset && attr.range_value().end >= offset {
+                    XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
+                    results.1 = Some(attr.range_value());
+                }
+            }
+        }
+        for child in node.children() {
+            XmlAstUtils::visit_node(session, &child, offset, from_module, ctxt, results, on_dep_only);
         }
     }
 
