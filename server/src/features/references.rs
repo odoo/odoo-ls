@@ -284,7 +284,14 @@ impl ReferenceFeature {
         session.sync_odoo.evaluation_search = Some(reference_target.clone());
         visitor.browse_file(session, file_symbol, file_info_ast.borrow().get_stmts().as_ref().unwrap());
         session.sync_odoo.evaluation_search = None;
-        std::mem::take(&mut session.sync_odoo.evaluation_locations)
+        let mut locations = std::mem::take(&mut session.sync_odoo.evaluation_locations);
+        // Innermost expressions are analyzed first, so stable-sort by position
+        // and keep the first hit at each (uri, position) - that's the most
+        // specific token. Replaces a per-push O(N) scan with one O(N log N).
+        locations.sort_by(|a, b| (a.uri.as_str(), a.range.start.line, a.range.start.character)
+            .cmp(&(b.uri.as_str(), b.range.start.line, b.range.start.character)));
+        locations.dedup_by(|a, b| a.uri == b.uri && a.range.start == b.range.start);
+        locations
     }
 
     //the name inside the manifest will be different, so we only search for the key in this module and return the location with the range
