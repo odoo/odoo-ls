@@ -7,12 +7,13 @@ use crate::{
         odoo::SyncOdoo,
         symbols::{
             ModuleSymbol,
+            storage::xml::xml_field_symbol::XmlFieldName,
             symbol_keys::{ModuleKey, SourceFileKey, SymbolKey, XmlId},
         },
     },
     threads::SessionInfo,
 };
-use roxmltree::Node;
+use roxmltree::{Attribute, Node};
 use std::ops::Range;
 
 pub struct XmlAstUtils {}
@@ -62,34 +63,24 @@ impl XmlAstUtils {
         }
     }
 
-    /// `<button name="method_x" type="object">` invokes `method_x` on the current
-    /// record's model. Implicit `type` is `object` in views, so we resolve `name`
-    /// against `record_model` whenever there's no `type="action"` (which would put
-    /// us in the xml-id case already handled by scan_format_xml_id_under_cursor /
-    /// the existing %(...)d path).
     fn visit_button(session: &mut SessionInfo<'_>, node: &Node, offset: usize, from_module: Option<ModuleKey>, ctxt: &mut HashMap<String, ContextValue>, results: &mut (Vec<SymbolKey>, Option<Range<usize>>), on_dep_only: bool) {
+        // Implicit `type` is `object` in views; only `type="action"` puts us in
+        // the xml-id case (handled by scan_format_xml_id_under_cursor).
         let is_action_type = node.attribute("type") == Some("action");
         for attr in node.attributes() {
+            let in_range = attr.range_value().start <= offset && attr.range_value().end >= offset;
+            if !in_range { continue; }
             if attr.name() == "name" && !is_action_type {
-                if attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    let model_name = ctxt.get("record_model").map(ContextValue::as_str).unwrap_or_default();
-                    if model_name.is_empty() { continue; }
-                    if let Some(model) = session.sync_odoo.models.get(model_name).cloned() {
-                        let from_module = match on_dep_only { true => from_module, false => None };
-                        for (class_key, missing_dep) in model.borrow().all_symbols(session, from_module, true) {
-                            if missing_dep.is_none() {
-                                let content = session.sync_odoo.symbol_table.get_content_symbol(class_key.into(), attr.value(), u32::MAX);
-                                for symbol in content.symbols {
-                                    results.0.push(symbol);
-                                }
-                            }
-                        }
-                        results.1 = Some(attr.range_value());
-                    }
+                let model_name = ctxt.get("record_model").map(ContextValue::as_str).unwrap_or_default().to_string();
+                if model_name.is_empty() { continue; }
+                let found = XmlAstUtils::resolve_member_on_model(session, &model_name, attr.value(), from_module, on_dep_only);
+                if !found.is_empty() {
+                    results.0.extend(found);
+                    results.1 = Some(attr.range_value());
                 }
             } else if attr.name() == "groups" {
-                if attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
+                if let Some(file_module) = from_module {
+                    XmlAstUtils::add_xml_id_result(session, attr.value(), file_module.into(), attr.range_value(), results, on_dep_only);
                     results.1 = Some(attr.range_value());
                 }
             }
@@ -97,6 +88,28 @@ impl XmlAstUtils {
         for child in node.children() {
             XmlAstUtils::visit_node(session, &child, offset, from_module, ctxt, results, on_dep_only);
         }
+    }
+
+    /// Find a member named `name` on every class registered for `model_name`,
+    /// honoring `_inherit` chains. Returns the concrete Variable/Function
+    /// symbols. Drives goto-def / hover for `<field name="X"/>` and
+    /// `<button name="X"/>` resolution.
+    fn resolve_member_on_model(session: &mut SessionInfo, model_name: &str, member_name: &str, from_module: Option<ModuleKey>, on_dep_only: bool) -> Vec<SymbolKey> {
+        let mut out = Vec::new();
+        let Some(model) = session.sync_odoo.models.get(model_name).cloned() else { return out };
+        let from_module = if on_dep_only { from_module } else { None };
+        for class_key in Model::get_full_model_classes(model.clone(), session, from_module) {
+            let content = session.st().get_content_symbol(class_key.into(), member_name, u32::MAX);
+            out.extend(content.symbols);
+        }
+        let model_ref = model.borrow();
+        for xml_record_key in model_ref.get_xml_model_field_symbols(session.st(), from_module) {
+            let field_name = session.st()[xml_record_key].get_field_text(XmlFieldName::Name, session.st());
+            if field_name.as_deref() == Some(member_name) {
+                out.push(xml_record_key.into());
+            }
+        }
+        out
     }
 
     fn visit_record(session: &mut SessionInfo<'_>, node: &Node, offset: usize, from_module: Option<ModuleKey>, ctxt: &mut HashMap<String, ContextValue>, results: &mut (Vec<SymbolKey>, Option<Range<usize>>), on_dep_only: bool) {
@@ -135,33 +148,13 @@ impl XmlAstUtils {
             if attr.name() == "name" {
                 ctxt.insert(S!("field_name"), ContextValue::STRING(attr.value().to_string()));
                 if attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    let model_name = ctxt.get("record_model").map(ContextValue::as_str).unwrap_or_default();
-                    if model_name.is_empty() {
-                        continue;
-                    }
-                    if let Some(model) = session.sync_odoo.models.get(model_name).cloned() {
-                        let from_module = match on_dep_only {
-                            true => from_module,
-                            false => None,
-                        };
-                        let field_name = attr.value();
-                        for class_key in Model::get_full_model_classes(model.clone(), session, from_module) {
-                            let content = session.st().get_content_symbol(class_key.into(), field_name, u32::MAX);
-                            for symbol in content.symbols {
-                                results.0.push(symbol);
-                            }
+                    let model_name = ctxt.get("record_model").map(ContextValue::as_str).unwrap_or_default().to_string();
+                    if !model_name.is_empty() {
+                        let found = XmlAstUtils::resolve_member_on_model(session, &model_name, attr.value(), from_module, on_dep_only);
+                        if !found.is_empty() {
+                            results.0.extend(found);
+                            results.1 = Some(attr.range_value());
                         }
-                        let model_ref = model.borrow();
-                        for xml_record_key in model_ref.get_xml_model_field_symbols(session.st(), from_module) {
-                            let record = &session.st()[xml_record_key];
-                            if let Some(&name_field_key) = record.fields().get("name") {
-                                let name_field = &session.st()[name_field_key];
-                                if name_field.text.as_deref() == Some(field_name) {
-                                    results.0.push(xml_record_key.into());
-                                }
-                            }
-                        }
-                        results.1 = Some(attr.range_value());
                     }
                 }
             } else if attr.name() == "ref" {
@@ -171,11 +164,7 @@ impl XmlAstUtils {
                 }
             }
         }
-        // Inside a `<field name="arch">...</field>`, sub-elements reference fields/methods
-        // on the *view's target* model, not on the surrounding record's model (typically
-        // ir.ui.view / ir.actions.act_window). Look at sibling `<field name="model">X</field>`
-        // to pick up the right model for the arch subtree.
-        let arch_model = XmlAstUtils::pick_arch_target_model(node);
+        let arch_model = XmlAstUtils::arch_field_target_model(node);
         let prev_record_model = arch_model.as_ref()
             .map(|m| ctxt.insert(S!("record_model"), ContextValue::STRING(m.clone())));
         for child in node.children() {
@@ -188,27 +177,6 @@ impl XmlAstUtils {
             }
         }
         ctxt.remove("field_name");
-    }
-
-    /// If `node` is `<field name="arch">`, return the text of its sibling
-    /// `<field name="model">…</field>` (the view's target model).
-    fn pick_arch_target_model(node: &Node) -> Option<String> {
-        if node.attribute("name") != Some("arch") {
-            return None;
-        }
-        let parent = node.parent()?;
-        for sibling in parent.children() {
-            if sibling.is_element()
-                && sibling.tag_name().name() == "field"
-                && sibling.attribute("name") == Some("model")
-            {
-                let model = sibling.text()?.trim();
-                if !model.is_empty() {
-                    return Some(model.to_string());
-                }
-            }
-        }
-        None
     }
 
     fn visit_text(session: &mut SessionInfo, node: &Node, offset: usize, from_module: Option<ModuleKey>, ctxt: &mut HashMap<String, ContextValue>, results: &mut (Vec<SymbolKey>, Option<Range<usize>>), on_dep_only: bool) {
@@ -262,40 +230,70 @@ impl XmlAstUtils {
         }
     }
 
-    /// Detect a `%(xml_id)d` / `%(xml_id)s` / `%(xml_id)i` format reference
-    /// in any attribute value on `node` and, if the cursor sits inside the
-    /// inner xml-id, resolve it like a normal xml-id reference (powering
-    /// goto-def / hover on `<button name="%(...)d">` and similar).
     fn scan_format_xml_id_under_cursor(session: &mut SessionInfo, node: &Node, offset: usize, from_module: Option<ModuleKey>, results: &mut (Vec<SymbolKey>, Option<Range<usize>>), on_dep_only: bool) {
         let Some(file_module) = from_module else { return };
         for attr in node.attributes() {
-            let value = attr.value();
-            let bytes = value.as_bytes();
-            let attr_start = attr.range_value().start;
-            let mut i = 0;
-            while i + 3 < bytes.len() {
-                if bytes[i] == b'%' && bytes[i+1] == b'(' {
-                    if let Some(close_off) = bytes[i+2..].iter().position(|&b| b == b')') {
-                        let inner_start = i + 2;
-                        let inner_end = i + 2 + close_off;
-                        let after = inner_end + 1;
-                        if after < bytes.len() && matches!(bytes[after], b'd' | b's' | b'i') {
-                            let abs_start = attr_start + inner_start;
-                            let abs_end = attr_start + inner_end;
-                            if abs_start <= offset && offset <= abs_end {
-                                let inner = &value[inner_start..inner_end];
-                                XmlAstUtils::add_xml_id_result(session, inner, file_module.into(), abs_start..abs_end, results, on_dep_only);
-                                results.1 = Some(abs_start..abs_end);
-                                return;
-                            }
-                            i = after + 1;
-                            continue;
-                        }
-                    }
+            let attr_range = attr.range_value();
+            if offset < attr_range.start || offset > attr_range.end { continue; }
+            let mut hit: Option<(String, Range<usize>)> = None;
+            XmlAstUtils::for_each_format_xml_id_ref(&attr, |inner, range| {
+                if hit.is_some() { return; }
+                if range.start <= offset && offset <= range.end {
+                    hit = Some((inner.to_string(), range));
                 }
-                i += 1;
+            });
+            if let Some((inner, range)) = hit {
+                XmlAstUtils::add_xml_id_result(session, &inner, file_module.into(), range.clone(), results, on_dep_only);
+                results.1 = Some(range);
+                return;
             }
         }
+    }
+
+    /// For each `%(xml_id)d|s|i` format-string reference in `attr`'s value, invoke
+    /// `f` with the inner xml-id and its absolute byte range (excluding the
+    /// `%(` and `)X` wrapper). Used for `<button name="%(...)d">` style action refs.
+    pub fn for_each_format_xml_id_ref(attr: &Attribute, mut f: impl FnMut(&str, Range<usize>)) {
+        let value = attr.value();
+        let bytes = value.as_bytes();
+        let attr_start = attr.range_value().start;
+        let mut i = 0;
+        while i + 3 < bytes.len() {
+            if bytes[i] == b'%' && bytes[i + 1] == b'(' {
+                if let Some(close_off) = bytes[i + 2..].iter().position(|&b| b == b')') {
+                    let inner_start = i + 2;
+                    let inner_end = i + 2 + close_off;
+                    let after = inner_end + 1;
+                    if after < bytes.len() && matches!(bytes[after], b'd' | b's' | b'i') {
+                        f(&value[inner_start..inner_end], attr_start + inner_start..attr_start + inner_end);
+                        i = after + 1;
+                        continue;
+                    }
+                }
+            }
+            i += 1;
+        }
+    }
+
+    /// If `node` is `<field name="arch">`, return the text of its sibling
+    /// `<field name="model">…</field>` (the view's target model).
+    pub fn arch_field_target_model(node: &Node) -> Option<String> {
+        if node.attribute("name") != Some("arch") {
+            return None;
+        }
+        let parent = node.parent()?;
+        for sibling in parent.children() {
+            if sibling.is_element()
+                && sibling.tag_name().name() == "field"
+                && sibling.attribute("name") == Some("model")
+            {
+                let model = sibling.text()?.trim();
+                if !model.is_empty() {
+                    return Some(model.to_string());
+                }
+            }
+        }
+        None
     }
 
     fn add_model_result(session: &mut SessionInfo, node: &Node, from_module: Option<ModuleKey>, results: &mut (Vec<SymbolKey>, Option<Range<usize>>), on_dep_only: bool) {
