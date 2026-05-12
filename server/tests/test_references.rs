@@ -102,7 +102,19 @@ fn test_references() {
     let mut references = get_references(&mut session, &test_file, Position::new(3, 18));
     assert_in_result(&mut references, "module_1/__manifest__.py", 3, 13);
     assert_in_result(&mut references, "module_2/__manifest__.py", 13, 17);
-    
+
+    //references on an xml-id declared in XML: should include both ref="..." and %(...)d callsites
+    let xml_file = test_addons_path.join("module_for_diagnostics").join("data").join("bikes.xml").sanitize();
+    let mut references = get_references(&mut session, &xml_file, Position::new(2, 18));
+    // declaration id="bike_wheel_1" in bikes.xml
+    assert_in_result(&mut references, "module_for_diagnostics/data/bikes.xml", 2, 16);
+    // ref="bike_wheel_1" inside bikes.xml
+    assert_in_result(&mut references, "module_for_diagnostics/data/bikes.xml", 17, 36);
+    // qualified %(module_for_diagnostics.bike_wheel_1)d in buttons.xml: inner range covers the whole id
+    assert_in_result(&mut references, "module_for_diagnostics/data/buttons.xml", 2, 24);
+    // prefix-less %(bike_wheel_1)d in buttons.xml
+    assert_in_result(&mut references, "module_for_diagnostics/data/buttons.xml", 3, 24);
+
     // for r in references.iter() {
     //     error!("Reference found at {}:{}:{}", r.uri.as_str(), r.range.start.line, r.range.start.character);
     // }
