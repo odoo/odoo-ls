@@ -62,3 +62,8 @@ dict_ref = {1: basic_var}
 call_ref = print(basic_var)
 binop_ref = basic_var + 1
 lambda_scope = lambda basic_var: basic_var
+
+def annotated_param_func(field_names: list | None = None) -> None:
+    if field_names is None or 'a' in field_names or 'b' in field_names:
+        return
+    return field_names
