@@ -22,6 +22,7 @@ fn test_references() {
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 3, 0);
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 4, 12);
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 15, 8);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 32, 8);  // self in self.env[...]
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 32, 17);
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 33, 8);
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 34, 18);
@@ -78,6 +79,20 @@ fn test_references() {
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 61, 17);
     // usage as left-hand side of a binary operation
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 62, 12);
+    assert!(references.len() == 0, "Some references were not expected: {}",
+        references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
+    );
+
+    //reference of a function parameter, exercising multiple uses of the same name on a single line
+    let mut references = get_references(&mut session, &test_file, Position::new(65, 28));
+    // parameter declaration
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 65, 25);
+    // three same-line usages inside the `if` test
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 66, 7);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 66, 37);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 66, 59);
+    // usage in the return statement
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 68, 11);
     assert!(references.len() == 0, "Some references were not expected: {}",
         references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
     );
