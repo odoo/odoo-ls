@@ -528,6 +528,11 @@ impl FeaturesUtils {
                 }
                 continue;
             };
+            // XML data symbols have no Symbol.name() and don't fit the aggregator below.
+            if let Some(block) = FeaturesUtils::xml_data_hover_block(session, symbol) {
+                blocks.push(block);
+                continue;
+            }
             let context = &eval_symbol.get_weak().context;
             let evaluation_ptrs = SymbolTable::follow_ref(&eval_symbol, session, Some(context), false, false, None, None);
 
@@ -558,6 +563,46 @@ impl FeaturesUtils {
             blocks.push(block);
         }
         blocks.iter().join("  \n***  \n")
+    }
+
+    fn xml_data_hover_block(session: &mut SessionInfo, symbol: SymbolKey) -> Option<String> {
+        let (kind, label, model): (&str, String, Option<String>) = match symbol {
+            SymbolKey::XmlRecord(k) => {
+                let r = &session.st()[k];
+                ("xml record", r.xml_id.as_ref()?.to_string(), Some(r.model.0.to_string()))
+            }
+            SymbolKey::XmlTemplate(k) => {
+                ("xml template", session.st()[k].xml_id.as_ref()?.to_string(), None)
+            }
+            SymbolKey::XmlMenuItem(k) => {
+                ("xml menuitem", session.st()[k].xml_id.as_ref()?.to_string(), None)
+            }
+            SymbolKey::XmlAsset(k) => {
+                ("xml asset", session.st()[k].xml_id.as_ref()?.to_string(), None)
+            }
+            SymbolKey::XmlDelete(k) => {
+                let d = &session.st()[k];
+                ("xml delete", d.xml_id.as_ref()?.to_string(), Some(d.model.to_string()))
+            }
+            SymbolKey::XmlField(k) => {
+                ("xml field", session.st()[k].field_name.to_string(), None)
+            }
+            _ => return None,
+        };
+        let module = session.st().find_module(symbol)
+            .map(|m| session.st()[m].dir_name.to_string());
+        let qualified = match (&module, matches!(symbol, SymbolKey::XmlField(_))) {
+            (Some(m), false) => format!("{}.{}", m, label),
+            _ => label,
+        };
+        let mut block = format!("({}) **{}**", kind, qualified);
+        if let Some(model) = model {
+            block += &format!("  \nModel: `{}`", model);
+        }
+        if let Some(module) = module {
+            block += &format!("  \nDefined in: `{}`", module);
+        }
+        Some(block)
     }
 
     fn get_type_symbol_tag(symbol_table: &SymbolTable, symbol_key: SymbolKey) -> String {

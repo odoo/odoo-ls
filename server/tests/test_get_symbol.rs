@@ -161,6 +161,48 @@ fn test_hover_on_model_field_and_method() {
 }
 
 #[test]
+fn test_hover_on_xml_symbols() {
+    let (mut odoo, config) = setup::setup::setup_server(true);
+    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let bikes_xml = test_addons_path.join("module_for_diagnostics").join("data").join("bikes.xml").sanitize();
+    assert!(PathBuf::from(&bikes_xml).exists(), "Test file does not exist: {}", bikes_xml);
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
+
+    let file_mgr = session.sync_odoo.get_file_mgr();
+    let file_info = file_mgr.borrow().get_file_info(&bikes_xml).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(
+        &mut session,
+        &PathBuf::from(&bikes_xml),
+    ) else {
+        panic!("Failed to get file symbol for bikes.xml");
+    };
+
+    // <record id="bike_wheel_1" model="bike_parts.wheel"> - XmlRecord hover via the new data path
+    let hover_record = test_utils::get_hover_xml_markdown(&mut session, file_symbol, &file_info, 2, 18).unwrap_or_default();
+    assert!(
+        hover_record.contains("xml record") && hover_record.contains("bike_wheel_1") && hover_record.contains("bike_parts.wheel"),
+        "Hover on <record id=...> should describe kind, id, and model. Got: {}",
+        hover_record
+    );
+
+    // <field name="name">Standard Wheel</field> - non-Class symbol (Variable) now renders instead of empty
+    let hover_field = test_utils::get_hover_xml_markdown(&mut session, file_symbol, &file_info, 3, 22).unwrap_or_default();
+    assert!(
+        hover_field.contains("name"),
+        "Hover on <field name=\"name\"> should mention the field. Got: {}",
+        hover_field
+    );
+
+    // ref="bike_wheel_1" - should resolve to the XmlRecord via the data symbol path
+    let hover_ref = test_utils::get_hover_xml_markdown(&mut session, file_symbol, &file_info, 17, 40).unwrap_or_default();
+    assert!(
+        hover_ref.contains("xml record") && hover_ref.contains("bike_wheel_1"),
+        "Hover on ref=\"bike_wheel_1\" should resolve to the XmlRecord. Got: {}",
+        hover_ref
+    );
+}
+
+#[test]
 fn test_hover_inverse_name_o2m(){
     // Setup server and session with test addons
     let (mut odoo, config) = setup::setup::setup_server(true);
