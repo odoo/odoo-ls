@@ -10,6 +10,9 @@ class BikePartsWheel(models.Model):
     available = fields.Boolean(string='Available', default=True)
     description = fields.Text(string='Description')
 
+    def action_set_available(self):
+        self.available = True
+
 class BikesBike(models.Model):
     _name = 'bikes.bike'
 
