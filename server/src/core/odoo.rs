@@ -1177,18 +1177,10 @@ impl SyncOdoo {
 
     pub fn get_main_entry_tree(&self, symbol_key: impl Into<SymbolKey>) -> Tree {
         let symbol_key = symbol_key.into();
-        let symbol_table = &self.symbol_table;
-        let mut tree = symbol_table.get_tree(symbol_key);
-        let len_first_part = tree.0.len();
+        let mut tree = self.symbol_table.get_tree(symbol_key);
         let odoo_tree = &self.main_entry_tree;
-        if len_first_part >= odoo_tree.len() {
-            for component in odoo_tree.iter() {
-                if tree.0.len() > 0 && &tree.0[0] == component {
-                    tree.0.remove(0);
-                } else {
-                    return symbol_table.get_tree(symbol_key);
-                }
-            }
+        if tree.0.starts_with(odoo_tree) {
+            tree.0.drain(0..odoo_tree.len());
         }
         tree
     }
