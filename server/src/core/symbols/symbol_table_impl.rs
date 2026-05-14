@@ -1485,17 +1485,16 @@ impl SymbolTable {
         is_super: bool
     ) -> HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> {
         let mut result: HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> = HashMap::default();
-        let mut acc: HashSet<Tree> = HashSet::default();
+        let mut acc = HashSet::default();
         Self::_all_members(symbol, session, &mut result, with_co_models, only_fields, only_methods, from_module, &mut acc, is_super);
         return  result;
     }
 
-    fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>>, with_co_models: bool, only_fields: bool, only_methods: bool, from_module: Option<ModuleKey>, acc: &mut HashSet<Tree>, is_super: bool) {
-        let tree = session.st().get_tree(symbol_key);
-        if acc.contains(&tree) {
+    fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>>, with_co_models: bool, only_fields: bool, only_methods: bool, from_module: Option<ModuleKey>, acc: &mut HashSet<SymbolKey>, is_super: bool) {
+        if acc.contains(&symbol_key) {
             return;
         }
-        acc.insert(tree);
+        acc.insert(symbol_key);
         let mut append_result = |name: OYarn, symbol: SymbolKey, dep: Option<OYarn>| {
             if let Some(vec) = result.get_mut(&name) {
                 vec.push((symbol, dep));
