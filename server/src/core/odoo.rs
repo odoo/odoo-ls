@@ -569,16 +569,27 @@ impl SyncOdoo {
         // is built at most once — matching the old single-drain behaviour.
         let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
-        let total_modules = sorted_modules.len() + invalid_modules.len();
+        let all_modules: Vec<ModuleKey> = sorted_modules.into_iter().chain(invalid_modules).collect();
+        let total_modules = all_modules.len();
+        // Warm the page cache for the first module before we touch disk.
+        if let Some(&first) = all_modules.first() {
+            SyncOdoo::prefetch_module(session.st(), first);
+        }
         // Phase 1: ARCH + ARCH_EVAL, one module at a time in dependency order. This keeps
         // the queues small so pop_item stays cheap. Validation is deferred: validating a
         // module before later modules contribute to the models it references would force
         // a re-validation once those models appear (manifest `depends` does not capture
         // every cross-module model dependency). Invalid modules (cyclic/unresolvable
         // deps) have no reliable order, so they are simply built last.
-        for (built, module_symbol) in sorted_modules.into_iter().chain(invalid_modules).enumerate() {
+        for (built, &module_symbol) in all_modules.iter().enumerate() {
             if is_reporting_progress {
                 SyncOdoo::report_modules_progress(session, total_modules - built, total_modules);
+            }
+            // While this module builds (CPU-bound), warm the next module's source files
+            // on a background thread. The strict per-module order makes this look-ahead
+            // reliable: by the time we reach module N+1 its files are page-cache-warm.
+            if let Some(&next) = all_modules.get(built + 1) {
+                SyncOdoo::prefetch_module(session.st(), next);
             }
             // An earlier module may already have built this one as a dependency (via
             // build_now / create_module_from_name); re-queuing it would re-arch an
@@ -790,6 +801,19 @@ impl SyncOdoo {
                 message: None,
                 percentage: None,
             }))
+        });
+    }
+
+    /// Best-effort: warm the OS page cache for a module's `.py`/`.xml`/`.csv`
+    /// files on a background thread, so they are resident before the build
+    /// pipeline reads them. Fire-and-forget; the thread is never joined.
+    fn prefetch_module(st: &SymbolTable, module: ModuleKey) {
+        let module_path = st[module].path.clone();
+        std::thread::spawn(move || {
+            crate::core::file_mgr::prefetch_dir(
+                std::path::Path::new(&module_path),
+                &["py", "xml", "csv"],
+            );
         });
     }
 
