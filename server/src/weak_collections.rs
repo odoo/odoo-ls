@@ -47,8 +47,8 @@ impl<K: Eq + Hash + Copy> WeakSet<K> {
         snapshot.into_iter()
     }
 
-    pub fn retain(&mut self, f: impl Fn(&K) -> bool) {
-        self.set.get_mut().retain(|k| f(k));
+    pub fn retain_valid(&mut self, table: &impl KeyValidator<K>, f: impl Fn(&K) -> bool) {
+        self.set.get_mut().retain(|k| table.is_key_valid(*k) && f(k));
     }
 
     pub fn drain_valid(&mut self, table: &impl KeyValidator<K>) -> IntoIter<K> {
