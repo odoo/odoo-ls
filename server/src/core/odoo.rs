@@ -639,33 +639,60 @@ impl SyncOdoo {
             BuildSteps::VALIDATION => &self.rebuild_validation,
             _ => &self.rebuild_arch
         };
-        let mut selected_sym: Option<SymbolKey> = None;
-        let mut selected_count: u32 = 999999999;
-        let mut current_count: u32;
-        for sym in set.iter_valid(&self.symbol_table) {
-            current_count = 0;
+
+        // Returns true if `sym` has at least one dep still pending in any rebuild set.
+        // Short-circuits on the first pending dep — never enumerates the full list.
+        let has_pending = |sym: SymbolKey| -> bool {
             let file = self.symbol_table.get_file(sym).unwrap();
             let all_dep = self.symbol_table.get_all_dependencies(file, step);
-            for (index, dep_set) in all_dep.iter().enumerate() {
-                let index_set =  match index {
-                    x if x == BuildSteps::ARCH as usize => &self.rebuild_arch,
-                    x if x == BuildSteps::ARCH_EVAL as usize => &self.rebuild_arch_eval,
-                    x if x == BuildSteps::VALIDATION as usize => &self.rebuild_validation,
-                    _ => continue,
+            all_dep.iter().enumerate().any(|(index, dep_set)| {
+                let index_set = match BuildSteps::from(index as i32) {
+                    BuildSteps::ARCH => &self.rebuild_arch,
+                    BuildSteps::ARCH_EVAL => &self.rebuild_arch_eval,
+                    BuildSteps::VALIDATION => &self.rebuild_validation,
+                    _ => return true // or panic??,
                 };
-                current_count += dep_set.iter_valid(&self.symbol_table)
-                    .filter(|&dep| index_set.contains(&dep.into()))
-                    .count() as u32;
-            }
-            if current_count < selected_count {
-                selected_sym = Some(sym);
-                selected_count = current_count;
-                if current_count == 0 {
-                    break;
+                dep_set.iter_valid(&self.symbol_table)
+                    .any(|dep| index_set.contains(&dep.into()))
+            })
+        };
+
+        // Pass 1 (fast path): pick the first FIFO symbol that's ready to build.
+        let mut selected_sym = set
+            .iter_valid(&self.symbol_table)
+            .find(|&sym| !has_pending(sym));
+
+        // Pass 2 (slow path): only runs when nothing is ready — i.e. cycles.
+        // Falls back to the original "least-blocked" heuristic.
+
+        if selected_sym.is_none() {
+            let mut selected_count: u32 = u32::MAX;
+            let mut current_count: u32;
+            for sym in set.iter_valid(&self.symbol_table) {
+                current_count = 0;
+                let file = self.symbol_table.get_file(sym).unwrap();
+                let all_dep = self.symbol_table.get_all_dependencies(file, step);
+                for (index, dep_set) in all_dep.iter().enumerate() {
+                    let index_set = match BuildSteps::from(index as i32) {
+                        BuildSteps::ARCH => &self.rebuild_arch,
+                        BuildSteps::ARCH_EVAL => &self.rebuild_arch_eval,
+                        BuildSteps::VALIDATION => &self.rebuild_validation,
+                        _ => continue,
+                    };
+                    current_count += dep_set.iter_valid(&self.symbol_table)
+                        .filter(|&dep| index_set.contains(&dep.into()))
+                        .count() as u32;
+                }
+                if current_count < selected_count {
+                    selected_sym = Some(sym);
+                    selected_count = current_count;
+                    if current_count == 0 {
+                        break;
+                    }
                 }
             }
         }
-        let set =  match step {
+        let set = match step {
             BuildSteps::ARCH_EVAL => &mut self.rebuild_arch_eval,
             BuildSteps::VALIDATION => &mut self.rebuild_validation,
             _ => &mut self.rebuild_arch
