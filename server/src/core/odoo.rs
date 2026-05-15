@@ -559,23 +559,50 @@ impl SyncOdoo {
                 }
             }
         }
-        let sorted_modules = SyncOdoo::sort_modules(session.st(), modules);
+        let (sorted_modules, invalid_modules) = SyncOdoo::sort_modules(session.st(), modules);
+        // Build modules one at a time, in dependency order, fully draining the rebuild
+        // queues between each. This keeps the queues small (so pop_item stays cheap) and
+        // guarantees every module is built against a fully-built dependency closure.
+        session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
+        SyncOdoo::add_from_self_reload(session);
+        let is_reporting_progress = SyncOdoo::start_rebuild_session(session, true);
         for module_symbol in sorted_modules {
+            // An earlier module may already have built this one as a dependency (via
+            // build_now / create_module_from_name); re-queuing it would re-arch an
+            // already-built tree and leave stale symbol keys behind.
+            if session.st().build_status(module_symbol.into(), BuildSteps::ARCH) == BuildStatus::DONE {
+                continue;
+            }
+            session.sync_odoo.add_to_rebuild_arch(module_symbol);
+            if !SyncOdoo::drain_rebuilds(session, false, is_reporting_progress) || session.sync_odoo.need_rebuild {
+                SyncOdoo::end_rebuild_session(session, is_reporting_progress);
+                return;
+            }
+        }
+        // Modules with cyclic/unresolvable manifest dependencies are not topologically
+        // sorted, so there is no reliable order for them: queue them together and let
+        // pop_item order what it can (build_now still enforces correctness).
+        for module_symbol in invalid_modules {
+            if session.st().build_status(module_symbol.into(), BuildSteps::ARCH) == BuildStatus::DONE {
+                continue;
+            }
             session.sync_odoo.add_to_rebuild_arch(module_symbol);
         }
-        if !SyncOdoo::process_rebuilds(session, false) {
+        if !SyncOdoo::drain_rebuilds(session, false, is_reporting_progress) {
+            SyncOdoo::end_rebuild_session(session, is_reporting_progress);
             return;
         }
-        //println!("{}", self.symbols.as_ref().unwrap().borrow_mut().debug_print_graph());
-        //fs::write("out_architecture.json", self.get_symbol(&tree(vec!["odoo", "addons", "module_1"], vec![])).as_ref().unwrap().borrow().debug_to_json().to_string()).expect("Unable to write file");
+        SyncOdoo::end_rebuild_session(session, is_reporting_progress);
         let modules_count = session.sync_odoo.modules.len();
         info!("End building modules. {} modules loaded", modules_count);
         session.log_message(MessageType::INFO, format!("End building modules. {} modules loaded", modules_count));
         session.sync_odoo.state_init = InitState::ODOO_READY;
     }
 
-    /// Sort modules by load order
-    fn sort_modules(symbol_table: &SymbolTable, modules: Vec<ModuleKey>) -> Vec<ModuleKey> {
+    /// Sort modules by load order. Returns `(sorted, invalid)`: `sorted` is the
+    /// topologically-ordered modules (per manifest `depends`); `invalid` holds modules
+    /// with cyclic or unresolvable dependencies, for which no reliable order exists.
+    fn sort_modules(symbol_table: &SymbolTable, modules: Vec<ModuleKey>) -> (Vec<ModuleKey>, Vec<ModuleKey>) {
         // Build name -> (symbol, dependencies) lookup
         let module_info: HashMap<OYarn, (ModuleKey, Vec<OYarn>)> = modules
             .into_iter()
@@ -600,13 +627,16 @@ impl SyncOdoo {
         let sort_result = sort_by_load_order(nodes);
         debug_assert!(sort_result.sorted.first() == Some(&"base"), "The first module after sorting should be 'base'");
 
-        sort_result.sorted
+        let sorted: Vec<ModuleKey> = sort_result.sorted
             .iter()
             .skip(1) // skip "base"
-            // TODO: decide what to do with invalid modules. For now, we append them at the end.
-            .chain(sort_result.invalid.iter())
             .map(|&name| module_info.get(name).expect("module should exist").0)
-            .collect()
+            .collect();
+        let invalid: Vec<ModuleKey> = sort_result.invalid
+            .iter()
+            .map(|&name| module_info.get(name).expect("module should exist").0)
+            .collect();
+        (sorted, invalid)
     }
 
 
@@ -762,17 +792,58 @@ impl SyncOdoo {
             return false;
         }
         SyncOdoo::add_from_self_reload(session);
+        let is_reporting_progress = SyncOdoo::start_rebuild_session(session, false);
+        let result = SyncOdoo::drain_rebuilds(session, no_validation, is_reporting_progress);
+        SyncOdoo::end_rebuild_session(session, is_reporting_progress);
+        result
+    }
+
+    /// Begin a rebuild session: set up the import cache and start work-done progress
+    /// reporting when there is queued work (or `force_reporting` is set, e.g. when the
+    /// caller is about to enqueue work itself). Returns whether progress is being
+    /// reported; pass that to `drain_rebuilds` and `end_rebuild_session`.
+    fn start_rebuild_session(session: &mut SessionInfo, force_reporting: bool) -> bool {
         session.sync_odoo.import_cache = Some(ImportCache{ modules: HashMap::new(), main_modules: HashMap::new() });
+        let has_work = !session.sync_odoo.rebuild_arch.is_empty()
+            || !session.sync_odoo.rebuild_arch_eval.is_empty()
+            || !session.sync_odoo.rebuild_validation.is_empty();
+        if has_work || force_reporting {
+            SyncOdoo::start_reporting(session);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// End a rebuild session: notify the client if a restart is required, tear down the
+    /// import cache, and close work-done progress reporting.
+    fn end_rebuild_session(session: &mut SessionInfo, is_reporting_progress: bool) {
+        if session.sync_odoo.need_rebuild {
+            session.log_message(MessageType::INFO, S!("Rebuild required. Resetting database on breaktime..."));
+            info!("Odoo version change detected. OdooLS is restarting");
+            session.send_notification("$Odoo/restartNeeded", ());
+        }
+        session.sync_odoo.import_cache = None;
+        if is_reporting_progress {
+            session.send_notification(Progress::METHOD, ProgressParams {
+                token: ProgressToken::Number(session.sync_odoo.progress_token),
+                value: ProgressParamsValue::WorkDone(WorkDoneProgress::End(WorkDoneProgressEnd {
+                    message: None,
+                }))
+            });
+        }
+    }
+
+    /// Drain the rebuild queues (ARCH, ARCH_EVAL, VALIDATION) until they are empty, a
+    /// restart is required, or the server shuts down. Returns `false` only on server
+    /// shutdown. The caller owns the rebuild session (`start_rebuild_session` /
+    /// `end_rebuild_session`), so this may be called repeatedly within one session.
+    fn drain_rebuilds(session: &mut SessionInfo, no_validation: bool, is_reporting_progress: bool) -> bool {
         let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
 
         //workdone progress
         let mut last_update_status = Instant::now() - Duration::from_secs(10);
-        let mut is_reporting_progress = false;
-        if !session.sync_odoo.rebuild_arch.is_empty() || !session.sync_odoo.rebuild_arch_eval.is_empty() || !session.sync_odoo.rebuild_validation.is_empty() {
-            is_reporting_progress = true;
-            SyncOdoo::start_reporting(session);
-        }
         trace!("Starting rebuild: {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_validation.len());
         while !session.sync_odoo.need_rebuild && (!session.sync_odoo.rebuild_arch.is_empty() || !session.sync_odoo.rebuild_arch_eval.is_empty() || !session.sync_odoo.rebuild_validation.is_empty()) {
             if DEBUG_THREADS {
@@ -842,14 +913,6 @@ impl SyncOdoo {
                     if no_validation {
                         session.request_delayed_rebuild();
                         session.sync_odoo.add_to_validations(sym_key);
-                        if is_reporting_progress {
-                            session.send_notification(Progress::METHOD, ProgressParams {
-                                token: ProgressToken::Number(session.sync_odoo.progress_token),
-                                value: ProgressParamsValue::WorkDone(WorkDoneProgress::End(WorkDoneProgressEnd {
-                                    message: None,
-                                }))
-                            });
-                        }
                         return true;
                     }
                 }
@@ -870,21 +933,9 @@ impl SyncOdoo {
                 continue;
             }
         }
-        if session.sync_odoo.need_rebuild {
-            session.log_message(MessageType::INFO, S!("Rebuild required. Resetting database on breaktime..."));
-            info!("Odoo version change detected. OdooLS is restarting");
-            session.send_notification("$Odoo/restartNeeded", ());
-        }
-        session.sync_odoo.import_cache = None;
+        // Only reached on normal completion (empty queues or need_rebuild); the early
+        // `return`s above (server shutdown, interrupt) deliberately skip this reset.
         session.sync_odoo.watched_file_updates = 0;
-        if is_reporting_progress {
-            session.send_notification(Progress::METHOD, ProgressParams {
-                token: ProgressToken::Number(session.sync_odoo.progress_token),
-                value: ProgressParamsValue::WorkDone(WorkDoneProgress::End(WorkDoneProgressEnd {
-                    message: None,
-                }))
-            });
-        }
         trace!("Leaving rebuild with remaining tasks: {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_validation.len());
         true
     }
