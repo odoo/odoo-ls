@@ -503,7 +503,7 @@ impl EntryPoint {
             session.st_mut().invalidate_sub_functions(s);
             session.sync_odoo.add_to_validations(s);
         }
-        self.not_found_symbols.retain(|&sym| {
+        self.not_found_symbols.retain_valid(session.st(), |&sym| {
             if !session.st().not_found_paths(sym).is_empty() {
                 return true;
             }
@@ -545,7 +545,7 @@ impl EntryPoint {
             session.st_mut().invalidate_sub_functions(s);
             session.sync_odoo.add_to_validations(s);
         }
-        self.not_found_symbols_for_models.retain(|&sym| {
+        self.not_found_symbols_for_models.retain_valid(session.st(), |&sym| {
             !session.st().not_found_models(sym).map(|models| models.is_empty()).unwrap_or(true)
         });
 
