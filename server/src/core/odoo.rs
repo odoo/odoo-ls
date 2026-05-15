@@ -560,35 +560,42 @@ impl SyncOdoo {
             }
         }
         let (sorted_modules, invalid_modules) = SyncOdoo::sort_modules(session.st(), modules);
-        // Build modules one at a time, in dependency order, fully draining the rebuild
-        // queues between each. This keeps the queues small (so pop_item stays cheap) and
-        // guarantees every module is built against a fully-built dependency closure.
         session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
+        // @todo: this is probably no needed. `must_reload_paths` is empty at this point.
         SyncOdoo::add_from_self_reload(session);
         let is_reporting_progress = SyncOdoo::start_rebuild_session(session, true);
-        for module_symbol in sorted_modules {
+        // `already_*` are scoped to the whole build pass and shared by every drain below,
+        // so a tree re-queued across module boundaries (e.g. by search_rebuild_for_models)
+        // is built at most once — matching the old single-drain behaviour.
+        let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
+        let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
+        let total_modules = sorted_modules.len() + invalid_modules.len();
+        // Phase 1: ARCH + ARCH_EVAL, one module at a time in dependency order. This keeps
+        // the queues small so pop_item stays cheap. Validation is deferred: validating a
+        // module before later modules contribute to the models it references would force
+        // a re-validation once those models appear (manifest `depends` does not capture
+        // every cross-module model dependency). Invalid modules (cyclic/unresolvable
+        // deps) have no reliable order, so they are simply built last.
+        for (built, module_symbol) in sorted_modules.into_iter().chain(invalid_modules).enumerate() {
+            if is_reporting_progress {
+                SyncOdoo::report_modules_progress(session, total_modules - built, total_modules);
+            }
             // An earlier module may already have built this one as a dependency (via
             // build_now / create_module_from_name); re-queuing it would re-arch an
             // already-built tree and leave stale symbol keys behind.
-            if session.st().build_status(module_symbol.into(), BuildSteps::ARCH) == BuildStatus::DONE {
-                continue;
+            if session.st().build_status(module_symbol.into(), BuildSteps::ARCH) != BuildStatus::DONE {
+                session.sync_odoo.add_to_rebuild_arch(module_symbol);
             }
-            session.sync_odoo.add_to_rebuild_arch(module_symbol);
-            if !SyncOdoo::drain_rebuilds(session, false, is_reporting_progress) || session.sync_odoo.need_rebuild {
+            if !SyncOdoo::drain_rebuilds(session, false, true, false,
+                    &mut already_arch_rebuilt, &mut already_arch_eval_rebuilt)
+                || session.sync_odoo.need_rebuild {
                 SyncOdoo::end_rebuild_session(session, is_reporting_progress);
                 return;
             }
         }
-        // Modules with cyclic/unresolvable manifest dependencies are not topologically
-        // sorted, so there is no reliable order for them: queue them together and let
-        // pop_item order what it can (build_now still enforces correctness).
-        for module_symbol in invalid_modules {
-            if session.st().build_status(module_symbol.into(), BuildSteps::ARCH) == BuildStatus::DONE {
-                continue;
-            }
-            session.sync_odoo.add_to_rebuild_arch(module_symbol);
-        }
-        if !SyncOdoo::drain_rebuilds(session, false, is_reporting_progress) {
+        // Phase 2: validate every file in a single pass, now that all models exist.
+        if !SyncOdoo::drain_rebuilds(session, false, false, is_reporting_progress,
+                &mut already_arch_rebuilt, &mut already_arch_eval_rebuilt) {
             SyncOdoo::end_rebuild_session(session, is_reporting_progress);
             return;
         }
@@ -786,6 +793,24 @@ impl SyncOdoo {
         });
     }
 
+    /// Report build progress as a module count (used by the initial module build,
+    /// where a per-item count would just flicker between tiny numbers).
+    fn report_modules_progress(session: &mut SessionInfo, remaining: usize, total: usize) {
+        let percentage = if total > 0 {
+            (((total - remaining) * 100) / total) as u32
+        } else {
+            100
+        };
+        session.send_notification(Progress::METHOD, ProgressParams {
+            token: ProgressToken::Number(session.sync_odoo.progress_token),
+            value: ProgressParamsValue::WorkDone(WorkDoneProgress::Report(WorkDoneProgressReport {
+                cancellable: Some(false),
+                message: Some(format!("{} modules remaining", remaining)),
+                percentage: Some(percentage),
+            }))
+        });
+    }
+
     pub fn process_rebuilds(session: &mut SessionInfo, no_validation: bool) -> bool {
         session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
         if session.sync_odoo.watched_file_updates > MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART {
@@ -793,7 +818,10 @@ impl SyncOdoo {
         }
         SyncOdoo::add_from_self_reload(session);
         let is_reporting_progress = SyncOdoo::start_rebuild_session(session, false);
-        let result = SyncOdoo::drain_rebuilds(session, no_validation, is_reporting_progress);
+        let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
+        let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
+        let result = SyncOdoo::drain_rebuilds(session, no_validation, false, is_reporting_progress,
+            &mut already_arch_rebuilt, &mut already_arch_eval_rebuilt);
         SyncOdoo::end_rebuild_session(session, is_reporting_progress);
         result
     }
@@ -834,23 +862,33 @@ impl SyncOdoo {
         }
     }
 
-    /// Drain the rebuild queues (ARCH, ARCH_EVAL, VALIDATION) until they are empty, a
-    /// restart is required, or the server shuts down. Returns `false` only on server
-    /// shutdown. The caller owns the rebuild session (`start_rebuild_session` /
+    /// Drain the rebuild queues until they are empty, a restart is required, or the
+    /// server shuts down. Returns `false` only on server shutdown.
+    ///
+    /// `skip_validation` stops the drain once ARCH and ARCH_EVAL are empty, leaving the
+    /// VALIDATION queue untouched — used to defer validation to a single global pass.
+    /// `report_items` controls whether per-iteration "{n} items remaining" progress is
+    /// emitted. `already_arch_rebuilt` / `already_arch_eval_rebuilt` are owned by the
+    /// caller so a tree is built at most once across every drain of one rebuild session.
+    /// The caller owns the rebuild session (`start_rebuild_session` /
     /// `end_rebuild_session`), so this may be called repeatedly within one session.
-    fn drain_rebuilds(session: &mut SessionInfo, no_validation: bool, is_reporting_progress: bool) -> bool {
-        let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
-        let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
-
+    fn drain_rebuilds(
+        session: &mut SessionInfo,
+        no_validation: bool,
+        skip_validation: bool,
+        report_items: bool,
+        already_arch_rebuilt: &mut HashSet<Tree>,
+        already_arch_eval_rebuilt: &mut HashSet<Tree>,
+    ) -> bool {
         //workdone progress
         let mut last_update_status = Instant::now() - Duration::from_secs(10);
         trace!("Starting rebuild: {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_validation.len());
-        while !session.sync_odoo.need_rebuild && (!session.sync_odoo.rebuild_arch.is_empty() || !session.sync_odoo.rebuild_arch_eval.is_empty() || !session.sync_odoo.rebuild_validation.is_empty()) {
+        while !session.sync_odoo.need_rebuild && (!session.sync_odoo.rebuild_arch.is_empty() || !session.sync_odoo.rebuild_arch_eval.is_empty() || (!skip_validation && !session.sync_odoo.rebuild_validation.is_empty())) {
             if DEBUG_THREADS {
                 trace!("remains: {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_validation.len());
             }
             let queue_size = session.sync_odoo.rebuild_arch.len() * 3 + session.sync_odoo.rebuild_arch_eval.len() * 2 + session.sync_odoo.rebuild_validation.len();
-            if is_reporting_progress && (Instant::now() - last_update_status) > Duration::from_millis(200) {
+            if report_items && (Instant::now() - last_update_status) > Duration::from_millis(200) {
                 last_update_status = Instant::now();
                 session.send_notification(Progress::METHOD, ProgressParams {
                     token: ProgressToken::Number(session.sync_odoo.progress_token),
@@ -895,6 +933,9 @@ impl SyncOdoo {
                 if let Some(mut builder) = PythonArchEval::new(session.st(), entry, sym_key) {
                     builder.eval_arch(session);
                 };
+                continue;
+            }
+            if skip_validation {
                 continue;
             }
             let sym = session.sync_odoo.pop_item(BuildSteps::VALIDATION);
