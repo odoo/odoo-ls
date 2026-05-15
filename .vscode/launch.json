@@ -38,7 +38,7 @@
             "cwd": "${workspaceFolder}/server",
             "externalConsole": false,
             "MIMode": "gdb",
-            "miDebuggerPath": "rust-gdb",
+            "miDebuggerPath": "${workspaceFolder}/server/debug_tools/rust-gdb-wrapper.sh",
             "setupCommands": [
                 {
                     "description": "Enable pretty-printing for gdb",
