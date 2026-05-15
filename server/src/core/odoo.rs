@@ -571,9 +571,11 @@ impl SyncOdoo {
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
         let all_modules: Vec<ModuleKey> = sorted_modules.into_iter().chain(invalid_modules).collect();
         let total_modules = all_modules.len();
-        // Warm the page cache for the first module before we touch disk.
-        if let Some(&first) = all_modules.first() {
-            SyncOdoo::prefetch_module(session.st(), first);
+        // How many modules ahead of the one currently building we keep page-cache-warm.
+        const PREFETCH_AHEAD: usize = 5;
+        // Warm the first window of modules before we touch disk.
+        for &module_symbol in all_modules.iter().take(PREFETCH_AHEAD) {
+            SyncOdoo::prefetch_module(session.st(), module_symbol);
         }
         // Phase 1: ARCH + ARCH_EVAL, one module at a time in dependency order. This keeps
         // the queues small so pop_item stays cheap. Validation is deferred: validating a
@@ -585,11 +587,12 @@ impl SyncOdoo {
             if is_reporting_progress {
                 SyncOdoo::report_modules_progress(session, total_modules - built, total_modules);
             }
-            // While this module builds (CPU-bound), warm the next module's source files
-            // on a background thread. The strict per-module order makes this look-ahead
-            // reliable: by the time we reach module N+1 its files are page-cache-warm.
-            if let Some(&next) = all_modules.get(built + 1) {
-                SyncOdoo::prefetch_module(session.st(), next);
+            // While this module builds (CPU-bound), warm the module entering the far
+            // edge of the look-ahead window on a background thread. The strict
+            // per-module order makes this reliable: each module's files are
+            // page-cache-warm well before we reach it.
+            if let Some(&ahead) = all_modules.get(built + PREFETCH_AHEAD) {
+                SyncOdoo::prefetch_module(session.st(), ahead);
             }
             // An earlier module may already have built this one as a dependency (via
             // build_now / create_module_from_name); re-queuing it would re-arch an
