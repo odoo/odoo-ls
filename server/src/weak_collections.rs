@@ -1,10 +1,14 @@
-use std::{cell::RefCell, collections::{HashMap, HashSet, hash_map}, hash::Hash, vec::IntoIter};
+use std::{cell::RefCell, collections::{HashMap, HashSet, hash_map, hash_set}, hash::Hash};
 
 use crate::core::symbols::symbol_keys::KeyValidator;
 
 #[derive(Debug, Clone)]
 pub struct WeakSet<K: Eq + Hash + Copy> {
-    set: RefCell<HashSet<K>>,
+    set: HashSet<K>,
+    /// Stale keys detected during `iter_valid`. Recorded here instead of being
+    /// removed immediately (since `iter_valid` only has `&self`), then flushed
+    /// the next time the set is mutated through `insert`.
+    stale: RefCell<HashSet<K>>,
 }
 
 impl<K: Eq + Hash + Copy> Default for WeakSet<K> {
@@ -16,46 +20,80 @@ impl<K: Eq + Hash + Copy> Default for WeakSet<K> {
 impl<K: Eq + Hash + Copy> WeakSet<K> {
     pub fn new() -> Self {
         Self {
-            set: RefCell::new(HashSet::new()),
+            set: HashSet::new(),
+            stale: RefCell::new(HashSet::new()),
         }
     }
 
     pub fn insert(&mut self, key: K) -> bool {
-        self.set.get_mut().insert(key)
+        // Flush stale keys before inserting, so this is the point where the set
+        // is kept from accumulating invalid keys over time.
+        for k in std::mem::take(self.stale.get_mut()) {
+            self.set.remove(&k);
+        }
+        self.set.insert(key)
     }
 
     pub fn contains(&self, key: &K) -> bool {
-        self.set.borrow().contains(key)
+        self.set.contains(key)
     }
 
     pub fn is_empty(&self) -> bool {
-        self.set.borrow().is_empty()
+        self.set.is_empty()
     }
 
     pub fn remove(&mut self, key: &K) {
-        self.set.get_mut().remove(key);
+        self.set.remove(key);
     }
 
     pub fn clear_invalid(&mut self, table: &impl KeyValidator<K>) {
-        self.set.get_mut().retain(|k| table.is_key_valid(*k));
+        self.set.retain(|k| table.is_key_valid(*k));
+        // The set no longer holds any invalid key, so pending stale marks are moot.
+        self.stale.get_mut().clear();
     }
 
-    pub fn iter_valid(&self, table: &impl KeyValidator<K>) -> IntoIter<K> {
-        let mut set = self.set.borrow_mut();
-        set.retain(|k| table.is_key_valid(*k));
-        let snapshot: Vec<_> = set.iter().copied().collect();
-        snapshot.into_iter()
+    /// Lazily iterates over valid keys. Stale keys are skipped and recorded for
+    /// removal on the next `insert`; iteration does not mutate the set itself,
+    /// so an early break only pays for the keys actually visited.
+    pub fn iter_valid<'a, V: KeyValidator<K>>(&'a self, table: &'a V) -> WeakSetValidIter<'a, K, V> {
+        WeakSetValidIter {
+            inner: self.set.iter(),
+            stale: &self.stale,
+            validator: table,
+        }
     }
 
     pub fn retain(&mut self, f: impl Fn(&K) -> bool) {
-        self.set.get_mut().retain(|k| f(k));
+        self.set.retain(|k| f(k));
     }
 
-    pub fn drain_valid(&mut self, table: &impl KeyValidator<K>) -> IntoIter<K> {
-        let valid: Vec<K> = self.set.get_mut().drain()
-            .filter(|k| table.is_key_valid(*k))
-            .collect();
-        valid.into_iter()
+    pub fn drain_valid<'a>(&'a mut self, table: &'a impl KeyValidator<K>) -> impl Iterator<Item = K> + 'a {
+        // The set is about to be emptied, so pending stale marks are moot.
+        self.stale.get_mut().clear();
+        self.set.drain().filter(move |k| table.is_key_valid(*k))
+    }
+}
+
+/// Lazy iterator over the valid keys of a [`WeakSet`], produced by
+/// [`WeakSet::iter_valid`]. Invalid keys encountered while iterating are pushed
+/// into the set's `stale` accessory for later removal.
+pub struct WeakSetValidIter<'a, K: Eq + Hash + Copy, V: KeyValidator<K>> {
+    inner: hash_set::Iter<'a, K>,
+    stale: &'a RefCell<HashSet<K>>,
+    validator: &'a V,
+}
+
+impl<'a, K: Eq + Hash + Copy, V: KeyValidator<K>> Iterator for WeakSetValidIter<'a, K, V> {
+    type Item = K;
+
+    fn next(&mut self) -> Option<K> {
+        for &k in self.inner.by_ref() {
+            if self.validator.is_key_valid(k) {
+                return Some(k);
+            }
+            self.stale.borrow_mut().insert(k);
+        }
+        None
     }
 }
 

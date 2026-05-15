@@ -300,7 +300,8 @@ impl Model {
     }
 
     pub fn add_dependents_to_validation(&self, session: &mut SessionInfo, module_change: Option<ModuleKey>) {
-        for dep in self.dependents.iter_valid(session.st()) {
+        let dependents = self.dependents.iter_valid(session.st()).collect::<Vec<_>>();
+        for dep in dependents {
             let st = session.st_mut();
             st.invalidate_sub_functions(dep);
             let module = st.find_module(dep);

@@ -466,7 +466,8 @@ impl EntryPoint {
     pub fn search_symbols_to_rebuild(&mut self, session: &mut SessionInfo, path: &String, tree: &Tree) {
         let flat_tree = [tree.0.clone(), tree.1.clone()].concat();
         let mut to_add = [vec![], vec![], vec![]];
-        for s in self.not_found_symbols.iter_valid(session.st()) {
+        let not_found_symbols: Vec<_> = self.not_found_symbols.iter_valid(session.st()).collect();
+        for s in not_found_symbols {
             if let SourceFileKey::Module(p) = s {
                 let module_package = &mut session.st_mut()[p];
                 if let Some(step) = module_package.not_found_data.get(path) {
@@ -515,8 +516,9 @@ impl EntryPoint {
 
     pub fn search_rebuild_for_models(&mut self, session: &mut SessionInfo, model_name: OYarn) {
         let mut to_add: [Vec<SourceFileKey>; 3] = [vec![], vec![], vec![]];
+        let mut to_clear = vec![];
         for sym_key in self.not_found_symbols_for_models.iter_valid(session.st()) {
-            let Some(not_found_models) = session.st_mut().not_found_models_mut(sym_key) else {
+            let Some(not_found_models) = session.st().not_found_models(sym_key) else {
                 continue;
             };
             let Some(step) = not_found_models.get(&model_name) else {
@@ -525,9 +527,14 @@ impl EntryPoint {
             if let BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION = step {
                 to_add[*step as usize].push(sym_key);
             }
-            not_found_models.remove(&model_name);
-
+            to_clear.push(sym_key);
         }
+        for sym_key in to_clear {
+            if let Some(not_found_models) = session.st_mut().not_found_models_mut(sym_key) {
+                not_found_models.remove(&model_name);
+            }
+        }
+
         for &s in to_add[BuildSteps::ARCH as usize].iter() {
             session.sync_odoo.add_to_rebuild_arch(s);
         }

@@ -1437,7 +1437,7 @@ impl SyncOdoo {
 
     /// Schedule revalidation for all language-dependent symbols.
     pub(crate) fn revalidate_language_dependents(&mut self) {
-        let to_revalidate = self.language_dependents.drain_valid(&self.symbol_table);
+        let to_revalidate: Vec<_> = self.language_dependents.drain_valid(&self.symbol_table).collect();
         for sym in to_revalidate {
             self.add_to_validations(sym);
         }

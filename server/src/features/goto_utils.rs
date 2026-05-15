@@ -149,7 +149,7 @@ impl GotoUtils {
         };
         let mut xml_found = false;
         let xml_ids = SyncOdoo::get_xml_ids(session, file_symbol, value.as_str(), &std::ops::Range{start: 0, end: 0}, &mut vec![]);
-        for xml_id in xml_ids.iter_valid(session.st()) {
+        for xml_id in xml_ids.iter_valid(session.st()).collect::<Vec<_>>() {
             let file = session.st().get_file(xml_id.into());
             if file.is_none() {
                 continue;
