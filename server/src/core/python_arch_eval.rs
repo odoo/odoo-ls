@@ -14,7 +14,7 @@ use crate::core::symbols::{ModuleSymbol, SymbolMgr};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::symbol_keys::{ClassKey, FunctionKey, ModuleKey, SourceFileKey, SymbolKey, VariableKey};
 use crate::core::symbols::VariableSymbol;
-use crate::{constants::*, oyarn, Sy};
+use crate::{constants::*, oyarn};
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation::Evaluation;
@@ -923,7 +923,7 @@ impl PythonArchEval {
                             for context_mgr_eval in context_mgr_evals.iter() {
                                 let symbol = context_mgr_eval.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, Some(session.st().parent_file_or_function(variable_key.into()).unwrap()));
                                 if let Some(symbol) = symbol.weak.upgrade(session.st()) {
-                                    let _enter_ = session.st().get_symbol(symbol, &(vec![], vec![Sy!("__enter__")]), u32::MAX);
+                                    let _enter_ = session.st().get_symbol(symbol, (&[], &["__enter__"]), u32::MAX);
                                     if let Some(&SymbolKey::Function(_enter_)) = _enter_.last() {
                                         SyncOdoo::ensure_func_evaluations(session, _enter_);
                                         enter_evals.extend(session.st()[_enter_].evaluations.clone());
@@ -987,7 +987,7 @@ impl PythonArchEval {
                     &mut None,
                     false,
                     false,
-                    Some((vec![Sy!("typing")], vec![Sy!("Self")])),
+                    Some((&["typing"], &["Self"])),
                     None
                 ).len() > 0
             ){

@@ -4,12 +4,13 @@ use ruff_python_ast::Expr;
 use lsp_types::Diagnostic;
 use tracing::error;
 
-use crate::constants::OYarn;
+use crate::constants::{OYarn};
 use crate::core::model::{Model, ModelData};
 use crate::core::symbols::{ClassSymbol, ModuleSymbol};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::symbol_keys::{ClassKey, SymbolKey, XmlId};
 use crate::threads::SessionInfo;
+use crate::tree::TreeStrSlice;
 use crate::{oyarn, Sy, S};
 
 use super::evaluation::{ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationValue};
@@ -69,7 +70,7 @@ impl PythonOdooBuilder {
 
     fn _load_class_inherit(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) {
         let symbol = self.symbol;
-        let _inherit = session.st().get_symbol(symbol.into(), &(vec![], vec![Sy!("_inherit")]), u32::MAX);
+        let _inherit = session.st().get_symbol(symbol.into(), (&[], &["_inherit"]), u32::MAX);
         let Some(&SymbolKey::Variable(_inherit)) = _inherit.last() else { return };
         let evaluations = &session.st()[_inherit].evaluations;
         if evaluations.len() == 0 {
@@ -101,7 +102,7 @@ impl PythonOdooBuilder {
 
     fn _evaluate_name(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) -> OYarn {
         let symbol = self.symbol;
-        let _name = session.st().get_symbol(symbol.into(), &(vec![], vec![Sy!("_name")]), u32::MAX);
+        let _name = session.st().get_symbol(symbol.into(), (&[], &["_name"]), u32::MAX);
         if let Some(&_name) = _name.last() {
             for eval in session.st().evaluations(_name).unwrap().clone() {
                 let eval = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
@@ -133,7 +134,7 @@ impl PythonOdooBuilder {
 
     fn _load_class_inherits(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) {
         let symbol = self.symbol;
-        let _inherits = session.st().get_symbol(symbol.into(), &(vec![], vec![Sy!("_inherits")]), u32::MAX);
+        let _inherits = session.st().get_symbol(symbol.into(), (&[], &["_inherits"]), u32::MAX);
         if let Some(&SymbolKey::Variable(_inherits)) = _inherits.last() {
             if let Some(eval) = session.st()[_inherits].evaluations.last().cloned() {
                 let eval = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
@@ -280,14 +281,14 @@ impl PythonOdooBuilder {
         //id
         let range = session.st()[symbol].range.clone();
         let id = session.st_mut().add_new_variable(symbol, "id", &range);
-        let id_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Id")]), u32::MAX);
+        let id_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), (&["odoo", "fields"], &["Id"]), u32::MAX);
         if let Some(&id_field) = id_field.last() {
             let evaluation = Evaluation::eval_from_symbol(session.st(), id_field, Some(true));
             session.st_mut()[id].evaluations.push(evaluation);
         }
         //display_name
         let display_name = session.st_mut().add_new_variable(symbol, "display_name", &range);
-        let char_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Char")]), u32::MAX);
+        let char_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), (&["odoo", "fields"], &["Char"]), u32::MAX);
         if let Some(&char_field) = char_field.last() {
             let evaluation = Evaluation::eval_from_symbol(session.st(), char_field, Some(true));
             session.st_mut()[display_name].evaluations.push(evaluation);
@@ -296,28 +297,28 @@ impl PythonOdooBuilder {
         if session.st()[symbol]._model.as_ref().unwrap().log_access {
             //create_uid
             let create_uid = session.st_mut().add_new_variable(symbol, "create_uid", &range);
-            let many2one_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2one")]), u32::MAX);
+            let many2one_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), (&["odoo", "fields"], &["Many2one"]), u32::MAX);
             if let Some(&many2one_field) = many2one_field.last() {
                 let evaluation = Evaluation::eval_from_symbol(session.st(), many2one_field, Some(true));
                 session.st_mut()[create_uid].evaluations.push(evaluation);
             }
             //create_date
             let create_date = session.st_mut().add_new_variable(symbol, "create_date", &range);
-            let datetime_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Datetime")]), u32::MAX);
+            let datetime_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), (&["odoo", "fields"], &["Datetime"]), u32::MAX);
             if let Some(&datetime_field) = datetime_field.last() {
                 let evaluation = Evaluation::eval_from_symbol(session.st(), datetime_field, Some(true));
                 session.st_mut()[create_date].evaluations.push(evaluation);
             }
             //write_uid
             let write_uid = session.st_mut().add_new_variable(symbol, "write_uid", &range);
-            let many2one_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Many2one")]), u32::MAX);
+            let many2one_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), (&["odoo", "fields"], &["Many2one"]), u32::MAX);
             if let Some(&many2one_field) = many2one_field.last() {
                 let evaluation = Evaluation::eval_from_symbol(session.st(), many2one_field, Some(true));
                 session.st_mut()[write_uid].evaluations.push(evaluation);
             }
             //write_date
             let write_date = session.st_mut().add_new_variable(symbol, "write_date", &range);
-            let datetime_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), &(vec![Sy!("odoo"), Sy!("fields")], vec![Sy!("Datetime")]), u32::MAX);
+            let datetime_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path.as_ref().unwrap(), (&["odoo", "fields"], &["Datetime"]), u32::MAX);
             if let Some(&datetime_field) = datetime_field.last() {
                 let evaluation = Evaluation::eval_from_symbol(session.st(), datetime_field, Some(true));
                 session.st_mut()[write_date].evaluations.push(evaluation);
@@ -332,12 +333,12 @@ impl PythonOdooBuilder {
             // We only consider symbols that has inheritance base or defined in modules as models
             return false;
         }
-        let base_model_tree = if session.sync_odoo.version >= (18, 1) {
-            (vec![Sy!("odoo"), Sy!("orm"), Sy!("models")], vec![Sy!("BaseModel")])
+        let base_model_tree: TreeStrSlice = if session.sync_odoo.version >= (18, 1) {
+            (&["odoo", "orm", "models"], &["BaseModel"])
         } else {
-            (vec![Sy!("odoo"), Sy!("models")], vec![Sy!("BaseModel")])
+            (&["odoo", "models"], &["BaseModel"])
         };
-        let base_model_syms = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), &base_model_tree, u32::MAX);
+        let base_model_syms = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path.as_ref().unwrap(), base_model_tree, u32::MAX);
         let Some(&SymbolKey::Class(base)) = base_model_syms.first() else {
             // base_model_syms empty so sym cannot be a model, otherwise we would have found it earlier
             return false;
@@ -346,7 +347,7 @@ impl PythonOdooBuilder {
             return false;
         }
         // Check if we have a _register = False
-        let register = session.st().get_symbol(symbol.into(), &(vec![], vec![Sy!("_register")]), u32::MAX);
+        let register = session.st().get_symbol(symbol.into(), (&[], &["_register"]), u32::MAX);
         if let Some(&register) = register.last() {
             let register_evals = session.st().evaluations(register).unwrap().clone();
             // Read all boolean values, ignore non-boolean-value evaluations, as they can be dynamic or type annotations

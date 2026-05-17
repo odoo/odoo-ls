@@ -9,7 +9,7 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation::ContextValue;
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey, SourceFileKey, SymbolKey};
-use crate::{constants::*, oyarn, Sy};
+use crate::{constants::*, oyarn};
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::ModuleSymbol;
 use crate::threads::SessionInfo;
@@ -605,7 +605,7 @@ impl PythonValidator {
             }
         }
         //Check inherit field
-        let inherit = session.st().get_symbol(class.into(), &(vec![], vec![Sy!("_inherit")]), u32::MAX);
+        let inherit = session.st().get_symbol(class.into(), (&[], &["_inherit"]), u32::MAX);
         if let Some(&inherit) = inherit.last() {
             let inherit_evals = session.st().evaluations(inherit).cloned().unwrap();
             for inherit_eval in inherit_evals {
@@ -647,7 +647,7 @@ impl PythonValidator {
         }).count() > 0 {
             // This a model with a name that already exists in models and in dependencies,
             // and it is not inherited, so it is basically shadowing the existing model.
-            let _name = session.st().get_symbol(class.into(), &(vec![], vec![Sy!("_name")]), u32::MAX);
+            let _name = session.st().get_symbol(class.into(), (&[], &["_name"]), u32::MAX);
             if let Some(&_name) = _name.last() {
                 let mut range = session.st().range(_name).clone();
                 let evals = session.st().evaluations(_name).cloned().unwrap();
@@ -669,7 +669,7 @@ impl PythonValidator {
             }
         }
         // check inherits
-        let inherits = session.st().get_symbol(class.into(), &(vec![], vec![Sy!("_inherits")]), u32::MAX);
+        let inherits = session.st().get_symbol(class.into(), (&[], &["_inherits"]), u32::MAX);
         if let Some(&inherits) = inherits.last() {
             let inherits_evals = session.st().evaluations(inherits).cloned().unwrap();
             for inherits_eval in inherits_evals {

@@ -6,7 +6,8 @@ use tracing::{error, info, warn};
 
 use crate::core::symbols::symbol_keys::{FileKey, RootKey, SourceFileKey, SymbolKey, Wk};
 use crate::{
-    constants::{flatten_tree, BuildSteps, OYarn, Tree},
+    tree::Tree,
+    constants::{BuildSteps, OYarn},
     core::symbols::storage::SymbolTable,
     threads::SessionInfo,
     utils::PathSanitizer,
@@ -93,7 +94,7 @@ impl EntryPointMgr {
         let entry = EntryPoint::new(
             &mut session.sync_odoo.symbol_table,
             path.clone(),
-            flatten_tree(&entry_point_tree),
+            entry_point_tree.flatten(),
             EntryPointType::MAIN,
             None,
             None);
@@ -111,7 +112,7 @@ impl EntryPointMgr {
         let entry = EntryPoint::new(
             &mut session.sync_odoo.symbol_table,
             path.clone(),
-            flatten_tree(&entry_point_tree),
+            entry_point_tree.flatten(),
             EntryPointType::BUILTIN,
             None,
             None);
@@ -142,7 +143,7 @@ impl EntryPointMgr {
         let entry = EntryPoint::new(
             &mut session.sync_odoo.symbol_table,
             path.clone(),
-            flatten_tree(&entry_point_tree),
+            entry_point_tree.flatten(),
             EntryPointType::PUBLIC,
             None,
             None);
@@ -162,7 +163,7 @@ impl EntryPointMgr {
         let shared_root = main_entry.borrow().root;
         let entry = EntryPoint::new_with_shared_root(
             path,
-            flatten_tree(&entry_point_tree),
+            entry_point_tree.flatten(),
             EntryPointType::ADDON,
             addon_to_odoo_path,
             addon_to_odoo_tree,
@@ -180,7 +181,7 @@ impl EntryPointMgr {
         let entry = EntryPoint::new(
             &mut session.sync_odoo.symbol_table,
             path.clone(),
-            flatten_tree(&entry_point_tree),
+            entry_point_tree.flatten(),
             EntryPointType::CUSTOM,
             None,
             None);
@@ -442,8 +443,8 @@ impl EntryPoint {
     }
 
     pub fn get_symbol(&self, symbol_table: &SymbolTable) -> Option<SymbolKey> {
-        let tree = self.addon_to_odoo_tree.as_ref().unwrap_or(&self.tree).clone();
-        let symbol = symbol_table.get_symbol(self.root.into(), &(tree, vec![]), u32::MAX);
+        let tree = self.addon_to_odoo_tree.as_ref().unwrap_or(&self.tree);
+        let symbol = symbol_table.get_symbol(self.root.into(), (tree, &[]), u32::MAX);
         match symbol.len() {
             0 => None,
             1 => Some(symbol[0]),
@@ -464,8 +465,8 @@ impl EntryPoint {
 
     /* Consider the given 'tree' path as updated (or new) and move all symbols that were searching for it
     from the not_found_symbols list to the rebuild list. Return True is something should be rebuilt */
-    pub fn search_symbols_to_rebuild(&mut self, session: &mut SessionInfo, path: &String, tree: &Tree) {
-        let flat_tree = [tree.0.clone(), tree.1.clone()].concat();
+    pub fn search_symbols_to_rebuild(&mut self, session: &mut SessionInfo, path: &String, tree: Tree) {
+        let flat_tree = tree.flatten();
         let mut to_add = [vec![], vec![], vec![]];
         for s in self.not_found_symbols.iter_valid(session.st()) {
             if let SourceFileKey::Module(p) = s {
