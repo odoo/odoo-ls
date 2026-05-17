@@ -11,19 +11,32 @@ use ruff_text_size::TextRange;
 use tracing::trace;
 
 use crate::{
-    S, Sy, constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType, Tree, flatten_tree, tree}, core::{
-        diagnostics::{DiagnosticCode, create_diagnostic},
+    constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType},
+    core::{
+        diagnostics::{create_diagnostic, DiagnosticCode},
         entry_point::EntryPoint,
         evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr},
         file_mgr::{FileMgr, NoqaInfo},
         model::Model,
         odoo::SyncOdoo,
         symbols::{
-            Buildable, Dependencies, storage::{SymbolTable, dependency_mgr::{DependenciesTable, DependentsTable}}, symbol_keys::{
-                ClassKey, FunctionKey, KeyValidator, ModuleKey, NamespaceKey, RootKey, SourceFileKey, SymbolKey, VariableKey, XmlDataKey
-            }, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}
+            storage::{
+                dependency_mgr::{DependenciesTable, DependentsTable},
+                SymbolTable,
+            },
+            symbol_keys::{
+                ClassKey, FunctionKey, KeyValidator, ModuleKey, NamespaceKey, RootKey,
+                SourceFileKey, SymbolKey, VariableKey, XmlDataKey,
+            },
+            symbol_mgr::{iter_symbol_keys, ContentSymbols, SectionIndex, SectionRange, SymbolMgr},
+            Buildable, Dependencies,
         },
-    }, threads::SessionInfo, utils::{PathSanitizer}, weak_collections::WeakSet
+    },
+    threads::SessionInfo,
+    tree::{OYarnExt, Tree},
+    utils::PathSanitizer,
+    weak_collections::WeakSet,
+    S,
 };
 
 impl SymbolTable {
@@ -543,7 +556,7 @@ impl SymbolTable {
             return Some(session.st_mut().add_new_file(parent, &name, &path_str).into());
         }
         let main_entry_tree = session.sync_odoo.get_main_entry_tree(parent);
-        if main_entry_tree == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
+        if main_entry_tree == (&["odoo", "addons"], &[]) && path.join("__manifest__.py").exists() {
             if let SymbolKey::Namespace(addons) = parent {
                 let module = Self::add_new_module_package(session, addons, &name, path);
                 let dir_name = session.st()[module].dir_name.clone();
@@ -561,7 +574,7 @@ impl SymbolTable {
         } else {
             let symbol_table = session.st_mut();
             if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
-                if main_entry_tree == tree(vec!["odoo"], vec![]) && path_str.ends_with("addons") {
+                if main_entry_tree == (&["odoo"], &[]) && path_str.ends_with("addons") {
                     //Force namespace for odoo/addons
                     let namespace_key = symbol_table.add_new_namespace(parent, &name, &path_str);
                     return Some(namespace_key.into());
@@ -580,7 +593,7 @@ impl SymbolTable {
 
     pub fn create_module_from_path(session: &mut SessionInfo, path: &PathBuf, addons: NamespaceKey) -> Option<ModuleKey> {
         let main_entry_tree = session.sync_odoo.get_main_entry_tree(addons);
-        if !(main_entry_tree == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists()) {
+        if !(main_entry_tree == (&["odoo", "addons"], &[]) && path.join("__manifest__.py").exists()) {
             return None;
         }
         let name = path.components().last().unwrap().as_os_str().to_str().unwrap();
@@ -591,7 +604,7 @@ impl SymbolTable {
     }
 
     fn get_tree_helper(&self, symbol_key: SymbolKey) -> (Tree, RootKey) {
-        let mut tree = (vec![], vec![]);
+        let mut tree = Tree::default();
         let mut current_key = symbol_key;
         while !matches!(current_key, SymbolKey::Root(_)) {
             if self.is_file_content(current_key) {
@@ -634,19 +647,21 @@ impl SymbolTable {
     }
 
 
-    pub fn get_symbol(&self, target: SymbolKey, tree: &Tree, position: u32) -> Vec<SymbolKey> {
-        let symbol_tree_files: &Vec<OYarn> = &tree.0;
-        let symbol_tree_content: &Vec<OYarn> = &tree.1;
+    /// The generic type `S` allows for flexibility: `tree` can be a tuple of `&[OYarn]` or `&[&str]`
+    /// To call this function with a param of type `Tree`, transform it into its slice form: `tree.as_slice()`
+    pub fn get_symbol<S: AsRef<str>>(&self, target: SymbolKey, tree: (&[S], &[S]), position: u32) -> Vec<SymbolKey> {
+        let symbol_tree_files = tree.0;
+        let symbol_tree_content = tree.1;
         let mut iter_sym: Vec<SymbolKey>;
         if symbol_tree_files.len() != 0 {
-            let _mod_iter_sym = self.get_module_symbol(target, &symbol_tree_files[0]);
+            let _mod_iter_sym = self.get_module_symbol(target, symbol_tree_files[0].as_ref());
             if _mod_iter_sym.is_none() {
                 return vec![];
             }
             iter_sym = vec![_mod_iter_sym.unwrap()];
             if symbol_tree_files.len() > 1 {
                 for fk in symbol_tree_files[1..symbol_tree_files.len()].iter() {
-                    if let Some(s) = self.get_module_symbol(*iter_sym.last().unwrap(), fk) {
+                    if let Some(s) = self.get_module_symbol(*iter_sym.last().unwrap(), fk.as_ref()) {
                         iter_sym = vec![s];
                     } else {
                         return vec![];
@@ -658,7 +673,7 @@ impl SymbolTable {
                     if iter_sym.len() > 1 {
                         trace!("TODO: explore all implementation possibilities");
                     }
-                    let _iter_sym = self.get_sub_symbol(iter_sym[0], fk, position);
+                    let _iter_sym = self.get_sub_symbol(iter_sym[0], fk.as_ref(), position);
                     iter_sym = _iter_sym.symbols;
                     if iter_sym.is_empty() {
                         return vec![];
@@ -669,7 +684,7 @@ impl SymbolTable {
             if symbol_tree_content.len() == 0 {
                 return vec![];
             }
-            iter_sym = self.get_sub_symbol(target, &symbol_tree_content[0], position).symbols;
+            iter_sym = self.get_sub_symbol(target, symbol_tree_content[0].as_ref(), position).symbols;
             if iter_sym.is_empty() {
                 return vec![];
             }
@@ -678,7 +693,7 @@ impl SymbolTable {
                     trace!("TODO: explore all implementation possibilities");
                 }
                 for fk in symbol_tree_content[1..symbol_tree_content.len()].iter() {
-                    let _iter_sym = self.get_sub_symbol(iter_sym[0], fk, position);
+                    let _iter_sym = self.get_sub_symbol(iter_sym[0], fk.as_ref(), position);
                     iter_sym = _iter_sym.symbols;
                     // TODO: this is a loop that runs only once! Fix me!
                     return iter_sym;
@@ -1262,12 +1277,12 @@ impl SymbolTable {
     If a symbol in the chain is a descriptor, return the __get__ return evaluation.
     If filter_on_tree is set, stop following when one of the symbols in the chain is in the tree, and only return those symbols.
         */
-    pub fn follow_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, filter_on_tree: Option<Tree>, max_scope: Option<SymbolKey>) -> Vec<EvaluationSymbolPtr> {
+    pub fn follow_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, filter_on_tree: Option<(&[&str], &[&str])>, max_scope: Option<SymbolKey>) -> Vec<EvaluationSymbolPtr> {
         let default_result = match filter_on_tree.as_ref() {
             Some(_) => vec![],
             None => vec![evaluation.clone()],
         };
-        let stop_on_tree_syms = filter_on_tree.map(|tree| session.sync_odoo.get_symbol("", &tree, u32::MAX));
+        let stop_on_tree_syms = filter_on_tree.map(|tree| session.sync_odoo.get_symbol("", tree, u32::MAX));
         if matches!(stop_on_tree_syms.as_ref(), Some(syms) if syms.is_empty()) {
             // can't find the tree symbol, stop here
             return default_result;
@@ -1637,7 +1652,7 @@ impl SymbolTable {
             // A function can reference another name from the full outer scope so no position is needed
             Self::infer_name(odoo, parent, name, None)
         } else if symbol_table.name(on_symbol) != "builtins" || on_symbol_type != SymType::FILE {
-            let builtins = odoo.get_symbol("", &(vec![Sy!("builtins")], vec![]), u32::MAX)[0];
+            let builtins = odoo.get_symbol("", (&["builtins"], &[]), u32::MAX)[0];
             Self::infer_name(odoo, builtins, name, None)
         } else {
             ContentSymbols::default()
@@ -1652,7 +1667,7 @@ impl SymbolTable {
     fn member_symbol_hook(session: &SessionInfo, target: SymbolKey, name: &str, diagnostics: &mut Vec<Diagnostic>){
         if session.sync_odoo.version.major >= 17 && name == "Form"{
             let tree = session.sync_odoo.symbol_table.get_tree(target);
-            if tree.0.ends_with(&[Sy!("odoo"), Sy!("tests"), Sy!("common")]) && tree.1.is_empty() {
+            if tree.0.ends_with_strs(&["odoo", "tests", "common"]) && tree.1.is_empty() {
                 if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03301, &[]) {
                     diagnostics.push(
                         Diagnostic {
@@ -1713,14 +1728,14 @@ impl SymbolTable {
 
 
     pub fn is_inheriting_from_field(session: &SessionInfo, class_key: ClassKey) -> bool {
-        let tree = flatten_tree(&session.sync_odoo.get_main_entry_tree(class_key));
+        let tree = session.sync_odoo.get_main_entry_tree(class_key).flatten();
         if session.sync_odoo.version <= (18, 0) {
-            if tree.as_slice() == ["odoo", "fields", "Field"] {
+            if tree == ["odoo", "fields", "Field"] {
                 return true;
             }
 
         } else {
-            if tree.as_slice() == ["odoo", "orm", "fields", "Field"] {
+            if tree == ["odoo", "orm", "fields", "Field"] {
                 return true;
             }
         }
@@ -1794,7 +1809,7 @@ impl SymbolTable {
     }
 
     pub fn is_specific_field_class(session: &SessionInfo, target: SymbolKey, field_names: &[&str]) -> bool {
-        let tree = flatten_tree(&session.sync_odoo.get_main_entry_tree(target));
+        let tree = session.sync_odoo.get_main_entry_tree(target).flatten();
         let Some(tree_last) = tree.last() else {
             return false;
         };
