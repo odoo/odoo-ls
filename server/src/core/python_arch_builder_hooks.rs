@@ -169,18 +169,28 @@ pub struct PythonArchBuilderHooks {}
 impl PythonArchBuilderHooks {
 
     pub fn on_class_def(session: &mut SessionInfo, class_key: ClassKey) {
-        let symbol_key: SymbolKey = class_key.into();
-        let tree = session.st().get_tree(symbol_key);
-        let odoo_tree = session.sync_odoo.get_main_entry_tree(symbol_key);
-        let name = session.st().name(symbol_key).clone();
+        let has_main_entry = session.sync_odoo.has_main_entry;
+        let mut lazy_tree = None;
+        let mut lazy_odoo_tree = None;
+        let name = session.st()[class_key].name.clone();
         for hook in arch_class_hooks.iter() {
-            for hook_tree in hook.trees.iter() {
-                if session.sync_odoo.version >= hook_tree.0 && session.sync_odoo.version < hook_tree.1 {
-                    if name.eq(hook_tree.2.1.last().unwrap()) {
-                        if (hook.odoo_entry && session.sync_odoo.has_main_entry && odoo_tree == hook_tree.2) || (!hook.odoo_entry && tree == hook_tree.2) {
-                            (hook.func)(&mut session.sync_odoo.symbol_table, class_key);
-                        }
-                    }
+            if hook.odoo_entry && !has_main_entry {
+                continue;
+            }
+            for (min_version, max_version, hook_tree) in hook.trees.iter() {
+                if !name.eq(hook_tree.1.last().unwrap()) {
+                    continue; // skip if class name doesn't match
+                }
+                if session.sync_odoo.version < *min_version || session.sync_odoo.version >= *max_version {
+                    continue; //skip if version not in range
+                }
+                let tree = if hook.odoo_entry {
+                    lazy_odoo_tree.get_or_insert_with(|| session.sync_odoo.get_main_entry_tree(class_key))
+                } else {
+                    lazy_tree.get_or_insert_with(|| session.st().get_tree(class_key))
+                };
+                if tree == hook_tree {
+                    (hook.func)(&mut session.sync_odoo.symbol_table, class_key);
                 }
             }
         }
