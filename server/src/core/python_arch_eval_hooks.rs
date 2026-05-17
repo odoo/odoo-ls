@@ -733,23 +733,37 @@ pub struct PythonArchEvalHooks {
 impl PythonArchEvalHooks {
 
     pub fn on_file_eval(session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: SourceFileKey) {
-        let tree = session.st().get_tree(symbol.into());
-        let odoo_tree = session.sync_odoo.get_main_entry_tree(symbol);
+        let has_main_entry = session.sync_odoo.has_main_entry;
+        let mut lazy_tree = None;
+        let mut lazy_odoo_tree = None;
         let name = session.st().name(symbol).clone();
         for hook in arch_eval_file_hooks.iter() {
+            if hook.odoo_entry && !has_main_entry {
+                continue;
+            }
             for (min_version, max_version, hook_tree) in hook.trees.iter() {
+                if !name.eq(hook_tree.0.last().unwrap()) {
+                    continue; // skip if file name not matched
+                }
                 if session.sync_odoo.version < *min_version || session.sync_odoo.version >= *max_version {
                     continue; //skip if version not in range
                 }
-                if name.eq(hook_tree.0.last().unwrap()) &&
-                ((hook.odoo_entry && session.sync_odoo.has_main_entry && odoo_tree.0 == hook_tree.0) || (!hook.odoo_entry && tree.0 == hook_tree.0)) {
-                    if hook_tree.1.is_empty() {
-                        (hook.func)(session.sync_odoo, entry_point, symbol, symbol.into());
-                    } else {
-                        let sub_symbol = session.st().get_symbol(symbol.into(), &(vec![], hook_tree.1.clone()), u32::MAX);
-                        if !sub_symbol.is_empty() {
-                            (hook.func)(session.sync_odoo, entry_point, symbol, *sub_symbol.last().unwrap());
-                        }
+                let file_tree_matches = if hook.odoo_entry {
+                    let odoo_tree = lazy_odoo_tree.get_or_insert_with(|| session.sync_odoo.get_main_entry_tree(symbol));
+                    odoo_tree.0 == hook_tree.0
+                } else {
+                    let tree = lazy_tree.get_or_insert_with(|| session.st().get_tree(symbol));
+                    tree.0 == hook_tree.0
+                };
+                if !file_tree_matches {
+                    continue;
+                }
+                if hook_tree.1.is_empty() {
+                    (hook.func)(session.sync_odoo, entry_point, symbol, symbol.into());
+                } else {
+                    let sub_symbol = session.st().get_symbol(symbol.into(), &(vec![], hook_tree.1.clone()), u32::MAX);
+                    if !sub_symbol.is_empty() {
+                        (hook.func)(session.sync_odoo, entry_point, symbol, *sub_symbol.last().unwrap());
                     }
                 }
             }
@@ -758,18 +772,28 @@ impl PythonArchEvalHooks {
 
     pub fn on_function_eval(session: &mut SessionInfo, entry_point: &Rc<RefCell<EntryPoint>>, function: FunctionKey) {
         let symbol_key: SymbolKey = function.into();
-        let tree = session.st().get_tree(symbol_key);
-        let odoo_tree = session.sync_odoo.get_main_entry_tree(symbol_key);
+        let has_main_entry = session.sync_odoo.has_main_entry;
+        let mut lazy_tree = None;
+        let mut lazy_odoo_tree = None;
         let name = session.st().name(symbol_key).clone();
         for hook in arch_eval_function_hooks.iter() {
-            for hook_tree in hook.tree.iter() {
-                if session.sync_odoo.version < hook_tree.0 || session.sync_odoo.version >= hook_tree.1 {
+            if hook.odoo_entry && !has_main_entry {
+                continue;
+            }
+            for (min_version, max_version, hook_tree) in hook.tree.iter() {
+                if !name.eq(hook_tree.1.last().unwrap()) {
+                    continue; // skip if function name not matched
+                }
+                if session.sync_odoo.version < *min_version || session.sync_odoo.version >= *max_version {
                     continue; //skip if version not in range
                 }
-                if name.eq(hook_tree.2.1.last().unwrap()) {
-                    if (hook.odoo_entry && session.sync_odoo.has_main_entry && odoo_tree == hook_tree.2) || (!hook.odoo_entry && tree == hook_tree.2) {
-                        (hook.func)(session.sync_odoo, entry_point, function);
-                    }
+                let tree = if hook.odoo_entry {
+                    lazy_odoo_tree.get_or_insert_with(|| session.sync_odoo.get_main_entry_tree(symbol_key))
+                } else {
+                    lazy_tree.get_or_insert_with(|| session.st().get_tree(symbol_key))
+                };
+                if tree == hook_tree {
+                    (hook.func)(session.sync_odoo, entry_point, function);
                 }
             }
         }
