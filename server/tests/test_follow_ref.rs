@@ -2,11 +2,9 @@ mod setup;
 mod test_utils;
 use odoo_ls_server::core::file_mgr::FileInfo;
 use odoo_ls_server::core::odoo::SyncOdoo;
-use odoo_ls_server::constants::OYarn;
 use odoo_ls_server::core::symbols::symbol_keys::{SourceFileKey};
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
-use odoo_ls_server::Sy;
 use std::cell::RefCell;
 use std::env;
 use std::path::PathBuf;
@@ -37,8 +35,8 @@ fn test_variable_type_resolution(
     file_symbol: SourceFileKey,
 ) {
     let test_class = session.st().get_sub_symbol(file_symbol.into(), "TestClass", u32::MAX).symbols[0].clone();
-    let int_type = session.sync_odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("int")]), u32::MAX)[0].clone();
-    let str_type = session.sync_odoo.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("str")]), u32::MAX)[0].clone();
+    let int_type = session.sync_odoo.get_symbol("", (&["builtins"], &["int"]), u32::MAX)[0].clone();
+    let str_type = session.sync_odoo.get_symbol("", (&["builtins"], &["str"]), u32::MAX)[0].clone();
 
     // Test cases: (var_name, (line, character), expected_types)
     let test_cases = [

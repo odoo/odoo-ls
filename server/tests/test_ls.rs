@@ -4,8 +4,6 @@ use std::path::PathBuf;
 use std::env;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::utils::PathSanitizer;
-use odoo_ls_server::Sy;
-use odoo_ls_server::constants::OYarn;
 
 mod setup;
 
@@ -19,24 +17,24 @@ fn test_structure() {
     let odoo_path = env::var("COMMUNITY_PATH").unwrap();
     let odoo_path = PathBuf::from(odoo_path).sanitize();
     let odoo_path = odoo_path.as_str();
-    assert!(!odoo.get_symbol(odoo_path, &(vec![Sy!("odoo")], vec![]), u32::MAX).is_empty());
-    assert!(!odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons")], vec![]), u32::MAX).is_empty());
-    assert!(!odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("module_1")], vec![]), u32::MAX).is_empty());
-    assert!(!odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("module_2")], vec![]), u32::MAX).is_empty());
-    assert!(odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("not_a_module")], vec![]), u32::MAX).is_empty());
+    assert!(!odoo.get_symbol(odoo_path, (&["odoo"], &[]), u32::MAX).is_empty());
+    assert!(!odoo.get_symbol(odoo_path, (&["odoo", "addons"], &[]), u32::MAX).is_empty());
+    assert!(!odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1"], &[]), u32::MAX).is_empty());
+    assert!(!odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_2"], &[]), u32::MAX).is_empty());
+    assert!(odoo.get_symbol(odoo_path, (&["odoo", "addons", "not_a_module"], &[]), u32::MAX).is_empty());
 
-    assert!(odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("module_1"), Sy!("not_loaded")], vec![]), u32::MAX).is_empty());
-    assert!(odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("module_1"), Sy!("not_loaded"), Sy!("not_loaded_file")], vec![]), u32::MAX).is_empty());
-    assert!(odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("module_1"), Sy!("not_loaded"), Sy!("not_loaded_file")], vec![Sy!("NotLoadedClass")]), u32::MAX).is_empty());
-    assert!(odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("module_1"), Sy!("not_loaded"), Sy!("not_loaded_file")], vec![Sy!("NotLoadedFunc")]), u32::MAX).is_empty());
+    assert!(odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "not_loaded"], &[]), u32::MAX).is_empty());
+    assert!(odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "not_loaded", "not_loaded_file"], &[]), u32::MAX).is_empty());
+    assert!(odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "not_loaded", "not_loaded_file"], &["NotLoadedClass"]), u32::MAX).is_empty());
+    assert!(odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "not_loaded", "not_loaded_file"], &["NotLoadedFunc"]), u32::MAX).is_empty());
 
-    let models = odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("module_1"), Sy!("models")], vec![]), u32::MAX);
+    let models = odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "models"], &[]), u32::MAX);
     assert!(models.len() == 1);
-    assert!(st.get_symbol(models[0], &(vec![Sy!("base_test_models")], vec![]), u32::MAX).len() == 1);
-    assert!(st.get_symbol(models[0], &(vec![], vec![Sy!("base_test_models")]), u32::MAX).len() == 1);
-    assert!(st.get_symbol(models[0], &(vec![Sy!("base_test_models")], vec![]), u32::MAX)[0] !=
-            st.get_symbol(models[0], &(vec![], vec![Sy!("base_test_models")]), u32::MAX)[0]);
-    let module_1 = odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("module_1")], vec![]), u32::MAX);
+    assert!(st.get_symbol(models[0], (&["base_test_models"], &[]), u32::MAX).len() == 1);
+    assert!(st.get_symbol(models[0], (&[], &["base_test_models"]), u32::MAX).len() == 1);
+    assert!(st.get_symbol(models[0], (&["base_test_models"], &[]), u32::MAX)[0] !=
+            st.get_symbol(models[0], (&[], &["base_test_models"]), u32::MAX)[0]);
+    let module_1 = odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1"], &[]), u32::MAX);
     assert!(module_1.len() == 1);
     //assert!(compare_symbol_with_json(module_1, "tests/module_1_structure.json"))
     test_imports(&odoo);
@@ -48,54 +46,54 @@ fn test_imports(odoo: &SyncOdoo) {
     let odoo_path = env::var("COMMUNITY_PATH").unwrap();
     let odoo_path = PathBuf::from(odoo_path).sanitize();
     let odoo_path = odoo_path.as_str();
-    let model_var = odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("module_1")], vec![Sy!("models")]), u32::MAX);
-    let model_dir = odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("module_1"), Sy!("models")], vec![]), u32::MAX);
+    let model_var = odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1"], &["models"]), u32::MAX);
+    let model_dir = odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "models"], &[]), u32::MAX);
     assert!(model_var.len() == 1);
     assert!(model_dir.len() == 1);
     assert!(model_dir[0] != model_var[0]);
     assert!(st.evaluations(model_var[0]).as_ref().unwrap().len() == 1);
     assert!(st.evaluations(model_var[0]).as_ref().unwrap()[0].symbol.get_symbol_ptr().upgrade_weak(st) == Some(model_dir[0]));
-    let data_var = odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("module_1")], vec![Sy!("data")]), u32::MAX);
+    let data_var = odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1"], &["data"]), u32::MAX);
     assert!(data_var.len() == 1);
     assert!(st.evaluations(data_var[0]).as_ref().unwrap().is_empty());
 
     //test * imports
-    let constants_dir = odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("module_1"), Sy!("constants")], vec![]), u32::MAX);
+    let constants_dir = odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "constants"], &[]), u32::MAX);
     assert!(constants_dir.len() == 1);
     let constants_dir = constants_dir[0];
     assert!(st.all_symbols(constants_dir).len() == 3);
-    assert!(st.get_symbol(constants_dir, &(vec![], vec![Sy!("CONSTANT_1")]), u32::MAX).len() == 1);
-    assert!(st.get_symbol(constants_dir, &(vec![], vec![Sy!("CONSTANT_2")]), u32::MAX).len() == 1);
-    assert!(st.get_symbol(constants_dir, &(vec![], vec![Sy!("CONSTANT_3")]), u32::MAX).len() == 0);
-    assert!(st.get_symbol(constants_dir, &(vec![Sy!("data")], vec![]), u32::MAX).len() == 1);
-    assert!(st.evaluations(st.get_symbol(constants_dir, &(vec![], vec![Sy!("CONSTANT_1")]), u32::MAX)[0]).as_ref().unwrap().len() == 1);
-    assert!(st.evaluations(st.get_symbol(constants_dir, &(vec![], vec![Sy!("CONSTANT_1")]), u32::MAX)[0]).as_ref().unwrap()[0].value.is_none());
-    assert!(st.evaluations(st.get_symbol(constants_dir, &(vec![], vec![Sy!("CONSTANT_2")]), u32::MAX)[0]).as_ref().unwrap().len() == 1);
-    assert!(st.evaluations(st.get_symbol(constants_dir, &(vec![], vec![Sy!("CONSTANT_2")]), u32::MAX)[0]).as_ref().unwrap()[0].value.is_none());
-    let data_dir = odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("module_1"), Sy!("constants"), Sy!("data")], vec![]), u32::MAX);
+    assert!(st.get_symbol(constants_dir, (&[], &["CONSTANT_1"]), u32::MAX).len() == 1);
+    assert!(st.get_symbol(constants_dir, (&[], &["CONSTANT_2"]), u32::MAX).len() == 1);
+    assert!(st.get_symbol(constants_dir, (&[], &["CONSTANT_3"]), u32::MAX).len() == 0);
+    assert!(st.get_symbol(constants_dir, (&["data"], &[]), u32::MAX).len() == 1);
+    assert!(st.evaluations(st.get_symbol(constants_dir, (&[], &["CONSTANT_1"]), u32::MAX)[0]).as_ref().unwrap().len() == 1);
+    assert!(st.evaluations(st.get_symbol(constants_dir, (&[], &["CONSTANT_1"]), u32::MAX)[0]).as_ref().unwrap()[0].value.is_none());
+    assert!(st.evaluations(st.get_symbol(constants_dir, (&[], &["CONSTANT_2"]), u32::MAX)[0]).as_ref().unwrap().len() == 1);
+    assert!(st.evaluations(st.get_symbol(constants_dir, (&[], &["CONSTANT_2"]), u32::MAX)[0]).as_ref().unwrap()[0].value.is_none());
+    let data_dir = odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "constants", "data"], &[]), u32::MAX);
     assert!(data_dir.len() == 1);
     let data_dir = data_dir[0];
     assert!(st.all_symbols(data_dir).len() == 4);
-    assert!(st.get_symbol(data_dir, &(vec![], vec![Sy!("CONSTANT_1")]), u32::MAX).len() == 1);
-    assert!(st.get_symbol(data_dir, &(vec![], vec![Sy!("CONSTANT_2")]), u32::MAX).len() == 1);
-    assert!(st.get_symbol(data_dir, &(vec![], vec![Sy!("CONSTANT_3")]), u32::MAX).len() == 0);
-    assert!(st.get_symbol(data_dir, &(vec![Sy!("constants")], vec![]), u32::MAX).len() == 1);
-    assert!(st.evaluations(st.get_symbol(data_dir, &(vec![], vec![Sy!("CONSTANT_1")]), u32::MAX)[0]).as_ref().unwrap().len() == 1);
-    assert!(st.evaluations(st.get_symbol(data_dir, &(vec![], vec![Sy!("CONSTANT_1")]), u32::MAX)[0]).as_ref().unwrap()[0].value.is_none());
-    assert!(st.evaluations(st.get_symbol(data_dir, &(vec![], vec![Sy!("CONSTANT_2")]), u32::MAX)[0]).as_ref().unwrap().len() == 1);
-    assert!(st.evaluations(st.get_symbol(data_dir, &(vec![], vec![Sy!("CONSTANT_2")]), u32::MAX)[0]).as_ref().unwrap()[0].value.is_some());
-    assert!(st.evaluations(st.get_symbol(data_dir, &(vec![], vec![Sy!("CONSTANT_2")]), u32::MAX)[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_number_literal_expr());
-    assert!(st.evaluations(st.get_symbol(data_dir, &(vec![], vec![Sy!("CONSTANT_2")]), u32::MAX)[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_int().unwrap().as_i32().unwrap() == 22);
-    assert!(st.evaluations(st.get_symbol(data_dir, &(vec![], vec![Sy!("CONSTANT_2")]), 26)[0]).as_ref().unwrap().len() == 1);
-    assert!(st.evaluations(st.get_symbol(data_dir, &(vec![], vec![Sy!("CONSTANT_2")]), 26)[0]).as_ref().unwrap()[0].value.is_none());
-    assert!(!st.evaluations(st.get_symbol(data_dir, &(vec![], vec![Sy!("CONSTANT_2")]), 26)[0]).as_ref().unwrap()[0].symbol.get_weak().weak.is_expired(st));
+    assert!(st.get_symbol(data_dir, (&[], &["CONSTANT_1"]), u32::MAX).len() == 1);
+    assert!(st.get_symbol(data_dir, (&[], &["CONSTANT_2"]), u32::MAX).len() == 1);
+    assert!(st.get_symbol(data_dir, (&[], &["CONSTANT_3"]), u32::MAX).len() == 0);
+    assert!(st.get_symbol(data_dir, (&["constants"], &[]), u32::MAX).len() == 1);
+    assert!(st.evaluations(st.get_symbol(data_dir, (&[], &["CONSTANT_1"]), u32::MAX)[0]).as_ref().unwrap().len() == 1);
+    assert!(st.evaluations(st.get_symbol(data_dir, (&[], &["CONSTANT_1"]), u32::MAX)[0]).as_ref().unwrap()[0].value.is_none());
+    assert!(st.evaluations(st.get_symbol(data_dir, (&[], &["CONSTANT_2"]), u32::MAX)[0]).as_ref().unwrap().len() == 1);
+    assert!(st.evaluations(st.get_symbol(data_dir, (&[], &["CONSTANT_2"]), u32::MAX)[0]).as_ref().unwrap()[0].value.is_some());
+    assert!(st.evaluations(st.get_symbol(data_dir, (&[], &["CONSTANT_2"]), u32::MAX)[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_number_literal_expr());
+    assert!(st.evaluations(st.get_symbol(data_dir, (&[], &["CONSTANT_2"]), u32::MAX)[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_int().unwrap().as_i32().unwrap() == 22);
+    assert!(st.evaluations(st.get_symbol(data_dir, (&[], &["CONSTANT_2"]), 26)[0]).as_ref().unwrap().len() == 1);
+    assert!(st.evaluations(st.get_symbol(data_dir, (&[], &["CONSTANT_2"]), 26)[0]).as_ref().unwrap()[0].value.is_none());
+    assert!(!st.evaluations(st.get_symbol(data_dir, (&[], &["CONSTANT_2"]), 26)[0]).as_ref().unwrap()[0].symbol.get_weak().weak.is_expired(st));
 
     //Test odoo.addons import
-    let constant_1_var = odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("module_1"), Sy!("models"), Sy!("base_test_models")], vec![Sy!("CONSTANT_1")]), u32::MAX);
+    let constant_1_var = odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "models", "base_test_models"], &["CONSTANT_1"]), u32::MAX);
     println!("test");
     assert!(constant_1_var.len() == 1);
     assert!(st.evaluations(constant_1_var[0]).as_ref().unwrap().len() == 1);
-    let constant_1_var_data = odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("module_1"), Sy!("constants")], vec![Sy!("CONSTANT_1")]), u32::MAX);
+    let constant_1_var_data = odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "constants"], &["CONSTANT_1"]), u32::MAX);
     assert!(constant_1_var_data.len() == 1);
     assert!(st.evaluations(constant_1_var[0]).as_ref().unwrap()[0].symbol.get_symbol_ptr().upgrade_weak(st) == Some(constant_1_var_data[0]));
 

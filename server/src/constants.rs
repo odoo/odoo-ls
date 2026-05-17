@@ -16,8 +16,6 @@ pub const DEBUG_REBUILD_NOW: bool = false;
 pub const DEBUG_BORROW_GUARDS: bool = false;
 pub const DEBUG_SYMBOL_TABLE_METRICS: bool = false;
 
-pub type Tree = (Vec<OYarn>, Vec<OYarn>);
-
 //type DebugYarn = String;
 
 #[macro_export]
@@ -42,13 +40,6 @@ use byteyarn::Yarn;
 #[cfg(not(all(feature="debug_yarn", debug_assertions)))]
 pub type OYarn = Yarn;
 
-pub fn tree(a: Vec<&str>, b: Vec<&str>) -> Tree {
-    (a.iter().map(|x| oyarn!("{}", *x)).collect(), b.iter().map(|x| oyarn!("{}", *x)).collect())
-}
-
-pub fn flatten_tree(tree: &Tree) -> Vec<OYarn> {
-    [tree.0.clone(), tree.1.clone()].concat()
-}
 
 
 #[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]

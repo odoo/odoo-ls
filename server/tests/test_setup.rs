@@ -1,9 +1,7 @@
 use std::env;
 use std::path::{Path, PathBuf};
 
-use odoo_ls_server::constants::OYarn;
 use odoo_ls_server::utils::PathSanitizer;
-use odoo_ls_server::Sy;
 
 mod setup;
 
@@ -26,9 +24,9 @@ fn test_start_odoo_server() {
     let odoo_path = PathBuf::from(env::var("COMMUNITY_PATH").unwrap()).sanitize();
 
     /* Let's ensure that the architecture is loaded */
-    assert!(!odoo.get_symbol(odoo_path.as_str(), &(vec![Sy!("odoo")], vec![]), u32::MAX).is_empty());
+    assert!(!odoo.get_symbol(odoo_path.as_str(), (&["odoo"], &[]), u32::MAX).is_empty());
     /* Let's ensure that odoo/addons is loaded */
-    assert!(!odoo.get_symbol(odoo_path.as_str(), &(vec![Sy!("odoo"), Sy!("addons")], vec![]), u32::MAX).is_empty());
+    assert!(!odoo.get_symbol(odoo_path.as_str(), (&["odoo", "addons"], &[]), u32::MAX).is_empty());
     /* And let's test that our test module has well been added and available in odoo/addons */
-    assert!(!odoo.get_symbol(odoo_path.as_str(), &(vec![Sy!("odoo"), Sy!("addons"), Sy!("module_1")], vec![]), u32::MAX).is_empty());
+    assert!(!odoo.get_symbol(odoo_path.as_str(), (&["odoo", "addons", "module_1"], &[]), u32::MAX).is_empty());
 }
