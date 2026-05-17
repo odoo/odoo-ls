@@ -57,3 +57,7 @@ assert_fs = "1.1"
 [features]
 default = []
 debug_yarn = []  # use a readable structure instead of Yarn for debug purpose
+
+[profile.profiling]
+inherits = "release"
+debug = true
