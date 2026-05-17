@@ -13,6 +13,7 @@ use crate::core::symbols::VariableSymbol;
 use crate::features::ast_utils::AstUtils;
 use crate::features::features_utils::FeaturesUtils;
 use crate::threads::SessionInfo;
+use crate::tree::OYarnExt;
 use crate::{Sy, S};
 use itertools::Itertools;
 use lsp_types::{
@@ -565,11 +566,11 @@ fn complete_decorator_call(
         };
         let dec_sym_tree = session.st().get_tree(dec_sym);
         let is_18_1_or_later = session.sync_odoo.version >= (18, 1);
-        let expected_types = if (!is_18_1_or_later && dec_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("api")])) ||
-                (is_18_1_or_later && dec_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("orm"), Sy!("decorators")])) {
-            if [vec![Sy!("onchange")], vec![Sy!("constrains")]].contains(&dec_sym_tree.1) && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0) {
+        let expected_types = if (!is_18_1_or_later && dec_sym_tree.0.ends_with_strs(&["odoo", "api"])) ||
+                (is_18_1_or_later && dec_sym_tree.0.ends_with_strs(&["odoo", "orm", "decorators"])) {
+            if (dec_sym_tree.1 == &["onchange"] || dec_sym_tree.1 == &["constrains"]) && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0) {
                 &vec![ExpectedType::SIMPLE_FIELD(None)]
-            } else if dec_sym_tree.1 == vec![Sy!("depends")] && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0){
+            } else if dec_sym_tree.1 == &["depends"] && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0){
                 &vec![ExpectedType::NESTED_FIELD(None)]
             } else {
                 continue;
@@ -901,7 +902,7 @@ fn complete_subscript(session: &mut SessionInfo, file: SourceFileKey, expr_subsc
             let symbol_types = SymbolTable::follow_ref(&eval_symbol, session, &mut None, false, false, None, None);
             for symbol_type in symbol_types.iter() {
                 if let Some(symbol_type) = symbol_type.upgrade_weak(session.st()) {
-                    let get_item = session.st().get_symbol(symbol_type, &(vec![], vec![Sy!("__getitem__")]), u32::MAX);
+                    let get_item = session.st().get_symbol(symbol_type, (&[], &["__getitem__"]), u32::MAX);
                     if let Some(&get_item) = get_item.last() {
                         let evaluations = session.st().evaluations(get_item).unwrap();
                         if evaluations.len() == 1 {

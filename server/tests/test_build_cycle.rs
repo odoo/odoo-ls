@@ -5,7 +5,6 @@ use odoo_ls_server::constants::{BuildStatus, BuildSteps};
 use odoo_ls_server::core::entry_point::EntryPointMgr;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::core::symbols::symbol_keys::SymbolKey;
-use odoo_ls_server::oyarn;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
@@ -54,7 +53,7 @@ fn test_build_now_arch_eval_cycle_does_not_overflow() {
 fn get_file(session: &SessionInfo, module_dir: &str, name: &str) -> SymbolKey {
     let syms = session
         .sync_odoo
-        .get_symbol(module_dir, &(vec![oyarn!("{}", name)], vec![]), u32::MAX);
+        .get_symbol(module_dir, (&[name], &[]), u32::MAX);
     assert!(!syms.is_empty(), "expected file symbol for {}", name);
     syms[0]
 }
