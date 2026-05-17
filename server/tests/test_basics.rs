@@ -2,12 +2,10 @@
 
 use odoo_ls_server::utils::HashSet;
 use std::env;
-use odoo_ls_server::{core::evaluation::EvaluationValue, oyarn};
-use odoo_ls_server::constants::OYarn;
+use odoo_ls_server::{core::evaluation::EvaluationValue};
 use odoo_ls_server::utils::PathSanitizer;
 use ruff_python_ast::Expr;
 
-use odoo_ls_server::Sy;
 
 mod setup;
 
@@ -41,7 +39,7 @@ fn test_assigns() {
     assert!(session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.len() == 1);
     let st = &session.sync_odoo.symbol_table;
 
-    let a = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![Sy!("a")]), u32::MAX);
+    let a = session.sync_odoo.get_symbol(path.as_str(), (&[], &["a"]), u32::MAX);
     assert!(a.len() == 1);
     assert!(st.name(a[0]) == "a");
     assert!(st.evaluations(a[0]).as_ref().unwrap().len() == 1);
@@ -51,7 +49,7 @@ fn test_assigns() {
     assert!(st.evaluations(a[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.is_int());
     assert!(st.evaluations(a[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_int().unwrap().as_i32().unwrap() == 5);
 
-    let b = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![Sy!("b")]), u32::MAX);
+    let b = session.sync_odoo.get_symbol(path.as_str(), (&[], &["b"]), u32::MAX);
     assert!(b.len() == 1);
     assert!(st.name(b[0]) == "b");
     assert!(st.evaluations(b[0]).as_ref().unwrap().len() == 1);
@@ -60,7 +58,7 @@ fn test_assigns() {
     assert!(st.evaluations(b[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_string_literal_expr());
     assert!(st.evaluations(b[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_string_literal_expr().unwrap().value.to_str() == "test");
 
-    let c = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![Sy!("c")]), u32::MAX);
+    let c = session.sync_odoo.get_symbol(path.as_str(), (&[], &["c"]), u32::MAX);
     assert!(c.len() == 1);
     assert!(st.name(c[0]) == "c");
     assert!(st.evaluations(c[0]).as_ref().unwrap().len() == 1);
@@ -70,7 +68,7 @@ fn test_assigns() {
     assert!(st.evaluations(c[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.is_float());
     assert!(st.evaluations(c[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_float().unwrap() == &3.14);
 
-    let d = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![Sy!("d")]), u32::MAX);
+    let d = session.sync_odoo.get_symbol(path.as_str(), (&[], &["d"]), u32::MAX);
     assert!(d.len() == 1);
     assert!(st.name(d[0]) == "d");
     assert!(st.evaluations(d[0]).as_ref().unwrap().len() == 1);
@@ -79,7 +77,7 @@ fn test_assigns() {
     assert!(st.evaluations(d[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_boolean_literal_expr());
     assert!(st.evaluations(d[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_boolean_literal_expr().unwrap().value == true);
 
-    let e = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![Sy!("e")]), u32::MAX);
+    let e = session.sync_odoo.get_symbol(path.as_str(), (&[], &["e"]), u32::MAX);
     assert!(e.len() == 1);
     assert!(st.name(e[0]) == "e");
     assert!(st.evaluations(e[0]).as_ref().unwrap().len() == 1);
@@ -88,7 +86,7 @@ fn test_assigns() {
     assert!(st.evaluations(e[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_boolean_literal_expr());
     assert!(st.evaluations(e[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_boolean_literal_expr().unwrap().value == false);
 
-    let f = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![Sy!("f")]), u32::MAX);
+    let f = session.sync_odoo.get_symbol(path.as_str(), (&[], &["f"]), u32::MAX);
     assert!(f.len() == 1);
     assert!(st.name(f[0]) == "f");
     assert!(st.evaluations(f[0]).as_ref().unwrap().len() == 1);
@@ -96,7 +94,7 @@ fn test_assigns() {
     assert!(matches!(st.evaluations(f[0]).as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(Expr::NoneLiteral(_))));
     assert!(st.evaluations(f[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_none_literal_expr());
 
-    let g = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![Sy!("g")]), u32::MAX);
+    let g = session.sync_odoo.get_symbol(path.as_str(), (&[], &["g"]), u32::MAX);
     assert!(g.len() == 1);
     assert!(st.name(g[0]) == "g");
     assert!(st.evaluations(g[0]).as_ref().unwrap().len() == 1);
@@ -110,7 +108,7 @@ fn test_assigns() {
     assert!(st.evaluations(g[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_list()[2].is_number_literal_expr());
     assert!(st.evaluations(g[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_list()[2].as_number_literal_expr().unwrap().value.as_int().unwrap().as_i32().unwrap() == 3);
 
-    let h = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![Sy!("h")]), u32::MAX);
+    let h = session.sync_odoo.get_symbol(path.as_str(), (&[], &["h"]), u32::MAX);
     assert!(h.len() == 1);
     assert!(st.name(h[0]) == "h");
     assert!(st.evaluations(h[0]).as_ref().unwrap().len() == 1);
@@ -124,7 +122,7 @@ fn test_assigns() {
     assert!(st.evaluations(h[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_tuple()[2].is_number_literal_expr());
     assert!(st.evaluations(h[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_tuple()[2].as_number_literal_expr().unwrap().value.as_int().unwrap().as_i32().unwrap() == 3);
 
-    let i = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![Sy!("i")]), u32::MAX);
+    let i = session.sync_odoo.get_symbol(path.as_str(), (&[], &["i"]), u32::MAX);
     assert!(i.len() == 1);
     assert!(st.name(i[0]) == "i");
     assert!(st.evaluations(i[0]).as_ref().unwrap().len() == 1);
@@ -140,7 +138,7 @@ fn test_assigns() {
     assert!(st.evaluations(i[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_dict()[1].1.is_number_literal_expr());
     assert!(st.evaluations(i[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_dict()[1].1.as_number_literal_expr().unwrap().value.as_int().unwrap().as_i32().unwrap() == 2);
 
-    let j = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![Sy!("j")]), u32::MAX);
+    let j = session.sync_odoo.get_symbol(path.as_str(), (&[], &["j"]), u32::MAX);
     assert!(j.len() == 1);
     assert!(st.name(j[0]) == "j");
     assert!(st.evaluations(j[0]).as_ref().unwrap().len() == 1);
@@ -158,7 +156,7 @@ fn test_sections() {
     let st = &session.sync_odoo.symbol_table;
 
     let assert_get_int_eval_values = |var_name: &str, values: HashSet<i32>|{
-        let syms = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![oyarn!("{}", var_name)]), u32::MAX);
+        let syms = session.sync_odoo.get_symbol(path.as_str(), (&[], &[var_name]), u32::MAX);
         assert_eq!(syms.len(), values.len()); // Check Number of symbols
         assert_eq!(syms.iter()
         .map(|&sym| {

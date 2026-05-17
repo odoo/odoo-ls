@@ -41,7 +41,7 @@ fn resolve_import_stmt_hook(alias: &Alias, from_symbols: &Option<Vec<SymbolKey>>
         return None;
     }
     for &from_symbol in from_symbols.iter().flatten() {
-        if session.sync_odoo.get_main_entry_tree(from_symbol).0 != vec!["odoo", "tests", "common"] {
+        if session.sync_odoo.get_main_entry_tree(from_symbol).0 != &["odoo", "tests", "common"] {
             continue;
         }
         let mut results = resolve_import_stmt(session, source_file_symbol, Some(&Identifier::new(S!("odoo.tests"), from_stmt.unwrap().range)), &[alias.clone()], level, &mut None);
@@ -165,7 +165,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
         0);
         if next_symbol.is_none() && name_split.len() == 1 && from_symbols.is_some() {
             //check the last name is not a symbol in the file
-            let name_symbol_vec = from_symbols.as_ref().unwrap().iter().flat_map(|&s| session.st().get_symbol(s, &(vec![], name_first_part.clone()), u32::MAX)).collect::<Vec<_>>();
+            let name_symbol_vec = from_symbols.as_ref().unwrap().iter().flat_map(|&s| session.st().get_symbol(s, (&[], &name_first_part), u32::MAX)).collect::<Vec<_>>();
             next_symbol = if name_symbol_vec.len() > 0 {Some(name_symbol_vec.clone())} else {None};
         }
         if next_symbol.is_none() {
@@ -209,7 +209,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
             0);
             if last_symbol.is_none() { //If not a file/package, try to look up in symbols in current file (second parameter of get_symbol)
                 //TODO what if multiple values?
-                let name_symbol_vec = next_symbol.as_ref().unwrap().iter().flat_map(|&s| session.st().get_symbol(s, &(vec![], name_last_name.clone()), u32::MAX)).collect::<Vec<_>>();
+                let name_symbol_vec = next_symbol.as_ref().unwrap().iter().flat_map(|&s| session.st().get_symbol(s, (&[], &name_last_name), u32::MAX)).collect::<Vec<_>>();
                 last_symbol = if name_symbol_vec.len() > 0 {Some(name_symbol_vec.clone())} else {None};
                 if last_symbol.is_none() {
                     if alias.asname.is_some() {
@@ -263,14 +263,14 @@ fn resolve_packages(symbol_table: &SymbolTable, from_file: SymbolKey, level: u32
             lvl -= 1;
         }
         if lvl == 0 {
-            first_part_tree = symbol_table.get_tree(from_file).0.clone();
+            first_part_tree = symbol_table.get_tree(from_file).0;
         } else {
             let tree = symbol_table.get_tree(from_file);
             if lvl > tree.0.len() as u32 {
                 error!("Level is too high and going out of scope");
                 return None;
             } else {
-                first_part_tree = Vec::from_iter(tree.0[0..tree.0.len()- lvl as usize].iter().cloned());
+                first_part_tree = tree.0[0..tree.0.len()- lvl as usize].to_vec();
             }
         }
     }
@@ -302,7 +302,7 @@ fn get_or_create_symbol(
             Some(ref symbols) => {
                 let mut next_symbol = vec![];
                 for &s in symbols.iter() {
-                    let mut current_batch_symbol = session.st().get_symbol(s, &(vec![branch.clone()], vec![]), u32::MAX);
+                    let mut current_batch_symbol = session.st().get_symbol(s, (&[branch.clone()], &[]), u32::MAX);
                     if current_batch_symbol.is_empty() && matches!(s, SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::Compiled(_) | SymbolKey::DiskDir(_)) {
                         current_batch_symbol = match resolve_new_symbol(session, s, &branch, asname.clone()) {
                             Ok(v) => vec![v],
@@ -350,7 +350,7 @@ fn get_or_create_symbol(
                     if ((entry.borrow().is_public() && level == 0) || entry.borrow().is_valid_for(&from_path)) && entry.borrow().addon_to_odoo_path.is_none() {
                         let entry_point = entry.borrow().get_symbol(session.st());
                         if let Some(entry_point) = entry_point {
-                            let mut next_symbols = session.st().get_symbol(entry_point, &(vec![branch.clone()], vec![]), u32::MAX);
+                            let mut next_symbols = session.st().get_symbol(entry_point, (&[branch.clone()], &[]), u32::MAX);
                             if next_symbols.is_empty() && matches!(entry_point, SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::Compiled(_) | SymbolKey::DiskDir(_)) {
                                 next_symbols = match resolve_new_symbol(session, entry_point, &branch, asname.clone()) {
                                     Ok(v) => vec![v],

@@ -1,13 +1,11 @@
 mod setup;
 mod test_utils;
 
-use odoo_ls_server::constants::OYarn;
 use odoo_ls_server::core::file_mgr::FileInfo;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::core::symbols::symbol_keys::{SourceFileKey, SymbolKey};
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
-use odoo_ls_server::Sy;
 use std::cell::RefCell;
 use std::env;
 use std::path::PathBuf;
@@ -33,7 +31,7 @@ where
     let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, &PathBuf::from(&path))
         .expect("Failed to get file symbol");
 
-    let my_class = session.sync_odoo.get_symbol(path.as_str(), &(vec![], vec![Sy!("MyClass")]), u32::MAX);
+    let my_class = session.sync_odoo.get_symbol(path.as_str(), (&[], &["MyClass"]), u32::MAX);
     assert!(!my_class.is_empty(), "MyClass should be found in the test file");
     let my_class = my_class[0].clone();
 
