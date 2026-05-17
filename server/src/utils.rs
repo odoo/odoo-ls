@@ -7,7 +7,7 @@ use std::process::Command;
 use std::sync::atomic::Ordering;
 use std::{fs::{self, DirEntry}, path::{Path, PathBuf}, str::FromStr, sync::LazyLock};
 
-use crate::{constants::Tree, oyarn};
+use crate::{tree::Tree, oyarn};
 
 static TEMPLATE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\$\{([^}]+)\}").unwrap()
@@ -183,7 +183,7 @@ impl PathSanitizer for PathBuf {
         } else {
             self.clone()
         };
-        (
+        Tree(
             modified_path
                 .components()
                 .map(|c| oyarn!("{}", c.as_os_str().to_str().unwrap()))

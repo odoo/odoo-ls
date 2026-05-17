@@ -7,9 +7,10 @@ use crate::core::symbols::function_symbol::Argument;
 use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey, SourceFileKey, SymbolKey, Wk};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::{FunctionSymbol, VariableSymbol};
+use crate::tree::OYarnExt;
 use crate::utils::HashMap;
 
-use crate::constants::SymType;
+use crate::constants::{SymType};
 use crate::constants::OYarn;
 use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak, EvaluationValue};
 use crate::threads::SessionInfo;
@@ -260,15 +261,15 @@ impl FeaturesUtils {
                 let func_sym_tree = session.st().get_tree(callable_sym);
                 // TODO: account for change in tree after 18.1 odoo.orm.decorators
                 let is_18_1_or_later = session.sync_odoo.version >= (18, 1);
-                if (!is_18_1_or_later && func_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("api")])) ||
-                    (is_18_1_or_later && func_sym_tree.0.ends_with(&[Sy!("odoo"), Sy!("orm"), Sy!("decorators")])) {
+                if (!is_18_1_or_later && func_sym_tree.0.ends_with_strs(&["odoo", "api"])) ||
+                    (is_18_1_or_later && func_sym_tree.0.ends_with_strs(&["odoo", "orm", "decorators"])) {
                     if [vec![Sy!("onchange")], vec![Sy!("constrains")]].contains(&func_sym_tree.1) && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0) {
                         arg_symbols.extend(
                             FeaturesUtils::find_simple_decorator_field_symbol(session, scope, from_module, field_name)
                             .into_iter().map(|symbol| (symbol, field_range.clone()))
                         );
                         continue;
-                    } else if func_sym_tree.1 == vec![Sy!("depends")] && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0){
+                    } else if func_sym_tree.1 == &["depends"] && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0){
                         arg_symbols.extend(
                             FeaturesUtils::find_nested_fields_in_class(session, scope, from_module, &field_range, field_name, &offset)
                         );

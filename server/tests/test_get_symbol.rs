@@ -296,7 +296,7 @@ fn test_definition() {
     let compute_arg_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, &m1_tf_file_info, 8, 50);
     assert_eq!(compute_arg_locs.len(), 1, "Expected 1 location for compute method '_compute_something'");
     assert_eq!(compute_arg_locs[0].target_uri.to_file_path().unwrap().sanitize(), module1_test_file, "Expected location to be in the same file");
-    let sym_compute_something = session.st().get_symbol(m1_tf_file_symbol.into(), &(vec![], vec![Sy!("BaseTestModel"), Sy!("_compute_something")]), u32::MAX);
+    let sym_compute_something = session.st().get_symbol(m1_tf_file_symbol.into(), (&[], &["BaseTestModel", "_compute_something"]), u32::MAX);
     assert_eq!(sym_compute_something.len(), 1, "Expected 1 symbol for _compute_something");
     let range = session.st().range(sym_compute_something[0]).clone();
     assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, &range), compute_arg_locs[0].target_range, "Expected _compute_something to be at the same location as the compute argument");
@@ -313,7 +313,7 @@ fn test_definition() {
     assert_eq!(compute_kwarg_locs.len(), 2, "Expected 2 locations for compute method '_compute_something'");
     assert!(compute_kwarg_locs.iter().any(|loc| loc.target_uri.to_file_path().unwrap().sanitize() == module1_test_file), "Expected one location to be in module_1 file");
     assert!(compute_kwarg_locs.iter().any(|loc| loc.target_uri.to_file_path().unwrap().sanitize() == module2_test_file), "Expected one location to be in module_2 file");
-    let sym_compute_something_m2 = session.st().get_symbol(m2_tf_file_symbol.into(), &(vec![], vec![Sy!("BaseTestModel"), Sy!("_compute_something")]), u32::MAX);
+    let sym_compute_something_m2 = session.st().get_symbol(m2_tf_file_symbol.into(), (&[], &["BaseTestModel", "_compute_something"]), u32::MAX);
     assert_eq!(sym_compute_something_m2.len(), 1, "Expected 1 symbol for _compute_something in module_2");
 
     // Check that compute_kwarg_locs contains the range of the compute something syms from both files
@@ -326,13 +326,13 @@ fn test_definition() {
     let partner_id_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, &m1_tf_file_info, 33, 25);
     assert_eq!(partner_id_locs.len(), 1, "Expected 1 location for partner_id");
     assert_eq!(partner_id_locs[0].target_uri.to_file_path().unwrap().sanitize(), module1_test_file, "Expected location to be in the same file");
-    let sym_partner_id = session.st().get_symbol(m1_tf_file_symbol.into(), &(vec![], vec![Sy!("BaseTestModel"), Sy!("partner_id")]), u32::MAX);
+    let sym_partner_id = session.st().get_symbol(m1_tf_file_symbol.into(), (&[], &["BaseTestModel", "partner_id"]), u32::MAX);
     assert_eq!(sym_partner_id.len(), 1, "Expected 1 symbol for partner_id");
     let range = session.st().range(sym_partner_id[0]).clone();
     assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, &range), partner_id_locs[0].target_range, "Expected partner_id to be at the same location as the field");
 
     let country_id_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, &m1_tf_file_info, 10, 74);
-    let country_id_field_sym = session.sync_odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("base"), Sy!("models"), Sy!("res_partner")], vec![Sy!(partner_class_name), Sy!("country_id")]), u32::MAX);
+    let country_id_field_sym = session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "base", "models", "res_partner"], &[partner_class_name, "country_id"]), u32::MAX);
     assert_eq!(country_id_field_sym.len(), 1, "Expected 1 location for country_id");
     let country_id_field_sym = country_id_field_sym[0].clone();
     let country_id_file = session.st().path(session.st().get_file(country_id_field_sym).unwrap()).to_string();
@@ -343,7 +343,7 @@ fn test_definition() {
 
     // now the same for phone_code
     let phone_code_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, &m1_tf_file_info, 10, 86);
-    let phone_code_field_sym = session.sync_odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("base"), Sy!("models"), Sy!("res_country")], vec![Sy!(country_class_name), Sy!("phone_code")]), u32::MAX);
+    let phone_code_field_sym = session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "base", "models", "res_country"], &[country_class_name, "phone_code"]), u32::MAX);
     assert_eq!(phone_code_field_sym.len(), 1, "Expected 1 location for phone_code");
     let phone_code_field_sym = phone_code_field_sym[0].clone();
     let phone_code_file = session.st().path(session.st().get_file(phone_code_field_sym).unwrap()).to_string();
@@ -380,20 +380,20 @@ fn test_definition_csv() {
     };
 
     // Test definition for country_id header
-    let res_country_file = session.sync_odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("base"), Sy!("models"), Sy!("res_country")], vec![]), u32::MAX);
+    let res_country_file = session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "base", "models", "res_country"], &[]), u32::MAX);
     assert!(res_country_file.len() == 1);
     let res_country_file = res_country_file[0];
     let path = session.st().file_path(res_country_file.as_source_file_key().unwrap()).to_string();
     let country_id_loc = test_utils::get_definition_locs(&mut session, mcsv_tf_file_symbol, &mcsv_tf_file_info, 0, 8);
     assert_eq!(country_id_loc.len(), 1, "Expected 1 location for header 'country_id_loc'");
     assert_eq!(country_id_loc[0].target_uri.to_file_path().unwrap().sanitize(), path, "Expected location to be in res_country.py file");
-    let country_id_sym = session.st().get_symbol(res_country_file, &(vec![], vec![Sy!("ResCountryState"), Sy!("country_id")]), u32::MAX);
+    let country_id_sym = session.st().get_symbol(res_country_file, (&[], &["ResCountryState", "country_id"]), u32::MAX);
     assert_eq!(country_id_sym.len(), 1, "Expected 1 symbol for country_id_sym");
     let range = session.st().range(country_id_sym[0]).clone();
     assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &path, &range), country_id_loc[0].target_range, "Expected country_id to be at the same location as the compute argument");
 
     // Test definition for code header (id part)
-    let ir_model_file = session.sync_odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("base"), Sy!("models"), Sy!("ir_model")], vec![]), u32::MAX);
+    let ir_model_file = session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "base", "models", "ir_model"], &[]), u32::MAX);
     assert!(ir_model_file.len() == 1);
     let ir_model_file = ir_model_file[0].clone();
     let path = session.st().file_path(ir_model_file.as_source_file_key().unwrap()).to_string();
@@ -403,7 +403,7 @@ fn test_definition_csv() {
     for loc in country_id_id_loc.iter() {
         if loc.target_uri.to_file_path().unwrap().sanitize() == path {
             found_base = true;
-            let base_sym = session.st().get_symbol(ir_model_file, &(vec![], vec![Sy!("Base")]), u32::MAX);
+            let base_sym = session.st().get_symbol(ir_model_file, (&[], &["Base"]), u32::MAX);
             assert_eq!(base_sym.len(), 1, "Expected 1 symbol for Base id field");
             let range = session.st().range(base_sym[0]).clone();
             assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &path, &range), loc.target_range, "Expected the location of Base class");
@@ -418,7 +418,7 @@ fn test_definition_csv() {
     assert_eq!(lsp_types::Range{start: lsp_types::Position { line: 1, character: 0 }, end: lsp_types::Position { line: 1, character: 13 }}, state_loc[0].target_range, "Expected code to be at the same location as the compute argument");
 
     // Test definition for base.au record field
-    let base = session.sync_odoo.get_symbol(odoo_path, &(vec![Sy!("odoo"), Sy!("addons"), Sy!("base")], vec![]), u32::MAX);
+    let base = session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "base"], &[]), u32::MAX);
     assert!(base.len() == 1);
     let base_module = base[0].unwrap_module_key();
     let base_path = session.st()[base_module].path.clone();
@@ -464,7 +464,7 @@ fn test_model_subscription() {
     };
     let file_mgr = session.sync_odoo.get_file_mgr();
     let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
-    let base_test_model_sym = session.st().get_symbol(file_symbol.into(), &(vec![], vec![Sy!("BaseTestModel")]), u32::MAX);
+    let base_test_model_sym = session.st().get_symbol(file_symbol.into(), (&[], &["BaseTestModel"]), u32::MAX);
     assert_eq!(base_test_model_sym.len(), 1, "Expected 1 symbol for BaseTestModel");
     let resolved_syms = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, 34, 10);
     assert!(

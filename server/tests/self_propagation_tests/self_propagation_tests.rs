@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use odoo_ls_server::{Sy, constants::OYarn, core::{odoo::SyncOdoo, symbols::{symbol_keys::SymbolKey, storage::SymbolTable}}, utils::PathSanitizer};
+use odoo_ls_server::{core::{odoo::SyncOdoo, symbols::{symbol_keys::SymbolKey, storage::SymbolTable}}, utils::PathSanitizer};
 
 use crate::{setup::setup, test_utils};
 
@@ -52,9 +52,9 @@ fn test_model_subscription() {
 
     let file_mgr = session.sync_odoo.get_file_mgr();
     let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
-    let model_a_sym = session.st().get_symbol(file_symbol.into(),&(vec![], vec![Sy!("ModelA")]), u32::MAX);
+    let model_a_sym = session.st().get_symbol(file_symbol.into(),(&[], &["ModelA"]), u32::MAX);
     assert_eq!(model_a_sym.len(), 1, "Expected 1 symbol for ModelA");
-    let model_b_sym = session.st().get_symbol(file_symbol.into(),&(vec![], vec![Sy!("ModelB")]), u32::MAX);
+    let model_b_sym = session.st().get_symbol(file_symbol.into(),(&[], &["ModelB"]), u32::MAX);
     assert_eq!(model_b_sym.len(), 1, "Expected 1 symbol for ModelB");
 
     let create_new_in_model_a = follow_evaluation_refs(
@@ -98,9 +98,9 @@ fn test_model_subscription() {
 
     // Test on normal classes
 
-    let a_sym = session.st().get_symbol(file_symbol.into(), &(vec![], vec![Sy!("A")]), u32::MAX);
+    let a_sym = session.st().get_symbol(file_symbol.into(), (&[], &["A"]), u32::MAX);
     assert_eq!(a_sym.len(), 1, "Expected 1 symbol for A");
-    let b_sym = session.st().get_symbol(file_symbol.into(), &(vec![], vec![Sy!("B")]), u32::MAX);
+    let b_sym = session.st().get_symbol(file_symbol.into(), (&[], &["B"]), u32::MAX);
     assert_eq!(b_sym.len(), 1, "Expected 1 symbol for B");
 
     let method_self_in_a = follow_evaluation_refs(
