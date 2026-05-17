@@ -42,6 +42,7 @@ use std::path::{Path, PathBuf};
 use std::env;
 use regex::Regex;
 use crate::{constants::*, Sy};
+use crate::tree::{Tree, TreeStrSlice};
 use super::config::{self, DEFAULT_PROFILE_NAME, get_configuration, ConfigEntry, ConfigFile};
 use super::entry_point::{EntryPoint, EntryPointMgr};
 use super::file_mgr::FileMgr;
@@ -362,7 +363,7 @@ impl SyncOdoo {
         };
         let tree_builtins = path.to_tree();
         let entry_stdlib = session.sync_odoo.find_stdlib_entry_point();
-        let disk_dir_builtins = session.st().get_symbol(entry_stdlib.borrow().root.into(), &tree_builtins, u32::MAX);
+        let disk_dir_builtins = session.st().get_symbol(entry_stdlib.borrow().root.into(), tree_builtins.as_slice(), u32::MAX);
         if disk_dir_builtins.is_empty() {
             panic!("Unable to find builtins disk dir symbol");
         }
@@ -477,11 +478,11 @@ impl SyncOdoo {
             return false;
         }
         //search common odoo addons path
-        let addon_symbols = session.sync_odoo.get_symbol(&odoo_path, &tree(vec!["odoo", "addons"], vec![]), u32::MAX);
+        let addon_symbols = session.sync_odoo.get_symbol(&odoo_path, (&["odoo", "addons"], &[]), u32::MAX);
         let addon_symbol = if let Some(&SymbolKey::Namespace(addon_ns)) = addon_symbols.first() {
             addon_ns
         } else {
-            let odoo = session.sync_odoo.get_symbol(&odoo_path, &tree(vec!["odoo"], vec![]), u32::MAX);
+            let odoo = session.sync_odoo.get_symbol(&odoo_path, (&["odoo"], &[]), u32::MAX);
             if odoo.is_empty() {
                 session.log_message(MessageType::WARNING, "Odoo not found. Switching to non-odoo mode...".to_string());
                 session.sync_odoo.has_odoo_main_entry = false;
@@ -522,7 +523,7 @@ impl SyncOdoo {
 
     fn build_modules(session: &mut SessionInfo) {
         let Some(&SymbolKey::Namespace(addons_symbol)) = session.sync_odoo.get_symbol(
-            session.sync_odoo.config.odoo_path.as_ref().unwrap(), &tree(vec!["odoo", "addons"], vec![]), u32::MAX
+            session.sync_odoo.config.odoo_path.as_ref().unwrap(), (&["odoo", "addons"], &[]), u32::MAX
         ).first() else {
             let message = S!("OdooLS: Unable to find 'odoo/addons'. Check the addons_paths in your config or your file structure. Skipping addons loading...");
             warn!("{}", message);
@@ -598,13 +599,17 @@ impl SyncOdoo {
 
 
     //search for a symbol with a tree local to an unknown entrypoint
-    pub fn get_symbol(&self, from_path: &str, tree: &Tree, position: u32) -> Vec<SymbolKey> {
+    pub fn get_symbol(&self, from_path: &str, tree: TreeStrSlice, position: u32) -> Vec<SymbolKey> {
         //find which entrypoint to use
         for entry in self.entry_point_mgr.borrow().iter_all() {
             let entry_point = entry.borrow();
             if entry_point.is_public() || PathBuf::from(from_path).starts_with(&entry_point.path) {
-                let tree: Tree = (entry_point.addon_to_odoo_tree.as_ref().unwrap_or(&entry_point.tree).iter().chain(&tree.0).cloned().collect(), tree.1.clone());
-                let symbols = self.symbol_table.get_symbol(entry_point.root.into(), &tree, position);
+                let prefix = entry_point.addon_to_odoo_tree.as_ref().unwrap_or(&entry_point.tree);
+                let tree_0: Vec<&str> = prefix.iter()
+                    .map(|y| y.as_slice())
+                    .chain(tree.0.iter().copied())
+                    .collect();
+                let symbols = self.symbol_table.get_symbol(entry_point.root.into(), (&tree_0, &tree.1), position);
                 if !symbols.is_empty() {
                     return symbols;
                 }
@@ -673,7 +678,7 @@ impl SyncOdoo {
             let Some(parent) = weak_sym.upgrade(session.st()) else {
                 continue;
             };
-            let in_addons = session.sync_odoo.get_main_entry_tree(parent) == tree(vec!["odoo", "addons"], vec![]);
+            let in_addons = session.sync_odoo.get_main_entry_tree(parent) == (&["odoo", "addons"], &[]);
             let new_symbol = SymbolTable::create_from_path(session, &PathBuf::from(path), parent, in_addons);
             let Some(new_symbol) = new_symbol else {
                 continue;
@@ -1042,7 +1047,7 @@ impl SyncOdoo {
             }
             if entry.borrow().is_valid_for(path) {
                 let tree = entry.borrow().get_tree_for_entry(path);
-                let path_symbols = session.st().get_symbol(entry.borrow().root.into(), &tree, u32::MAX);
+                let path_symbols = session.st().get_symbol(entry.borrow().root.into(), tree.as_slice(), u32::MAX);
                 let Some(&path_symbol) = path_symbols.first() else {
                     continue;
                 };
@@ -1114,7 +1119,7 @@ impl SyncOdoo {
             }
             if (entry.borrow().typ == EntryPointType::MAIN || entry.borrow().addon_to_odoo_path.is_some()) && entry.borrow().is_valid_for(path) {
                 let tree = entry.borrow().get_tree_for_entry(path);
-                let path_symbol = session.st().get_symbol(entry.borrow().root.into(), &tree, u32::MAX);
+                let path_symbol = session.st().get_symbol(entry.borrow().root.into(), tree.as_slice(), u32::MAX);
                 if path_symbol.is_empty() {
                     continue;
                 }
@@ -1134,7 +1139,7 @@ impl SyncOdoo {
             if !entry.borrow().is_public() && &path_in_tree == &PathBuf::from(&entry.borrow().path) {
                 found_an_entry = true;
                 let tree = entry.borrow().get_tree_for_entry(path);
-                let path_symbol = session.st().get_symbol(entry.borrow().root.into(), &tree, u32::MAX);
+                let path_symbol = session.st().get_symbol(entry.borrow().root.into(), tree.as_slice(), u32::MAX);
                 if path_symbol.is_empty() {
                     continue;
                 }
@@ -1183,7 +1188,7 @@ impl SyncOdoo {
         tree
     }
 
-    pub fn match_tree_from_any_entry(&self, symbol_key: SymbolKey, tree: &Tree) -> bool {
+    pub fn match_tree_from_any_entry(&self, symbol_key: SymbolKey, tree: TreeStrSlice) -> bool {
         let symbol_table = &self.symbol_table;
         let (mut self_tree, entry) = symbol_table.get_tree_and_entry(symbol_key);
         'outer: for entry in self.entry_point_mgr.borrow().iter_for_import(&entry) {
@@ -1195,7 +1200,7 @@ impl SyncOdoo {
                     continue 'outer;
                 }
             }
-            return (self_tree.0.split_off(entry.borrow().tree.len()), self_tree.1) == *tree;
+            return Tree(self_tree.0.split_off(entry.borrow().tree.len()), self_tree.1) == tree;
         }
         false
     }
@@ -1213,7 +1218,7 @@ impl SyncOdoo {
         false
     }
 
-    pub fn is_in_main_entry(session: &mut SessionInfo, path: &Vec<OYarn>) -> bool{
+    pub fn is_in_main_entry(session: &mut SessionInfo, path: &[OYarn]) -> bool{
         path.starts_with(session.sync_odoo.main_entry_tree.as_slice())
     }
 
@@ -1299,84 +1304,84 @@ impl SyncOdoo {
 
     pub fn get_ts_dict(&mut self) -> Wk<SymbolKey> {
         if self.typeshed_weak_cache.dict.is_expired(&self.symbol_table) {
-            self.typeshed_weak_cache.dict = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("dict")]), u32::MAX).last().copied().unwrap().into();
+            self.typeshed_weak_cache.dict = self.get_symbol("", (&["builtins"], &["dict"]), u32::MAX).last().copied().unwrap().into();
         }
         self.typeshed_weak_cache.dict
     }
 
     pub fn get_ts_tuple(&mut self) -> Wk<SymbolKey> {
         if self.typeshed_weak_cache.tuple.is_expired(&self.symbol_table) {
-            self.typeshed_weak_cache.tuple = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("tuple")]), u32::MAX).last().copied().unwrap().into();
+            self.typeshed_weak_cache.tuple = self.get_symbol("", (&["builtins"], &["tuple"]), u32::MAX).last().copied().unwrap().into();
         }
         self.typeshed_weak_cache.tuple
     }
 
     pub fn get_ts_set(&mut self) -> Wk<SymbolKey> {
         if self.typeshed_weak_cache.set.is_expired(&self.symbol_table) {
-            self.typeshed_weak_cache.set = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("set")]), u32::MAX).last().copied().unwrap().into();
+            self.typeshed_weak_cache.set = self.get_symbol("", (&["builtins"], &["set"]), u32::MAX).last().copied().unwrap().into();
         }
         self.typeshed_weak_cache.set
     }
 
     pub fn get_ts_list(&mut self) -> Wk<SymbolKey> {
         if self.typeshed_weak_cache.list.is_expired(&self.symbol_table) {
-            self.typeshed_weak_cache.list = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("list")]), u32::MAX).last().copied().unwrap().into();
+            self.typeshed_weak_cache.list = self.get_symbol("", (&["builtins"], &["list"]), u32::MAX).last().copied().unwrap().into();
         }
         self.typeshed_weak_cache.list
     }
 
     pub fn get_ts_string(&mut self) -> Wk<SymbolKey> {
         if self.typeshed_weak_cache.string.is_expired(&self.symbol_table) {
-            self.typeshed_weak_cache.string = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("str")]), u32::MAX).last().copied().unwrap().into();
+            self.typeshed_weak_cache.string = self.get_symbol("", (&["builtins"], &["str"]), u32::MAX).last().copied().unwrap().into();
         }
         self.typeshed_weak_cache.string
     }
 
     pub fn get_ts_boolean(&mut self) -> Wk<SymbolKey> {
         if self.typeshed_weak_cache.boolean.is_expired(&self.symbol_table) {
-            self.typeshed_weak_cache.boolean = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("bool")]), u32::MAX).last().copied().unwrap().into();
+            self.typeshed_weak_cache.boolean = self.get_symbol("", (&["builtins"], &["bool"]), u32::MAX).last().copied().unwrap().into();
         }
         self.typeshed_weak_cache.boolean
     }
 
     pub fn get_ts_int(&mut self) -> Wk<SymbolKey> {
         if self.typeshed_weak_cache.int.is_expired(&self.symbol_table) {
-            self.typeshed_weak_cache.int = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("int")]), u32::MAX).last().copied().unwrap().into();
+            self.typeshed_weak_cache.int = self.get_symbol("", (&["builtins"], &["int"]), u32::MAX).last().copied().unwrap().into();
         }
         self.typeshed_weak_cache.int
     }
 
     pub fn get_ts_float(&mut self) -> Wk<SymbolKey> {
         if self.typeshed_weak_cache.float.is_expired(&self.symbol_table) {
-            self.typeshed_weak_cache.float = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("float")]), u32::MAX).last().copied().unwrap().into();
+            self.typeshed_weak_cache.float = self.get_symbol("", (&["builtins"], &["float"]), u32::MAX).last().copied().unwrap().into();
         }
         self.typeshed_weak_cache.float
     }
 
     pub fn get_ts_complex(&mut self) -> Wk<SymbolKey> {
         if self.typeshed_weak_cache.complex.is_expired(&self.symbol_table) {
-            self.typeshed_weak_cache.complex = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("complex")]), u32::MAX).last().copied().unwrap().into();
+            self.typeshed_weak_cache.complex = self.get_symbol("", (&["builtins"], &["complex"]), u32::MAX).last().copied().unwrap().into();
         }
         self.typeshed_weak_cache.complex
     }
 
     pub fn get_ts_ellipsis(&mut self) -> Wk<SymbolKey> {
         if self.typeshed_weak_cache.ellipsis.is_expired(&self.symbol_table) {
-            self.typeshed_weak_cache.ellipsis = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("Ellipsis")]), u32::MAX).last().copied().unwrap().into();
+            self.typeshed_weak_cache.ellipsis = self.get_symbol("", (&["builtins"], &["Ellipsis"]), u32::MAX).last().copied().unwrap().into();
         }
         self.typeshed_weak_cache.ellipsis
     }
 
     pub fn get_ts_bytes(&mut self) -> Wk<SymbolKey> {
         if self.typeshed_weak_cache.bytes.is_expired(&self.symbol_table) {
-            self.typeshed_weak_cache.bytes = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("bytes")]), u32::MAX).last().copied().unwrap().into();
+            self.typeshed_weak_cache.bytes = self.get_symbol("", (&["builtins"], &["bytes"]), u32::MAX).last().copied().unwrap().into();
         }
         self.typeshed_weak_cache.bytes
     }
 
     pub fn get_ts_object(&mut self) -> Wk<SymbolKey> {
         if self.typeshed_weak_cache.object.is_expired(&self.symbol_table) {
-            self.typeshed_weak_cache.object = self.get_symbol("", &(vec![Sy!("builtins")], vec![Sy!("object")]), u32::MAX).last().copied().unwrap().into();
+            self.typeshed_weak_cache.object = self.get_symbol("", (&["builtins"], &["object"]), u32::MAX).last().copied().unwrap().into();
         }
         self.typeshed_weak_cache.object
     }
@@ -1891,7 +1896,7 @@ impl Odoo {
                             let tree = session.sync_odoo.path_to_main_entry_tree(&path);
                             let tree_path = path.to_tree_path();
                             if tree.is_none() ||
-                            (session.st().get_symbol(session.sync_odoo.get_main_entry().borrow().root.into(), tree.as_ref().unwrap(), u32::MAX).is_empty()
+                            (session.st().get_symbol(session.sync_odoo.get_main_entry().borrow().root.into(), tree.as_ref().unwrap().as_slice(), u32::MAX).is_empty()
                             && session.sync_odoo.get_main_entry().borrow().data_symbols.get(&path.sanitize()).is_none())
                             {
                                 //main entry doesn't handle this file. Let's test customs entries, or create a new one
@@ -1989,13 +1994,13 @@ impl Odoo {
         let tree = session.sync_odoo.path_to_main_entry_tree(&PathBuf::from(path.clone()));
         if let Some(tree) = tree {
             if let Some(main) = ep_mgr.borrow().main_entry_point.as_ref() {
-                main.borrow_mut().search_symbols_to_rebuild(session, path, &tree);
+                main.borrow_mut().search_symbols_to_rebuild(session, path, tree);
             }
         }
         for entry in ep_mgr.borrow().iter_all_but_main() {
             if entry.borrow().is_valid_for(&PathBuf::from(path)) {
                 let tree = entry.borrow().get_tree_for_entry(&PathBuf::from(path.clone()));
-                entry.borrow_mut().search_symbols_to_rebuild(session, path, &tree);
+                entry.borrow_mut().search_symbols_to_rebuild(session, path, tree);
             }
         }
         //test if the new path is a new module
@@ -2012,7 +2017,7 @@ impl Odoo {
             }
             if parent_path.sanitize() == session.sync_odoo.config.odoo_path.as_deref().unwrap_or_default().to_string() + "/odoo/addons" {
                 let addons_symbol = session.sync_odoo.get_main_entry().borrow().get_symbol(session.st()).map(|ep_sym_key|
-                    session.st().get_symbol(ep_sym_key, &(vec![Sy!("odoo"), Sy!("addons")], vec![]), u32::MAX)
+                    session.st().get_symbol(ep_sym_key, (&["odoo", "addons"], &[]), u32::MAX)
                 );
                 match addons_symbol {
                     Some(addons_symbol) if !addons_symbol.is_empty() => {
@@ -2050,7 +2055,7 @@ impl Odoo {
             SyncOdoo::process_rebuilds(session, false);
             let tree = session.sync_odoo.path_to_main_entry_tree(&new_path_buf);
             if let Some(tree) = tree {
-                if  new_path_buf.is_file() &&  session.st().get_symbol(session.sync_odoo.get_main_entry().borrow().root.into(), &tree, u32::MAX).is_empty() {
+                if  new_path_buf.is_file() &&  session.st().get_symbol(session.sync_odoo.get_main_entry().borrow().root.into(), tree.as_slice(), u32::MAX).is_empty() {
                     //file has not been added to main entry. Let's build a new entry point
                     EntryPointMgr::create_new_custom_entry_for_path(session, &new_path_updated, &new_path_buf.sanitize());
                     SyncOdoo::process_rebuilds(session, false);
@@ -2078,7 +2083,7 @@ impl Odoo {
             let path_updated = PathBuf::from(path.clone()).to_tree_path().sanitize();
             let tree = session.sync_odoo.path_to_main_entry_tree(&PathBuf::from(path.clone()));
             if PathBuf::from(&path).is_file() && (tree.is_none() || (
-                session.st().get_symbol(session.sync_odoo.get_main_entry().borrow().root.into(), &tree.unwrap(), u32::MAX).is_empty()
+                session.st().get_symbol(session.sync_odoo.get_main_entry().borrow().root.into(), tree.unwrap().as_slice(), u32::MAX).is_empty()
                 && session.sync_odoo.get_main_entry().borrow().data_symbols.get(&path_updated).is_none()
             )) {
                 //file has not been added to main entry. Let's build a new entry point

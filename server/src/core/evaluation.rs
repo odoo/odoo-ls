@@ -847,7 +847,7 @@ impl Evaluation {
                         if base_sym_weak_eval.instance.unwrap_or(false) {
                             //TODO handle call on class instance
                         } else {
-                            if session.sync_odoo.match_tree_from_any_entry(base_sym, &(vec![Sy!("builtins")], vec![Sy!("super")])) {
+                            if session.sync_odoo.match_tree_from_any_entry(base_sym, (&["builtins"], &["super"])) {
                                 //  - If 1st argument exists, we add that class with symbol_type Super
                                 let super_class = if !expr.arguments.is_empty() {
                                     let (class_eval, diags) = Evaluation::eval_from_ast(session, &expr.arguments.args[0], parent, max_infer, false, required_dependencies);
