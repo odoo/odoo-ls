@@ -580,7 +580,7 @@ impl SyncOdoo {
         // How many modules ahead worker threads pre-parse into ASTs (and page-cache
         // prefetch the XML/CSV of). Kept small because each prepared AST sits in RAM
         // until the build consumes it.
-        const PRE_PARSE_AHEAD: usize = 3;
+        const PRE_PARSE_AHEAD: usize = 5;
         // Spawn the AST pre-parser pool and publish its cache so FileInfo::update
         // can pick up prepared ASTs instead of parsing on the build thread.
         let pre_parser = PreParser::new(session, PRE_PARSE_AHEAD);
