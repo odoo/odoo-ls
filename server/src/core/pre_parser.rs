@@ -12,11 +12,12 @@
 //! so correctness never depends on a worker winning the race. The look-ahead window
 //! is kept small because each prepared AST sits in RAM until the build consumes it.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -39,16 +40,70 @@ const PRE_PARSE_WORKERS: usize = 2;
 #[derive(Debug, Default)]
 pub struct PreParseCache {
     map: Mutex<HashMap<String, PreparedAst>>,
+    /// Instrumentation: build-thread lookups that found a worker-prepared AST.
+    hits: AtomicUsize,
+    /// Instrumentation: build-thread lookups of a `.py`/`.pyi` file that found
+    /// nothing (the build thread then parsed it inline).
+    misses: AtomicUsize,
+    /// Instrumentation: total files parsed by worker threads.
+    parsed: AtomicUsize,
+    /// Instrumentation: modules dropped by `submit` because the channel was full
+    /// (workers were behind — the module is built without a pre-parse).
+    rejected: AtomicUsize,
+    /// Instrumentation: every path that missed, so `Drop` can tell apart a miss a
+    /// worker *eventually* parsed (just too slowly) from one never produced at all.
+    missed_paths: Mutex<HashSet<String>>,
 }
 
 impl PreParseCache {
     /// Remove and return the prepared AST for `path`, if a worker produced one.
+    /// Records the lookup as a hit or a miss for end-of-build instrumentation.
     pub fn take(&self, path: &str) -> Option<PreparedAst> {
-        self.map.lock().unwrap().remove(path)
+        let prepared = self.map.lock().unwrap().remove(path);
+        if prepared.is_some() {
+            self.hits.fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.misses.fetch_add(1, Ordering::Relaxed);
+            self.missed_paths.lock().unwrap().insert(path.to_string());
+        }
+        prepared
     }
 
     fn insert(&self, path: String, prepared: PreparedAst) {
+        self.parsed.fetch_add(1, Ordering::Relaxed);
         self.map.lock().unwrap().insert(path, prepared);
+    }
+}
+
+impl Drop for PreParseCache {
+    fn drop(&mut self) {
+        let hits = self.hits.load(Ordering::Relaxed);
+        let misses = self.misses.load(Ordering::Relaxed);
+        let parsed = self.parsed.load(Ordering::Relaxed);
+        let rejected = self.rejected.load(Ordering::Relaxed);
+        let lookups = hits + misses;
+        let unconsumed_keys: Vec<String> = self.map.get_mut().map(|m| m.keys().cloned().collect()).unwrap_or_default();
+        let unconsumed = unconsumed_keys.len();
+        if lookups == 0 && unconsumed == 0 {
+            return;
+        }
+        let rate = if lookups > 0 { hits as f64 * 100.0 / lookups as f64 } else { 0.0 };
+        // An unconsumed entry whose path also missed = a file a worker *did* parse,
+        // only too late (the build thread had already parsed it inline). The rest
+        // are files that are not build targets at all (e.g. migration scripts).
+        let empty = HashSet::new();
+        let missed_paths = self.missed_paths.get_mut().map(|m| &*m).unwrap_or(&empty);
+        let late_parses = unconsumed_keys.iter().filter(|k| missed_paths.contains(*k)).count();
+        let non_target = unconsumed - late_parses;
+        let never_produced = misses.saturating_sub(late_parses);
+        tracing::info!(
+            "pre-parse cache: {hits} hits / {misses} misses ({rate:.1}% hit rate); \
+             workers parsed {parsed} files, {rejected} modules skipped (channel full)"
+        );
+        tracing::info!(
+            "pre-parse misses: {late_parses} parsed-too-late, {never_produced} never-pre-submitted; \
+             unconsumed {unconsumed}: {late_parses} too-late + {non_target} non-target files"
+        );
     }
 }
 
@@ -114,7 +169,10 @@ impl PreParser {
     pub fn submit(&self, module_path: PathBuf) {
         if let Some(sender) = &self.sender {
             match sender.try_send(module_path) {
-                Ok(()) | Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => {}
+                Ok(()) | Err(TrySendError::Disconnected(_)) => {}
+                Err(TrySendError::Full(_)) => {
+                    self.cache.rejected.fetch_add(1, Ordering::Relaxed);
+                }
             }
         }
     }
