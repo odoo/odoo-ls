@@ -12,7 +12,7 @@
 //! so correctness never depends on a worker winning the race. The look-ahead window
 //! is kept small because each prepared AST sits in RAM until the build consumes it.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -35,11 +35,14 @@ use crate::utils::PathSanitizer;
 /// so this stays small — the build thread is the consumer and stays the bottleneck.
 const PRE_PARSE_WORKERS: usize = 2;
 
-/// Concurrent `sanitized path -> prepared AST` map, filled by worker threads and
-/// drained (once) by the build thread.
+/// Concurrent map of `sanitized path -> (submission index, prepared AST)`, filled
+/// by worker threads and drained by the build thread. The submission index is the
+/// position of the owning module in the build order; it lets the build thread
+/// evict entries for modules it has already passed (see [`Self::evict_before`]),
+/// so the map only ever holds the look-ahead window — not every leftover AST.
 #[derive(Debug, Default)]
 pub struct PreParseCache {
-    map: Mutex<HashMap<String, PreparedAst>>,
+    map: Mutex<HashMap<String, (usize, PreparedAst)>>,
     /// Instrumentation: build-thread lookups that found a worker-prepared AST.
     hits: AtomicUsize,
     /// Instrumentation: build-thread lookups of a `.py`/`.pyi` file that found
@@ -50,28 +53,47 @@ pub struct PreParseCache {
     /// Instrumentation: modules dropped by `submit` because the channel was full
     /// (workers were behind — the module is built without a pre-parse).
     rejected: AtomicUsize,
-    /// Instrumentation: every path that missed, so `Drop` can tell apart a miss a
-    /// worker *eventually* parsed (just too slowly) from one never produced at all.
-    missed_paths: Mutex<HashSet<String>>,
+    /// Instrumentation: entries reclaimed mid-build by `evict_before` because the
+    /// build had moved past their module without consuming them.
+    evicted: AtomicUsize,
+    /// Instrumentation: high-water mark of live entries — i.e. the cache's peak
+    /// memory footprint, which `evict_before` exists to keep bounded.
+    peak_live: AtomicUsize,
 }
 
 impl PreParseCache {
     /// Remove and return the prepared AST for `path`, if a worker produced one.
     /// Records the lookup as a hit or a miss for end-of-build instrumentation.
     pub fn take(&self, path: &str) -> Option<PreparedAst> {
-        let prepared = self.map.lock().unwrap().remove(path);
-        if prepared.is_some() {
+        let entry = self.map.lock().unwrap().remove(path);
+        if entry.is_some() {
             self.hits.fetch_add(1, Ordering::Relaxed);
         } else {
             self.misses.fetch_add(1, Ordering::Relaxed);
-            self.missed_paths.lock().unwrap().insert(path.to_string());
         }
-        prepared
+        entry.map(|(_, prepared)| prepared)
     }
 
-    fn insert(&self, path: String, prepared: PreparedAst) {
+    /// Drop every cached entry whose owning module comes before `module_idx` in
+    /// build order. The build proceeds in strict module order, so such entries can
+    /// no longer be consumed as hits — keeping them would just grow RAM until the
+    /// end of phase 1. Called once per module-build iteration by the build thread.
+    pub fn evict_before(&self, module_idx: usize) {
+        let mut map = self.map.lock().unwrap();
+        let before = map.len();
+        map.retain(|_, (idx, _)| *idx >= module_idx);
+        let removed = before - map.len();
+        drop(map);
+        if removed > 0 {
+            self.evicted.fetch_add(removed, Ordering::Relaxed);
+        }
+    }
+
+    fn insert(&self, module_idx: usize, path: String, prepared: PreparedAst) {
         self.parsed.fetch_add(1, Ordering::Relaxed);
-        self.map.lock().unwrap().insert(path, prepared);
+        let mut map = self.map.lock().unwrap();
+        map.insert(path, (module_idx, prepared));
+        self.peak_live.fetch_max(map.len(), Ordering::Relaxed);
     }
 }
 
@@ -81,28 +103,23 @@ impl Drop for PreParseCache {
         let misses = self.misses.load(Ordering::Relaxed);
         let parsed = self.parsed.load(Ordering::Relaxed);
         let rejected = self.rejected.load(Ordering::Relaxed);
+        let evicted = self.evicted.load(Ordering::Relaxed);
+        let peak_live = self.peak_live.load(Ordering::Relaxed);
         let lookups = hits + misses;
-        let unconsumed_keys: Vec<String> = self.map.get_mut().map(|m| m.keys().cloned().collect()).unwrap_or_default();
-        let unconsumed = unconsumed_keys.len();
-        if lookups == 0 && unconsumed == 0 {
+        // Entries still live at teardown: parsed but never consumed and never
+        // evicted (their module sits at the tail of the build order).
+        let unconsumed = self.map.get_mut().map(|m| m.len()).unwrap_or(0);
+        if lookups == 0 && parsed == 0 {
             return;
         }
         let rate = if lookups > 0 { hits as f64 * 100.0 / lookups as f64 } else { 0.0 };
-        // An unconsumed entry whose path also missed = a file a worker *did* parse,
-        // only too late (the build thread had already parsed it inline). The rest
-        // are files that are not build targets at all (e.g. migration scripts).
-        let empty = HashSet::new();
-        let missed_paths = self.missed_paths.get_mut().map(|m| &*m).unwrap_or(&empty);
-        let late_parses = unconsumed_keys.iter().filter(|k| missed_paths.contains(*k)).count();
-        let non_target = unconsumed - late_parses;
-        let never_produced = misses.saturating_sub(late_parses);
         tracing::info!(
             "pre-parse cache: {hits} hits / {misses} misses ({rate:.1}% hit rate); \
              workers parsed {parsed} files, {rejected} modules skipped (channel full)"
         );
         tracing::info!(
-            "pre-parse misses: {late_parses} parsed-too-late, {never_produced} never-pre-submitted; \
-             unconsumed {unconsumed}: {late_parses} too-late + {non_target} non-target files"
+            "pre-parse memory: peak {peak_live} live entries; \
+             {evicted} evicted mid-build, {unconsumed} unconsumed at teardown"
         );
     }
 }
@@ -122,7 +139,7 @@ struct WorkerCtx {
 /// closes the channel and joins the workers, so no pre-parse thread outlives phase 1.
 pub struct PreParser {
     pub cache: Arc<PreParseCache>,
-    sender: Option<SyncSender<PathBuf>>,
+    sender: Option<SyncSender<(usize, PathBuf)>>,
     workers: Vec<JoinHandle<()>>,
 }
 
@@ -142,8 +159,8 @@ impl PreParser {
             encoding: session.sync_odoo.encoding,
             test_mode: session.sync_odoo.test_mode,
         });
-        let (sender, receiver) = sync_channel::<PathBuf>(ahead.max(1));
-        let receiver: Arc<Mutex<Receiver<PathBuf>>> = Arc::new(Mutex::new(receiver));
+        let (sender, receiver) = sync_channel::<(usize, PathBuf)>(ahead.max(1));
+        let receiver: Arc<Mutex<Receiver<(usize, PathBuf)>>> = Arc::new(Mutex::new(receiver));
         let mut workers = Vec::with_capacity(PRE_PARSE_WORKERS);
         for _ in 0..PRE_PARSE_WORKERS {
             let receiver = receiver.clone();
@@ -152,9 +169,9 @@ impl PreParser {
                 loop {
                     // Hold the lock only long enough to pull one module, then release
                     // it so a sibling worker can pull while this one parses.
-                    let module_path = receiver.lock().unwrap().recv();
-                    match module_path {
-                        Ok(path) => pre_parse_module(&ctx, &path),
+                    let job = receiver.lock().unwrap().recv();
+                    match job {
+                        Ok((module_idx, path)) => pre_parse_module(&ctx, module_idx, &path),
                         Err(_) => break, // channel closed: PreParser dropped
                     }
                 }
@@ -163,12 +180,14 @@ impl PreParser {
         PreParser { cache, sender: Some(sender), workers }
     }
 
-    /// Queue a module's directory for pre-parsing. Best-effort: if the workers are
-    /// already `ahead` modules behind, the channel is full and the module is
-    /// silently skipped — the build thread will parse it inline.
-    pub fn submit(&self, module_path: PathBuf) {
+    /// Queue a module's directory for pre-parsing. `module_idx` is the module's
+    /// position in build order — workers tag every entry with it so the build can
+    /// `evict_before` once it has moved past the module. Best-effort: if the
+    /// workers are already `ahead` modules behind, the channel is full and the
+    /// module is silently skipped — the build thread will parse it inline.
+    pub fn submit(&self, module_idx: usize, module_path: PathBuf) {
         if let Some(sender) = &self.sender {
-            match sender.try_send(module_path) {
+            match sender.try_send((module_idx, module_path)) {
                 Ok(()) | Err(TrySendError::Disconnected(_)) => {}
                 Err(TrySendError::Full(_)) => {
                     self.cache.rejected.fetch_add(1, Ordering::Relaxed);
@@ -193,7 +212,7 @@ impl Drop for PreParser {
 /// directory filtering of `file_mgr::prefetch_dir`, and additionally skips
 /// `migrations/` — migration scripts are not imported, so the build never parses
 /// them and pre-parsing them is pure wasted work.
-fn pre_parse_module(ctx: &WorkerCtx, module_path: &Path) {
+fn pre_parse_module(ctx: &WorkerCtx, module_idx: usize, module_path: &Path) {
     let mut stack = vec![module_path.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let Ok(entries) = fs::read_dir(&dir) else { continue };
@@ -210,7 +229,7 @@ fn pre_parse_module(ctx: &WorkerCtx, module_path: &Path) {
             } else if file_type.is_file() {
                 let path = entry.path();
                 match path.extension().and_then(|e| e.to_str()) {
-                    Some("py") | Some("pyi") => pre_parse_file(ctx, &path),
+                    Some("py") | Some("pyi") => pre_parse_file(ctx, module_idx, &path),
                     _ => {}
                 }
             }
@@ -218,9 +237,10 @@ fn pre_parse_module(ctx: &WorkerCtx, module_path: &Path) {
     }
 }
 
-/// Read, parse and index a single Python file, depositing the result in the cache.
-/// Errors are silently ignored — the build thread will parse the file inline.
-fn pre_parse_file(ctx: &WorkerCtx, path: &Path) {
+/// Read, parse and index a single Python file, depositing the result in the cache
+/// tagged with `module_idx`. Errors are silently ignored — the build thread will
+/// parse the file inline.
+fn pre_parse_file(ctx: &WorkerCtx, module_idx: usize, path: &Path) {
     let key = path.sanitize();
     let Ok(contents) = fs::read_to_string(path) else { return };
     let source_type = if key.ends_with(".pyi") {
@@ -243,7 +263,7 @@ fn pre_parse_file(ctx: &WorkerCtx, path: &Path) {
         (scan.blocs, scan.lines, scan.test_comments)
     };
     let indexed_module = IndexedModule::new(parsed);
-    ctx.cache.insert(key, PreparedAst {
+    ctx.cache.insert(module_idx, key, PreparedAst {
         text_hash,
         text_document,
         indexed_module,

@@ -590,8 +590,8 @@ impl SyncOdoo {
         for &module_symbol in all_modules.iter().take(PREFETCH_AHEAD) {
             SyncOdoo::prefetch_module(session.st(), module_symbol);
         }
-        for &module_symbol in all_modules.iter().take(PRE_PARSE_AHEAD) {
-            pre_parser.submit(PathBuf::from(&session.st()[module_symbol].path));
+        for (idx, &module_symbol) in all_modules.iter().take(PRE_PARSE_AHEAD).enumerate() {
+            pre_parser.submit(idx, PathBuf::from(&session.st()[module_symbol].path));
         }
         // Phase 1: ARCH + ARCH_EVAL, one module at a time in dependency order. This keeps
         // the queues small so pop_item stays cheap. Validation is deferred: validating a
@@ -603,6 +603,10 @@ impl SyncOdoo {
             if is_reporting_progress {
                 SyncOdoo::report_modules_progress(session, total_modules - built, total_modules);
             }
+            // The build advances in strict module order, so prepared ASTs for
+            // modules already passed can no longer be consumed — drop them now
+            // instead of letting them pile up in RAM until the end of phase 1.
+            pre_parser.cache.evict_before(built);
             // While this module builds (CPU-bound), warm the module entering the far
             // edge of the look-ahead window on a background thread. The strict
             // per-module order makes this reliable: each module's files are
@@ -613,7 +617,7 @@ impl SyncOdoo {
             // Likewise, hand the module entering the pre-parse window to a worker
             // thread so its ASTs are ready by the time the build reaches it.
             if let Some(&ahead) = all_modules.get(built + PRE_PARSE_AHEAD) {
-                pre_parser.submit(PathBuf::from(&session.st()[ahead].path));
+                pre_parser.submit(built + PRE_PARSE_AHEAD, PathBuf::from(&session.st()[ahead].path));
             }
             // An earlier module may already have built this one as a dependency (via
             // build_now / create_module_from_name); re-queuing it would re-arch an
