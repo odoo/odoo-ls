@@ -189,8 +189,10 @@ impl Drop for PreParser {
     }
 }
 
-/// Walk a module directory and pre-parse every Python file under it. Mirrors the
-/// directory filtering of `file_mgr::prefetch_dir`.
+/// Walk a module directory and pre-parse every Python file under it. Follows the
+/// directory filtering of `file_mgr::prefetch_dir`, and additionally skips
+/// `migrations/` — migration scripts are not imported, so the build never parses
+/// them and pre-parsing them is pure wasted work.
 fn pre_parse_module(ctx: &WorkerCtx, module_path: &Path) {
     let mut stack = vec![module_path.to_path_buf()];
     while let Some(dir) = stack.pop() {
@@ -200,7 +202,8 @@ fn pre_parse_module(ctx: &WorkerCtx, module_path: &Path) {
             if file_type.is_dir() {
                 let name = entry.file_name();
                 let name = name.to_string_lossy();
-                if name.starts_with('.') || name == "__pycache__" || name == "static" || name == "node_modules" {
+                if name.starts_with('.') || name == "__pycache__" || name == "static"
+                    || name == "node_modules" || name == "migrations" {
                     continue;
                 }
                 stack.push(entry.path());
