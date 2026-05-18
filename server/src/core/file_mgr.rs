@@ -97,6 +97,97 @@ pub fn combine_noqa_info(noqas: &[NoqaInfo]) -> NoqaInfo {
     NoqaInfo::Codes(codes.iter().cloned().collect())
 }
 
+/// Result of scanning a parsed module's comment tokens. See [`scan_noqa`].
+pub(crate) struct NoqaScan {
+    pub blocs: HashMap<u32, NoqaInfo>,
+    pub lines: HashMap<u32, NoqaInfo>,
+    pub test_comments: Vec<(u32, Vec<String>)>,
+}
+
+/// Scan a parsed module's comment tokens for `noqa` directives and (in test mode)
+/// `# OLS` test-expectation comments.
+///
+/// This is a pure function of the parse result + source text, so it can run on a
+/// [`crate::core::pre_parser`] worker thread as well as on the build thread. The
+/// build thread reaches it through [`FileInfo::extract_tokens`].
+pub(crate) fn scan_noqa(
+    parsed_module: &Parsed<ModModule>,
+    source: &str,
+    text_document: &TextDocument,
+    encoding: PositionEncoding,
+    parse_test_comments: bool,
+) -> NoqaScan {
+    fn add_noqa_bloc(blocs: &mut HashMap<u32, NoqaInfo>, index: u32, noqa: NoqaInfo) {
+        if let Some(existing) = blocs.remove(&index) {
+            blocs.insert(index, combine_noqa_info(&[existing, noqa]));
+        } else {
+            blocs.insert(index, noqa);
+        }
+    }
+    let mut blocs: HashMap<u32, NoqaInfo> = HashMap::new();
+    let mut lines: HashMap<u32, NoqaInfo> = HashMap::new();
+    let mut test_comments: Vec<(u32, Vec<String>)> = Vec::new();
+    let mut is_first_expr: bool = true;
+    let mut noqa_to_add = None;
+    let mut previous_token: Option<&Token> = None;
+    for token in parsed_module.tokens().iter() {
+        match token.kind() {
+            TokenKind::Comment => {
+                let text = &source[token.range()];
+                if text.starts_with("#noqa") || text.starts_with("# noqa") || text.starts_with("# odools: noqa") {
+                    let after_noqa = text.split("noqa").skip(1).next();
+                    if let Some(after_noqa) = after_noqa {
+                        let mut codes = vec![];
+                        for code in after_noqa.split(|c: char| c == ',' || c.is_whitespace() || c == ':') {
+                            let code = code.trim();
+                            if code.len() > 0 {
+                                codes.push(code.to_string());
+                            }
+                        }
+                        if codes.len() > 0 {
+                            noqa_to_add = Some(NoqaInfo::Codes(codes));
+                        } else {
+                            noqa_to_add = Some(NoqaInfo::All);
+                        }
+                        let source_location = text_document.index().source_location(token.start(), text_document.contents(), encoding);
+                        if let Some(previous_token) = previous_token {
+                            let prev_location = text_document.index().source_location(previous_token.start(), text_document.contents(), encoding);
+                            if prev_location.line == source_location.line {
+                                lines.insert(source_location.line.to_zero_indexed() as u32, noqa_to_add.unwrap());
+                                noqa_to_add = None;
+                                continue;
+                            }
+                        }
+                        if is_first_expr {
+                            add_noqa_bloc(&mut blocs, 0, noqa_to_add.unwrap());
+                            noqa_to_add = None;
+                        }
+                    }
+                }
+                if parse_test_comments {
+                    if text.starts_with("#OLS") || text.starts_with("# OLS") {
+                        let codes = text.split(",").map(|s| s.trim().trim_start_matches('#').trim().to_string()).collect::<Vec<String>>();
+                        let source_location = text_document.index().source_location(token.start(), text_document.contents(), encoding);
+                        test_comments.push((source_location.line.to_zero_indexed() as u32, codes));
+                    }
+                }
+            },
+            TokenKind::Class | TokenKind::Def => {
+                if noqa_to_add.is_some() {
+                    add_noqa_bloc(&mut blocs, token.range().start().to_u32(), noqa_to_add.unwrap());
+                    noqa_to_add = None;
+                }
+            }
+            TokenKind::NonLogicalNewline => {}
+            _ => {
+                is_first_expr = false
+            }
+        }
+        previous_token = Some(token);
+    }
+    NoqaScan { blocs, lines, test_comments }
+}
+
 #[derive(Debug, Clone)]
 pub enum AstType {
     Python,
@@ -118,6 +209,20 @@ impl FileInfoAst {
     pub fn get_stmts(&self) -> Option<&Vec<Stmt>> {
         self.indexed_module.as_ref().map(|module| &module.parsed.syntax().body)
     }
+}
+
+/// A fully-prepared Python AST produced by a [`crate::core::pre_parser`] worker
+/// thread, ready to be slotted into a [`FileInfo`] by the build thread without
+/// re-reading or re-parsing the file. Built off the build thread to overlap the
+/// (pure-CPU) ruff parse with the actual module build. See [`FileInfo::apply_prepared_ast`].
+#[derive(Debug)]
+pub struct PreparedAst {
+    pub text_hash: u64,
+    pub text_document: TextDocument,
+    pub indexed_module: Arc<IndexedModule>,
+    pub noqas_blocs: HashMap<u32, NoqaInfo>,
+    pub noqas_lines: HashMap<u32, NoqaInfo>,
+    pub diag_test_comments: Vec<(u32, Vec<String>)>,
 }
 
 #[derive(Debug)]
@@ -199,6 +304,21 @@ impl FileInfo {
             session.log_message(MessageType::ERROR, format!("Attempt to update untitled file {}, without changes", path));
             return false;
         } else {
+            // A pre-parser worker thread may have already read + parsed this file
+            // ahead of the build. If so, slot the prepared AST straight in — no
+            // disk read, no parse. Best-effort: a miss just falls through to the
+            // inline path below. See `crate::core::pre_parser`.
+            if let Some(cache) = session.sync_odoo.pre_parse_cache.clone() {
+                if path.ends_with(".py") || path.ends_with(".pyi") {
+                    if let Some(prepared) = cache.take(&PathBuf::from(path).sanitize()) {
+                        if self.file_info_ast.borrow().text_hash == prepared.text_hash {
+                            return false;
+                        }
+                        self.apply_prepared_ast(session, prepared);
+                        return true;
+                    }
+                }
+            }
             match fs::read_to_string(path) {
                 Ok(content) => {
                     self.file_info_ast.borrow_mut().text_document = Some(TextDocument::new(content, self.version.unwrap_or(-1)));
@@ -264,6 +384,39 @@ impl FileInfo {
         self.replace_diagnostics(BuildSteps::SYNTAX, diagnostics);
     }
 
+    /// Slot a [`PreparedAst`] produced by a background [`crate::core::pre_parser`]
+    /// worker into this `FileInfo`, instead of reading and parsing the file inline.
+    /// Mirrors the Python branch of [`Self::_build_ast`] (syntax diagnostics are
+    /// rebuilt here because they depend on the session's noqa/severity config).
+    fn apply_prepared_ast(&mut self, session: &mut SessionInfo, prepared: PreparedAst) {
+        let mut diagnostics = vec![];
+        self.valid = true;
+        for error in prepared.indexed_module.parsed.errors().iter() {
+            self.valid = false;
+            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS01000, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: Range{
+                        start: Position::new(error.location.start().to_u32(), 0),
+                        end: Position::new(error.location.end().to_u32(), 0)
+                    },
+                    message: error.error.to_string(),
+                    ..diagnostic_base
+                });
+            }
+        }
+        self.noqas_blocs = prepared.noqas_blocs;
+        self.noqas_lines = prepared.noqas_lines;
+        self.diag_test_comments = prepared.diag_test_comments;
+        {
+            let mut fia = self.file_info_ast.borrow_mut();
+            fia.text_hash = prepared.text_hash;
+            fia.text_document = Some(prepared.text_document);
+            fia.indexed_module = Some(prepared.indexed_module);
+            fia.ast_type = AstType::Python;
+        }
+        self.replace_diagnostics(BuildSteps::SYNTAX, diagnostics);
+    }
+
     /* if ast has been set to none to lower memory usage, try to reload it */
     pub fn prepare_ast(&mut self, session: &mut SessionInfo) {
         if self.file_info_ast.borrow_mut().text_document.is_none() { //can already be set in xml files
@@ -283,77 +436,13 @@ impl FileInfo {
     }
 
     fn extract_tokens(&mut self, parsed_module: &Parsed<ModModule>, source: &String, encoding: PositionEncoding, parse_test_comments: bool) {
-        let mut is_first_expr: bool = true;
-        let mut noqa_to_add = None;
-        let mut previous_token: Option<&Token> = None;
-        for token in parsed_module.tokens().iter() {
-            match token.kind() {
-                TokenKind::Comment => {
-                    let text = &source[token.range()];
-                    if text.starts_with("#noqa") || text.starts_with("# noqa") || text.starts_with("# odools: noqa") {
-                        let after_noqa = text.split("noqa").skip(1).next();
-                        if let Some(after_noqa) = after_noqa {
-                            let mut codes = vec![];
-                            for code in after_noqa.split(|c: char| c == ',' || c.is_whitespace() || c == ':') {
-                                let code = code.trim();
-                                if code.len() > 0 {
-                                    codes.push(code.to_string());
-                                }
-                            }
-                            if codes.len() > 0 {
-                                noqa_to_add = Some(NoqaInfo::Codes(codes));
-                            } else {
-                                noqa_to_add = Some(NoqaInfo::All);
-                            }
-                            let file_info_ast_ref = self.file_info_ast.borrow();
-                            let text_doc = file_info_ast_ref.text_document.as_ref().unwrap();
-                            let source_location = text_doc.index().source_location(token.start(), text_doc.contents(), encoding);
-                            if let Some(previous_token) = previous_token {
-                                let prev_location = file_info_ast_ref.text_document.as_ref().unwrap().index().source_location(previous_token.start(), file_info_ast_ref.text_document.as_ref().unwrap().contents(), encoding);
-                                if prev_location.line == source_location.line {
-                                    self.noqas_lines.insert(source_location.line.to_zero_indexed() as u32, noqa_to_add.unwrap());
-                                    noqa_to_add = None;
-                                    continue;
-                                }
-                            }
-                            drop(file_info_ast_ref);
-                            if is_first_expr {
-                                self.add_noqa_bloc(0, noqa_to_add.unwrap());
-                                noqa_to_add = None;
-                            }
-                        }
-                    }
-                    if parse_test_comments {
-                        if text.starts_with("#OLS") || text.starts_with("# OLS") {
-                            let codes = text.split(",").map(|s| s.trim().trim_start_matches('#').trim().to_string()).collect::<Vec<String>>();
-                            let file_info_ast_ref = self.file_info_ast.borrow();
-                            let text_doc = file_info_ast_ref.text_document.as_ref().unwrap();
-                            let source_location = text_doc.index().source_location(token.start(), text_doc.contents(), encoding);
-                            self.diag_test_comments.push((source_location.line.to_zero_indexed() as u32, codes));
-                        }
-                    }
-                },
-                TokenKind::Class | TokenKind::Def => {
-                    if noqa_to_add.is_some() {
-                        self.add_noqa_bloc(token.range().start().to_u32(), noqa_to_add.unwrap());
-                        noqa_to_add = None;
-                    }
-                }
-                TokenKind::NonLogicalNewline => {}
-                _ => {
-                    is_first_expr = false
-                }
-            }
-            previous_token = Some(token);
-        }
-    }
-
-    fn add_noqa_bloc(&mut self, index: u32, noqa_to_add: NoqaInfo) {
-        if let Some(noqa_bloc) = self.noqas_blocs.remove(&index) {
-            self.noqas_blocs.insert(index, combine_noqa_info(&[noqa_bloc, noqa_to_add]));
-        } else {
-            self.noqas_blocs.insert(index, noqa_to_add);
-        }
+        let scan = {
+            let fia = self.file_info_ast.borrow();
+            scan_noqa(parsed_module, source, fia.text_document.as_ref().unwrap(), encoding, parse_test_comments)
+        };
+        self.noqas_blocs.extend(scan.blocs);
+        self.noqas_lines.extend(scan.lines);
+        self.diag_test_comments.extend(scan.test_comments);
     }
 
     pub fn replace_diagnostics(&mut self, step: BuildSteps, diagnostics: Vec<Diagnostic>) {

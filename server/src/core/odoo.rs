@@ -4,6 +4,7 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
 use crate::core::module_load_order::sort_by_load_order;
+use crate::core::pre_parser::PreParser;
 use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::storage::metrics::{log_slotmap_capacities, log_symbol_counts, log_memory_usage};
@@ -148,6 +149,10 @@ pub struct SyncOdoo {
     language_dependents: WeakSet<SymbolKey>,
 
     pub test_mode: bool,
+
+    /// Set only during `build_modules` phase 1: a shared cache of ASTs parsed
+    /// ahead of the build by background worker threads. See `crate::core::pre_parser`.
+    pub pre_parse_cache: Option<Arc<crate::core::pre_parser::PreParseCache>>,
 }
 
 unsafe impl Send for SyncOdoo {}
@@ -200,6 +205,7 @@ impl SyncOdoo {
             language_dependents: WeakSet::new(),
 
             test_mode: false,
+            pre_parse_cache: None,
         };
         sync_odoo
     }
@@ -573,9 +579,19 @@ impl SyncOdoo {
         let total_modules = all_modules.len();
         // How many modules ahead of the one currently building we keep page-cache-warm.
         const PREFETCH_AHEAD: usize = 5;
+        // How many modules ahead worker threads pre-parse into ASTs. Kept smaller
+        // than PREFETCH_AHEAD because each prepared AST sits in RAM until consumed.
+        const PRE_PARSE_AHEAD: usize = 3;
+        // Spawn the AST pre-parser pool and publish its cache so FileInfo::update
+        // can pick up prepared ASTs instead of parsing on the build thread.
+        let pre_parser = PreParser::new(session, PRE_PARSE_AHEAD);
+        session.sync_odoo.pre_parse_cache = Some(pre_parser.cache.clone());
         // Warm the first window of modules before we touch disk.
         for &module_symbol in all_modules.iter().take(PREFETCH_AHEAD) {
             SyncOdoo::prefetch_module(session.st(), module_symbol);
+        }
+        for &module_symbol in all_modules.iter().take(PRE_PARSE_AHEAD) {
+            pre_parser.submit(PathBuf::from(&session.st()[module_symbol].path));
         }
         // Phase 1: ARCH + ARCH_EVAL, one module at a time in dependency order. This keeps
         // the queues small so pop_item stays cheap. Validation is deferred: validating a
@@ -594,6 +610,11 @@ impl SyncOdoo {
             if let Some(&ahead) = all_modules.get(built + PREFETCH_AHEAD) {
                 SyncOdoo::prefetch_module(session.st(), ahead);
             }
+            // Likewise, hand the module entering the pre-parse window to a worker
+            // thread so its ASTs are ready by the time the build reaches it.
+            if let Some(&ahead) = all_modules.get(built + PRE_PARSE_AHEAD) {
+                pre_parser.submit(PathBuf::from(&session.st()[ahead].path));
+            }
             // An earlier module may already have built this one as a dependency (via
             // build_now / create_module_from_name); re-queuing it would re-arch an
             // already-built tree and leave stale symbol keys behind.
@@ -603,10 +624,16 @@ impl SyncOdoo {
             if !SyncOdoo::drain_rebuilds(session, false, true, false,
                     &mut already_arch_rebuilt, &mut already_arch_eval_rebuilt)
                 || session.sync_odoo.need_rebuild {
+                session.sync_odoo.pre_parse_cache = None;
                 SyncOdoo::end_rebuild_session(session, is_reporting_progress);
                 return;
             }
         }
+        // Phase 1 done: every module's AST is built. Tear down the pre-parser (this
+        // joins the worker threads) and drop the cache — phase 2 only re-reads
+        // already-built ASTs, and a stale cache must not outlive this build.
+        session.sync_odoo.pre_parse_cache = None;
+        drop(pre_parser);
         // Phase 2: validate every file in a single pass, now that all models exist.
         if !SyncOdoo::drain_rebuilds(session, false, false, is_reporting_progress,
                 &mut already_arch_rebuilt, &mut already_arch_eval_rebuilt) {
