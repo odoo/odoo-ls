@@ -32,45 +32,24 @@ pub fn legacy_unc_paths() -> &'static AtomicBool {
     LEGACY_UNC_PATHS.get_or_init(|| AtomicBool::new(false))
 }
 
-/// Best-effort hint to the kernel that we're about to read every file under
-/// `root` whose extension is in `exts`. Walks the tree once and fires
-/// `posix_fadvise(WILLNEED)` on each match so the data lands in the page cache
-/// before the build pipeline reads it. Errors are silently ignored — purely an
+/// Best-effort hint to the kernel that `path` is about to be read, so its
+/// contents land in the page cache before the build pipeline reaches it. Fires
+/// `posix_fadvise(WILLNEED)`; errors are silently ignored — purely an
 /// optimization. No-op on non-Linux platforms.
-pub fn prefetch_dir(root: &std::path::Path, exts: &[&str]) {
+pub fn fadvise_willneed(path: &std::path::Path) {
     #[cfg(target_os = "linux")]
     {
         use std::fs::File;
         use std::os::fd::AsRawFd;
         use nix::fcntl::{posix_fadvise, PosixFadviseAdvice};
 
-        let mut stack = vec![root.to_path_buf()];
-        while let Some(dir) = stack.pop() {
-            let Ok(entries) = fs::read_dir(&dir) else { continue };
-            for entry in entries.flatten() {
-                let Ok(file_type) = entry.file_type() else { continue };
-                if file_type.is_dir() {
-                    let name = entry.file_name();
-                    let name = name.to_string_lossy();
-                    if name.starts_with('.') || name == "__pycache__" || name == "static" || name == "node_modules" {
-                        continue;
-                    }
-                    stack.push(entry.path());
-                } else if file_type.is_file() {
-                    let path = entry.path();
-                    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                    if exts.contains(&ext) {
-                        if let Ok(file) = File::open(&path) {
-                            let _ = posix_fadvise(file.as_raw_fd(), 0, 0, PosixFadviseAdvice::POSIX_FADV_WILLNEED);
-                        }
-                    }
-                }
-            }
+        if let Ok(file) = File::open(path) {
+            let _ = posix_fadvise(file.as_raw_fd(), 0, 0, PosixFadviseAdvice::POSIX_FADV_WILLNEED);
         }
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (root, exts);
+        let _ = path;
     }
 }
 

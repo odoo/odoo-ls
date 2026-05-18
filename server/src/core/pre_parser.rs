@@ -6,7 +6,9 @@
 //! the modules just ahead of it: reading each file, running the ruff parser and
 //! building the `IndexedModule`. The result lands in a shared [`PreParseCache`];
 //! when the build thread reaches the file it slots the prepared AST in instead of
-//! parsing inline (see `FileInfo::update`).
+//! parsing inline (see `FileInfo::update`). The same worker pass also fires a
+//! `posix_fadvise(WILLNEED)` hint for the module's XML/CSV files — the build reads
+//! those inline, so warming the page cache ahead of time is all that is needed.
 //!
 //! This is strictly best-effort: a cache miss simply falls back to inline parsing,
 //! so correctness never depends on a worker winning the race. The look-ahead window
@@ -208,10 +210,11 @@ impl Drop for PreParser {
     }
 }
 
-/// Walk a module directory and pre-parse every Python file under it. Follows the
-/// directory filtering of `file_mgr::prefetch_dir`, and additionally skips
-/// `migrations/` — migration scripts are not imported, so the build never parses
-/// them and pre-parsing them is pure wasted work.
+/// Walk a module directory once: pre-parse every Python file into the cache, and
+/// fire a page-cache prefetch hint for every XML/CSV file (those are read inline
+/// by the build, before the Python files of the same module). `migrations/` is
+/// skipped entirely — migration scripts are not imported, so the build touches
+/// neither their Python nor their data files.
 fn pre_parse_module(ctx: &WorkerCtx, module_idx: usize, module_path: &Path) {
     let mut stack = vec![module_path.to_path_buf()];
     while let Some(dir) = stack.pop() {
@@ -230,6 +233,7 @@ fn pre_parse_module(ctx: &WorkerCtx, module_idx: usize, module_path: &Path) {
                 let path = entry.path();
                 match path.extension().and_then(|e| e.to_str()) {
                     Some("py") | Some("pyi") => pre_parse_file(ctx, module_idx, &path),
+                    Some("xml") | Some("csv") => crate::core::file_mgr::fadvise_willneed(&path),
                     _ => {}
                 }
             }

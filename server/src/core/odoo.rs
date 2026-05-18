@@ -577,19 +577,15 @@ impl SyncOdoo {
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
         let all_modules: Vec<ModuleKey> = sorted_modules.into_iter().chain(invalid_modules).collect();
         let total_modules = all_modules.len();
-        // How many modules ahead of the one currently building we keep page-cache-warm.
-        const PREFETCH_AHEAD: usize = 5;
-        // How many modules ahead worker threads pre-parse into ASTs. Kept smaller
-        // than PREFETCH_AHEAD because each prepared AST sits in RAM until consumed.
+        // How many modules ahead worker threads pre-parse into ASTs (and page-cache
+        // prefetch the XML/CSV of). Kept small because each prepared AST sits in RAM
+        // until the build consumes it.
         const PRE_PARSE_AHEAD: usize = 3;
         // Spawn the AST pre-parser pool and publish its cache so FileInfo::update
         // can pick up prepared ASTs instead of parsing on the build thread.
         let pre_parser = PreParser::new(session, PRE_PARSE_AHEAD);
         session.sync_odoo.pre_parse_cache = Some(pre_parser.cache.clone());
-        // Warm the first window of modules before we touch disk.
-        for &module_symbol in all_modules.iter().take(PREFETCH_AHEAD) {
-            SyncOdoo::prefetch_module(session.st(), module_symbol);
-        }
+        // Hand the first window of modules to the worker pool before we touch disk.
         for (idx, &module_symbol) in all_modules.iter().take(PRE_PARSE_AHEAD).enumerate() {
             pre_parser.submit(idx, PathBuf::from(&session.st()[module_symbol].path));
         }
@@ -607,15 +603,9 @@ impl SyncOdoo {
             // modules already passed can no longer be consumed — drop them now
             // instead of letting them pile up in RAM until the end of phase 1.
             pre_parser.cache.evict_before(built);
-            // While this module builds (CPU-bound), warm the module entering the far
-            // edge of the look-ahead window on a background thread. The strict
-            // per-module order makes this reliable: each module's files are
-            // page-cache-warm well before we reach it.
-            if let Some(&ahead) = all_modules.get(built + PREFETCH_AHEAD) {
-                SyncOdoo::prefetch_module(session.st(), ahead);
-            }
-            // Likewise, hand the module entering the pre-parse window to a worker
-            // thread so its ASTs are ready by the time the build reaches it.
+            // Hand the module entering the look-ahead window to a worker thread so
+            // its ASTs are parsed — and its XML/CSV page-cache-warmed — by the time
+            // the build reaches it. The strict per-module order makes this reliable.
             if let Some(&ahead) = all_modules.get(built + PRE_PARSE_AHEAD) {
                 pre_parser.submit(built + PRE_PARSE_AHEAD, PathBuf::from(&session.st()[ahead].path));
             }
@@ -835,19 +825,6 @@ impl SyncOdoo {
                 message: None,
                 percentage: None,
             }))
-        });
-    }
-
-    /// Best-effort: warm the OS page cache for a module's `.py`/`.xml`/`.csv`
-    /// files on a background thread, so they are resident before the build
-    /// pipeline reads them. Fire-and-forget; the thread is never joined.
-    fn prefetch_module(st: &SymbolTable, module: ModuleKey) {
-        let module_path = st[module].path.clone();
-        std::thread::spawn(move || {
-            crate::core::file_mgr::prefetch_dir(
-                std::path::Path::new(&module_path),
-                &["py", "xml", "csv"],
-            );
         });
     }
 
