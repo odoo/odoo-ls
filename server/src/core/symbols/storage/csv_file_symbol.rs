@@ -4,7 +4,7 @@ use crate::core::symbols::Buildable;
 use crate::core::symbols::storage::dependency_mgr::{DependenciesTable, DependentsTable};
 use crate::core::symbols::symbol_keys::{ModuleKey, XmlDataKey};
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_keys::SymbolKey}, oyarn};
-use std::collections::HashSet;
+use crate::utils::HashSet;
 use std::{cell::RefCell, rc::Weak};
 
 #[derive(Debug)]
@@ -44,7 +44,7 @@ impl CsvFileSymbol {
             in_workspace: false,
             model_name: OYarn::default(),
             headers: Vec::new(),
-            symbols: HashSet::new(),
+            symbols: HashSet::default(),
             self_import: false,
             model_dependencies: PtrWeakHashSet::new(),
             dependencies: DependenciesTable::default(),

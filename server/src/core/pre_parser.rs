@@ -14,7 +14,7 @@
 //! so correctness never depends on a worker winning the race. The look-ahead window
 //! is kept small because each prepared AST sits in RAM until the build consumes it.
 
-use std::collections::HashMap;
+use crate::utils::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -261,7 +261,7 @@ fn pre_parse_file(ctx: &WorkerCtx, module_idx: usize, path: &Path) {
     // External files skip the noqa scan, mirroring `FileInfo::_build_ast`.
     let is_external = !ctx.entry_paths.iter().any(|ep| key.starts_with(ep.as_str()));
     let (noqas_blocs, noqas_lines, diag_test_comments) = if is_external {
-        (HashMap::new(), HashMap::new(), Vec::new())
+        (HashMap::default(), HashMap::default(), Vec::new())
     } else {
         let scan = scan_noqa(&parsed, text_document.contents(), &text_document, ctx.encoding, ctx.test_mode);
         (scan.blocs, scan.lines, scan.test_comments)

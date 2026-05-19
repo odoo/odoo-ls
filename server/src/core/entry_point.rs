@@ -1,4 +1,5 @@
-use std::{cell::RefCell, cmp, collections::HashMap, path::PathBuf, rc::Rc, u32};
+use std::{cell::RefCell, cmp, path::PathBuf, rc::Rc, u32};
+use crate::utils::HashMap;
 
 use slotmap::Key;
 use tracing::{error, info, warn};
@@ -396,7 +397,7 @@ impl EntryPoint {
             not_found_symbols_for_models: WeakSet::new(),
             root: RootKey::null(), // set below
             to_delete: false,
-            data_symbols: HashMap::new(),
+            data_symbols: HashMap::default(),
         }));
         let root = symbol_table.new_root(entry.clone());
         entry.borrow_mut().root = root;
@@ -421,7 +422,7 @@ impl EntryPoint {
             not_found_symbols_for_models: WeakSet::new(),
             root,
             to_delete: false,
-            data_symbols: HashMap::new(),
+            data_symbols: HashMap::default(),
         }))
     }
 

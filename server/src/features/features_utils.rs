@@ -9,7 +9,7 @@ use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::{FunctionSymbol, VariableSymbol};
 use crate::utils::compare_semver;
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use crate::utils::HashMap;
 
 use crate::constants::SymType;
 use crate::constants::OYarn;
@@ -436,7 +436,7 @@ impl FeaturesUtils {
         }
 
         let mut blocks = vec![];
-        let mut aggregator: HashMap<SymbolGroupKey, Vec<SymbolInfo>> = HashMap::new();
+        let mut aggregator: HashMap<SymbolGroupKey, Vec<SymbolInfo>> = HashMap::default();
         for (index, eval) in evals.iter().enumerate() {
             //search for a constant evaluation like a model name or domain field
             if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(expr))) = eval.value.as_ref() {

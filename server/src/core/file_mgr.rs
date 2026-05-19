@@ -5,12 +5,13 @@ use lsp_types::notification::{Notification, PublishDiagnostics};
 use ruff_source_file::{OneIndexed, PositionEncoding, SourceLocation};
 use tracing::{error, warn};
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashSet;
+use crate::utils::HashSet;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, OnceLock};
-use std::{collections::HashMap, fs};
+use std::{fs};
+use crate::utils::HashMap;
 use crate::core::config::{DiagnosticFilter, DiagnosticFilterPathType};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode, DiagnosticSetting};
 use crate::core::text_document::TextDocument;
@@ -61,7 +62,7 @@ pub enum NoqaInfo {
 }
 
 pub fn combine_noqa_info(noqas: &[NoqaInfo]) -> NoqaInfo {
-    let mut codes = HashSet::new();
+    let mut codes = HashSet::default();
     for noqa in noqas.iter() {
         match noqa {
             NoqaInfo::None => {},
@@ -103,8 +104,8 @@ pub(crate) fn scan_noqa(
             blocs.insert(index, noqa);
         }
     }
-    let mut blocs: HashMap<u32, NoqaInfo> = HashMap::new();
-    let mut lines: HashMap<u32, NoqaInfo> = HashMap::new();
+    let mut blocs: HashMap<u32, NoqaInfo> = HashMap::default();
+    let mut lines: HashMap<u32, NoqaInfo> = HashMap::default();
     let mut test_comments: Vec<(u32, Vec<String>)> = Vec::new();
     let mut is_first_expr: bool = true;
     let mut noqa_to_add = None;
@@ -234,9 +235,9 @@ impl FileInfo {
                 indexed_module: None,
                 ast_type: AstType::Python,
             })),
-            diagnostics: HashMap::new(),
-            noqas_blocs: HashMap::new(),
-            noqas_lines: HashMap::new(),
+            diagnostics: HashMap::default(),
+            noqas_blocs: HashMap::default(),
+            noqas_lines: HashMap::default(),
             diagnostic_filters: Vec::new(),
             diag_test_comments: vec![],
         }
@@ -595,9 +596,9 @@ impl FileMgr {
 
     pub fn new() -> Self {
         Self {
-            files: HashMap::new(),
-            untitled_files: HashMap::new(),
-            workspace_folders: HashSet::new(),
+            files: HashMap::default(),
+            untitled_files: HashMap::default(),
+            workspace_folders: HashSet::default(),
         }
     }
 
@@ -790,8 +791,8 @@ impl FileMgr {
     /// Get a map of workspace folder name to sanitized path string
     /// of only unique workspace names, repeated names are skipped
     pub fn get_unique_workspace_folders(&self) -> HashMap<String, String> {
-        let mut visited_names= HashSet::new();
-        let mut unique_folders = HashMap::new();
+        let mut visited_names= HashSet::default();
+        let mut unique_folders = HashMap::default();
         for (name, uri) in self.workspace_folders.iter() {
             if visited_names.insert(name.clone()) {
                 unique_folders.insert(name.clone(), FileMgr::uri2pathname(uri.as_str()));

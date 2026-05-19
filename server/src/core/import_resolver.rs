@@ -2,7 +2,7 @@ use glob::glob;
 use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
 use ruff_python_ast::name::Name;
 use tracing::error;
-use std::collections::HashMap;
+use crate::utils::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -496,7 +496,7 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: Source
     let entry = session.st().get_entry(source_file_symbol);
     let (mut from_symbol, _fallback_sym, file_tree) = resolve_from_stmt(session, source_file_symbol.into(), identifier_from.as_ref(), level);
     let source_path = session.st().path(source_file_symbol).to_string();
-    let mut result = HashMap::new();
+    let mut result = HashMap::default();
     let mut symbols_to_browse = vec![];
     if from_symbol.is_none() {
         if !file_tree.is_empty() { //symbol was not found
@@ -558,7 +558,7 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: Source
 }
 
 fn valid_names_for_a_symbol(symbol_table: &SymbolTable, symbol: SymbolKey, start_filter: &str, only_on_disk: bool) -> HashMap<OYarn, SymType> {
-    let mut res = HashMap::new();
+    let mut res = HashMap::default();
     match symbol {
         SymbolKey::File(_) => {
             if only_on_disk {
@@ -590,7 +590,7 @@ fn valid_names_for_a_symbol(symbol_table: &SymbolTable, symbol: SymbolKey, start
 }
 
 fn valid_name_from_disk(path: &String, start_filter: &str) -> HashMap<OYarn, SymType> {
-    let mut res = HashMap::new();
+    let mut res = HashMap::default();
     if is_dir_cs(path.clone()) {
         if let Ok(entries) = std::fs::read_dir(path) {
             for entry in entries {
@@ -627,7 +627,7 @@ fn valid_name_from_disk(path: &String, start_filter: &str) -> HashMap<OYarn, Sym
 }
 
 fn valid_name_from_symbol(symbol_table: &SymbolTable, symbol: SymbolKey, start_filter: &str) -> HashMap<OYarn, SymType> {
-    let mut res = HashMap::new();
+    let mut res = HashMap::default();
     for s in symbol_table.iter_symbols(symbol) {
         if s.0.starts_with(start_filter) {
             let mut typ = SymType::VARIABLE;

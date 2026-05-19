@@ -20,7 +20,7 @@ use crate::features::definition::DefinitionFeature;
 use crate::features::hover::HoverFeature;
 use crate::threads::SessionInfo;
 use crate::weak_collections::{WeakMap, WeakSet};
-use std::collections::HashMap;
+use crate::utils::HashMap;
 use std::cell::RefCell;
 use std::rc::{Rc};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -35,7 +35,7 @@ use ruff_source_file::PositionEncoding;
 use serde_json::Value;
 use tracing::{error, warn, info, trace};
 
-use std::collections::HashSet;
+use crate::utils::HashSet;
 use std::process::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -179,8 +179,8 @@ impl SyncOdoo {
             file_mgr: Rc::new(RefCell::new(FileMgr::new())),
             stubs_dirs: SyncOdoo::default_stubs(),
             stdlib_dir: SyncOdoo::default_stdlib(),
-            modules: HashMap::new(),
-            models: HashMap::new(),
+            modules: HashMap::default(),
+            models: HashMap::default(),
             interrupt_rebuild: Arc::new(AtomicBool::new(false)),
             terminate_rebuild: Arc::new(AtomicBool::new(false)),
             current_request_id: None,
@@ -221,8 +221,8 @@ impl SyncOdoo {
         FileMgr::clear(session);//only reset files, as workspace folders didn't change
         session.sync_odoo.stubs_dirs = SyncOdoo::default_stubs();
         session.sync_odoo.stdlib_dir = SyncOdoo::default_stdlib();
-        session.sync_odoo.modules = HashMap::new();
-        session.sync_odoo.models = HashMap::new();
+        session.sync_odoo.modules = HashMap::default();
+        session.sync_odoo.models = HashMap::default();
         session.sync_odoo.rebuild_arch = FifoWeakHashSet::new();
         session.sync_odoo.rebuild_arch_eval = FifoWeakHashSet::new();
         session.sync_odoo.rebuild_validation = FifoWeakHashSet::new();
@@ -573,8 +573,8 @@ impl SyncOdoo {
         // `already_*` are scoped to the whole build pass and shared by every drain below,
         // so a tree re-queued across module boundaries (e.g. by search_rebuild_for_models)
         // is built at most once — matching the old single-drain behaviour.
-        let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
-        let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
+        let mut already_arch_rebuilt: HashSet<Tree> = HashSet::default();
+        let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::default();
         let all_modules: Vec<ModuleKey> = sorted_modules.into_iter().chain(invalid_modules).collect();
         let total_modules = all_modules.len();
         // How many modules ahead worker threads pre-parse into ASTs (and page-cache
@@ -853,8 +853,8 @@ impl SyncOdoo {
         }
         SyncOdoo::add_from_self_reload(session);
         let is_reporting_progress = SyncOdoo::start_rebuild_session(session, false);
-        let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
-        let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
+        let mut already_arch_rebuilt: HashSet<Tree> = HashSet::default();
+        let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::default();
         let result = SyncOdoo::drain_rebuilds(session, no_validation, false, is_reporting_progress,
             &mut already_arch_rebuilt, &mut already_arch_eval_rebuilt);
         SyncOdoo::end_rebuild_session(session, is_reporting_progress);
@@ -866,7 +866,7 @@ impl SyncOdoo {
     /// caller is about to enqueue work itself). Returns whether progress is being
     /// reported; pass that to `drain_rebuilds` and `end_rebuild_session`.
     fn start_rebuild_session(session: &mut SessionInfo, force_reporting: bool) -> bool {
-        session.sync_odoo.import_cache = Some(ImportCache{ modules: HashMap::new(), main_modules: HashMap::new() });
+        session.sync_odoo.import_cache = Some(ImportCache{ modules: HashMap::default(), main_modules: HashMap::default() });
         let has_work = !session.sync_odoo.rebuild_arch.is_empty()
             || !session.sync_odoo.rebuild_arch_eval.is_empty()
             || !session.sync_odoo.rebuild_validation.is_empty();
@@ -1056,7 +1056,7 @@ impl SyncOdoo {
      */
     pub fn build_now(session: &mut SessionInfo, symbol: impl Into<SymbolKey>, step: BuildSteps) {
         // prevents dependency cycles
-        let mut visited = HashSet::new();
+        let mut visited = HashSet::default();
         Self::build_now_impl(session, symbol.into(), step, &mut visited)
     }
 

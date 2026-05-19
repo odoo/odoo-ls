@@ -1,7 +1,8 @@
 use weak_table::PtrWeakHashSet;
 
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{storage::dependency_mgr::{DependenciesTable, DependentsTable}, symbol_keys::SymbolKey}}, oyarn, utils::{NoHashBuilder, PathSanitizer}};
-use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Weak};
+use std::{cell::RefCell, path::PathBuf, rc::Weak};
+use crate::utils::HashMap;
 
 use super::symbol_mgr::{SectionRange, SymbolMgr};
 
@@ -29,7 +30,7 @@ pub struct PythonPackageSymbol {
 
     // parent / child symbols
     parent: SymbolKey,
-    pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>, NoHashBuilder>>,
+    pub(super) symbols: HashMap<OYarn, std::collections::HashMap<u32, Vec<SymbolKey>, NoHashBuilder>>,
     pub(super) module_symbols: HashMap<OYarn, SymbolKey>,
 }
 
@@ -49,9 +50,9 @@ impl PythonPackageSymbol {
             not_found_paths: vec![],
             in_workspace: false,
             self_import: false, //indicates that if unloaded, the symbol should be added in the rebuild automatically as nothing depends on it (used for root packages)
-            module_symbols: HashMap::new(),
+            module_symbols: HashMap::default(),
             sections: vec![],
-            symbols: HashMap::new(),
+            symbols: HashMap::default(),
             model_dependencies: PtrWeakHashSet::new(),
             dependencies: DependenciesTable::default(),
             dependents: DependentsTable::default(),

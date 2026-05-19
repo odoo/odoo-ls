@@ -21,7 +21,7 @@ impl<K: Eq + Hash + Copy> Default for WeakSet<K> {
 impl<K: Eq + Hash + Copy> WeakSet<K> {
     pub fn new() -> Self {
         Self {
-            set: HashSet::new(),
+            set: HashSet::default(),
             stale: RefCell::new(None),
         }
     }
@@ -97,7 +97,7 @@ impl<'a, K: Eq + Hash + Copy, V: KeyValidator<K>> Iterator for WeakSetValidIter<
             }
             self.stale
                 .borrow_mut()
-                .get_or_insert_with(|| Box::new(HashSet::new()))
+                .get_or_insert_with(|| Box::new(HashSet::default()))
                 .insert(k);
         }
         None
@@ -113,7 +113,7 @@ pub struct WeakMap<K: Eq + Hash + Copy, V> {
 impl<K: Eq + Hash + Copy, V> WeakMap<K, V> {
     pub fn new() -> Self {
         Self {
-            map: HashMap::new(),
+            map: HashMap::default(),
         }
     }
 
