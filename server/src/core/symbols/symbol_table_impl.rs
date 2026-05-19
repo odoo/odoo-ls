@@ -1084,23 +1084,25 @@ impl SymbolTable {
     }
 
     pub fn get_in_parents(&self, target: SymbolKey, sym_types: &[SymType], stop_same_file: bool) -> Option<SymbolKey> {
-        let target_type = target.typ();
-        if sym_types.contains(&target_type) {
-            return Some(target);
+        let mut current = target;
+        loop {
+            let current_type = current.typ();
+            if sym_types.contains(&current_type) {
+                return Some(current);
+            }
+            if stop_same_file && matches!(current_type, SymType::FILE | SymType::PACKAGE(_)) {
+                return None;
+            }
+            current = self.parent(current)?;
         }
-        if stop_same_file && matches!(target_type, SymType::FILE | SymType::PACKAGE(_)) {
-            return None;
-        }
-        let parent = self.parent(target)?;
-        return self.get_in_parents(parent, sym_types, stop_same_file);
     }
 
     pub fn get_root(&self, target: SymbolKey) -> RootKey {
-        if let SymbolKey::Root(root) = target {
-            return root;
+        let mut current = target;
+        while let Some(parent) = self.parent(current) {
+            current = parent;
         }
-        let parent = self.parent(target).expect("non-root symbol should have parent");
-        self.get_root(parent)
+        current.unwrap_root_key()
     }
 
     pub fn get_entry(&self, target: impl Into<SymbolKey>) -> Rc<RefCell<EntryPoint>> {
@@ -1143,13 +1145,17 @@ impl SymbolTable {
     }
 
     pub fn get_file(&self, target: SymbolKey) -> Option<SourceFileKey> {
-        match target {
-            SymbolKey::File(f) => Some(f.into()),
-            SymbolKey::Module(m) => Some(m.into()),
-            SymbolKey::PythonPackage(p) => Some(p.into()),
-            SymbolKey::XmlFile(x) => Some(x.into()),
-            SymbolKey::CsvFile(c) => Some(c.into()),
-            key => self.get_file(self.parent(key)?),
+        let mut key = target;
+        loop {
+            match key {
+                SymbolKey::File(f) => return Some(f.into()),
+                SymbolKey::Module(m) => return Some(m.into()),
+                SymbolKey::PythonPackage(p) => return Some(p.into()),
+                SymbolKey::XmlFile(x) => return Some(x.into()),
+                SymbolKey::CsvFile(c) => return Some(c.into()),
+                _ => {}
+            }
+            key = self.parent(key)?;
         }
     }
 
@@ -1167,11 +1173,13 @@ impl SymbolTable {
     }
 
     pub fn find_module(&self, key: impl Into<SymbolKey>) -> Option<ModuleKey> {
-        let key = key.into();
-        if let SymbolKey::Module(module) = key {
-            return Some(module);
+        let mut key = key.into();
+        loop {
+            if let SymbolKey::Module(module) = key {
+                return Some(module);
+            }
+            key = self.parent(key)?;
         }
-        return self.find_module(self.parent(key)?);
     }
 
     fn next_refs_class(session: &mut SessionInfo, class_key: ClassKey, context: &mut Option<Context>, symbol_context: &Context) -> Vec<EvaluationSymbolPtr> {
