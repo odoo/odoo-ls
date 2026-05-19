@@ -6,7 +6,7 @@ use odoo_ls_server::core::config::get_configuration;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
-use std::collections::HashSet;
+use odoo_ls_server::utils::HashSet;
 use std::str::FromStr;
 
 
@@ -1919,7 +1919,7 @@ fn test_additional_languages_merge_and_base_expansion() {
     "#;
     ws_folder.child("odools.toml").write_str(ws_toml).unwrap();
 
-    // let mut ws_folders = HashMap::new();
+    // let mut ws_folders = HashMap::default();
     // ws_folders.insert(S!("ws1"), ws_folder.path().sanitize().to_string());
     let ws_folders = [(S!("ws1"), ws_folder.path().sanitize().to_string())]; 
     let mut session = mock_session_with_workspaces(&ws_folders);

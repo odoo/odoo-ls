@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use odoo_ls_server::utils::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use lsp_types::{NumberOrString, TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier};
@@ -222,7 +222,7 @@ fn test_language_validation() {
 #[test]
 fn test_additional_languages_config() {
     let (mut odoo, mut config) = setup_server(false);
-    config.additional_languages = HashSet::from(["zz".to_string()]);
+    config.additional_languages = HashSet::from_iter(["zz".to_string()]);
     let session = create_init_session(&mut odoo, config);
 
     let languages = session.sync_odoo._get_languages();
@@ -282,7 +282,7 @@ fn test_config_additional_languages_updates_diagnostics() {
     let force_republish_diagnostic = |session: &mut SessionInfo| {
         let mut file_info_borrow = file_info.borrow_mut();
         // This does not rebuild validation steps. It just sets need_push to true.
-        file_info_borrow.update_validation_diagnostics(HashMap::new());
+        file_info_borrow.update_validation_diagnostics(HashMap::default());
         file_info_borrow.publish_diagnostics(session);
     };
 
@@ -296,7 +296,7 @@ fn test_config_additional_languages_updates_diagnostics() {
 
     // Add nl_WV and nl to additional_languages via config update
     let mut new_config = session.sync_odoo.config.clone();
-    new_config.additional_languages = HashSet::from(["nl_WV".to_string(), "nl".to_string()]);
+    new_config.additional_languages = HashSet::from_iter(["nl_WV".to_string(), "nl".to_string()]);
     Odoo::handle_config_update(&mut session, new_config, ConfigFile::new());
 
     // OLS05068 should be gone now
@@ -312,7 +312,7 @@ fn test_config_additional_languages_updates_diagnostics() {
 
     // Restore original config (without nl_WV) and verify diagnostic reappears
     let mut restored_config = session.sync_odoo.config.clone();
-    restored_config.additional_languages = HashSet::new();
+    restored_config.additional_languages = HashSet::default();
     Odoo::handle_config_update(&mut session, restored_config, ConfigFile::new());
 
     let diagnostics = get_diagnostics_for_path(&mut session, &items_xml_path);

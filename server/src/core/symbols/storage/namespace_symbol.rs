@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use crate::utils::HashMap;
 use crate::{constants::OYarn, core::symbols::symbol_keys::SymbolKey, oyarn};
 
 #[derive(Debug)]
@@ -29,7 +29,7 @@ impl NamespaceSymbol {
     pub fn new(name: &str, paths: Vec<String>, parent: SymbolKey, is_external: bool) -> Self {
         let directories = paths.into_iter().map(|p| NamespaceDirectory {
             path: p,
-            module_symbols: HashMap::new(),
+            module_symbols: HashMap::default(),
         }).collect();
         Self {
             name: oyarn!("{}", name),
@@ -45,7 +45,7 @@ impl NamespaceSymbol {
     }
 
     pub fn add_path(&mut self, path: String) {
-        self.directories.push(NamespaceDirectory { path: path, module_symbols: HashMap::new() });
+        self.directories.push(NamespaceDirectory { path: path, module_symbols: HashMap::default() });
     }
 
     pub fn directories(&self) -> &[NamespaceDirectory] {

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use crate::utils::{HashMap, HashSet};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::{u32, vec};
@@ -830,7 +830,7 @@ impl PythonArchEval {
                                 let eval_iter = evals[0].clone();
                                 if for_stmt.target.is_name_expr() { //only handle simple variable for now
                                     let variable = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &for_stmt.target.as_name_expr().unwrap().id, &for_stmt.target.range());
-                                    let symbol = eval_iter.symbol.get_symbol_as_weak(session, &mut Some(HashMap::from([(S!("parent_for"), ContextValue::SYMBOL(symbol_type.into()))])), &mut vec![], None);
+                                    let symbol = eval_iter.symbol.get_symbol_as_weak(session, &mut Some(HashMap::from_iter([(S!("parent_for"), ContextValue::SYMBOL(symbol_type.into()))])), &mut vec![], None);
                                     let v = variable.unwrap().unwrap_variable_key();
                                     session.st_mut()[v].evaluations = vec![Evaluation::eval_from_symbol(session.st(), symbol.weak, symbol.instance)];
                                 }

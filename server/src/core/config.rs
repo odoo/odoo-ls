@@ -5,7 +5,7 @@ use ruff_python_ast::{Expr, Mod};
 use ruff_python_parser::{Mode, ParseOptions};
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::{HashMap, HashSet};
+use crate::utils::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::path::PathBuf;
@@ -369,7 +369,7 @@ impl<T: Default> Default for Sourced<T> {
     fn default() -> Self {
         Sourced {
             value: T::default(),
-            sources: HashSet::from([S!("$default")]),
+            sources: HashSet::from_iter([S!("$default")]),
             info: String::new(),
         }
     }
@@ -381,7 +381,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Sourced<T> {
         let value = T::deserialize(deserializer)?;
         Ok(Sourced {
             value,
-            sources: HashSet::new(),
+            sources: HashSet::default(),
             info: String::new(),
         })
     }
@@ -531,7 +531,7 @@ fn process_version(
         unreachable!("Expected at least one source for sourced_path: {:?}", var);
     };
     let config_dir = config_path.parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
-    match fill_validate_path(unique_ws_folders, current_ws, var.value(), |p| PathBuf::from(p).exists(), HashMap::new(), &config_dir) {
+    match fill_validate_path(unique_ws_folders, current_ws, var.value(), |p| PathBuf::from(p).exists(), HashMap::default(), &config_dir) {
         Ok(filled_path) => {
             let var_pb = PathBuf::from(&filled_path);
             if var_pb.is_file() {
@@ -755,10 +755,10 @@ impl Default for ConfigEntry {
         Self {
             name: DEFAULT_PROFILE_NAME.to_string(),
             odoo_path: None,
-            addons_paths: HashSet::new(),
+            addons_paths: HashSet::default(),
             python_path: S!(get_python_command().unwrap_or_default()),
-            additional_stubs: HashSet::new(),
-            additional_languages: HashSet::new(),
+            additional_stubs: HashSet::default(),
+            additional_languages: HashSet::default(),
             file_cache: true,
             diag_missing_imports: DiagMissingImportsMode::default(),
             ac_filter_model_names: true,
@@ -828,7 +828,7 @@ fn process_paths(
     unique_ws_folders: &HashMap<String, String>,
     current_ws: Option<&(String, String)>,
 ){
-    let mut var_map: HashMap<String, String> = HashMap::new();
+    let mut var_map: HashMap<String, String> = HashMap::default();
     if let Some(v) = entry.version.clone() {
         var_map.insert(S!("version"), v.value().clone());
     }
@@ -858,7 +858,7 @@ fn process_paths(
         if let Some((name, workspace_path)) = current_ws {
             let workspace_path = PathBuf::from(workspace_path).sanitize();
             if is_addon_path(&workspace_path) {
-                let addon_path = Sourced { value: workspace_path.clone(), sources: HashSet::from([S!(format!("$workspaceFolder:{name}"))]), ..Default::default()};
+                let addon_path = Sourced { value: workspace_path.clone(), sources: HashSet::from_iter([S!(format!("$workspaceFolder:{name}"))]), ..Default::default()};
                 match entry.addons_paths {
                     Some(ref mut paths) => paths.push(addon_path),
                     None => entry.addons_paths = Some(vec![addon_path]),
@@ -1094,7 +1094,7 @@ fn apply_extends(
     let mut nodes: HashMap<String, Node> = keys.iter().map(|key|
         (key.clone(), Node {
             parent: None,
-            children: HashSet::new(),
+            children: HashSet::default(),
         })
     ).collect();
     let edges: Vec<(String, String)> = keys.iter().filter_map(|key| {
@@ -1112,7 +1112,7 @@ fn apply_extends(
     }
 
     let mut ordered_nodes= vec![];
-    let mut visited = HashSet::new();
+    let mut visited = HashSet::default();
     for parent in nodes.iter().filter(|(_, n)| n.parent.is_none()){
         let mut stack = vec![parent.0.clone()];
         while let Some(current) = stack.pop().map(|value| {ordered_nodes.push(value.clone()); value}) {
@@ -1147,9 +1147,9 @@ fn merge_configs(
     child: &HashMap<String, ConfigEntryRaw>,
     parent: &HashMap<String, ConfigEntryRaw>,
 ) -> HashMap<String, ConfigEntryRaw> {
-    let mut merged = HashMap::new();
+    let mut merged = HashMap::default();
 
-    let keys: std::collections::HashSet<_> = child.keys()
+    let keys: HashSet<_> = child.keys()
         .chain(parent.keys())
         .cloned()
         .collect();
@@ -1186,8 +1186,8 @@ fn load_config_from_workspace(
 ) -> Result<HashMap<String, ConfigEntryRaw>, String> {
     let ws_path_pb = PathBuf::from(&current_ws.1);
     let mut current_dir = ws_path_pb.clone();
-    let mut visited_dirs = HashSet::new();
-    let mut merged_config: HashMap<String, ConfigEntryRaw> = HashMap::new();
+    let mut visited_dirs = HashSet::default();
+    let mut merged_config: HashMap<String, ConfigEntryRaw> = HashMap::default();
     merged_config.insert(DEFAULT_PROFILE_NAME.to_string(), ConfigEntryRaw::new());
 
     loop {
@@ -1256,7 +1256,7 @@ fn load_config_from_workspace(
                 unique_ws_folders,
                 Some(current_ws),
                 &|p| PathBuf::from(p).is_dir(),
-                HashMap::new(),
+                HashMap::default(),
             ){
                 Ok(parent_dir) => parent_dir,
                 Err(err) => {
@@ -1325,7 +1325,7 @@ fn merge_all_workspaces(
     unique_ws_folders: &HashMap<String, String>,
     workspace_configs: Vec<HashMap<String, ConfigEntryRaw>>,
 ) -> Result<(ConfigNew, ConfigFile), String> {
-    let mut merged_raw_config: HashMap<String, ConfigEntryRaw> = HashMap::new();
+    let mut merged_raw_config: HashMap<String, ConfigEntryRaw> = HashMap::default();
 
     for workspace_config in workspace_configs {
         for (key, raw_entry) in workspace_config {
@@ -1426,7 +1426,7 @@ fn merge_all_workspaces(
                             S!("More than one workspace folder is a valid odoo_path\nPlease set the odoo_path in the config file.")
                         );
                     }
-                    entry.odoo_path = Some(Sourced { value: path.clone(), sources: HashSet::from([S!(format!("$workspaceFolder:{name}"))]), ..Default::default()});
+                    entry.odoo_path = Some(Sourced { value: path.clone(), sources: HashSet::from_iter([S!(format!("$workspaceFolder:{name}"))]), ..Default::default()});
                 }
             }
         }
@@ -1435,7 +1435,7 @@ fn merge_all_workspaces(
     let config_file = ConfigFile { config: merged_raw_config.values().cloned().collect::<Vec<_>>()};
 
     // Convert the merged ConfigEntryRaw structure into ConfigEntry
-    let mut final_config: ConfigNew = HashMap::new();
+    let mut final_config: ConfigNew = HashMap::default();
     for (key, raw_entry) in merged_raw_config {
         final_config.insert(
             key.clone(),

@@ -7,8 +7,9 @@ use crate::core::symbols::symbol_keys::{ModuleKey, SymbolKey, XmlDataKey};
 use crate::core::symbols::Buildable;
 use crate::{core::diagnostics::DiagnosticCode, threads::SessionInfo};
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::{FileInfo, NoqaInfo}, model::Model}, oyarn};
-use std::collections::HashSet;
-use std::{cell::RefCell, collections::HashMap, rc::Weak};
+use crate::utils::HashSet;
+use std::{cell::RefCell, rc::Weak};
+use crate::utils::HashMap;
 
 #[derive(Debug)]
 pub struct XmlFileSymbol {
@@ -43,8 +44,8 @@ impl XmlFileSymbol {
             arch_status: BuildStatus::PENDING,
             validation_status: BuildStatus::PENDING,
             not_found_paths: vec![],
-            not_found_models: HashMap::new(),
-            symbols: HashSet::new(),
+            not_found_models: HashMap::default(),
+            symbols: HashSet::default(),
             in_workspace: false,
             self_import: false,
             model_dependencies: PtrWeakHashSet::new(),

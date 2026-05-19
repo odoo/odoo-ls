@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use crate::utils::HashMap;
 
 pub struct SortResult<'a> {
     pub sorted: Vec<&'a str>,
@@ -66,9 +66,9 @@ impl<'a> Graph<'a> {
     fn from(nodes: Vec<(&'a str, Vec<&'a str>)>) -> Self {
         let mut graph = Self {
             modules_to_dependencies: nodes.into_iter().collect(),
-            validation_cache: HashMap::new(),
-            depth_cache: HashMap::new(),
-            order_name_cache: HashMap::new(),
+            validation_cache: HashMap::default(),
+            depth_cache: HashMap::default(),
+            order_name_cache: HashMap::default(),
             errors: Vec::new(),
         };
         graph.add_base_dependency();
