@@ -1,6 +1,6 @@
 
 
-use std::collections::HashSet;
+use odoo_ls_server::utils::HashSet;
 use std::env;
 use odoo_ls_server::{core::evaluation::EvaluationValue, oyarn};
 use odoo_ls_server::constants::OYarn;
@@ -174,34 +174,34 @@ fn test_sections() {
         .collect::<HashSet<_>>(), values); // Check evaluation values
     };
     // If statement sections
-    assert_get_int_eval_values("a", HashSet::from([5, 6]));
-    assert_get_int_eval_values("b", HashSet::from([7]));
-    assert_get_int_eval_values("c", HashSet::from([5, 6]));
-    assert_get_int_eval_values("d", HashSet::from([4, 5]));
-    assert_get_int_eval_values("e", HashSet::from([1, 2 ,3]));
+    assert_get_int_eval_values("a", HashSet::from_iter([5, 6]));
+    assert_get_int_eval_values("b", HashSet::from_iter([7]));
+    assert_get_int_eval_values("c", HashSet::from_iter([5, 6]));
+    assert_get_int_eval_values("d", HashSet::from_iter([4, 5]));
+    assert_get_int_eval_values("e", HashSet::from_iter([1, 2 ,3]));
     // For statement sections
-    assert_get_int_eval_values("f", HashSet::from([32, 33, 34, 35]));
-    assert_get_int_eval_values("g", HashSet::from([98, 99]));
-    assert_get_int_eval_values("h", HashSet::from([98, 5]));
+    assert_get_int_eval_values("f", HashSet::from_iter([32, 33, 34, 35]));
+    assert_get_int_eval_values("g", HashSet::from_iter([98, 99]));
+    assert_get_int_eval_values("h", HashSet::from_iter([98, 5]));
     // While statement sections
-    assert_get_int_eval_values("i", HashSet::from([67, 76]));
-    assert_get_int_eval_values("j", HashSet::from([37, 27]));
+    assert_get_int_eval_values("i", HashSet::from_iter([67, 76]));
+    assert_get_int_eval_values("j", HashSet::from_iter([37, 27]));
     // Try statement sections
-    assert_get_int_eval_values("k", HashSet::from([2, 3]));
-    assert_get_int_eval_values("l", HashSet::from([30, 40]));
-    assert_get_int_eval_values("m", HashSet::from([80]));
-    assert_get_int_eval_values("o", HashSet::from([120]));
-    assert_get_int_eval_values("p", HashSet::from([20, 30, 40]));
+    assert_get_int_eval_values("k", HashSet::from_iter([2, 3]));
+    assert_get_int_eval_values("l", HashSet::from_iter([30, 40]));
+    assert_get_int_eval_values("m", HashSet::from_iter([80]));
+    assert_get_int_eval_values("o", HashSet::from_iter([120]));
+    assert_get_int_eval_values("p", HashSet::from_iter([20, 30, 40]));
     // Match statement sections
-    assert_get_int_eval_values("q", HashSet::from([33, 34, 43]));
-    assert_get_int_eval_values("r", HashSet::from([34, 43]));
+    assert_get_int_eval_values("q", HashSet::from_iter([33, 34, 43]));
+    assert_get_int_eval_values("r", HashSet::from_iter([34, 43]));
     // Named expression
-    assert_get_int_eval_values("s", HashSet::from([2]));
-    assert_get_int_eval_values("t", HashSet::from([3]));
+    assert_get_int_eval_values("s", HashSet::from_iter([2]));
+    assert_get_int_eval_values("t", HashSet::from_iter([3]));
     // If stmt with walrus
-    assert_get_int_eval_values("u", HashSet::from([91, 92]));
-    assert_get_int_eval_values("v", HashSet::from([72, 73, 74]));
-    assert_get_int_eval_values("w", HashSet::from([71, 72, 74]));
+    assert_get_int_eval_values("u", HashSet::from_iter([91, 92]));
+    assert_get_int_eval_values("v", HashSet::from_iter([72, 73, 74]));
+    assert_get_int_eval_values("w", HashSet::from_iter([71, 72, 74]));
 
 }
 

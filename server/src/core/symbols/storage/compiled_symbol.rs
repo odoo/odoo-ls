@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use crate::utils::HashMap;
 
 
 use crate::{constants::OYarn, oyarn};
@@ -22,7 +22,7 @@ impl CompiledSymbol {
             name: oyarn!("{}", name),
             is_external,
             path: path.to_string(),
-            module_symbols: HashMap::new(),
+            module_symbols: HashMap::default(),
             parent,
         }
     }

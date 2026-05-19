@@ -1,5 +1,6 @@
 use crate::{constants::OYarn, core::{entry_point::EntryPoint, symbols::symbol_keys::SymbolKey}, oyarn};
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
+use crate::utils::HashMap;
 
 #[derive(Debug)]
 pub struct RootSymbol {
@@ -16,7 +17,7 @@ impl RootSymbol {
         Self {
             name: oyarn!("Root"),
             entry_point,
-            module_symbols: HashMap::new(),
+            module_symbols: HashMap::default(),
         }
     }
 

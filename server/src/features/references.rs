@@ -22,7 +22,7 @@ use ruff_python_ast::{
 };
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::error;
-use std::collections::HashSet;
+use crate::utils::HashSet;
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
 #[derive(Debug, Clone)]
@@ -91,7 +91,7 @@ impl ReferenceFeature {
                     }
                 },
                 SymType::CLASS | SymType::FUNCTION | SymType::VARIABLE | SymType::FILE => {
-                    let mut files_to_check = HashSet::new();
+                    let mut files_to_check = HashSet::default();
 
                     files_to_check.insert(file_symbol);
 
@@ -181,7 +181,7 @@ impl ReferenceFeature {
                     let xml_id_file = session.st().get_file(definition.source).unwrap();
                     let current_module = session.st().find_module(xml_id_file).unwrap();
                     let data_module_name = session.st()[current_module].dir_name.clone();
-                    let mut files_to_process = HashSet::new();
+                    let mut files_to_process = HashSet::default();
                     //TODO do not process all modules in the dep tree, but use dependencies on XML files when we will have them
                     let modules: Vec<_> = session.sync_odoo.modules.values().copied().collect();
                     for module in modules {

@@ -15,7 +15,7 @@ use crate::{constants::*, oyarn, Sy};
 use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
 use ruff_python_ast::{Expr, ExprStringLiteral, Stmt};
 use ruff_text_size::Ranged;
-use std::collections::HashSet;
+use crate::utils::HashSet;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 use tracing::{error, info};
@@ -77,7 +77,7 @@ impl ModuleSymbol {
             }
             return res;
         }
-        let mut visited_keys = HashSet::new();
+        let mut visited_keys = HashSet::default();
         let dict = &ast[0].as_expr_stmt().unwrap().value.clone().dict_expr().unwrap();
         for (index, key) in dict.iter_keys().enumerate() {
             match key {
