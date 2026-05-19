@@ -23,7 +23,7 @@ use crate::weak_collections::{WeakMap, WeakSet};
 use std::collections::HashMap;
 use std::cell::RefCell;
 use std::rc::{Rc};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use lsp_server::{ErrorCode, RequestId, ResponseError};
@@ -57,6 +57,85 @@ use crate::S;
 static VERSION_REGEX: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r#"version_info = \((['\"]?(\D+~)?\d+['\"]?, \d+, \d+, \w+, \d+, \D+)\)"#).unwrap()
 });
+
+/// TEMPORARY perf instrumentation for `build_now` and `Evaluation::eval_from_ast`.
+/// Splits the real work between internal (workspace) and external (odoo-core /
+/// typeshed) symbols — external validation diagnostics are discarded, so external
+/// work is a candidate to skip. Remove once the numbers are collected.
+static BUILD_NOW_STATS: BuildNowStats = BuildNowStats::new();
+
+#[derive(Default)]
+struct BuildNowStats {
+    /// Every `build_now_impl` invocation.
+    calls: AtomicUsize,
+    /// Returned early: symbol type is never built (Root/Namespace/Class/...).
+    skipped_type: AtomicUsize,
+    /// Returned early: (symbol, step) already in the recursion chain (dep cycle).
+    skipped_cycle: AtomicUsize,
+    /// Returned early: status != PENDING or previous step not DONE — a no-op visit.
+    skipped_status: AtomicUsize,
+    /// Actually ran a builder (ARCH / ARCH_EVAL / VALIDATION).
+    work: AtomicUsize,
+    /// Subset of `work` where the built symbol is external (non-workspace).
+    work_external: AtomicUsize,
+    /// `Evaluation::eval_from_ast` invocations (from the validator).
+    eval: AtomicUsize,
+    /// Subset of `eval` where the validated file is external.
+    eval_external: AtomicUsize,
+    /// Baseline snapshots for delta logging.
+    last: BuildNowSnapshot,
+}
+
+#[derive(Default)]
+struct BuildNowSnapshot {
+    calls: AtomicUsize,
+    skipped_type: AtomicUsize,
+    skipped_cycle: AtomicUsize,
+    skipped_status: AtomicUsize,
+    work: AtomicUsize,
+    work_external: AtomicUsize,
+    eval: AtomicUsize,
+    eval_external: AtomicUsize,
+}
+
+impl BuildNowStats {
+    const fn new() -> Self {
+        const Z: AtomicUsize = AtomicUsize::new(0);
+        BuildNowStats {
+            calls: Z, skipped_type: Z, skipped_cycle: Z, skipped_status: Z,
+            work: Z, work_external: Z, eval: Z, eval_external: Z,
+            last: BuildNowSnapshot {
+                calls: Z, skipped_type: Z, skipped_cycle: Z, skipped_status: Z,
+                work: Z, work_external: Z, eval: Z, eval_external: Z,
+            },
+        }
+    }
+
+    fn log_delta(&self, label: &str) {
+        let r = Ordering::Relaxed;
+        // delta = current - baseline, and reset baseline to current.
+        let d = |cur: &AtomicUsize, last: &AtomicUsize| {
+            let v = cur.load(r);
+            v - last.swap(v, r)
+        };
+        let calls = d(&self.calls, &self.last.calls);
+        let d_type = d(&self.skipped_type, &self.last.skipped_type);
+        let d_cycle = d(&self.skipped_cycle, &self.last.skipped_cycle);
+        let d_status = d(&self.skipped_status, &self.last.skipped_status);
+        let work = d(&self.work, &self.last.work);
+        let work_ext = d(&self.work_external, &self.last.work_external);
+        let eval = d(&self.eval, &self.last.eval);
+        let eval_ext = d(&self.eval_external, &self.last.eval_external);
+        let pct = |n: usize, total: usize| if total > 0 { n as f64 * 100.0 / total as f64 } else { 0.0 };
+        info!(
+            "build_now stats [{label}]: {calls} calls = {work} work ({:.1}%) + \
+             {d_status} no-op/status + {d_cycle} cycle + {d_type} type-skip; \
+             work: {work_ext} external ({:.1}%) / {} internal; \
+             eval_from_ast: {eval} calls, {eval_ext} external ({:.1}%)",
+            pct(work, calls), pct(work_ext, work), work - work_ext, pct(eval_ext, eval),
+        );
+    }
+}
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, PartialEq)]
@@ -628,12 +707,15 @@ impl SyncOdoo {
         // already-built ASTs, and a stale cache must not outlive this build.
         session.sync_odoo.pre_parse_cache = None;
         drop(pre_parser);
+        SyncOdoo::log_build_now_stats("phase 1 (arch + arch_eval)");
         // Phase 2: validate every file in a single pass, now that all models exist.
         if !SyncOdoo::drain_rebuilds(session, false, false, is_reporting_progress,
                 &mut already_arch_rebuilt, &mut already_arch_eval_rebuilt) {
+            SyncOdoo::log_build_now_stats("phase 2 (validation)");
             SyncOdoo::end_rebuild_session(session, is_reporting_progress);
             return;
         }
+        SyncOdoo::log_build_now_stats("phase 2 (validation)");
         SyncOdoo::end_rebuild_session(session, is_reporting_progress);
         let modules_count = session.sync_odoo.modules.len();
         info!("End building modules. {} modules loaded", modules_count);
@@ -1060,13 +1142,32 @@ impl SyncOdoo {
         Self::build_now_impl(session, symbol.into(), step, &mut visited)
     }
 
+    /// Snapshot the build_now instrumentation counters, log them against `label`
+    /// (as a delta since the last snapshot), and reset the delta baseline.
+    /// Temporary — see BuildNowStats.
+    pub fn log_build_now_stats(label: &str) {
+        BUILD_NOW_STATS.log_delta(label);
+    }
+
+    /// TEMPORARY: record one `Evaluation::eval_from_ast` call from the validator,
+    /// tagged by whether the validated file is external. See BuildNowStats.
+    pub fn record_eval_from_ast(is_external: bool) {
+        BUILD_NOW_STATS.eval.fetch_add(1, Ordering::Relaxed);
+        if is_external {
+            BUILD_NOW_STATS.eval_external.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
     /// Helper for build_now. Mutually recursive with build_now_dependencies.
     fn build_now_impl(session: &mut SessionInfo, symbol: SymbolKey, step: BuildSteps, visited: &mut HashSet<(SymbolKey, BuildSteps)>) {
+        BUILD_NOW_STATS.calls.fetch_add(1, Ordering::Relaxed);
         if matches!(symbol,
             SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::DiskDir(_) | SymbolKey::Compiled(_) | SymbolKey::Class(_) | SymbolKey::Variable(_))  {
+                BUILD_NOW_STATS.skipped_type.fetch_add(1, Ordering::Relaxed);
                 return
         };
         if !visited.insert((symbol, step)) {
+            BUILD_NOW_STATS.skipped_cycle.fetch_add(1, Ordering::Relaxed);
             return; // already in the recursion chain — dep cycle
         }
         if DEBUG_REBUILD_NOW {
@@ -1078,6 +1179,10 @@ impl SyncOdoo {
             }
         }
         if session.st().build_status(symbol, step) == BuildStatus::PENDING && session.st().previous_step_done(symbol, step) {
+            BUILD_NOW_STATS.work.fetch_add(1, Ordering::Relaxed);
+            if session.st().is_external(symbol) {
+                BUILD_NOW_STATS.work_external.fetch_add(1, Ordering::Relaxed);
+            }
             Self::build_now_dependencies(session, symbol, step, visited);
             let entry_point = session.st().get_entry(symbol);
             session.sync_odoo.remove_from_rebuild(symbol, step);
@@ -1103,6 +1208,8 @@ impl SyncOdoo {
                 let mut validator = PythonValidator::new(session.st(), entry_point, symbol);
                 validator.validate(session);
             }
+        } else {
+            BUILD_NOW_STATS.skipped_status.fetch_add(1, Ordering::Relaxed);
         }
     }
 
