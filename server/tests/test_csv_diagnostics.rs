@@ -3,7 +3,7 @@
 use lsp_types::Diagnostic;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
-use std::collections::HashMap;
+use odoo_ls_server::utils::HashMap;
 use std::env;
 use std::path::PathBuf;
 

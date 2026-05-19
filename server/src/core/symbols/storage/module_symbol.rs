@@ -10,7 +10,7 @@ use crate::weak_collections::WeakSet;
 use crate::{constants::*, oyarn};
 use ruff_text_size::TextRange;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use crate::utils::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Weak;
 use weak_table::PtrWeakHashSet;
@@ -48,7 +48,7 @@ pub struct ModuleSymbol {
 
     // parent / child symbols
     parent: NamespaceKey,
-    pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>, NoHashBuilder>>,
+    pub(super) symbols: HashMap<OYarn, std::collections::HashMap<u32, Vec<SymbolKey>, NoHashBuilder>>,
     pub(super) module_symbols: HashMap<OYarn, SymbolKey>,
     pub(super) data_symbols: HashMap<String, SourceFileKey>,
 }
@@ -69,31 +69,31 @@ impl ModuleSymbol {
             init_path: dir_path.join("__init__.py").sanitize(),
             is_external,
             not_found_paths: vec![],
-            not_found_data: HashMap::new(),
-            not_found_models: HashMap::new(),
+            not_found_data: HashMap::default(),
+            not_found_models: HashMap::default(),
             in_workspace: false,
             root_path: path,
             loaded: false,
             module_name: OYarn::from(""),
-            xml_ids: HashMap::new(),
+            xml_ids: HashMap::default(),
             dir_name,
             depends,
-            all_depends: HashSet::new(),
+            all_depends: HashSet::default(),
             data: Vec::new(),
             assets: Vec::new(),
             parent,
-            module_symbols: HashMap::new(),
+            module_symbols: HashMap::default(),
             arch_status: BuildStatus::PENDING,
             arch_eval_status: BuildStatus::PENDING,
             validation_status: BuildStatus::PENDING,
             sections: vec![],
-            symbols: HashMap::new(),
+            symbols: HashMap::default(),
             model_dependencies: PtrWeakHashSet::new(),
             dependencies: DependenciesTable::default(),
             dependents: DependentsTable::default(),
             processed_text_hash: 0,
             noqas: NoqaInfo::None,
-            data_symbols: HashMap::new(),
+            data_symbols: HashMap::default(),
         };
         module._init_symbol_mgr();
         module.load(session, dir_path)

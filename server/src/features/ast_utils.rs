@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use crate::utils::HashMap;
 use crate::constants::{BuildStatus, BuildSteps, SymType};
 use crate::core::evaluation::{AnalyzeAstResult, Context, ContextValue, Evaluation, ExprOrIdent};
 use crate::core::odoo::SyncOdoo;
@@ -48,7 +48,7 @@ impl AstUtils {
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }
-        let mut context: Option<Context> = Some(HashMap::from([
+        let mut context: Option<Context> = Some(HashMap::from_iter([
             (S!("module"), from_module),
             (S!("range"), ContextValue::RANGE(expr.range()))
         ]));
