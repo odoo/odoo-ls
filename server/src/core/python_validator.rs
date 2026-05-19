@@ -752,7 +752,6 @@ impl PythonValidator {
     }
 
     fn validate_expr(&mut self, session: &mut SessionInfo, expr: &Expr, max_infer: &TextSize) {
-        SyncOdoo::record_eval_from_ast(session.st().is_external(self.file.into()));
         let mut deps = vec![vec![], vec![], vec![]];
         let (_, diags) = Evaluation::eval_from_ast(session, expr, *self.sym_stack.last().unwrap(), max_infer, false, &mut deps);
         session.sync_odoo.symbol_table.insert_dependencies(self.file, &deps, BuildSteps::VALIDATION);
