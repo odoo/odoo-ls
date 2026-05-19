@@ -46,6 +46,8 @@ rustc-hash = "2.1"
 # ittapi = "0.3" # profiling with VTune profiler
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 nix = { version = "0.29.0", features = ["process"] }
+tikv-jemallocator = "0.6"
+tikv-jemalloc-ctl = "0.6"
 
 [[bench]]
 name = "gungraun_bench"

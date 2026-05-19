@@ -15,7 +15,20 @@ use odoo_ls_server::allocator::TrackingAllocator;
 #[global_allocator]
 static GLOBAL: TrackingAllocator = TrackingAllocator;
 
+// jemalloc isn't supported on Windows (MSVC); release builds there fall back to the system allocator.
+#[cfg(all(not(debug_assertions), any(target_os = "linux", target_os = "macos")))]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 fn main() {
+    // Move jemalloc's purging (madivise) off the worker threads
+    #[cfg(all(not(debug_assertions), any(target_os = "linux", target_os = "macos")))]
+    {
+        if let Err(e) = tikv_jemalloc_ctl::background_thread::write(true) {
+            tracing::warn!("failed to enable jemalloc background_thread: {e}");
+        }
+    }
+
     // TODO: Audit that the environment access only happens in single-threaded code.
     unsafe { env::set_var("RUST_BACKTRACE", "full") };
     crash_buffer::init_crash_buffer();
