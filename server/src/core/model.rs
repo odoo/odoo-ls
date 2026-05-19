@@ -1,7 +1,7 @@
 use lsp_types::MessageType;
 use std::cell::RefCell;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use crate::utils::HashMap;
+use crate::utils::HashSet;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
@@ -62,7 +62,7 @@ impl ModelData {
             parent_store: false,
             data_name: String::from("date"),
             fold_name: String::from("fold"),
-            computes: HashMap::new(),
+            computes: HashMap::default(),
         }
     }
 }
@@ -151,8 +151,8 @@ impl Model {
 
     pub fn get_full_model_symbols(model_rc: Rc<RefCell<Model>>, session: &SessionInfo, from_module: ModuleKey) -> HashSet<ClassKey> {
         let st = &session.sync_odoo.symbol_table;
-        let mut symbol_set  = HashSet::new();
-        let mut already_in = HashSet::new();
+        let mut symbol_set  = HashSet::default();
+        let mut already_in = HashSet::default();
         let mut queue = VecDeque::from([model_rc]);
         while let Some(current_model_rc) = queue.pop_front() {
             let current_model = current_model_rc.borrow();
@@ -176,7 +176,7 @@ impl Model {
     pub fn get_inherits_models(&self, session: &mut SessionInfo, from_module: ModuleKey) -> Vec<Rc<RefCell<Model>>> {
         let st = &session.sync_odoo.symbol_table;
         let mut res = vec![];
-        let mut already_in = HashSet::new();
+        let mut already_in = HashSet::default();
         let symbols = self.get_symbols(st, Some(from_module));
         for symbol_key in symbols {
             let Some(model_data) = &st[symbol_key]._model else {
@@ -204,7 +204,7 @@ impl Model {
         if with_inheritance is true, it will also return symbols from inherited models (NOT Base classes).
     */
     pub fn all_symbols(&self, session: &SessionInfo, from_module: Option<ModuleKey>, with_inheritance: bool) -> Vec<(ClassKey, Option<OYarn>)> {
-        self.all_symbols_helper(session, from_module, with_inheritance, &mut HashSet::new())
+        self.all_symbols_helper(session, from_module, with_inheritance, &mut HashSet::default())
     }
 
     fn all_symbols_helper(&self, session: &SessionInfo, from_module: Option<ModuleKey>, with_inheritance: bool, seen_inherited_models: &mut HashSet<OYarn>) -> Vec<(ClassKey, Option<OYarn>)> {
@@ -243,7 +243,7 @@ impl Model {
     }
 
     pub fn all_symbols_inherits(&self, session: &SessionInfo, from_module: Option<ModuleKey>) -> (Vec<(ClassKey, Option<OYarn>)>, Vec<(ClassKey, Option<OYarn>)>) {
-        let mut visited_models = HashSet::new();
+        let mut visited_models = HashSet::default();
         self.all_inherits_helper(session, from_module, &mut visited_models)
     }
 
@@ -332,6 +332,6 @@ impl Model {
             }
             false
         }
-        inner(self, session, base, &mut HashSet::new())
+        inner(self, session, base, &mut HashSet::default())
     }
 }

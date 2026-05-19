@@ -1,5 +1,6 @@
 
-use std::{collections::HashMap, path::PathBuf};
+use std::{path::PathBuf};
+use crate::utils::HashMap;
 
 use crate::{constants::OYarn, core::symbols::symbol_keys::SymbolKey, oyarn, utils::PathSanitizer};
 
@@ -28,7 +29,7 @@ impl DiskDirSymbol {
             is_external,
             parent,
             in_workspace: false,
-            module_symbols: HashMap::new()
+            module_symbols: HashMap::default()
         }
     }
 

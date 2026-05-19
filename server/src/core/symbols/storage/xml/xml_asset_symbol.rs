@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use crate::utils::HashMap;
 
 use ruff_text_size::TextRange;
 
@@ -16,7 +16,7 @@ pub struct XmlAssetSymbol {
 
 impl XmlAssetSymbol {
     pub fn new(xml_id: Option<OYarn>, range: TextRange, parent: SymbolKey, is_external: bool) -> Self {
-        Self { xml_id, range, parent, is_external, fields: HashMap::new() }
+        Self { xml_id, range, parent, is_external, fields: HashMap::default() }
     }
 
     pub fn parent(&self) -> SymbolKey {

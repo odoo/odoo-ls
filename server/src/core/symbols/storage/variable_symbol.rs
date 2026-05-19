@@ -2,7 +2,7 @@ use ruff_text_size::TextRange;
 
 use crate::{S, constants::OYarn, core::{evaluation::{ContextValue, Evaluation}, symbols::storage::SymbolTable}, threads::SessionInfo};
 use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey, SymbolKey, VariableKey};
-use std::collections::HashMap;
+use crate::utils::HashMap;
 
 #[derive(Debug)]
 pub struct VariableSymbol {
@@ -64,7 +64,7 @@ impl VariableSymbol {
             let parent = session.st()[target].parent();
             // To be able to follow related fields, we need to have the base_attr set in order to find the __get__ hook in next_refs
             // we update the context here for the case where we are coming from a decorator for example.
-            let mut context = Some(HashMap::new());
+            let mut context = Some(HashMap::default());
             context.as_mut().unwrap().insert(S!("base_attr"), ContextValue::SYMBOL(parent.into()));
             let eval_weaks = SymbolTable::follow_ref(&symbol, session, &mut context, false, false, None, None);
             for eval_weak in eval_weaks.iter() {

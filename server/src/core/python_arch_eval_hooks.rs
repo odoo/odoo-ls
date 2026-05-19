@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use crate::utils::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
 use lsp_types::Diagnostic;
@@ -65,7 +65,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
             return;
         };
         let env = &mut odoo.symbol_table[symbol.unwrap_variable_key()];
-        let context = HashMap::new();
+        let context = HashMap::default();
         env.evaluations = vec![Evaluation {
             symbol: EvaluationSymbol::new_with_symbol(
                 env_class.into(),
@@ -161,7 +161,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                 symbol: EvaluationSymbol::new_with_symbol(
                     (*registry_sym.last().unwrap()).into(),
                     Some(true),
-                    HashMap::new(),
+                    HashMap::default(),
                     None
                 ),
                 value: None,
@@ -511,7 +511,7 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
        odoo.symbol_table[symbol].evaluations = vec![Evaluation {
             symbol: EvaluationSymbol::new_with_symbol(Wk::null(),
                 Some(true),
-                HashMap::new(),
+                HashMap::default(),
                 Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_env_get_item, name: S!("eval_env_get_item")})
             ),
             value: None,
@@ -526,7 +526,7 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
         odoo.symbol_table[symbol].evaluations = vec![Evaluation {
             symbol: EvaluationSymbol::new_with_symbol(Wk::null(),
                 Some(true),
-                HashMap::new(),
+                HashMap::default(),
                 Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_registry_get_item, name: S!("eval_registry_get_item")})
             ),
             value: None,
@@ -689,7 +689,7 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
             symbol: EvaluationSymbol::new_with_symbol(
                 fields_class_sym.into(),
                 Some(true),
-                HashMap::new(),
+                HashMap::default(),
                 Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_init, name: S!("eval_init")})
             ),
             value: None,
@@ -970,7 +970,7 @@ impl PythonArchEvalHooks {
             symbol: EvaluationSymbol::new_with_symbol(
                 return_sym.into(),
                 Some(true),
-                HashMap::new(),
+                HashMap::default(),
                 Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_get, name: S!("eval_get")})
             ),
             value: None,
@@ -994,7 +994,7 @@ impl PythonArchEvalHooks {
             symbol: EvaluationSymbol::new_with_symbol(
                 return_sym.into(),
                 Some(true),
-                HashMap::new(),
+                HashMap::default(),
                 Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_get, name: S!("eval_get")})
             ),
             value: None,
@@ -1021,7 +1021,7 @@ impl PythonArchEvalHooks {
         let from_module = session.st().find_module(class_sym);
         let syms = PythonArchEval::get_nested_sub_field(session, related_field_name, class_sym, from_module);
         if let Some(&symbol) = syms.first() {
-            return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: symbol.into(), context: HashMap::new(), instance: Some(true), is_super: false}))
+            return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: symbol.into(), context: HashMap::default(), instance: Some(true), is_super: false}))
         }
         None
     }
@@ -1043,10 +1043,10 @@ impl PythonArchEvalHooks {
             }
             let main_symbol = comodel_sym.borrow().get_main_symbols(session, from_module);
             if main_symbol.len() == 1 {
-                return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: main_symbol[0].into(), context: HashMap::new(), instance: Some(true), is_super: false}))
+                return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: main_symbol[0].into(), context: HashMap::default(), instance: Some(true), is_super: false}))
             }
         }
-        Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Wk::null(), context: HashMap::new(), instance: Some(true), is_super: false}))
+        Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Wk::null(), context: HashMap::default(), instance: Some(true), is_super: false}))
     }
 
     fn eval_relational(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, _diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
@@ -1072,7 +1072,7 @@ impl PythonArchEvalHooks {
             symbol: EvaluationSymbol::new_with_symbol(
                 Wk::null(),
                 Some(true),
-                HashMap::new(),
+                HashMap::default(),
                 Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_relational, name: S!("eval_relational")})
             ),
             value: None,
@@ -1085,7 +1085,7 @@ impl PythonArchEvalHooks {
             symbol: EvaluationSymbol::new_with_symbol(
                 Wk::null(),
                 Some(true),
-                HashMap::new(),
+                HashMap::default(),
                 Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_relational, name: S!("eval_relational")})
             ),
             value: None,
@@ -1112,9 +1112,9 @@ impl PythonArchEvalHooks {
             context.get("range").unwrap().as_text_range().start().to_u32(),
             false
         );
-        let mut result_context = HashMap::new();
+        let mut result_context = HashMap::default();
 
-        let mut contexts_to_add = HashMap::new();
+        let mut contexts_to_add = HashMap::default();
         if relational {
             if let Some(first_param) = parameters.args.get(0) {
                 contexts_to_add.insert("comodel_name", (first_param, first_param.range(), "str"));
@@ -1201,7 +1201,7 @@ impl PythonArchEvalHooks {
             symbol: EvaluationSymbol::new_with_symbol(
                 Wk::from(symbol), //use the weak to keep reference to the class for the hook.
                 Some(true),
-                HashMap::new(),
+                HashMap::default(),
                 Some(match relational {
                     Some(oyarn) if oyarn == oyarn!("One2many") => GetSymbolHook{callable: PythonArchEvalHooks::eval_init_relational_one2many, name: S!("eval_init_relational_one2many")},
                     Some(_) => GetSymbolHook{callable: PythonArchEvalHooks::eval_init_relational, name: S!("eval_init_relational")},
@@ -1379,7 +1379,7 @@ impl PythonArchEvalHooks {
             symbol: EvaluationSymbol::new_with_symbol(
                 func_sym.into(),
                 Some(true),
-                HashMap::new(),
+                HashMap::default(),
                 Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_env_ref, name: S!("eval_env_ref")})
             ),
             value: None,

@@ -19,7 +19,7 @@ use crate::features::definition::DefinitionFeature;
 use crate::features::hover::HoverFeature;
 use crate::threads::SessionInfo;
 use crate::weak_collections::{WeakMap, WeakSet};
-use std::collections::HashMap;
+use crate::utils::HashMap;
 use std::cell::RefCell;
 use std::rc::{Rc};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -34,7 +34,7 @@ use ruff_source_file::PositionEncoding;
 use serde_json::Value;
 use tracing::{error, warn, info, trace};
 
-use std::collections::HashSet;
+use crate::utils::HashSet;
 use std::process::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -174,8 +174,8 @@ impl SyncOdoo {
             file_mgr: Rc::new(RefCell::new(FileMgr::new())),
             stubs_dirs: SyncOdoo::default_stubs(),
             stdlib_dir: SyncOdoo::default_stdlib(),
-            modules: HashMap::new(),
-            models: HashMap::new(),
+            modules: HashMap::default(),
+            models: HashMap::default(),
             interrupt_rebuild: Arc::new(AtomicBool::new(false)),
             terminate_rebuild: Arc::new(AtomicBool::new(false)),
             current_request_id: None,
@@ -215,8 +215,8 @@ impl SyncOdoo {
         FileMgr::clear(session);//only reset files, as workspace folders didn't change
         session.sync_odoo.stubs_dirs = SyncOdoo::default_stubs();
         session.sync_odoo.stdlib_dir = SyncOdoo::default_stdlib();
-        session.sync_odoo.modules = HashMap::new();
-        session.sync_odoo.models = HashMap::new();
+        session.sync_odoo.modules = HashMap::default();
+        session.sync_odoo.models = HashMap::default();
         session.sync_odoo.rebuild_arch = FifoWeakHashSet::new();
         session.sync_odoo.rebuild_arch_eval = FifoWeakHashSet::new();
         session.sync_odoo.rebuild_validation = FifoWeakHashSet::new();
@@ -735,9 +735,9 @@ impl SyncOdoo {
             return false;
         }
         SyncOdoo::add_from_self_reload(session);
-        session.sync_odoo.import_cache = Some(ImportCache{ modules: HashMap::new(), main_modules: HashMap::new() });
-        let mut already_arch_rebuilt: HashSet<Tree> = HashSet::new();
-        let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::new();
+        session.sync_odoo.import_cache = Some(ImportCache{ modules: HashMap::default(), main_modules: HashMap::default() });
+        let mut already_arch_rebuilt: HashSet<Tree> = HashSet::default();
+        let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::default();
 
         //workdone progress
         let mut last_update_status = Instant::now() - Duration::from_secs(10);
@@ -902,7 +902,7 @@ impl SyncOdoo {
      */
     pub fn build_now(session: &mut SessionInfo, symbol: impl Into<SymbolKey>, step: BuildSteps) {
         // prevents dependency cycles
-        let mut visited = HashSet::new();
+        let mut visited = HashSet::default();
         Self::build_now_impl(session, symbol.into(), step, &mut visited)
     }
 

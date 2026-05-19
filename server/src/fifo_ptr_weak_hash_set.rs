@@ -11,7 +11,7 @@ pub struct FifoWeakHashSet<T: Copy + Eq + Hash> {
 impl<T: Copy + Eq + Hash> FifoWeakHashSet<T> {
     pub fn new() -> Self {
         Self {
-            set: HashSet::new(),
+            set: HashSet::default(),
             queue: VecDeque::new(),
         }
     }
