@@ -51,7 +51,7 @@ macro_rules! diagnostic_codes {
             }
         }
 
-        pub static DIAGNOSTIC_INFOS: once_cell::sync::Lazy<std::collections::HashMap<DiagnosticCode, DiagnosticInfo>> = once_cell::sync::Lazy::new(|| std::collections::HashMap::from([
+        pub static DIAGNOSTIC_INFOS: once_cell::sync::Lazy<crate::utils::HashMap<DiagnosticCode, DiagnosticInfo>> = once_cell::sync::Lazy::new(|| crate::utils::HashMap::from_iter([
             $( (DiagnosticCode::$name, DiagnosticInfo { default_setting: $default_setting, template: $msg }), )*
         ]));
     }

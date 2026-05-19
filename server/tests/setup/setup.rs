@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use core::str;
-use std::collections::HashMap;
+use odoo_ls_server::utils::HashMap;
 use std::{env, fs};
 
 use std::path::PathBuf;
@@ -103,7 +103,7 @@ pub fn get_diagnostics_for_path(session: &mut SessionInfo, path: &str) -> Vec<Di
 }
 
 pub fn get_diagnostics_for_paths(session: &mut SessionInfo, paths: &Vec<String>) -> HashMap<String, Vec<Diagnostic>> {
-    let mut res = HashMap::new();
+    let mut res = HashMap::default();
     while let Some(msg) = session._consume_message() {
         match msg {
             Message::Notification(n) => {

@@ -1,5 +1,5 @@
 use ruff_text_size::{TextRange, TextSize};
-use std::collections::{HashMap, HashSet};
+use crate::utils::{HashMap, HashSet};
 use std::cell::RefCell;
 
 use crate::constants::OYarn;
@@ -31,7 +31,7 @@ pub struct ClassSymbol {
     // parent / child symbols
     parent: SymbolKey,
     //--- Body symbols
-    pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>, NoHashBuilder>>,
+    pub(super) symbols: HashMap<OYarn, std::collections::HashMap<u32, Vec<SymbolKey>, NoHashBuilder>>,
 }
 
 impl ClassSymbol {
@@ -45,7 +45,7 @@ impl ClassSymbol {
             body_range: TextRange::new(body_start, range.end()),
             doc_string: None,
             sections: vec![],
-            symbols: HashMap::new(),
+            symbols: HashMap::default(),
             bases: vec![],
             _model: None,
             noqas: NoqaInfo::None,
@@ -57,7 +57,7 @@ impl ClassSymbol {
 
     pub fn inherits(session: &mut SessionInfo, class_key: ClassKey, base: ClassKey, checked: &mut Option<HashSet<ClassKey>>) -> bool {
         if checked.is_none() {
-            *checked = Some(HashSet::new());
+            *checked = Some(HashSet::default());
         }
         let bases: Vec<_> = session.st()[class_key].bases.iter().filter_map(|w| w.upgrade(session.st())).collect();
         for b in bases {

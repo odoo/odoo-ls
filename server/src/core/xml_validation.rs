@@ -1,9 +1,9 @@
 use std::{
     cell::RefCell,
     cmp::Ordering,
-    collections::{HashMap, HashSet},
     rc::Rc,
 };
+use crate::utils::{HashMap, HashSet};
 
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{info, trace};
@@ -37,7 +37,7 @@ impl XmlValidator {
             xml_symbol: symbol,
             is_in_main_ep,
             module,
-            fields_cache: HashMap::new(),
+            fields_cache: HashMap::default(),
         }
     }
 
@@ -48,7 +48,7 @@ impl XmlValidator {
         }
         let mut dependencies = vec![];
         let mut model_dependencies = vec![];
-        let mut missing_model_dependencies = HashSet::new();
+        let mut missing_model_dependencies = HashSet::default();
         let mut diagnostics = vec![];
         for data_key in session.st()[self.xml_symbol].symbols().iter().cloned().collect::<Vec<_>>() {
             self.validate_data(session, data_key, &mut diagnostics, &mut dependencies, &mut model_dependencies, &mut missing_model_dependencies);

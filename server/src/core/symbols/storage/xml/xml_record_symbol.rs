@@ -1,4 +1,5 @@
-use std::{collections::HashMap, ops::Range};
+use std::{ops::Range};
+use crate::utils::HashMap;
 
 use ruff_text_size::TextRange;
 
@@ -26,7 +27,7 @@ impl XmlRecordSymbol {
         Self {
             model,
             xml_id,
-            fields: HashMap::new(),
+            fields: HashMap::default(),
             range,
             parent,
             is_external,
