@@ -11,7 +11,7 @@ use crate::core::odoo::SyncOdoo;
 use crate::threads::SessionInfo;
 use crate::utils::{PathSanitizer, is_addon_path, is_odoo_path, is_python_path};
 use serde_json::json;
-use std::collections::HashMap;
+use crate::utils::HashMap;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;

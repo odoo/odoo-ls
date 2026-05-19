@@ -84,7 +84,7 @@ pub fn verify_diagnostics_against_doc(
     doc_diag: Vec<(u32, Vec<String>)>
 ) {
     // Build a map from line to set of diagnostic codes found in diagnostics
-    let mut diags: HashMap<u32, Vec<&Diagnostic>> = HashMap::new();
+    let mut diags: HashMap<u32, Vec<&Diagnostic>> = HashMap::default();
     for diag in &diagnostics {
         let line = diag.range.start.line;
         diags.entry(line).or_default().push(diag);

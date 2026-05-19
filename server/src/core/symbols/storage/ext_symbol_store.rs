@@ -3,7 +3,7 @@ use crate::oyarn;
 use crate::{
     constants::OYarn, core::symbols::storage::SymbolTable, weak_collections::WeakSet,
 };
-use std::collections::HashMap;
+use crate::utils::HashMap;
 
 /// section index → [variable keys] (Strong keys stored here)
 type SectionSymbols = HashMap<u32, Vec<VariableKey>>;
@@ -27,8 +27,8 @@ pub struct ExtSymbolStore {
 impl ExtSymbolStore {
     pub fn new() -> Self {
         Self {
-            owners_by_target: HashMap::new(),
-            symbols_by_owner: HashMap::new(),
+            owners_by_target: HashMap::default(),
+            symbols_by_owner: HashMap::default(),
         }
     }
 

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use crate::utils::HashMap;
 
 use lsp_types::Diagnostic;
 use ruff_python_ast::{AtomicNodeIndex, Expr, ExprCall};
@@ -54,7 +54,7 @@ pub struct FunctionSymbol {
     // parent / child symbols
     parent: SymbolKey,
     //--- Body content
-    pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>, NoHashBuilder>>,
+    pub(super) symbols: HashMap<OYarn, std::collections::HashMap<u32, Vec<SymbolKey>, NoHashBuilder>>,
 }
 
 impl FunctionSymbol {
@@ -68,7 +68,7 @@ impl FunctionSymbol {
             body_range: TextRange::new(body_start, range.end()),
             is_static: false,
             is_property: false,
-            diagnostics: HashMap::new(),
+            diagnostics: HashMap::default(),
             node_index: AtomicNodeIndex::default(),
             doc_string: None,
             evaluations: vec![],
@@ -76,7 +76,7 @@ impl FunctionSymbol {
             arch_eval_status: BuildStatus::PENDING,
             validation_status: BuildStatus::PENDING,
             sections: vec![],
-            symbols: HashMap::new(),
+            symbols: HashMap::default(),
             args: vec![],
             is_overloaded: false,
             is_class_method: false,

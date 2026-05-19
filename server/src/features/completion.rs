@@ -26,7 +26,7 @@ use ruff_python_ast::{
 };
 use ruff_text_size::{Ranged, TextSize};
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use crate::utils::{HashMap, HashSet};
 use std::{cell::RefCell, rc::Rc};
 
 
@@ -935,7 +935,7 @@ fn complete_name(session: &mut SessionInfo, file: SourceFileKey, offset: usize, 
     Some(CompletionResponse::List(CompletionList {
         is_incomplete: false,
         items: symbols.into_iter().map(|(_symbol_name, symbols)| {
-            build_completion_item_from_symbol(session, symbols, HashMap::new())
+            build_completion_item_from_symbol(session, symbols, HashMap::default())
         }).collect::<Vec<_>>(),
     }))
 }
@@ -1080,7 +1080,7 @@ fn add_nested_field_names(
                         let mut found_one = false;
                         for (final_sym, dep) in symbols.iter() { //search for at least one that is a field
                             if dep.is_none() && (specific_field_type.is_none() || SymbolTable::is_specific_field(session, *final_sym, &["Many2one", "One2many", "Many2many", specific_field_type.as_ref().unwrap().as_str()])){
-                                items.push(build_completion_item_from_symbol(session, vec![*final_sym], HashMap::new()));
+                                items.push(build_completion_item_from_symbol(session, vec![*final_sym], HashMap::default()));
                                 found_one = true;
                                 continue;
                             }
@@ -1146,7 +1146,7 @@ fn add_model_attributes(
             }
         }
         if symbol_name.starts_with(attribute_name) {
-            let context_of_symbol = HashMap::from([(S!("base_attr"), ContextValue::SYMBOL(parent_sym.into()))]);
+            let context_of_symbol = HashMap::from_iter([(S!("base_attr"), ContextValue::SYMBOL(parent_sym.into()))]);
             items.push(build_completion_item_from_symbol(session, vec![*final_sym], context_of_symbol));
         }
     }
