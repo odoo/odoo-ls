@@ -5,7 +5,7 @@ use ruff_text_size::TextSize;
 use std::ffi::OsStr;
 use std::process::Command;
 use std::sync::atomic::Ordering;
-use std::{collections::HashMap, fs::{self, DirEntry}, path::{Path, PathBuf}, str::FromStr, sync::LazyLock};
+use std::{fs::{self, DirEntry}, path::{Path, PathBuf}, str::FromStr, sync::LazyLock};
 
 use crate::{constants::Tree, oyarn};
 
@@ -290,7 +290,7 @@ pub fn fill_template(template: &str, vars: &HashMap<String, String>) -> Result<S
 
 pub fn build_pattern_map(unique_ws_folders: &HashMap<String, String>) -> HashMap<String, String> {
     // TODO: Maybe cache this
-    let mut pattern_map = HashMap::new();
+    let mut pattern_map = HashMap::default();
     if let Some(home_dir) = HOME_DIR.as_ref() {
         pattern_map.insert(S!("userHome"), home_dir.clone());
     }
@@ -436,3 +436,12 @@ impl Hasher for U32IdentityHasher {
 	}
 }
 pub type NoHashBuilder = BuildHasherDefault<U32IdentityHasher>;
+
+/// Drop-in replacements for `std::collections::HashMap`/`HashSet` that use
+/// `rustc_hash::FxBuildHasher` (a fast, non-cryptographic hasher). OdooLS only ever
+/// hashes its own internal keys, so the HashDoS resistance of the std SipHash default
+/// is dead weight. The hasher is baked in (no third type parameter) so that
+/// `HashMap::default()` infers a concrete type; maps that need a different hasher
+/// (e.g. `NoHashBuilder`) must spell out `std::collections::HashMap` explicitly.
+pub type HashMap<K, V> = std::collections::HashMap<K, V, rustc_hash::FxBuildHasher>;
+pub type HashSet<T> = std::collections::HashSet<T, rustc_hash::FxBuildHasher>;

@@ -16,7 +16,7 @@ use ruff_python_ast::{
 };
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use std::cmp::{Ordering, max, min};
-use std::collections::{HashMap, HashSet};
+use crate::utils::{HashMap, HashSet};
 use std::i32;
 
 use super::file_mgr::FileMgr;
@@ -214,7 +214,7 @@ impl EvaluationSymbolWeak {
     pub fn new(key: impl Into<Wk<SymbolKey>>, instance: Option<bool>, is_super: bool) -> Self {
         EvaluationSymbolWeak {
             weak: key.into(),
-            context: HashMap::new(),
+            context: HashMap::default(),
             instance,
             is_super
         }
@@ -263,7 +263,7 @@ impl Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
                     weak: odoo.get_ts_list(),
-                    context: HashMap::new(),
+                    context: HashMap::default(),
                     instance: Some(true),
                     is_super: false,
                 }),
@@ -279,7 +279,7 @@ impl Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
                     weak: odoo.get_ts_tuple(),
-                    context: HashMap::new(),
+                    context: HashMap::default(),
                     instance: Some(true),
                     is_super: false,
                 }),
@@ -295,7 +295,7 @@ impl Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
                     weak: odoo.get_ts_dict(),
-                    context: HashMap::new(),
+                    context: HashMap::default(),
                     instance: Some(true),
                     is_super: false,
                 }),
@@ -311,7 +311,7 @@ impl Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
                     weak: odoo.get_ts_set(),
-                    context: HashMap::new(),
+                    context: HashMap::default(),
                     instance: Some(true),
                     is_super: false,
                 }),
@@ -368,7 +368,7 @@ impl Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak {
                     weak: symbol,
-                    context: HashMap::new(),
+                    context: HashMap::default(),
                     instance: Some(true),
                     is_super: false,
                 }),
@@ -474,11 +474,11 @@ impl Evaluation {
     /// else:
     ///     i="test"
     /// It will return two evaluation for i, one with 5 and one for "test"
-    pub fn from_sections(symbol_table: &SymbolTable, parent_key: SymbolKey, sections: &HashMap<u32, Vec<SymbolKey>, NoHashBuilder>) -> Vec<Evaluation> {
+    pub fn from_sections(symbol_table: &SymbolTable, parent_key: SymbolKey, sections: &std::collections::HashMap<u32, Vec<SymbolKey>, NoHashBuilder>) -> Vec<Evaluation> {
         let parent_sym_mgr = symbol_table.as_symbol_mgr(parent_key);
         let mut res = vec![];
         let section = parent_sym_mgr.get_section_for(u32::MAX);
-        let content_symbols = symbol_table.get_loc_symbol(parent_sym_mgr, sections, u32::MAX, &SectionIndex::INDEX(section.index), &mut HashSet::new());
+        let content_symbols = symbol_table.get_loc_symbol(parent_sym_mgr, sections, u32::MAX, &SectionIndex::INDEX(section.index), &mut HashSet::default());
         for sym_key in content_symbols.symbols {
             let mut is_instance = None;
             let sym_type = sym_key.typ();
@@ -513,7 +513,7 @@ impl Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
                     weak: symbol,
-                    context: HashMap::new(),
+                    context: HashMap::default(),
                     instance: instance,
                     is_super: false,
                 }),
@@ -551,7 +551,7 @@ impl Evaluation {
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }
-        let mut context: Option<Context> = Some(HashMap::from([
+        let mut context: Option<Context> = Some(HashMap::from_iter([
             (S!("module"), from_module),
             (S!("range"), ContextValue::RANGE(ast.range()))
         ]));
@@ -567,7 +567,7 @@ impl Evaluation {
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }
-        let mut context: Option<Context> = Some(HashMap::from([
+        let mut context: Option<Context> = Some(HashMap::from_iter([
             (S!("module"), from_module),
             (S!("range"), ContextValue::RANGE(ast.range()))
         ]));
@@ -600,7 +600,7 @@ impl Evaluation {
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }
-        let mut context: Option<Context> = Some(HashMap::from([
+        let mut context: Option<Context> = Some(HashMap::from_iter([
             (S!("module"), from_module),
             (S!("range"), ContextValue::RANGE(ast.range()))
         ]));
@@ -916,7 +916,7 @@ impl Evaluation {
                                         symbol: EvaluationSymbol {
                                             sym: EvaluationSymbolPtr::SELF(EvaluationSymbolWeak{
                                                 weak: super_class,
-                                                context: HashMap::new(),
+                                                context: HashMap::default(),
                                                 instance,
                                                 is_super: true,
                                             }),
@@ -983,7 +983,7 @@ impl Evaluation {
                                         symbol: EvaluationSymbol {
                                             sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak {
                                                 weak: base_sym_weak_eval.weak,
-                                                context: HashMap::new(),
+                                                context: HashMap::default(),
                                                 instance: Some(true),
                                                 is_super: false,
                                             }),
@@ -1266,7 +1266,7 @@ impl Evaluation {
                                 // For example for models, since you get the same type of recordset when subscripted
                                 evals.push(Evaluation{
                                     symbol: EvaluationSymbol {
-                                        sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: base.into(), context: HashMap::new(), instance: Some(true), is_super: false}),
+                                        sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: base.into(), context: HashMap::default(), instance: Some(true), is_super: false}),
                                         get_symbol_hook: None,
                                     },
                                     value: None,
@@ -1305,7 +1305,7 @@ impl Evaluation {
                             symbol: EvaluationSymbol {
                                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
                                     weak: odoo.get_ts_boolean(),
-                                    context: HashMap::new(),
+                                    context: HashMap::default(),
                                     instance: Some(true),
                                     is_super: false,
                                 }),
@@ -1355,7 +1355,7 @@ impl Evaluation {
                         symbol: EvaluationSymbol {
                             sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
                                 weak: odoo.get_ts_string(),
-                                context: HashMap::new(),
+                                context: HashMap::default(),
                                 instance: Some(true),
                                 is_super: false,
                             }),
@@ -1618,7 +1618,7 @@ impl Evaluation {
         //validate pos args first
         let mut arg_index = 0;
         let mut number_pos_arg = 0;
-        let mut pos_only_args = HashSet::new();
+        let mut pos_only_args = HashSet::default();
         let mut kword_only_args = Vec::new();
         let mut vararg_index = i32::MAX;
         let mut kwarg_index = i32::MAX;
@@ -2040,7 +2040,7 @@ impl EvaluationSymbol {
 
     pub fn new_self(get_symbol_hook: Option<GetSymbolHook>, base: Wk<SymbolKey>, instance: Option<bool>) -> EvaluationSymbol {
         Self {
-            sym: EvaluationSymbolPtr::SELF(EvaluationSymbolWeak{weak: base, context: HashMap::new(), instance, is_super: false}),
+            sym: EvaluationSymbolPtr::SELF(EvaluationSymbolWeak{weak: base, context: HashMap::default(), instance, is_super: false}),
             get_symbol_hook,
         }
     }
@@ -2081,14 +2081,14 @@ impl EvaluationSymbol {
             | EvaluationSymbolPtr::ARG(_)
             | EvaluationSymbolPtr::NONE
             | EvaluationSymbolPtr::UNBOUND(_)
-            | EvaluationSymbolPtr::DOMAIN => EvaluationSymbolWeak{ weak: Wk::null(), context: HashMap::new(), instance: Some(false), is_super: false },
+            | EvaluationSymbolPtr::DOMAIN => EvaluationSymbolWeak{ weak: Wk::null(), context: HashMap::default(), instance: Some(false), is_super: false },
             EvaluationSymbolPtr::SELF(_) => {
                 let class = context.as_ref().
                 and_then(|context| context.get("parent_for").or(context.get("base_attr")))
                 .unwrap_or(&ContextValue::BOOLEAN(false));
                 match class {
-                    ContextValue::SYMBOL(s) => EvaluationSymbolWeak{weak: *s, context: HashMap::new(), instance: Some(true), is_super: false},
-                    _ => EvaluationSymbolWeak{weak: Wk::null(), context: HashMap::new(), instance: Some(false), is_super: false}
+                    ContextValue::SYMBOL(s) => EvaluationSymbolWeak{weak: *s, context: HashMap::default(), instance: Some(true), is_super: false},
+                    _ => EvaluationSymbolWeak{weak: Wk::null(), context: HashMap::default(), instance: Some(false), is_super: false}
                 }
             }
         }
@@ -2107,7 +2107,7 @@ impl EvaluationSymbol {
             EvaluationSymbolPtr::UNBOUND(_) => eval,
             EvaluationSymbolPtr::DOMAIN => eval,
             EvaluationSymbolPtr::SELF(_) => {
-                let default = EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Wk::null(), context: HashMap::new(), instance: Some(false), is_super: false});
+                let default = EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Wk::null(), context: HashMap::default(), instance: Some(false), is_super: false});
                 let class = context.as_ref().and_then(|context| context.get("base_call")).unwrap_or(&ContextValue::BOOLEAN(false));
                 let class_sym = match class {
                     ContextValue::SYMBOL(s) => match s.upgrade(&session.sync_odoo.symbol_table) {
@@ -2116,7 +2116,7 @@ impl EvaluationSymbol {
                     },
                     _ => {return default;}
                 };
-                let eval_symbol_weak = EvaluationSymbolWeak{weak: class_sym.into(), context: HashMap::new(), instance: Some(true), is_super: false};
+                let eval_symbol_weak = EvaluationSymbolWeak{weak: class_sym.into(), context: HashMap::default(), instance: Some(true), is_super: false};
                 let base_is_self = context
                     .as_ref()
                     .and_then(|context| context.get("base_is_self"))

@@ -9,7 +9,8 @@ use crate::{
 };
 use lsp_types::Location;
 use roxmltree::Node;
-use std::{collections::HashMap, ops::Range};
+use std::{ops::Range};
+use crate::utils::HashMap;
 
 pub enum XmlAstReferenceVisitor {
 
@@ -20,7 +21,7 @@ impl XmlAstReferenceVisitor {
     pub fn search_target(session: &mut SessionInfo, file_symbol: XmlFileKey, root: roxmltree::Node, target: &ReferenceTarget) -> Vec<Location> {
         let mut results = vec![];
         let from_module = session.st().find_module(file_symbol);
-        let mut context_xml = HashMap::new();
+        let mut context_xml = HashMap::default();
         for node in root.children() {
             XmlAstReferenceVisitor::visit_node(session, &node, from_module, &mut context_xml, &mut results, target);
         }

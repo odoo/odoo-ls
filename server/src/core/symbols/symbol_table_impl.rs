@@ -1,10 +1,11 @@
 use std::{
     cell::RefCell,
     cmp::Ordering,
-    collections::{hash_map, HashMap, HashSet, VecDeque},
+    collections::{hash_map, VecDeque},
     path::PathBuf,
     rc::Rc,
 };
+use crate::utils::{HashMap, HashSet};
 
 use lsp_types::{Diagnostic, DiagnosticTag, Range, SymbolKind};
 use ruff_text_size::TextRange;
@@ -398,7 +399,7 @@ impl SymbolTable {
         }
     }
 
-    pub fn iter_symbols(&self, target: SymbolKey) -> hash_map::Iter<'_, OYarn, HashMap<u32, Vec<SymbolKey>, NoHashBuilder>> {
+    pub fn iter_symbols(&self, target: SymbolKey) -> hash_map::Iter<'_, OYarn, std::collections::HashMap<u32, Vec<SymbolKey>, NoHashBuilder>> {
         match target {
             SymbolKey::File(f) => {
                 self[f].symbols().iter()
@@ -727,7 +728,7 @@ impl SymbolTable {
         let sections = target_sym_mgr.symbols().get(name);
         let mut content = if let Some(sections) = sections {
             let section: SectionRange = target_sym_mgr.get_section_for(position);
-            self.get_loc_symbol(target_sym_mgr, sections, position, &SectionIndex::INDEX(section.index), &mut HashSet::new())
+            self.get_loc_symbol(target_sym_mgr, sections, position, &SectionIndex::INDEX(section.index), &mut HashSet::default())
         } else {
             ContentSymbols::default()
         };
@@ -742,9 +743,9 @@ impl SymbolTable {
     /// Return all symbols before the given position that are visible in the body of this symbol.
     pub fn get_all_visible_symbols(&self, target: SymbolKey, name_prefix: &String, position: u32) -> HashMap<OYarn, Vec<SymbolKey>> {
         let Some(target_sym_mgr) = self.try_as_symbol_mgr(target) else {
-            return HashMap::new();
+            return HashMap::default();
         };
-        let mut result = HashMap::new();
+        let mut result = HashMap::default();
         let current_section = target_sym_mgr.get_section_for(position);
         let current_index = SectionIndex::INDEX(current_section.index);
 
@@ -752,7 +753,7 @@ impl SymbolTable {
             if !name.starts_with(name_prefix) {
                 continue;
             }
-            let mut seen = HashSet::new();
+            let mut seen = HashSet::default();
             let content = self.get_loc_symbol(target_sym_mgr, section_map, position, &current_index, &mut seen);
 
             if !content.symbols.is_empty() {
@@ -780,7 +781,7 @@ impl SymbolTable {
     }
 
     ///given all the sections of a symbol and a position, return all the Symbols that can represent the symbol
-    pub fn get_loc_symbol(&self, target: &dyn SymbolMgr, map: &HashMap<u32, Vec<SymbolKey>, NoHashBuilder>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols {
+    pub fn get_loc_symbol(&self, target: &dyn SymbolMgr, map: &std::collections::HashMap<u32, Vec<SymbolKey>, NoHashBuilder>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols {
         let mut res = ContentSymbols::default();
         match index {
                 SectionIndex::NONE => { return res; },
@@ -1184,7 +1185,7 @@ impl SymbolTable {
         SyncOdoo::ensure_func_evaluations(session, get_method);
         let evaluations = session.st()[get_method].evaluations.clone();
         if context.is_none() {
-            *context = Some(HashMap::new());
+            *context = Some(HashMap::default());
         }
         for get_method_eval in evaluations.iter() {
             context.as_mut().unwrap().extend(symbol_context.clone().into_iter());
@@ -1214,7 +1215,7 @@ impl SymbolTable {
         let var_symbol = &session.sync_odoo.symbol_table[key];
         let evaluations = var_symbol.evaluations.clone();
         for eval in evaluations.iter() {
-            let ctx = &mut Some(symbol_context.clone().into_iter().chain(context.clone().unwrap_or(HashMap::new()).into_iter()).collect::<HashMap<_, _>>());
+            let ctx = &mut Some(symbol_context.clone().into_iter().chain(context.clone().unwrap_or(HashMap::default()).into_iter()).collect::<HashMap<_, _>>());
             let mut sym = eval.symbol.get_symbol(session, ctx, &mut vec![], None);
             if let EvaluationSymbolPtr::WEAK(w) | EvaluationSymbolPtr::SELF(w) = &mut sym {
                 if let Some(base_attr) = symbol_context.get("base_attr") {
@@ -1302,7 +1303,7 @@ impl SymbolTable {
             }).collect();
         }
         let mut results = Vec::new();
-        let mut visited = HashSet::new();
+        let mut visited = HashSet::default();
         while let Some(current_eval) = work_queue.pop_front() {
             let next_ref_weak = match &current_eval {
                 EvaluationSymbolPtr::WEAK(weak)
@@ -1467,8 +1468,8 @@ impl SymbolTable {
         from_module: Option<ModuleKey>,
         is_super: bool
     ) -> HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> {
-        let mut result: HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> = HashMap::new();
-        let mut acc: HashSet<Tree> = HashSet::new();
+        let mut result: HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> = HashMap::default();
+        let mut acc: HashSet<Tree> = HashSet::default();
         Self::_all_members(symbol, session, &mut result, with_co_models, only_fields, only_methods, from_module, &mut acc, is_super);
         return  result;
     }
@@ -1614,7 +1615,7 @@ impl SymbolTable {
                 }
             }
         }
-        let mut results = HashMap::new();
+        let mut results = HashMap::default();
         helper(self, on_symbol, name, position, &mut results);
         results
     }
@@ -1840,7 +1841,7 @@ impl SymbolTable {
         all: bool,
         is_super: bool
     ) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
-        let mut visited_classes: HashSet<ClassKey> = HashSet::new();
+        let mut visited_classes: HashSet<ClassKey> = HashSet::default();
         return Self::_get_member_symbol_helper(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super, &mut visited_classes);
     }
 
@@ -1857,7 +1858,7 @@ impl SymbolTable {
         visited_classes: &mut HashSet<ClassKey>
     ) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
         let mut result: Vec<SymbolKey> = vec![];
-        let mut visited_symbols: HashSet<SymbolKey> = HashSet::new();
+        let mut visited_symbols: HashSet<SymbolKey> = HashSet::default();
         let extend_result = |syms: Vec<SymbolKey>, result: &mut Vec<SymbolKey>, visited_symbols: &mut HashSet<SymbolKey>| {
             syms.iter().for_each(|&sym|{
                 if !visited_symbols.contains(&sym){

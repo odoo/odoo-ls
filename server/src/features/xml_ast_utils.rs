@@ -8,7 +8,8 @@ use crate::{
     }, threads::SessionInfo
 };
 use roxmltree::Node;
-use std::{collections::HashMap, ops::Range};
+use std::{ops::Range};
+use crate::utils::HashMap;
 
 pub struct XmlAstUtils {}
 
@@ -17,7 +18,7 @@ impl XmlAstUtils {
     pub fn get_symbols(session: &mut SessionInfo, file_symbol: SourceFileKey, root: roxmltree::Node, offset: usize, on_dep_only: bool) -> (Vec<SymbolKey>, Option<Range<usize>>) {
         let mut results = (vec![], None);
         let from_module = session.sync_odoo.symbol_table.find_module(file_symbol);
-        let mut context_xml = HashMap::new();
+        let mut context_xml = HashMap::default();
         for node in root.children() {
             XmlAstUtils::visit_node(session, &node, offset, from_module, &mut context_xml, &mut results, on_dep_only);
         }

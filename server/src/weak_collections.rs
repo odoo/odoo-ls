@@ -1,6 +1,6 @@
-use std::{cell::RefCell, collections::{HashMap, HashSet, hash_map}, hash::Hash, vec::IntoIter};
+use std::{cell::RefCell, collections::{hash_map}, hash::Hash, vec::IntoIter};
 
-use crate::core::symbols::symbol_keys::KeyValidator;
+use crate::{core::symbols::symbol_keys::KeyValidator, utils::{HashMap, HashSet}};
 
 #[derive(Debug, Clone)]
 pub struct WeakSet<K: Eq + Hash + Copy> {
@@ -16,7 +16,7 @@ impl<K: Eq + Hash + Copy> Default for WeakSet<K> {
 impl<K: Eq + Hash + Copy> WeakSet<K> {
     pub fn new() -> Self {
         Self {
-            set: RefCell::new(HashSet::new()),
+            set: RefCell::new(HashSet::default()),
         }
     }
 
@@ -68,7 +68,7 @@ pub struct WeakMap<K: Eq + Hash + Copy, V> {
 impl<K: Eq + Hash + Copy, V> WeakMap<K, V> {
     pub fn new() -> Self {
         Self {
-            map: HashMap::new(),
+            map: HashMap::default(),
         }
     }
 
