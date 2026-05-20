@@ -4,7 +4,7 @@ use lsp_types::Diagnostic;
 use ruff_python_ast::{AtomicNodeIndex, Expr, ExprCall};
 use ruff_text_size::{TextRange, TextSize};
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{evaluation::{Context, Evaluation}, file_mgr::NoqaInfo, symbols::{SymbolTable, symbol_keys::{FunctionKey, SymbolKey, VariableKey, Wk}}}, oyarn, threads::SessionInfo, utils::NoHashBuilder};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{evaluation::{Context, Evaluation}, file_mgr::NoqaInfo, symbols::{SymbolTable, symbol_keys::{FunctionKey, SymbolKey, VariableKey, Wk}}}, oyarn, threads::SessionInfo};
 
 use super::{symbol_mgr::{SectionRange, SymbolMgr}};
 
@@ -54,7 +54,7 @@ pub struct FunctionSymbol {
     // parent / child symbols
     parent: SymbolKey,
     //--- Body content
-    pub(super) symbols: HashMap<OYarn, std::collections::HashMap<u32, Vec<SymbolKey>, NoHashBuilder>>,
+    pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
 }
 
 impl FunctionSymbol {

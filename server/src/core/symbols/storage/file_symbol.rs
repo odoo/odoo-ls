@@ -1,6 +1,6 @@
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{storage::dependency_mgr::{DependenciesTable, DependentsTable}, symbol_keys::SymbolKey}}, oyarn, utils::NoHashBuilder};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{storage::dependency_mgr::{DependenciesTable, DependentsTable}, symbol_keys::SymbolKey}}, oyarn};
 use std::{cell::RefCell, rc::Weak};
 use crate::utils::HashMap;
 
@@ -29,7 +29,7 @@ pub struct FileSymbol {
 
     // parent / child symbols
     parent: SymbolKey,
-    pub(super) symbols: HashMap<OYarn, std::collections::HashMap<u32, Vec<SymbolKey>, NoHashBuilder>>,
+    pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
 }
 
 impl FileSymbol {
