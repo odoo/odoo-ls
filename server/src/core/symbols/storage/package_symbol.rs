@@ -1,6 +1,6 @@
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{storage::dependency_mgr::{DependenciesTable, DependentsTable}, symbol_keys::SymbolKey}}, oyarn, utils::{NoHashBuilder, PathSanitizer}};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{storage::dependency_mgr::{DependenciesTable, DependentsTable}, symbol_keys::SymbolKey}}, oyarn, utils::PathSanitizer};
 use std::{cell::RefCell, path::PathBuf, rc::Weak};
 use crate::utils::HashMap;
 
@@ -30,7 +30,7 @@ pub struct PythonPackageSymbol {
 
     // parent / child symbols
     parent: SymbolKey,
-    pub(super) symbols: HashMap<OYarn, std::collections::HashMap<u32, Vec<SymbolKey>, NoHashBuilder>>,
+    pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
     pub(super) module_symbols: HashMap<OYarn, SymbolKey>,
 }
 

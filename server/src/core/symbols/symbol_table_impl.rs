@@ -24,7 +24,7 @@ use crate::{
                 ClassKey, FunctionKey, KeyValidator, ModuleKey, NamespaceKey, RootKey, SourceFileKey, SymbolKey, VariableKey, XmlDataKey
             }, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys}
         },
-    }, threads::SessionInfo, utils::{NoHashBuilder, PathSanitizer, compare_semver}, weak_collections::WeakSet
+    }, threads::SessionInfo, utils::{PathSanitizer, compare_semver}, weak_collections::WeakSet
 };
 
 impl SymbolTable {
@@ -399,7 +399,7 @@ impl SymbolTable {
         }
     }
 
-    pub fn iter_symbols(&self, target: SymbolKey) -> hash_map::Iter<'_, OYarn, std::collections::HashMap<u32, Vec<SymbolKey>, NoHashBuilder>> {
+    pub fn iter_symbols(&self, target: SymbolKey) -> hash_map::Iter<'_, OYarn, HashMap<u32, Vec<SymbolKey>>> {
         match target {
             SymbolKey::File(f) => {
                 self[f].symbols().iter()
@@ -781,7 +781,7 @@ impl SymbolTable {
     }
 
     ///given all the sections of a symbol and a position, return all the Symbols that can represent the symbol
-    pub fn get_loc_symbol(&self, target: &dyn SymbolMgr, map: &std::collections::HashMap<u32, Vec<SymbolKey>, NoHashBuilder>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols {
+    pub fn get_loc_symbol(&self, target: &dyn SymbolMgr, map: &HashMap<u32, Vec<SymbolKey>>, position: u32, index: &SectionIndex, acc: &mut HashSet<u32>) -> ContentSymbols {
         let mut res = ContentSymbols::default();
         match index {
                 SectionIndex::NONE => { return res; },
