@@ -413,35 +413,10 @@ macro_rules! warn_or_panic {
     }
 }
 
-use std::hash::{BuildHasherDefault, Hasher};
-#[derive(Default)]
-pub struct U32IdentityHasher(u64);
-
-impl Hasher for U32IdentityHasher {
-	fn write(&mut self, bytes: &[u8]) {
-		// fallback lent (rare si on n'utilise que u32)
-		let mut v = 0u64;
-		for (i, b) in bytes.iter().enumerate().take(8) {
-			v |= (*b as u64) << (i * 8);
-		}
-		self.0 = v;
-	}
-
-	fn write_u32(&mut self, i: u32) {
-		self.0 = i as u64;
-	}
-
-	fn finish(&self) -> u64 {
-		self.0
-	}
-}
-pub type NoHashBuilder = BuildHasherDefault<U32IdentityHasher>;
-
 /// Drop-in replacements for `std::collections::HashMap`/`HashSet` that use
 /// `rustc_hash::FxBuildHasher` (a fast, non-cryptographic hasher). OdooLS only ever
 /// hashes its own internal keys, so the HashDoS resistance of the std SipHash default
 /// is dead weight. The hasher is baked in (no third type parameter) so that
-/// `HashMap::default()` infers a concrete type; maps that need a different hasher
-/// (e.g. `NoHashBuilder`) must spell out `std::collections::HashMap` explicitly.
+/// `HashMap::default()` infers a concrete type.
 pub type HashMap<K, V> = std::collections::HashMap<K, V, rustc_hash::FxBuildHasher>;
 pub type HashSet<T> = std::collections::HashSet<T, rustc_hash::FxBuildHasher>;

@@ -5,7 +5,7 @@ use crate::core::symbols::storage::dependency_mgr::{DependenciesTable, Dependent
 use crate::core::symbols::symbol_keys::{NamespaceKey, SourceFileKey, SymbolKey, XmlId};
 use super::symbol_mgr::SymbolMgr;
 use crate::threads::SessionInfo;
-use crate::utils::{NoHashBuilder, PathSanitizer};
+use crate::utils::{PathSanitizer};
 use crate::weak_collections::WeakSet;
 use crate::{constants::*, oyarn};
 use ruff_text_size::TextRange;
@@ -48,7 +48,7 @@ pub struct ModuleSymbol {
 
     // parent / child symbols
     parent: NamespaceKey,
-    pub(super) symbols: HashMap<OYarn, std::collections::HashMap<u32, Vec<SymbolKey>, NoHashBuilder>>,
+    pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
     pub(super) module_symbols: HashMap<OYarn, SymbolKey>,
     pub(super) data_symbols: HashMap<String, SourceFileKey>,
 }

@@ -8,7 +8,6 @@ use crate::core::model::ModelData;
 use crate::oyarn;
 use crate::core::symbols::symbol_keys::{ClassKey, SymbolKey, Wk};
 use crate::threads::SessionInfo;
-use crate::utils::NoHashBuilder;
 
 use super::symbol_mgr::{SectionRange, SymbolMgr};
 
@@ -31,7 +30,7 @@ pub struct ClassSymbol {
     // parent / child symbols
     parent: SymbolKey,
     //--- Body symbols
-    pub(super) symbols: HashMap<OYarn, std::collections::HashMap<u32, Vec<SymbolKey>, NoHashBuilder>>,
+    pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
 }
 
 impl ClassSymbol {
