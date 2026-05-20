@@ -5,7 +5,7 @@ use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::{FunctionSymbol, VariableSymbol};
 use crate::features::references::ReferenceTarget;
 use crate::threads::SessionInfo;
-use crate::utils::{NoHashBuilder, compare_semver};
+use crate::utils::compare_semver;
 use crate::S;
 use crate::{constants::*, Sy};
 use itertools::FoldWhile::{Continue, Done};
@@ -474,7 +474,7 @@ impl Evaluation {
     /// else:
     ///     i="test"
     /// It will return two evaluation for i, one with 5 and one for "test"
-    pub fn from_sections(symbol_table: &SymbolTable, parent_key: SymbolKey, sections: &std::collections::HashMap<u32, Vec<SymbolKey>, NoHashBuilder>) -> Vec<Evaluation> {
+    pub fn from_sections(symbol_table: &SymbolTable, parent_key: SymbolKey, sections: &HashMap<u32, Vec<SymbolKey>>) -> Vec<Evaluation> {
         let parent_sym_mgr = symbol_table.as_symbol_mgr(parent_key);
         let mut res = vec![];
         let section = parent_sym_mgr.get_section_for(u32::MAX);
