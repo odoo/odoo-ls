@@ -80,7 +80,7 @@ impl ModuleSymbol {
         let module_symbol = &symbol_table[module_key];
         let root_path = module_symbol.root_path.clone();
         let tests_path = PathBuf::from(root_path).join("tests");
-        if tests_path.exists() {
+        if tests_path.exists() && !session.st()[module_key].module_symbols().contains_key("tests") {
             let symbol = SymbolTable::create_from_path(session, &tests_path, module_key.into(), false);
             if let Some(sym) = symbol && !matches!(sym, SymbolKey::Namespace(_)) {
                 session.sync_odoo.add_to_rebuild_arch(sym);
