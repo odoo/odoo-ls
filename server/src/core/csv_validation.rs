@@ -22,6 +22,9 @@ impl CsvValidator {
     }
 
     pub fn validate(&mut self, session: &mut SessionInfo, csv_symbol: CsvFileKey) {
+        if session.st().build_status(csv_symbol.into(), BuildSteps::VALIDATION) != BuildStatus::PENDING {
+            return;
+        }
         let mut diagnostics = vec![];
         session.st_mut().set_build_status(csv_symbol.into(), BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
         let path = session.st()[csv_symbol].path.clone();

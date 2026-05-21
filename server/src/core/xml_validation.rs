@@ -2,7 +2,7 @@ use std::{
     cell::RefCell,
     rc::Rc,
 };
-use crate::{core::symbols::storage::xml::xml_field_symbol::XmlFieldName, utils::{HashMap, HashSet}};
+use crate::{core::symbols::storage::xml::xml_field_symbol::XmlFieldName, constants::BuildStatus, utils::{HashMap, HashSet}};
 
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
@@ -40,6 +40,10 @@ impl XmlValidator {
     }
 
     pub fn validate(&mut self, session: &mut SessionInfo) {
+        if session.st().build_status(self.xml_symbol.into(), BuildSteps::VALIDATION) != BuildStatus::PENDING {
+            return;
+        }
+        session.st_mut().set_build_status(self.xml_symbol.into(), BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
         if DEBUG_STEPS {
             info!("VALIDATION - XML FILE: {}", &session.st()[self.xml_symbol].path);
         }
@@ -65,6 +69,7 @@ impl XmlValidator {
         };
         file_info.borrow_mut().replace_diagnostics(BuildSteps::VALIDATION, diagnostics);
         file_info.borrow_mut().publish_diagnostics(session);
+        session.st_mut().set_build_status(self.xml_symbol.into(), BuildSteps::VALIDATION, BuildStatus::DONE);
     }
 
     fn validate_data(&mut self, session: &mut SessionInfo, data: XmlDataKey, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<SourceFileKey>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>, missing_model_dependencies: &mut HashSet<OYarn>) {
