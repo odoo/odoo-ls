@@ -50,6 +50,9 @@ impl PythonArchBuilder {
         if matches!(symbol, SymbolKey::Namespace(_) | SymbolKey::Root(_) | SymbolKey::Compiled(_) | SymbolKey::Variable(_) | SymbolKey::Class(_)) {
             return None; // nothing to extract
         }
+        if symbol_table.build_status(symbol, BuildSteps::ARCH) != BuildStatus::PENDING {
+            return None;
+        }
         let file = symbol_table.get_file(symbol).unwrap();
         let file_mode = symbol == file;
 
