@@ -33,15 +33,15 @@ impl CsvValidator {
         let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).unwrap();
         let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
         let model_name_pb = PathBuf::from(path);
-        let model_name = Sy!(model_name_pb.file_stem().unwrap().to_str().unwrap().to_string());
+        let model_name = model_name_pb.file_stem().unwrap().to_str().unwrap();
         let csv_module = session.st().find_module(csv_symbol);
         let mut rdr = csv::ReaderBuilder::new().from_reader(data.as_bytes());
-        let Some(model) = session.sync_odoo.models.get(&model_name).cloned() else {
+        let Some(model) = session.sync_odoo.models.get(model_name).cloned() else {
             let mut max_range = 1;
             if let Ok(headers) = rdr.headers() {
                 max_range = headers.len();
             }
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[model_name.as_str()]) {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[model_name]) {
                 diagnostics.push(Diagnostic {
                     range: Range { start: Position::new(0, 0), end: Position::new(max_range as u32, 0) },
                     ..diagnostic.clone()
@@ -65,7 +65,7 @@ impl CsvValidator {
                 let member_sym = SymbolTable::get_member_symbol(session, model_main_sym.into(), header_elts[0], Some(csv_module), false, true, false, true, false);
                 if member_sym.0.is_empty() {
                     header_is_xml[idx] = false;
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05057, &[h, model_name.as_str()]) {
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05057, &[h, model_name]) {
                         diagnostics.push(Diagnostic {
                             range: Range { start: Position::new(start as u32, 0), end: Position::new(end as u32, 0) },
                             ..diagnostic.clone()
