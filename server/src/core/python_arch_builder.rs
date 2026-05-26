@@ -732,20 +732,20 @@ impl PythonArchBuilder {
         func_sym.node_index.set(func_def.node_index.load());
         for decorator in func_def.decorator_list.iter() {
             if decorator.expression.is_name_expr() {
-                if decorator.expression.as_name_expr().unwrap().id.to_string() == "staticmethod" {
+                if decorator.expression.as_name_expr().unwrap().id == "staticmethod" {
                     func_sym.is_static = true;
                 }
-                else if decorator.expression.as_name_expr().unwrap().id.to_string() == "property" {
+                else if decorator.expression.as_name_expr().unwrap().id == "property" {
                     func_sym.is_property = true;
                 }
-                else if decorator.expression.as_name_expr().unwrap().id.to_string() == "overload" {
+                else if decorator.expression.as_name_expr().unwrap().id == "overload" {
                     func_sym.is_overloaded = true;
                 }
-                else if decorator.expression.as_name_expr().unwrap().id.to_string() == "classmethod" {
+                else if decorator.expression.as_name_expr().unwrap().id == "classmethod" {
                     func_sym.is_class_method = true;
                 }
-                else if decorator.expression.as_name_expr().unwrap().id.to_string() == "classproperty" ||
-                decorator.expression.as_name_expr().unwrap().id.to_string() == "lazy_classproperty" {
+                else if decorator.expression.as_name_expr().unwrap().id == "classproperty" ||
+                decorator.expression.as_name_expr().unwrap().id == "lazy_classproperty" {
                     func_sym.is_property = true;
                     func_sym.is_class_method = true;
                 }
