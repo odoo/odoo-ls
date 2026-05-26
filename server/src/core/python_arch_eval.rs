@@ -378,7 +378,7 @@ impl PythonArchEval {
     }
 
     fn eval_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: u32, _range: &TextRange) {
-        if name_aliases.len() == 1 && name_aliases[0].name.to_string() == "*" {
+        if name_aliases.len() == 1 && name_aliases[0].name.as_str() == "*" {
             return;
         }
         let import_results: Vec<ImportResult> = resolve_import_stmt(
@@ -730,8 +730,8 @@ impl PythonArchEval {
             for arg in func_stmt.parameters.posonlyargs.iter().chain(&func_stmt.parameters.args) {
                 if is_first && !is_static && matches!(scope, SymbolKey::Class(_)) {
                     let is_class_method = session.st()[f].is_class_method;
-                    let arg_name = OYarn::from(arg.parameter.name.id.to_string());
-                    let arg_sym = session.st()[f].symbols().get(&arg_name).unwrap().get(&0).unwrap()[0]; //get first declaration
+                    let arg_name = arg.parameter.name.id.as_str();
+                    let arg_sym = session.st()[f].symbols().get(arg_name).unwrap().get(&0).unwrap()[0]; //get first declaration
                     let v = arg_sym.unwrap_variable_key();
                     let evaluation = Evaluation::new_self(scope, Some(!is_class_method));
                     session.st_mut()[v].evaluations.push(evaluation);
@@ -751,8 +751,8 @@ impl PythonArchEval {
                                                 true,
                                                 &mut deps);
                     session.st_mut().insert_dependencies(self.file, &deps, self.current_step);
-                    let arg_name = OYarn::from(arg.parameter.name.id.to_string());
-                    let arg_sym = session.st()[f].symbols().get(&arg_name).unwrap().get(&0).unwrap()[0];
+                    let arg_name = arg.parameter.name.id.as_str();
+                    let arg_sym = session.st()[f].symbols().get(arg_name).unwrap().get(&0).unwrap()[0];
                     let v = arg_sym.unwrap_variable_key();
                     session.st_mut()[v].evaluations = eval;
                     self.diagnostics.extend(diags);
@@ -768,8 +768,8 @@ impl PythonArchEval {
                                                 false,
                                                 &mut deps);
                     session.st_mut().insert_dependencies(self.file, &deps, self.current_step);
-                    let arg_name = OYarn::from(arg.parameter.name.id.to_string());
-                    let arg_sym = session.st()[f].symbols().get(&arg_name).unwrap().get(&0).unwrap()[0];
+                    let arg_name = arg.parameter.name.id.as_str();
+                    let arg_sym = session.st()[f].symbols().get(arg_name).unwrap().get(&0).unwrap()[0];
                     let v = arg_sym.unwrap_variable_key();
                     session.st_mut()[v].evaluations = eval;
                     self.diagnostics.extend(diags);
@@ -853,7 +853,7 @@ impl PythonArchEval {
         for handler in try_stmt.handlers.iter() {
             let handler = handler.as_except_handler().unwrap();
             if let Some(type_) = &handler.type_ {
-                if type_.is_name_expr() && type_.as_name_expr().unwrap().id.to_string() == "ImportError" {
+                if type_.is_name_expr() && type_.as_name_expr().unwrap().id == "ImportError" {
                     safe_import = true;
                 }
             }
@@ -868,7 +868,7 @@ impl PythonArchEval {
                 //Prevent import error in catch clause of ImportError too
                 let mut added_safe_import = false;
                 if let Some(type_) = &h.type_ {
-                    if type_.is_name_expr() && type_.as_name_expr().unwrap().id.to_string() == "ImportError" {
+                    if type_.is_name_expr() && type_.as_name_expr().unwrap().id == "ImportError" {
                         added_safe_import = true;
                         self.safe_import.push(true);
                     }
