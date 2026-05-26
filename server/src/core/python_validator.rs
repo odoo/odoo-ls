@@ -297,7 +297,7 @@ impl PythonValidator {
         for handler in node.handlers.iter() {
             let handler = handler.as_except_handler().unwrap();
             if let Some(type_) = &handler.type_ {
-                if type_.is_name_expr() && type_.as_name_expr().unwrap().id.to_string() == "ImportError" {
+                if type_.is_name_expr() && type_.as_name_expr().unwrap().id == "ImportError" {
                     safe_import = true;
                 }
             }
