@@ -63,8 +63,8 @@ impl CsvArchBuilder {
                         }
                         let mut csv_module = csv_module;
                         if id_split.len() == 2 {
-                            let module_name = Sy!(id_split.first().unwrap().to_string());
-                            if let Some(module) = session.sync_odoo.modules.get(&module_name).and_then(|m| m.upgrade(session.st())) {
+                            let module_name = *id_split.first().unwrap();
+                            if let Some(module) = session.sync_odoo.modules.get(module_name).and_then(|m| m.upgrade(session.st())) {
                                 csv_module = module;
                             }
                         }
