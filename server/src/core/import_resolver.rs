@@ -1,4 +1,3 @@
-use glob::glob;
 use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
 use ruff_python_ast::name::Name;
 use tracing::error;
@@ -449,23 +448,14 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
                 return Ok(_arc_symbol);
             }
         } else if !matches!(parent, SymbolKey::Root(_)) {
-            if cfg!(target_os = "windows") {
-                for entry in glob((full_path.sanitize() + "*.pyd").as_str()).expect("Failed to read glob pattern") {
-                    match entry {
-                        Ok(_path) => {
-                            return Ok(session.st_mut().add_new_compiled(parent, &sym_name, _path.to_str().unwrap()).into());
-                        }
-                        Err(_) => {},
-                    }
-                }
-            } else if cfg!(target_os = "linux") {
-                for entry in glob((full_path.sanitize() + "*.so").as_str()).expect("Failed to read glob pattern") {
-                    match entry {
-                        Ok(_path) => {
-                            return Ok(session.st_mut().add_new_compiled(parent, &sym_name, _path.to_str().unwrap()).into());
-                        }
-                        Err(_) => {},
-                    }
+            // Probe the suffixes CPython itself accepts for extension modules,
+            // in the order it would try them (see importlib.machinery.EXTENSION_SUFFIXES).
+            let base = full_path.sanitize();
+            let candidates = session.sync_odoo.python_ext_suffixes.iter()
+                .map(|suffix| format!("{}{}", base, suffix));
+            for candidate in candidates {
+                if is_file_cs(&candidate) {
+                    return Ok(session.st_mut().add_new_compiled(parent, &sym_name, &candidate).into());
                 }
             }
         }

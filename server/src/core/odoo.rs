@@ -107,6 +107,12 @@ impl TypeshedWeakReferences {
 pub struct SyncOdoo {
     pub version: OdooVersion,
     pub python_version: Vec<u32>,
+    /// Filename suffixes the configured Python interpreter accepts for C
+    /// extension modules, in CPython's own probe order (the value of
+    /// `importlib.machinery.EXTENSION_SUFFIXES`). Used to detect compiled
+    /// modules without globbing. Populated from the Python query in `init`;
+    /// initialized to a platform default so non-Python init paths still work.
+    pub python_ext_suffixes: Vec<String>,
     pub config: ConfigEntry,
     pub config_file: Option<ConfigFile>,
     pub config_path: Option<String>,
@@ -157,6 +163,7 @@ impl SyncOdoo {
         let sync_odoo = Self {
             version: OdooVersion::default(),
             python_version: vec![0, 0, 0],
+            python_ext_suffixes: Vec::new(),
             config: ConfigEntry::new(),
             selected_config: None,
             config_file: None,
@@ -310,7 +317,7 @@ impl SyncOdoo {
                     }
                 }
             }
-            match Command::new(session.sync_odoo.config.python_path.clone()).args(&["-c", "import sys; import json; print(json.dumps(sys.version_info))"]).output() {
+            match Command::new(session.sync_odoo.config.python_path.clone()).args(&["-c", "import sys, importlib.machinery, json; print(json.dumps({'version_info': list(sys.version_info)[:3], 'ext_suffixes': list(importlib.machinery.EXTENSION_SUFFIXES)}))"]).output() {
                 Err(err) => {
                     warn!("Wrong python command: {}, error: {}", session.sync_odoo.config.python_path.clone(), err);
                     session.send_notification("$Odoo/invalid_python_path", ());
@@ -319,19 +326,23 @@ impl SyncOdoo {
                     session.sync_odoo.has_valid_python = true;
                     if output.status.success() {
                         let stdout = String::from_utf8_lossy(&output.stdout);
-                        session.log_message(MessageType::INFO, format!("Detected sys.version_info: {}", stdout));
-                        let version_infos: Value = serde_json::from_str(&stdout).expect("Unable to get python version info with json of sys.version_info output");
-                        session.sync_odoo.python_version = version_infos.as_array()
-                            .expect("Expected JSON array")
+                        session.log_message(MessageType::INFO, format!("Detected python info: {}", stdout));
+                        let info: Value = serde_json::from_str(&stdout).expect("Unable to parse python info json");
+                        session.sync_odoo.python_version = info["version_info"].as_array()
+                            .expect("Expected JSON array for version_info")
                             .iter()
                             .filter_map(|v| v.as_u64())
                             .map(|v| v as u32)
                             .take(3)
                             .collect();
+                        session.sync_odoo.python_ext_suffixes = info["ext_suffixes"].as_array()
+                            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                            .unwrap_or_default();
                         info!("Detected python version: {}.{}.{}", session.sync_odoo.python_version[0], session.sync_odoo.python_version[1], session.sync_odoo.python_version[2]);
+                        info!("Detected python EXTENSION_SUFFIXES: {:?}", session.sync_odoo.python_ext_suffixes);
                     } else {
                         let stderr = String::from_utf8_lossy(&output.stderr);
-                        warn!("Error reading sys.version_info: {}", stderr);
+                        warn!("Error reading python info: {}", stderr);
                     }
                 }
             }
