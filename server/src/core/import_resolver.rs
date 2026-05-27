@@ -234,7 +234,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
 pub fn create_module_from_name(session: &mut SessionInfo, odoo_addons: NamespaceKey, name: &str) -> Option<ModuleKey> {
     for path in session.st()[odoo_addons].paths() {
         let full_path = PathBuf::from(path).join(name);
-        if !is_dir_cs(full_path.sanitize()) {
+        if !is_dir_cs(&full_path.sanitize()) {
             continue;
         }
         let Some(module) = SymbolTable::create_module_from_path(session, &full_path, odoo_addons) else {
@@ -282,7 +282,7 @@ fn resolve_packages(symbol_table: &SymbolTable, from_file: SymbolKey, level: u32
 }
 
 fn get_or_create_symbol(
-    session: &mut SessionInfo, for_entry: &Rc<RefCell<EntryPoint>>, from_path: &str, symbol: Option<Vec<SymbolKey>>, names: &Vec<OYarn>, asname: Option<String>, level: u32
+    session: &mut SessionInfo, for_entry: &Rc<RefCell<EntryPoint>>, from_path: &str, symbol: Option<Vec<SymbolKey>>, names: &Vec<OYarn>, asname: Option<&str>, level: u32
 ) -> (Option<Vec<SymbolKey>>, Option<Vec<SymbolKey>>) {
     let mut syms = symbol.clone();
     let mut last_symbols = symbol.clone();
@@ -299,7 +299,7 @@ fn get_or_create_symbol(
                 for &s in symbols.iter() {
                     let mut current_batch_symbol = session.st().get_symbol(s, (&[branch.clone()], &[]), u32::MAX);
                     if current_batch_symbol.is_empty() && matches!(s, SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::Compiled(_) | SymbolKey::DiskDir(_)) {
-                        current_batch_symbol = match resolve_new_symbol(session, s, &branch, asname.clone()) {
+                        current_batch_symbol = match resolve_new_symbol(session, s, &branch, asname) {
                             Ok(v) => vec![v],
                             Err(_) => vec![]
                         }
@@ -347,7 +347,7 @@ fn get_or_create_symbol(
                         if let Some(entry_point) = entry_point {
                             let mut next_symbols = session.st().get_symbol(entry_point, (&[branch.clone()], &[]), u32::MAX);
                             if next_symbols.is_empty() && matches!(entry_point, SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::Compiled(_) | SymbolKey::DiskDir(_)) {
-                                next_symbols = match resolve_new_symbol(session, entry_point, &branch, asname.clone()) {
+                                next_symbols = match resolve_new_symbol(session, entry_point, &branch, asname) {
                                     Ok(v) => vec![v],
                                     Err(_) => vec![]
                                 }
@@ -395,72 +395,70 @@ fn get_or_create_symbol(
 
 /// Resolve a new symbol from disk, creating it if found, or just creating a COMPILED symbol if a parent is COMPILED
 /// parent : parent symbol where to search, either ROOT, NAMESPACE, PACKAGE, COMPILED or DISK_DIR
-fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_name: &OYarn, asname: Option<String>) -> Result<SymbolKey, String> {
-    if imported_name == "" {
-        return Err("Empty name".to_string());
+fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_name: &OYarn, asname: Option<&str>) -> Result<SymbolKey, &'static str> {
+    if imported_name.is_empty() {
+        return Err("Empty name");
     }
-    let sym_name: String = match asname {
-        Some(asname_inner) => asname_inner,
-        None => imported_name.to_string()
-    };
+    let sym_name = asname.unwrap_or(imported_name.as_str());
     // COMPILED: we can only create a COMPILED symbol
     if matches!(parent, SymbolKey::Compiled(_)) {
-        return Ok(session.st_mut().add_new_compiled(parent, &sym_name, "").into());
+        return Ok(session.st_mut().add_new_compiled(parent, sym_name, "").into());
     }
     // ROOT, NAMESPACE, PACKAGE or DISK_DIR: we can search on disk
-    let paths = session.st().paths(parent);
-    for path in paths.iter() {
-        let mut full_path = Path::new(path.as_str()).join(imported_name.to_string());
-        for stub in session.sync_odoo.stubs_dirs.iter() {
-            if path.as_str().to_string() == *stub {
-                full_path = full_path.join(imported_name.to_string());
+    'paths: for path in session.st().paths(parent) {
+        let is_stub = session.sync_odoo.stubs_dirs.contains(&path);
+        let mut full_path = PathBuf::from(path);
+        full_path.push(imported_name.as_str());
+        if is_stub {
+            full_path.push(imported_name.as_str());
+        }
+        let full_path_str = full_path.sanitize();
+        let is_dir = is_dir_cs(&full_path_str);
+        // Try as package/odoo module
+        if is_dir && (
+            is_file_cs(&full_path.join("__init__.py").sanitize())
+            || is_file_cs(&full_path.join("__init__.pyi").sanitize())
+        ) {
+            if let Some(symbol) = SymbolTable::create_from_path(session, &full_path, parent, false) {
+                SyncOdoo::build_now(session, symbol, BuildSteps::ARCH);
+                return Ok(symbol);
+            }
+            continue;
+        }
+        // Try as file (python module)
+        for extension in ["py", "pyi"] {
+            let path = full_path.with_extension(extension);
+            if is_file_cs(&path.sanitize()) {
+                if let Some(symbol) = SymbolTable::create_from_path(session, &path, parent, false) {
+                    SyncOdoo::build_now(session, symbol, BuildSteps::ARCH);
+                    return Ok(symbol);
+                }
+                continue 'paths;
             }
         }
-        if is_dir_cs(full_path.sanitize()) && (is_file_cs(full_path.join("__init__").with_extension("py").sanitize().as_str()) ||
-        is_file_cs(full_path.join("__init__").with_extension("pyi").sanitize().as_str())) {
-            //module directory
-            let _rc_symbol = SymbolTable::create_from_path(session, &full_path, parent, false);
-            if _rc_symbol.is_some() {
-                let _arc_symbol = _rc_symbol.unwrap();
-                SyncOdoo::build_now(session, _arc_symbol, BuildSteps::ARCH);
-                return Ok(_arc_symbol);
+        // Try as directory (namespace)
+        if is_dir {
+            if let Some(symbol) = SymbolTable::create_from_path(session, &full_path, parent, false) {
+                SyncOdoo::build_now(session, symbol, BuildSteps::ARCH);
+                return Ok(symbol);
             }
-        } else if is_file_cs(full_path.with_extension("py").sanitize().as_str()) {
-            let _arc_symbol = SymbolTable::create_from_path(session, &full_path.with_extension("py"), parent, false);
-            if _arc_symbol.is_some() {
-                let _arc_symbol = _arc_symbol.unwrap();
-                SyncOdoo::build_now(session, _arc_symbol, BuildSteps::ARCH);
-                return Ok(_arc_symbol);
-            }
-        } else if is_file_cs(full_path.with_extension("pyi").sanitize().as_str()) {
-            let _arc_symbol = SymbolTable::create_from_path(session, &full_path.with_extension("pyi"), parent, false);
-            if _arc_symbol.is_some() {
-                let _arc_symbol = _arc_symbol.unwrap();
-                SyncOdoo::build_now(session, _arc_symbol, BuildSteps::ARCH);
-                return Ok(_arc_symbol);
-            }
-        } else if is_dir_cs(full_path.sanitize()) {
-            //namespace directory
-            let _rc_symbol = SymbolTable::create_from_path(session, &full_path, parent, false);
-            if _rc_symbol.is_some() {
-                let _arc_symbol = _rc_symbol.unwrap();
-                SyncOdoo::build_now(session, _arc_symbol, BuildSteps::ARCH);
-                return Ok(_arc_symbol);
-            }
-        } else if !matches!(parent, SymbolKey::Root(_)) {
+            continue;
+        }
+        // Try as compiled
+        if !matches!(parent, SymbolKey::Root(_)) {
             // Probe the suffixes CPython itself accepts for extension modules,
             // in the order it would try them (see importlib.machinery.EXTENSION_SUFFIXES).
-            let base = full_path.sanitize();
+            let base = &full_path_str;
             let candidates = session.sync_odoo.python_ext_suffixes.iter()
                 .map(|suffix| format!("{}{}", base, suffix));
             for candidate in candidates {
                 if is_file_cs(&candidate) {
-                    return Ok(session.st_mut().add_new_compiled(parent, &sym_name, &candidate).into());
+                    return Ok(session.st_mut().add_new_compiled(parent, sym_name, &candidate).into());
                 }
             }
         }
     }
-    return Err("Symbol not found".to_string())
+    return Err("Symbol not found")
 }
 
 /*
@@ -581,7 +579,7 @@ fn valid_names_for_a_symbol(symbol_table: &SymbolTable, symbol: SymbolKey, start
 
 fn valid_name_from_disk(path: &String, start_filter: &str) -> HashMap<OYarn, SymType> {
     let mut res = HashMap::default();
-    if is_dir_cs(path.clone()) {
+    if is_dir_cs(path) {
         if let Ok(entries) = std::fs::read_dir(path) {
             for entry in entries {
                 if let Ok(entry) = entry {
