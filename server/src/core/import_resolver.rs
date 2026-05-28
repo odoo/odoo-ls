@@ -13,7 +13,7 @@ use crate::core::symbols::symbol_keys::{ModuleKey, NamespaceKey, SourceFileKey, 
 use crate::{constants::*, oyarn, Sy, S};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::threads::SessionInfo;
-use crate::utils::{is_dir_cs, is_file_cs, PathSanitizer};
+use crate::utils::{is_dir_cs, PathSanitizer};
 
 use super::entry_point::{EntryPoint, EntryPointType};
 use super::odoo::SyncOdoo;
@@ -29,10 +29,12 @@ pub struct ImportResult {
 
 //class used to cache import results in a build execution to speed up subsequent imports.
 //It means of course than a modification during the build will not be taken into account, but it should be ok because reloaded after the build
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ImportCache {
     pub modules: HashMap<OYarn, Option<Vec<SymbolKey>>>,
     pub main_modules: HashMap<OYarn, Option<Vec<SymbolKey>>>,
+    pub is_file_cs: HashMap<String, bool>,
+    pub is_dir_cs: HashMap<String, bool>,
 }
 
 fn resolve_import_stmt_hook(alias: &Alias, from_symbols: &Option<Vec<SymbolKey>>, session: &mut SessionInfo, source_file_symbol: SymbolKey, from_stmt: Option<&Identifier>, level: u32, diagnostics: &mut Option<&mut Vec<Diagnostic>>) -> Option<ImportResult>{
@@ -238,7 +240,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
 pub fn create_module_from_name(session: &mut SessionInfo, odoo_addons: NamespaceKey, name: &str) -> Option<ModuleKey> {
     for path in session.st()[odoo_addons].paths() {
         let full_path = PathBuf::from(path).join(name);
-        if !is_dir_cs(&full_path.sanitize_cow()) {
+        if !session.sync_odoo.is_dir_cs(&full_path.sanitize_cow()) {
             continue;
         }
         let Some(module) = SymbolTable::create_module_from_path(session, &full_path, odoo_addons) else {
@@ -417,11 +419,11 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
             full_path.push(imported_name.as_str());
         }
         let full_path_str = full_path.sanitize_cow();
-        let is_dir = is_dir_cs(&full_path_str);
+        let is_dir = session.sync_odoo.is_dir_cs(&full_path_str);
         // Try as package/odoo module
         if is_dir && (
-            is_file_cs(&full_path.join("__init__.py").sanitize_cow())
-            || is_file_cs(&full_path.join("__init__.pyi").sanitize_cow())
+            session.sync_odoo.is_file_cs(&full_path.join("__init__.py").sanitize_cow())
+            || session.sync_odoo.is_file_cs(&full_path.join("__init__.pyi").sanitize_cow())
         ) {
             if let Some(symbol) = SymbolTable::create_from_path(session, &full_path, parent, false) {
                 SyncOdoo::build_now(session, symbol, BuildSteps::ARCH);
@@ -432,7 +434,7 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
         // Try as file (python module)
         for extension in ["py", "pyi"] {
             let path = full_path.with_extension(extension);
-            if is_file_cs(&path.sanitize_cow()) {
+            if session.sync_odoo.is_file_cs(&path.sanitize_cow()) {
                 if let Some(symbol) = SymbolTable::create_from_path(session, &path, parent, false) {
                     SyncOdoo::build_now(session, symbol, BuildSteps::ARCH);
                     return Ok(symbol);
@@ -454,9 +456,10 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
             // in the order it would try them (see importlib.machinery.EXTENSION_SUFFIXES).
             let base = &full_path_str;
             let candidates = session.sync_odoo.python_ext_suffixes.iter()
-                .map(|suffix| format!("{}{}", base, suffix));
+                .map(|suffix| format!("{}{}", base, suffix))
+                .collect::<Vec<_>>();
             for candidate in candidates {
-                if is_file_cs(&candidate) {
+                if session.sync_odoo.is_file_cs(&candidate) {
                     return Ok(session.st_mut().add_new_compiled(parent, sym_name, &candidate).into());
                 }
             }
