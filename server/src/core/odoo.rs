@@ -20,7 +20,7 @@ use crate::features::definition::DefinitionFeature;
 use crate::features::hover::HoverFeature;
 use crate::threads::SessionInfo;
 use crate::weak_collections::{WeakMap, WeakSet};
-use crate::utils::HashMap;
+use crate::utils::{HashMap, is_dir_cs, is_file_cs};
 use std::cell::RefCell;
 use std::rc::{Rc};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -738,7 +738,7 @@ impl SyncOdoo {
             return false;
         }
         SyncOdoo::add_from_self_reload(session);
-        session.sync_odoo.import_cache = Some(ImportCache{ modules: HashMap::default(), main_modules: HashMap::default() });
+        session.sync_odoo.import_cache = Some(ImportCache::default());
         let mut already_arch_rebuilt: HashSet<Tree> = HashSet::default();
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::default();
 
@@ -1436,6 +1436,24 @@ impl SyncOdoo {
         for sym in to_revalidate {
             self.add_to_validations(sym);
         }
+    }
+
+    /// Cached version of `is_file_cs` that uses the import cache if available.
+    /// Avoids multiple stat syscalls for the same file during a rebuild.
+    pub fn is_file_cs(&mut self, path: &str) -> bool {
+        let Some(cache) = self.import_cache.as_mut().map(|c| &mut c.is_file_cs) else {
+            return is_file_cs(path);
+        };
+        *cache.entry(path.to_string()).or_insert_with(|| is_file_cs(path))
+    }
+
+    /// Cached version of `is_dir_cs` that uses the import cache if available.
+    /// Avoids multiple stat syscalls for the same dir during a rebuild.
+    pub fn is_dir_cs(&mut self, path: &str) -> bool {
+        let Some(cache) = self.import_cache.as_mut().map(|c| &mut c.is_dir_cs) else {
+            return is_dir_cs(path);
+        };
+        *cache.entry(path.to_string()).or_insert_with(|| is_dir_cs(path))
     }
 }
 

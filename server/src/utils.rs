@@ -70,13 +70,13 @@ pub fn is_file_cs(path: &str) -> bool {
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn is_file_cs(path: &str) -> bool {
     let p = Path::new(path);
-    p.exists() && p.is_file()
+    p.is_file()
 }
 
 #[cfg(target_os = "windows")]
 pub fn is_dir_cs(path: &str) -> bool {
     let mut p = Path::new(path);
-    if p.exists() && p.is_dir() {
+    if p.is_dir() {
         while p.parent().is_some() {
             let mut found = false;
             if let Ok(entries) = fs::read_dir(p.parent().unwrap()) {
@@ -102,7 +102,7 @@ pub fn is_dir_cs(path: &str) -> bool {
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn is_dir_cs(path: &str) -> bool {
     let p = Path::new(path);
-    p.exists() && p.is_dir()
+    p.is_dir()
 }
 
 //TODO use it?
