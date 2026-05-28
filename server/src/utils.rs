@@ -1,7 +1,8 @@
 use crate::core::file_mgr::legacy_unc_paths;
-use path_slash::{PathBufExt, PathExt};
+use path_slash::PathExt;
 use regex::Regex;
 use ruff_text_size::TextSize;
+use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::process::Command;
 use std::sync::atomic::Ordering;
@@ -134,36 +135,44 @@ impl ToFilePath for lsp_types::Uri {
 }
 
 pub trait PathSanitizer {
+    fn sanitize_cow(&self) -> Cow<'_, str>;
     fn sanitize(&self) -> String;
     fn to_tree(&self) -> Tree;
     fn to_tree_path(&self) -> PathBuf;
 }
 
-impl PathSanitizer for PathBuf {
+impl PathSanitizer for Path {
 
-    fn sanitize(&self) -> String {
+    fn sanitize_cow(&self) -> Cow<'_, str> {
         #[cfg(windows)]
         {
-            let mut path = self.to_slash_lossy().to_string();
+            let mut path = self.to_slash_lossy();
             // check if path begins with //?/ if yes remove it
             // to handle extended-length path prefix
             // https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation
             if path.starts_with("\\\\?\\") {
-                path = path[4..].to_string();
+                path = path[4..].to_string().into();
             }
-            // Check if path begin with a letter + ':'
-            if path.len() > 2 && path.chars().nth(1) == Some(':') {
-                let disk_letter = path.chars().next().unwrap().to_ascii_lowercase();
-                path.replace_range(0..1, &disk_letter.to_string());
+            // Check if path begin with uppercase letter + ':'
+            let mut chars = path.chars();
+            if path.len() > 2
+                && let (Some(disk), Some(':')) = (chars.next(), chars.next())
+                && disk.is_ascii_uppercase()
+            {
+                let disk_letter = disk.to_ascii_lowercase();
+                path = format!("{}{}", disk_letter, &path[1..]).into();
             }
             return path;
         }
 
         #[cfg(not(windows))]
-        return self.to_slash_lossy().to_string();
+        return self.to_slash_lossy();
     }
 
-    /// Convert the path to a tree structure.
+    fn sanitize(&self) -> String {
+        self.sanitize_cow().into_owned()
+    }
+
     fn to_tree(&self) -> Tree {
         // Drop extension it is .py or .pyi
         let modified_path = if let Some(ext) = self.extension().and_then(OsStr::to_str)
@@ -181,7 +190,7 @@ impl PathSanitizer for PathBuf {
                 trimmed_path
             }
         } else {
-            self.clone()
+            self.to_path_buf()
         };
         Tree(
             modified_path
@@ -190,42 +199,6 @@ impl PathSanitizer for PathBuf {
                 .collect(),
             vec![],
         )
-    }
-
-    /// Convert the path to a path valid for the tree structure (without __init__.py or __manifest__.py).
-    fn to_tree_path(&self) -> PathBuf {
-        if let Some(file_name) = self.file_name() {
-            if file_name.to_str().unwrap() == "__init__.py" || file_name.to_str().unwrap() == "__manifest__.py" {
-                return self.parent().unwrap().to_path_buf();
-            }
-        }
-        self.clone()
-    }
-}
-
-impl PathSanitizer for Path {
-
-    fn sanitize(&self) -> String {
-        #[cfg(windows)]
-        {
-            let mut path = self.to_slash_lossy().to_string();
-            if path.starts_with("\\\\?\\") {
-                path = path[4..].to_string();
-            }
-            // Check if path begin with a letter + ':'
-            if path.len() > 2 && path.chars().nth(1) == Some(':') {
-                let disk_letter = path.chars().next().unwrap().to_ascii_lowercase();
-                path.replace_range(0..1, &disk_letter.to_string());
-            }
-            return path;
-        }
-
-        #[cfg(not(windows))]
-        return self.to_slash_lossy().to_string();
-    }
-
-    fn to_tree(&self) -> Tree {
-        self.to_path_buf().to_tree()
     }
 
     /// Convert the path to a path valid for the tree structure (without __init__.py or __manifest__.py).
