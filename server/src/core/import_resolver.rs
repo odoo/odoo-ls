@@ -238,7 +238,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
 pub fn create_module_from_name(session: &mut SessionInfo, odoo_addons: NamespaceKey, name: &str) -> Option<ModuleKey> {
     for path in session.st()[odoo_addons].paths() {
         let full_path = PathBuf::from(path).join(name);
-        if !is_dir_cs(&full_path.sanitize()) {
+        if !is_dir_cs(&full_path.sanitize_cow()) {
             continue;
         }
         let Some(module) = SymbolTable::create_module_from_path(session, &full_path, odoo_addons) else {
@@ -343,7 +343,7 @@ fn get_or_create_symbol(
                 let mut found = false;
                 let entry_point_mgr = session.sync_odoo.entry_point_mgr.clone();
                 let entry_point_mgr = entry_point_mgr.borrow();
-                let from_path = session.sync_odoo.entry_point_mgr.borrow().transform_addon_path(&PathBuf::from(from_path));
+                let from_path = session.sync_odoo.entry_point_mgr.borrow().transform_addon_path(Path::new(from_path));
                 let from_path = PathBuf::from(from_path);
                 for entry in entry_point_mgr.iter_for_import(for_entry) {
                     if ((entry.borrow().is_public() && level == 0) || entry.borrow().is_valid_for(&from_path)) && entry.borrow().addon_to_odoo_path.is_none() {
@@ -416,12 +416,12 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
         if is_stub {
             full_path.push(imported_name.as_str());
         }
-        let full_path_str = full_path.sanitize();
+        let full_path_str = full_path.sanitize_cow();
         let is_dir = is_dir_cs(&full_path_str);
         // Try as package/odoo module
         if is_dir && (
-            is_file_cs(&full_path.join("__init__.py").sanitize())
-            || is_file_cs(&full_path.join("__init__.pyi").sanitize())
+            is_file_cs(&full_path.join("__init__.py").sanitize_cow())
+            || is_file_cs(&full_path.join("__init__.pyi").sanitize_cow())
         ) {
             if let Some(symbol) = SymbolTable::create_from_path(session, &full_path, parent, false) {
                 SyncOdoo::build_now(session, symbol, BuildSteps::ARCH);
@@ -432,7 +432,7 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
         // Try as file (python module)
         for extension in ["py", "pyi"] {
             let path = full_path.with_extension(extension);
-            if is_file_cs(&path.sanitize()) {
+            if is_file_cs(&path.sanitize_cow()) {
                 if let Some(symbol) = SymbolTable::create_from_path(session, &path, parent, false) {
                     SyncOdoo::build_now(session, symbol, BuildSteps::ARCH);
                     return Ok(symbol);
@@ -496,7 +496,7 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: Source
         } else { //nothing was provided, so we have to add the root symbol of any valid entrypoint
             let entry_point_mgr = session.sync_odoo.entry_point_mgr.clone();
             let entry_point_mgr = entry_point_mgr.borrow();
-            let from_path = session.sync_odoo.entry_point_mgr.borrow().transform_addon_path(&PathBuf::from(&source_path));
+            let from_path = session.sync_odoo.entry_point_mgr.borrow().transform_addon_path(Path::new(&source_path));
             let from_path = PathBuf::from(from_path);
             for entry in entry_point_mgr.iter_for_import(&entry) {
                 if (entry.borrow().is_public() && (level == 0)) || entry.borrow().is_valid_for(&from_path) {

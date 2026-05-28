@@ -17,7 +17,7 @@ impl ModuleSymbol {
         let module = &mut session.st_mut()[module_key];
         module.loaded = true;
         let manifest_path = PathBuf::from(&module.root_path).join("__manifest__.py");
-        let manifest_file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize()).expect("file not found in cache").clone();
+        let manifest_file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize_cow()).expect("file not found in cache").clone();
         let mut manifest_file_info = (*manifest_file_info).borrow_mut();
         manifest_file_info.replace_diagnostics(crate::constants::BuildSteps::ARCH, diagnostics);
     }
