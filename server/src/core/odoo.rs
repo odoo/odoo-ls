@@ -1049,7 +1049,7 @@ impl SyncOdoo {
     pub fn unload_path(session: &mut SessionInfo, path: &PathBuf) {
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_all() {
-            let sym_in_data = entry.borrow().data_symbols.get(path.sanitize().as_str()).cloned();
+            let sym_in_data = entry.borrow().data_symbols.get(path.sanitize_cow().as_ref()).copied();
             if let Some(sym) = sym_in_data {
                 if let Some(sym) = sym.upgrade(session.st()) {
                     SymbolTable::unload(session, sym.into());

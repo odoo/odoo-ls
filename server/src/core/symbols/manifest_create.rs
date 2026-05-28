@@ -16,7 +16,7 @@ impl ModuleSymbol {
         if DEBUG_STEPS {
             info!("ARCH       - MANIFEST: {}", manifest_path.sanitize());
         }
-        let (_, manifest_file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, manifest_path.sanitize().as_str(), None, None, false);
+        let (_, manifest_file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &manifest_path.sanitize_cow(), None, None, false);
         let mut manifest_file_info = (*manifest_file_info).borrow_mut();
         if manifest_file_info.file_info_ast.borrow().indexed_module.is_none() {
             return;
