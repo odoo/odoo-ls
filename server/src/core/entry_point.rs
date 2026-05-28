@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::{cell::RefCell, cmp, path::PathBuf, rc::Rc, u32};
 use crate::utils::HashMap;
 
@@ -351,10 +352,10 @@ impl EntryPointMgr {
 
     /// Transform the path of an addon to the odoo relative path.
     /// Otherwise, return the path as is.
-    pub fn transform_addon_path(&self, path: &PathBuf) -> String {
+    pub fn transform_addon_path(&self, path: &Path) -> String {
         for entry in self.addons_entry_points.iter() {
             if entry.borrow().is_valid_for(path) {
-                let path_str = path.sanitize();
+                let path_str = path.sanitize_cow();
                 return path_str.replace(&entry.borrow().path, entry.borrow().addon_to_odoo_path.as_ref().unwrap());
             }
         }
@@ -427,9 +428,9 @@ impl EntryPoint {
         }))
     }
 
-    pub fn is_valid_for(&self, path: &PathBuf) -> bool {
+    pub fn is_valid_for(&self, path: &Path) -> bool {
         if self.typ == EntryPointType::UNTITLED {
-            return self.path == path.sanitize();
+            return self.path == path.sanitize_cow();
         }
         path.starts_with(&self.path)
     }

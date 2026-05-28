@@ -1,7 +1,7 @@
 use weak_table::PtrWeakHashSet;
 
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{storage::dependency_mgr::{DependenciesTable, DependentsTable}, symbol_keys::SymbolKey}}, oyarn, utils::PathSanitizer};
-use std::{cell::RefCell, path::PathBuf, rc::Weak};
+use std::{cell::RefCell, path::Path, rc::Weak};
 use crate::utils::HashMap;
 
 use super::symbol_mgr::{SectionRange, SymbolMgr};
@@ -40,7 +40,7 @@ impl PythonPackageSymbol {
         let mut res = Self {
             name: oyarn!("{}", name),
             path: path.to_string(),
-            init_path: PathBuf::from(path).join("__init__.py").sanitize() + i_ext,
+            init_path: Path::new(path).join("__init__.py").sanitize() + i_ext,
             is_external,
             i_ext,
             parent,

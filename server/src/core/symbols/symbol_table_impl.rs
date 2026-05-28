@@ -550,7 +550,7 @@ impl SymbolTable {
         } else {
             path.with_extension("").components().next_back().unwrap().as_os_str().to_str().unwrap().to_string()
         };
-        let path_str = path.sanitize();
+        let path_str = path.sanitize_cow();
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") || FileMgr::is_untitled(&path_str) {
             return Some(session.st_mut().add_new_file(parent, &name, &path_str).into());
         }
