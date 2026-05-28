@@ -20,15 +20,16 @@ impl ModuleSymbol {
         for (data_url, data_range) in data_paths.iter() {
             let path = Path::new(&module_path).join(data_url);
             let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
+            let path_string = path.sanitize();
             //check if already exists
-            if session.st()[symbol_key].data_symbols().contains_key(&path.sanitize()) {
+            if session.st()[symbol_key].data_symbols().contains_key(&path_string) {
                 continue;
             }
             //load data from file
             if !path.exists() {
-                session.st_mut()[symbol_key].not_found_data.insert(path.sanitize(), BuildSteps::ARCH_EVAL);
+                session.st_mut()[symbol_key].not_found_data.insert(path_string.clone(), BuildSteps::ARCH_EVAL);
                 session.st_mut().get_entry(symbol_key).borrow_mut().not_found_symbols.insert(symbol_key.into());
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05049, &[&path.sanitize()]) {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05049, &[&path_string]) {
                     diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(data_range.start().to_u32(), 0), Position::new(data_range.end().to_u32(), 0)),
                         ..diagnostic.clone()
@@ -36,7 +37,7 @@ impl ModuleSymbol {
                 }
                 continue;
             } else if path.extension().map_or(true, |ext| !["xml", "csv", "sql"].contains(&ext.to_str().unwrap_or(""))) {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05050, &[&path.sanitize()]) {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05050, &[&path_string]) {
                     diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(data_range.start().to_u32(), 0), Position::new(data_range.end().to_u32(), 0)),
                         ..diagnostic.clone()
@@ -44,10 +45,10 @@ impl ModuleSymbol {
                 }
                 continue;
             }
-            let (_, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path.sanitize(), None, None, false); //create ast if not in cache
+            let (_, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path_string, None, None, false); //create ast if not in cache
             let mut file_info = file_info.borrow_mut();
             if file_name.ends_with(".xml") {
-                let xml_sym = session.st_mut().add_new_xml_file(symbol_key, &file_name, &path.sanitize());
+                let xml_sym = session.st_mut().add_new_xml_file(symbol_key, &file_name, &path_string);
                 Self::on_data_file_load(session.st(), xml_sym.into());
                 session.st_mut().add_dependency(symbol_key.into(), xml_sym.into(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
                 let data = match file_info.file_info_ast.borrow().text_document.as_ref() {
@@ -71,7 +72,7 @@ impl ModuleSymbol {
                     continue
                 }
             } else if file_name.ends_with(".csv") {
-                let csv_sym = session.st_mut().add_new_csv_file(symbol_key, &file_name, &path.sanitize());
+                let csv_sym = session.st_mut().add_new_csv_file(symbol_key, &file_name, &path_string);
                 Self::on_data_file_load(session.st(), csv_sym.into());
                 session.st_mut().add_dependency(symbol_key.into(), csv_sym.into(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
                 if file_info.file_info_ast.borrow().text_document.as_ref().is_none() {
@@ -86,7 +87,7 @@ impl ModuleSymbol {
             }
         }
         let manifest_path = PathBuf::from(&module_path).join("__manifest__.py");
-        let Some(manifest_file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize()) else {
+        let Some(manifest_file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize_cow()) else {
             return;
         };
         let mut manifest_file_info = (*manifest_file_info).borrow_mut();
