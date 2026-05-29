@@ -4,10 +4,9 @@ use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Pos
 use lsp_types::notification::{Notification, PublishDiagnostics};
 use ruff_source_file::{OneIndexed, PositionEncoding, SourceLocation};
 use tracing::{error, warn};
-use std::collections::hash_map::DefaultHasher;
+use std::{collections::hash_map::DefaultHasher, path::Path};
 use crate::utils::HashSet;
 use std::hash::{Hash, Hasher};
-use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, OnceLock};
 use std::{fs};
@@ -610,18 +609,28 @@ impl FileMgr {
 
     pub fn delete_path(session: &mut SessionInfo, uri: &str) {
         //delete all files that are the uri or in subdirectory
-        let matching_keys: Vec<String> = session.sync_odoo.get_file_mgr().borrow_mut().files.keys().filter(|k| PathBuf::from(k).starts_with(uri)).cloned().collect();
+        let matching_keys: Vec<String> = session.sync_odoo.get_file_mgr().borrow_mut().files.keys().filter(|&k| Path::new(k).starts_with(uri)).cloned().collect();
         for key in matching_keys {
-            let to_del = session.sync_odoo.get_file_mgr().borrow_mut().files.remove(&key);
-            if let Some(to_del) = to_del {
-                if SyncOdoo::is_in_workspace_or_entry(session, uri) {
-                    let mut to_del = (*to_del).borrow_mut();
-                    to_del.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
-                    to_del.replace_diagnostics(BuildSteps::ARCH, vec![]);
-                    to_del.replace_diagnostics(BuildSteps::ARCH_EVAL, vec![]);
-                    to_del.replace_diagnostics(BuildSteps::VALIDATION, vec![]);
-                    to_del.publish_diagnostics(session)
-                }
+            Self::delete_entry(session, &key, uri);
+        }
+    }
+
+    /// Unlike `delete_path`, this function only deletes the file with the exact uri, and not files in subdirectories.
+    pub fn delete_file_path(session: &mut SessionInfo, uri: &str) {
+        Self::delete_entry(session, uri, uri);
+    }
+
+    /// Helper for delete_path and delete_file_path
+    fn delete_entry(session: &mut SessionInfo, key: &str, uri: &str) {
+        let to_del = session.sync_odoo.get_file_mgr().borrow_mut().files.remove(key);
+        if let Some(to_del) = to_del {
+            if SyncOdoo::is_in_workspace_or_entry(session, uri) {
+                let mut to_del = (*to_del).borrow_mut();
+                to_del.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
+                to_del.replace_diagnostics(BuildSteps::ARCH, vec![]);
+                to_del.replace_diagnostics(BuildSteps::ARCH_EVAL, vec![]);
+                to_del.replace_diagnostics(BuildSteps::VALIDATION, vec![]);
+                to_del.publish_diagnostics(session)
             }
         }
     }
