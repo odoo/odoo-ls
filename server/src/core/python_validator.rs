@@ -188,7 +188,8 @@ impl PythonValidator {
                 if !session.st().is_external(symbol) {
                     return;
                 }
-                FileMgr::delete_path(session, &session.st().paths(symbol)[0]);
+                let file = symbol.as_source_file_key().unwrap();
+                FileMgr::delete_file_path(session, &session.st().file_path(file).to_string());
             } else {
                 self.file_info.as_ref().unwrap().borrow_mut().publish_diagnostics(session);
             }
