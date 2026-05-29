@@ -287,7 +287,7 @@ fn get_or_create_symbol(
     session: &mut SessionInfo, for_entry: &Rc<RefCell<EntryPoint>>, from_path: &str, symbol: Option<Vec<SymbolKey>>, names: &Vec<OYarn>, asname: Option<&str>, level: u32
 ) -> (Option<Vec<SymbolKey>>, Option<Vec<SymbolKey>>) {
     let mut syms = symbol.clone();
-    let mut last_symbols = symbol.clone();
+    let mut last_symbols = symbol;
     for branch in names.iter() {
         if branch.is_empty() {
             continue;
@@ -299,21 +299,21 @@ fn get_or_create_symbol(
             Some(ref symbols) => {
                 let mut next_symbol = vec![];
                 for &s in symbols.iter() {
-                    let mut current_batch_symbol = session.st().get_symbol(s, (&[branch.clone()], &[]), u32::MAX);
-                    if current_batch_symbol.is_empty() && matches!(s, SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::Compiled(_) | SymbolKey::DiskDir(_)) {
+                    let mut current_batch_symbol = session.st().get_module_symbol(s, branch);
+                    if current_batch_symbol.is_none() && matches!(s, SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::Compiled(_) | SymbolKey::DiskDir(_)) {
                         current_batch_symbol = match resolve_new_symbol(session, s, &branch, asname) {
-                            Ok(v) => vec![v],
-                            Err(_) => vec![]
+                            Ok(v) => Some(v),
+                            Err(_) => None
                         }
                     }
-                    next_symbol.extend(current_batch_symbol.clone());
+                    next_symbol.extend(current_batch_symbol);
                 }
                 if next_symbol.is_empty() {
                     syms = None;
                     break;
                 }
                 syms = Some(next_symbol.clone());
-                last_symbols = Some(next_symbol.clone());
+                last_symbols = Some(next_symbol);
             },
             None => {
                 // Can we have sym None and level != 0 ? maybe on get_all_valid_names? tbc
@@ -347,30 +347,30 @@ fn get_or_create_symbol(
                     if ((entry.borrow().is_public() && level == 0) || entry.borrow().is_valid_for(&from_path)) && entry.borrow().addon_to_odoo_path.is_none() {
                         let entry_point = entry.borrow().get_symbol(session.st());
                         if let Some(entry_point) = entry_point {
-                            let mut next_symbols = session.st().get_symbol(entry_point, (&[branch.clone()], &[]), u32::MAX);
-                            if next_symbols.is_empty() && matches!(entry_point, SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::Compiled(_) | SymbolKey::DiskDir(_)) {
-                                next_symbols = match resolve_new_symbol(session, entry_point, &branch, asname) {
-                                    Ok(v) => vec![v],
-                                    Err(_) => vec![]
+                            let mut next_symbol = session.st().get_module_symbol(entry_point, branch);
+                            if next_symbol.is_none() && matches!(entry_point, SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::Compiled(_) | SymbolKey::DiskDir(_)) {
+                                next_symbol = match resolve_new_symbol(session, entry_point, &branch, asname) {
+                                    Ok(v) => Some(v),
+                                    Err(_) => None,
                                 }
                             }
-                            if next_symbols.is_empty() {
+                            let Some(next_symbol) = next_symbol else {
                                 continue;
-                            }
+                            };
                             if level == 0 {
                                 if entry.borrow().is_public() {
                                     if let Some(cache) = session.sync_odoo.import_cache.as_mut() {
-                                        cache.modules.insert(branch.clone(), Some(next_symbols.clone()));
+                                        cache.modules.insert(branch.clone(), Some(vec![next_symbol]));
                                     }
                                 } else if matches!(entry.borrow().typ, EntryPointType::MAIN | EntryPointType::ADDON) {
                                     if let Some(cache) = session.sync_odoo.import_cache.as_mut() {
-                                        cache.main_modules.insert(branch.clone(), Some(next_symbols.clone()));
+                                        cache.main_modules.insert(branch.clone(), Some(vec![next_symbol]));
                                     }
                                 }
                             }
                             found = true;
-                            syms = Some(next_symbols.clone());
-                            last_symbols = Some(next_symbols.clone());
+                            syms = Some(vec![next_symbol]);
+                            last_symbols = Some(vec![next_symbol]);
                             break;
                         }
                     }
