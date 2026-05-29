@@ -137,7 +137,7 @@ impl PythonArchEval {
         session.st_mut().set_build_status(self.sym_stack[0], BuildSteps::ARCH_EVAL, BuildStatus::DONE);
         if session.st().is_external(self.sym_stack[0]) && (!self.file_mode  || !file_info_rc.borrow().opened) {
             if self.file_mode {
-                FileMgr::delete_path(session, &session.st().file_path(self.file).to_string());
+                FileMgr::delete_file_path(session, &session.st().file_path(self.file).to_string());
             }
         } else {
             if self.file_mode {
