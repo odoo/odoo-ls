@@ -12,7 +12,7 @@ use crate::utils::HashMap;
 
 use crate::constants::{SymType};
 use crate::constants::OYarn;
-use crate::core::evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak, EvaluationValue};
+use crate::core::evaluation::{Context, ContextKey, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak, EvaluationValue};
 use crate::threads::SessionInfo;
 use crate::{Sy, S};
 
@@ -210,7 +210,7 @@ impl FeaturesUtils {
         offset: &usize,
         from_module: Option<ModuleKey>,
     ) -> Vec<(SymbolKey, TextRange)> {
-        let Some(SymbolKey::Class(parent_object)) = callable.context.get("base_attr").and_then(|parent_object| parent_object.as_symbol().upgrade(session.st())) else {
+        let Some(SymbolKey::Class(parent_object)) = callable.context.get(ContextKey::BaseAttr).and_then(|parent_object| parent_object.as_symbol().upgrade(session.st())) else {
             return vec![];
         };
         FeaturesUtils::find_nested_fields(session, parent_object, from_module, field_range, field_name, offset)
@@ -291,7 +291,7 @@ impl FeaturesUtils {
                 // skip self on __init__
                 Some(true)
             } else {
-                callable.context.get("is_attr_of_instance").map(|v| v.as_bool())
+                callable.context.get(ContextKey::IsAttrOfInstance).map(|v| v.as_bool())
             };
 
             let func_arg = FunctionSymbol::get_indexed_arg_in_call(
@@ -606,7 +606,7 @@ impl FeaturesUtils {
                     // let inferred_type = inferred_type.borrow();
                     match inferred_type {
                         SymbolKey::Function(function_key) if !session.st()[function_key].is_property => {
-                            let base_attr_ctx_ref = eval.get_weak().context.get("base_attr").or(context.as_mut().and_then(|ctx| ctx.get("base_attr")));
+                            let base_attr_ctx_ref = eval.get_weak().context.get(ContextKey::BaseAttr).or(context.as_mut().and_then(|ctx| ctx.get(ContextKey::BaseAttr)));
                             let call_parent = match base_attr_ctx_ref {
                                 Some(ContextValue::SYMBOL(s)) => *s,
                                 _ => {
@@ -618,7 +618,7 @@ impl FeaturesUtils {
                                     }
                                 }
                             };
-                            context.as_mut().map(|ctx| ctx.insert(S!("base_call"), ContextValue::SYMBOL(call_parent)));
+                            context.as_mut().map(|ctx| ctx.insert(ContextKey::BaseCall, ContextValue::SYMBOL(call_parent)));
                             let return_type = {
                                 let func_eval = session.st()[function_key].evaluations.clone();
                                 let type_names: Vec<_> = func_eval.iter().flat_map(|eval|{
@@ -632,7 +632,7 @@ impl FeaturesUtils {
                                 }).unique().collect();
                                 if !type_names.is_empty() {FeaturesUtils::represent_return_types(type_names)} else {S!("None")}
                             };
-                            context.as_mut().map(|ctx| ctx.remove("base_call"));
+                            context.as_mut().map(|ctx| ctx.remove(ContextKey::BaseCall));
                             let argument_names = session.st()[function_key].args.clone().iter().map(|arg| FeaturesUtils::argument_presentation(session, arg)).join(", ");
                             TypeInfo::CALLABLE(CallableSignature { arguments: argument_names, return_types: return_type })
                         },
@@ -813,10 +813,10 @@ impl FeaturesUtils {
             };
             for eval in evals {
                 if let EvaluationSymbolPtr::WEAK(weak) = eval.symbol.get_mut_symbol_ptr() {
-                    if let Some(field_parent) = weak.context.get("field_parent").cloned() {
-                        if !weak.context.contains_key("base_attr") {
-                            weak.context.insert(S!("base_attr"), field_parent);
-                            weak.context.insert(S!("base_attr_inserted"), ContextValue::BOOLEAN(true));
+                    if let Some(field_parent) = weak.context.get(ContextKey::FieldParent).cloned() {
+                        if !weak.context.contains_key(&ContextKey::BaseAttr) {
+                            weak.context.insert(ContextKey::BaseAttr, field_parent);
+                            weak.context.insert(ContextKey::BaseAttrInserted, ContextValue::BOOLEAN(true));
                         }
                     }
                 }
@@ -834,9 +834,9 @@ impl FeaturesUtils {
             };
             for eval in evals {
                 if let EvaluationSymbolPtr::WEAK(weak) = eval.symbol.get_mut_symbol_ptr() {
-                    if let Some(ContextValue::BOOLEAN(true)) = weak.context.get("base_attr_inserted") {
-                        weak.context.remove("base_attr");
-                        weak.context.remove("base_attr_inserted");
+                    if let Some(ContextValue::BOOLEAN(true)) = weak.context.get(ContextKey::BaseAttrInserted) {
+                        weak.context.remove(ContextKey::BaseAttrInserted);
+                        weak.context.remove(ContextKey::BaseAttr);
                     }
                 }
             }

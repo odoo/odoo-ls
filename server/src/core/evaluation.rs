@@ -16,7 +16,8 @@ use ruff_python_ast::{
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use std::cmp::{max, min};
 use crate::utils::{HashMap, HashSet};
-use std::i32;
+use std::{i32, mem};
+use thin_vec::ThinVec;
 
 use super::file_mgr::FileMgr;
 use super::symbols::function_symbol::{Argument, ArgumentType};
@@ -115,6 +116,41 @@ impl ExprOrIdent<'_> {
 
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ContextKey {
+    Args,
+    BaseAttr,
+    BaseAttrInserted,
+    BaseCall,
+    BaseIsSelf,
+    Compute,
+    ComputeArgRange,
+    ComodelName,
+    ComodelNameArgRange,
+    ConstructingClass,
+    Default,
+    Delegate,
+    FieldParent,
+    IsAttrOfInstance,
+    IsInValidation,
+    Inverse,
+    InverseArgRange,
+    InverseName,
+    InverseNameArgRange,
+    Module,
+    Parameters,
+    ParentFor,
+    ParentInstance,
+    Range,
+    Related,
+    RelatedArgRange,
+    Required,
+    Search,
+    SearchArgRange,
+    // placeholder after removal
+    EMPTY,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ContextValue {
     BOOLEAN(bool),
@@ -122,7 +158,9 @@ pub enum ContextValue {
     MODULE(Wk<ModuleKey>),
     SYMBOL(Wk<SymbolKey>),
     ARGUMENTS(Arguments),
-    RANGE(TextRange)
+    RANGE(TextRange),
+    // empty value after removal
+    EMPTY,
 }
 
 impl ContextValue {
@@ -162,12 +200,96 @@ impl ContextValue {
     }
 }
 
-/** A context can contains: (non-exhaustive)
+/** A context can contain: (non-exhaustive)
 * module: the current module the file belongs to
 * parent: in an expression, like self.test, the parent is the base attribute, so 'self' for test
 * object: the object the expression is executed on (useful if function is defined in parent object).
 */
-pub type Context = HashMap<String, ContextValue>;
+#[derive(Debug, Clone, Default)]
+pub struct Context {
+    // ThinVec is a single pointer (8 B inline, x 24 B for a Vec), with no heap
+    // allocation while empty. Most contexts are empty.
+    entries: ThinVec<(ContextKey, ContextValue)>
+}
+
+impl PartialEq for Context {
+    fn eq(&self, other: &Self) -> bool {
+        self.iter().count() == other.iter().count()
+            && self.iter().all(|(k, v)| other.get(*k) == Some(v))
+    }
+}
+
+impl Context {
+    pub fn from_iter(entries: impl IntoIterator<Item = (ContextKey, ContextValue)>) -> Self {
+        Context { entries: entries.into_iter().collect() }
+    }
+
+    pub fn insert(&mut self, key: ContextKey, value: ContextValue) {
+        let mut empty_slot = None;
+        // update value if key already exists
+        for (i, (k, v)) in self.entries.iter_mut().enumerate() {
+            if *k == key {
+                *v = value;
+                return;
+            }
+            if empty_slot.is_none() && *k == ContextKey::EMPTY {
+                empty_slot = Some(i)
+            }
+        }
+        // otherwise, insert new entry
+        // reuse empty slot if any
+        if let Some(i) = empty_slot {
+            self.entries[i] = (key, value);
+        } else {
+            self.entries.push((key, value));
+        }
+    }
+
+    /// Removing an entry that was added last is (usually) more efficient.
+    pub fn remove(&mut self, key: ContextKey) -> Option<ContextValue> {
+        while let Some((k, _)) = self.entries.last() {
+            if *k == key {
+                // key matches last entry, simply pop it
+                return self.entries.pop().map(|(_, v)| v);
+            } else if *k == ContextKey::EMPTY {
+                // last entry is empty: clean it up and keep seaching
+                self.entries.pop();
+            } else {
+                break;
+            }
+        }
+        // We keep seaching in reverse order, skip last entry (it was checked above)
+        for (k, v) in self.entries.iter_mut().rev().skip(1) {
+            if *k == key {
+                *k = ContextKey::EMPTY; // mark as empty
+                let value = mem::replace(v, ContextValue::EMPTY);
+                return Some(value);
+            }
+        }
+        None
+    }
+
+    pub fn get(&self, key: ContextKey) -> Option<&ContextValue> {
+        self.entries.iter().find(|(k, _)| *k == key).map(|(_, v)| v)
+    }
+
+    pub fn contains_key(&self, key: &ContextKey) -> bool {
+        self.entries.iter().any(|(k, _)| k == key)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &(ContextKey, ContextValue)> {
+        self.entries.iter().filter(|(k, _)| *k != ContextKey::EMPTY)
+    }
+
+    /// Merges two Contexts into a new one.
+    /// When a key is present in both, value from `b` has precedence.
+    pub fn merge(a: &Self, b: &Self) -> Self {
+        let mut result = ThinVec::with_capacity(a.entries.len() + b.entries.len());
+        result.extend(a.iter().filter(|(key, _)| !b.contains_key(key)).cloned());
+        result.extend(b.iter().cloned());
+        Self { entries: result }
+    }
+}
 
 /**
  * A hook will receive:
@@ -202,10 +324,10 @@ pub struct EvaluationSymbolWeak {
 
 impl PartialEq for EvaluationSymbolWeak {
     fn eq(&self, other: &Self) -> bool {
-        self.context == other.context
-        && self.instance == other.instance
+        self.instance == other.instance
         && self.is_super == other.is_super
         && self.weak == other.weak
+        && self.context == other.context
     }
 }
 
@@ -213,7 +335,7 @@ impl EvaluationSymbolWeak {
     pub fn new(key: impl Into<Wk<SymbolKey>>, instance: Option<bool>, is_super: bool) -> Self {
         EvaluationSymbolWeak {
             weak: key.into(),
-            context: HashMap::default(),
+            context: Context::default(),
             instance,
             is_super
         }
@@ -279,7 +401,7 @@ impl Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
                     weak: odoo.get_ts_list(),
-                    context: HashMap::default(),
+                    context: Context::default(),
                     instance: Some(true),
                     is_super: false,
                 }),
@@ -295,7 +417,7 @@ impl Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
                     weak: odoo.get_ts_tuple(),
-                    context: HashMap::default(),
+                    context: Context::default(),
                     instance: Some(true),
                     is_super: false,
                 }),
@@ -311,7 +433,7 @@ impl Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
                     weak: odoo.get_ts_dict(),
-                    context: HashMap::default(),
+                    context: Context::default(),
                     instance: Some(true),
                     is_super: false,
                 }),
@@ -327,7 +449,7 @@ impl Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
                     weak: odoo.get_ts_set(),
-                    context: HashMap::default(),
+                    context: Context::default(),
                     instance: Some(true),
                     is_super: false,
                 }),
@@ -384,7 +506,7 @@ impl Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak {
                     weak: symbol,
-                    context: HashMap::default(),
+                    context: Context::default(),
                     instance: Some(true),
                     is_super: false,
                 }),
@@ -529,7 +651,7 @@ impl Evaluation {
             symbol: EvaluationSymbol {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
                     weak: symbol,
-                    context: HashMap::default(),
+                    context: Context::default(),
                     instance: instance,
                     is_super: false,
                 }),
@@ -567,9 +689,9 @@ impl Evaluation {
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }
-        let mut context: Option<Context> = Some(HashMap::from_iter([
-            (S!("module"), from_module),
-            (S!("range"), ContextValue::RANGE(ast.range()))
+        let mut context: Option<Context> = Some(Context::from_iter([
+            (ContextKey::Module, from_module),
+            (ContextKey::Range, ContextValue::RANGE(ast.range()))
         ]));
         let analyze_result = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context, for_annotation, required_dependencies);
         return (analyze_result.evaluations, analyze_result.diagnostics)
@@ -583,9 +705,9 @@ impl Evaluation {
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }
-        let mut context: Option<Context> = Some(HashMap::from_iter([
-            (S!("module"), from_module),
-            (S!("range"), ContextValue::RANGE(ast.range()))
+        let mut context: Option<Context> = Some(Context::from_iter([
+            (ContextKey::Module, from_module),
+            (ContextKey::Range, ContextValue::RANGE(ast.range()))
         ]));
         let value = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context, for_annotation, &mut vec![]);
         if value.evaluations.len() == 1 { //only handle strict evaluations
@@ -616,9 +738,9 @@ impl Evaluation {
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }
-        let mut context: Option<Context> = Some(HashMap::from_iter([
-            (S!("module"), from_module),
-            (S!("range"), ContextValue::RANGE(ast.range()))
+        let mut context: Option<Context> = Some(Context::from_iter([
+            (ContextKey::Module, from_module),
+            (ContextKey::Range, ContextValue::RANGE(ast.range()))
         ]));
         let value = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context, for_annotation, &mut vec![]);
         if value.evaluations.len() == 1 { //only handle strict evaluations
@@ -932,7 +1054,7 @@ impl Evaluation {
                                         symbol: EvaluationSymbol {
                                             sym: EvaluationSymbolPtr::SELF(EvaluationSymbolWeak{
                                                 weak: super_class,
-                                                context: HashMap::default(),
+                                                context: Context::default(),
                                                 instance,
                                                 is_super: true,
                                             }),
@@ -960,8 +1082,8 @@ impl Evaluation {
                                     //init will always return an instance of the class, so we are not searching the method to check its return type, but rather to check if there is
                                     //an hook on it. Hooks, can be used to use parameters for context (see relational fields for example).
                                     if init_eval.len() == 1 && init_eval[0].symbol.get_symbol_hook.is_some() {
-                                        context.as_mut().unwrap().insert(S!("constructing_class"), ContextValue::SYMBOL(base_sym.into()));
-                                        context.as_mut().unwrap().insert(S!("parameters"), ContextValue::ARGUMENTS(expr.arguments.clone()));
+                                        context.as_mut().unwrap().insert(ContextKey::ConstructingClass, ContextValue::SYMBOL(base_sym.into()));
+                                        context.as_mut().unwrap().insert(ContextKey::Parameters, ContextValue::ARGUMENTS(expr.arguments.clone()));
                                         found_hook = true;
                                         let init_eval_sym = init_eval[0].symbol.clone();
                                         // We disable evaluation search during the get_symbol call to avoid duplicating references.
@@ -971,8 +1093,8 @@ impl Evaluation {
                                         session.sync_odoo.evaluation_search = None;
                                         let init_result = init_eval_sym.get_symbol_as_weak(session, context, &mut diagnostics, Some(session.st().get_file(parent).unwrap().into()));
                                         session.sync_odoo.evaluation_search = cache_eval_search;
-                                        context.as_mut().unwrap().remove("parameters");
-                                        context.as_mut().unwrap().remove("constructing_class");
+                                        context.as_mut().unwrap().remove(ContextKey::ConstructingClass);
+                                        context.as_mut().unwrap().remove(ContextKey::Parameters);
                                         evals.push(Evaluation {
                                             symbol: EvaluationSymbol {
                                                 sym: EvaluationSymbolPtr::WEAK(init_result),
@@ -999,7 +1121,7 @@ impl Evaluation {
                                         symbol: EvaluationSymbol {
                                             sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak {
                                                 weak: base_sym_weak_eval.weak,
-                                                context: HashMap::default(),
+                                                context: Context::default(),
                                                 instance: Some(true),
                                                 is_super: false,
                                             }),
@@ -1026,8 +1148,8 @@ impl Evaluation {
                             required_dependencies[2].push(base_sym_file);
                         }
                         let (call_parent, base_is_self) = match (
-                            base_sym_weak_eval.context.get("base_attr"),
-                            base_sym_weak_eval.context.get("base_is_self"),
+                            base_sym_weak_eval.context.get(ContextKey::BaseAttr),
+                            base_sym_weak_eval.context.get(ContextKey::BaseIsSelf),
                         )
                         {
                             (
@@ -1040,7 +1162,7 @@ impl Evaluation {
                             Evaluation::search_reference_in_arg(session, expr, parent);
                         }
                         if is_in_validation {
-                            let on_instance = base_sym_weak_eval.context.get("is_attr_of_instance").map(|v| v.as_bool());
+                            let on_instance = base_sym_weak_eval.context.get(ContextKey::IsAttrOfInstance).map(|v| v.as_bool());
                             call_argument_diagnostics.last_mut().unwrap().extend(Evaluation::validate_call_arguments(session,
                                 f,
                                 expr,
@@ -1049,10 +1171,10 @@ impl Evaluation {
                                 on_instance,
                             ));
                         }
-                        context.as_mut().unwrap().insert(S!("base_call"), ContextValue::SYMBOL(call_parent));
-                        context.as_mut().unwrap().insert(S!("base_is_self"), ContextValue::BOOLEAN(base_is_self));
-                        context.as_mut().unwrap().insert(S!("parameters"), ContextValue::ARGUMENTS(expr.arguments.clone()));
-                        context.as_mut().unwrap().insert(S!("is_in_validation"), ContextValue::BOOLEAN(is_in_validation));
+                        context.as_mut().unwrap().insert(ContextKey::BaseCall, ContextValue::SYMBOL(call_parent));
+                        context.as_mut().unwrap().insert(ContextKey::BaseIsSelf, ContextValue::BOOLEAN(base_is_self));
+                        context.as_mut().unwrap().insert(ContextKey::Parameters, ContextValue::ARGUMENTS(expr.arguments.clone()));
+                        context.as_mut().unwrap().insert(ContextKey::IsInValidation, ContextValue::BOOLEAN(is_in_validation));
                         let evaluations = &session.st()[f].evaluations;
                         for eval in evaluations.clone() {
                             let eval_ptr = eval.symbol.get_symbol_weak_transformed(session, context, &mut diagnostics, Some(session.st().get_file(parent).unwrap().into()));
@@ -1065,10 +1187,11 @@ impl Evaluation {
                                 range: Some(expr.range)
                             });
                         }
-                        context.as_mut().unwrap().remove("base_call");
-                        context.as_mut().unwrap().remove("base_is_self");
-                        context.as_mut().unwrap().remove("parameters");
-                        context.as_mut().unwrap().remove("is_in_validation");
+                        // removing in reverse order is more efficient
+                        context.as_mut().unwrap().remove(ContextKey::IsInValidation);
+                        context.as_mut().unwrap().remove(ContextKey::Parameters);
+                        context.as_mut().unwrap().remove(ContextKey::BaseIsSelf);
+                        context.as_mut().unwrap().remove(ContextKey::BaseCall);
                     }
                 }
                 diagnostics.extend(Evaluation::process_argument_diagnostics(&session, expr, call_argument_diagnostics, base_eval_ptrs.len()));
@@ -1125,9 +1248,9 @@ impl Evaluation {
                                     let mut eval = Evaluation::eval_from_symbol(session.st(), attribute, instance);
                                     match eval.symbol.sym {
                                         EvaluationSymbolPtr::WEAK(ref mut weak) => {
-                                            weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(base_loc.into()));
-                                            weak.context.insert(S!("base_is_self"), ContextValue::BOOLEAN(base_is_self));
-                                            weak.context.insert(S!("is_attr_of_instance"), ContextValue::BOOLEAN(is_instance));
+                                            weak.context.insert(ContextKey::BaseAttr, ContextValue::SYMBOL(base_loc.into()));
+                                            weak.context.insert(ContextKey::BaseIsSelf, ContextValue::BOOLEAN(base_is_self));
+                                            weak.context.insert(ContextKey::IsAttrOfInstance, ContextValue::BOOLEAN(is_instance));
                                         },
                                         _ => {}
                                     }
@@ -1255,11 +1378,11 @@ impl Evaluation {
                         for get_item_eval in evaluations.clone() {
                             if let Some(hook) = get_item_eval.symbol.get_symbol_hook.as_ref() {
                                 if let Some(value) = &value.0 {
-                                    context.as_mut().unwrap().insert(S!("args"), ContextValue::STRING(value.clone()));
+                                    context.as_mut().unwrap().insert(ContextKey::Args, ContextValue::STRING(value.clone()));
                                 }
-                                let old_range = context.as_mut().unwrap().remove("range");
-                                context.as_mut().unwrap().insert(S!("range"), ContextValue::RANGE(sub.slice.range()));
-                                context.as_mut().unwrap().insert(S!("is_in_validation"), ContextValue::BOOLEAN(is_in_validation));
+                                let old_range = context.as_mut().unwrap().remove(ContextKey::Range);
+                                context.as_mut().unwrap().insert(ContextKey::Range, ContextValue::RANGE(sub.slice.range()));
+                                context.as_mut().unwrap().insert(ContextKey::IsInValidation, ContextValue::BOOLEAN(is_in_validation));
                                 let hook_result = (hook.callable)(session, &get_item_eval.symbol, context, &mut diagnostics, Some(parent));
                                 if let Some(hook_result) = hook_result {
                                     match hook_result {
@@ -1273,16 +1396,16 @@ impl Evaluation {
                                         }
                                     }
                                 }
-                                context.as_mut().unwrap().remove("args");
-                                context.as_mut().unwrap().remove("is_in_validation");
-                                context.as_mut().unwrap().insert(S!("range"), old_range.unwrap());
+                                context.as_mut().unwrap().remove(ContextKey::Args);
+                                context.as_mut().unwrap().remove(ContextKey::IsInValidation);
+                                context.as_mut().unwrap().insert(ContextKey::Range, old_range.unwrap());
                             }
                             if let EvaluationSymbolPtr::SELF(_) = get_item_eval.symbol.get_symbol_ptr() {
                                 // Evaluate to the base itself
                                 // For example for models, since you get the same type of recordset when subscripted
                                 evals.push(Evaluation{
                                     symbol: EvaluationSymbol {
-                                        sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: base.into(), context: HashMap::default(), instance: Some(true), is_super: false}),
+                                        sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: base.into(), context: Context::default(), instance: Some(true), is_super: false}),
                                         get_symbol_hook: None,
                                     },
                                     value: None,
@@ -1321,7 +1444,7 @@ impl Evaluation {
                             symbol: EvaluationSymbol {
                                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
                                     weak: odoo.get_ts_boolean(),
-                                    context: HashMap::default(),
+                                    context: Context::default(),
                                     instance: Some(true),
                                     is_super: false,
                                 }),
@@ -1371,7 +1494,7 @@ impl Evaluation {
                         symbol: EvaluationSymbol {
                             sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
                                 weak: odoo.get_ts_string(),
-                                context: HashMap::default(),
+                                context: Context::default(),
                                 instance: Some(true),
                                 is_super: false,
                             }),
@@ -2013,7 +2136,7 @@ impl EvaluationSymbol {
 
     pub fn new_self(get_symbol_hook: Option<GetSymbolHook>, base: Wk<SymbolKey>, instance: Option<bool>) -> EvaluationSymbol {
         Self {
-            sym: EvaluationSymbolPtr::SELF(EvaluationSymbolWeak{weak: base, context: HashMap::default(), instance, is_super: false}),
+            sym: EvaluationSymbolPtr::SELF(EvaluationSymbolWeak{weak: base, context: Context::default(), instance, is_super: false}),
             get_symbol_hook,
         }
     }
@@ -2054,14 +2177,14 @@ impl EvaluationSymbol {
             | EvaluationSymbolPtr::ARG(_)
             | EvaluationSymbolPtr::NONE
             | EvaluationSymbolPtr::UNBOUND(_)
-            | EvaluationSymbolPtr::DOMAIN => EvaluationSymbolWeak{ weak: Wk::null(), context: HashMap::default(), instance: Some(false), is_super: false },
+            | EvaluationSymbolPtr::DOMAIN => EvaluationSymbolWeak{ weak: Wk::null(), context: Context::default(), instance: Some(false), is_super: false },
             EvaluationSymbolPtr::SELF(_) => {
                 let class = context.as_ref().
-                and_then(|context| context.get("parent_for").or(context.get("base_attr")))
+                and_then(|context| context.get(ContextKey::ParentFor).or(context.get(ContextKey::BaseAttr)))
                 .unwrap_or(&ContextValue::BOOLEAN(false));
                 match class {
-                    ContextValue::SYMBOL(s) => EvaluationSymbolWeak{weak: *s, context: HashMap::default(), instance: Some(true), is_super: false},
-                    _ => EvaluationSymbolWeak{weak: Wk::null(), context: HashMap::default(), instance: Some(false), is_super: false}
+                    ContextValue::SYMBOL(s) => EvaluationSymbolWeak{weak: *s, context: Context::default(), instance: Some(true), is_super: false},
+                    _ => EvaluationSymbolWeak{weak: Wk::null(), context: Context::default(), instance: Some(false), is_super: false}
                 }
             }
         }
@@ -2080,8 +2203,8 @@ impl EvaluationSymbol {
             EvaluationSymbolPtr::UNBOUND(_) => eval,
             EvaluationSymbolPtr::DOMAIN => eval,
             EvaluationSymbolPtr::SELF(_) => {
-                let default = EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Wk::null(), context: HashMap::default(), instance: Some(false), is_super: false});
-                let class = context.as_ref().and_then(|context| context.get("base_call")).unwrap_or(&ContextValue::BOOLEAN(false));
+                let default = EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Wk::null(), context: Context::default(), instance: Some(false), is_super: false});
+                let class = context.as_ref().and_then(|context| context.get(ContextKey::BaseCall)).unwrap_or(&ContextValue::BOOLEAN(false));
                 let class_sym = match class {
                     ContextValue::SYMBOL(s) => match s.upgrade(&session.sync_odoo.symbol_table) {
                         Some(sym) => sym,
@@ -2089,10 +2212,10 @@ impl EvaluationSymbol {
                     },
                     _ => {return default;}
                 };
-                let eval_symbol_weak = EvaluationSymbolWeak{weak: class_sym.into(), context: HashMap::default(), instance: Some(true), is_super: false};
+                let eval_symbol_weak = EvaluationSymbolWeak{weak: class_sym.into(), context: Context::default(), instance: Some(true), is_super: false};
                 let base_is_self = context
                     .as_ref()
-                    .and_then(|context| context.get("base_is_self"))
+                    .and_then(|context| context.get(ContextKey::BaseIsSelf))
                     .unwrap_or(&ContextValue::BOOLEAN(false))
                     .as_bool();
                 if base_is_self {

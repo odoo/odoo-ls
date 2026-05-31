@@ -1,7 +1,7 @@
 use super::features_utils::TypeInfo;
 use crate::constants::{OYarn, SymType};
 use crate::core::evaluation::{
-    Context, ContextValue, Evaluation, EvaluationSymbol, EvaluationSymbolPtr, EvaluationSymbolWeak,
+    Context, ContextKey, ContextValue, Evaluation, EvaluationSymbol, EvaluationSymbolPtr, EvaluationSymbolWeak
 };
 use crate::core::file_mgr::FileInfo;
 use crate::core::import_resolver;
@@ -25,7 +25,7 @@ use ruff_python_ast::{
     ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal,
 };
 use ruff_text_size::{Ranged, TextSize};
-use std::collections::{HashMap, HashSet};
+use crate::utils::HashSet;
 use std::{cell::RefCell, rc::Rc};
 
 
@@ -631,7 +631,7 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
             let is_on_instance = if callable_sym.typ() == SymType::CLASS {
                 Some(true)
             } else {
-                callable.context.get("is_attr_of_instance").map(|v| v.as_bool())
+                callable.context.get(ContextKey::IsAttrOfInstance).map(|v| v.as_bool())
             };
             let Some(func_arg_sym) = FunctionSymbol::get_indexed_arg_in_call(
                 session.st(),
@@ -676,7 +676,7 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
                             }
                         },
                         EvaluationSymbolPtr::DOMAIN => {
-                            if let Some(parent) = callable.context.get("base_attr")
+                            if let Some(parent) = callable.context.get(ContextKey::BaseAttr)
                                 .and_then(|parent_value| parent_value.as_symbol().upgrade(session.st())) {
                                 expected_type.push(ExpectedType::DOMAIN(parent));
                             }
@@ -934,7 +934,7 @@ fn complete_name(session: &mut SessionInfo, file: SourceFileKey, offset: usize, 
     Some(CompletionResponse::List(CompletionList {
         is_incomplete: false,
         items: symbols.into_iter().map(|(_symbol_name, symbols)| {
-            build_completion_item_from_symbol(session, symbols, HashMap::default())
+            build_completion_item_from_symbol(session, symbols, Context::default())
         }).collect::<Vec<_>>(),
     }))
 }
@@ -1079,7 +1079,7 @@ fn add_nested_field_names(
                         let mut found_one = false;
                         for (final_sym, dep) in symbols.iter() { //search for at least one that is a field
                             if dep.is_none() && (specific_field_type.is_none() || SymbolTable::is_specific_field(session, *final_sym, &["Many2one", "One2many", "Many2many", specific_field_type.as_ref().unwrap().as_str()])){
-                                items.push(build_completion_item_from_symbol(session, vec![*final_sym], HashMap::default()));
+                                items.push(build_completion_item_from_symbol(session, vec![*final_sym], Context::default()));
                                 found_one = true;
                                 continue;
                             }
@@ -1145,7 +1145,7 @@ fn add_model_attributes(
             }
         }
         if symbol_name.starts_with(attribute_name) {
-            let context_of_symbol = HashMap::from_iter([(S!("base_attr"), ContextValue::SYMBOL(parent_sym.into()))]);
+            let context_of_symbol = Context::from_iter([(ContextKey::BaseAttr, ContextValue::SYMBOL(parent_sym.into()))]);
             items.push(build_completion_item_from_symbol(session, vec![*final_sym], context_of_symbol));
         }
     }
