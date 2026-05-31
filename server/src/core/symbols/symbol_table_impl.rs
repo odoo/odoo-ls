@@ -4,16 +4,15 @@ use std::{
     path::PathBuf,
     rc::Rc,
 };
-use crate::utils::{HashMap, HashSet};
+use crate::{core::evaluation::ContextKey, utils::{HashMap, HashSet}};
 
 use lsp_types::{Diagnostic, DiagnosticTag, Range, SymbolKind};
 use ruff_text_size::TextRange;
 use tracing::{trace, warn};
 
 use crate::{
-    constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType},
-    core::{
-        diagnostics::{create_diagnostic, DiagnosticCode},
+    constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType}, core::{
+        diagnostics::{DiagnosticCode, create_diagnostic},
         entry_point::EntryPoint,
         evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr},
         file_mgr::{FileInfo, FileMgr, NoqaInfo},
@@ -1188,11 +1187,11 @@ impl SymbolTable {
     fn next_refs_class(session: &mut SessionInfo, class_key: ClassKey, context: &mut Option<Context>, symbol_context: &Context) -> Vec<EvaluationSymbolPtr> {
         //if current symbol is a descriptor, we have to resolve __get__ method before going further
         let mut res = Vec::new();
-        let mut base_attr = symbol_context.get("base_attr");
+        let mut base_attr = symbol_context.get(ContextKey::BaseAttr);
         if base_attr.is_none() {
             //search in context (used in decorators to indicate on which base the field is searched)
             if let Some(context) = context.as_ref() {
-                base_attr = context.get("base_attr");
+                base_attr = context.get(ContextKey::BaseAttr);
             }
         }
         let Some(base_attr) = base_attr else {
@@ -1212,11 +1211,12 @@ impl SymbolTable {
         SyncOdoo::ensure_func_evaluations(session, get_method);
         let evaluations = session.st()[get_method].evaluations.clone();
         if context.is_none() {
-            *context = Some(HashMap::default());
+            *context = Some(Context::default());
         }
         for get_method_eval in evaluations.iter() {
-            context.as_mut().unwrap().extend(symbol_context.clone().into_iter());
-            let get_result = get_method_eval.symbol.get_symbol_as_weak(session, context, &mut vec![], None);
+            let merged_context = Context::merge(context.as_ref().unwrap(), symbol_context);
+            // TODO: make get_symbol_as_weak and the callabe hook take a non-mutable ref to Context, and merge context once outside the loop.
+            let get_result = get_method_eval.symbol.get_symbol_as_weak(session, &mut Some(merged_context), &mut vec![], None);
             if !get_result.weak.is_expired(session.st()) {
                 let mut eval = Evaluation::eval_from_symbol(session.st(), get_result.weak, get_result.instance);
                 match eval.symbol.get_mut_symbol_ptr() {
@@ -1226,13 +1226,12 @@ impl SymbolTable {
                                 continue;
                             }
                         }
-                        weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(base_attr.into()));
+                        weak.context.insert(ContextKey::BaseAttr, ContextValue::SYMBOL(base_attr.into()));
                         res.push(eval.symbol.get_symbol_ptr().clone());
                     },
                     _ => {}
                 }
             }
-            context.as_mut().unwrap().retain(|k, _| !symbol_context.contains_key(k));
         }
         res
     }
@@ -1242,17 +1241,17 @@ impl SymbolTable {
         let var_symbol = &session.sync_odoo.symbol_table[key];
         let evaluations = var_symbol.evaluations.clone();
         for eval in evaluations.iter() {
-            let ctx = &mut Some(symbol_context.clone().into_iter().chain(context.clone().unwrap_or(HashMap::default()).into_iter()).collect::<HashMap<_, _>>());
+            let ctx = &mut Some(Context::merge(symbol_context, context.as_ref().unwrap_or(&Context::default())));
             let mut sym = eval.symbol.get_symbol(session, ctx, &mut vec![], None);
             if let EvaluationSymbolPtr::WEAK(w) | EvaluationSymbolPtr::SELF(w) = &mut sym {
-                if let Some(base_attr) = symbol_context.get("base_attr") {
-                    if !w.context.get("is_attr_of_instance").map(|x| x.as_bool()).unwrap_or(false) {
-                        w.context.insert(S!("base_attr"), base_attr.clone());
+                if let Some(base_attr) = symbol_context.get(ContextKey::BaseAttr) {
+                    if !w.context.get(ContextKey::IsAttrOfInstance).map(|x| x.as_bool()).unwrap_or(false) {
+                        w.context.insert(ContextKey::BaseAttr, base_attr.clone());
                     }
                 }
-                if let Some(base_attr) = symbol_context.get("is_attr_of_instance") {
-                    if !w.context.get("is_attr_of_instance").map(|x| x.as_bool()).unwrap_or(false) {
-                        w.context.insert(S!("is_attr_of_instance"), base_attr.clone());
+                if let Some(base_attr) = symbol_context.get(ContextKey::IsAttrOfInstance) {
+                    if !w.context.get(ContextKey::IsAttrOfInstance).map(|x| x.as_bool()).unwrap_or(false) {
+                        w.context.insert(ContextKey::IsAttrOfInstance, base_attr.clone());
                     }
                 }
             }
