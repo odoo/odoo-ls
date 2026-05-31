@@ -4,7 +4,8 @@ use ruff_python_ast::Expr;
 use lsp_types::Diagnostic;
 use tracing::error;
 
-use crate::constants::{OYarn};
+use crate::constants::OYarn;
+use crate::core::evaluation::ContextKey;
 use crate::core::model::{Model, ModelData};
 use crate::core::symbols::{ClassSymbol, ModuleSymbol};
 use crate::core::symbols::storage::SymbolTable;
@@ -164,8 +165,8 @@ impl PythonOdooBuilder {
                     let Some(eval_symbol) = symbol_weak.weak.upgrade(session.st()) else { continue };
                     if session.st().name(eval_symbol) != &Sy!("Many2one") { continue; }
                     let context = &symbol_weak.context;
-                    let Some(delegate) = context.get("delegate") else { continue };
-                    if delegate.as_bool() == true && let Some(comodel) = context.get("comodel_name") {
+                    let Some(delegate) = context.get(ContextKey::Delegate) else { continue };
+                    if delegate.as_bool() == true && let Some(comodel) = context.get(ContextKey::ComodelName) {
                         let comodel_name = oyarn!("{}", comodel.as_str());
                         session.st_mut()[self.symbol]._model.as_mut().unwrap().inherits.push((comodel_name, field_name.clone()));
                     }
@@ -385,7 +386,7 @@ impl PythonOdooBuilder {
                     if !SymbolTable::is_field_class(session, member_symbol) {
                         continue;
                     }
-                    if let Some(ContextValue::STRING(compute_ctx_val)) = eval_weak.context.get("compute") {
+                    if let Some(ContextValue::STRING(compute_ctx_val)) = eval_weak.context.get(ContextKey::Compute) {
                         let name = session.st().name(field).clone();
                         session.st_mut()[symbol]._model.as_mut().unwrap().computes.entry(oyarn!("{}", compute_ctx_val)).or_default().insert(name);
                     }

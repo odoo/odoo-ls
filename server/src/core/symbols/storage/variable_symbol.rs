@@ -1,8 +1,7 @@
 use ruff_text_size::TextRange;
 
-use crate::{S, constants::OYarn, core::{evaluation::{ContextValue, Evaluation}, symbols::storage::SymbolTable}, threads::SessionInfo};
+use crate::{constants::OYarn, core::{evaluation::{Context, ContextKey, ContextValue, Evaluation}, symbols::storage::SymbolTable}, threads::SessionInfo};
 use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey, SymbolKey, VariableKey};
-use crate::utils::HashMap;
 
 #[derive(Debug)]
 pub struct VariableSymbol {
@@ -64,13 +63,13 @@ impl VariableSymbol {
             let parent = session.st()[target].parent();
             // To be able to follow related fields, we need to have the base_attr set in order to find the __get__ hook in next_refs
             // we update the context here for the case where we are coming from a decorator for example.
-            let mut context = Some(HashMap::default());
-            context.as_mut().unwrap().insert(S!("base_attr"), ContextValue::SYMBOL(parent.into()));
+            let mut context = Some(Context::default());
+            context.as_mut().unwrap().insert(ContextKey::BaseAttr, ContextValue::SYMBOL(parent.into()));
             let eval_weaks = SymbolTable::follow_ref(&symbol, session, &mut context, false, false, None, None);
             for eval_weak in eval_weaks.iter() {
                 if let Some(symbol) = eval_weak.upgrade_weak(session.st()) {
                     if ["Many2one", "One2many", "Many2many"].contains(&session.st().name(symbol).as_str()) {
-                        let Some(comodel) = eval_weak.get_weak().context.get("comodel_name") else {
+                        let Some(comodel) = eval_weak.get_weak().context.get(ContextKey::ComodelName) else {
                             continue;
                         };
                         let Some(model) = session.sync_odoo.models.get(comodel.as_str()) else {
