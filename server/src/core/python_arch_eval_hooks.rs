@@ -1,3 +1,4 @@
+use crate::core::evaluation::ContextKey;
 use crate::utils::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -67,7 +68,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
             return;
         };
         let env = &mut odoo.symbol_table[symbol.unwrap_variable_key()];
-        let context = HashMap::default();
+        let context = Context::default();
         env.evaluations = vec![Evaluation {
             symbol: EvaluationSymbol::new_with_symbol(
                 env_class.into(),
@@ -163,7 +164,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
                 symbol: EvaluationSymbol::new_with_symbol(
                     (*registry_sym.last().unwrap()).into(),
                     Some(true),
-                    HashMap::default(),
+                    Context::default(),
                     None
                 ),
                 value: None,
@@ -372,7 +373,7 @@ static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {v
         if let Some(&boolean) = boolean_field.first() {
             let mut eval = Evaluation::eval_from_symbol(&odoo.symbol_table, boolean, Some(true));
             let weak = eval.symbol.get_mut_symbol_ptr().get_mut_weak();
-            weak.context.insert(S!("compute"), ContextValue::STRING(S!("_compute_global")));
+            weak.context.insert(ContextKey::Compute, ContextValue::STRING(S!("_compute_global")));
             odoo.symbol_table.set_evaluations(symbol, vec![eval]);
         }
     }},
@@ -513,7 +514,7 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
        odoo.symbol_table[symbol].evaluations = vec![Evaluation {
             symbol: EvaluationSymbol::new_with_symbol(Wk::null(),
                 Some(true),
-                HashMap::default(),
+                Context::default(),
                 Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_env_get_item, name: S!("eval_env_get_item")})
             ),
             value: None,
@@ -528,7 +529,7 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
         odoo.symbol_table[symbol].evaluations = vec![Evaluation {
             symbol: EvaluationSymbol::new_with_symbol(Wk::null(),
                 Some(true),
-                HashMap::default(),
+                Context::default(),
                 Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_registry_get_item, name: S!("eval_registry_get_item")})
             ),
             value: None,
@@ -691,7 +692,7 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
             symbol: EvaluationSymbol::new_with_symbol(
                 fields_class_sym.into(),
                 Some(true),
-                HashMap::default(),
+                Context::default(),
                 Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_init, name: S!("eval_init")})
             ),
             value: None,
@@ -865,15 +866,15 @@ impl PythonArchEvalHooks {
         let Some(context) = context else {
             return res
         };
-        let in_validation = context.get("is_in_validation").unwrap_or(&ContextValue::BOOLEAN(false)).as_bool();
-        let Some(ContextValue::STRING(s)) = context.get("args") else {
+        let in_validation = context.get(ContextKey::IsInValidation).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool();
+        let Some(ContextValue::STRING(s)) = context.get(ContextKey::Args) else {
             return res
         };
         let maybe_model = session.sync_odoo.models.get(s.as_str()).cloned();
         let has_class_in_parents = scope.as_ref().map(|&scope| session.st().get_in_parents(scope, &[SymType::CLASS], true).is_some()).unwrap_or(false);
         if maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols(session.st())).unwrap_or(false) {
             let Some(model) = maybe_model else {unreachable!()};
-            let module = context.get("module");
+            let module = context.get(ContextKey::Module);
             let from_module = if let Some(ContextValue::MODULE(m)) = module {
                 m.upgrade(session.st())
             } else {
@@ -908,7 +909,7 @@ impl PythonArchEvalHooks {
                         // Model exists, but has no main symbols
                         if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03005, &[]) { // Is this error code correct?
                             diagnostics.push(Diagnostic {
-                                range: FileMgr::textRange_to_temporary_Range(&context.get("range").unwrap().as_text_range()),
+                                range: FileMgr::textRange_to_temporary_Range(&context.get(ContextKey::Range).unwrap().as_text_range()),
                                 ..diagnostic_base.clone()
                             });
                         }
@@ -920,7 +921,7 @@ impl PythonArchEvalHooks {
                         }).collect();
                         if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03001, &[&format!("{:?}", valid_modules)]) {
                             diagnostics.push(Diagnostic {
-                                range: FileMgr::textRange_to_temporary_Range(&context.get("range").unwrap().as_text_range()),
+                                range: FileMgr::textRange_to_temporary_Range(&context.get(ContextKey::Range).unwrap().as_text_range()),
                                 ..diagnostic_base.clone()
                             });
                         }
@@ -929,7 +930,7 @@ impl PythonArchEvalHooks {
                     // Model exists, but has no main symbols
                     if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03005, &[]) {
                             diagnostics.push(Diagnostic {
-                                range: FileMgr::textRange_to_temporary_Range(&context.get("range").unwrap().as_text_range()),
+                                range: FileMgr::textRange_to_temporary_Range(&context.get(ContextKey::Range).unwrap().as_text_range()),
                                 ..diagnostic_base
                             });
                     }
@@ -939,7 +940,7 @@ impl PythonArchEvalHooks {
             // Model Unknown
             if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03002, &[]) {
                 diagnostics.push(Diagnostic {
-                    range: FileMgr::textRange_to_temporary_Range(&context.get("range").unwrap().as_text_range()),
+                    range: FileMgr::textRange_to_temporary_Range(&context.get(ContextKey::Range).unwrap().as_text_range()),
                     ..diagnostic_base
                 });
             }
@@ -968,7 +969,7 @@ impl PythonArchEvalHooks {
     fn eval_get(_session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, _diagnostics: &mut Vec<Diagnostic>, _scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
     {
         if context.is_some() {
-            let parent_instance = context.as_ref().unwrap().get("parent_instance");
+            let parent_instance = context.as_ref().unwrap().get(ContextKey::ParentInstance);
             if parent_instance.is_some() {
                 match parent_instance.unwrap() {
                     ContextValue::BOOLEAN(b) => {
@@ -995,7 +996,7 @@ impl PythonArchEvalHooks {
             symbol: EvaluationSymbol::new_with_symbol(
                 return_sym.into(),
                 Some(true),
-                HashMap::default(),
+                Context::default(),
                 Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_get, name: S!("eval_get")})
             ),
             value: None,
@@ -1019,7 +1020,7 @@ impl PythonArchEvalHooks {
             symbol: EvaluationSymbol::new_with_symbol(
                 return_sym.into(),
                 Some(true),
-                HashMap::default(),
+                Context::default(),
                 Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_get, name: S!("eval_get")})
             ),
             value: None,
@@ -1040,13 +1041,13 @@ impl PythonArchEvalHooks {
     }
 
     fn eval_relational_with_related(session: &mut SessionInfo, related_field: &ContextValue, context: &Context) -> Option<EvaluationSymbolPtr>{
-        let Some(ContextValue::SYMBOL(class_sym_weak)) = context.get("field_parent") else {return None};
+        let Some(ContextValue::SYMBOL(class_sym_weak)) = context.get(ContextKey::FieldParent) else {return None};
         let Some(SymbolKey::Class(class_sym)) = class_sym_weak.upgrade(session.st()) else {return None};
         let related_field_name = related_field.as_str();
         let from_module = session.st().find_module(class_sym);
         let syms = PythonArchEval::get_nested_sub_field(session, related_field_name, class_sym, from_module);
         if let Some(&symbol) = syms.first() {
-            return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: symbol.into(), context: HashMap::default(), instance: Some(true), is_super: false}))
+            return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: symbol.into(), context: Context::default(), instance: Some(true), is_super: false}))
         }
         None
     }
@@ -1059,7 +1060,7 @@ impl PythonArchEvalHooks {
             if let Some(scope) = scope.and_then(|s| session.st().get_file(s)) {
                 session.st_mut().add_model_dependencies(scope, &comodel_sym);
             }
-            let module = context.get("module");
+            let module = context.get(ContextKey::Module);
             let mut from_module = None;
             if let Some(ContextValue::MODULE(m)) = module {
                 if let Some(m) = m.upgrade(session.st()) {
@@ -1068,10 +1069,10 @@ impl PythonArchEvalHooks {
             }
             let main_symbol = comodel_sym.borrow().get_main_symbols(session, from_module);
             if main_symbol.len() == 1 {
-                return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: main_symbol[0].into(), context: HashMap::default(), instance: Some(true), is_super: false}))
+                return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: main_symbol[0].into(), context: Context::default(), instance: Some(true), is_super: false}))
             }
         }
-        Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Wk::null(), context: HashMap::default(), instance: Some(true), is_super: false}))
+        Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Wk::null(), context: Context::default(), instance: Some(true), is_super: false}))
     }
 
     fn eval_relational(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, _diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
@@ -1079,10 +1080,10 @@ impl PythonArchEvalHooks {
         let Some(context) = context else {
             return None;
         };
-        if let Some(comodel) = context.get("comodel_name") {
+        if let Some(comodel) = context.get(ContextKey::ComodelName) {
             return PythonArchEvalHooks::eval_relational_with_comodel(session, comodel, context, scope);
         }
-        if let Some(related_field) = context.get("related") {
+        if let Some(related_field) = context.get(ContextKey::Related) {
             return PythonArchEvalHooks::eval_relational_with_related(session, related_field, context);
         }
         None
@@ -1097,7 +1098,7 @@ impl PythonArchEvalHooks {
             symbol: EvaluationSymbol::new_with_symbol(
                 Wk::null(),
                 Some(true),
-                HashMap::default(),
+                Context::default(),
                 Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_relational, name: S!("eval_relational")})
             ),
             value: None,
@@ -1110,7 +1111,7 @@ impl PythonArchEvalHooks {
             symbol: EvaluationSymbol::new_with_symbol(
                 Wk::null(),
                 Some(true),
-                HashMap::default(),
+                Context::default(),
                 Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_relational, name: S!("eval_relational")})
             ),
             value: None,
@@ -1130,70 +1131,68 @@ impl PythonArchEvalHooks {
     {
         let Some(context) = maybe_context else {return None};
 
-        let Some(parameters) = context.get("parameters").map(|ps| ps.as_arguments()) else {return None};
+        let Some(parameters) = context.get(ContextKey::Parameters).map(|ps| ps.as_arguments()) else {return None};
 
         let parent = session.st().get_scope_symbol(
             file_symbol.unwrap(),
-            context.get("range").unwrap().as_text_range().start().to_u32(),
+            context.get(ContextKey::Range).unwrap().as_text_range().start().to_u32(),
             false
         );
-        let mut result_context = HashMap::default();
+        let mut result_context = Context::default();
 
         let mut contexts_to_add = HashMap::default();
         if relational {
             if let Some(first_param) = parameters.args.get(0) {
-                contexts_to_add.insert("comodel_name", (first_param, first_param.range(), "str"));
+                contexts_to_add.insert(ContextKey::ComodelName, (first_param, first_param.range(), "str", ContextKey::ComodelNameArgRange));
             }
             if one2many {
                 if let Some(second_param) = parameters.args.get(1) {
-                    contexts_to_add.insert("inverse_name", (second_param, second_param.range(), "str"));
+                    contexts_to_add.insert(ContextKey::InverseName, (second_param, second_param.range(), "str", ContextKey::InverseNameArgRange));
                 }
             }
         }
 
         // Keyword Arguments for fields that we would like to keep in the context
         let context_arguments = [
-            ("comodel_name", "str"),
-            ("related", "str"),
-            ("compute", "str"),
-            ("inverse", "str"),
-            ("search", "str"),
-            ("inverse_name", "str"),
-            ("delegate", "bool"),
-            ("required", "bool"),
-            ("default", "bool"),
+            ("comodel_name", "str", ContextKey::ComodelName, ContextKey::ComodelNameArgRange),
+            ("related", "str", ContextKey::Related, ContextKey::RelatedArgRange),
+            ("compute", "str", ContextKey::Compute, ContextKey::ComputeArgRange),
+            ("inverse", "str", ContextKey::Inverse, ContextKey::InverseArgRange),
+            ("search", "str", ContextKey::Search, ContextKey::SearchArgRange),
+            ("inverse_name", "str", ContextKey::InverseName, ContextKey::InverseNameArgRange),
+            ("delegate", "bool", ContextKey::Delegate, ContextKey::EMPTY), // No arg range
+            ("required", "bool", ContextKey::Required, ContextKey::EMPTY),
+            ("default", "bool", ContextKey::Default, ContextKey::EMPTY),
         ];
         contexts_to_add.extend(
             context_arguments.into_iter()
-            .filter_map(|(arg_name, only_str)|
-                PythonArchEvalHooks::find_special_arguments(&parameters, arg_name)
-                .map(|(field_name_expr, arg_range)| (arg_name, (field_name_expr, arg_range, only_str)))
+            .filter_map(|(arg_name_str, only_str, arg_name_key, arg_range_key)|
+                PythonArchEvalHooks::find_special_arguments(&parameters, arg_name_str)
+                .map(|(field_name_expr, arg_range)| (arg_name_key, (field_name_expr, arg_range, only_str, arg_range_key)))
             )
         );
 
-        for (arg_name, (field_name_expr, arg_range, bool_or_str)) in contexts_to_add {
+        for (arg_name, (field_name_expr, arg_range, bool_or_str, arg_range_key)) in contexts_to_add {
             match bool_or_str {
                 "str" => if let Some(related_string) = Evaluation::expr_to_str(session, field_name_expr, parent, &parameters.range.start(), false, &mut vec![]).0 {
-                    result_context.insert(S!(arg_name), ContextValue::STRING(related_string.to_string()));
-                    result_context.insert(format!("{arg_name}_arg_range"), ContextValue::RANGE(arg_range.clone()));
+                    result_context.insert(arg_name, ContextValue::STRING(related_string.to_string()));
+                    result_context.insert(arg_range_key, ContextValue::RANGE(arg_range));
                 },
                 "bool" => {
                     let maybe_boolean = Evaluation::expr_to_bool(session, field_name_expr, parent, &parameters.range.start(), false, &mut vec![]).0;
                     if let Some(boolean) = maybe_boolean {
-                        result_context.insert(S!(arg_name), ContextValue::BOOLEAN(boolean));
+                        result_context.insert(arg_name, ContextValue::BOOLEAN(boolean));
                     }
-                    if arg_name == "default" {
-                        result_context.insert(S!("default"), ContextValue::BOOLEAN(true)); //set to True as the value is not really useful for now, but we want the key in context if one default is set
+                    if arg_name == ContextKey::Default {
+                        result_context.insert(ContextKey::Default, ContextValue::BOOLEAN(true)); //set to True as the value is not really useful for now, but we want the key in context if one default is set
                     }
                 },
                 _ => {}
             }
         }
 
-        result_context.extend([
-            (S!("field_parent"), ContextValue::SYMBOL(parent.into())),
-        ]);
-        let weak_eval = match context.get("constructing_class") {
+        result_context.insert(ContextKey::FieldParent, ContextValue::SYMBOL(parent.into()));
+        let weak_eval = match context.get(ContextKey::ConstructingClass) {
             Some(ContextValue::SYMBOL(weak)) if !weak.is_expired(session.st()) => *weak,
             _ => evaluation_sym.get_weak().weak,
         };
@@ -1226,7 +1225,7 @@ impl PythonArchEvalHooks {
             symbol: EvaluationSymbol::new_with_symbol(
                 Wk::from(symbol), //use the weak to keep reference to the class for the hook.
                 Some(true),
-                HashMap::default(),
+                Context::default(),
                 Some(match relational {
                     Some(oyarn) if oyarn == oyarn!("One2many") => GetSymbolHook{callable: PythonArchEvalHooks::eval_init_relational_one2many, name: S!("eval_init_relational_one2many")},
                     Some(_) => GetSymbolHook{callable: PythonArchEvalHooks::eval_init_relational, name: S!("eval_init_relational")},
@@ -1338,8 +1337,8 @@ impl PythonArchEvalHooks {
 
     fn eval_env_ref(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
         let Some(context) = context else {return None};
-        let in_validation = context.get("is_in_validation").unwrap_or(&ContextValue::BOOLEAN(false)).as_bool();
-        let Some(parameters) = context.get("parameters").map(|ps| ps.as_arguments()) else {return None};
+        let in_validation = context.get(ContextKey::IsInValidation).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool();
+        let Some(parameters) = context.get(ContextKey::Parameters).map(|ps| ps.as_arguments()) else {return None};
         if parameters.args.is_empty() {
             return None; // No arguments to process
         }
@@ -1404,7 +1403,7 @@ impl PythonArchEvalHooks {
             symbol: EvaluationSymbol::new_with_symbol(
                 func_sym.into(),
                 Some(true),
-                HashMap::default(),
+                Context::default(),
                 Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_env_ref, name: S!("eval_env_ref")})
             ),
             value: None,

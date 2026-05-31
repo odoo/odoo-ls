@@ -1,6 +1,5 @@
-use crate::utils::HashMap;
 use crate::constants::{BuildStatus, BuildSteps, SymType};
-use crate::core::evaluation::{AnalyzeAstResult, Context, ContextValue, Evaluation, ExprOrIdent};
+use crate::core::evaluation::{AnalyzeAstResult, Context, ContextKey, ContextValue, Evaluation, ExprOrIdent};
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::symbol_keys::{SourceFileKey, SymbolKey};
 use crate::core::import_resolver::{resolve_from_stmt, resolve_import_stmt};
@@ -48,9 +47,9 @@ impl AstUtils {
         } else {
             from_module = ContextValue::BOOLEAN(false);
         }
-        let mut context: Option<Context> = Some(HashMap::from_iter([
-            (S!("module"), from_module),
-            (S!("range"), ContextValue::RANGE(expr.range()))
+        let mut context: Option<Context> = Some(Context::from_iter([
+            (ContextKey::Module, from_module),
+            (ContextKey::Range, ContextValue::RANGE(expr.range()))
         ]));
         let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(session, &expr, parent_symbol, &expr.range().end(), &mut context,false, &mut vec![]);
         (analyse_ast_result, Some(expr.range()))
