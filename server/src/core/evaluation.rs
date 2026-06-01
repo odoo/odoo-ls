@@ -5,7 +5,6 @@ use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::{FunctionSymbol, VariableSymbol};
 use crate::features::references::ReferenceTarget;
 use crate::threads::SessionInfo;
-use crate::S;
 use crate::{constants::*, Sy};
 use itertools::FoldWhile::{Continue, Done};
 use itertools::Itertools;
@@ -1109,7 +1108,7 @@ impl Evaluation {
                                     }
                                 }
                                 //1: find __init__ method
-                                let init = SymbolTable::get_member_symbol(session, base_sym, &S!("__init__"), module, true, false, false, false, false);
+                                let init = SymbolTable::get_member_symbol(session, base_sym, "__init__", module, true, false, false, false, false);
                                 let mut found_hook = false;
                                 if let Some(&SymbolKey::Function(init)) = init.0.first() {
                                     SyncOdoo::ensure_func_evaluations(session, init);
@@ -1398,7 +1397,7 @@ impl Evaluation {
                     let get_item_symbols = SymbolTable::get_member_symbol(
                         session,
                         base,
-                        &S!("__getitem__"),
+                        "__getitem__",
                         session.st().find_module(parent),
                         false,
                         false,
@@ -1505,7 +1504,7 @@ impl Evaluation {
                     for base_eval_ptr in base_eval_ptrs.iter() {
                         let EvaluationSymbolPtr::WEAK(base_sym_weak_eval) = base_eval_ptr else {continue};
                         let Some(base_sym) = base_sym_weak_eval.weak.upgrade(session.st()) else {continue};
-                        let (operator_functions, diags) = SymbolTable::get_member_symbol(session, base_sym, &S!(method), module, true, false, true, false, false);
+                        let (operator_functions, diags) = SymbolTable::get_member_symbol(session, base_sym, method, module, true, false, true, false, false);
                         diagnostics.extend(diags);
                         for operator_function in operator_functions.into_iter() {
                             for eval in session.st().evaluations(operator_function).unwrap_or(&vec![]).clone() {

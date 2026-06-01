@@ -35,7 +35,6 @@ use crate::{
     tree::{OYarnExt, Tree},
     utils::PathSanitizer,
     weak_collections::WeakSet,
-    S,
 };
 
 impl SymbolTable {
@@ -1204,7 +1203,7 @@ impl SymbolTable {
             return res;
         }
         //TODO shouldn't we set the from_module in the call to get_member_symbol?
-        let get_method = Self::get_member_symbol(session, class_key.into(), &S!("__get__"), None, true, false, false, true, false).0.first().copied();
+        let get_method = Self::get_member_symbol(session, class_key.into(), "__get__", None, true, false, false, true, false).0.first().copied();
         let Some(SymbolKey::Function(get_method)) = get_method else {
             return res;
         };
