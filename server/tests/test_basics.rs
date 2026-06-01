@@ -44,7 +44,7 @@ fn test_assigns() {
     assert!(st.name(a[0]) == "a");
     assert!(st.evaluations(a[0]).as_ref().unwrap().len() == 1);
     assert!(st.evaluations(a[0]).as_ref().unwrap()[0].value.is_some());
-    assert!(matches!(st.evaluations(a[0]).as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(Expr::NumberLiteral(_))));
+    assert!(matches!(st.evaluations(a[0]).as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(c) if matches!(c.as_ref(), Expr::NumberLiteral(_))));
     assert!(st.evaluations(a[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_number_literal_expr());
     assert!(st.evaluations(a[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.is_int());
     assert!(st.evaluations(a[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_int().unwrap().as_i32().unwrap() == 5);
@@ -54,7 +54,7 @@ fn test_assigns() {
     assert!(st.name(b[0]) == "b");
     assert!(st.evaluations(b[0]).as_ref().unwrap().len() == 1);
     assert!(st.evaluations(b[0]).as_ref().unwrap()[0].value.is_some());
-    assert!(matches!(st.evaluations(b[0]).as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(Expr::StringLiteral(_))));
+    assert!(matches!(st.evaluations(b[0]).as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(c) if matches!(c.as_ref(), Expr::StringLiteral(_))));
     assert!(st.evaluations(b[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_string_literal_expr());
     assert!(st.evaluations(b[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_string_literal_expr().unwrap().value.to_str() == "test");
 
@@ -63,7 +63,7 @@ fn test_assigns() {
     assert!(st.name(c[0]) == "c");
     assert!(st.evaluations(c[0]).as_ref().unwrap().len() == 1);
     assert!(st.evaluations(c[0]).as_ref().unwrap()[0].value.is_some());
-    assert!(matches!(st.evaluations(c[0]).as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(Expr::NumberLiteral(_))));
+    assert!(matches!(st.evaluations(c[0]).as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(c) if matches!(c.as_ref(), Expr::NumberLiteral(_))));
     assert!(st.evaluations(c[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_number_literal_expr());
     assert!(st.evaluations(c[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.is_float());
     assert!(st.evaluations(c[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_float().unwrap() == &3.14);
@@ -73,7 +73,7 @@ fn test_assigns() {
     assert!(st.name(d[0]) == "d");
     assert!(st.evaluations(d[0]).as_ref().unwrap().len() == 1);
     assert!(st.evaluations(d[0]).as_ref().unwrap()[0].value.is_some());
-    assert!(matches!(st.evaluations(d[0]).as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(Expr::BooleanLiteral(_))));
+    assert!(matches!(st.evaluations(d[0]).as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(c) if matches!(c.as_ref(), Expr::BooleanLiteral(_))));
     assert!(st.evaluations(d[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_boolean_literal_expr());
     assert!(st.evaluations(d[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_boolean_literal_expr().unwrap().value == true);
 
@@ -82,7 +82,7 @@ fn test_assigns() {
     assert!(st.name(e[0]) == "e");
     assert!(st.evaluations(e[0]).as_ref().unwrap().len() == 1);
     assert!(st.evaluations(e[0]).as_ref().unwrap()[0].value.is_some());
-    assert!(matches!(st.evaluations(e[0]).as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(Expr::BooleanLiteral(_))));
+    assert!(matches!(st.evaluations(e[0]).as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(c) if matches!(c.as_ref(), Expr::BooleanLiteral(_))));
     assert!(st.evaluations(e[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_boolean_literal_expr());
     assert!(st.evaluations(e[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_boolean_literal_expr().unwrap().value == false);
 
@@ -91,7 +91,7 @@ fn test_assigns() {
     assert!(st.name(f[0]) == "f");
     assert!(st.evaluations(f[0]).as_ref().unwrap().len() == 1);
     assert!(st.evaluations(f[0]).as_ref().unwrap()[0].value.is_some());
-    assert!(matches!(st.evaluations(f[0]).as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(Expr::NoneLiteral(_))));
+    assert!(matches!(st.evaluations(f[0]).as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(c) if matches!(c.as_ref(), Expr::NoneLiteral(_))));
     assert!(st.evaluations(f[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_none_literal_expr());
 
     let g = session.sync_odoo.get_symbol(path.as_str(), (&[], &["g"]), u32::MAX);
@@ -165,7 +165,7 @@ fn test_sections() {
             let eval = evaluations.as_ref().unwrap();
             assert_eq!(eval.len(), 1);  // Check that each symbol has one evaluation
             let value = eval[0].value.as_ref().unwrap();
-            assert!(matches!(value, EvaluationValue::CONSTANT(Expr::NumberLiteral(_)))); // Check that the evaluation is a num literal
+            assert!(matches!(value, EvaluationValue::CONSTANT(c) if matches!(c.as_ref(), Expr::NumberLiteral(_)))); // Check that the evaluation is a num literal
             let number = value.as_constant().as_number_literal_expr().unwrap().value.as_int().unwrap();
             number.as_i32().unwrap()
         })
