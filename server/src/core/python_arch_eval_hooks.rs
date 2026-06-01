@@ -1,4 +1,5 @@
 use crate::core::evaluation::ContextKey;
+use crate::core::evaluation::HookName;
 use crate::utils::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -515,7 +516,7 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
             symbol: EvaluationSymbol::new_with_symbol(Wk::null(),
                 Some(true),
                 Context::default(),
-                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_env_get_item, name: S!("eval_env_get_item")})
+                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_env_get_item, name: HookName::EvalEnvGetItem})
             ),
             value: None,
             range: None
@@ -530,7 +531,7 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
             symbol: EvaluationSymbol::new_with_symbol(Wk::null(),
                 Some(true),
                 Context::default(),
-                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_registry_get_item, name: S!("eval_registry_get_item")})
+                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_registry_get_item, name: HookName::EvalRegistryGetItem})
             ),
             value: None,
             range: None
@@ -693,7 +694,7 @@ static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::n
                 fields_class_sym.into(),
                 Some(true),
                 Context::default(),
-                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_init, name: S!("eval_init")})
+                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_init, name: HookName::EvalInit})
             ),
             value: None,
             range: None,
@@ -997,7 +998,7 @@ impl PythonArchEvalHooks {
                 return_sym.into(),
                 Some(true),
                 Context::default(),
-                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_get, name: S!("eval_get")})
+                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_get, name: HookName::EvalGet})
             ),
             value: None,
             range: None
@@ -1021,7 +1022,7 @@ impl PythonArchEvalHooks {
                 return_sym.into(),
                 Some(true),
                 Context::default(),
-                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_get, name: S!("eval_get")})
+                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_get, name: HookName::EvalGet})
             ),
             value: None,
             range: None
@@ -1099,7 +1100,7 @@ impl PythonArchEvalHooks {
                 Wk::null(),
                 Some(true),
                 Context::default(),
-                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_relational, name: S!("eval_relational")})
+                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_relational, name: HookName::EvalRelational})
             ),
             value: None,
             range: None,
@@ -1112,7 +1113,7 @@ impl PythonArchEvalHooks {
                 Wk::null(),
                 Some(true),
                 Context::default(),
-                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_relational, name: S!("eval_relational")})
+                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_relational, name: HookName::EvalRelational})
             ),
             value: None,
             range: None,
@@ -1227,9 +1228,9 @@ impl PythonArchEvalHooks {
                 Some(true),
                 Context::default(),
                 Some(match relational {
-                    Some(oyarn) if oyarn == oyarn!("One2many") => GetSymbolHook{callable: PythonArchEvalHooks::eval_init_relational_one2many, name: S!("eval_init_relational_one2many")},
-                    Some(_) => GetSymbolHook{callable: PythonArchEvalHooks::eval_init_relational, name: S!("eval_init_relational")},
-                    None => GetSymbolHook{callable: PythonArchEvalHooks::eval_init, name: S!("eval_init")},
+                    Some(oyarn) if oyarn == oyarn!("One2many") => GetSymbolHook{callable: PythonArchEvalHooks::eval_init_relational_one2many, name: HookName::EvalInitRelationalOne2many},
+                    Some(_) => GetSymbolHook{callable: PythonArchEvalHooks::eval_init_relational, name: HookName::EvalInitRelational},
+                    None => GetSymbolHook{callable: PythonArchEvalHooks::eval_init, name: HookName::EvalInit},
                 })
             ),
             value: None,
@@ -1404,7 +1405,7 @@ impl PythonArchEvalHooks {
                 func_sym.into(),
                 Some(true),
                 Context::default(),
-                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_env_ref, name: S!("eval_env_ref")})
+                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_env_ref, name: HookName::EvalEnvRef})
             ),
             value: None,
             range: None

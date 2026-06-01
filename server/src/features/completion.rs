@@ -1,7 +1,7 @@
 use super::features_utils::TypeInfo;
 use crate::constants::{OYarn, SymType};
 use crate::core::evaluation::{
-    Context, ContextKey, ContextValue, Evaluation, EvaluationSymbol, EvaluationSymbolPtr, EvaluationSymbolWeak
+    Context, ContextKey, ContextValue, Evaluation, EvaluationSymbol, EvaluationSymbolPtr, EvaluationSymbolWeak, HookName
 };
 use crate::core::file_mgr::FileInfo;
 use crate::core::import_resolver;
@@ -907,7 +907,7 @@ fn complete_subscript(session: &mut SessionInfo, file: SourceFileKey, expr_subsc
                         let evaluations = session.st().evaluations(get_item).unwrap();
                         if evaluations.len() == 1 {
                             let get_item_eval = evaluations.first().unwrap();
-                            if get_item_eval.symbol.get_symbol_hook.as_ref().map(|hook| &hook.name == "eval_env_get_item").unwrap_or_default() {
+                            if get_item_eval.symbol.get_symbol_hook.as_ref().map(|hook| hook.name == HookName::EvalEnvGetItem).unwrap_or_default() {
                                 return complete_expr(&expr_subscript.slice, session, file, offset, is_param, &vec![ExpectedType::MODEL_NAME]);
                             }
                         }
