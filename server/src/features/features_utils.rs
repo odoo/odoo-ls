@@ -438,7 +438,7 @@ impl FeaturesUtils {
         let mut aggregator: HashMap<SymbolGroupKey, Vec<SymbolInfo>> = HashMap::default();
         for (index, eval) in evals.iter().enumerate() {
             //search for a constant evaluation like a model name or domain field
-            if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(expr))) = eval.value.as_ref() {
+            if let Some(expr) = eval.value.as_ref().and_then(EvaluationValue::as_string_literal) {
                 let str = expr.value.to_str();
                 if let Some(SourceFileKey::Module(_)) = file_symbol
                 && file_path.is_some_and(|fp| fp.ends_with("__manifest__.py")) {
