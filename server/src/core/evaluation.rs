@@ -326,8 +326,21 @@ type GetSymbolHookCallable = fn (session: &mut SessionInfo, eval: &EvaluationSym
 #[derive(Debug, Clone)]
 pub struct GetSymbolHook {
     pub callable: GetSymbolHookCallable,
-    pub name: String
+    pub name: HookName,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum HookName {
+    EvalEnvGetItem,
+    EvalRegistryGetItem,
+    EvalInit,
+    EvalGet,
+    EvalRelational,
+    EvalInitRelational,
+    EvalInitRelationalOne2many,
+    EvalEnvRef,
+}
+
 
 impl PartialEq for GetSymbolHook {
     fn eq(&self, other: &Self) -> bool {
