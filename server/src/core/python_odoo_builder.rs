@@ -81,8 +81,12 @@ impl PythonOdooBuilder {
         for eval in evaluations.clone() {
             if let Some(eval) = eval.follow_ref_and_get_value(session, &mut None, diagnostics) {
                 match eval {
-                    EvaluationValue::CONSTANT(Expr::StringLiteral(s)) => {
-                        session.st_mut()[symbol]._model.as_mut().unwrap().inherit = vec![oyarn!("{}", s.value)];
+                    EvaluationValue::CONSTANT(c) => {
+                        if let Expr::StringLiteral(s) = c.as_ref() {
+                            session.st_mut()[symbol]._model.as_mut().unwrap().inherit = vec![oyarn!("{}", s.value)];
+                        } else {
+                            error!("wrong _inherit value");
+                        }
                     },
                     EvaluationValue::LIST(l) | EvaluationValue::TUPLE(l)=> {
                         for e in l {
@@ -107,7 +111,7 @@ impl PythonOdooBuilder {
         if let Some(&_name) = _name.last() {
             for eval in session.st().evaluations(_name).unwrap().clone() {
                 let eval = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
-                if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(s))) = eval {
+                if let Some(s) = eval.as_ref().and_then(EvaluationValue::as_string_literal) {
                     return oyarn!("{}", s.value);
                 }
             }
@@ -190,86 +194,86 @@ impl PythonOdooBuilder {
     fn _load_class_attributes(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) {
         let symbol = self.symbol;
         let descr = PythonOdooBuilder::_get_attribute(session, symbol, &"_description".to_string(), diagnostics);
-        if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(s))) = descr {
+        if let Some(s) = descr.as_ref().and_then(EvaluationValue::as_string_literal) {
             session.st_mut()[symbol]._model.as_mut().unwrap().description = S!(s.value.to_str());
         } else {
             session.st_mut()[symbol]._model.as_mut().unwrap().description = session.st()[symbol]._model.as_ref().unwrap().name.to_string();
         }
         let auto = PythonOdooBuilder::_get_attribute(session, symbol, &"_auto".to_string(), diagnostics);
-        if let Some(EvaluationValue::CONSTANT(Expr::BooleanLiteral(b))) = auto {
-            session.st_mut()[symbol]._model.as_mut().unwrap().auto = b.value;
+        if let Some(b) = auto.as_ref().and_then(EvaluationValue::as_bool_literal) {
+            session.st_mut()[symbol]._model.as_mut().unwrap().auto = b;
         } else {
             session.st_mut()[symbol]._model.as_mut().unwrap().auto = false;
         }
         let log_access = PythonOdooBuilder::_get_attribute(session, symbol, &"_log_access".to_string(), diagnostics);
-        if let Some(EvaluationValue::CONSTANT(Expr::BooleanLiteral(b))) = log_access {
-            session.st_mut()[symbol]._model.as_mut().unwrap().log_access = b.value;
+        if let Some(b) = log_access.as_ref().and_then(EvaluationValue::as_bool_literal) {
+            session.st_mut()[symbol]._model.as_mut().unwrap().log_access = b;
         } else {
             session.st_mut()[symbol]._model.as_mut().unwrap().log_access = session.st()[symbol]._model.as_ref().unwrap().auto;
         }
         let table = PythonOdooBuilder::_get_attribute(session, symbol, &"_table".to_string(), diagnostics);
-        if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(s))) = table {
+        if let Some(s) = table.as_ref().and_then(EvaluationValue::as_string_literal) {
             session.st_mut()[symbol]._model.as_mut().unwrap().table = S!(s.value.to_str());
         } else {
             session.st_mut()[symbol]._model.as_mut().unwrap().table = session.st()[symbol]._model.as_ref().unwrap().name.replace(".", "_");
         }
         let sequence = PythonOdooBuilder::_get_attribute(session, symbol, &"_sequence".to_string(), diagnostics);
-        if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(s))) = sequence {
+        if let Some(s) = sequence.as_ref().and_then(EvaluationValue::as_string_literal) {
             session.st_mut()[symbol]._model.as_mut().unwrap().sequence = S!(s.value.to_str());
         } else {
             session.st_mut()[symbol]._model.as_mut().unwrap().sequence = session.st()[symbol]._model.as_ref().unwrap().table.clone() + "_id_seq";
         }
         let is_abstract = PythonOdooBuilder::_get_attribute(session, symbol, &"_abstract".to_string(), diagnostics);
-        if let Some(EvaluationValue::CONSTANT(Expr::BooleanLiteral(b))) = is_abstract {
-            session.st_mut()[symbol]._model.as_mut().unwrap().is_abstract = b.value;
+        if let Some(b) = is_abstract.as_ref().and_then(EvaluationValue::as_bool_literal) {
+            session.st_mut()[symbol]._model.as_mut().unwrap().is_abstract = b;
         } else {
             session.st_mut()[symbol]._model.as_mut().unwrap().is_abstract = true;
         }
         let transient = PythonOdooBuilder::_get_attribute(session, symbol, &"_transient".to_string(), diagnostics);
-        if let Some(EvaluationValue::CONSTANT(Expr::BooleanLiteral(b))) = transient {
-            session.st_mut()[symbol]._model.as_mut().unwrap().transient = b.value;
+        if let Some(b) = transient.as_ref().and_then(EvaluationValue::as_bool_literal) {
+            session.st_mut()[symbol]._model.as_mut().unwrap().transient = b;
         } else {
             session.st_mut()[symbol]._model.as_mut().unwrap().transient = false;
         }
         let rec_name = PythonOdooBuilder::_get_attribute(session, symbol, &"_rec_name".to_string(), diagnostics);
         //TODO check that rec_name is a field
-        if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(s))) = rec_name {
+        if let Some(s) = rec_name.as_ref().and_then(EvaluationValue::as_string_literal) {
             session.st_mut()[symbol]._model.as_mut().unwrap().rec_name = Some(S!(s.value.to_str()));
         } else {
             session.st_mut()[symbol]._model.as_mut().unwrap().rec_name = Some(S!("name")); //TODO if name is not on model, take 'id'
         }
         let _check_company_auto = PythonOdooBuilder::_get_attribute(session, symbol, &"_check_company_auto".to_string(), diagnostics);
-        if let Some(EvaluationValue::CONSTANT(Expr::BooleanLiteral(b))) = _check_company_auto {
-            session.st_mut()[symbol]._model.as_mut().unwrap().check_company_auto = b.value;
+        if let Some(b) = _check_company_auto.as_ref().and_then(EvaluationValue::as_bool_literal) {
+            session.st_mut()[symbol]._model.as_mut().unwrap().check_company_auto = b;
         } else {
             session.st_mut()[symbol]._model.as_mut().unwrap().check_company_auto = false;
         }
         let parent_name = PythonOdooBuilder::_get_attribute(session, symbol, &"_parent_name".to_string(), diagnostics);
-        if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(s))) = parent_name {
+        if let Some(s) = parent_name.as_ref().and_then(EvaluationValue::as_string_literal) {
             session.st_mut()[symbol]._model.as_mut().unwrap().parent_name = S!(s.value.to_str());
         } else {
             session.st_mut()[symbol]._model.as_mut().unwrap().parent_name = S!("parent_id");
         }
         let parent_store = PythonOdooBuilder::_get_attribute(session, symbol, &"_parent_store".to_string(), diagnostics);
-        if let Some(EvaluationValue::CONSTANT(Expr::BooleanLiteral(b))) = parent_store {
-            session.st_mut()[symbol]._model.as_mut().unwrap().parent_store = b.value;
+        if let Some(b) = parent_store.as_ref().and_then(EvaluationValue::as_bool_literal) {
+            session.st_mut()[symbol]._model.as_mut().unwrap().parent_store = b;
         } else {
             session.st_mut()[symbol]._model.as_mut().unwrap().parent_store = false;
         }
         let active_name = PythonOdooBuilder::_get_attribute(session, symbol, &"_active_name".to_string(), diagnostics);
-        if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(s))) = active_name {
+        if let Some(s) = active_name.as_ref().and_then(EvaluationValue::as_string_literal) {
             session.st_mut()[symbol]._model.as_mut().unwrap().active_name = Some(S!(s.value.to_str()));
         } else {
             session.st_mut()[symbol]._model.as_mut().unwrap().active_name = None;
         }
         let data_name = PythonOdooBuilder::_get_attribute(session, symbol, &"_data_name".to_string(), diagnostics);
-        if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(s))) = data_name {
+        if let Some(s) = data_name.as_ref().and_then(EvaluationValue::as_string_literal) {
             session.st_mut()[symbol]._model.as_mut().unwrap().data_name = S!(s.value.to_str());
         } else {
             session.st_mut()[symbol]._model.as_mut().unwrap().data_name = S!("date");
         }
         let fold_name = PythonOdooBuilder::_get_attribute(session, symbol, &"_fold_name".to_string(), diagnostics);
-        if let Some(EvaluationValue::CONSTANT(Expr::StringLiteral(s))) = fold_name {
+        if let Some(s) = fold_name.as_ref().and_then(EvaluationValue::as_string_literal) {
             session.st_mut()[symbol]._model.as_mut().unwrap().fold_name = S!(s.value.to_str());
         } else {
             session.st_mut()[symbol]._model.as_mut().unwrap().fold_name = S!("fold");
@@ -354,10 +358,7 @@ impl PythonOdooBuilder {
             // Read all boolean values, ignore non-boolean-value evaluations, as they can be dynamic or type annotations
             let register_evals_values: Vec<_> = register_evals.iter().filter_map(
                 |eval|
-                    match eval.follow_ref_and_get_value(session, &mut None, diagnostics)? {
-                        EvaluationValue::CONSTANT(Expr::BooleanLiteral(b)) => Some(b.value),
-                        _ => None,
-                    }
+                    eval.follow_ref_and_get_value(session, &mut None, diagnostics)?.as_bool_literal()
             ).collect();
             // If we have exactly *one* False value evaluation, we consider _register = False, thus it is an abstract model
             if register_evals_values == &[false] {

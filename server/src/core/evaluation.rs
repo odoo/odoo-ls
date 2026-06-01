@@ -26,7 +26,7 @@ use super::symbols::symbol_mgr::SectionIndex;
 #[derive(Debug, Clone, PartialEq)]
 pub enum EvaluationValue {
     ANY(), //we don't know what it is, so it can be everything !
-    CONSTANT(ruff_python_ast::Expr), //expr is a literal
+    CONSTANT(Box<ruff_python_ast::Expr>), //expr is a literal
     DICT(Vec<(ruff_python_ast::Expr, ruff_python_ast::Expr)>), //expr is a literal
     LIST(Vec<ruff_python_ast::Expr>), //expr is a literal
     TUPLE(Vec<ruff_python_ast::Expr>) //expr is a literal
@@ -44,6 +44,28 @@ impl EvaluationValue {
         match self {
             EvaluationValue::CONSTANT(e) => e,
             _ => panic!("Not a constant")
+        }
+    }
+
+    /// Returns the inner string literal if this is a `CONSTANT(Expr::StringLiteral(_))`.
+    pub fn as_string_literal(&self) -> Option<&ruff_python_ast::ExprStringLiteral> {
+        match self {
+            EvaluationValue::CONSTANT(e) => match e.as_ref() {
+                Expr::StringLiteral(s) => Some(s),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// Returns the boolean value if this is a `CONSTANT(Expr::BooleanLiteral(_))`.
+    pub fn as_bool_literal(&self) -> Option<bool> {
+        match self {
+            EvaluationValue::CONSTANT(e) => match e.as_ref() {
+                Expr::BooleanLiteral(b) => Some(b.value),
+                _ => None,
+            },
+            _ => None,
         }
     }
 
@@ -495,7 +517,7 @@ impl Evaluation {
             Expr::NoneLiteral(_n) => {
                 let mut eval = Evaluation::new_none();
                 eval.range = Some(range);
-                eval.value = Some(EvaluationValue::CONSTANT(values));
+                eval.value = Some(EvaluationValue::CONSTANT(Box::new(values)));
                 return eval
             }
             _ => {
@@ -512,7 +534,7 @@ impl Evaluation {
                 }),
                 get_symbol_hook: None
             },
-            value: Some(EvaluationValue::CONSTANT(values)),
+            value: Some(EvaluationValue::CONSTANT(Box::new(values))),
             range: Some(range)
         }
     }
@@ -716,7 +738,7 @@ impl Evaluation {
             if let Some(v) = v {
                 match v {
                     EvaluationValue::CONSTANT(v) => {
-                        match v {
+                        match *v {
                             Expr::StringLiteral(s) => {
                                 return (Some(s.value.to_string()), value.diagnostics);
                             },
@@ -749,7 +771,7 @@ impl Evaluation {
             if let Some(v) = v {
                 match v {
                     EvaluationValue::CONSTANT(v) => {
-                        match v {
+                        match *v {
                             Expr::BooleanLiteral(s) => {
                                 return (Some(s.value), value.diagnostics);
                             },
@@ -1673,8 +1695,8 @@ impl Evaluation {
                     }
                 }
                 if let Some(value) = eval.value.as_ref() {
-                    match value {
-                        EvaluationValue::CONSTANT(Expr::StringLiteral(constant)) => {
+                    if let EvaluationValue::CONSTANT(c) = value {
+                        if let Expr::StringLiteral(constant) = c.as_ref() {
                             match evaluation_search {
                                 ReferenceTarget::String(evaluation_search_string) => {
                                     if constant.value.to_str() == evaluation_search_string {
@@ -1691,8 +1713,7 @@ impl Evaluation {
                                     }
                                 }
                             }
-                        },
-                        _ => {}
+                        }
                     }
                 }
             }

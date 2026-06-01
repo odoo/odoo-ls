@@ -503,7 +503,7 @@ impl PythonArchBuilder {
                         vec![]
                     }
                     EvaluationValue::CONSTANT(c) => {
-                        match c {
+                        match &**c {
                             Expr::StringLiteral(s) => {
                                 vec![oyarn!("{}", s.value)]
                             },
