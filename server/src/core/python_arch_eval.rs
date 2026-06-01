@@ -21,7 +21,6 @@ use crate::core::evaluation::{Context, ContextKey, Evaluation};
 use crate::core::python_utils;
 use crate::features::ast_utils::AstUtils;
 use crate::threads::SessionInfo;
-use crate::S;
 
 use super::config::DiagMissingImportsMode;
 use super::entry_point::EntryPoint;
@@ -825,7 +824,7 @@ impl PythonArchEval {
                 let symbol_eval = SymbolTable::follow_ref(&eval_symbol, session, &mut None, false, false, None, None);
                 if symbol_eval.len() == 1 && let Some(symbol_type) = symbol_eval[0].upgrade_weak(session.st()) {
                     if matches!(symbol_type, SymbolKey::Class(_)) {
-                        let (iters, _) = SymbolTable::get_member_symbol(session, symbol_type, &S!("__iter__"), None, true, false, false, false, false);
+                        let (iters, _) = SymbolTable::get_member_symbol(session, symbol_type, "__iter__", None, true, false, false, false, false);
                         if let Some(&SymbolKey::Function(iter)) = iters.first() && iters.len() == 1 {
                             SyncOdoo::ensure_func_evaluations(session, iter);
                             let evals = &session.st()[iter].evaluations;
@@ -1047,8 +1046,8 @@ impl PythonArchEval {
     ) -> Vec<SymbolKey>{
         let mut parent_object = Some(class_sym);
         let mut syms = vec![];
-        let split_expr: Vec<String> = field_name.split(".").map(|x| x.to_string()).collect();
-        for (ix, name) in split_expr.iter().enumerate() {
+        let split_expr: Vec<_> = field_name.split(".").collect();
+        for (ix, &name) in split_expr.iter().enumerate() {
             if parent_object.is_none() {
                 break;
             }

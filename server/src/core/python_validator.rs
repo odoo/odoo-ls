@@ -446,7 +446,7 @@ impl PythonValidator {
                                         return false
                                     };
                                     let found =
-                                        SymbolTable::get_member_symbol(session, related_field_class_sym, &S!("type"), None, false, false, false, false, false)
+                                        SymbolTable::get_member_symbol(session, related_field_class_sym, "type", None, false, false, false, false, false)
                                         .0.first()
                                         .and_then(|field_type_var| session.st().evaluations(*field_type_var).cloned())
                                         .and_then(|evals| evals.first().cloned())
