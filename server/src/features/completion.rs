@@ -1044,10 +1044,10 @@ fn add_nested_field_names(
     add_date_completions: bool,
     specific_field_type: &Option<OYarn>,
 ){
-    let split_expr: Vec<String> = field_prefix.split(".").map(|x| x.to_string()).collect();
+    let split_expr: Vec<_> = field_prefix.split(".").collect();
     let mut obj = Some(parent);
     let mut date_mode = false;
-    for (index, name) in split_expr.iter().enumerate() {
+    for (index, &name) in split_expr.iter().enumerate() {
         if add_date_completions && date_mode {
             if index != split_expr.len() - 1 {
                 break;
@@ -1092,7 +1092,7 @@ fn add_nested_field_names(
             } else {
                 let (symbols, _diagnostics) = SymbolTable::get_member_symbol(session,
                     object,
-                    &name.to_string(),
+                    name,
                     from_module,
                     false,
                     true,
