@@ -148,19 +148,19 @@ impl FeaturesUtils {
         }
         let mut parent_object = Some(base_symbol);
         let mut range_start = field_range.start() + TextSize::new(1);
-        for name in field_name.split(".").map(|x| x.to_string()) {
+        for name in field_name.split(".") {
             if parent_object.is_none() {
                 break;
             }
             let range_end = range_start + TextSize::new((name.len() + 1) as u32);
             let cursor_section = TextRange::new(range_start, range_end).contains(TextSize::new(*offset as u32));
             if cursor_section {
-                let fields = SymbolTable::get_member_symbol(session, parent_object.unwrap().into(), &name, from_module, false, true, false, true, false).0;
+                let fields = SymbolTable::get_member_symbol(session, parent_object.unwrap().into(), name, from_module, false, true, false, true, false).0;
                 return fields.into_iter().map(|f| (f, TextRange::new(range_start, range_end - TextSize::new(1)))).collect();
             } else {
                 let (symbols, _diagnostics) = SymbolTable::get_member_symbol(session,
                     parent_object.unwrap().into(),
-                    &name.to_string(),
+                    name,
                     from_module,
                     false,
                     true,
