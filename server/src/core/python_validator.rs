@@ -414,10 +414,7 @@ impl PythonValidator {
                                 .and_then(|field_type_var| session.st().evaluations(*field_type_var).cloned())
                                 .and_then(|evals| evals.first().cloned())
                                 .and_then(|eval| eval.value.clone())
-                                .and_then(|value| match value {
-                                    EvaluationValue::CONSTANT(Expr::StringLiteral(s)) => Some(s.value.to_string()),
-                                    _ => None,
-                                }) else {
+                                .and_then(|value| value.as_string_literal().map(|s| s.value.to_string())) else {
                                 break 'related_check;
                             };
                             let found_same_type_match = syms.iter().any(|&sym| {
@@ -436,7 +433,7 @@ impl PythonValidator {
                                         .and_then(|field_type_var| session.st().evaluations(*field_type_var).cloned())
                                         .and_then(|evals| evals.first().cloned())
                                         .and_then(|eval| eval.value.clone())
-                                        .map(|value| matches!(value, EvaluationValue::CONSTANT(Expr::StringLiteral(s)) if s.value.to_str() == field_type))
+                                        .map(|value| value.as_string_literal().is_some_and(|s| s.value.to_str() == field_type))
                                         .unwrap_or(false);
                                     found
                                 })
@@ -616,8 +613,10 @@ impl PythonValidator {
                 let inherit_value = inherit_eval.follow_ref_and_get_value(session, &mut None, &mut vec![]);
                 if let Some(inherit_value) = inherit_value {
                     match inherit_value {
-                        EvaluationValue::CONSTANT(Expr::StringLiteral(s)) => {
-                            self._check_module_dependency(session, class, s.value.to_str(), &s.range());
+                        EvaluationValue::CONSTANT(c) => {
+                            if let Expr::StringLiteral(s) = c.as_ref() {
+                                self._check_module_dependency(session, class, s.value.to_str(), &s.range());
+                            }
                         },
                         EvaluationValue::LIST(l) => {
                             for e in l {
@@ -658,7 +657,7 @@ impl PythonValidator {
                 // Try to get the string value range, otherwise stick to _name var range.
                 if let Some(eval_range) = evals.iter().find_map(|e|
                     match e.follow_ref_and_get_value(session, &mut None, &mut self.diagnostics) {
-                        Some(EvaluationValue::CONSTANT(Expr::StringLiteral(_))) => e.range,
+                        Some(v) if v.as_string_literal().is_some() => e.range,
                         _ => None,
                     }
                 ) {
