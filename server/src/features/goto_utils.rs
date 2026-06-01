@@ -44,7 +44,7 @@ pub struct GotoUtils {}
 impl GotoUtils {
     fn check_for_domain_field(session: &mut SessionInfo, eval: &Evaluation, file_symbol: SourceFileKey, call_expr: &Option<ExprCall>, offset: usize, sources: &mut Vec<GotoSource>) -> bool {
         let (field_name, field_range) = if let Some(eval_value) = eval.value.as_ref() {
-            if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
+            if let Some(expr) = eval_value.as_string_literal() {
                 (expr.value.to_str(), expr.range)
             } else {
                 return false;
@@ -74,7 +74,7 @@ impl GotoUtils {
 
     fn check_for_model_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: SourceFileKey, sources: &mut Vec<GotoSource>) -> bool {
         let value = if let Some(eval_value) = eval.value.as_ref() {
-            if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
+            if let Some(expr) = eval_value.as_string_literal() {
                 oyarn!("{}", expr.value.to_str())
             } else {
                 return false;
@@ -115,7 +115,7 @@ impl GotoUtils {
             return false;
         }
         let mut value = if let Some(eval_value) = eval.value.as_ref() {
-            if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
+            if let Some(expr) = eval_value.as_string_literal() {
                 oyarn!("{}", expr.value.to_str())
             } else {
                 return false;
@@ -139,7 +139,7 @@ impl GotoUtils {
 
     fn check_for_xml_id_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: SourceFileKey, sources: &mut Vec<GotoSource>) -> bool {
         let value = if let Some(eval_value) = eval.value.as_ref() {
-            if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
+            if let Some(expr) = eval_value.as_string_literal() {
                 oyarn!("{}", expr.value.to_str())
             } else {
                 return false;
@@ -166,7 +166,7 @@ impl GotoUtils {
 
     fn check_for_compute_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: SourceFileKey, call_expr: &Option<ExprCall>, offset: usize, sources: &mut Vec<GotoSource>) -> bool {
         let value = if let Some(eval_value) = eval.value.as_ref() {
-            if let EvaluationValue::CONSTANT(Expr::StringLiteral(expr)) = eval_value {
+            if let Some(expr) = eval_value.as_string_literal() {
                 expr.value.to_str()
             } else {
                 return false;
