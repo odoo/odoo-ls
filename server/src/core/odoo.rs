@@ -977,31 +977,32 @@ impl SyncOdoo {
     }
 
     pub fn build_now_dependencies(session: &mut SessionInfo, symbol: &Rc<RefCell<Symbol>>, step: BuildSteps) {
-        let symbol = symbol.borrow();
-        match symbol.typ() {
-            SymType::ROOT | SymType::NAMESPACE | SymType::DISK_DIR | SymType::COMPILED | SymType::CLASS | SymType::VARIABLE | SymType::FUNCTION => return,
-            _ => {}
-        }
-        for step_to_build in 0..2 {
-            let step_to_build = BuildSteps::from(step_to_build);
-            let all_dep = symbol.get_all_dependencies(step_to_build);
-            if let Some(all_dep) = all_dep {
-                for (index, dep_set) in all_dep.iter().enumerate() {
+        let deps_to_build: Vec<(Rc<RefCell<Symbol>>, BuildSteps)> = {
+            let symbol = symbol.borrow();
+            match symbol.typ() {
+                SymType::ROOT | SymType::NAMESPACE | SymType::DISK_DIR | SymType::COMPILED | SymType::CLASS | SymType::VARIABLE | SymType::FUNCTION => return,
+                _ => {}
+            }
+            let mut deps = Vec::new();
+            for step_to_build in 0..2 {
+                let step_to_build = BuildSteps::from(step_to_build);
+                let all_dep = symbol.get_all_dependencies(step_to_build);
+                for (index, dep_set) in all_dep.into_iter().flatten().enumerate() {
                     let dep_step = match index {
                         0 => BuildSteps::ARCH,
                         1 => BuildSteps::ARCH_EVAL,
                         _ => panic!("Unexpected step index"),
                     };
-                    if let Some(dep_set) = dep_set {
-                        for dep in dep_set.iter() {
-                            SyncOdoo::build_now(session, &dep, dep_step);
-                        }
-                    }
+                    deps.extend(dep_set.into_iter().flatten().map(|dep| (dep, dep_step)));
+                }
+                if step_to_build == step {
+                    break;
                 }
             }
-            if step_to_build == step {
-                break;
-            }
+            deps
+        };
+        for (dep, dep_step) in deps_to_build {
+            SyncOdoo::build_now(session, &dep, dep_step);
         }
     }
 
