@@ -1198,13 +1198,9 @@ impl SymbolTable {
         };
         SyncOdoo::ensure_func_evaluations(session, get_method);
         let evaluations = session.st()[get_method].evaluations.clone();
-        if context.is_none() {
-            *context = Some(Context::default());
-        }
+        let merged_context = Some(Context::merge(context.as_ref().unwrap_or(&Context::default()), symbol_context));
         for get_method_eval in evaluations.iter() {
-            let merged_context = Context::merge(context.as_ref().unwrap(), symbol_context);
-            // TODO: make get_symbol_as_weak and the callabe hook take a non-mutable ref to Context, and merge context once outside the loop.
-            let get_result = get_method_eval.symbol.get_symbol_as_weak(session, &mut Some(merged_context), &mut vec![], None);
+            let get_result = get_method_eval.symbol.get_symbol_as_weak(session, &merged_context, &mut vec![], None);
             if !get_result.weak.is_expired(session.st()) {
                 let mut eval = Evaluation::eval_from_symbol(session.st(), get_result.weak, get_result.instance);
                 match eval.symbol.get_mut_symbol_ptr() {
@@ -1228,9 +1224,9 @@ impl SymbolTable {
         let mut res = Vec::new();
         let var_symbol = &session.sync_odoo.symbol_table[key];
         let evaluations = var_symbol.evaluations.clone();
+        let ctx = Some(Context::merge(symbol_context, context.as_ref().unwrap_or(&Context::default())));
         for eval in evaluations.iter() {
-            let ctx = &mut Some(Context::merge(symbol_context, context.as_ref().unwrap_or(&Context::default())));
-            let mut sym = eval.symbol.get_symbol(session, ctx, &mut vec![], None);
+            let mut sym = eval.symbol.get_symbol(session, &ctx, &mut vec![], None);
             if let EvaluationSymbolPtr::WEAK(w) | EvaluationSymbolPtr::SELF(w) = &mut sym {
                 if let Some(base_attr) = symbol_context.get(ContextKey::BaseAttr) {
                     if !w.context.get(ContextKey::IsAttrOfInstance).map(|x| x.as_bool()).unwrap_or(false) {
