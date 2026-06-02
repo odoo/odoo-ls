@@ -72,7 +72,7 @@ impl PythonValidator {
                     return;
                 }
                 if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !session.st().is_external(symbol)) {
-                    trace!("Validating {}", session.st().paths(symbol).first().unwrap_or(&S!("No path found")));
+                    trace!("VALIDATION - PYTHON FILE {}", session.st().paths(symbol).first().unwrap_or(&S!("No path found")));
                 }
                 session.st_mut().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 file_info_rc.borrow_mut().replace_diagnostics(BuildSteps::VALIDATION, vec![]);
@@ -103,7 +103,7 @@ impl PythonValidator {
             },
             SymbolKey::Function(f) => {
                 if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !session.st().is_external(symbol)) {
-                    trace!("Validating function {}", session.st().name(symbol));
+                    trace!("VALIDATION - PYTHON FUNCTION: {}", session.st().name(symbol));
                 }
                 self.file_mode = false;
                 let func = symbol;
