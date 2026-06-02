@@ -74,14 +74,14 @@ impl SymbolTable {
         compiled_key
     }
 
-    pub fn add_new_module_package(session: &mut SessionInfo, parent: NamespaceKey, name: &str, path: &PathBuf) -> Option<ModuleKey> {
+    pub fn add_new_module_package(session: &mut SessionInfo, parent: NamespaceKey, name: &str, path: &PathBuf) -> ModuleKey {
         let is_external = session.sync_odoo.symbol_table.is_external(parent.into());
-        let module = ModuleSymbol::new(session, name, path, parent, is_external)?;
+        let module = ModuleSymbol::new(name, path, parent, is_external);
         let path_str = module.path.clone();
-        let st = &mut session.sync_odoo.symbol_table;
-        let module_key = st.modules.insert(module);
-        st.add_to_parent_module_symbols(parent.into(), module_key.into(), name, &path_str);
-        Some(module_key)
+        let module_key = session.st_mut().modules.insert(module);
+        ModuleSymbol::load_manifest_content(session, module_key);
+        session.st_mut().add_to_parent_module_symbols(parent.into(), module_key.into(), name, &path_str);
+        module_key
     }
 
     pub fn add_new_variable(&mut self, parent: impl Into<SymbolKey>, name: &str, range: &TextRange) -> VariableKey {

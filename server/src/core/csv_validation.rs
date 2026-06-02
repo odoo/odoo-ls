@@ -2,17 +2,14 @@ use std::path::PathBuf;
 
 use csv::StringRecord;
 use lsp_types::{Diagnostic, Position, Range};
+use tracing::info;
 
 use crate::{
-    constants::{BuildStatus, BuildSteps, OYarn},
-    core::{
-        diagnostics::{create_diagnostic, DiagnosticCode},
+    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, OYarn}, core::{
+        diagnostics::{DiagnosticCode, create_diagnostic},
         file_mgr::FileInfo,
-        symbols::{symbol_keys::{CsvFileKey, ModuleKey}, storage::SymbolTable},
-    },
-    features::csv_ast_utils::CsvFieldIter,
-    threads::SessionInfo,
-    Sy,
+        symbols::{storage::SymbolTable, symbol_keys::{CsvFileKey, ModuleKey}},
+    }, features::csv_ast_utils::CsvFieldIter, threads::SessionInfo
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -30,6 +27,9 @@ impl CsvValidator {
         let mut diagnostics = vec![];
         session.st_mut().set_build_status(csv_symbol.into(), BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
         let path = session.st()[csv_symbol].path.clone();
+        if DEBUG_STEPS {
+            info!("VALIDATION - CSV: {}", path);
+        }
         let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).unwrap();
         let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
         let model_name_pb = PathBuf::from(path);
