@@ -168,7 +168,7 @@ pub fn get_resolved_symbols_at_position(
             SymbolTable::follow_ref(
                 eval.symbol.get_symbol_ptr(),
                 session,
-                &mut None,
+                None,
                 false,
                 false,
                 None,

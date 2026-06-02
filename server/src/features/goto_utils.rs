@@ -203,7 +203,7 @@ impl GotoUtils {
             return;
         };
         let (analyse_ast_result, _range) = AstUtils::get_symbol_from_expr(session, file_symbol, &ExprOrIdent::Expr(&attr_expr.value), offset as u32);
-        let eval_ptrs = analyse_ast_result.evaluations.iter().flat_map(|eval| SymbolTable::follow_ref(eval.symbol.get_symbol_ptr(), session, &mut None, false, false, None, None)).collect::<Vec<_>>();
+        let eval_ptrs = analyse_ast_result.evaluations.iter().flat_map(|eval| SymbolTable::follow_ref(eval.symbol.get_symbol_ptr(), session, None, false, false, None, None)).collect::<Vec<_>>();
         let maybe_module = session.st().find_module(file_symbol);
         let symbols = eval_ptrs.iter().flat_map(|eval_ptr| {
             let Some(symbol) = eval_ptr.upgrade_weak(session.st()) else {
@@ -239,7 +239,7 @@ impl GotoUtils {
         let mut dislay_name_found = false;
         evaluations.retain(|eval| {
             // Filter out, variables, whose parents are a class, whose name is one of the magic fields, and have the same range as their parent
-            let eval_sym = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
+            let eval_sym = eval.symbol.get_symbol(session, None, &mut vec![], None);
             let Some(eval_sym) = eval_sym.upgrade_weak(session.st()) else { return true; };
             let SymbolKey::Variable(variable_key) = eval_sym else {
                 return true;
@@ -279,8 +279,8 @@ impl GotoUtils {
                 continue;
             }
             if matches!(goto_request, GotoRequest::Definition) {
-                let eval_ptr = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-                let end_symbols = SymbolTable::follow_imported_ref(&eval_ptr, session, &mut None);
+                let eval_ptr = eval.symbol.get_symbol(session, None, &mut vec![], None);
+                let end_symbols = SymbolTable::follow_imported_ref(&eval_ptr, session, None);
                 for end_symbol in end_symbols.iter() {
                     if let Some(symbol) = end_symbol.upgrade_weak(session.st()) {
                         definition_sources.push(GotoSource{
@@ -290,7 +290,7 @@ impl GotoUtils {
                     }
                 }
             } else {
-                let Some(symbol) = eval.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None).weak.upgrade(session.st()) else {
+                let Some(symbol) = eval.symbol.get_symbol_as_weak(session, None, &mut vec![], None).weak.upgrade(session.st()) else {
                     index += 1;
                     continue;
                 };

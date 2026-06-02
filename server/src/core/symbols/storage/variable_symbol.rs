@@ -59,13 +59,12 @@ impl VariableSymbol {
         let variable_symbol = &session.st()[target]; // former method taking self
         let evaluations = variable_symbol.evaluations.clone();
         for eval in evaluations.iter() {
-            let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
+            let symbol = eval.symbol.get_symbol(session, None, &mut vec![], None);
             let parent = session.st()[target].parent();
             // To be able to follow related fields, we need to have the base_attr set in order to find the __get__ hook in next_refs
             // we update the context here for the case where we are coming from a decorator for example.
-            let mut context = Some(Context::default());
-            context.as_mut().unwrap().insert(ContextKey::BaseAttr, ContextValue::SYMBOL(parent.into()));
-            let eval_weaks = SymbolTable::follow_ref(&symbol, session, &mut context, false, false, None, None);
+            let context = Context::from_iter([(ContextKey::BaseAttr, ContextValue::SYMBOL(parent.into()))]);
+            let eval_weaks = SymbolTable::follow_ref(&symbol, session, Some(&context), false, false, None, None);
             for eval_weak in eval_weaks.iter() {
                 if let Some(symbol) = eval_weak.upgrade_weak(session.st()) {
                     if ["Many2one", "One2many", "Many2many"].contains(&session.st().name(symbol).as_str()) {

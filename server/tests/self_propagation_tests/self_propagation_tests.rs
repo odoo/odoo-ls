@@ -21,9 +21,9 @@ fn test_model_subscription() {
         match session.st().evaluations(sym).cloned() {
             Some(evals) => evals.into_iter().flat_map(|eval|
                 SymbolTable::follow_ref(
-                    &eval.symbol.get_symbol(session, &mut None, &mut vec![], None),
+                    &eval.symbol.get_symbol(session, None, &mut vec![], None),
                     session,
-                    &mut None,
+                    None,
                     false,
                     false,
                     None,
