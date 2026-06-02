@@ -320,7 +320,7 @@ impl Context {
  * diagnostics: a vec the hook can fill to add diagnostics
  * file_symbol: if provided, can be used to add dependencies
  */
-type GetSymbolHookCallable = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>;
+type GetSymbolHookCallable = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: &Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>;
 
 #[derive(Debug, Clone)]
 pub struct GetSymbolHook {
@@ -2200,7 +2200,7 @@ impl EvaluationSymbol {
     }
 
     /* Execute the hook, then use context to return an EvaluationSymbolWeak if possible, else return an empty one */
-    pub fn get_symbol_as_weak(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> EvaluationSymbolWeak {
+    pub fn get_symbol_as_weak(&self, session: &mut SessionInfo, context: &Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> EvaluationSymbolWeak {
         let eval = self.get_symbol(session, context, diagnostics, scope);
         match eval {
             EvaluationSymbolPtr::WEAK(w) => {
@@ -2261,7 +2261,7 @@ impl EvaluationSymbol {
     }
 
     /* Execute Hook, then return the effective EvaluationSymbolPtr */
-    pub fn get_symbol(&self, session: &mut SessionInfo, context: &mut Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>) -> EvaluationSymbolPtr {
+    pub fn get_symbol(&self, session: &mut SessionInfo, context: &Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>) -> EvaluationSymbolPtr {
         let mut custom_eval = None;
         if let Some(hook) = self.get_symbol_hook.as_ref() {
             custom_eval = (hook.callable)(session, self, context, diagnostics, file_symbol);
