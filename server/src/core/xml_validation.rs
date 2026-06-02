@@ -6,7 +6,7 @@ use std::{
 use crate::utils::{HashMap, HashSet};
 
 use lsp_types::{Diagnostic, Position, Range};
-use tracing::{info, trace};
+use tracing::info;
 
 use crate::core::{model::Model, symbols::{storage::SymbolTable, symbol_keys::{XmlAssetKey, XmlDataKey, XmlDeleteKey, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey}}};
 use crate::{
@@ -43,8 +43,7 @@ impl XmlValidator {
 
     pub fn validate(&mut self, session: &mut SessionInfo) {
         if DEBUG_STEPS {
-            let name = &session.st()[self.xml_symbol].name;
-            trace!("Validating XML File {}", name);
+            info!("VALIDATION - XML FILE: {}", &session.st()[self.xml_symbol].path);
         }
         let mut dependencies = vec![];
         let mut model_dependencies = vec![];
