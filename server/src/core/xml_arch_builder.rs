@@ -1,6 +1,6 @@
 use super::file_mgr::FileInfo;
 use crate::{
-    Sy, constants::{BuildStatus, BuildSteps, OYarn}, core::{entry_point::EntryPointType, symbols::{ModuleSymbol, symbol_keys::{XmlDataKey, XmlId}}}, threads::SessionInfo
+    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, OYarn}, core::{entry_point::EntryPointType, symbols::{ModuleSymbol, symbol_keys::{XmlDataKey, XmlId}}}, threads::SessionInfo
 };
 use crate::{
     core::{
@@ -12,7 +12,7 @@ use crate::{
 };
 use lsp_types::Diagnostic;
 use roxmltree::{Attribute, Node};
-use tracing::warn;
+use tracing::{info, warn};
 
 /*
 Struct made to load RelaxNG Odoo schemas and add hooks and specific OdooLS behavior on particular nodes.
@@ -34,6 +34,9 @@ impl XmlArchBuilder {
     pub fn load_arch(&mut self, session: &mut SessionInfo, file_info: &mut FileInfo, node: &Node) {
         let mut diagnostics = vec![];
         session.st_mut()[self.xml_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
+        if DEBUG_STEPS {
+            info!("ARCH       - XML: {}", session.st()[self.xml_symbol].path);
+        }
         let ep = session.st().get_entry(self.xml_symbol);
         self.is_in_main_ep = ep.borrow().typ == EntryPointType::MAIN || ep.borrow().typ == EntryPointType::ADDON;
         self.load_odoo_openerp_data(session, node, &mut diagnostics);

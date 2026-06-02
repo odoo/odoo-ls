@@ -1,5 +1,5 @@
 use crate::{
-    Sy, constants::{BuildStatus, BuildSteps, OYarn}, core::{
+    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, OYarn}, core::{
         data_hooks,
         diagnostics::{DiagnosticCode, create_diagnostic},
         symbols::{
@@ -11,7 +11,7 @@ use csv::StringRecord;
 use lsp_types::{Diagnostic, Position, Range};
 use ruff_text_size::{TextRange, TextSize};
 use std::path::PathBuf;
-use tracing::error;
+use tracing::{error, info};
 
 pub struct CsvArchBuilder {
 }
@@ -32,6 +32,9 @@ impl CsvArchBuilder {
         let Some(csv_module) = csv_module else {
             return diagnostics;
         };
+        if DEBUG_STEPS {
+            info!("ARCH       - CSV: {}", session.st()[csv_symbol].path);
+        }
         let csv = &mut session.st_mut()[csv_symbol];
         let mut rdr = csv::ReaderBuilder::new().from_reader(content.as_bytes());
         if rdr.has_headers() {
