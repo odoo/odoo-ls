@@ -10,7 +10,7 @@ use tracing::{debug, trace, warn};
 
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
-use crate::core::symbols::SymbolMgr;
+use crate::core::symbols::{ModuleSymbol, SymbolMgr};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::symbol_keys::{ClassKey, FunctionKey, ModuleKey, SourceFileKey, SymbolKey, VariableKey};
 use crate::core::symbols::VariableSymbol;
@@ -68,7 +68,7 @@ impl PythonArchEval {
     pub fn eval_arch(&mut self, session: &mut SessionInfo) {
         let symbol = self.sym_stack[0];
         if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !session.st().is_external(symbol)) {
-            trace!("evaluating {} - {}", session.st().path(self.file), session.st().name(symbol));
+            trace!("ARCH_EVAL  - PYTHON {} - {}", session.st().path(self.file), session.st().name(symbol));
         }
         session.st_mut().set_build_status(symbol, BuildSteps::ARCH_EVAL, BuildStatus::IN_PROGRESS);
         let path = session.st().file_path(self.file);
@@ -82,6 +82,9 @@ impl PythonArchEval {
         let file_info = (*file_info_rc).borrow();
         let file_info_ast = file_info.file_info_ast.clone();
         drop(file_info);
+        if let SymbolKey::Module(m) = symbol  {
+            ModuleSymbol::load_data(m, session);
+        }
         if file_info_ast.borrow().indexed_module.is_some() {
             let old_noqa = session.current_noqa.clone();
             session.current_noqa = session.st().get_noqas(symbol);
