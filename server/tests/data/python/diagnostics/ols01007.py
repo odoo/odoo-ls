@@ -111,6 +111,7 @@ n(a=1, b=2, c=3, d=4) # OLS01011
 n(1, 2) # OLS01007
 n(1, 2, 3) # OLS01010
 n(1, 2, 3, 4, d=5) # OLS01007
+n(1, 2, **{})
 
 # Functions mixing defaults and varargs + keywords
 def o(a, b=1, *args, c, d=0):
