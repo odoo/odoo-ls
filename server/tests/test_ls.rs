@@ -90,7 +90,6 @@ fn test_imports(odoo: &SyncOdoo) {
 
     //Test odoo.addons import
     let constant_1_var = odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "models", "base_test_models"], &["CONSTANT_1"]), u32::MAX);
-    println!("test");
     assert!(constant_1_var.len() == 1);
     assert!(st.evaluations(constant_1_var[0]).as_ref().unwrap().len() == 1);
     let constant_1_var_data = odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "constants"], &["CONSTANT_1"]), u32::MAX);
