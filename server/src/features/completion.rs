@@ -554,7 +554,7 @@ fn complete_decorator_call(
     let mut followed_evals = vec![];
     for eval in dec_evals {
         followed_evals.extend(
-            SymbolTable::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, None)
+            SymbolTable::follow_ref(&eval.symbol.get_symbol(session, None, &mut vec![], None), session, None, true, false, None, None)
         );
     }
     for decorator_eval in followed_evals{
@@ -599,7 +599,7 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
     AstUtils::build_scope(session, scope);
     let callable_evals = Evaluation::eval_from_ast(session, &expr_call.func, scope, &expr_call.func.range().start(), false, &mut vec![]).0;
     let callable_eval_sym_ptrs = callable_evals.iter().flat_map(|callable_eval|
-        SymbolTable::follow_ref(&callable_eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, false, false, None, None)
+        SymbolTable::follow_ref(&callable_eval.symbol.get_symbol(session, None, &mut vec![], None), session, None, false, false, None, None)
     ).collect::<Vec<_>>();
     if let Some((arg_index, arg)) = expr_call.arguments.args.iter().find_position(|arg|
         offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize())
@@ -668,7 +668,7 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
                     match evaluation.symbol.get_symbol_ptr() {
                         EvaluationSymbolPtr::WEAK(_weak) => {
                             //if weak, use get_symbol
-                            let symbol =  evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None);
+                            let symbol =  evaluation.symbol.get_symbol_as_weak(session, None, &mut vec![], None);
                             if let Some(evaluation) = symbol.weak.upgrade(session.st()) {
                                 if let SymbolKey::Class(class) = evaluation {
                                     expected_type.push(ExpectedType::CLASS(class));
@@ -876,9 +876,9 @@ fn complete_attribut(session: &mut SessionInfo, file: SourceFileKey, attr: &Expr
         let from_module = session.st().find_module(file);
         for parent_eval in parent.iter() {
             //TODO shouldn't we set and clean context here?
-            let parent_sym_eval = parent_eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(scope));
+            let parent_sym_eval = parent_eval.symbol.get_symbol(session, None, &mut vec![], Some(scope));
             if !parent_sym_eval.is_expired_if_weak(session.st()) {
-                let parent_sym_types = SymbolTable::follow_ref(&parent_sym_eval, session, &mut None, false, false, None, None);
+                let parent_sym_types = SymbolTable::follow_ref(&parent_sym_eval, session, None, false, false, None, None);
                 for parent_sym_type in parent_sym_types.iter() {
                     let Some(parent_sym) = parent_sym_type.upgrade_weak(session.st()) else {continue};
                     add_model_attributes(session, &mut items, from_module, parent_sym, parent_sym_eval.get_weak().is_super, false, false, attr.attr.id.as_str(), &None)
@@ -897,9 +897,9 @@ fn complete_subscript(session: &mut SessionInfo, file: SourceFileKey, expr_subsc
     AstUtils::build_scope(session, scope);
     let subscripted = Evaluation::eval_from_ast(session, &expr_subscript.value, scope, &expr_subscript.value.range().start(), false, &mut vec![]).0;
     for eval in subscripted.iter() {
-        let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], Some(scope));
+        let eval_symbol = eval.symbol.get_symbol(session, None, &mut vec![], Some(scope));
         if !eval_symbol.is_expired_if_weak(session.st()) {
-            let symbol_types = SymbolTable::follow_ref(&eval_symbol, session, &mut None, false, false, None, None);
+            let symbol_types = SymbolTable::follow_ref(&eval_symbol, session, None, false, false, None, None);
             for symbol_type in symbol_types.iter() {
                 if let Some(symbol_type) = symbol_type.upgrade_weak(session.st()) {
                     let get_item = session.st().get_symbol(symbol_type, (&[], &["__getitem__"]), u32::MAX);
@@ -1161,10 +1161,10 @@ fn build_completion_item_from_symbol(session: &mut SessionInfo, symbols: Vec<Sym
             symbol,
             None,
             false,
-        )), session, &mut None, false, false, None, None)
+        )), session, None, false, false, None, None)
     ).collect::<Vec<_>>();
     let type_details = typ.iter().map(|eval|
-        FeaturesUtils::get_inferred_types(session, eval, &mut Some(context_of_symbol.clone()), &symbols[0].typ())
+        FeaturesUtils::get_inferred_types(session, eval, Some(&context_of_symbol), &symbols[0].typ())
     ).collect::<HashSet<_>>();
     let label_details_description = match type_details.len() {
         0 => None,

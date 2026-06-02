@@ -366,7 +366,7 @@ impl PythonArchEval {
     fn check_for_cyclic_evaluation(&mut self, session: &mut SessionInfo, sym_ref: SymbolKey, from_sym: VariableKey) -> bool {
         let syms_followed = SymbolTable::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
             sym_ref, None, false
-        )), session, &mut None, false, false, None, None);
+        )), session, None, false, false, None, None);
         for sym in syms_followed {
             let Some(sym) = sym.upgrade_weak(session.st()) else { continue };
             if sym == from_sym {
@@ -479,7 +479,7 @@ impl PythonArchEval {
                         if let Some((ref val_eval, ref _diags)) = value_evaluations {
                             if val_eval.len() == 1 {
                                 let evaluation = &val_eval[0];
-                                let sym_weak = evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], Some(parent));
+                                let sym_weak = evaluation.symbol.get_symbol_as_weak(session, None, &mut vec![], Some(parent));
                                 if let Some(sym_key) = sym_weak.weak.upgrade(session.st()) {
                                     if SymbolTable::is_field_class(session, sym_key) {
                                         take_value = true;
@@ -506,7 +506,7 @@ impl PythonArchEval {
                         let mut dep_to_add = vec![];
                         let mut to_remove = vec![];
                         for (ix, evaluation) in evaluations.iter().enumerate() {
-                            if let Some(sym) = evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, None).weak.upgrade(session.st()) {
+                            if let Some(sym) = evaluation.symbol.get_symbol_as_weak(session, None, &mut self.diagnostics, None).weak.upgrade(session.st()) {
                                 if sym == variable_key {
                                     // TODO: investigate deps, and fix cyclic evals
                                     let file_path = session.st().get_file(parent).map(|file| session.st().path(file));
@@ -567,7 +567,7 @@ impl PythonArchEval {
                     'while_block: while matches!(expr, Expr::Attribute(_)){
                         let assignee = Evaluation::eval_from_ast(session, &expr, *self.sym_stack.last().unwrap(), &attr_expr.range.start(), false, &mut vec![]);
                         for evaluation in assignee.0 {
-                            let evaluation_symbol_ptr = evaluation.symbol.get_symbol_weak_transformed(session, &mut None, &mut vec![], None);
+                            let evaluation_symbol_ptr = evaluation.symbol.get_symbol_weak_transformed(session, None, &mut vec![], None);
                             let Some(sym_key) = evaluation_symbol_ptr.upgrade_weak(session.st()) else {
                                 continue;
                             };
@@ -643,8 +643,8 @@ impl PythonArchEval {
                 continue;
             }
             let eval_base = &eval_base[0];
-            let eval_symbol = eval_base.symbol.get_symbol(session, &mut None, &mut vec![], None);
-            let ref_sym = SymbolTable::follow_ref(&eval_symbol, session, &mut None, false, true, None, None);
+            let eval_symbol = eval_base.symbol.get_symbol(session, None, &mut vec![], None);
+            let ref_sym = SymbolTable::follow_ref(&eval_symbol, session, None, false, true, None, None);
             if ref_sym.len() > 1 {
                 if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01003, &[&AstUtils::flatten_expr(base)]) {
                     self.diagnostics.push(Diagnostic {
@@ -819,9 +819,9 @@ impl PythonArchEval {
         self.diagnostics.extend(diags);
         if eval_iter_node.len() == 1 { //Only handle values that we are sure about
             let eval = &eval_iter_node[0];
-            let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
+            let eval_symbol = eval.symbol.get_symbol(session, None, &mut vec![], None);
             if !eval_symbol.is_expired_if_weak(session.st()) {
-                let symbol_eval = SymbolTable::follow_ref(&eval_symbol, session, &mut None, false, false, None, None);
+                let symbol_eval = SymbolTable::follow_ref(&eval_symbol, session, None, false, false, None, None);
                 if symbol_eval.len() == 1 && let Some(symbol_type) = symbol_eval[0].upgrade_weak(session.st()) {
                     if matches!(symbol_type, SymbolKey::Class(_)) {
                         let (iters, _) = SymbolTable::get_member_symbol(session, symbol_type, "__iter__", None, true, false, false, false, false);
@@ -833,7 +833,7 @@ impl PythonArchEval {
                                 if for_stmt.target.is_name_expr() { //only handle simple variable for now
                                     let variable = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &for_stmt.target.as_name_expr().unwrap().id, &for_stmt.target.range());
 
-                                    let symbol = eval_iter.symbol.get_symbol_as_weak(session, &mut Some(Context::from_iter([(ContextKey::ParentFor, ContextValue::SYMBOL(symbol_type.into()))])), &mut vec![], None);
+                                    let symbol = eval_iter.symbol.get_symbol_as_weak(session, Some(&Context::from_iter([(ContextKey::ParentFor, ContextValue::SYMBOL(symbol_type.into()))])), &mut vec![], None);
                                     let v = variable.unwrap().unwrap_variable_key();
                                     session.st_mut()[v].evaluations = vec![Evaluation::eval_from_symbol(session.st(), symbol.weak, symbol.instance)];
                                 }
@@ -921,7 +921,7 @@ impl PythonArchEval {
                             // The expression name in with <> [as <name>], is the result of __enter__.
                             let mut enter_evals = vec![];
                             for context_mgr_eval in context_mgr_evals.iter() {
-                                let symbol = context_mgr_eval.symbol.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, Some(session.st().parent_file_or_function(variable_key.into()).unwrap()));
+                                let symbol = context_mgr_eval.symbol.get_symbol_as_weak(session, None, &mut self.diagnostics, Some(session.st().parent_file_or_function(variable_key.into()).unwrap()));
                                 if let Some(symbol) = symbol.weak.upgrade(session.st()) {
                                     let _enter_ = session.st().get_symbol(symbol, (&[], &["__enter__"]), u32::MAX);
                                     if let Some(&SymbolKey::Function(_enter_)) = _enter_.last() {
@@ -982,9 +982,9 @@ impl PythonArchEval {
             // And give it priority over other evaluations
             if evaluations.iter().any(|evaluation|
                 SymbolTable::follow_ref(
-                    &evaluation.symbol.get_symbol(session, &mut None, diagnostics, None),
+                    &evaluation.symbol.get_symbol(session, None, diagnostics, None),
                     session,
-                    &mut None,
+                    None,
                     false,
                     false,
                     Some((&["typing"], &["Self"])),

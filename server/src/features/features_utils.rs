@@ -77,9 +77,9 @@ impl FeaturesUtils {
         for eval in evaluations {
             followed_evals.extend(
                 SymbolTable::follow_ref(
-                    &eval.symbol.get_symbol(session, &mut None, &mut vec![], None),
+                    &eval.symbol.get_symbol(session, None, &mut vec![], None),
                     session,
-                    &mut None,
+                    None,
                     true,
                     false,
                     None,
@@ -233,9 +233,9 @@ impl FeaturesUtils {
         for eval in callable_evals {
             followed_evals.extend(
                 SymbolTable::follow_ref(
-                    &eval.symbol.get_symbol(session, &mut None, &mut vec![], None),
+                    &eval.symbol.get_symbol(session, None, &mut vec![], None),
                     session,
-                    &mut None,
+                    None,
                     true,
                     false,
                     None,
@@ -350,9 +350,9 @@ impl FeaturesUtils {
         for eval in callable_evals {
             followed_evals.extend(
                 SymbolTable::follow_ref(
-                    &eval.symbol.get_symbol(session, &mut None, &mut vec![], None),
+                    &eval.symbol.get_symbol(session, None, &mut vec![], None),
                     session,
-                    &mut None,
+                    None,
                     true,
                     false,
                     None,
@@ -516,7 +516,7 @@ impl FeaturesUtils {
                     continue;
                 }
             }
-            let eval_symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
+            let eval_symbol = eval.symbol.get_symbol(session, None, &mut vec![], None);
             let Some(symbol) = eval_symbol.upgrade_weak(session.st()) else {
                 if let EvaluationSymbolPtr::UNBOUND(name) = eval_symbol {
                     aggregator.entry(SymbolGroupKey { name: name.clone(), type_: SymType::VARIABLE }).or_default().push(
@@ -527,14 +527,14 @@ impl FeaturesUtils {
                 }
                 continue;
             };
-            let mut context = Some(eval_symbol.get_weak().context.clone());
-            let evaluation_ptrs = SymbolTable::follow_ref(&eval_symbol, session, &mut context, false, false, None, None);
+            let context = &eval_symbol.get_weak().context;
+            let evaluation_ptrs = SymbolTable::follow_ref(&eval_symbol, session, Some(context), false, false, None, None);
 
             let symbol_type = symbol.typ();
             let symbol_name = session.st().name(symbol).clone();
             let from_module = session.st().find_module(symbol);
             let sym_type_tag = FeaturesUtils::get_type_symbol_tag(&session.sync_odoo.symbol_table, symbol);
-            let return_types: Vec<TypeInfo> = evaluation_ptrs.iter().map(|eval| FeaturesUtils::get_inferred_types(session, eval, &mut context, &symbol_type)).unique().collect();
+            let return_types: Vec<TypeInfo> = evaluation_ptrs.iter().map(|eval| FeaturesUtils::get_inferred_types(session, eval, Some(context), &symbol_type)).unique().collect();
             let inferred_types = evaluation_ptrs.into_iter().zip(return_types.into_iter()).map(|(eval_ptr, eval_info)| InferredType{eval_ptr, eval_info}).collect();
 
             aggregator.entry(SymbolGroupKey { name: symbol_name.clone(), type_: symbol_type }).or_default().push(
@@ -581,7 +581,7 @@ impl FeaturesUtils {
             Some(anno_expr) => {
                 let Some(type_symbol) = session.st().parent(arg_symbol)
                 .and_then(|parent| Evaluation::eval_from_ast(session, &anno_expr, parent, &anno_expr.range().start(), false, &mut vec![]).0.first().cloned())
-                .and_then(|type_evaluation| type_evaluation.symbol.get_symbol_as_weak(session, &mut None, &mut vec![], None).weak.upgrade(session.st()))
+                .and_then(|type_evaluation| type_evaluation.symbol.get_symbol_as_weak(session, None, &mut vec![], None).weak.upgrade(session.st()))
                  else {
                     return arg_name.to_string()
                 };
@@ -596,7 +596,7 @@ impl FeaturesUtils {
     /// Return return type representation of evaluation
     /// for a function evaluation it is typically (_arg: _arg_type, ...) -> (_result_type)
     /// for variable it just shows the type, or Any if it fails to find it
-    pub fn get_inferred_types(session: &mut SessionInfo, eval: &EvaluationSymbolPtr, context: &mut Option<Context>, symbol_type: &SymType) -> TypeInfo {
+    pub fn get_inferred_types(session: &mut SessionInfo, eval: &EvaluationSymbolPtr, context: Option<&Context>, symbol_type: &SymType) -> TypeInfo {
         if *symbol_type == SymType::CLASS{
             return TypeInfo::VALUE(S!(""));
         }
@@ -606,7 +606,7 @@ impl FeaturesUtils {
                     // let inferred_type = inferred_type.borrow();
                     match inferred_type {
                         SymbolKey::Function(function_key) if !session.st()[function_key].is_property => {
-                            let base_attr_ctx_ref = eval.get_weak().context.get(ContextKey::BaseAttr).or(context.as_mut().and_then(|ctx| ctx.get(ContextKey::BaseAttr)));
+                            let base_attr_ctx_ref = eval.get_weak().context.get(ContextKey::BaseAttr).or(context.and_then(|ctx| ctx.get(ContextKey::BaseAttr)));
                             let call_parent = match base_attr_ctx_ref {
                                 Some(ContextValue::SYMBOL(s)) => *s,
                                 _ => {
@@ -618,12 +618,16 @@ impl FeaturesUtils {
                                     }
                                 }
                             };
-                            context.as_mut().map(|ctx| ctx.insert(ContextKey::BaseCall, ContextValue::SYMBOL(call_parent)));
+                            let mut ctx = context.map(|ctx| ctx.clone());
+                            if let Some(ctx) = ctx.as_mut() {
+                                ctx.insert(ContextKey::BaseCall, ContextValue::SYMBOL(call_parent));
+                            }
+                            // context.as_mut().map(|ctx| ctx.insert(ContextKey::BaseCall, ContextValue::SYMBOL(call_parent)));
                             let return_type = {
                                 let func_eval = session.st()[function_key].evaluations.clone();
                                 let type_names: Vec<_> = func_eval.iter().flat_map(|eval|{
-                                    let eval_symbol = eval.symbol.get_symbol_weak_transformed(session, context, &mut vec![], None);
-                                    let weak_eval_symbols = SymbolTable::follow_ref(&eval_symbol, session, context, false, false, None, None);
+                                    let eval_symbol = eval.symbol.get_symbol_weak_transformed(session, ctx.as_ref(), &mut vec![], None);
+                                    let weak_eval_symbols = SymbolTable::follow_ref(&eval_symbol, session, ctx.as_ref(), false, false, None, None);
                                     weak_eval_symbols.iter().map(|weak_eval_symbol| match weak_eval_symbol.upgrade_weak(session.st()) {
                                         //if fct is a variable, it means that evaluation is None.
                                         Some(s_type) if s_type.typ() != SymType::VARIABLE => session.st().name(s_type).to_string(),
@@ -632,7 +636,6 @@ impl FeaturesUtils {
                                 }).unique().collect();
                                 if !type_names.is_empty() {FeaturesUtils::represent_return_types(type_names)} else {S!("None")}
                             };
-                            context.as_mut().map(|ctx| ctx.remove(ContextKey::BaseCall));
                             let argument_names = session.st()[function_key].args.clone().iter().map(|arg| FeaturesUtils::argument_presentation(session, arg)).join(", ");
                             TypeInfo::CALLABLE(CallableSignature { arguments: argument_names, return_types: return_type })
                         },
