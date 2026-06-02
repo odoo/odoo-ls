@@ -545,8 +545,8 @@ impl SymbolTable {
         }
         let main_entry_tree = session.sync_odoo.get_main_entry_tree(parent);
         if main_entry_tree == tree(vec!["odoo", "addons"], vec![]) && path.join("__manifest__.py").exists() {
-            if let SymbolKey::Namespace(addons) = parent
-            && let Some(module) = Self::add_new_module_package(session, addons, &name, path) {
+            if let SymbolKey::Namespace(addons) = parent {
+                let module = Self::add_new_module_package(session, addons, &name, path);
                 let dir_name = session.st()[module].dir_name.clone();
                 session.sync_odoo.modules.insert(dir_name, module.into());
                 return Some(module.into());
@@ -585,7 +585,7 @@ impl SymbolTable {
             return None;
         }
         let name = path.components().last().unwrap().as_os_str().to_str().unwrap();
-        let module = Self::add_new_module_package(session, addons, name, path)?;
+        let module = Self::add_new_module_package(session, addons, name, path);
         let dir_name = session.sync_odoo.symbol_table[module].dir_name.clone();
         session.sync_odoo.modules.insert(dir_name, module.into());
         Some(module)

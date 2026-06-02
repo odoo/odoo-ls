@@ -68,7 +68,7 @@ impl PythonArchBuilder {
     pub fn load_arch(&mut self, session: &mut SessionInfo) {
         let symbol = self.sym_stack[0];
         if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !session.st().is_external(symbol)) {
-            trace!("building {} - {}", session.st().path(self.file), session.st().name(symbol));
+            trace!("ARCH       - PYTHON {} - {}", session.st().path(self.file), session.st().name(symbol));
         }
         session.st_mut().set_build_status(symbol, BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
         let path = session.st().file_path(self.file).to_string();
@@ -80,8 +80,7 @@ impl PythonArchBuilder {
         }
         if let SymbolKey::Module(m) = symbol  {
             let odoo_addons = session.st()[m].parent();
-            ModuleSymbol::load_module_info(m, session, odoo_addons);
-            ModuleSymbol::load_data(m, session);
+            ModuleSymbol::load_module_arch(m, session, odoo_addons);
         }
         let file_info_rc = match self.file_mode {
             true => {

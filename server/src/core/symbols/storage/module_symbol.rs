@@ -1,10 +1,10 @@
 use super::symbol_mgr::SectionRange;
 use crate::core::file_mgr::NoqaInfo;
 use crate::core::model::Model;
+use crate::core::symbols::SymbolTable;
 use crate::core::symbols::storage::dependency_mgr::{DependenciesTable, DependentsTable};
-use crate::core::symbols::symbol_keys::{NamespaceKey, SourceFileKey, SymbolKey, XmlId};
+use crate::core::symbols::symbol_keys::{ModuleKey, NamespaceKey, SourceFileKey, SymbolKey, XmlId};
 use super::symbol_mgr::SymbolMgr;
-use crate::threads::SessionInfo;
 use crate::utils::{PathSanitizer};
 use crate::weak_collections::WeakSet;
 use crate::{constants::*, oyarn};
@@ -55,7 +55,7 @@ pub struct ModuleSymbol {
 
 impl ModuleSymbol {
 
-    pub fn new(session: &mut SessionInfo, name: &str, dir_path: &PathBuf, parent: NamespaceKey, is_external: bool) -> Option<Self> {
+    pub fn new(name: &str, dir_path: &PathBuf, parent: NamespaceKey, is_external: bool) -> Self {
         let path = dir_path.sanitize();
         let dir_name = oyarn!("{}", dir_path.with_extension("").components().next_back().unwrap().as_os_str().to_str().unwrap());
         let depends = if dir_name == "base" {
@@ -96,7 +96,7 @@ impl ModuleSymbol {
             data_symbols: HashMap::default(),
         };
         module._init_symbol_mgr();
-        module.load(session, dir_path)
+        module
     }
 
     pub fn module_symbols(&self) -> &HashMap<OYarn, SymbolKey> {
@@ -117,6 +117,25 @@ impl ModuleSymbol {
             .chain(self.module_symbols.values()).copied()
             .chain(self.data_symbols.values().map(|&key| key.into()))
             .collect()
+    }
+
+    pub fn is_in_deps(symbol_table: &SymbolTable, module_key: ModuleKey, dir_name: &OYarn) -> bool {
+        let module = &symbol_table[module_key];
+        module.dir_name == *dir_name || module.all_depends.contains(dir_name)
+    }
+
+    pub fn get_all_depends(&self) -> &HashSet<OYarn> {
+        &self.all_depends
+    }
+
+    pub fn insert_xml_id(symbol_table: &mut SymbolTable, target: ModuleKey, xml_id: OYarn, xml_data: XmlId) {
+        symbol_table[target].xml_ids.entry(xml_id).or_default().insert(xml_data);
+    }
+
+    //given an xml_id without "module." part, return all XmlData that declare it ("this_module.xml_id"), regardless of the module declaring it.
+    pub fn get_xml_id(symbol_table: &SymbolTable, target: ModuleKey, xml_id: &str) -> Option<WeakSet<XmlId>> {
+        let target_module = &symbol_table[target];
+        return target_module.xml_ids.get(xml_id).cloned();
     }
 
 }

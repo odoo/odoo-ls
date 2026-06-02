@@ -2,7 +2,10 @@
 pub mod symbol_keys;
 pub mod storage;
 pub mod symbol_table_impl;
-pub mod module_load;
+pub mod manifest_create;
+pub mod manifest_arch_eval;
+pub mod manifest_validation;
+pub mod module_utils;
 
 pub use storage::{
     class_symbol::ClassSymbol,
