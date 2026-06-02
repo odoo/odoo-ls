@@ -341,7 +341,7 @@ impl PythonValidator {
                 if let Some(variable) = variable {
                     let v = variable.unwrap_variable_key();
                     for evaluation in session.st()[v].evaluations.clone() {
-                        let eval_sym = evaluation.symbol.get_symbol(session, &mut None, &mut self.diagnostics, Some(file_symbol.into()));
+                        let eval_sym = evaluation.symbol.get_symbol(session, None, &mut self.diagnostics, Some(file_symbol.into()));
                         match eval_sym {
                             EvaluationSymbolPtr::WEAK(w) => {
                                 if let Some(symbol) = w.weak.upgrade(session.st()) {
@@ -406,8 +406,8 @@ impl PythonValidator {
             };
             let evals = session.st()[v].evaluations.clone();
             for eval in evals.iter() {
-                let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
-                let eval_weaks = SymbolTable::follow_ref(&symbol, session, &mut None, true, false, None, None);
+                let symbol = eval.symbol.get_symbol(session, None,  &mut vec![], None);
+                let eval_weaks = SymbolTable::follow_ref(&symbol, session, None, true, false, None, None);
                 for eval_weak in eval_weaks {
                     let Some(symbol) = eval_weak.upgrade_weak(session.st()) else {continue};
                     if !SymbolTable::is_field_class(session, symbol) {
@@ -440,7 +440,7 @@ impl PythonValidator {
                                     sym,
                                     None,
                                     false,
-                                )), session, &mut None, true, true, None, None);
+                                )), session, None, true, true, None, None);
                                 related_eval_weaks.iter().any(|related_eval_weak|{
                                     let Some(related_field_class_sym) = related_eval_weak.upgrade_weak(session.st()) else {
                                         return false
@@ -579,9 +579,9 @@ impl PythonValidator {
                                 let evals = session.st().evaluations(sym).cloned().unwrap();
                                 for eval in evals {
                                     let followed = SymbolTable::follow_ref(
-                                        &eval.symbol.get_symbol(session, &mut None, &mut vec![], None),
+                                        &eval.symbol.get_symbol(session, None, &mut vec![], None),
                                         session,
-                                        &mut None,
+                                        None,
                                         true,
                                         false,
                                         None,
@@ -618,7 +618,7 @@ impl PythonValidator {
         if let Some(&inherit) = inherit.last() {
             let inherit_evals = session.st().evaluations(inherit).cloned().unwrap();
             for inherit_eval in inherit_evals {
-                let inherit_value = inherit_eval.follow_ref_and_get_value(session, &mut None, &mut vec![]);
+                let inherit_value = inherit_eval.follow_ref_and_get_value(session, None, &mut vec![]);
                 if let Some(inherit_value) = inherit_value {
                     match inherit_value {
                         EvaluationValue::CONSTANT(c) => {
@@ -664,7 +664,7 @@ impl PythonValidator {
                 let evals = session.st().evaluations(_name).cloned().unwrap();
                 // Try to get the string value range, otherwise stick to _name var range.
                 if let Some(eval_range) = evals.iter().find_map(|e|
-                    match e.follow_ref_and_get_value(session, &mut None, &mut self.diagnostics) {
+                    match e.follow_ref_and_get_value(session, None, &mut self.diagnostics) {
                         Some(v) if v.as_string_literal().is_some() => e.range,
                         _ => None,
                     }
@@ -684,7 +684,7 @@ impl PythonValidator {
         if let Some(&inherits) = inherits.last() {
             let inherits_evals = session.st().evaluations(inherits).cloned().unwrap();
             for inherits_eval in inherits_evals {
-                let inherits_value = inherits_eval.follow_ref_and_get_value(session, &mut None, &mut vec![]);
+                let inherits_value = inherits_eval.follow_ref_and_get_value(session, None, &mut vec![]);
                 if let Some(inherits_value) = inherits_value {
                     match inherits_value {
                         EvaluationValue::DICT(d) => {
