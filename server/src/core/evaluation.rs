@@ -1764,8 +1764,8 @@ impl Evaluation {
                     }
                 }
             } else {
-                // if arg is None, it means that it is a **arg, which could replace all args (except pos-only args)
-                found_pos_arg_with_kw = number_pos_arg - pos_only_args.len() as i32;
+                // if arg is None, it means that it is a **arg, which could replace all args (except pos-only args, of which some could have been set already)
+                found_pos_arg_with_kw = number_pos_arg as i32 - (pos_only_args.len() as i32 - arg_index).max(0);
                 kword_only_args.clear();
             }
         }
