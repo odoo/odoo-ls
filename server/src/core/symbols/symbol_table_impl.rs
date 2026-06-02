@@ -1183,13 +1183,13 @@ impl SymbolTable {
         }
     }
 
-    fn next_refs_class(session: &mut SessionInfo, class_key: ClassKey, context: &mut Option<Context>, symbol_context: &Context) -> Vec<EvaluationSymbolPtr> {
+    fn next_refs_class(session: &mut SessionInfo, class_key: ClassKey, context: Option<&Context>, symbol_context: &Context) -> Vec<EvaluationSymbolPtr> {
         //if current symbol is a descriptor, we have to resolve __get__ method before going further
         let mut res = Vec::new();
         let mut base_attr = symbol_context.get(ContextKey::BaseAttr);
         if base_attr.is_none() {
             //search in context (used in decorators to indicate on which base the field is searched)
-            if let Some(context) = context.as_ref() {
+            if let Some(context) = context {
                 base_attr = context.get(ContextKey::BaseAttr);
             }
         }
@@ -1209,9 +1209,13 @@ impl SymbolTable {
         };
         SyncOdoo::ensure_func_evaluations(session, get_method);
         let evaluations = session.st()[get_method].evaluations.clone();
-        let merged_context = Some(Context::merge(context.as_ref().unwrap_or(&Context::default()), symbol_context));
+        let merged_context = if let Some(context) = context {
+            &Context::merge(context, symbol_context)
+        } else {
+            symbol_context
+        };
         for get_method_eval in evaluations.iter() {
-            let get_result = get_method_eval.symbol.get_symbol_as_weak(session, &merged_context, &mut vec![], None);
+            let get_result = get_method_eval.symbol.get_symbol_as_weak(session, Some(merged_context), &mut vec![], None);
             if !get_result.weak.is_expired(session.st()) {
                 let mut eval = Evaluation::eval_from_symbol(session.st(), get_result.weak, get_result.instance);
                 match eval.symbol.get_mut_symbol_ptr() {
@@ -1231,13 +1235,17 @@ impl SymbolTable {
         res
     }
 
-    fn next_refs_variable(session: &mut SessionInfo, key: VariableKey, context: &mut Option<Context>, symbol_context: &Context) -> Vec<EvaluationSymbolPtr> {
+    fn next_refs_variable(session: &mut SessionInfo, key: VariableKey, context: Option<&Context>, symbol_context: &Context) -> Vec<EvaluationSymbolPtr> {
         let mut res = Vec::new();
         let var_symbol = &session.sync_odoo.symbol_table[key];
         let evaluations = var_symbol.evaluations.clone();
-        let ctx = Some(Context::merge(symbol_context, context.as_ref().unwrap_or(&Context::default())));
+        let ctx = if let Some(context) = context {
+            &Context::merge(symbol_context, context)
+        } else {
+            symbol_context
+        };
         for eval in evaluations.iter() {
-            let mut sym = eval.symbol.get_symbol(session, &ctx, &mut vec![], None);
+            let mut sym = eval.symbol.get_symbol(session, Some(ctx), &mut vec![], None);
             if let EvaluationSymbolPtr::WEAK(w) | EvaluationSymbolPtr::SELF(w) = &mut sym {
                 if let Some(base_attr) = symbol_context.get(ContextKey::BaseAttr) {
                     if !w.context.get(ContextKey::IsAttrOfInstance).map(|x| x.as_bool()).unwrap_or(false) {
@@ -1269,7 +1277,7 @@ impl SymbolTable {
     ====
     next_refs on the 'a' in the print will return a SymbolRef to Test and one to Object
     */
-    fn next_refs(session: &mut SessionInfo, symbol_key: SymbolKey, context: &mut Option<Context>, symbol_context: &Context, stop_on_type: bool) -> Vec<EvaluationSymbolPtr> {
+    fn next_refs(session: &mut SessionInfo, symbol_key: SymbolKey, context: Option<&Context>, symbol_context: &Context, stop_on_type: bool) -> Vec<EvaluationSymbolPtr> {
         match symbol_key {
             SymbolKey::Class(c) if !stop_on_type => Self::next_refs_class(session, c, context, symbol_context),
             SymbolKey::Variable(v) => Self::next_refs_variable(session, v, context, symbol_context),
@@ -1282,7 +1290,7 @@ impl SymbolTable {
     If a symbol in the chain is a descriptor, return the __get__ return evaluation.
     If filter_on_tree is set, stop following when one of the symbols in the chain is in the tree, and only return those symbols.
         */
-    pub fn follow_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, context: &mut Option<Context>, stop_on_type: bool, stop_on_value: bool, filter_on_tree: Option<(&[&str], &[&str])>, max_scope: Option<SymbolKey>) -> Vec<EvaluationSymbolPtr> {
+    pub fn follow_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, context: Option<&Context>, stop_on_type: bool, stop_on_value: bool, filter_on_tree: Option<(&[&str], &[&str])>, max_scope: Option<SymbolKey>) -> Vec<EvaluationSymbolPtr> {
         let default_result = match filter_on_tree.as_ref() {
             Some(_) => vec![],
             None => vec![evaluation.clone()],
@@ -1424,7 +1432,7 @@ impl SymbolTable {
         results
     }
 
-    pub fn follow_imported_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, context: &mut Option<Context>) -> Vec<EvaluationSymbolPtr> {
+    pub fn follow_imported_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, context: Option<&Context>) -> Vec<EvaluationSymbolPtr> {
         let mut res = vec![];
         let mut symbols = VecDeque::new();
         symbols.push_back(evaluation.clone());
@@ -1693,8 +1701,8 @@ impl SymbolTable {
         let var_symbol = &session.sync_odoo.symbol_table[v];
         let evaluations = var_symbol.evaluations.clone();
         for eval in evaluations {
-            let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
-            let eval_weaks = Self::follow_ref(&symbol, session, &mut None, true, false, None, None);
+            let symbol = eval.symbol.get_symbol(session, None,  &mut vec![], None);
+            let eval_weaks = Self::follow_ref(&symbol, session, None, true, false, None, None);
             for eval_weak in eval_weaks.iter() {
                 if let Some(key) = eval_weak.upgrade_weak(&session.sync_odoo.symbol_table) {
                     if Self::is_field_class(session, key) {
@@ -1717,8 +1725,8 @@ impl SymbolTable {
         let var_symbol = &session.sync_odoo.symbol_table[v];
         let evals = var_symbol.evaluations.clone();
         for eval in evals.iter() {
-            let symbol = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
-            let eval_weaks = Self::follow_ref(&symbol, session, &mut None, true, false, None, None);
+            let symbol = eval.symbol.get_symbol(session, None,  &mut vec![], None);
+            let eval_weaks = Self::follow_ref(&symbol, session, None, true, false, None, None);
             for eval_weak in eval_weaks.iter() {
                 if let Some(key) = eval_weak.upgrade_weak(&session.sync_odoo.symbol_table) {
                     if matches!(key, SymbolKey::Function(_)) {
@@ -1827,8 +1835,8 @@ impl SymbolTable {
         };
         let evaluations = session.st()[v].evaluations.clone();
         for eval in evaluations.iter() {
-            let symbol = eval.symbol.get_symbol(session, &mut None, &mut vec![], None);
-            let eval_weaks = Self::follow_ref(&symbol, session, &mut None, true, false, None, None);
+            let symbol = eval.symbol.get_symbol(session, None, &mut vec![], None);
+            let eval_weaks = Self::follow_ref(&symbol, session, None, true, false, None, None);
             for eval_weak in eval_weaks.iter() {
                 if let Some(symbol) = eval_weak.upgrade_weak(session.st()) {
                     if Self::is_specific_field_class(session, symbol, field_names){

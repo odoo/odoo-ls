@@ -833,7 +833,7 @@ impl PythonArchEvalHooks {
             diagnostics.extend(diags);
             let mut followed_evals = vec![];
             for eval in dec_evals {
-                followed_evals.extend(SymbolTable::follow_ref(&eval.symbol.get_symbol(session, &mut None, &mut vec![], None), session, &mut None, true, false, None, None));
+                followed_evals.extend(SymbolTable::follow_ref(&eval.symbol.get_symbol(session, None, &mut vec![], None), session, None, true, false, None, None));
             }
             for decorator_eval in followed_evals {
                 let EvaluationSymbolPtr::WEAK(decorator_eval_sym_weak) = decorator_eval else {
@@ -861,7 +861,7 @@ impl PythonArchEvalHooks {
         diagnostics
     }
 
-    pub fn eval_env_get_item(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: &Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
+    pub fn eval_env_get_item(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
     {
         let res = Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(Wk::null(), Some(true), false)));
         let Some(context) = context else {
@@ -955,7 +955,7 @@ impl PythonArchEvalHooks {
         res
     }
 
-    pub fn eval_registry_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
+    pub fn eval_registry_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
     {
         let mut result = PythonArchEvalHooks::eval_env_get_item(session, evaluation_sym, context, diagnostics, scope);
         match result.as_mut().unwrap() {
@@ -967,10 +967,10 @@ impl PythonArchEvalHooks {
         result
     }
 
-    fn eval_get(_session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: &Option<Context>, _diagnostics: &mut Vec<Diagnostic>, _scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
+    fn eval_get(_session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: Option<&Context>, _diagnostics: &mut Vec<Diagnostic>, _scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
     {
         if context.is_some() {
-            let parent_instance = context.as_ref().unwrap().get(ContextKey::ParentInstance);
+            let parent_instance = context.unwrap().get(ContextKey::ParentInstance);
             if parent_instance.is_some() {
                 match parent_instance.unwrap() {
                     ContextValue::BOOLEAN(b) => {
@@ -1076,7 +1076,7 @@ impl PythonArchEvalHooks {
         Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Wk::null(), context: Context::default(), instance: Some(true), is_super: false}))
     }
 
-    fn eval_relational(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: &Option<Context>, _diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
+    fn eval_relational(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: Option<&Context>, _diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
     {
         let Some(context) = context else {
             return None;
@@ -1128,7 +1128,7 @@ impl PythonArchEvalHooks {
         })
     }
 
-    fn eval_init_common(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: &Option<Context>, _diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>, relational: bool, one2many: bool) -> Option<EvaluationSymbolPtr>
+    fn eval_init_common(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: Option<&Context>, _diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>, relational: bool, one2many: bool) -> Option<EvaluationSymbolPtr>
     {
         let Some(context) = maybe_context else {return None};
 
@@ -1205,15 +1205,15 @@ impl PythonArchEvalHooks {
         }));
     }
 
-    fn eval_init(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: &Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
+    fn eval_init(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
         return PythonArchEvalHooks::eval_init_common(session, evaluation_sym, maybe_context, diagnostics, file_symbol, false, false)
     }
 
-    fn eval_init_relational(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: &Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
+    fn eval_init_relational(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
         return PythonArchEvalHooks::eval_init_common(session, evaluation_sym, maybe_context, diagnostics, file_symbol, true, false)
     }
 
-    fn eval_init_relational_one2many(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: &Option<Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
+    fn eval_init_relational_one2many(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
         return PythonArchEvalHooks::eval_init_common(session, evaluation_sym, maybe_context, diagnostics, file_symbol, true, true)
     }
 
@@ -1336,7 +1336,7 @@ impl PythonArchEvalHooks {
         diagnostics
     }
 
-    fn eval_env_ref(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: &Option<Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
+    fn eval_env_ref(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
         let Some(context) = context else {return None};
         let in_validation = context.get(ContextKey::IsInValidation).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool();
         let Some(parameters) = context.get(ContextKey::Parameters).map(|ps| ps.as_arguments()) else {return None};

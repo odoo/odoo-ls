@@ -79,7 +79,7 @@ impl PythonOdooBuilder {
             return;
         }
         for eval in evaluations.clone() {
-            if let Some(eval) = eval.follow_ref_and_get_value(session, &mut None, diagnostics) {
+            if let Some(eval) = eval.follow_ref_and_get_value(session, None, diagnostics) {
                 match eval {
                     EvaluationValue::CONSTANT(c) => {
                         if let Expr::StringLiteral(s) = c.as_ref() {
@@ -110,7 +110,7 @@ impl PythonOdooBuilder {
         let _name = session.st().get_symbol(symbol.into(), (&[], &["_name"]), u32::MAX);
         if let Some(&_name) = _name.last() {
             for eval in session.st().evaluations(_name).unwrap().clone() {
-                let eval = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
+                let eval = eval.follow_ref_and_get_value(session, None, diagnostics);
                 if let Some(s) = eval.as_ref().and_then(EvaluationValue::as_string_literal) {
                     return oyarn!("{}", s.value);
                 }
@@ -142,7 +142,7 @@ impl PythonOdooBuilder {
         let _inherits = session.st().get_symbol(symbol.into(), (&[], &["_inherits"]), u32::MAX);
         if let Some(&SymbolKey::Variable(_inherits)) = _inherits.last() {
             if let Some(eval) = session.st()[_inherits].evaluations.last().cloned() {
-                let eval = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
+                let eval = eval.follow_ref_and_get_value(session, None, diagnostics);
                 let model = session.st_mut()[symbol]._model.as_mut().unwrap();
                 model.inherits.clear();
                 if let Some(EvaluationValue::DICT(d)) = eval {
@@ -165,7 +165,7 @@ impl PythonOdooBuilder {
                 let Some(evals) = session.st().evaluations(*symbol) else { continue };
                 for eval in evals.clone() {
                     let scope = session.st().get_file(self.symbol.into()).map(SymbolKey::from);
-                    let symbol_weak = eval.symbol.get_symbol_as_weak(session, &mut None, diagnostics, scope);
+                    let symbol_weak = eval.symbol.get_symbol_as_weak(session, None, diagnostics, scope);
                     let Some(eval_symbol) = symbol_weak.weak.upgrade(session.st()) else { continue };
                     if session.st().name(eval_symbol) != &Sy!("Many2one") { continue; }
                     let context = &symbol_weak.context;
@@ -183,7 +183,7 @@ impl PythonOdooBuilder {
         let (attr_sym, _) = SymbolTable::get_member_symbol(session, loc_sym.into(), attr, None, true, false, false, false, false);
         let &attr_sym = attr_sym.first()?;
         for eval in session.st().evaluations(attr_sym).unwrap().clone() {
-            let eval = eval.follow_ref_and_get_value(session, &mut None, diagnostics);
+            let eval = eval.follow_ref_and_get_value(session, None, diagnostics);
             if eval.is_some() {
                 return eval;
             }
@@ -358,7 +358,7 @@ impl PythonOdooBuilder {
             // Read all boolean values, ignore non-boolean-value evaluations, as they can be dynamic or type annotations
             let register_evals_values: Vec<_> = register_evals.iter().filter_map(
                 |eval|
-                    eval.follow_ref_and_get_value(session, &mut None, diagnostics)?.as_bool_literal()
+                    eval.follow_ref_and_get_value(session, None, diagnostics)?.as_bool_literal()
             ).collect();
             // If we have exactly *one* False value evaluation, we consider _register = False, thus it is an abstract model
             if register_evals_values == &[false] {
@@ -374,8 +374,8 @@ impl PythonOdooBuilder {
                 continue;
             };
             for eval in evals.clone() {
-                let eval_sym_ptr = eval.symbol.get_symbol(session, &mut None,  &mut vec![], None);
-                let eval_ptrs = SymbolTable::follow_ref(&eval_sym_ptr, session, &mut None, true, false, None, None);
+                let eval_sym_ptr = eval.symbol.get_symbol(session, None,  &mut vec![], None);
+                let eval_ptrs = SymbolTable::follow_ref(&eval_sym_ptr, session, None, true, false, None, None);
                 for eval_ptr in eval_ptrs.iter() {
                     let eval_weak = match &eval_ptr {
                         EvaluationSymbolPtr::WEAK(w) => w,
