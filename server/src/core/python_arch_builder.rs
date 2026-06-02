@@ -199,7 +199,7 @@ impl PythonArchBuilder {
                     if let Some(all) = session.st().get_content_symbol(import_symbol, "__all__", u32::MAX).symbols.first().copied() {
                         let all_value = SymbolTable::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
                             all, None, false
-                        )), session, &mut None, false, true, None, None);
+                        )), session, None, false, true, None, None);
                         if let Some(all_value_first) = all_value.get(0) {
                             if !all_value_first.is_expired_if_weak(session.st()) {
                                 let all_upgraded = all_value_first.upgrade_weak(session.st());
@@ -244,7 +244,7 @@ impl PythonArchBuilder {
                         }
                         for (name, evaluations) in import_variables_to_create {
                             let evaluated_type = &evaluations[0].symbol;
-                            let evaluated_type = evaluated_type.get_symbol_as_weak(session, &mut None, &mut self.diagnostics, None).weak;
+                            let evaluated_type = evaluated_type.get_symbol_as_weak(session, None, &mut self.diagnostics, None).weak;
                             if let Some(evaluated_type) = evaluated_type.upgrade(session.st()) {
                                 let evaluated_type_file = session.st().get_file(evaluated_type).unwrap();
                                 if !(self.file == evaluated_type_file) {

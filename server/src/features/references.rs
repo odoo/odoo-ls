@@ -424,7 +424,7 @@ impl ReferenceVisitor {
             let variable = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), var_name, &alias.range);
             let Some(SymbolKey::Variable(variable_key)) = variable else { continue };
             for evaluation in session.st()[variable_key].evaluations.clone() {
-                let eval_sym = evaluation.symbol.get_symbol(session, &mut None, &mut vec![], Some(file_symbol.into()));
+                let eval_sym = evaluation.symbol.get_symbol(session, None, &mut vec![], Some(file_symbol.into()));
                 let EvaluationSymbolPtr::WEAK(w) = eval_sym else {
                     panic!("Internal error: evaluated has invalid evaluationType");
                 };
