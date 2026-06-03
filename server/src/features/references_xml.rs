@@ -1,6 +1,6 @@
 use crate::{
     S, constants::SymType, core::{
-        evaluation::ContextValue,
+        evaluation_context::ContextValue,
         file_mgr::FileMgr,
         symbols::{
             storage::SymbolTable, symbol_keys::{ModuleKey, SymbolKey, XmlFileKey}
