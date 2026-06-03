@@ -48,7 +48,7 @@ pub enum ContextKey {
     Required,
     Search,
     SearchArgRange,
-    // placeholder after removal
+    // placeholder after removal (tombstone) - should not be used as key
     EMPTY,
 }
 
@@ -60,14 +60,25 @@ pub enum ContextValue {
     SYMBOL(Wk<SymbolKey>),
     ARGUMENTS(Arguments),
     RANGE(TextRange),
-    // empty value after removal
+    // empty value after removal - should not be used as value
     EMPTY,
 }
 
 
 impl Context {
+    /// Builds a Context from an iterable of key-value pairs. Keys must be unique.
     pub fn from_iter(entries: impl IntoIterator<Item = (ContextKey, ContextValue)>) -> Self {
-        Context { entries: entries.into_iter().collect() }
+        let entries: ThinVec<_> = entries.into_iter().collect();
+        debug_assert!({
+            let unique_keys = entries.iter().map(|(k, _)| *k).collect::<crate::utils::HashSet<_>>();
+            unique_keys.len() == entries.len()
+            }, "Context::from_iter requires unique keys"
+        );
+        debug_assert!(
+            entries.iter().all(|(k, _)| *k != ContextKey::EMPTY),
+            "Context::from_iter must not receive EMPTY keys"
+        );
+        Context { entries }
     }
 
     pub fn insert(&mut self, key: ContextKey, value: ContextValue) {
@@ -178,5 +189,285 @@ impl PartialEq for Context {
     fn eq(&self, other: &Self) -> bool {
         self.iter().count() == other.iter().count()
             && self.iter().all(|(k, v)| other.get(*k) == Some(v))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_returns_inserted_value() {
+        let mut ctx = Context::default();
+        ctx.insert(ContextKey::Required, ContextValue::BOOLEAN(true));
+        assert_eq!(ctx.get(ContextKey::Required), Some(&ContextValue::BOOLEAN(true)));
+    }
+
+    #[test]
+    fn get_missing_key_returns_none() {
+        let ctx = Context::default();
+        assert_eq!(ctx.get(ContextKey::Required), None);
+    }
+
+    #[test]
+    fn insert_updates_existing_key() {
+        let mut ctx = Context::default();
+        ctx.insert(ContextKey::Default, ContextValue::STRING("a".to_string()));
+        ctx.insert(ContextKey::Default, ContextValue::STRING("b".to_string()));
+        assert_eq!(ctx.get(ContextKey::Default), Some(&ContextValue::STRING("b".to_string())));
+        // update must not create a second entry
+        assert_eq!(ctx.iter().count(), 1);
+    }
+
+    #[test]
+    fn contains_key_reflects_presence() {
+        let mut ctx = Context::default();
+        assert!(!ctx.contains_key(&ContextKey::Search));
+        ctx.insert(ContextKey::Search, ContextValue::BOOLEAN(false));
+        assert!(ctx.contains_key(&ContextKey::Search));
+    }
+
+    #[test]
+    fn remove_returns_value_and_clears_key() {
+        let mut ctx = Context::default();
+        ctx.insert(ContextKey::Inverse, ContextValue::STRING("x".to_string()));
+        assert_eq!(ctx.remove(ContextKey::Inverse), Some(ContextValue::STRING("x".to_string())));
+        assert!(!ctx.contains_key(&ContextKey::Inverse));
+        assert_eq!(ctx.get(ContextKey::Inverse), None);
+    }
+
+    #[test]
+    fn remove_missing_key_returns_none() {
+        let mut ctx = Context::default();
+        ctx.insert(ContextKey::Required, ContextValue::BOOLEAN(true));
+        assert_eq!(ctx.remove(ContextKey::Search), None);
+        // unrelated entry is untouched
+        assert!(ctx.contains_key(&ContextKey::Required));
+    }
+
+    #[test]
+    fn remove_non_last_entry_keeps_others() {
+        let mut ctx = Context::default();
+        ctx.insert(ContextKey::Required, ContextValue::BOOLEAN(true));
+        ctx.insert(ContextKey::Default, ContextValue::STRING("d".to_string()));
+        ctx.insert(ContextKey::Search, ContextValue::BOOLEAN(false));
+        // remove a middle (non-last) entry
+        assert_eq!(ctx.remove(ContextKey::Default), Some(ContextValue::STRING("d".to_string())));
+        assert!(!ctx.contains_key(&ContextKey::Default));
+        assert!(ctx.contains_key(&ContextKey::Required));
+        assert!(ctx.contains_key(&ContextKey::Search));
+        assert_eq!(ctx.iter().count(), 2);
+    }
+
+    #[test]
+    fn iter_skips_tombstones() {
+        let mut ctx = Context::default();
+        ctx.insert(ContextKey::Required, ContextValue::BOOLEAN(true));
+        ctx.insert(ContextKey::Default, ContextValue::STRING("d".to_string()));
+        // non-last removal leaves an EMPTY tombstone in raw storage
+        ctx.remove(ContextKey::Required);
+        assert_eq!(ctx.entries.len(), 2);
+        // iter must hide the tombstone and only yield the live entry
+        let yielded: Vec<_> = ctx.iter().collect();
+        assert_eq!(yielded, vec![&(ContextKey::Default, ContextValue::STRING("d".to_string()))]);
+    }
+
+    #[test]
+    fn insert_reuses_emptied_slot() {
+        let mut ctx = Context::default();
+        ctx.insert(ContextKey::Required, ContextValue::BOOLEAN(true));
+        ctx.insert(ContextKey::Default, ContextValue::STRING("d".to_string()));
+        // removing the non-last entry leaves an EMPTY slot to be reused
+        ctx.remove(ContextKey::Required);
+        ctx.insert(ContextKey::Search, ContextValue::BOOLEAN(false));
+        assert_eq!(ctx.entries.len(), 2);
+        assert_eq!(ctx.iter().count(), 2);
+        assert!(ctx.contains_key(&ContextKey::Search));
+    }
+
+    #[test]
+    fn remove_then_reinsert_same_key() {
+        let mut ctx = Context::default();
+        ctx.insert(ContextKey::Required, ContextValue::BOOLEAN(true));
+        ctx.insert(ContextKey::Default, ContextValue::STRING("d".to_string()));
+        // non-last removal tombstones Required
+        ctx.remove(ContextKey::Required);
+        // putting it back reuses the freed slot rather than growing storage
+        ctx.insert(ContextKey::Required, ContextValue::BOOLEAN(false));
+        assert_eq!(ctx.entries.len(), 2);
+        assert_eq!(ctx.iter().count(), 2);
+        assert_eq!(ctx.get(ContextKey::Required), Some(&ContextValue::BOOLEAN(false)));
+    }
+
+    #[test]
+    fn insert_reuses_first_of_multiple_tombstones() {
+        let mut ctx = Context::default();
+        ctx.insert(ContextKey::Required, ContextValue::BOOLEAN(true));
+        ctx.insert(ContextKey::Default, ContextValue::STRING("d".to_string()));
+        ctx.insert(ContextKey::Search, ContextValue::BOOLEAN(false));
+        // tombstone the two non-last entries -> two EMPTY slots in storage
+        ctx.remove(ContextKey::Required);
+        ctx.remove(ContextKey::Default);
+        assert_eq!(ctx.entries.len(), 3);
+        // one insert fills one tombstone; storage must not grow
+        ctx.insert(ContextKey::Inverse, ContextValue::BOOLEAN(true));
+        assert_eq!(ctx.entries.len(), 3);
+        // it reused the first tombstone (Required's slot, index 0)
+        assert_eq!(ctx.entries[0].0, ContextKey::Inverse);
+        assert_eq!(ctx.iter().count(), 2);
+    }
+
+    #[test]
+    fn double_remove_returns_none_second_time() {
+        let mut ctx = Context::default();
+        ctx.insert(ContextKey::Inverse, ContextValue::STRING("x".to_string()));
+        assert!(ctx.remove(ContextKey::Inverse).is_some());
+        assert_eq!(ctx.remove(ContextKey::Inverse), None);
+    }
+
+    #[test]
+    fn pop_last_leaves_no_tombstone() {
+        let mut ctx = Context::default();
+        ctx.insert(ContextKey::Required, ContextValue::BOOLEAN(true));
+        // removing the only (last) entry pops it outright, no tombstone left behind
+        ctx.remove(ContextKey::Required);
+        assert_eq!(ctx.entries.len(), 0);
+    }
+
+    #[test]
+    fn lifo_removal_clears_all_entries() {
+        let mut ctx = Context::default();
+        ctx.insert(ContextKey::Required, ContextValue::BOOLEAN(true));
+        ctx.insert(ContextKey::Default, ContextValue::STRING("d".to_string()));
+        ctx.insert(ContextKey::Search, ContextValue::BOOLEAN(false));
+        // pop in reverse insertion order: each removal hits the last entry
+        ctx.remove(ContextKey::Search);
+        assert_eq!(ctx.entries.len(), 2);
+        ctx.remove(ContextKey::Default);
+        assert_eq!(ctx.entries.len(), 1);
+        ctx.remove(ContextKey::Required);
+        // fully drained, raw storage reclaimed (no tombstones)
+        assert_eq!(ctx.entries.len(), 0);
+    }
+
+    #[test]
+    fn next_remove_sweeps_trailing_tombstone() {
+        let mut ctx = Context::default();
+        ctx.insert(ContextKey::Required, ContextValue::BOOLEAN(true));
+        ctx.insert(ContextKey::Default, ContextValue::STRING("d".to_string()));
+        ctx.insert(ContextKey::Search, ContextValue::BOOLEAN(false));
+        // remove a middle entry: leaves a tombstone, raw storage unchanged
+        ctx.remove(ContextKey::Default);
+        assert_eq!(ctx.entries.len(), 3);
+        // remove the last entry: it pops & returns immediately, so the middle
+        // tombstone is now trailing but still occupies storage
+        ctx.remove(ContextKey::Search);
+        assert_eq!(ctx.entries.len(), 2);
+        // the next removal sweeps that trailing tombstone before popping its target
+        ctx.remove(ContextKey::Required);
+        assert_eq!(ctx.entries.len(), 0);
+    }
+
+    #[test]
+    fn from_iter_builds_context_with_entries() {
+        let ctx = Context::from_iter([
+            (ContextKey::Required, ContextValue::BOOLEAN(true)),
+            (ContextKey::Default, ContextValue::STRING("d".to_string())),
+        ]);
+        assert_eq!(ctx.iter().count(), 2);
+        assert_eq!(ctx.get(ContextKey::Required), Some(&ContextValue::BOOLEAN(true)));
+        assert_eq!(ctx.get(ContextKey::Default), Some(&ContextValue::STRING("d".to_string())));
+    }
+
+    #[test]
+    fn from_iter_empty_yields_empty_context() {
+        let ctx = Context::from_iter([]);
+        assert_eq!(ctx.iter().count(), 0);
+        assert_eq!(ctx, Context::default());
+    }
+
+    #[test]
+    fn merge_unions_disjoint_keys() {
+        let a = Context::from_iter([(ContextKey::Required, ContextValue::BOOLEAN(true))]);
+        let b = Context::from_iter([(ContextKey::Search, ContextValue::BOOLEAN(false))]);
+        let merged = Context::merge(&a, &b);
+        assert_eq!(merged.iter().count(), 2);
+        assert_eq!(merged.get(ContextKey::Required), Some(&ContextValue::BOOLEAN(true)));
+        assert_eq!(merged.get(ContextKey::Search), Some(&ContextValue::BOOLEAN(false)));
+    }
+
+    #[test]
+    fn merge_b_takes_precedence_on_conflict() {
+        let a = Context::from_iter([(ContextKey::Default, ContextValue::STRING("a".to_string()))]);
+        let b = Context::from_iter([(ContextKey::Default, ContextValue::STRING("b".to_string()))]);
+        let merged = Context::merge(&a, &b);
+        // conflicting key keeps b's value, with no duplicate entry
+        assert_eq!(merged.iter().count(), 1);
+        assert_eq!(merged.get(ContextKey::Default), Some(&ContextValue::STRING("b".to_string())));
+    }
+
+    #[test]
+    fn merge_with_empty_is_identity() {
+        let ctx = Context::from_iter([
+            (ContextKey::Required, ContextValue::BOOLEAN(true)),
+            (ContextKey::Default, ContextValue::STRING("d".to_string())),
+        ]);
+        let empty = Context::default();
+        // empty is the identity element on both sides
+        assert_eq!(Context::merge(&ctx, &empty), ctx);
+        assert_eq!(Context::merge(&empty, &ctx), ctx);
+        // merging two empties stays empty
+        assert_eq!(Context::merge(&empty, &empty), empty);
+    }
+
+    #[test]
+    fn merge_skips_emptied_slots() {
+        let mut a = Context::default();
+        a.insert(ContextKey::Required, ContextValue::BOOLEAN(true));
+        a.insert(ContextKey::Default, ContextValue::STRING("d".to_string()));
+        a.remove(ContextKey::Required); // leaves an EMPTY slot in a
+        let b = Context::from_iter([(ContextKey::Search, ContextValue::BOOLEAN(false))]);
+        let merged = Context::merge(&a, &b);
+        // EMPTY slot must not leak into the merged result
+        assert_eq!(merged.iter().count(), 2);
+        assert!(!merged.contains_key(&ContextKey::Required));
+        assert!(merged.contains_key(&ContextKey::Default));
+        assert!(merged.contains_key(&ContextKey::Search));
+    }
+
+    #[test]
+    fn eq_ignores_entry_order() {
+        let a = Context::from_iter([
+            (ContextKey::Required, ContextValue::BOOLEAN(true)),
+            (ContextKey::Search, ContextValue::BOOLEAN(false)),
+        ]);
+        let b = Context::from_iter([
+            (ContextKey::Search, ContextValue::BOOLEAN(false)),
+            (ContextKey::Required, ContextValue::BOOLEAN(true)),
+        ]);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn eq_distinguishes_values_and_counts() {
+        let base = Context::from_iter([(ContextKey::Default, ContextValue::STRING("a".to_string()))]);
+        let diff_value = Context::from_iter([(ContextKey::Default, ContextValue::STRING("b".to_string()))]);
+        let extra_key = Context::from_iter([
+            (ContextKey::Default, ContextValue::STRING("a".to_string())),
+            (ContextKey::Required, ContextValue::BOOLEAN(true)),
+        ]);
+        assert_ne!(base, diff_value);
+        assert_ne!(base, extra_key);
+    }
+
+    #[test]
+    fn eq_ignores_emptied_slots() {
+        // A context that had an entry removed should equal a fresh-built equivalent.
+        let mut with_empty = Context::default();
+        with_empty.insert(ContextKey::Required, ContextValue::BOOLEAN(true));
+        with_empty.insert(ContextKey::Default, ContextValue::STRING("d".to_string()));
+        with_empty.remove(ContextKey::Required);
+        let clean = Context::from_iter([(ContextKey::Default, ContextValue::STRING("d".to_string()))]);
+        assert_eq!(with_empty, clean);
     }
 }
