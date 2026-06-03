@@ -4,7 +4,7 @@ use std::{
     path::PathBuf,
     rc::Rc,
 };
-use crate::{core::evaluation::ContextKey, utils::{HashMap, HashSet}};
+use crate::{core::evaluation_context::ContextKey, utils::{HashMap, HashSet}};
 
 use lsp_types::{Diagnostic, DiagnosticTag, Range, SymbolKind};
 use ruff_text_size::TextRange;
@@ -14,7 +14,7 @@ use crate::{
     constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType}, core::{
         diagnostics::{DiagnosticCode, create_diagnostic},
         entry_point::EntryPoint,
-        evaluation::{Context, ContextValue, Evaluation, EvaluationSymbolPtr},
+        evaluation::{Evaluation, EvaluationSymbolPtr},
         file_mgr::{FileInfo, FileMgr, NoqaInfo},
         model::Model,
         odoo::SyncOdoo,
@@ -36,6 +36,7 @@ use crate::{
     utils::PathSanitizer,
     weak_collections::WeakSet,
 };
+use crate::core::evaluation_context::{Context, ContextValue};
 
 impl SymbolTable {
 

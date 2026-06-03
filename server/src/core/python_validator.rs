@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use lsp_types::{Diagnostic, Position, Range};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
-use crate::core::evaluation::{ContextKey, ContextValue};
+use crate::core::evaluation_context::{ContextKey, ContextValue};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey, SourceFileKey, SymbolKey};
 use crate::{constants::*, oyarn};
