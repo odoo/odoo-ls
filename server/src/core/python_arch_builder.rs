@@ -86,8 +86,19 @@ impl PythonArchBuilder {
         }
         let file_info_rc = match self.file_mode {
             true => {
-                let (_, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path.as_str(), None, None, false); //create ast if not in cache
-                file_info
+                let maybe_file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).clone();
+                match maybe_file_info {
+                    Some(file_info) => {
+                        if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                            file_info.borrow_mut().prepare_ast(session);
+                        }
+                        file_info
+                    },
+                    None => {
+                        let (_, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path, None, None, false); //create ast if not in cache
+                        file_info
+                    }
+                }
                 },
             false => {session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).unwrap()}
         };
@@ -96,9 +107,6 @@ impl PythonArchBuilder {
             //diagnostics for functions are stored directly on funcs
             let mut file_info = file_info_rc.borrow_mut();
             file_info.replace_diagnostics(BuildSteps::ARCH, self.diagnostics.clone());
-        }
-        if file_info_rc.borrow().file_info_ast.borrow().indexed_module.is_none() {
-            file_info_rc.borrow_mut().prepare_ast(session);
         }
         let file_info = file_info_rc.borrow();
         let file_info_ast_rc = file_info.file_info_ast.clone();
