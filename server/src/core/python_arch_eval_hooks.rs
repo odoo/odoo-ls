@@ -1,4 +1,4 @@
-use crate::core::evaluation::ContextKey;
+use crate::core::evaluation_context::ContextKey;
 use crate::core::evaluation::HookName;
 use crate::utils::HashMap;
 use std::rc::Rc;
@@ -14,7 +14,7 @@ use tracing::warn;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation::GetSymbolHook;
 use crate::core::odoo::SyncOdoo;
-use crate::core::evaluation::Context;
+use crate::core::evaluation_context::Context;
 use crate::constants::*;
 use crate::tree::OYarnExt;
 use crate::tree::Tree;
@@ -30,7 +30,8 @@ use crate::S;
 use crate::tree::TreeStrSlice;
 
 use super::entry_point::EntryPoint;
-use super::evaluation::{ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbol, EvaluationSymbolWeak};
+use super::evaluation::{Evaluation, EvaluationSymbolPtr, EvaluationSymbol, EvaluationSymbolWeak};
+use super::evaluation_context::ContextValue;
 use super::file_mgr::FileMgr;
 use super::python_arch_eval::PythonArchEval;
 

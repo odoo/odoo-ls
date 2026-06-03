@@ -1,6 +1,7 @@
 use ruff_text_size::TextRange;
 
-use crate::{constants::OYarn, core::{evaluation::{Context, ContextKey, ContextValue, Evaluation}, symbols::storage::SymbolTable}, threads::SessionInfo};
+use crate::{constants::OYarn, core::{evaluation::{Evaluation}, symbols::storage::SymbolTable}, threads::SessionInfo};
+use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
 use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey, SymbolKey, VariableKey};
 
 #[derive(Debug)]

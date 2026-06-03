@@ -1,6 +1,6 @@
 use crate::{
     S, core::{
-        evaluation::ContextValue,
+        evaluation_context::ContextValue,
         odoo::SyncOdoo,
         symbols::{
             ModuleSymbol, symbol_keys::{ModuleKey, SourceFileKey, SymbolKey, XmlId}
@@ -187,7 +187,7 @@ impl XmlAstUtils {
 
     fn add_xml_id_result(session: &mut SessionInfo, xml_id: &str, file_symbol: SourceFileKey, range: Range<usize>, results: &mut (Vec<SymbolKey>, Option<Range<usize>>), on_dep_only: bool) {
         let xml_ids = SyncOdoo::get_xml_ids(session, file_symbol, xml_id, &range, &mut vec![]);
-        
+
         for xml_id in xml_ids.iter_valid(session.st()) {
             if on_dep_only {
                 if let Some(module) = session.st().find_module(xml_id) {
