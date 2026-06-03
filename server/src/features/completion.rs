@@ -1,8 +1,9 @@
 use super::features_utils::TypeInfo;
 use crate::constants::{OYarn, SymType};
 use crate::core::evaluation::{
-    Context, ContextKey, ContextValue, Evaluation, EvaluationSymbol, EvaluationSymbolPtr, EvaluationSymbolWeak, HookName
+    Evaluation, EvaluationSymbol, EvaluationSymbolPtr, EvaluationSymbolWeak, HookName
 };
+use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
 use crate::core::file_mgr::FileInfo;
 use crate::core::import_resolver;
 use crate::core::odoo::SyncOdoo;

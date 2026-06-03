@@ -17,14 +17,15 @@ use crate::core::symbols::VariableSymbol;
 use crate::{constants::*, oyarn};
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
-use crate::core::evaluation::{Context, ContextKey, Evaluation};
+use crate::core::evaluation::{Evaluation};
+use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
 use crate::core::python_utils;
 use crate::features::ast_utils::AstUtils;
 use crate::threads::SessionInfo;
 
 use super::config::DiagMissingImportsMode;
 use super::entry_point::EntryPoint;
-use super::evaluation::{ContextValue, EvaluationSymbolPtr, EvaluationSymbolWeak};
+use super::evaluation::{EvaluationSymbolPtr, EvaluationSymbolWeak};
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportResult;
 use super::python_arch_eval_hooks::PythonArchEvalHooks;

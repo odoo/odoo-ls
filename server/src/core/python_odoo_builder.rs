@@ -5,7 +5,7 @@ use lsp_types::Diagnostic;
 use tracing::error;
 
 use crate::constants::OYarn;
-use crate::core::evaluation::ContextKey;
+use crate::core::evaluation_context::ContextKey;
 use crate::core::model::{Model, ModelData};
 use crate::core::symbols::{ClassSymbol, ModuleSymbol};
 use crate::core::symbols::storage::SymbolTable;
@@ -14,7 +14,8 @@ use crate::threads::SessionInfo;
 use crate::tree::TreeStrSlice;
 use crate::{oyarn, Sy, S};
 
-use super::evaluation::{ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationValue};
+use super::evaluation::{Evaluation, EvaluationSymbolPtr, EvaluationValue};
+use super::evaluation_context::ContextValue;
 
 pub const MAGIC_FIELDS: [&str; 6] = [
     "id",

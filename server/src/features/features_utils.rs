@@ -12,7 +12,8 @@ use crate::utils::HashMap;
 
 use crate::constants::{SymType};
 use crate::constants::OYarn;
-use crate::core::evaluation::{Context, ContextKey, ContextValue, Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak, EvaluationValue};
+use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak, EvaluationValue};
+use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
 use crate::threads::SessionInfo;
 use crate::{Sy, S};
 
