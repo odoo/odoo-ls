@@ -1111,16 +1111,19 @@ impl SymbolTable {
     }
 
     pub fn has_in_parents(&self, symbol: SymbolKey, to_test: SymbolKey, stop_same_file: bool) -> bool {
-        if symbol == to_test {
-            return true;
+        let mut current = symbol;
+        loop {
+            if current == to_test {
+                return true;
+            }
+            if stop_same_file && matches!(current.typ(), SymType::FILE | SymType::PACKAGE(_)) {
+                return false;
+            }
+            let Some(parent) = self.parent(current) else {
+                return false;
+            };
+            current = parent;
         }
-        if stop_same_file && matches!(symbol.typ(), SymType::FILE | SymType::PACKAGE(_)) {
-            return false;
-        }
-        let Some(parent) = self.parent(symbol) else {
-            return false;
-        };
-        self.is_symbol_in_parents(parent, to_test)
     }
 
     /// get a Symbol that has the same given range and name
