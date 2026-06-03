@@ -1,5 +1,6 @@
 use crate::constants::{BuildStatus, BuildSteps, SymType};
-use crate::core::evaluation::{AnalyzeAstResult, Context, ContextKey, ContextValue, Evaluation, ExprOrIdent};
+use crate::core::evaluation::{AnalyzeAstResult, Evaluation, ExprOrIdent};
+use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::symbol_keys::{SourceFileKey, SymbolKey};
 use crate::core::import_resolver::{resolve_from_stmt, resolve_import_stmt};
