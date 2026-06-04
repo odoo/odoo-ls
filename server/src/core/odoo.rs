@@ -1541,7 +1541,7 @@ impl Odoo {
         let options = DidChangeWatchedFilesRegistrationOptions {
             watchers: vec![
                 FileSystemWatcher {
-                    glob_pattern: GlobPattern::String("**".to_string()),
+                    glob_pattern: GlobPattern::String("**/*.{py,pyi,xml,csv}".to_string()),
                     kind: Some(WatchKind::Change | WatchKind::Create | WatchKind::Delete),
                 },
             ],
