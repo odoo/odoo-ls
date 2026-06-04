@@ -85,10 +85,9 @@ pub fn resolve_from_stmt(
     let source_root = source_file_symbol.borrow().get_root().as_ref().unwrap().upgrade().unwrap();
     let entry = source_root.borrow().get_entry().unwrap();
     let _source_file_symbol_lock = source_file_symbol.borrow_mut();
-    let file_tree = resolve_packages(
-        &_source_file_symbol_lock,
-        level,
-        from_stmt);
+    let Some(file_tree) = resolve_packages(&_source_file_symbol_lock, level, from_stmt) else {
+        return (None, Some(vec![source_root.clone()]), vec![]);
+    };
     drop(_source_file_symbol_lock);
     let source_path = source_file_symbol.borrow().paths()[0].clone();
     let mut start_symbol = None;
@@ -123,7 +122,9 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: &Rc<Re
             range: alias.range.clone()
         })
     }
-    if from_symbols.is_none() && from_stmt.is_some() {
+    if from_symbols.is_none()
+    && (from_stmt.is_some() || level != 0)
+    {
         return result;
     }
 
@@ -247,12 +248,12 @@ pub fn find_module(session: &mut SessionInfo, odoo_addons: Rc<RefCell<Symbol>>, 
     None
 }
 
-fn resolve_packages(from_file: &Symbol, level: u32, from_stmt: Option<&Identifier>) -> Vec<OYarn> {
+fn resolve_packages(from_file: &Symbol, level: u32, from_stmt: Option<&Identifier>) -> Option<Vec<OYarn>> {
     let mut first_part_tree: Vec<OYarn> = vec![];
     if level > 0 {
         let mut lvl = level;
         if lvl > Path::new(&from_file.paths()[0]).components().count() as u32 {
-            panic!("Level is too high!")
+            return None;
         }
         if matches!(from_file.typ(), SymType::PACKAGE(_)) {
             lvl -= 1;
@@ -263,7 +264,7 @@ fn resolve_packages(from_file: &Symbol, level: u32, from_stmt: Option<&Identifie
             let tree = from_file.get_tree();
             if lvl > tree.0.len() as u32 {
                 error!("Level is too high and going out of scope");
-                first_part_tree = vec![];
+                return None;
             } else {
                 first_part_tree = Vec::from_iter(tree.0[0..tree.0.len()- lvl as usize].iter().cloned());
             }
@@ -278,7 +279,7 @@ fn resolve_packages(from_file: &Symbol, level: u32, from_stmt: Option<&Identifie
         },
         None => ()
     }
-    first_part_tree
+    Some(first_part_tree)
 }
 
 fn get_or_create_symbol(

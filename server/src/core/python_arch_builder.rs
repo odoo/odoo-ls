@@ -230,7 +230,7 @@ impl PythonArchBuilder {
                     }
                     let mut dep_to_add = vec![];
                     let sym_type = import_symbol.borrow().typ();
-                    if ![SymType::COMPILED, SymType::DISK_DIR].contains(&sym_type) // DISK_DIR does not have iter_symbols and is a symptom of unresolved dirs in custom EPs
+                    if ![SymType::COMPILED, SymType::DISK_DIR, SymType::ROOT, SymType::NAMESPACE].contains(&sym_type) // DISK_DIR does not have iter_symbols and is a symptom of unresolved dirs in custom EPs
                     && !Rc::ptr_eq(self.sym_stack.last().unwrap(), &import_symbol) { /*We have to check that the imported symbol is not the current one. It can
                         happen for example in a .pyi that is importing the .pyd file with the same name. As both exists, odools will try to import the pyi a second time in the same file,
                         and so create a borrow error here
@@ -281,6 +281,9 @@ impl PythonArchBuilder {
                     self.create_local_symbols_from_import_stmt(session, None, &import_stmt.names, 0, &import_stmt.range)?
                 },
                 Stmt::ImportFrom(import_from_stmt) => {
+                    if import_from_stmt.module.is_none() && import_from_stmt.level == 0 {
+                        continue;
+                    }
                     self.create_local_symbols_from_import_stmt(session, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level, &import_from_stmt.range)?
                 },
                 Stmt::AnnAssign(ann_assign_stmt) => {
