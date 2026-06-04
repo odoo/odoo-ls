@@ -1,11 +1,11 @@
 use ruff_python_ast::AtomicNodeIndex;
 use ruff_text_size::{TextSize, TextRange};
-use tracing::{info, trace};
+use tracing::{info, trace, warn};
 use weak_table::traits::WeakElement;
 
 use crate::core::data_hooks;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
-use crate::core::file_mgr::{FileMgr, NoqaInfo};
+use crate::core::file_mgr::{FileInfo, FileMgr, NoqaInfo};
 use crate::core::xml_data::OdooData;
 use crate::{constants::*, oyarn, Sy};
 use crate::core::entry_point::EntryPoint;
@@ -889,6 +889,28 @@ impl Symbol {
             Symbol::Variable(_) => panic!("invalid symbol type to extract path"),
             Symbol::XmlFileSymbol(x) => x.path.clone(),
             Symbol::CsvFileSymbol(c) => c.path.clone(),
+        }
+    }
+
+    pub fn get_file_info_for_validation(symbol: &Rc<RefCell<Symbol>>, session: &mut SessionInfo) -> Option<Rc<RefCell<FileInfo>>> {
+        let file_symbol = symbol.borrow();
+        let mut path = file_symbol.paths()[0].clone();
+        if matches!(file_symbol.typ(), SymType::PACKAGE(_)) {
+            path = PathBuf::from(path).join("__init__.py").sanitize() + file_symbol.as_package().i_ext().as_str();
+        }
+        let name = file_symbol.name().clone();
+        let original_path = &file_symbol.paths()[0];
+        drop(file_symbol);
+        match session.sync_odoo.get_file_mgr().borrow().get_file_info(&path) {
+            Some(file_info) => Some(file_info),
+            None => {
+                let (updated, result) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, original_path, None, Some(-100), true);
+                if !updated {
+                    warn!("File info not found for validating symbol: {} at path {}", name, original_path);
+                    return None;
+                }
+                Some(result)
+            }
         }
     }
 
