@@ -49,27 +49,6 @@ impl PythonValidator {
         }
     }
 
-    fn get_file_info(&mut self, session: &mut SessionInfo) -> Option<Rc<RefCell<FileInfo>>> {
-        let file_symbol = self.file.borrow();
-        let mut path = file_symbol.paths()[0].clone();
-        if matches!(file_symbol.typ(), SymType::PACKAGE(_)) {
-            path = PathBuf::from(path).join("__init__.py").sanitize() + file_symbol.as_package().i_ext().as_str();
-        }
-        let file_info_rc = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
-        let file_info_rc = match file_info_rc {
-            Some(f) => f,
-            None => {
-                let (updated, symbol) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &file_symbol.paths()[0], None, Some(-100), true);
-                if !updated {
-                    warn!("File info not found for validating symbol: {} at path {}", self.sym_stack[0].borrow().name(), file_symbol.paths()[0]);
-                    return None;
-                }
-                symbol
-            }
-        };
-        Some(file_info_rc)
-    }
-
     /* Validate the symbol. The dependencies must be done before any validation. */
     pub fn validate(&mut self, session: &mut SessionInfo) {
         self.file = self.sym_stack[0].borrow().get_file().unwrap().upgrade().unwrap();
@@ -80,7 +59,7 @@ impl PythonValidator {
         }
         let sym_type = symbol.typ().clone();
         drop(symbol);
-        let file_info_rc = self.get_file_info(session).clone();
+        let file_info_rc = Symbol::get_file_info_for_validation(&self.file, session).clone();
         let file_info_rc = match file_info_rc {
             Some(f) => f,
             None => {

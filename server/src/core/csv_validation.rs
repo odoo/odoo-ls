@@ -17,10 +17,14 @@ impl CsvValidator {
         }
     }
 
+
     pub fn validate(&mut self, session: &mut SessionInfo, csv_symbol: Rc<RefCell<Symbol>>) {
         let mut diagnostics = vec![];
         csv_symbol.borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
-        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&csv_symbol.borrow().get_symbol_first_path()).unwrap();
+        let Some(file_info) = Symbol::get_file_info_for_validation(&csv_symbol, session) else {
+            csv_symbol.borrow_mut().set_build_status(BuildSteps::VALIDATION, BuildStatus::INVALID);
+            return;
+        };
         let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
         let model_name_pb = PathBuf::from(&csv_symbol.borrow().paths()[0]);
         let model_name = Sy!(model_name_pb.file_stem().unwrap().to_str().unwrap().to_string());
