@@ -447,7 +447,7 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
             continue;
         }
         // Try as compiled
-        if !matches!(parent, SymbolKey::Root(_)) {
+        if !is_stub && !matches!(parent, SymbolKey::Root(_)) {
             // Probe the suffixes CPython itself accepts for extension modules,
             // in the order it would try them (see importlib.machinery.EXTENSION_SUFFIXES).
             let base = &full_path_str;
