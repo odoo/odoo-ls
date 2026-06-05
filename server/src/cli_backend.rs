@@ -417,8 +417,10 @@ mod tests {
         let backend = CliBackend::new(cli);
         let (_, config) = setup_with_config(&backend).expect("Expected config entry");
 
+        let ws1_expected = fs::canonicalize(ws1.path()).unwrap().sanitize();
+
         assert!(
-            config.addons_paths.contains(&ws1.path().sanitize()),
+            config.addons_paths.contains(&ws1_expected),
             "Expected ws1 to be in addons_paths after resolving template variable, got: {:?}",
             config.addons_paths
         );
@@ -470,6 +472,9 @@ mod tests {
         ws1.create_dir_all().unwrap();
         ws2.create_dir_all().unwrap();
 
+        let ws1_expected = fs::canonicalize(ws1.path()).unwrap().sanitize();
+        let ws2_expected = fs::canonicalize(ws2.path()).unwrap().sanitize();
+
         let cli = Cli {
             tracked_folders: Some(vec![
                 ws1.path().to_string_lossy().into_owned(),
@@ -482,11 +487,11 @@ mod tests {
 
         assert_eq!(ws_folders.len(), 2, "Both tracked folders should be registered");
         assert!(
-            ws_folders.values().any(|p| p == &ws1.path().sanitize()),
+            ws_folders.values().any(|p| p == &ws1_expected),
             "ws1 should be registered"
         );
         assert!(
-            ws_folders.values().any(|p| p == &ws2.path().sanitize()),
+            ws_folders.values().any(|p| p == &ws2_expected),
             "ws2 should be registered"
         );
     }
@@ -695,8 +700,10 @@ mod tests {
         let backend = CliBackend::new(cli);
         let (_, config) = setup_with_config(&backend).expect("Expected config entry");
 
+        let addons_expected = fs::canonicalize(addons_dir.path()).unwrap().sanitize();
+
         assert!(
-            config.addons_paths.contains(&addons_dir.path().sanitize()),
+            config.addons_paths.contains(&addons_expected),
             "CLI --addons should add the directory to addons_paths, got: {:?}",
             config.addons_paths
         );
@@ -751,13 +758,16 @@ mod tests {
         let backend = CliBackend::new(cli);
         let (_, config) = setup_with_config(&backend).expect("Expected config entry");
 
+        let config_addons_expected = fs::canonicalize(config_addons.path()).unwrap().sanitize();
+        let cli_addons_expected = fs::canonicalize(cli_addons.path()).unwrap().sanitize();
+
         assert!(
-            config.addons_paths.contains(&config_addons.path().sanitize()),
+            config.addons_paths.contains(&config_addons_expected),
             "addons from config file must be present, got: {:?}",
             config.addons_paths
         );
         assert!(
-            config.addons_paths.contains(&cli_addons.path().sanitize()),
+            config.addons_paths.contains(&cli_addons_expected),
             "addons from CLI must be present, got: {:?}",
             config.addons_paths
         );
