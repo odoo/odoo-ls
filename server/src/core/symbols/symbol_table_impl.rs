@@ -973,7 +973,7 @@ impl SymbolTable {
                     } else if index == BuildSteps::ARCH_EVAL as usize {
                         session.sync_odoo.add_to_rebuild_arch_eval(sym);
                     } else if index == BuildSteps::VALIDATION as usize {
-                        session.st_mut().invalidate_sub_functions(sym);
+                        SymbolTable::invalidate_sub_functions(session, sym);
                         session.sync_odoo.add_to_validations(sym);
                     }
                 }
@@ -992,7 +992,7 @@ impl SymbolTable {
                     if index + 1 == BuildSteps::ARCH_EVAL as usize {
                         session.sync_odoo.add_to_rebuild_arch_eval(sym);
                     } else if index + 1 == BuildSteps::VALIDATION as usize {
-                        session.st_mut().invalidate_sub_functions(sym);
+                        SymbolTable::invalidate_sub_functions(session, sym);
                         session.sync_odoo.add_to_validations(sym);
                     }
                 }
@@ -1006,7 +1006,7 @@ impl SymbolTable {
                         .flat_map(|s| s.iter_valid(session.st()))
                         .collect::<Vec<_>>() {
                     if !session.st_mut().is_symbol_in_parents(sym.into(), ref_to_inv.into()) {
-                        session.st_mut().invalidate_sub_functions(sym);
+                        SymbolTable::invalidate_sub_functions(session, sym);
                         session.sync_odoo.add_to_validations(sym);
                     }
                 }
@@ -1020,10 +1020,14 @@ impl SymbolTable {
         }
     }
 
-    pub fn invalidate_sub_functions(&mut self, target: SourceFileKey) {
+    pub fn invalidate_sub_functions(session: &mut SessionInfo, target: SourceFileKey) {
+        if let Some(deferred) = &mut session.sync_odoo.deferred_subfunc_invalidation {
+            deferred.insert(target);
+            return;
+        }
         if matches!(target, SourceFileKey::File(_) | SourceFileKey::PythonPackage(_) | SourceFileKey::Module(_)) {
-            for func_key in self.iter_inner_functions(target.into()) {
-                let func = &mut self[func_key];
+            for func_key in session.st().iter_inner_functions(target.into()) {
+                let func = &mut session.st_mut()[func_key];
                 func.evaluations.clear();
                 func.set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
                 func.set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);

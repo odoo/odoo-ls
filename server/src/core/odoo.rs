@@ -148,7 +148,7 @@ pub struct SyncOdoo {
     pub evaluation_search: Option<ReferenceTarget>, //If set, any evaluation will be check against this value. If evaluation matches, location is kept in evaluation_locations
     pub evaluation_locations: Vec<Location>,
     pub typeshed_weak_cache: TypeshedWeakReferences, //cache of weak references to important typeshed symbols, to avoid having to look for them in the graph for each evaluation
-
+    pub deferred_subfunc_invalidation: Option<FifoWeakHashSet<SourceFileKey>>, // None = eager (default)
     languages_by_source: WeakMap<SourceFileKey, HashSet<String>>,
     language_dependents: WeakSet<SymbolKey>,
 
@@ -201,6 +201,7 @@ impl SyncOdoo {
             typeshed_weak_cache: TypeshedWeakReferences::new(),
             languages_by_source: WeakMap::new(),
             language_dependents: WeakSet::new(),
+            deferred_subfunc_invalidation: None,
 
             test_mode: false,
         };
@@ -561,6 +562,7 @@ impl SyncOdoo {
         let sorted_modules = SyncOdoo::sort_modules(session.st(), modules);
         let main_entry = session.sync_odoo.get_main_entry();
         session.sync_odoo.import_cache = Some(ImportCache::default());
+        session.sync_odoo.deferred_subfunc_invalidation = Some(FifoWeakHashSet::new());
          // Build modules (arch + arch_eval)
         for module in sorted_modules {
             if let Some(mut builder) = PythonArchBuilder::new(session.st(), main_entry.clone(), module.into()) {
@@ -568,6 +570,12 @@ impl SyncOdoo {
             }
             // Drain build queues, skip validation
             while Self::build_one(session, &main_entry, false) {}
+        }
+        // Run deferred subfunction invalidations
+        if let Some(mut files) = session.sync_odoo.deferred_subfunc_invalidation.take() {
+            while let Some(file) = files.pop_front_valid(session.st()) {
+                SymbolTable::invalidate_sub_functions(session, file);
+            }
         }
         // Drain validation queue
         while Self::build_one(session, &main_entry, true) {}
