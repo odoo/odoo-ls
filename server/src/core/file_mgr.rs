@@ -3,8 +3,9 @@ use ruff_python_parser::Parsed;
 use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent, Uri};
 use lsp_types::notification::{Notification, PublishDiagnostics};
 use ruff_source_file::{OneIndexed, PositionEncoding, SourceLocation};
+use rustc_hash::FxHasher;
 use tracing::{error, warn};
-use std::{collections::hash_map::DefaultHasher, path::Path};
+use std::path::Path;
 use crate::utils::HashSet;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
@@ -53,6 +54,61 @@ pub fn combine_noqa_info(noqas: &[NoqaInfo]) -> NoqaInfo {
         }
     }
     NoqaInfo::Codes(codes.iter().cloned().collect())
+}
+
+/// Result of scanning a parsed module's comment tokens. See [`scan_noqa`].
+struct NoqaScan {
+    pub blocs: HashMap<u32, NoqaInfo>,
+    pub lines: HashMap<u32, NoqaInfo>,
+    pub test_comments: Vec<(u32, Vec<String>)>,
+}
+
+
+/// Select the ruff [`PySourceType`] for a path by extension: `.pyi` → stub,
+/// `.ipynb` → notebook, everything else → regular Python.
+pub fn python_source_type(path: &str) -> PySourceType {
+    if path.ends_with(".pyi") {
+        PySourceType::Stub
+    } else if path.ends_with(".ipynb") {
+        PySourceType::Ipynb
+    } else {
+        PySourceType::Python
+    }
+}
+
+/// Parsed product of a Python source: its indexed AST plus the noqa/`# OLS`
+/// directives scanned from its comments. See [`parse_python`].
+#[derive(Debug)]
+pub struct ParsedPython {
+    pub indexed_module: Arc<IndexedModule>,
+    pub noqas_blocs: HashMap<u32, NoqaInfo>,
+    pub noqas_lines: HashMap<u32, NoqaInfo>,
+    pub diag_test_comments: Vec<(u32, Vec<String>)>,
+}
+
+/// Parse `text_document` as Python and, unless `is_external`, scan its comments
+/// for noqa/`# OLS` directives.
+pub fn parse_python(
+    text_document: &TextDocument,
+    source_type: PySourceType,
+    encoding: PositionEncoding,
+    test_mode: bool,
+    skip_noqa_scan: bool,
+) -> ParsedPython {
+    let parsed = ruff_python_parser::parse_unchecked_source(text_document.contents(), source_type);
+    // External files skip the noqa scan: their diagnostics are never published.
+    let (noqas_blocs, noqas_lines, diag_test_comments) = if skip_noqa_scan {
+        (HashMap::default(), HashMap::default(), Vec::new())
+    } else {
+        let scan = FileInfo::scan_noqa(&parsed, text_document.contents(), text_document, encoding, test_mode);
+        (scan.blocs, scan.lines, scan.test_comments)
+    };
+    ParsedPython {
+        indexed_module: IndexedModule::new(parsed),
+        noqas_blocs,
+        noqas_lines,
+        diag_test_comments,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -186,27 +242,30 @@ impl FileInfo {
             self.file_info_ast.borrow_mut().ast_type = AstType::Csv;
             return;
         }
-        let mut diagnostics = vec![];
-        let fia_rc = self.file_info_ast.clone();
-        let fia = fia_rc.borrow_mut();
-        let source = S!(fia.text_document.as_ref().unwrap().contents());
-        drop(fia);
-        let mut python_source_type = PySourceType::Python;
-        if self.uri.ends_with(".pyi") {
-            python_source_type = PySourceType::Stub;
-        } else if self.uri.ends_with(".ipynb") {
-            python_source_type = PySourceType::Ipynb;
-        }
-        let parsed_module = ruff_python_parser::parse_unchecked_source(source.as_str(), python_source_type);
+        let source_type = python_source_type(&self.uri);
+        let parsed = {
+            let fia = self.file_info_ast.borrow();
+            parse_python(fia.text_document.as_ref().unwrap(), source_type, session.sync_odoo.encoding, session.sync_odoo.test_mode, is_external)
+        };
         if !is_external {
-            self.noqas_blocs.clear();
-            self.noqas_lines.clear();
-            self.extract_tokens(&parsed_module, &source, session.sync_odoo.encoding, session.sync_odoo.test_mode);
+            self.noqas_blocs = parsed.noqas_blocs;
+            self.noqas_lines = parsed.noqas_lines;
+            self.diag_test_comments.extend(parsed.diag_test_comments);
         }
-        self.valid = true;
-        for error in parsed_module.errors().iter() {
-            self.valid = false;
-            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS01000, &[]) {
+        let (valid, diagnostics) = Self::syntax_diagnostics(session, &parsed.indexed_module.parsed);
+        self.valid = valid;
+        self.file_info_ast.borrow_mut().indexed_module = Some(parsed.indexed_module);
+        self.replace_diagnostics(BuildSteps::SYNTAX, diagnostics);
+    }
+
+    /// Build the SYNTAX-step diagnostics (OLS01000) for a parsed Python module.
+    /// Returns whether the module is syntactically valid along with the diagnostics.
+    fn syntax_diagnostics(session: &SessionInfo, parsed: &Parsed<ModModule>) -> (bool, Vec<Diagnostic>) {
+        let mut diagnostics = vec![];
+        let mut valid = true;
+        for error in parsed.errors().iter() {
+            valid = false;
+            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS01000, &[]) {
                 diagnostics.push(Diagnostic {
                     range: Range{
                         start: Position::new(error.location.start().to_u32(), 0),
@@ -217,8 +276,7 @@ impl FileInfo {
                 });
             }
         }
-        self.file_info_ast.borrow_mut().indexed_module = Some(IndexedModule::new(parsed_module));
-        self.replace_diagnostics(BuildSteps::SYNTAX, diagnostics);
+        (valid, diagnostics)
     }
 
     /* if ast has been set to none to lower memory usage, try to reload it */
@@ -240,7 +298,25 @@ impl FileInfo {
         self._build_ast(session, session.sync_odoo.get_file_mgr().borrow().is_in_workspace(&self.uri));
     }
 
-    fn extract_tokens(&mut self, parsed_module: &Parsed<ModModule>, source: &String, encoding: PositionEncoding, parse_test_comments: bool) {
+    /// Scan a parsed module's comment tokens for `noqa` directives and (in test mode)
+    /// `# OLS` test-expectation comments.
+    fn scan_noqa(
+        parsed_module: &Parsed<ModModule>,
+        source: &str,
+        text_document: &TextDocument,
+        encoding: PositionEncoding,
+        parse_test_comments: bool,
+    ) -> NoqaScan {
+        fn add_noqa_bloc(blocs: &mut HashMap<u32, NoqaInfo>, index: u32, noqa: NoqaInfo) {
+            if let Some(existing) = blocs.remove(&index) {
+                blocs.insert(index, combine_noqa_info(&[existing, noqa]));
+            } else {
+                blocs.insert(index, noqa);
+            }
+        }
+        let mut blocs: HashMap<u32, NoqaInfo> = HashMap::default();
+        let mut lines: HashMap<u32, NoqaInfo> = HashMap::default();
+        let mut test_comments: Vec<(u32, Vec<String>)> = Vec::new();
         let mut is_first_expr: bool = true;
         let mut noqa_to_add = None;
         let mut previous_token: Option<&Token> = None;
@@ -263,20 +339,17 @@ impl FileInfo {
                             } else {
                                 noqa_to_add = Some(NoqaInfo::All);
                             }
-                            let file_info_ast_ref = self.file_info_ast.borrow();
-                            let text_doc = file_info_ast_ref.text_document.as_ref().unwrap();
-                            let source_location = text_doc.index().source_location(token.start(), text_doc.contents(), encoding);
+                            let source_location = text_document.index().source_location(token.start(), text_document.contents(), encoding);
                             if let Some(previous_token) = previous_token {
-                                let prev_location = file_info_ast_ref.text_document.as_ref().unwrap().index().source_location(previous_token.start(), file_info_ast_ref.text_document.as_ref().unwrap().contents(), encoding);
+                                let prev_location = text_document.index().source_location(previous_token.start(), text_document.contents(), encoding);
                                 if prev_location.line == source_location.line {
-                                    self.noqas_lines.insert(source_location.line.to_zero_indexed() as u32, noqa_to_add.unwrap());
+                                    lines.insert(source_location.line.to_zero_indexed() as u32, noqa_to_add.unwrap());
                                     noqa_to_add = None;
                                     continue;
                                 }
                             }
-                            drop(file_info_ast_ref);
                             if is_first_expr {
-                                self.add_noqa_bloc(0, noqa_to_add.unwrap());
+                                add_noqa_bloc(&mut blocs, 0, noqa_to_add.unwrap());
                                 noqa_to_add = None;
                             }
                         }
@@ -284,16 +357,14 @@ impl FileInfo {
                     if parse_test_comments {
                         if text.starts_with("#OLS") || text.starts_with("# OLS") {
                             let codes = text.split(",").map(|s| s.trim().trim_start_matches('#').trim().to_string()).collect::<Vec<String>>();
-                            let file_info_ast_ref = self.file_info_ast.borrow();
-                            let text_doc = file_info_ast_ref.text_document.as_ref().unwrap();
-                            let source_location = text_doc.index().source_location(token.start(), text_doc.contents(), encoding);
-                            self.diag_test_comments.push((source_location.line.to_zero_indexed() as u32, codes));
+                            let source_location = text_document.index().source_location(token.start(), text_document.contents(), encoding);
+                            test_comments.push((source_location.line.to_zero_indexed() as u32, codes));
                         }
                     }
                 },
                 TokenKind::Class | TokenKind::Def => {
                     if noqa_to_add.is_some() {
-                        self.add_noqa_bloc(token.range().start().to_u32(), noqa_to_add.unwrap());
+                        add_noqa_bloc(&mut blocs, token.range().start().to_u32(), noqa_to_add.unwrap());
                         noqa_to_add = None;
                     }
                 }
@@ -304,14 +375,7 @@ impl FileInfo {
             }
             previous_token = Some(token);
         }
-    }
-
-    fn add_noqa_bloc(&mut self, index: u32, noqa_to_add: NoqaInfo) {
-        if let Some(noqa_bloc) = self.noqas_blocs.remove(&index) {
-            self.noqas_blocs.insert(index, combine_noqa_info(&[noqa_bloc, noqa_to_add]));
-        } else {
-            self.noqas_blocs.insert(index, noqa_to_add);
-        }
+        NoqaScan { blocs, lines, test_comments }
     }
 
     pub fn replace_diagnostics(&mut self, step: BuildSteps, diagnostics: Vec<Diagnostic>) {
