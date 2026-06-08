@@ -15,6 +15,7 @@ pub const DEBUG_STEPS_ONLY_INTERNAL: bool = true;
 pub const DEBUG_REBUILD_NOW: bool = false;
 pub const DEBUG_BORROW_GUARDS: bool = false;
 pub const DEBUG_SYMBOL_TABLE_METRICS: bool = false;
+pub const DEBUG_PRE_PARSER: bool = false;
 
 //type DebugYarn = String;
 
