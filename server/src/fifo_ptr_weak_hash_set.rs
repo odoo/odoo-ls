@@ -59,4 +59,15 @@ impl<T: Copy + Eq + Hash> FifoWeakHashSet<T> {
     pub fn len(&self) -> usize {
         self.set.len()
     }
+
+
+    pub fn pop_front_valid(&mut self, table: &impl KeyValidator<T>) -> Option<T> {
+        while let Some(v) = self.queue.pop_front() {
+            self.set.remove(&v);
+            if table.is_key_valid(v) {
+                return Some(v)
+            }
+        }
+        None
+    }
 }
