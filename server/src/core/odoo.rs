@@ -2,8 +2,9 @@ use crate::constants::OYarn;
 use crate::core::csv_validation::CsvValidator;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
-use crate::core::file_mgr::AstType;
+use crate::core::file_mgr::{AstType, PreloadedFile};
 use crate::core::module_load_order::sort_by_load_order;
+use crate::core::pre_parser::{PreParseCache, PreParser};
 use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::storage::metrics::{log_slotmap_capacities, log_symbol_counts, log_memory_usage};
@@ -151,8 +152,10 @@ pub struct SyncOdoo {
     pub deferred_subfunc_invalidation: Option<FifoWeakHashSet<SourceFileKey>>, // None = eager (default)
     languages_by_source: WeakMap<SourceFileKey, HashSet<String>>,
     language_dependents: WeakSet<SymbolKey>,
+    pre_parse_cache: Option<Arc<PreParseCache>>, // used by `build_modules`
 
     pub test_mode: bool,
+
 }
 
 unsafe impl Send for SyncOdoo {}
@@ -202,6 +205,7 @@ impl SyncOdoo {
             languages_by_source: WeakMap::new(),
             language_dependents: WeakSet::new(),
             deferred_subfunc_invalidation: None,
+            pre_parse_cache: None,
 
             test_mode: false,
         };
@@ -563,14 +567,26 @@ impl SyncOdoo {
         let main_entry = session.sync_odoo.get_main_entry();
         session.sync_odoo.import_cache = Some(ImportCache::default());
         session.sync_odoo.deferred_subfunc_invalidation = Some(FifoWeakHashSet::new());
-         // Build modules (arch + arch_eval)
-        for module in sorted_modules {
+
+        // Pre-parser: Start reading/parsing files in separate thread.
+        let pre_parser = PreParser::new(session, &sorted_modules);
+        session.sync_odoo.pre_parse_cache = Some(pre_parser.cache.clone());
+
+        // Build modules (arch + arch_eval)
+        for (i, module) in sorted_modules.into_iter().enumerate() {
             if let Some(mut builder) = PythonArchBuilder::new(session.st(), main_entry.clone(), module.into()) {
                 builder.load_arch(session);
             }
             // Drain build queues, skip validation
             while Self::build_one(session, &main_entry, false) {}
+
+            // Update pre_parser on module build progress
+            pre_parser.on_module_built(i);
         }
+        // Module-build phase done: tear down the pool (joins workers) and drop the cache.
+        session.sync_odoo.pre_parse_cache = None;
+        drop(pre_parser);
+
         // Run deferred subfunction invalidations
         if let Some(mut files) = session.sync_odoo.deferred_subfunc_invalidation.take() {
             while let Some(file) = files.pop_front_valid(session.st()) {
@@ -1495,6 +1511,13 @@ impl SyncOdoo {
             return is_dir_cs(path);
         };
         *cache.entry(path.to_string()).or_insert_with(|| is_dir_cs(path))
+    }
+
+    /// Take the prepared payload (Python AST or XML/CSV data file) for
+    /// `sanitized_path`, if a [`crate::core::pre_parser`] worker produced one
+    /// ahead of the build.
+    pub fn take_preloaded(session: &SessionInfo, sanitized_path: &str) -> Option<PreloadedFile> {
+        session.sync_odoo.pre_parse_cache.as_ref()?.take(sanitized_path)
     }
 }
 
