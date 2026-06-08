@@ -502,7 +502,7 @@ impl EntryPoint {
             session.sync_odoo.add_to_rebuild_arch_eval(s);
         }
         for &s in to_add[BuildSteps::VALIDATION as usize].iter() {
-            session.st_mut().invalidate_sub_functions(s);
+            SymbolTable::invalidate_sub_functions(session, s);
             session.sync_odoo.add_to_validations(s);
         }
         self.not_found_symbols.retain_valid(session.st(), |&sym| {
@@ -538,7 +538,7 @@ impl EntryPoint {
             session.sync_odoo.add_to_rebuild_arch_eval(s);
         }
         for &s in to_add[BuildSteps::VALIDATION as usize].iter() {
-            session.st_mut().invalidate_sub_functions(s);
+            SymbolTable::invalidate_sub_functions(session, s);
             session.sync_odoo.add_to_validations(s);
         }
         self.not_found_symbols_for_models.retain_valid(session.st(), |&sym| {

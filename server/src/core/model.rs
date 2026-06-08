@@ -380,8 +380,8 @@ impl Model {
 
     pub fn add_dependents_to_validation(&self, session: &mut SessionInfo, module_change: Option<ModuleKey>) {
         for dep in self.dependents.iter_valid(session.st()) {
+            SymbolTable::invalidate_sub_functions(session, dep);
             let st = session.st_mut();
-            st.invalidate_sub_functions(dep);
             let module = st.find_module(dep);
             if module_change.is_none() || module.is_none() || ModuleSymbol::is_in_deps(st, module.unwrap(), &st[module_change.unwrap()].dir_name) {
                 session.sync_odoo.add_to_validations(dep);
