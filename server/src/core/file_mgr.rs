@@ -88,6 +88,8 @@ pub struct ParsedPython {
 
 /// Parse `text_document` as Python and, unless `is_external`, scan its comments
 /// for noqa/`# OLS` directives.
+/// Shared by the build thread ([`FileInfo::_build_ast`]) and the pre-parse
+/// workers ([`crate::core::pre_parser`])
 pub fn parse_python(
     text_document: &TextDocument,
     source_type: PySourceType,
@@ -213,6 +215,18 @@ impl FileInfo {
             session.log_message(MessageType::ERROR, format!("Attempt to update untitled file {}, without changes", path));
             return false;
         } else {
+            // A pre-parser worker thread may have already read (and for Python
+            // also parsed) this file ahead of the build. If so, slot the
+            // prepared payload straight in — no disk read. See
+            // `crate::core::pre_parser`.
+            let sanitized_path = Path::new(path).sanitize_cow();
+            if let Some(preloaded) = SyncOdoo::take_preloaded(session, &sanitized_path) {
+                if self.file_info_ast.borrow().text_hash == preloaded.text_hash() {
+                    return false;
+                }
+                self.apply_preloaded(session, preloaded);
+                return true;
+            }
             match fs::read_to_string(path) {
                 Ok(content) => {
                     self.file_info_ast.borrow_mut().text_document = Some(TextDocument::new(content, self.version.unwrap_or(-1)));
@@ -277,6 +291,37 @@ impl FileInfo {
             }
         }
         (valid, diagnostics)
+    }
+
+    /// Slot a [`PreloadedFile`] payload produced by a background [`crate::core::pre_parser`]
+    /// worker into this `FileInfo`, instead of reading (and, for Python, parsing)
+    /// the file inline. For Python this mirrors the Python branch of
+    /// [`Self::_build_ast`] — syntax diagnostics are built here because they
+    /// depend on the session's diagnostic config.
+    fn apply_preloaded(&mut self, session: &mut SessionInfo, preloaded: PreloadedFile) {
+        match preloaded {
+            PreloadedFile::Python { text_hash, text_document, parsed } => {
+                let (valid, diagnostics) = Self::syntax_diagnostics(session, &parsed.indexed_module.parsed);
+                self.valid = valid;
+                self.noqas_blocs = parsed.noqas_blocs;
+                self.noqas_lines = parsed.noqas_lines;
+                self.diag_test_comments = parsed.diag_test_comments;
+                {
+                    let mut fia = self.file_info_ast.borrow_mut();
+                    fia.text_hash = text_hash;
+                    fia.text_document = Some(text_document);
+                    fia.indexed_module = Some(parsed.indexed_module);
+                    fia.ast_type = AstType::Python;
+                }
+                self.replace_diagnostics(BuildSteps::SYNTAX, diagnostics);
+            }
+            PreloadedFile::DataFile { text_hash, text_document, ast_type } => {
+                let mut fia = self.file_info_ast.borrow_mut();
+                fia.text_hash = text_hash;
+                fia.text_document = Some(text_document);
+                fia.ast_type = ast_type;
+            }
+        }
     }
 
     /* if ast has been set to none to lower memory usage, try to reload it */
@@ -828,6 +873,38 @@ impl FileMgr {
                 error!("Unable to parse uri: {s}, {}", err);
                 S!(s)
             }
+        }
+    }
+}
+
+/// A file pre-loaded by a background [`crate::core::pre_parser`] worker thread,
+/// ready to be slotted into a [`FileInfo`] by the build thread without re-reading
+/// or re-parsing it from disk. See [`FileInfo::apply_preloaded`].
+#[derive(Debug)]
+pub enum PreloadedFile {
+    /// A fully-parsed Python source: the worker ran read + ruff parse + noqa scan
+    /// off the build thread.
+    /// The build only rebuilds syntax diagnostics (they depend on session config).
+    Python {
+        text_hash: u64,
+        text_document: TextDocument,
+        parsed: ParsedPython,
+    },
+    /// A pre-read XML/CSV data file (one of the paths listed in the manifest
+    /// `data` list). Workers only run [`fs::read_to_string`] — no parsing; the
+    /// build thread slots the contents straight in without touching the disk.
+    DataFile {
+        text_hash: u64,
+        text_document: TextDocument,
+        ast_type: AstType,
+    },
+}
+
+impl PreloadedFile {
+    pub fn text_hash(&self) -> u64 {
+        match self {
+            PreloadedFile::Python { text_hash, .. }
+            | PreloadedFile::DataFile { text_hash, .. } => *text_hash,
         }
     }
 }
