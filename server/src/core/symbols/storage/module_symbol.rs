@@ -103,6 +103,10 @@ impl ModuleSymbol {
         &self.module_symbols
     }
 
+    pub fn data(&self) -> &[(String, TextRange)] {
+        &self.data
+    }
+
     pub fn data_symbols(&self) -> &HashMap<String, SourceFileKey> {
         &self.data_symbols
     }
