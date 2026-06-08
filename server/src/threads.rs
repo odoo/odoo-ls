@@ -47,6 +47,12 @@ impl <'a> SessionInfo<'a> {
         }
     }
 
+    /// Clone of the outgoing message channel. Lets a helper emit notifications
+    /// without borrowing the whole session — e.g. from a `Drop` impl.
+    pub fn clone_sender(&self) -> Sender<Message> {
+        self.sender.clone()
+    }
+
     pub fn send_notification<T: Serialize>(&self, method: &str, params: T) {
         let param = serde_json::to_value(params);
         let Ok(param) = param else {
