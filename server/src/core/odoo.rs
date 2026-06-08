@@ -559,18 +559,45 @@ impl SyncOdoo {
             }
         }
         let sorted_modules = SyncOdoo::sort_modules(session.st(), modules);
-        for module_symbol in sorted_modules {
-            session.sync_odoo.add_to_rebuild_arch(module_symbol);
+        let main_entry = session.sync_odoo.get_main_entry();
+        session.sync_odoo.import_cache = Some(ImportCache::default());
+         // Build modules (arch + arch_eval)
+        for module in sorted_modules {
+            if let Some(mut builder) = PythonArchBuilder::new(session.st(), main_entry.clone(), module.into()) {
+                builder.load_arch(session);
+            }
+            // Drain build queues, skip validation
+            while Self::build_one(session, &main_entry, false) {}
         }
-        if !SyncOdoo::process_rebuilds(session, false) {
-            return;
-        }
-        //println!("{}", self.symbols.as_ref().unwrap().borrow_mut().debug_print_graph());
-        //fs::write("out_architecture.json", self.get_symbol(&tree(vec!["odoo", "addons", "module_1"], vec![])).as_ref().unwrap().borrow().debug_to_json().to_string()).expect("Unable to write file");
+        // Drain validation queue
+        while Self::build_one(session, &main_entry, true) {}
+        session.sync_odoo.import_cache = None;
         let modules_count = session.sync_odoo.modules.len();
         info!("End building modules. {} modules loaded", modules_count);
         session.log_message(MessageType::INFO, format!("End building modules. {} modules loaded", modules_count));
         session.sync_odoo.state_init = InitState::ODOO_READY;
+    }
+
+    /// Builds one item from the build queues, preferably ARCH, then ARCH_EVAL, then VALIDATION if `validation` is `true`.
+    /// Returns true if an item was built, false if all queues are empty.
+    fn build_one(session: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, validation: bool) -> bool {
+        while let Some(symbol) = session.sync_odoo.rebuild_arch.pop_front_valid(&session.sync_odoo.symbol_table) {
+            if let Some(mut builder) = PythonArchBuilder::new(session.st(), entry.clone(), symbol) {
+                builder.load_arch(session);
+                return true;
+            }
+        }
+        while let Some(symbol) = session.sync_odoo.rebuild_arch_eval.pop_front_valid(&session.sync_odoo.symbol_table) {
+            if let Some(mut builder) = PythonArchEval::new(session.st(), entry.clone(), symbol) {
+                builder.eval_arch(session);
+                return true;
+            }
+        }
+        if validation && let Some(symbol) = session.sync_odoo.rebuild_validation.pop_front_valid(&session.sync_odoo.symbol_table) {
+            Self::validate(session, symbol, entry.clone());
+            return true;
+        }
+        false
     }
 
     /// Sort modules by load order
@@ -836,20 +863,7 @@ impl SyncOdoo {
                         return true;
                     }
                 }
-                match sym_key {
-                    SymbolKey::XmlFile(xml) => {
-                        let mut validator = XmlValidator::new(&entry, xml, session.st());
-                        validator.validate(session);
-                    },
-                    SymbolKey::CsvFile(csv) => {
-                        let mut validator = CsvValidator::new();
-                        validator.validate(session, csv);
-                    },
-                    _ => {
-                        let mut validator = PythonValidator::new(session.st(), entry, sym_key);
-                        validator.validate(session);
-                    }
-                }
+                Self::validate(session, sym_key, entry);
                 continue;
             }
         }
@@ -865,6 +879,23 @@ impl SyncOdoo {
         }
         trace!("Leaving rebuild with remaining tasks: {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_validation.len());
         true
+    }
+
+    fn validate(session: &mut SessionInfo, sym_key: SymbolKey, entry: Rc<RefCell<EntryPoint>>) {
+        match sym_key {
+            SymbolKey::XmlFile(xml) => {
+                let mut validator = XmlValidator::new(&entry, xml, session.st());
+                validator.validate(session);
+            },
+            SymbolKey::CsvFile(csv) => {
+                let mut validator = CsvValidator::new();
+                validator.validate(session, csv);
+            },
+            _ => {
+                let mut validator = PythonValidator::new(session.st(), entry, sym_key);
+                validator.validate(session);
+            }
+        }
     }
 
     pub fn add_to_rebuild_arch(&mut self, symbol: impl Into<SymbolKey>) {
