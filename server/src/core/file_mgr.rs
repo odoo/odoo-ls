@@ -167,13 +167,12 @@ impl FileInfo {
                 },
             };
         }
-        let mut hasher = DefaultHasher::new();
-        self.file_info_ast.borrow_mut().text_document.clone().unwrap().hash(&mut hasher);
         let old_hash = self.file_info_ast.borrow().text_hash;
-        self.file_info_ast.borrow_mut().text_hash = hasher.finish();
-        if old_hash == self.file_info_ast.borrow().text_hash {
+        let new_hash = hash_text_document(self.file_info_ast.borrow().text_document.as_ref().unwrap());
+        if old_hash == new_hash {
             return false;
         }
+        self.file_info_ast.borrow_mut().text_hash = new_hash;
         self._build_ast(session, is_external);
         true
     }
@@ -234,9 +233,10 @@ impl FileInfo {
                 },
             };
         }
-        let mut hasher = DefaultHasher::new();
-        self.file_info_ast.borrow().text_document.clone().unwrap().hash(&mut hasher);
-        self.file_info_ast.borrow_mut().text_hash = hasher.finish();
+        {
+            let mut fia = self.file_info_ast.borrow_mut();
+            fia.text_hash = hash_text_document(fia.text_document.as_ref().unwrap());
+        }
         self._build_ast(session, session.sync_odoo.get_file_mgr().borrow().is_in_workspace(&self.uri));
     }
 
@@ -766,4 +766,10 @@ impl FileMgr {
             }
         }
     }
+}
+
+pub fn hash_text_document(text: &TextDocument) -> u64 {
+    let mut hasher = FxHasher::default();
+    text.hash(&mut hasher);
+    hasher.finish()
 }
