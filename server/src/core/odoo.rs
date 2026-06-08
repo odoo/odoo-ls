@@ -19,6 +19,7 @@ use crate::features::declaration::DeclarationFeature;
 use crate::features::completion::CompletionFeature;
 use crate::features::definition::DefinitionFeature;
 use crate::features::hover::HoverFeature;
+use crate::progress_reporter::{ProgressReporterPercentage, ProgressReporterRemaining};
 use crate::threads::SessionInfo;
 use crate::weak_collections::{WeakMap, WeakSet};
 use crate::utils::{HashMap, is_dir_cs, is_file_cs};
@@ -26,10 +27,9 @@ use std::cell::RefCell;
 use std::rc::{Rc};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use lsp_server::{ErrorCode, RequestId, ResponseError};
-use lsp_types::notification::{Notification, Progress};
-use lsp_types::request::{GotoDeclarationResponse, WorkDoneProgressCreate};
+use lsp_types::request::GotoDeclarationResponse;
 use lsp_types::*;
 use request::{RegisterCapability, Request, WorkspaceConfiguration};
 use ruff_source_file::PositionEncoding;
@@ -564,9 +564,15 @@ impl SyncOdoo {
             }
         }
         let sorted_modules = SyncOdoo::sort_modules(session.st(), modules);
+        let n_modules = sorted_modules.len();
         let main_entry = session.sync_odoo.get_main_entry();
         session.sync_odoo.import_cache = Some(ImportCache::default());
         session.sync_odoo.deferred_subfunc_invalidation = Some(FifoWeakHashSet::new());
+
+        // For reporting purposes: progress is split between the two phases of this function: build (arch, arch_eval) and validation.
+        const BUILD_PHASE_WEIGHT: u32 = 30; // %
+        const VALIDATION_PHASE_WEIGHT: u32 = 100 - BUILD_PHASE_WEIGHT; // %
+        let mut reporter = ProgressReporterPercentage::start(session, "Odoo: Indexing modules");
 
         // Pre-parser: Start reading/parsing files in separate thread.
         let pre_parser = PreParser::new(session, &sorted_modules);
@@ -574,6 +580,9 @@ impl SyncOdoo {
 
         // Build modules (arch + arch_eval)
         for (i, module) in sorted_modules.into_iter().enumerate() {
+            // report progress (n_modules > 0, otherwise loop wouldn't run)
+            reporter.report_progress(i as u32 * BUILD_PHASE_WEIGHT / n_modules as u32);
+
             if let Some(mut builder) = PythonArchBuilder::new(session.st(), main_entry.clone(), module.into()) {
                 builder.load_arch(session);
             }
@@ -594,9 +603,15 @@ impl SyncOdoo {
             }
         }
         // Drain validation queue
-        while Self::build_one(session, &main_entry, true) {}
+        let total_items = session.sync_odoo.rebuild_validation.len() as u32;
+        while Self::build_one(session, &main_entry, true) {
+            let items_left = session.sync_odoo.rebuild_validation.len() as u32;
+            // report progress (total_items > 0, otherwise loop wouldn't run)
+            reporter.report_progress(BUILD_PHASE_WEIGHT + (total_items - items_left) * (VALIDATION_PHASE_WEIGHT) / total_items);
+        }
         session.sync_odoo.import_cache = None;
         let modules_count = session.sync_odoo.modules.len();
+        reporter.end();
         info!("End building modules. {} modules loaded", modules_count);
         session.log_message(MessageType::INFO, format!("End building modules. {} modules loaded", modules_count));
         session.sync_odoo.state_init = InitState::ODOO_READY;
@@ -767,31 +782,6 @@ impl SyncOdoo {
         session.sync_odoo.must_reload_paths.retain(|x| x.0.upgrade(&session.sync_odoo.symbol_table).is_some());
     }
 
-    fn start_reporting(session: &mut SessionInfo) {
-        session.sync_odoo.progress_token += 1;
-        let _ = session.send_request::<WorkDoneProgressCreateParams, ()>(WorkDoneProgressCreate::METHOD, WorkDoneProgressCreateParams {
-            token: ProgressToken::Number(session.sync_odoo.progress_token)
-        });
-        session.send_notification(Progress::METHOD, ProgressParams {
-            token: ProgressToken::Number(session.sync_odoo.progress_token),
-            value: ProgressParamsValue::WorkDone(WorkDoneProgress::Begin(WorkDoneProgressBegin {
-                title: "Odoo: Indexing".to_string(),
-                cancellable: Some(false),
-                message: None,
-                percentage: None,
-            }))
-        });
-    }
-
-    fn end_reporting(session: &mut SessionInfo) {
-        session.send_notification(Progress::METHOD, ProgressParams {
-            token: ProgressToken::Number(session.sync_odoo.progress_token),
-            value: ProgressParamsValue::WorkDone(WorkDoneProgress::End(WorkDoneProgressEnd {
-                message: None,
-            }))
-        });
-    }
-
     pub fn process_rebuilds(session: &mut SessionInfo, no_validation: bool) -> bool {
         session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
         if session.sync_odoo.watched_file_updates > MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART {
@@ -803,33 +793,21 @@ impl SyncOdoo {
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::default();
 
         //workdone progress
-        let mut last_update_status = Instant::now() - Duration::from_secs(10);
-        let mut is_reporting_progress = false;
-        if !session.sync_odoo.rebuild_arch.is_empty() || !session.sync_odoo.rebuild_arch_eval.is_empty() || !session.sync_odoo.rebuild_validation.is_empty() {
-            is_reporting_progress = true;
-            SyncOdoo::start_reporting(session);
-        }
+        let mut reporter = (!session.sync_odoo.rebuild_arch.is_empty() || !session.sync_odoo.rebuild_arch_eval.is_empty() || !session.sync_odoo.rebuild_validation.is_empty())
+            .then(|| ProgressReporterRemaining::start(session, "Odoo: Indexing"));
         trace!("Starting rebuild: {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_validation.len());
         while !session.sync_odoo.need_rebuild && (!session.sync_odoo.rebuild_arch.is_empty() || !session.sync_odoo.rebuild_arch_eval.is_empty() || !session.sync_odoo.rebuild_validation.is_empty()) {
             if DEBUG_THREADS {
                 trace!("remains: {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_validation.len());
             }
             let queue_size = session.sync_odoo.rebuild_arch.len() * 3 + session.sync_odoo.rebuild_arch_eval.len() * 2 + session.sync_odoo.rebuild_validation.len();
-            if is_reporting_progress && (Instant::now() - last_update_status) > Duration::from_millis(200) {
-                last_update_status = Instant::now();
-                session.send_notification(Progress::METHOD, ProgressParams {
-                    token: ProgressToken::Number(session.sync_odoo.progress_token),
-                    value: ProgressParamsValue::WorkDone(WorkDoneProgress::Report(WorkDoneProgressReport {
-                        cancellable: Some(false),
-                        message: Some(format!("{} items remaining", queue_size)),
-                        percentage: None,
-                    }))
-                });
+            if let Some(reporter) = &mut reporter {
+                reporter.report_progress(queue_size);
             }
             if session.sync_odoo.terminate_rebuild.load(Ordering::SeqCst){
                 info!("Terminating rebuilds due to server shutdown");
-                if is_reporting_progress {
-                    SyncOdoo::end_reporting(session);
+                if let Some(reporter) = &mut reporter {
+                    reporter.end();
                 }
                 return false;
             }
@@ -881,8 +859,8 @@ impl SyncOdoo {
                     if no_validation {
                         session.request_delayed_rebuild();
                         session.sync_odoo.add_to_validations(sym_key);
-                        if is_reporting_progress {
-                            SyncOdoo::end_reporting(session);
+                        if let Some(reporter) = &mut reporter {
+                            reporter.end();
                         }
                         return true;
                     }
@@ -898,8 +876,8 @@ impl SyncOdoo {
         }
         session.sync_odoo.import_cache = None;
         session.sync_odoo.watched_file_updates = 0;
-        if is_reporting_progress {
-            SyncOdoo::end_reporting(session);
+        if let Some(reporter) = &mut reporter {
+            reporter.end();
         }
         trace!("Leaving rebuild with remaining tasks: {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_validation.len());
         true
