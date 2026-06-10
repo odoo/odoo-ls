@@ -978,7 +978,7 @@ impl FileMgr {
         Self::try_pathname2uri(s).unwrap_or_else(|err| panic!("unable to transform pathname to uri: {s}, {}", err))
     }
 
-    pub fn try_pathname2uri(s: &str) -> Result<lsp_types::Uri, anyhow::Error> {
+    pub fn try_pathname2uri(s: &str) -> Result<lsp_types::Uri, String> {
         let pre_uri = if s.starts_with("untitled:"){
             s.to_string()
         } else {
@@ -1005,10 +1005,10 @@ impl FileMgr {
                         pre_uri.to_string()
                     }
                 },
-                Err(err) => return Err(err.into())
+                Err(err) => return Err(err.to_string())
             }
         };
-        lsp_types::Uri::from_str(&pre_uri).map_err(|err| err.into())
+        lsp_types::Uri::from_str(&pre_uri).map_err(|err| err.to_string())
     }
 
     pub fn uri2pathname(s: &str) -> String {
