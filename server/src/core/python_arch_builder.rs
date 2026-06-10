@@ -1,4 +1,3 @@
-use anyhow::Error;
 use lsp_types::Diagnostic;
 use ruff_python_ast::{
     Alias, AnyRootNodeRef, CmpOp, Expr, ExprNamed, ExprTuple, FStringPart, Identifier, Parameters,
@@ -178,7 +177,7 @@ impl PythonArchBuilder {
         session.st_mut().set_build_status(self.sym_stack[0], BuildSteps::ARCH, BuildStatus::DONE);
     }
 
-    fn create_local_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: u32, _range: &TextRange) -> Result<(), Error> {
+    fn create_local_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: u32, _range: &TextRange) {
         for import_name in name_aliases {
             if import_name.name.as_str() == "*" {
                 if self.sym_stack.len() != 1 { //only at top level for now.
@@ -271,20 +270,19 @@ impl PythonArchBuilder {
                 session.st_mut()[variable_key].is_import_variable = true;
             }
         }
-        Ok(())
     }
 
-    fn visit_node(&mut self, session: &mut SessionInfo, nodes: &Vec<Stmt>) -> Result<(), Error> {
+    fn visit_node(&mut self, session: &mut SessionInfo, nodes: &Vec<Stmt>) {
         for stmt in nodes.iter() {
             match stmt {
                 Stmt::Import(import_stmt) => {
-                    self.create_local_symbols_from_import_stmt(session, None, &import_stmt.names, 0, &import_stmt.range)?
+                    self.create_local_symbols_from_import_stmt(session, None, &import_stmt.names, 0, &import_stmt.range);
                 },
                 Stmt::ImportFrom(import_from_stmt) => {
                     if import_from_stmt.module.is_none() && import_from_stmt.level == 0 {
                         continue;
                     }
-                    self.create_local_symbols_from_import_stmt(session, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level, &import_from_stmt.range)?
+                    self.create_local_symbols_from_import_stmt(session, import_from_stmt.module.as_ref(), &import_from_stmt.names, import_from_stmt.level, &import_from_stmt.range)
                 },
                 Stmt::AnnAssign(ann_assign_stmt) => {
                     self._visit_ann_assign(session, ann_assign_stmt);
@@ -293,28 +291,28 @@ impl PythonArchBuilder {
                     self._visit_assign(session, assign_stmt);
                 },
                 Stmt::FunctionDef(function_def_stmt) => {
-                    self.visit_func_def(session, function_def_stmt)?;
+                    self.visit_func_def(session, function_def_stmt);
                 },
                 Stmt::ClassDef(class_def_stmt) => {
-                    self.visit_class_def(session, class_def_stmt)?;
+                    self.visit_class_def(session, class_def_stmt);
                 },
                 Stmt::If(if_stmt) => {
-                    self.visit_if(session, if_stmt)?;
+                    self.visit_if(session, if_stmt);
                 },
                 Stmt::Try(try_stmt) => {
-                    self.visit_try(session, try_stmt)?;
+                    self.visit_try(session, try_stmt);
                 },
                 Stmt::For(for_stmt) => {
-                    self.visit_for(session, for_stmt)?;
+                    self.visit_for(session, for_stmt);
                 },
                 Stmt::With(with_stmt) => {
-                    self.visit_with(session, with_stmt)?;
+                    self.visit_with(session, with_stmt);
                 },
                 Stmt::Match(match_stmt) => {
-                    self.visit_match(session, match_stmt)?;
+                    self.visit_match(session, match_stmt);
                 },
                 Stmt::While(while_stmt) => {
-                    self.visit_while(session, while_stmt)?;
+                    self.visit_while(session, while_stmt);
                 },
                 Stmt::Expr(stmt_expression) => {
                     self.visit_expr(session, &stmt_expression.value);
@@ -349,7 +347,6 @@ impl PythonArchBuilder {
                 Stmt::IpyEscapeCommand(_) => {},
             }
         }
-        Ok(())
     }
 
     fn visit_expr(&mut self, session: &mut SessionInfo, expr: &Expr){
@@ -725,9 +722,9 @@ impl PythonArchBuilder {
         }
     }
 
-    fn visit_func_def(&mut self, session: &mut SessionInfo, func_def: &StmtFunctionDef) -> Result<(), Error> {
+    fn visit_func_def(&mut self, session: &mut SessionInfo, func_def: &StmtFunctionDef) {
         if func_def.body.is_empty() {
-            return Ok(()) //if body is empty, it usually means that the ast of the class is invalid. Skip it
+            return; //if body is empty, it usually means that the ast of the class is invalid. Skip it
         }
         let function_key = session.st_mut().add_new_function(*self.sym_stack.last().unwrap(),
             &func_def.name.id, func_def.range, &func_def.body.get(0).unwrap().range().start());
@@ -779,19 +776,18 @@ impl PythonArchBuilder {
         if !self.file_mode || session.st().get_in_parents(function_key.into(), &[SymType::CLASS], true).is_none() {
             session.st_mut()[function_key].arch_status = BuildStatus::IN_PROGRESS;
             self.sym_stack.push(function_key.into());
-            self.visit_node(session, &func_def.body)?;
+            self.visit_node(session, &func_def.body);
             self.sym_stack.pop();
             session.st_mut()[function_key].arch_status = BuildStatus::DONE;
         }
         if add_noqa {
             session.noqas_stack.pop();
         }
-        Ok(())
     }
 
-    fn visit_class_def(&mut self, session: &mut SessionInfo, class_def: &StmtClassDef) -> Result<(), Error> {
+    fn visit_class_def(&mut self, session: &mut SessionInfo, class_def: &StmtClassDef) {
         if class_def.body.is_empty() {
-            return Ok(()) //if body is empty, it usually means that the ast of the class is invalid. Skip it
+            return; //if body is empty, it usually means that the ast of the class is invalid. Skip it
         }
         let parent = *self.sym_stack.last().unwrap();
         let class_key = session.st_mut().add_new_class(
@@ -816,13 +812,12 @@ impl PythonArchBuilder {
         class_sym.noqas = noqas.clone();
         session.current_noqa = noqas;
         self.sym_stack.push(class_key.into());
-        self.visit_node(session, &class_def.body)?;
+        self.visit_node(session, &class_def.body);
         self.sym_stack.pop();
         if add_noqa {
             session.noqas_stack.pop();
         }
         PythonArchBuilderHooks::on_class_def(session, class_key);
-        Ok(())
     }
 
     fn _resolve_all_symbols(&mut self, session: &mut SessionInfo) {
@@ -930,7 +925,7 @@ impl PythonArchBuilder {
         (true, false)
     }
 
-    fn visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) -> Result<(), Error> {
+    fn visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) {
         //TODO check platform condition (sys.version > 3.12, etc...)
         let scope = *self.sym_stack.last().unwrap();
         let scope_as_sym_mgr = session.st_mut().as_mut_symbol_mgr(scope);
@@ -955,7 +950,7 @@ impl PythonArchBuilder {
                 if check_version.1 {
                     body_version_ok = true;
                 }
-                self.visit_node(session, &if_stmt.body)?;
+                self.visit_node(session, &if_stmt.body);
                 vec![ SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index())]
             } else {
                 vec![]
@@ -964,7 +959,7 @@ impl PythonArchBuilder {
 
         let mut else_clause_exists = false;
 
-        let stmt_clauses_iter = if_stmt.elif_else_clauses.iter().map(|elif_else_clause|{
+        let stmt_clauses_iter = if_stmt.elif_else_clauses.iter().filter_map(|elif_else_clause|{
             match elif_else_clause.test {
                 Some(ref test_clause) => {
                     last_test_section = session.st_mut().as_mut_symbol_mgr(scope).add_section(
@@ -976,7 +971,7 @@ impl PythonArchBuilder {
                 None => else_clause_exists = true
             }
             if elif_else_clause.body.is_empty() {
-                return Ok::<Option<SectionIndex>, Error>(None);
+                return None;
             }
             session.st_mut().as_mut_symbol_mgr(scope).add_section(
                 elif_else_clause.body[0].range().start(),
@@ -988,17 +983,17 @@ impl PythonArchBuilder {
                     if version_check.1 {
                         body_version_ok = true;
                     }
-                    self.visit_node(session, &elif_else_clause.body)?;
+                    self.visit_node(session, &elif_else_clause.body);
                 }
             }
             else if !body_version_ok { //else clause
-                self.visit_node(session, &elif_else_clause.body)?;
+                self.visit_node(session, &elif_else_clause.body);
             }
             let clause_section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
-            Ok::<Option<SectionIndex>, Error>(Some(clause_section))
+            Some(clause_section)
         });
 
-        stmt_sections.extend(stmt_clauses_iter.collect::<Result<Vec<_>, _>>()?.into_iter().filter_map(|x| x).collect::<Vec<_>>());
+        stmt_sections.extend(stmt_clauses_iter);
 
         if !else_clause_exists{
             // If there is no else clause, the there is an implicit else clause
@@ -1013,10 +1008,9 @@ impl PythonArchBuilder {
             if_stmt.range().end() + TextSize::new(1),
             Some(SectionIndex::OR(stmt_sections))
         );
-        Ok(())
     }
 
-    fn visit_for(&mut self, session: &mut SessionInfo, for_stmt: &StmtFor) -> Result<(), Error> {
+    fn visit_for(&mut self, session: &mut SessionInfo, for_stmt: &StmtFor) {
         // TODO: Handle breaks for sections
         let scope = *self.sym_stack.last().unwrap();
         let unpacked = python_utils::unpack_assign(&[*for_stmt.target.clone()], None, None);
@@ -1041,7 +1035,7 @@ impl PythonArchBuilder {
             );
         }
 
-        self.visit_node(session, &for_stmt.body)?;
+        self.visit_node(session, &for_stmt.body);
         let mut stmt_sections = vec![SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index())];
 
         if !for_stmt.orelse.is_empty(){
@@ -1049,7 +1043,7 @@ impl PythonArchBuilder {
                 for_stmt.orelse[0].range().start(),
                 Some(previous_section.clone())
             );
-            self.visit_node(session, &for_stmt.orelse)?;
+            self.visit_node(session, &for_stmt.orelse);
             stmt_sections.push(SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index()));
         } else {
             stmt_sections.push(previous_section.clone());
@@ -1059,15 +1053,14 @@ impl PythonArchBuilder {
             for_stmt.range().end() + TextSize::new(1),
             Some(SectionIndex::OR(stmt_sections))
         );
-        Ok(())
     }
 
-    fn visit_try(&mut self, session: &mut SessionInfo, try_stmt: &StmtTry) -> Result<(), Error> {
+    fn visit_try(&mut self, session: &mut SessionInfo, try_stmt: &StmtTry) {
         // Try sections:
         // try block is always executed, so it has the same section as the one preceding it.
         // Finally is always executed if it exists, so it belongs to the lower section
         let scope = *self.sym_stack.last().unwrap();
-        self.visit_node(session, &try_stmt.body)?;
+        self.visit_node(session, &try_stmt.body);
         if !try_stmt.handlers.is_empty(){
             // Branching around except _T, except, and else act similar to if-elif-else
             // The direct link (eq. to empty section) to previous scope is always there
@@ -1086,7 +1079,7 @@ impl PythonArchBuilder {
                             h.body[0].range().start(),
                             Some(previous_section.clone())
                         );
-                        self.visit_node(session, &h.body)?;
+                        self.visit_node(session, &h.body);
                         stmt_sections.push(SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index()));
                     }
                 }
@@ -1099,7 +1092,7 @@ impl PythonArchBuilder {
                     try_stmt.orelse[0].range().start(),
                     Some(previous_section.clone())
                 );
-                self.visit_node(session, &try_stmt.orelse)?;
+                self.visit_node(session, &try_stmt.orelse);
                 stmt_sections.push(SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index()));
             }
             // Next section is either the start of the finally block, or right after the try block if finally does not exist
@@ -1109,11 +1102,10 @@ impl PythonArchBuilder {
                 Some(SectionIndex::OR(stmt_sections))
             );
         }
-        self.visit_node(session, &try_stmt.finalbody)?;
-        Ok(())
+        self.visit_node(session, &try_stmt.finalbody);
     }
 
-    fn visit_with(&mut self, session: &mut SessionInfo, with_stmt: &StmtWith) -> Result<(), Error> {
+    fn visit_with(&mut self, session: &mut SessionInfo, with_stmt: &StmtWith) {
         for item in with_stmt.items.iter() {
             self.visit_expr(session, &item.context_expr);
             if let Some(var) = item.optional_vars.as_ref() {
@@ -1128,11 +1120,10 @@ impl PythonArchBuilder {
                 }
             }
         }
-        self.visit_node(session, &with_stmt.body)?;
-        Ok(())
+        self.visit_node(session, &with_stmt.body);
     }
 
-    fn visit_match(&mut self, session: &mut SessionInfo, match_stmt: &StmtMatch) -> Result<(), Error> {
+    fn visit_match(&mut self, session: &mut SessionInfo, match_stmt: &StmtMatch) {
         fn traverse_match(pattern: &Pattern, symbol_table: &mut SymbolTable, scope: SymbolKey){
             match pattern {
                 Pattern::MatchValue(_) => {},
@@ -1177,17 +1168,16 @@ impl PythonArchBuilder {
                 Some(previous_section.clone())
             );
             traverse_match(&case.pattern, session.st_mut(), scope);
-            self.visit_node(session, &case.body)?;
+            self.visit_node(session, &case.body);
             stmt_sections.push(SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index()));
         }
         session.st_mut().as_mut_symbol_mgr(scope).add_section(
             match_stmt.range().end() + TextSize::new(1),
             Some(SectionIndex::OR(stmt_sections))
         );
-        Ok(())
     }
 
-    fn visit_while(&mut self, session: &mut SessionInfo, while_stmt: &StmtWhile) -> Result<(), Error> {
+    fn visit_while(&mut self, session: &mut SessionInfo, while_stmt: &StmtWhile) {
         // TODO: Handle breaks for sections
         let scope = *self.sym_stack.last().unwrap();
         let scope_as_sym_mgr = session.st_mut().as_mut_symbol_mgr(scope);
@@ -1199,7 +1189,7 @@ impl PythonArchBuilder {
             );
         }
         self.visit_expr(session, &while_stmt.test);
-        self.visit_node(session, &while_stmt.body)?;
+        self.visit_node(session, &while_stmt.body);
         let scope_as_sym_mgr = session.st_mut().as_mut_symbol_mgr(scope);
         let body_section = SectionIndex::INDEX(scope_as_sym_mgr.get_last_index());
         let mut stmt_sections = vec![body_section];
@@ -1208,7 +1198,7 @@ impl PythonArchBuilder {
                 while_stmt.orelse[0].range().start(),
                 Some(previous_section.clone())
             );
-            self.visit_node(session, &while_stmt.orelse)?;
+            self.visit_node(session, &while_stmt.orelse);
             stmt_sections.push(SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index()));
         } else {
             stmt_sections.push(previous_section.clone());
@@ -1218,6 +1208,5 @@ impl PythonArchBuilder {
             while_stmt.range().end() + TextSize::new(1),
             Some(SectionIndex::OR(stmt_sections))
         );
-        Ok(())
     }
 }
