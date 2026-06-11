@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use ruff_text_size::TextRange;
 use tracing::{info, warn};
 use crate::core::import_resolver::manual_import;
@@ -21,7 +21,7 @@ pub struct PythonArchClassHook {
 }
 
 #[allow(non_upper_case_globals)]
-static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
+static arch_class_hooks: LazyLock<Vec<PythonArchClassHook>> = LazyLock::new(|| {vec![
     PythonArchClassHook {
         odoo_entry: true,
         trees: vec![
