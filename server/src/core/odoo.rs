@@ -606,7 +606,7 @@ impl SyncOdoo {
             if entry_point.is_public() || PathBuf::from(from_path).starts_with(&entry_point.path) {
                 let prefix = entry_point.addon_to_odoo_tree.as_ref().unwrap_or(&entry_point.tree);
                 let tree_0: Vec<&str> = prefix.iter()
-                    .map(|y| y.as_slice())
+                    .map(|y| y.as_str())
                     .chain(tree.0.iter().copied())
                     .collect();
                 let symbols = self.symbol_table.get_symbol(entry_point.root.into(), (&tree_0, &tree.1), position);
