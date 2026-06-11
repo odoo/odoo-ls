@@ -6,7 +6,7 @@ use odoo_ls_server::{
         symbols::{storage::SymbolTable, symbol_keys::{SourceFileKey, SymbolKey}},
     }, features::ast_utils::AstUtils, odoo_version::OdooVersion, threads::SessionInfo
 };
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -15,7 +15,7 @@ use std::{
 
 
 /// Returns the correct class name for Partner/ResPartner depending on Odoo version
-pub static PARTNER_CLASS_NAME: Lazy<fn(OdooVersion) -> &'static str> = Lazy::new(|| {
+pub static PARTNER_CLASS_NAME: LazyLock<fn(OdooVersion) -> &'static str> = LazyLock::new(|| {
     |version: OdooVersion| {
         if version >= (18, 1) {
             "ResPartner"
@@ -26,7 +26,7 @@ pub static PARTNER_CLASS_NAME: Lazy<fn(OdooVersion) -> &'static str> = Lazy::new
 });
 
 /// Returns the correct class name for Country/ResCountry depending on Odoo version
-pub static COUNTRY_CLASS_NAME: Lazy<fn(OdooVersion) -> &'static str> = Lazy::new(|| {
+pub static COUNTRY_CLASS_NAME: LazyLock<fn(OdooVersion) -> &'static str> = LazyLock::new(|| {
     |version: OdooVersion| {
         if version >= (18, 1) {
             "ResCountry"

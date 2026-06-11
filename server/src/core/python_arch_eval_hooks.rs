@@ -4,7 +4,7 @@ use crate::utils::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
 use lsp_types::Diagnostic;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use ruff_python_ast::Arguments;
 use ruff_python_ast::Expr;
 use ruff_python_ast::StmtFunctionDef;
@@ -55,7 +55,7 @@ pub struct PythonArchEvalFileHook {
 }
 
 #[allow(non_upper_case_globals)]
-static arch_eval_file_hooks: Lazy<Vec<PythonArchEvalFileHook>> = Lazy::new(|| {vec![
+static arch_eval_file_hooks: LazyLock<Vec<PythonArchEvalFileHook>> = LazyLock::new(|| {vec![
     PythonArchEvalFileHook {odoo_entry: true,
                         trees: vec![((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "env"])),
                         ((18, 1), (999, 0), (&["odoo", "orm", "models"], &["BaseModel", "env"]))],
@@ -507,7 +507,7 @@ pub struct PythonArchEvalFunctionHook {
 }
 
 #[allow(non_upper_case_globals)]
-static arch_eval_function_hooks: Lazy<Vec<PythonArchEvalFunctionHook>> = Lazy::new(|| {vec![
+static arch_eval_function_hooks: LazyLock<Vec<PythonArchEvalFunctionHook>> = LazyLock::new(|| {vec![
     PythonArchEvalFunctionHook {odoo_entry: true,
                         tree: vec![((0, 0), (18, 1), (&["odoo", "api"], &["Environment", "__getitem__"])),
                         ((18, 1), (999, 0), (&["odoo", "orm", "environments"], &["Environment", "__getitem__"]))],
@@ -712,7 +712,7 @@ pub struct PythonArchEvalDecoratorHook {
 }
 
 #[allow(non_upper_case_globals)]
-static arch_eval_decorator_hooks: Lazy<Vec<PythonArchEvalDecoratorHook>> = Lazy::new(|| {vec![
+static arch_eval_decorator_hooks: LazyLock<Vec<PythonArchEvalDecoratorHook>> = LazyLock::new(|| {vec![
     PythonArchEvalDecoratorHook {trees: vec![((0, 0), (18, 1), (&["odoo", "api"], &["returns"]))], //disappear in 18.1
                         func: |session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments| {
                             PythonArchEvalHooks::handle_api_returns_decorator(session, func_sym, arguments)
