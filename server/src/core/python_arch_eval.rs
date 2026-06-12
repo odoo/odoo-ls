@@ -1,4 +1,4 @@
-use crate::utils::HashSet;
+use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::{u32, vec};
@@ -13,7 +13,6 @@ use crate::core::entry_point::EntryPointType;
 use crate::core::symbols::{ModuleSymbol, SymbolMgr};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::symbol_keys::{ClassKey, FunctionKey, ModuleKey, SourceFileKey, SymbolKey, VariableKey};
-use crate::core::symbols::VariableSymbol;
 use crate::{constants::*, oyarn};
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
@@ -551,11 +550,9 @@ impl PythonArchEval {
                     let Some(model) = session.sync_odoo.models.get(&model_data.name).cloned() else {
                         continue;
                     };
-                    let model_classes = model.borrow().all_symbols(session, session.st().find_module(parent_class), false);
                     let fn_name = session.st().name(self.sym_stack[0]).clone();
-                    let allowed_fields: HashSet<_> = model_classes.iter().filter_map(|(sym, _)|
-                        session.st()[*sym]._model.as_ref().unwrap().computes.get(&fn_name).cloned()
-                    ).flatten().collect();
+                    let module = session.st().find_module(parent_class);
+                    let allowed_fields = model.borrow().get_method_computed_field_names(session, module, &fn_name);
                     if allowed_fields.is_empty() {
                         continue;
                     }
@@ -1045,39 +1042,13 @@ impl PythonArchEval {
         class_sym: ClassKey,
         from_module: Option<ModuleKey>,
     ) -> Vec<SymbolKey>{
-        let mut parent_object = Some(class_sym);
         let mut syms = vec![];
-        let split_expr: Vec<_> = field_name.split(".").collect();
-        for (ix, &name) in split_expr.iter().enumerate() {
-            if parent_object.is_none() {
+        let mut deep_field_walker = DeepFieldEvalWalker::new(class_sym.into(), from_module);
+        for sub_field_name in field_name.split(".") {
+            let Some(base_symbol) = deep_field_walker.get_model_symbol(session) else {
                 break;
-            }
-            let (symbols, _diagnostics) = SymbolTable::get_member_symbol(session,
-                parent_object.unwrap().into(),
-                name,
-                from_module,
-                false,
-                true,
-                false,
-                true,
-                false);
-            if ix == split_expr.len() - 1 {
-                syms = symbols;
-                break;
-            } else if symbols.is_empty() {
-                break;
-            }
-            parent_object = None;
-            for s in symbols {
-                if !SymbolTable::is_specific_field(session, s, &["Many2one", "One2many", "Many2many"]) {
-                    break;
-                }
-                let models = VariableSymbol::get_relational_model(s.unwrap_variable_key(), session, from_module);
-                if models.len() == 1 {
-                    parent_object = Some(models[0]);
-                    break;
-                }
-            }
+            };
+            syms = deep_field_walker.get_model_fields(session, base_symbol, sub_field_name);
         }
         syms
     }

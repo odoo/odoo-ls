@@ -1,15 +1,19 @@
+use crate::utils::HashMap;
 use crate::{
-    S, core::{
+    S,
+    core::{
         evaluation_context::ContextValue,
+        model::Model,
         odoo::SyncOdoo,
         symbols::{
-            ModuleSymbol, symbol_keys::{ModuleKey, SourceFileKey, SymbolKey, XmlId}
+            ModuleSymbol,
+            symbol_keys::{ModuleKey, SourceFileKey, SymbolKey, XmlId},
         },
-    }, threads::SessionInfo
+    },
+    threads::SessionInfo,
 };
 use roxmltree::Node;
-use std::{ops::Range};
-use crate::utils::HashMap;
+use std::ops::Range;
 
 pub struct XmlAstUtils {}
 
@@ -63,12 +67,9 @@ impl XmlAstUtils {
                             false => None,
                         };
                         results.0.extend(
-                            model.borrow().all_symbols(
-                                session,
-                                from_module,
-                                false)
-                            .iter().filter(|s| s.1.is_none())
-                            .map(|s| SymbolKey::from(s.0)));
+                            model.borrow().get_model_symbols(session.st(), from_module)
+                                .into_iter().map(SymbolKey::from)
+                            );
                         results.1 = Some(attr.range_value());
                     }
                 }
@@ -99,11 +100,20 @@ impl XmlAstUtils {
                             true => from_module,
                             false => None,
                         };
-                        for (class_key, missing_dep) in model.borrow().all_symbols(session, from_module, true) {
-                            if missing_dep.is_none() {
-                                let content = session.sync_odoo.symbol_table.get_content_symbol(class_key.into(), attr.value(), u32::MAX);
-                                for symbol in content.symbols {
-                                    results.0.push(symbol);
+                        let field_name = attr.value();
+                        for class_key in Model::get_full_model_classes(model.clone(), session, from_module) {
+                            let content = session.st().get_content_symbol(class_key.into(), field_name, u32::MAX);
+                            for symbol in content.symbols {
+                                results.0.push(symbol);
+                            }
+                        }
+                        let model_ref = model.borrow();
+                        for xml_record_key in model_ref.get_xml_model_field_symbols(session.st(), from_module) {
+                            let record = &session.st()[xml_record_key];
+                            if let Some(&name_field_key) = record.fields().get("name") {
+                                let name_field = &session.st()[name_field_key];
+                                if name_field.text.as_deref() == Some(field_name) {
+                                    results.0.push(xml_record_key.into());
                                 }
                             }
                         }
@@ -180,7 +190,10 @@ impl XmlAstUtils {
                 true => from_module,
                 false => None,
             };
-            results.0.extend(model.borrow().all_symbols(session, from_module, false).iter().filter(|s| s.1.is_none()).map(|s| SymbolKey::from(s.0)));
+            results.0.extend(
+                model.borrow().get_model_symbols(session.st(), from_module)
+                    .into_iter().map(SymbolKey::from)
+            );
             results.1 = Some(node.range());
         }
     }

@@ -1,8 +1,17 @@
 use ruff_text_size::TextRange;
 
-use crate::{constants::OYarn, core::{evaluation::{Evaluation}, symbols::storage::SymbolTable}, threads::SessionInfo};
-use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
-use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey, SymbolKey, VariableKey};
+use crate::{
+    constants::OYarn,
+    core::{
+        evaluation::{Evaluation},
+        evaluation_context::{Context, ContextKey, ContextValue},
+        symbols::{
+            storage::SymbolTable,
+            symbol_keys::{ModelSymbolKey, ModuleKey, SymbolKey, VariableKey},
+        },
+    },
+    threads::SessionInfo,
+};
 
 #[derive(Debug)]
 pub struct VariableSymbol {
@@ -55,8 +64,8 @@ impl VariableSymbol {
     //     evals
     // }
 
-    /* If this variable has been evaluated to a relational field, return the main symbol of the comodel */
-    pub fn get_relational_model(target: VariableKey, session: &mut SessionInfo, from_module: Option<ModuleKey>) -> Vec<ClassKey> {
+    /// If this variable has been evaluated to a relational field, return the main symbol of the comodel
+    pub fn get_relational_model(target: VariableKey, session: &mut SessionInfo, from_module: Option<ModuleKey>) -> Vec<ModelSymbolKey> {
         let variable_symbol = &session.st()[target]; // former method taking self
         let evaluations = variable_symbol.evaluations.clone();
         for eval in evaluations.iter() {
@@ -75,9 +84,11 @@ impl VariableSymbol {
                         let Some(model) = session.sync_odoo.models.get(comodel.as_str()) else {
                             continue;
                         };
-                        return model.borrow().get_main_symbols(session, from_module);
-                    } else if let SymbolKey::Class(c) = symbol { // Already evaluated from descriptor in follow_ref
-                        return vec![c];
+                        return model.borrow().get_main_symbols(session, from_module).collect();
+                    } else if let SymbolKey::Class(k) = symbol { // Already evaluated from descriptor in follow_ref
+                        return vec![k.into()];
+                    } else if let SymbolKey::XmlRecord(k) = symbol {
+                        return vec![k.into()];
                     }
                 }
             }

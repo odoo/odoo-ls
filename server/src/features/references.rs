@@ -114,15 +114,18 @@ impl ReferenceFeature {
                     } else {
                         None
                     };
-                    if let Some(SymbolKey::Class(class_model)) = class_model_to_check {
-                        if let Some(model_data) = session.st()[class_model]._model.as_ref() {
-                            if let Some(model) = session.sync_odoo.models.get(&model_data.name).cloned() {
-                                files_to_check.extend(model.borrow().dependents.iter_valid(session.st()));
-                                for symbol in model.borrow().all_symbols(session, None, false) {
-                                    if let Some(file) = session.st().get_file(symbol.0.into()) {
-                                        files_to_check.insert(file);
-                                    }
-                                }
+                    if let Some(SymbolKey::Class(class_model)) = class_model_to_check 
+                    && let Some(model_data) = session.st()[class_model]._model.as_ref() 
+                    && let Some(model) = session.sync_odoo.models.get(&model_data.name).cloned() {
+                        files_to_check.extend(model.borrow().dependents.iter_valid(session.st()));
+                        for symbol in model.borrow().get_model_symbols(session.st(), None) {
+                            if let Some(file) = session.st().get_file(symbol.into()) {
+                                files_to_check.insert(file);
+                            }
+                        }
+                        for symbol in model.borrow().get_xml_model_field_symbols(session.st(), None) {
+                            if let Some(file) = session.st().get_file(symbol.into()) {
+                                files_to_check.insert(file);
                             }
                         }
                     }

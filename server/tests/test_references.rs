@@ -26,10 +26,10 @@ fn test_references() {
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 32, 17);
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 33, 8);
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 34, 18);
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 40, 16);
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 41, 16);
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 42, 16);
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 43, 16);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 44, 16);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 45, 16);
     assert_in_result(&mut references, "module_1/models/diagnostics.py", 9, 34);
     assert_in_result(&mut references, "module_1/models/diagnostics.py", 17, 34);
     assert_in_result(&mut references, "module_1/models/diagnostics.py", 18, 34);
@@ -44,55 +44,55 @@ fn test_references() {
     // reference of an attribute
     let mut references = get_references(&mut session, &test_file, Position::new(9, 8));
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 9, 4);
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 37, 18);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 39, 18);
     assert!(references.len() == 0, "Some references were not expected: {}",
         references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
     );
 
     //reference of a simple variable, including usages inside newly-handled constructs
-    let mut references = get_references(&mut session, &test_file, Position::new(50, 4));
+    let mut references = get_references(&mut session, &test_file, Position::new(52, 4));
     // usage in models.py import
     assert_in_result(&mut references, "module_1/models/models.py", 1, 30);
     //definition
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 50, 0);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 52, 0);
     // usage inside lambda body
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 51, 23);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 53, 23);
     // usage inside f-string
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 52, 24);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 54, 24);
     // usage inside bool operation
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 53, 13);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 55, 13);
     // usage inside compare expression
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 54, 14);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 56, 14);
     // usage inside list comprehension element
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 55, 16);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 57, 16);
     // usage inside dict comprehension key
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 56, 16);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 58, 16);
     // usage inside list literal element
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 57, 12);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 59, 12);
     // usage inside tuple literal element
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 58, 13);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 60, 13);
     // usage inside set literal element
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 59, 11);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 61, 11);
     // usage inside dict literal value
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 60, 15);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 62, 15);
     // usage as a call argument
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 61, 17);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 63, 17);
     // usage as left-hand side of a binary operation
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 62, 12);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 64, 12);
     assert!(references.len() == 0, "Some references were not expected: {}",
         references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
     );
 
     //reference of a function parameter, exercising multiple uses of the same name on a single line
-    let mut references = get_references(&mut session, &test_file, Position::new(65, 28));
+    let mut references = get_references(&mut session, &test_file, Position::new(67, 28));
     // parameter declaration
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 65, 25);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 67, 25);
     // three same-line usages inside the `if` test
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 66, 7);
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 66, 37);
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 66, 59);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 68, 7);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 68, 37);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 68, 59);
     // usage in the return statement
-    assert_in_result(&mut references, "module_1/models/base_test_models.py", 68, 11);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 70, 11);
     assert!(references.len() == 0, "Some references were not expected: {}",
         references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
     );

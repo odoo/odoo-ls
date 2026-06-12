@@ -1,0 +1,3 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_xml_test_model,access_xml_test_model,module_xml_models_fields.xml_test_model,base.group_user,1,1,1,1
+access_xml_test_m2o_model,access_xml_test_m2o_model,module_xml_models_fields.xml_test_model_m2o,base.group_user,1,1,1,1

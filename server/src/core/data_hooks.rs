@@ -1,5 +1,6 @@
 //! Hooks for XML/CSV data file events.
 
+use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::symbol_keys::{SourceFileKey, XmlRecordKey};
 use crate::threads::SessionInfo;
 use once_cell::sync::Lazy;
@@ -27,10 +28,7 @@ static record_creation_hooks: Lazy<Vec<RecordCreationHook>> = Lazy::new(|| {
             models: vec!["res.lang"],
             func: |session, source_file, record_key| {
                 // Collect valid "code" field key
-                let Some(&field_key) = session.st()[record_key].fields().get("code") else {
-                    return;
-                };
-                let Some(text) = session.st()[field_key].text.clone() else {
+                let Some(text) = session.st()[record_key].get_field_text(XmlFieldName::Code, session.st()) else {
                     return;
                 };
                 session.sync_odoo.add_language(&text, source_file);

@@ -1,0 +1,16 @@
+<odoo>
+    <!-- ir.model record for pygls.tests.xml_test_model (enables model class XML hover) -->
+    <record id="xml_test_model" model="ir.model">
+        <field name="model">pygls.tests.xml_test_model</field>
+        <field name="name">Base Test Model</field>
+    </record>
+    <!-- ir.model.fields record for partner_id field (enables field XML hover) -->
+    <record id="field_xml_test_model_partner_id" model="ir.model.fields">
+        <field name="model_id" ref="xml_test_model"/>
+        <field name="name">partner_id</field>
+    </record>
+    <!-- data record of pygls.tests.xml_test_model (enables record XML hover) -->
+    <record id="test_xml_test_record" model="pygls.tests.xml_test_model">
+        <field name="partner_id"/>
+    </record>
+</odoo>
