@@ -38,7 +38,7 @@ use super::python_arch_eval::PythonArchEval;
 type PythonArchEvalHookFile = fn (odoo: &mut SyncOdoo, entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey);
 type Version = (u32, u32); // (major, minor)
 
-fn get_base_model_symbol(odoo: &mut SyncOdoo) -> Option<SymbolKey> {
+pub fn get_base_model_symbol(odoo: &mut SyncOdoo) -> Option<SymbolKey> {
     let base_model_tree: TreeStrSlice = if odoo.version >= (18, 1) {
         (&["odoo", "orm", "models"], &["BaseModel"])
     } else {
@@ -874,7 +874,8 @@ impl PythonArchEvalHooks {
         };
         let maybe_model = session.sync_odoo.models.get(s.as_str()).cloned();
         let has_class_in_parents = scope.as_ref().map(|&scope| session.st().get_in_parents(scope, &[SymType::CLASS], true).is_some()).unwrap_or(false);
-        if maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols(session.st())).unwrap_or(false) {
+        let model_exists = maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols(session.st())).unwrap_or(false);
+        if model_exists {
             let Some(model) = maybe_model else {unreachable!()};
             let module = context.get(ContextKey::Module);
             let from_module = if let Some(ContextValue::MODULE(m)) = module {
@@ -899,14 +900,14 @@ impl PythonArchEvalHooks {
             }
             let model = model.clone();
             let model = model.borrow();
-            let symbols = model.get_main_symbols(session, from_module);
-            if let Some(&first_symbol) = symbols.first() {
-                return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(first_symbol, Some(true), false)));
+            let mut symbols = model.get_main_symbols(session, from_module);
+            if let Some(first_class) = symbols.next() {
+                return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(first_class, Some(true), false)));
             }
             if in_validation && has_class_in_parents { //we don't want to show error for functions outside of a model body
                 if from_module.is_some() {
                     //retry without from_module to see if model exists elsewhere
-                    let symbols = model.get_main_symbols(session, None);
+                    let symbols = model.get_main_symbols(session, None).collect::<Vec<_>>();
                     if symbols.is_empty() {
                         // Model exists, but has no main symbols
                         if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03005, &[]) { // Is this error code correct?
@@ -1069,9 +1070,10 @@ impl PythonArchEvalHooks {
                     from_module = Some(m);
                 }
             }
-            let main_symbol = comodel_sym.borrow().get_main_symbols(session, from_module);
-            if main_symbol.len() == 1 {
-                return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: main_symbol[0].into(), context: Context::default(), instance: Some(true), is_super: false}))
+            let comodel_sym_ref = comodel_sym.borrow();
+            let mut main_symbol = comodel_sym_ref.get_main_symbols(session, from_module);
+            if let Some(key) = main_symbol.next() {
+                return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: key.into(), context: Context::default(), instance: Some(true), is_super: false}))
             }
         }
         Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Wk::null(), context: Context::default(), instance: Some(true), is_super: false}))
@@ -1264,7 +1266,11 @@ impl PythonArchEvalHooks {
             };
             return diagnostics;
         };
-        let Some(&main_model_sym) = model.borrow().get_main_symbols(session, session.st().find_module(func_sym)).first() else {
+        let Some(main_model_sym) = model
+            .borrow()
+            .get_main_symbols(session, session.st().find_module(func_sym))
+            .next()
+        else {
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03001, &[]) {
                 diagnostics.push(Diagnostic {
                     range: FileMgr::textRange_to_temporary_Range(&expr.range()),

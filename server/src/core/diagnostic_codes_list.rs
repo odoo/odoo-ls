@@ -193,6 +193,10 @@ OLS03301, DiagnosticSetting::Warning, "Deprecation Warning: Since 17.0: odoo.tes
 */
 OLS03302, DiagnosticSetting::Warning, "The active key is deprecated",
 /**
+ * XML Defined Model with the same name already exists. This can lead to unexpected behavior.
+ */
+OLS03303, DiagnosticSetting::Warning, "Model {0} is already defined in XML. This can lead to unexpected behavior.",
+/**
 * A __manifest__.py file should be evaluated with a literal_eval to a single dictionary.
 * Do not store any other information in it.
 */

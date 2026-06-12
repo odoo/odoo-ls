@@ -1,0 +1,40 @@
+<odoo>
+    <!-- Tree (List) View -->
+    <record id="view_test_model_tree_m2o" model="ir.ui.view">
+        <field name="name">x_test_model_m2o.tree</field>
+        <field name="model">x_test_model_m2o</field>
+        <field name="arch" type="xml">
+            <list string="Test Model List">
+                <field name="x_name"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Form View -->
+    <record id="view_test_model_form_m2o" model="ir.ui.view">
+        <field name="name">x_test_model_m2o.form</field>
+        <field name="model">x_test_model_m2o</field>
+        <field name="arch" type="xml">
+            <form string="Test Model Form">
+                <sheet>
+                    <group>
+                        <field name="x_name"/>
+                        <field name="x_other_model"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Window Action -->
+    <record id="action_test_model_m2o" model="ir.actions.act_window">
+        <field name="name">M2O Test Models</field>
+        <field name="res_model">x_test_model_m2o</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- Menu Item -->
+    <menuitem id="menu_test_model_root_m2o" name="M2O Test Models" sequence="11"/>
+    <menuitem id="menu_test_model_list_m2o" name="Instances" parent="menu_test_model_root_m2o" action="action_test_model_m2o" sequence="10"/>
+
+</odoo>

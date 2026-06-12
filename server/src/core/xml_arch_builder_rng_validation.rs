@@ -1,8 +1,10 @@
+use std::{cell::RefCell, rc::Rc};
+
 use lsp_types::{Diagnostic, Position, Range};
 use roxmltree::Node;
 use ruff_text_size::{TextRange, TextSize};
 
-use crate::{Sy, constants::OYarn, core::{diagnostics::{DiagnosticCode, create_diagnostic}, odoo::SyncOdoo, symbols::symbol_keys::{SymbolKey, XmlFieldKey}}, oyarn, threads::SessionInfo};
+use crate::{Sy, constants::OYarn, core::{diagnostics::{DiagnosticCode, create_diagnostic}, model::Model, odoo::SyncOdoo, symbols::{storage::xml::xml_field_symbol::XmlFieldName, symbol_keys::{SymbolKey, XmlFieldKey, XmlId, XmlRecordKey}}}, oyarn, threads::SessionInfo, utils};
 
 use super::xml_arch_builder::XmlArchBuilder;
 
@@ -228,6 +230,8 @@ impl XmlArchBuilder {
                 }
             }
         }
+        self.register_ir_model_record(session, record);
+        self.register_ir_model_fields_record(session, record);
         self.on_operation_creation(session, found_id, node, record.into(), diagnostics);
         true
     }
@@ -246,7 +250,7 @@ impl XmlArchBuilder {
         };
 
         let has_type = node.attribute("type").is_some();
-        let ref_key = node.attribute_node("ref").map(|rk| (rk.value().to_string(), TextRange::new(TextSize::new(rk.range().start as u32), TextSize::new(rk.range().end as u32))));
+        let ref_key = node.attribute_node("ref").map(|rk| (rk.value().to_string(), utils::range_to_text_range(rk.range())));
         let has_ref = ref_key.is_some();
         let has_eval = node.attribute("eval").is_some();
         let has_search = node.attribute("search").is_some();
@@ -710,5 +714,91 @@ impl XmlArchBuilder {
         }
         self.on_operation_creation(session, found_id, node, asset.into(), diagnostics);
         true
+    }
+
+    fn register_ir_model_record(&self, session: &mut SessionInfo, record: XmlRecordKey) {
+        let xml_record_sym = &session.st()[record];
+        if xml_record_sym.model.0 != "ir.model" {
+            return;
+        }
+
+        let Some(model_name) = xml_record_sym
+            .get_field_text(XmlFieldName::Model, session.st())
+            .map(|name| Sy!(name))
+        else {
+            return;
+        };
+        let model = session
+            .sync_odoo
+            .models
+            .entry(model_name.clone())
+            .or_insert_with(|| Rc::new(RefCell::new(Model::new(model_name.clone()))))
+            .clone();
+        model.borrow_mut().add_symbol(session, record);
+        session
+            .sync_odoo
+            .get_main_entry()
+            .borrow_mut()
+            .search_rebuild_for_models(session, model_name);
+    }
+
+    fn register_ir_model_fields_record(&self, session: &mut SessionInfo, record: XmlRecordKey) {
+        let xml_record_sym = &session.st()[record];
+        if xml_record_sym.model.0 != "ir.model.fields" {
+            return;
+        }
+
+        let model_name: OYarn = if let Some(&field_sym_key) =
+            xml_record_sym.fields().get(XmlFieldName::ModelId.as_str())
+        {
+            let field_sym = &session.st()[field_sym_key];
+            let Some((ref_key, ref_range)) = field_sym.ref_key.clone() else {
+                return;
+            };
+            let xml_ids = SyncOdoo::get_xml_ids(
+                session,
+                self.xml_symbol.into(),
+                &ref_key,
+                &utils::text_range_to_range(&ref_range),
+                &mut vec![],
+            );
+            let model_name_option =
+                xml_ids
+                    .iter_valid(session.st())
+                    .find_map(|xml_id| match xml_id {
+                        XmlId::PythonClass(key) => {
+                            let sym = &session.st()[key];
+                            sym._model.as_ref().map(|model| model.name.clone())
+                        }
+                        XmlId::XmlRecord(key) => {
+                            let st = session.st();
+                            let sym = &st[key];
+                            if sym.model.0 != "ir.model" {
+                                return None;
+                            }
+                            sym.fields().iter().find_map(|(name, &field_key)| {
+                                if name == "model" {
+                                    st[field_key].text.as_ref().map(|t| oyarn!("{}", t))
+                                } else {
+                                    None
+                                }
+                            })
+                        }
+                        _ => None,
+                    });
+            match model_name_option {
+                Some(model_name) => model_name,
+                None => return,
+            }
+        } else if let Some(model_name) =
+            xml_record_sym.get_field_text(XmlFieldName::Model, session.st())
+        {
+            Sy!(model_name)
+        } else {
+            return;
+        };
+        if let Some(model) = session.sync_odoo.models.get(&model_name).cloned() {
+            model.borrow_mut().add_xml_field_symbol(session, record);
+        }
     }
 }

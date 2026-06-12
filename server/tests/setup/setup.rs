@@ -104,7 +104,7 @@ pub fn get_diagnostics_for_path(session: &mut SessionInfo, path: &str) -> Vec<Di
     return res;
 }
 
-pub fn get_diagnostics_for_paths(session: &mut SessionInfo, paths: &Vec<String>) -> HashMap<String, Vec<Diagnostic>> {
+pub fn get_diagnostics_for_paths(session: &mut SessionInfo, paths: &[String]) -> HashMap<String, Vec<Diagnostic>> {
     let mut res = HashMap::default();
     while let Some(msg) = session._consume_message() {
         match msg {

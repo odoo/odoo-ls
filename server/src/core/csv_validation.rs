@@ -6,9 +6,7 @@ use tracing::info;
 
 use crate::{
     Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, OYarn}, core::{
-        diagnostics::{DiagnosticCode, create_diagnostic},
-        file_mgr::FileInfo,
-        symbols::{storage::SymbolTable, symbol_keys::{CsvFileKey, ModuleKey}},
+        diagnostics::{DiagnosticCode, create_diagnostic}, evaluation_utils::DeepFieldEvalWalker, file_mgr::FileInfo, symbols::{SymbolTable, symbol_keys::{CsvFileKey, ModuleKey}}
     }, features::csv_ast_utils::CsvFieldIter, threads::SessionInfo
 };
 use std::{cell::RefCell, rc::Rc};
@@ -58,15 +56,27 @@ impl CsvValidator {
             self.finalize_validation(session, csv_symbol, &file_info, diagnostics);
             return;
         };
-        let model_main_sym = model.borrow().get_main_symbols(session, Some(csv_module));
-        let Some(&model_main_sym) = model_main_sym.get(0) else { return;};
+        let model_main_class_sym = {
+            let model_ref = model.borrow();
+            let mut model_main_sym = model_ref.get_main_symbols(session, Some(csv_module));
+            let Some(model_main_sym) = model_main_sym.find_map(|s| s.as_class_key()) else {
+                return;
+            };
+            model_main_sym
+        };
         if rdr.has_headers() && let Ok(header) = rdr.headers() {
             let mut header_is_xml = vec![false; header.len()];
             for (idx, (start, end, h)) in CsvFieldIter::new(header, &data).unwrap().enumerate() {
-                let mut header_elts = h.splitn(2, [':', '/']).collect::<Vec<_>>();
-                header_elts[0] = header_elts[0].split("@").next().unwrap(); //remove translation if exists
-                let member_sym = SymbolTable::get_member_symbol(session, model_main_sym.into(), header_elts[0], Some(csv_module), false, true, false, true, false);
-                if member_sym.0.is_empty() {
+                let header_elts = h.splitn(2, [':', '/']).collect::<Vec<_>>();
+                let field_name = header_elts[0].split("@").next().unwrap(); //remove translation if exists
+                let mut deep_field_walker =
+                    DeepFieldEvalWalker::new(model_main_class_sym.into(), Some(csv_module));
+                let member_symbols = deep_field_walker.get_model_fields(
+                    session,
+                    model_main_class_sym.into(),
+                    field_name,
+                );
+                if member_symbols.is_empty() {
                     header_is_xml[idx] = false;
                     if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05057, &[h, model_name]) {
                         diagnostics.push(Diagnostic {
@@ -75,18 +85,9 @@ impl CsvValidator {
                         });
                     }
                 } else {
-                    let mut is_relational = false;
-                    for sym in member_sym.0.iter() {
-                        if SymbolTable::is_specific_field(session, *sym, &["Many2one", "One2many", "Many2many"]) &&
-                            header_elts.len() == 2 && header_elts[1] == "id"
-                        {
-                            //on relational fields, the header must contain :id to search for xml_id.
-                            //Else, it will use _rec_name and _rec_name_search to find the right record, which we are not validating
-                            is_relational = true;
-                            break;
-                        }
-                    }
-                    header_is_xml[idx] = is_relational;
+                    header_is_xml[idx] = header_elts.len() == 2
+                        && header_elts[1] == "id"
+                        && deep_field_walker.last_field_is_relational(session);
                 }
             }
             if session.st()[csv_symbol].headers.contains(&Sy!("id")) {
@@ -107,8 +108,8 @@ impl CsvValidator {
     fn validate_record(&self, session: &mut SessionInfo, csv_module: ModuleKey, headers_is_xml: &Vec<bool>, record: &StringRecord, diagnostics: &mut Vec<Diagnostic>, data: &str) {
         let Some(field_iter) = CsvFieldIter::new(record, data) else { return; };
         for (idx, (start, end, field)) in field_iter.enumerate() {
-            let Some(should_be_xml_id) = headers_is_xml.get(idx) else { break;};
-            if *should_be_xml_id {
+            let Some(&should_be_xml_id) = headers_is_xml.get(idx) else { break;};
+            if should_be_xml_id {
                 //check that field_data is a valid xml id
                 let id_split = field.split(".").collect::<Vec<&str>>();
                 let mut module_name = session.st().name(csv_module).as_str();

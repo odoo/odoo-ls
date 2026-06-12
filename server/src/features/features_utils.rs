@@ -1,14 +1,17 @@
 use itertools::Itertools;
 use ruff_python_ast::{Expr, ExprCall, Keyword};
 use ruff_text_size::{Ranged, TextRange, TextSize};
+use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use crate::core::file_mgr::FileMgr;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::function_symbol::Argument;
-use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey, SourceFileKey, SymbolKey, Wk};
+use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
+use crate::core::symbols::symbol_keys::{ModelSymbolKey, ModuleKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlRecordKey};
 use crate::core::symbols::storage::SymbolTable;
-use crate::core::symbols::{FunctionSymbol, VariableSymbol};
+use crate::core::symbols::FunctionSymbol;
 use crate::tree::OYarnExt;
 use crate::utils::HashMap;
+use std::path::PathBuf;
 
 use crate::constants::{SymType};
 use crate::constants::OYarn;
@@ -117,7 +120,7 @@ impl FeaturesUtils {
         let Some(model) = session.sync_odoo.models.get(model_name).cloned() else {
             return vec![];
         };
-        let main_syms = model.borrow().get_main_symbols(session, from_module);
+        let main_syms = model.borrow().get_main_symbols(session, from_module).collect::<Vec<_>>();
         main_syms.iter().flat_map(|&main_sym| SymbolTable::get_member_symbol(session, main_sym.into(), field_value, from_module, false, true, false, true, false).0).collect()
     }
 
@@ -138,53 +141,53 @@ impl FeaturesUtils {
 
     fn find_nested_fields(
         session: &mut SessionInfo,
-        base_symbol: ClassKey,
+        base_symbol: ModelSymbolKey,
         from_module: Option<ModuleKey>,
         field_range: &TextRange,
         field_name: &str,
         offset: &usize,
     ) -> Vec<(SymbolKey, TextRange)> {
-        if session.st()[base_symbol]._model.is_none() {
+        if let SymbolKey::Class(class) = base_symbol.into()
+        && session.st()[class]._model.is_none() {
             return vec![];
         }
-        let mut parent_object = Some(base_symbol);
-        let mut range_start = field_range.start() + TextSize::new(1);
-        for name in field_name.split(".") {
-            if parent_object.is_none() {
-                break;
-            }
-            let range_end = range_start + TextSize::new((name.len() + 1) as u32);
-            let cursor_section = TextRange::new(range_start, range_end).contains(TextSize::new(*offset as u32));
-            if cursor_section {
-                let fields = SymbolTable::get_member_symbol(session, parent_object.unwrap().into(), name, from_module, false, true, false, true, false).0;
-                return fields.into_iter().map(|f| (f, TextRange::new(range_start, range_end - TextSize::new(1)))).collect();
-            } else {
-                let (symbols, _diagnostics) = SymbolTable::get_member_symbol(session,
-                    parent_object.unwrap().into(),
-                    name,
-                    from_module,
-                    false,
-                    true,
-                    false,
-                    true,
-                    false);
-                if symbols.is_empty() {
-                    break;
-                }
-                parent_object = None;
-                for s in symbols {
-                    if let SymbolKey::Variable(variable_key) = s && SymbolTable::is_specific_field(session, s, &["Many2one", "One2many", "Many2many"]) {
-                        let models = VariableSymbol::get_relational_model(variable_key, session, from_module);
-                        if models.len() == 1 {
-                            parent_object = Some(models[0]);
-                            break;
-                        }
+        // Search in each str subsection where the cursor is and find the corresponding index + range
+        let cursor_index = field_name
+            .split(".")
+            .enumerate()
+            .try_fold(
+                field_range.start() + TextSize::new(1),
+                |range_start, (idx, name)| {
+                    let range_end = range_start + TextSize::new((name.len() + 1) as u32);
+                    if TextRange::new(range_start, range_end)
+                        .contains(TextSize::new(*offset as u32))
+                    {
+                        // Err is the result we want, it breaks the iteration
+                        Err((
+                            idx,
+                            TextRange::new(range_start, range_end - TextSize::new(1)),
+                        ))
                     } else {
-                        break;
+                        Ok(range_end)
                     }
-                }
+                },
+            )
+            .err();
+        let Some((cursor_index, cursor_range)) = cursor_index else {
+            return vec![];
+        };
+        let mut deep_field_walker = DeepFieldEvalWalker::new(base_symbol.into(), from_module);
+        for (idx, field_sub_name) in field_name.split(".").map(|x| x.to_string()).enumerate() {
+            let Some(base_symbol) = deep_field_walker.get_model_symbol(session) else {
+                break;
+            };
+            let field_symbols = deep_field_walker.get_model_fields(session, base_symbol, &field_sub_name);
+            if cursor_index == idx {
+                return field_symbols
+                    .into_iter()
+                    .map(|f| (f, cursor_range))
+                    .collect();
             }
-            range_start = range_end;
         }
         vec![]
     }
@@ -200,7 +203,7 @@ impl FeaturesUtils {
         let Some(SymbolKey::Class(parent_class)) = session.st().get_in_parents(scope, &[SymType::CLASS], true) else {
             return vec![];
         };
-        FeaturesUtils::find_nested_fields(session, parent_class, from_module, field_range, field_name, offset)
+        FeaturesUtils::find_nested_fields(session, parent_class.into(), from_module, field_range, field_name, offset)
     }
 
     fn find_domain_param_symbols(
@@ -211,10 +214,15 @@ impl FeaturesUtils {
         offset: &usize,
         from_module: Option<ModuleKey>,
     ) -> Vec<(SymbolKey, TextRange)> {
-        let Some(SymbolKey::Class(parent_object)) = callable.context.get(ContextKey::BaseAttr).and_then(|parent_object| parent_object.as_symbol().upgrade(session.st())) else {
+        let Some(base_sym) = callable.context.get(ContextKey::BaseAttr).and_then(|parent_object| parent_object.as_symbol().upgrade(session.st())) else {
             return vec![];
         };
-        FeaturesUtils::find_nested_fields(session, parent_object, from_module, field_range, field_name, offset)
+        let model_sym = match base_sym {
+            SymbolKey::Class(class_key) => class_key.into(),
+            SymbolKey::XmlRecord(xml_rec_key) => xml_rec_key.into(),
+            _ => return vec![],
+        };
+        FeaturesUtils::find_nested_fields(session, model_sym, from_module, field_range, field_name, offset)
     }
 
     fn find_positional_argument_symbols(
@@ -476,44 +484,72 @@ impl FeaturesUtils {
                         return r;
                     }
                 }
+                let mut string_handled = false;
                 if let Some(model) = session.sync_odoo.models.get(str).cloned() {
-                    let main_classes = model.borrow().get_main_symbols(session, from_module);
+                    let model_ref = model.borrow();
+                    let model_main_syms = model_ref.get_main_symbols(session, from_module);
                     let mut block = S!("");
-                    for main_class in main_classes {
-                        let st = &session.sync_odoo.symbol_table;
-                        if let Some(main_class_module) = st.find_module(main_class) {
-                            block += format!("Model in {}: {}", st[main_class_module].name, st[main_class].name).as_str();
-                            if let Some(doc_string) = &st[main_class].doc_string {
-                                block = block + "  \n***  \n" + doc_string;
+                    for model_main_sym in model_main_syms {
+                        match model_main_sym {
+                            ModelSymbolKey::Class(class_key) => {
+                                let model_sym: SymbolKey = class_key.into();
+                                let st = &session.sync_odoo.symbol_table;
+                                if let Some(main_class_module) = st.find_module(model_sym) {
+                                    block += format!("Model in {}: {}", st[main_class_module].name, st.repr(model_sym)).as_str();
+                                    if let Some(doc_string) = st.doc_string(model_sym) {
+                                        block = block + "  \n***  \n" + doc_string;
+                                    }
+                                    block += "  \n***  \n";
+                                    block += &model_ref.all_model_classes_dependencies(session, from_module)
+                                        .filter_map(|(sym, needed_module)| {
+                                            if model_sym == sym {
+                                                None // Skip main_class
+                                            } else {
+                                                let module = st.find_module(sym).unwrap();
+                                                Some((st[module].name.clone(), needed_module))
+                                            }
+                                        }).unique_by(|(name, _)| name.clone())
+                                        .sorted_by(|x, y| {
+                                            if x.1.is_none() && y.1.is_some() {
+                                                std::cmp::Ordering::Less
+                                            } else if x.1.is_some() && y.1.is_none() {
+                                                std::cmp::Ordering::Greater
+                                            } else {
+                                                x.0.cmp(&y.0)
+                                            }
+                                        })
+                                        .map(|(mod_name, needed_module)| {
+                                            match needed_module {
+                                                Some(module) => format!("inherited in {} (require {}){}", mod_name, module, FeaturesUtils::get_line_break(session)),
+                                                None => format!("inherited in {}{}", mod_name, FeaturesUtils::get_line_break(session))
+                                            }
+                                        }).collect::<String>();
+                                }
+                            },
+                                ModelSymbolKey::XmlRecord(xml_key) => {
+                                if let Some(xml_block) = FeaturesUtils::format_xml_record_block(session, xml_key) {
+                                    blocks.push(xml_block);
+                                }
                             }
-                            block += "  \n***  \n";
-                            block += &model.borrow().all_symbols(session, from_module, false).into_iter()
-                                .filter_map(|(sym, needed_module)| {
-                                    if sym == main_class {
-                                        None // Skip main_class
-                                    } else {
-                                        let module = st.find_module(sym).unwrap();
-                                        Some((st[module].name.clone(), needed_module))
-                                    }
-                                }).unique_by(|(name, _)| name.clone())
-                                .sorted_by(|x, y| {
-                                    if x.1.is_none() && y.1.is_some() {
-                                        std::cmp::Ordering::Less
-                                    } else if x.1.is_some() && y.1.is_none() {
-                                        std::cmp::Ordering::Greater
-                                    } else {
-                                        x.0.cmp(&y.0)
-                                    }
-                                })
-                                .map(|(mod_name, needed_module)| {
-                                    match needed_module {
-                                        Some(module) => format!("inherited in {} (require {}){}", mod_name, module, FeaturesUtils::get_line_break(session)),
-                                        None => format!("inherited in {}{}", mod_name, FeaturesUtils::get_line_break(session))
-                                    }
-                                }).collect::<String>();
                         }
                     }
-                    blocks.push(block);
+                    if !block.is_empty() {
+                        blocks.push(block);
+                    }
+                    string_handled = true;
+                }
+                if let Some(file_sym) = file_symbol {
+                    let xml_ids = SyncOdoo::get_xml_ids(session, file_sym, str, &std::ops::Range { start: 0, end: 0 }, &mut vec![]);
+                    for xml_id in xml_ids.iter_valid(session.st()) {
+                        if let XmlId::XmlRecord(record_key) = xml_id {
+                            if let Some(xml_block) = FeaturesUtils::format_xml_record_block(session, record_key) {
+                                blocks.push(xml_block);
+                                string_handled = true;
+                            }
+                        }
+                    }
+                }
+                if string_handled {
                     continue;
                 }
             }
@@ -528,9 +564,14 @@ impl FeaturesUtils {
                 }
                 continue;
             };
+            if let SymbolKey::XmlRecord(xml_key) = symbol {
+                if let Some(block) = Self::format_xml_record_block(session, xml_key) {
+                    blocks.push(block);
+                }
+                continue;
+            }
             let context = &eval_symbol.get_weak().context;
             let evaluation_ptrs = SymbolTable::follow_ref(&eval_symbol, session, Some(context), false, false, None, None);
-
             let symbol_type = symbol.typ();
             let symbol_name = session.st().name(symbol).clone();
             let from_module = session.st().find_module(symbol);
@@ -567,6 +608,7 @@ impl FeaturesUtils {
             SymbolKey::Function(f) if symbol_table[f].is_property => S!("property"),
             SymbolKey::Function(f) if symbol_table.parent(f).unwrap().typ() == SymType::CLASS => S!("method"),
             SymbolKey::PythonPackage(_) | SymbolKey::Module(_) => S!("package"),
+            SymbolKey::XmlRecord(_) => S!("XML record"),
             type_ => type_.typ().to_string().to_lowercase()
         }
     }
@@ -631,7 +673,7 @@ impl FeaturesUtils {
                                     let weak_eval_symbols = SymbolTable::follow_ref(&eval_symbol, session, ctx.as_ref(), false, false, None, None);
                                     weak_eval_symbols.iter().map(|weak_eval_symbol| match weak_eval_symbol.upgrade_weak(session.st()) {
                                         //if fct is a variable, it means that evaluation is None.
-                                        Some(s_type) if s_type.typ() != SymType::VARIABLE => session.st().name(s_type).to_string(),
+                                        Some(s_type) if s_type.typ() != SymType::VARIABLE => session.st().repr(s_type).to_string(),
                                         _ => "Any".to_string()
                                     }).collect::<Vec<_>>()
                                 }).unique().collect();
@@ -644,6 +686,13 @@ impl FeaturesUtils {
                         SymbolKey::PythonPackage(_) | SymbolKey::Module(_) => TypeInfo::VALUE(S!("Module")),
                         SymbolKey::Namespace(_) => TypeInfo::VALUE(S!("Namespace")),
                         SymbolKey::Class(class_key) => TypeInfo::VALUE(if eval_weak.is_super {format!("super[{}]", session.st()[class_key].name)} else {session.st()[class_key].name.to_string()}), // TODO: Maybe do something special if it is a descriptor
+                        SymbolKey::XmlRecord(xml_field_record_key) => {
+                            let xml_record = &session.st()[xml_field_record_key];
+                            match xml_record.get_field_text(XmlFieldName::Type, session.st()) {
+                                Some(type_name) => TypeInfo::VALUE(type_name),
+                                None => TypeInfo::VALUE(S!("Any"))
+                            }
+                        },
                         _ => TypeInfo::VALUE(S!("Any"))
                     }
                 } else {
@@ -845,5 +894,26 @@ impl FeaturesUtils {
                 }
             }
         }
+    }
+
+    fn format_xml_record_block(session: &SessionInfo, xml_record_key: XmlRecordKey) -> Option<String> {
+        let st = &session.sync_odoo.symbol_table;
+        let record = &st[xml_record_key];
+        let local_id = record.xml_id.as_ref()?;
+        let module_name = st.find_module(xml_record_key)
+            .map(|mk| st[mk].name.clone())
+            .unwrap_or_default();
+        let full_xml_id = if module_name.is_empty() {
+            local_id.to_string()
+        } else {
+            format!("{}.{}", module_name, local_id)
+        };
+        let file_name = st.get_file(xml_record_key.into())
+            .map(|f| {
+                let path = st.file_path(f);
+                PathBuf::from(path).file_name().unwrap_or_default().to_str().unwrap_or_default().to_string()
+            })
+            .unwrap_or_default();
+        Some(format!("```\n(XML record) {}\nmodel: {}\nfile: {}\n```", full_xml_id, record.model.0, file_name))
     }
 }
