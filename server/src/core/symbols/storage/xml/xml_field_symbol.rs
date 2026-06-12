@@ -45,3 +45,35 @@ impl XmlFieldSymbol {
         vec![]
     }
 }
+
+/// Enum for the possible field names of an xml field symbol, used to get the text of these fields in a type safe way
+// Add a new enum values as needed
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
+pub enum XmlFieldName {
+    Name,
+    Type,
+    Relation,
+    Model,
+    ModelId,
+    Code,
+    Id,
+}
+
+impl XmlFieldName {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            XmlFieldName::Name => "name",
+            XmlFieldName::Type => "ttype",
+            XmlFieldName::Relation => "relation",
+            XmlFieldName::Model => "model",
+            XmlFieldName::ModelId => "model_id",
+            XmlFieldName::Code => "code",
+            XmlFieldName::Id => "id",
+        }
+    }
+}
+impl ToString for XmlFieldName {
+    fn to_string(&self) -> String {
+        self.as_str().to_string()
+    }
+}

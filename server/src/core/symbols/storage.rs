@@ -16,13 +16,13 @@ pub mod dependency_mgr;
 pub mod metrics;
 mod ext_symbol_store;
 
-use crate::core::symbols::{
+use crate::{constants::OYarn, core::symbols::{
     ClassSymbol, CompiledSymbol, CsvFileSymbol, DiskDirSymbol, FileSymbol, FunctionSymbol, ModuleSymbol, NamespaceSymbol, PythonPackageSymbol, RootSymbol, VariableSymbol, XmlFileSymbol, storage::xml::{xml_asset_symbol::XmlAssetSymbol, xml_delete_symbol::XmlDeleteSymbol, xml_field_symbol::XmlFieldSymbol, xml_menuitem_symbol::XmlMenuItemSymbol, xml_record_symbol::XmlRecordSymbol, xml_template_symbol::XmlTemplateSymbol}, symbol_keys::{
-        ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, KeyValidator, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey, VariableKey, XmlAssetKey, XmlDataKey, XmlDeleteKey, XmlFieldKey, XmlFileKey, XmlId, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey
+        ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, KeyValidator, ModelSymbolKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey, VariableKey, XmlAssetKey, XmlDataKey, XmlDeleteKey, XmlFieldKey, XmlFileKey, XmlId, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey
     }
-};
+}};
 use ext_symbol_store::ExtSymbolStore;
-use slotmap::SlotMap;
+use slotmap::{SlotMap, SparseSecondaryMap};
 use std::ops::{Index, IndexMut};
 
 #[derive(Debug)]
@@ -48,6 +48,8 @@ pub struct SymbolTable {
     xml_deletes: SlotMap<XmlDeleteKey, XmlDeleteSymbol>,
     // external symbols
     ext_symbols: ExtSymbolStore,
+    // secondary slotmaps
+    xml_declared_models: SparseSecondaryMap<XmlRecordKey, OYarn>,
 }
 
 impl SymbolTable {
@@ -72,6 +74,7 @@ impl SymbolTable {
             xml_assets: SlotMap::with_key(),
             xml_deletes: SlotMap::with_key(),
             ext_symbols: ExtSymbolStore::new(),
+            xml_declared_models: SparseSecondaryMap::new(),
         }
     }
 
@@ -243,6 +246,15 @@ impl KeyValidator<XmlId> for SymbolTable {
             XmlId::XmlTemplate(k) => self.xml_templates.contains_key(k),
             XmlId::XmlAsset(k) => self.xml_assets.contains_key(k),
             XmlId::XmlDelete(k) => self.xml_deletes.contains_key(k),
+        }
+    }
+}
+
+impl KeyValidator<ModelSymbolKey> for SymbolTable {
+    fn is_key_valid(&self, key: ModelSymbolKey) -> bool {
+        match key {
+            ModelSymbolKey::Class(k) => self.classes.contains_key(k),
+            ModelSymbolKey::XmlRecord(k) => self.xml_records.contains_key(k),
         }
     }
 }

@@ -34,7 +34,7 @@ fn csv_test_paths() -> (String, String, String) {
 }
 
 fn collect_all_csv_diagnostics(session: &mut SessionInfo, paths: &[&str]) -> HashMap<String, Vec<Diagnostic>> {
-    let paths_vec = paths.iter().map(|s| s.to_string()).collect();
+    let paths_vec: Vec<_> = paths.iter().map(|s| s.to_string()).collect();
     setup::setup::get_diagnostics_for_paths(session, &paths_vec)
 }
 

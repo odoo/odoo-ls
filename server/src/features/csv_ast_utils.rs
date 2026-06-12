@@ -2,17 +2,15 @@ use csv::{Reader, StringRecord};
 use lsp_types::Range;
 use ruff_text_size::{TextRange, TextSize};
 
+use crate::core::evaluation_utils::DeepFieldEvalWalker;
+use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::symbol_keys::CsvFileKey;
 use crate::features::goto_utils::GotoSource;
 use crate::{
     constants::OYarn,
     core::{
         odoo::SyncOdoo,
-        symbols::{
-            symbol_keys::{ModuleKey, SymbolKey},
-            storage::SymbolTable,
-            VariableSymbol,
-        },
+        symbols::symbol_keys::{ModuleKey, SymbolKey},
     },
     oyarn,
     threads::SessionInfo,
@@ -124,9 +122,9 @@ impl CsvAstUtils {
         let mut results = vec![];
         let module = session.st().find_module(file_symbol);
         let Some(model) = session.sync_odoo.models.get(model_name).cloned() else {return vec![];};
-        let model_syms = model.borrow().get_main_symbols(session, module);
-        let Some(&main_symbol) = model_syms.first() else {return results;};
-        drop(model_syms);
+        let Some(main_symbol) = model.borrow().get_main_symbols(session, module).next() else {
+            return results;
+        };
         let mut headers = vec![];
         if !csv_reader.has_headers() {
             return results;
@@ -134,13 +132,16 @@ impl CsvAstUtils {
         let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(session.st().file_path(file_symbol.into())).unwrap();
         let Ok(header) = csv_reader.headers() else { return results;};
         for (h_start, end, h) in CsvFieldIter::new(header, content).unwrap() {
-            let has_quotes = end - h_start - h.len() == 2; // Range is bigger than field length by 2, meaning field is quoted
             headers.push(oyarn!("{}", h));
             if offset >= h_start && offset <= end {
+                let has_quotes = end - h_start - h.len() == 2; // Range is bigger than field length by 2, meaning field is quoted
                 let header_elts = h.splitn(2, [':', '/']).collect::<Vec<_>>();
-                let symbols = SymbolTable::get_member_symbol(session, main_symbol.into(), header_elts[0], module, false, true, false, true, false);
-                if offset <= h_start + has_quotes as usize + header_elts[0].len() { // Offset is on the field name, not on the relational part
-                    for sym in symbols.0 {
+                let mut deep_field_walker = DeepFieldEvalWalker::new(main_symbol.into(), module);
+                let symbols =
+                    deep_field_walker.get_model_fields(session, main_symbol.into(), header_elts[0]);
+                if offset <= h_start + has_quotes as usize + header_elts[0].len() {
+                    // Offset is on the field name, not on the relational part
+                    for sym in symbols {
                         let substring_end = if header_elts.len() > 1 {
                             // start + field_name + initial quote + 1 to make end inclusive
                             (h_start + header_elts[0].len() + has_quotes as usize + 1) as u32
@@ -150,35 +151,42 @@ impl CsvAstUtils {
                         results.push(GotoSource {
                             source: sym,
                             origin_selection_range: Some(Range {
-                                start: file_info.borrow().offset_to_position(h_start as u32, session.sync_odoo.encoding),
-                                end: file_info.borrow().offset_to_position(substring_end, session.sync_odoo.encoding),
+                                start: file_info
+                                    .borrow()
+                                    .offset_to_position(h_start as u32, session.sync_odoo.encoding),
+                                end: file_info
+                                    .borrow()
+                                    .offset_to_position(substring_end, session.sync_odoo.encoding),
                             }),
                         })
                     }
-                } else { // Offset is on the relational part
-                    for sym in symbols.0 {
-                        let SymbolKey::Variable(variable_key) = sym else {
-                            continue;
-                        };
-                        if !SymbolTable::is_specific_field(session, sym, &["Many2one", "One2many", "Many2many"]) {
-                            continue;
-                        }
-                        let models = VariableSymbol::get_relational_model(variable_key, session, module);
-                        if models.len() == 1 {
-                            let model = models[0];
-                            let sub_symbols = SymbolTable::get_member_symbol(session, model.into(), header_elts[1], module, false, true, false, true, false);
-                            for sym in sub_symbols.0 {
-                                // start + quotes + field name + separator
-                                let substring_start = (h_start + header_elts[0].len() + has_quotes as usize + 1) as u32;
-                                results.push(GotoSource {
-                                    source: sym,
-                                    origin_selection_range: Some(Range {
-                                        start: file_info.borrow().offset_to_position(substring_start, session.sync_odoo.encoding),
-                                        end: file_info.borrow().offset_to_position(end as u32, session.sync_odoo.encoding),
-                                    }),
-                                })
-                            }
-                        }
+                } else {
+                    // Offset is on the relational part
+                    let next_base = deep_field_walker.get_model_symbol(session);
+                    let Some(relational_field) = header_elts.get(1) else {
+                        return results;
+                    };
+                    let Some(next_base) = next_base else {
+                        return results;
+                    };
+                    let sub_symbols =
+                        deep_field_walker.get_model_fields(session, next_base, relational_field);
+                    for sym in sub_symbols {
+                        // start + quotes + field name + separator
+                        let substring_start =
+                            (h_start + header_elts[0].len() + has_quotes as usize + 1) as u32;
+                        results.push(GotoSource {
+                            source: sym,
+                            origin_selection_range: Some(Range {
+                                start: file_info.borrow().offset_to_position(
+                                    substring_start,
+                                    session.sync_odoo.encoding,
+                                ),
+                                end: file_info
+                                    .borrow()
+                                    .offset_to_position(end as u32, session.sync_odoo.encoding),
+                            }),
+                        })
                     }
                 }
             }
@@ -222,8 +230,8 @@ impl CsvAstUtils {
                     if let Some(record_key) = data.as_xml_record_key() {
                         let record = &session.st()[record_key];
                         let Some(record_xml_id) = &record.xml_id else {continue;};
-                        if record.range.contains_range(field_range) && record_xml_id.as_str() == field_data.as_str() {
-                            if let Some(xml_id) = record.fields().get("id") {
+                        if record.range.contains_range(field_range) && field_data == *record_xml_id {
+                            if let Some(xml_id) = record.fields().get(XmlFieldName::Id.as_str()) {
                                 results.push(GotoSource {
                                     source: (*xml_id).into(),
                                     origin_selection_range: None,
@@ -234,35 +242,30 @@ impl CsvAstUtils {
                     }
                 }
             //in case of relational field, return the field in the related model
-            } else if let Some(&relational_field) = relational_field {
+            } else if let Some(&relational_field) = relational_field
+            && relational_field == XmlFieldName::Id.as_str()  // Only id because we will only look for xml_ids
+            {
                 // 1. find relational field in current model
-                let field_syms = SymbolTable::get_member_symbol(session, main_symbol, field_name, module, false, true, false, true, false).0;
-                for field_sym in field_syms {
-                    let SymbolKey::Variable(variable_key) = field_sym else {
-                        continue;
-                    };
-                    if !SymbolTable::is_specific_field(session, field_sym, &["Many2one", "One2many", "Many2many"]) {
-                        continue;
-                    }
-                    // 2. find related model
-                    let related_models = VariableSymbol::get_relational_model(variable_key, session, module);
-                    for related_model in related_models {
-                        // 3. find related field in related model
-                        let related_syms = SymbolTable::get_member_symbol(session, related_model.into(), relational_field, module, false, true, false, true, false).0;
-                        // 4. push result in results
-                        if !related_syms.is_empty() {
-                            results.extend(SyncOdoo::get_xml_ids(session,
-                                csv_symbol.into(),
-                                field_data.as_str(),
-                                &std::ops::Range::default(), //we don't care about range as it's used only for diagnostic
-                                &mut vec![]
-                            ).iter_valid(session.st()).map(|xml_id| GotoSource {
-                                source: xml_id.into(),
-                                origin_selection_range: None,
-                            }));
-                        }
-                    }
-                }
+                let mut deep_field_walker = DeepFieldEvalWalker::new(main_symbol.into(), module);
+                let _ = deep_field_walker.get_model_fields(session, main_symbol.into(), field_name);
+                let Some(_) = deep_field_walker.get_model_symbol(session) else {
+                    return;
+                };
+                // We found the relational model referred to, we can lookup the xml_id now
+                results.extend(
+                    SyncOdoo::get_xml_ids(
+                        session,
+                        csv_symbol.into(),
+                        field_data.as_str(),
+                        &std::ops::Range::default(), //we don't care about range as it's used only for diagnostic
+                        &mut vec![],
+                    )
+                    .iter_valid(session.st())
+                    .map(|xml_id| GotoSource {
+                        source: xml_id.into(),
+                        origin_selection_range: None,
+                    }),
+                );
             }
         }
     }

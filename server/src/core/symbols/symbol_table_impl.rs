@@ -4,7 +4,11 @@ use std::{
     path::PathBuf,
     rc::Rc,
 };
-use crate::{core::evaluation_context::ContextKey, utils::{HashMap, HashSet}};
+use crate::{
+    Sy, core::{
+        evaluation_context::ContextKey, python_arch_eval_hooks::get_base_model_symbol, symbols::{storage::xml::xml_field_symbol::XmlFieldName, symbol_keys::XmlRecordKey},
+    }, oyarn, utils::{HashMap, HashSet},
+};
 
 use lsp_types::{Diagnostic, DiagnosticTag, Range, SymbolKind};
 use ruff_text_size::TextRange;
@@ -66,26 +70,100 @@ impl SymbolTable {
         }
     }
 
+    fn try_name(&self, target: SymbolKey) -> Option<&OYarn> {
+        match target {
+            SymbolKey::Root(k) => Some(&self[k].name),
+            SymbolKey::DiskDir(k) => Some(&self[k].name),
+            SymbolKey::Namespace(k) => Some(&self[k].name),
+            SymbolKey::PythonPackage(k) => Some(&self[k].name),
+            SymbolKey::Module(k) => Some(&self[k].name),
+            SymbolKey::File(k) => Some(&self[k].name),
+            SymbolKey::Compiled(k) => Some(&self[k].name),
+            SymbolKey::Class(k) => Some(&self[k].name),
+            SymbolKey::Function(k) => Some(&self[k].name),
+            SymbolKey::Variable(k) => Some(&self[k].name),
+            SymbolKey::XmlFile(k) => Some(&self[k].name),
+            SymbolKey::CsvFile(k) => Some(&self[k].name),
+            SymbolKey::XmlRecord(_) => None,
+            SymbolKey::XmlField(_) => None,
+            SymbolKey::XmlMenuItem(_) => None,
+            SymbolKey::XmlTemplate(_) => None,
+            SymbolKey::XmlAsset(_) => None,
+            SymbolKey::XmlDelete(_) => None,
+        }
+    }
+
     pub fn name(&self, target: impl Into<SymbolKey>) -> &OYarn {
+        let sym_key = target.into();
+        match self.try_name(sym_key) {
+            Some(name) => name,
+            None => panic!("{} does not have a name", sym_key.typ()),
+        }
+    }
+
+    /// Representation of symbol for features like hover. For symbols without a name, use a fallback representation.
+    pub fn repr(&self, target: impl Into<SymbolKey>) -> OYarn {
+        let sym_key = target.into();
+        match sym_key {
+            SymbolKey::XmlRecord(key) => oyarn!(
+                "<xml record>{}",
+                self[key]
+                    .xml_id
+                    .as_ref()
+                    .map(|id| format!(" xml_id: ({id})"))
+                    .unwrap_or_default()
+            ),
+            SymbolKey::XmlField(key) => oyarn!(
+                "<xml field> (name: {}){}",
+                self[key]
+                    .field_name,
+                self[key]
+                    .text
+                    .as_ref()
+                    .map(|t| format!(", text_value: ({t})"))
+                    .unwrap_or_default()
+            ),
+            SymbolKey::XmlMenuItem(key) => oyarn!(
+                "<xml menuitem>{}",
+                self[key]
+                    .xml_id
+                    .as_ref()
+                    .map(|id| format!(" xml_id: ({id})"))
+                    .unwrap_or_default()
+            ),
+            SymbolKey::XmlTemplate(key) => oyarn!(
+                "<xml template>{}",
+                self[key]
+                    .xml_id
+                    .as_ref()
+                    .map(|id| format!(" xml_id: ({id})"))
+                    .unwrap_or_default()
+            ),
+            SymbolKey::XmlAsset(key) => oyarn!(
+                "<xml asset>{}",
+                self[key]
+                    .xml_id
+                    .as_ref()
+                    .map(|id| format!(" xml_id: ({id})"))
+                    .unwrap_or_default()
+            ),
+            SymbolKey::XmlDelete(key) => oyarn!(
+                "<xml delete>{}",
+                self[key]
+                    .xml_id
+                    .as_ref()
+                    .map(|id| format!(" xml_id: ({id})"))
+                    .unwrap_or_default()
+            ),
+            _ => self.try_name(sym_key).cloned().unwrap_or_else(|| oyarn!("unknown")),
+        }
+    }
+
+    pub fn doc_string(&self, target: impl Into<SymbolKey>) -> Option<&String> {
         match target.into() {
-            SymbolKey::Root(k) => &self[k].name,
-            SymbolKey::DiskDir(k) => &self[k].name,
-            SymbolKey::Namespace(k) => &self[k].name,
-            SymbolKey::PythonPackage(p) => &self[p].name,
-            SymbolKey::Module(m) => &self[m].name,
-            SymbolKey::File(k) => &self[k].name,
-            SymbolKey::Compiled(k) => &self[k].name,
-            SymbolKey::Class(k) => &self[k].name,
-            SymbolKey::Function(k) => &self[k].name,
-            SymbolKey::Variable(k) => &self[k].name,
-            SymbolKey::XmlFile(k) => &self[k].name,
-            SymbolKey::XmlRecord(_) => panic!("XmlRecord doesn't have a name"), //TODO do not have a panic?
-            SymbolKey::XmlField(_) => panic!("XmlField doesn't have a name"),
-            SymbolKey::XmlMenuItem(_) => panic!("XmlMenuItem doesn't have a name"),
-            SymbolKey::XmlTemplate(_) => panic!("XmlTemplate doesn't have a name"),
-            SymbolKey::XmlAsset(_) => panic!("XmlAsset doesn't have a name"),
-            SymbolKey::XmlDelete(_) => panic!("XmlDelete doesn't have a name"),
-            SymbolKey::CsvFile(k) => &self[k].name,
+            SymbolKey::Class(k) => self[k].doc_string.as_ref(),
+            SymbolKey::Function(k) => self[k].doc_string.as_ref(),
+            _ => None
         }
     }
 
@@ -933,14 +1011,8 @@ impl SymbolTable {
                         session.sync_odoo.add_to_validations(sym);
                     }
                 }
-                for class in session.st().iter_classes(ref_to_inv.into()) {
-                    if let Some(model_data) = &session.st()[class]._model {
-                        let model = session.sync_odoo.models.get(&model_data.name).cloned();
-                        if let Some(model) = model {
-                            let from_module = session.st().find_module(class);
-                            model.borrow().add_dependents_to_validation(session, from_module);
-                        }
-                    }
+                for (model, from_module) in session.st().iter_all_model_keys(session, ref_to_inv.into()) {
+                    model.borrow().add_dependents_to_validation(session, from_module);
                 }
             }
             if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::VALIDATION].contains(&step) && in_workspace {
@@ -1487,6 +1559,9 @@ impl SymbolTable {
         iter
     }
 
+    /// Returns all members of a symbol, including sub-symbols, base class elements, and model symbols.
+    /// Result is HashMap<name, Vec<symbol)>
+    /// where name is the member name, symbol is the SymbolKey of the member.
     //store in result all available members for symbol: sub symbols, base class elements and models symbols
     //TODO is order right of Vec in HashMap? if we take first or last in it, do we have the last effective value?
     pub fn all_members(
@@ -1497,23 +1572,33 @@ impl SymbolTable {
         only_methods: bool,
         from_module: Option<ModuleKey>,
         is_super: bool
-    ) -> HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> {
-        let mut result: HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> = HashMap::default();
+    ) -> HashMap<OYarn, Vec<SymbolKey>> {
+        let mut result: HashMap<OYarn, Vec<SymbolKey>> = HashMap::default();
         let mut acc = HashSet::default();
         Self::_all_members(symbol, session, &mut result, with_co_models, only_fields, only_methods, from_module, &mut acc, is_super);
         return  result;
     }
 
-    fn _all_members(symbol_key: SymbolKey, session: &mut SessionInfo, result: &mut HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>>, with_co_models: bool, only_fields: bool, only_methods: bool, from_module: Option<ModuleKey>, acc: &mut HashSet<SymbolKey>, is_super: bool) {
+    fn _all_members(
+        symbol_key: SymbolKey,
+        session: &mut SessionInfo,
+        result: &mut HashMap<OYarn, Vec<SymbolKey>>,
+        with_co_models: bool,
+        only_fields: bool,
+        only_methods: bool,
+        from_module: Option<ModuleKey>,
+        acc: &mut HashSet<SymbolKey>,
+        is_super: bool
+    ) {
         if acc.contains(&symbol_key) {
             return;
         }
         acc.insert(symbol_key);
-        let mut append_result = |name: OYarn, symbol: SymbolKey, dep: Option<OYarn>| {
+        let mut append_result = |name: OYarn, symbol: SymbolKey| {
             if let Some(vec) = result.get_mut(&name) {
-                vec.push((symbol, dep));
+                vec.push(symbol);
             } else {
-                result.insert(name, vec![(symbol, dep)]);
+                result.insert(name, vec![symbol]);
             }
         };
         match symbol_key {
@@ -1525,7 +1610,7 @@ impl SymbolTable {
                             continue;
                         }
                         let name = session.st().name(symbol).clone();
-                        append_result(name, symbol, None);
+                        append_result(name, symbol);
                     }
                 }
                 let model_option = session.st()[class_key]._model.as_ref().and_then(|model_data|
@@ -1540,13 +1625,12 @@ impl SymbolTable {
                         }
                         let model_sym = &session.st()[model_key];
                         let all_symbols = model_sym.children();
-                        let model_name = model_sym.name.clone();
                         for s in all_symbols {
                             if (only_fields && !Self::is_field(session, s)) || (only_methods && !matches!(s, SymbolKey::Function(_))) {
                                 continue;
                             }
                             let name = session.st().name(s).clone();
-                            append_result(name, s, Some(model_name.clone()));
+                            append_result(name, s);
                         }
                     }
                     for (model_key, dependency) in model_inherits_symbols {
@@ -1556,11 +1640,10 @@ impl SymbolTable {
                         let model_sym = &session.st()[model_key];
                         // for inherits symbols, we only add fields
                         let all_symbols = model_sym.children();
-                        let model_name = model_sym.name.clone();
                         let fields = all_symbols.into_iter().filter(|&s| Self::is_field(session, s)).collect::<Vec<_>>();
                         for s in fields {
                             let name = session.st().name(s).clone();
-                            append_result(name, s, Some(model_name.clone()));
+                            append_result(name, s);
                         }
                     }
                 }
@@ -1572,16 +1655,33 @@ impl SymbolTable {
                     //TODO what about base of co-models classes?
                     Self::_all_members(base.into(), session, result, false, only_fields, only_methods, from_module, acc, false);
                 }
-            },
+            }
+            SymbolKey::XmlRecord(xml_record_key) => {
+                // If it is a model-defining record
+                // return the field symbols of the record alongside their names
+                let Some(model) = SymbolTable::get_xml_defined_model(session, xml_record_key) else {
+                    return;
+                };
+                let model_ref = model.borrow();
+                let fields = model_ref.get_xml_model_field_symbols(&session.st(), from_module);
+                let fields_with_names = fields.filter_map(|f_key| {
+                    let field_name =
+                        session.st()[f_key].get_field_text(XmlFieldName::Name, session.st())?;
+                    Some((f_key, Sy!(field_name)))
+                });
+                for (field_key, field_name) in fields_with_names {
+                    append_result(field_name, field_key.into());
+                }
+            }
             SymbolKey::Function(_) => {
                 // A function does not expose its symbols
             },
-            // if not class just add it to result
+            // otherwise just add it to result
             _ => {
                 session.st().all_symbols(symbol_key).into_iter().for_each(|s|
                     if !(only_fields && !Self::is_field(session, s)) {
                         let name = session.st().name(s).clone();
-                        append_result(name, s, None);
+                        append_result(name, s);
                     }
                 )
             }
@@ -1849,7 +1949,11 @@ impl SymbolTable {
         false
     }
 
-    pub fn all_fields(symbol: SymbolKey, session: &mut SessionInfo, from_module: Option<ModuleKey>) -> HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>> {
+    pub fn all_fields(
+        symbol: SymbolKey,
+        session: &mut SessionInfo,
+        from_module: Option<ModuleKey>,
+    ) -> HashMap<OYarn, Vec<SymbolKey>> {
         Self::all_members(symbol, session, true, true, false, from_module, false)
     }
 
@@ -1924,6 +2028,43 @@ impl SymbolTable {
                 }
             }
         }
+        if let SymbolKey::XmlRecord(xml_record_key) = target
+            && let Some(model) = SymbolTable::get_xml_defined_model(session, xml_record_key)
+        {
+            let model_ref = model.borrow();
+            let fields = model_ref.get_xml_model_field_symbols(&session.st(), from_module);
+            let matching_fields = fields.filter_map(|f_key| {
+                let field_name =
+                    session.st()[f_key].get_field_text(XmlFieldName::Name, session.st())?;
+                if field_name == name {
+                    Some(SymbolKey::from(f_key))
+                } else {
+                    None
+                }
+            });
+            extend_result(matching_fields.collect(), &mut result, &mut visited_symbols);
+            if let Some(base_model) = get_base_model_symbol(&mut session.sync_odoo) {
+                let (s, s_diagnostic) = Self::get_member_symbol(
+                    session,
+                    base_model.into(),
+                    name,
+                    from_module,
+                    prevent_comodel,
+                    only_fields,
+                    only_methods,
+                    all,
+                    false,
+                );
+                diagnostics.extend(s_diagnostic);
+                if !s.is_empty() {
+                    if all {
+                        extend_result(s, &mut result, &mut visited_symbols);
+                    } else {
+                        return (s, diagnostics);
+                    }
+                }
+            }
+        }
         let SymbolKey::Class(c) = target else {
             return (result, diagnostics);
         };
@@ -1936,7 +2077,7 @@ impl SymbolTable {
                     from_module = session.st().find_module(target);
                 }
                 if let Some(from_module) = from_module {
-                    let model_symbols = Model::get_full_model_symbols(model.clone(), session, from_module);
+                    let model_symbols = Model::get_full_model_classes(model.clone(), session, Some(from_module));
                     for model_symbol in model_symbols {
                         if target == model_symbol || visited_classes.contains(&model_symbol) {
                             continue;
@@ -1954,7 +2095,7 @@ impl SymbolTable {
                     }
                     for model_inherits_symbol in model.clone().borrow().get_inherits_models(session, from_module) {
                         //only fields are visible on inherits, not methods
-                        let model_symbols = Model::get_full_model_symbols(model_inherits_symbol, session, from_module);
+                        let model_symbols = Model::get_full_model_classes(model_inherits_symbol, session, Some(from_module));
                         for model_symbol in model_symbols {
                             if target == model_symbol || visited_classes.contains(&model_symbol) {
                                 continue;
@@ -2092,6 +2233,85 @@ impl SymbolTable {
         res
     }
 
+    /// Look for symbols that are implementing models, starting from a given symbol key.
+    fn iter_all_model_keys(
+        &self,
+        session: &SessionInfo,
+        key: SymbolKey,
+    ) -> Vec<(Rc<RefCell<Model>>, Option<ModuleKey>)> {
+        let mut res = vec![];
+
+        fn iter_recursive(
+            session: &SessionInfo,
+            key: SymbolKey,
+            res: &mut Vec<(Rc<RefCell<Model>>, Option<ModuleKey>)>,
+        ) {
+            let table = session.st();
+            match key {
+                SymbolKey::Class(class) => {
+                    if let Some(model_data) =
+                        session.st()[class]._model.as_ref().and_then(|model_data| {
+                            session.sync_odoo.models.get(&model_data.name).cloned()
+                        })
+                    {
+                        res.push((model_data, session.st().find_module(class)));
+                    }
+                    let class_sym = &table[class];
+                    for child_key in iter_symbol_keys(class_sym) {
+                        iter_recursive(session, *child_key, res);
+                    }
+                }
+                SymbolKey::File(f) => {
+                    let file_sym = &table[f];
+                    for child_key in iter_symbol_keys(file_sym) {
+                        iter_recursive(session, *child_key, res);
+                    }
+                }
+                SymbolKey::Function(f) => {
+                    let func_sym = &table[f];
+                    for child_key in iter_symbol_keys(func_sym) {
+                        iter_recursive(session, *child_key, res);
+                    }
+                }
+                SymbolKey::XmlFile(xml_file) => {
+                    let xml_file_sym = &table[xml_file];
+                    for child_key in xml_file_sym.children() {
+                        iter_recursive(session, child_key, res);
+                    }
+                }
+                SymbolKey::XmlRecord(xml_record_key) => {
+                    let xml_record_sym = &table[xml_record_key];
+                    if let Some(model) = SymbolTable::get_xml_defined_model(session, xml_record_key)
+                    {
+                        res.push((model, session.st().find_module(xml_record_key)));
+                    }
+                    for child_key in xml_record_sym.children() {
+                        iter_recursive(session, child_key, res);
+                    }
+                }
+                SymbolKey::DiskDir(_)
+                | SymbolKey::Root(_)
+                | SymbolKey::Namespace(_)
+                | SymbolKey::PythonPackage(_)
+                | SymbolKey::Module(_)
+                | SymbolKey::Compiled(_)
+                | SymbolKey::Variable(_)
+                | SymbolKey::XmlField(_)
+                | SymbolKey::XmlMenuItem(_)
+                | SymbolKey::XmlTemplate(_)
+                | SymbolKey::XmlAsset(_)
+                | SymbolKey::XmlDelete(_)
+                | SymbolKey::CsvFile(_) => {}
+            }
+        }
+
+        iter_recursive(session, key, &mut res);
+
+        res
+    }
+
+
+
     pub fn get_lsp_symbol_kind(target: SymbolKey) -> SymbolKind {
         match target.typ() {
             SymType::CLASS => SymbolKind::CLASS,
@@ -2126,7 +2346,6 @@ impl SymbolTable {
         self.paths(target).first().cloned().unwrap_or(self.name(target).to_string())
     }
 
-
     pub fn get_file_info_for_validation(
         session: &mut SessionInfo,
         symbol: SourceFileKey,
@@ -2159,4 +2378,8 @@ impl SymbolTable {
         }
     }
 
+    pub fn get_xml_defined_model(session: &SessionInfo, xml_record_key: XmlRecordKey) -> Option<Rc<RefCell<Model>>> {
+        let model_name = session.st().get_declared_model(xml_record_key)?;
+        session.sync_odoo.models.get(model_name).cloned()
+    }
 }

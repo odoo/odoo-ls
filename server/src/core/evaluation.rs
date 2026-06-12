@@ -1,9 +1,11 @@
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
+use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use crate::core::odoo::SyncOdoo;
+use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::symbol_keys::{FunctionKey, KeyValidator, ModuleKey, SourceFileKey, SymbolKey, Wk};
 use crate::core::symbols::storage::SymbolTable;
-use crate::core::symbols::{FunctionSymbol, VariableSymbol};
+use crate::core::symbols::FunctionSymbol;
 use crate::features::references::ReferenceTarget;
 use crate::threads::SessionInfo;
 use crate::{constants::*, Sy};
@@ -1864,11 +1866,11 @@ impl Evaluation {
         if let Expr::StringLiteral(s) = elt1 {
             let value = s.value.to_str();
             let split_expr = value.split(".");
-            let mut obj = Some(on_object);
             let mut date_mode = false;
-            'split_name: for name in split_expr {
+            let mut deep_field_walker = DeepFieldEvalWalker::new(on_object, from_module);
+            'split_name: for field_name in split_expr {
                 if date_mode {
-                    if !["year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"].contains(&name) {
+                    if !["year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"].contains(&field_name) {
                         if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03012, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
@@ -1879,7 +1881,7 @@ impl Evaluation {
                     date_mode = false;
                     continue;
                 }
-                if obj.is_none() {
+                let Some(base_symbol) = deep_field_walker.get_model_symbol(session) else {
                     if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03013, &[]) {
                         diagnostics.push(Diagnostic {
                             range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
@@ -1887,47 +1889,51 @@ impl Evaluation {
                         });
                     }
                     break;
-                }
-                if let Some(object) = obj {
-                    let (symbols, _diagnostics) = SymbolTable::get_member_symbol(session,
-                        object,
-                        name,
-                        from_module,
-                        false,
-                        true,
-                        false,
-                        true,
-                        false);
-                    if symbols.is_empty() {
-                        if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03011, &[name, session.st().name(object)]) {
-                            diagnostics.push(Diagnostic {
-                                range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
-                                ..diagnostic_base
-                            });
-                        }
-                        break;
+                };
+                let field_symbols =
+                    deep_field_walker.get_model_fields(session, base_symbol, field_name);
+                if field_symbols.is_empty() {
+                    if let Some(diagnostic_base) = create_diagnostic(
+                        session,
+                        DiagnosticCode::OLS03011,
+                        &[field_name, &session.st().repr(base_symbol)],
+                    ) {
+                        diagnostics.push(Diagnostic {
+                            range: Range::new(
+                                Position::new(s.range().start().to_u32(), 0),
+                                Position::new(s.range().end().to_u32(), 0),
+                            ),
+                            ..diagnostic_base
+                        });
                     }
-                    obj = None;
-                    for s in symbols {
-                        if SymbolTable::is_specific_field(session, s, &["Many2one", "One2many", "Many2many"]) {
-                            if let SymbolKey::Variable(v) = s {
-                                let models = VariableSymbol::get_relational_model(v, session, from_module);
-                                //only handle it if there is only one main symbol for this model
-                                if models.len() == 1 {
-                                    obj = Some(models[0].into());
-                                }
+                    break;
+                }
+                for symbol in field_symbols {
+                    match symbol {
+                        SymbolKey::Variable(_) => {
+                            if SymbolTable::is_specific_field(session, symbol, &["Properties"]) {
+                                //TODO handle properties field
+                                //property field, not handled for now. Skip the parsing to not generate diagnostics
+                                break 'split_name
+                            }
+                            if SymbolTable::is_specific_field(session, symbol, &["Date", "Datetime"]) {
+                                date_mode = true;
                             }
                         }
-                        if SymbolTable::is_specific_field(session, s, &["Properties"]) {
-                            //TODO handle properties field
-                            //property field, not handled for now. Skip the parsing to not generate diagnostics
-                            break 'split_name
+                        SymbolKey::XmlRecord(key) => {
+                            let Some(ttype) =
+                                session.st()[key].get_field_text(XmlFieldName::Type, session.st())
+                            else {
+                                continue;
+                            };
+                            if ["date", "datetime"].contains(&ttype.as_str()) {
+                                date_mode = true;
+                            }
                         }
-                        if SymbolTable::is_specific_field(session, s, &["Date"]) {
-                            date_mode = true;
-                        }
+                        _ => {}
                     }
                 }
+
             }
         }
         //parameter 2

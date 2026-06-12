@@ -1,9 +1,8 @@
 use crate::{
     Sy, constants::OYarn, core::{
-        file_mgr::FileMgr,
-        symbols::{
-            VariableSymbol, storage::SymbolTable, symbol_keys::{CsvFileKey, ModuleKey, SymbolKey}
-        },
+        evaluation_utils::DeepFieldEvalWalker, file_mgr::FileMgr, symbols::{
+            symbol_keys::{CsvFileKey, ModuleKey}
+        }
     }, features::{csv_ast_utils::CsvFieldIter, references::ReferenceTarget}, oyarn, threads::SessionInfo
 };
 use csv::{Reader, StringRecord};
@@ -22,42 +21,37 @@ impl CsvAstReferenceVisitor {
         let mut headers = vec![];
         if csv_reader.has_headers() {
             if let Ok(header) = csv_reader.headers() {
-                for (h_start, end, h) in CsvFieldIter::new(header, content).unwrap() {
+                for (start, end, h) in CsvFieldIter::new(header, content).unwrap() {
                     headers.push(oyarn!("{}", h));
                     let header_elts = h.splitn(2, [':', '/']).collect::<Vec<_>>();
                     if let &ReferenceTarget::Symbol(target_sym) = target {
                         let Some(model_name) = model_name else {continue;};
                         let Some(model) = session.sync_odoo.models.get(model_name).cloned() else {return vec![];};
-                        let model_syms = model.borrow().get_main_symbols(session, module);
-                        let Some(main_symbol) = model_syms.first().cloned() else {return results;};
-                        let symbols = SymbolTable::get_member_symbol(session, main_symbol.into(), header_elts[0], module, false, true, false, true, false);
-                        for sym in symbols.0 {
-                            if target_sym == sym {
-                                results.push(Location {
-                                    uri: uri.clone(),
-                                    range: session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, &std::ops::Range {
-                                        start: h_start,
-                                        end,
-                                    }),
-                                });
-                            } else {
-                                if let SymbolKey::Variable(v) = sym && SymbolTable::is_specific_field(session, sym, &["Many2one", "One2many", "Many2many"]) {
-                                    let models = VariableSymbol::get_relational_model(v, session, module);
-                                    if models.len() == 1 {
-                                        let model = models[0];
-                                        let sub_symbols = SymbolTable::get_member_symbol(session, model.into(), header_elts[1], module, false, true, false, true, false);
-                                        if !sub_symbols.0.is_empty() {
-                                            results.push(Location {
-                                                uri: uri.clone(),
-                                                range: session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, &std::ops::Range {
-                                                    start: h_start,
-                                                    end,
-                                                }),
-                                            });
-                                        }
-                                    }
-                                }
-                            }
+                        let Some(main_symbol) = model.borrow().get_main_symbols(session, module).next() else {return results;};
+                        let mut deep_field_walker = DeepFieldEvalWalker::new(main_symbol.into(), module);
+                        let symbols =
+                            deep_field_walker.get_model_fields(session, main_symbol.into(), header_elts[0]);
+                        if symbols.iter().any(|&sym| target_sym == sym) {
+                            results.push(Location {
+                                uri: uri.clone(),
+                                range: session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, &std::ops::Range {
+                                    start,
+                                    end,
+                                }),
+                            });
+                        }
+                        let Some(next_base) = deep_field_walker.get_model_symbol(session) else {
+                            continue;
+                        };
+                        let sub_symbols = deep_field_walker.get_model_fields(session, next_base.into(), header_elts[1]);
+                        if sub_symbols.iter().any(|&sym| target_sym == sym) {
+                            results.push(Location {
+                                uri: uri.clone(),
+                                range: session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, &std::ops::Range {
+                                    start,
+                                    end,
+                                }),
+                            });
                         }
                     }
                 }
