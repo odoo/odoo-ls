@@ -2,7 +2,8 @@ use std::{io::Error, panic, sync::{Arc, Mutex, atomic::AtomicBool}, thread::Join
 
 use crossbeam_channel::{Receiver, Select, Sender};
 use lsp_server::{Connection, IoThreads, Message, ProtocolError, RequestId, ResponseError};
-use lsp_types::{CancelParams, CompletionOptions, DeclarationOptions, DefinitionOptions, DocumentSymbolOptions, FileOperationFilter, FileOperationPattern, FileOperationRegistrationOptions, HoverProviderCapability, InitializeParams, InitializeResult, OneOf, ReferencesOptions, SaveOptions, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, WorkDoneProgressOptions, WorkspaceFileOperationsServerCapabilities, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities, WorkspaceSymbolOptions, notification::{Cancel, DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification}, request::{Completion, DocumentSymbolRequest, GotoDeclaration, GotoDefinition, HoverRequest, References, Request, ResolveCompletionItem, Shutdown, WorkspaceSymbolRequest, WorkspaceSymbolResolve}};
+use lsp_types::{CancelParams, CompletionOptions, DeclarationOptions, DefinitionOptions, DocumentSymbolOptions, FileOperationFilter, FileOperationPattern, FileOperationRegistrationOptions, HoverProviderCapability, InitializeParams, InitializeResult, OneOf, ReferencesOptions, SaveOptions, SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions, WorkDoneProgressOptions, WorkspaceFileOperationsServerCapabilities, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities, WorkspaceSymbolOptions, notification::{Cancel, DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders, DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, Notification}, request::{Completion, DocumentSymbolRequest, GotoDeclaration, GotoDefinition, HoverRequest, References, Request, ResolveCompletionItem, SemanticTokensFullRequest, Shutdown, WorkspaceSymbolRequest, WorkspaceSymbolResolve}};
+use crate::features::semantic_tokens::{TOKEN_MODIFIERS, TOKEN_TYPES};
 use ruff_source_file::PositionEncoding;
 use serde_json::json;
 #[cfg(target_os = "linux")]
@@ -241,6 +242,15 @@ impl Server {
                         PositionEncoding::Utf32 => lsp_types::PositionEncodingKind::UTF32,
                     }
                 ),
+                semantic_tokens_provider: Some(lsp_types::SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions {
+                    legend: SemanticTokensLegend {
+                        token_types: TOKEN_TYPES.to_vec(),
+                        token_modifiers: TOKEN_MODIFIERS.to_vec(),
+                    },
+                    range: Some(false),
+                    full: Some(SemanticTokensFullOptions::Delta { delta: Some(false) }),
+                    work_done_progress_options: WorkDoneProgressOptions { work_done_progress: Some(false) },
+                })),
                 ..ServerCapabilities::default()
             }
         };
@@ -389,7 +399,7 @@ impl Server {
                 self.running_request_ids.lock().unwrap().push(r.id.clone());
                 match r.method.as_str() {
                     HoverRequest::METHOD | GotoDefinition::METHOD | GotoDeclaration::METHOD | References::METHOD | DocumentSymbolRequest::METHOD |
-                    WorkspaceSymbolRequest::METHOD | WorkspaceSymbolResolve::METHOD | Completion::METHOD => {
+                    WorkspaceSymbolRequest::METHOD | WorkspaceSymbolResolve::METHOD | Completion::METHOD | SemanticTokensFullRequest::METHOD => {
                         self.interrupt_rebuild_boolean.store(true, std::sync::atomic::Ordering::SeqCst);
                         if DEBUG_THREADS {
                             info!("Sending request to main thread : {} - {}", r.method, r.id);

@@ -18,6 +18,7 @@ use crate::features::declaration::DeclarationFeature;
 use crate::features::completion::CompletionFeature;
 use crate::features::definition::DefinitionFeature;
 use crate::features::hover::HoverFeature;
+use crate::features::semantic_tokens::SemanticTokensFeature;
 use crate::threads::SessionInfo;
 use crate::weak_collections::{WeakMap, WeakSet};
 use crate::utils::{HashMap, is_dir_cs, is_file_cs};
@@ -47,6 +48,7 @@ use super::config::{self, DEFAULT_PROFILE_NAME, get_configuration, ConfigEntry, 
 use super::entry_point::{EntryPoint, EntryPointMgr};
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportCache;
+use super::text_document::TextDocument;
 use crate::core::model::Model;
 use crate::core::python_arch_builder::PythonArchBuilder;
 use crate::core::python_arch_eval::PythonArchEval;
@@ -153,6 +155,8 @@ pub struct SyncOdoo {
     language_dependents: WeakSet<SymbolKey>,
 
     pub test_mode: bool,
+
+    pub js_documents: HashMap<String, TextDocument>,
 }
 
 unsafe impl Send for SyncOdoo {}
@@ -203,6 +207,8 @@ impl SyncOdoo {
             language_dependents: WeakSet::new(),
 
             test_mode: false,
+
+            js_documents: HashMap::default(),
         };
         sync_odoo
     }
@@ -1912,6 +1918,11 @@ impl Odoo {
                         let sanitized_path = path.sanitize();
                         session.log_message(MessageType::INFO, format!("File opened: {}", sanitized_path));
                         let file_extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                        if file_extension == "js" {
+                            let doc = TextDocument::new(params.text_document.text, params.text_document.version);
+                            session.sync_odoo.js_documents.insert(sanitized_path, doc);
+                            return;
+                        }
                         let (valid, updated) = Odoo::update_file_cache(session, &sanitized_path, file_extension, Some(&[TextDocumentContentChangeEvent{
                             range: None,
                             range_length: None,
@@ -2007,6 +2018,7 @@ impl Odoo {
             }
         };
         session.log_message(MessageType::INFO, format!("File closed: {path}"));
+        session.sync_odoo.js_documents.remove(&path);
         session.sync_odoo.opened_files.retain(|x| x != &path);
         let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
         if let Some(file_info) = file_info {
@@ -2165,6 +2177,12 @@ impl Odoo {
             "untitled" => "py",
             _ => return,
         };
+        if file_extension == "js" {
+            if let Some(doc) = session.sync_odoo.js_documents.get_mut(&path) {
+                doc.apply_changes(&params.content_changes, params.text_document.version, session.sync_odoo.encoding);
+            }
+            return;
+        }
         let (valid, updated) = Odoo::update_file_cache(session, &path, file_extension, Some(&params.content_changes), params.text_document.version);
         if session.sync_odoo.state_init != InitState::NOT_READY && valid && updated {
             Odoo::update_file_index(session, path_buf.clone(), file_extension, false, false);
@@ -2239,6 +2257,53 @@ impl Odoo {
                 file_info.borrow_mut().prepare_ast(session);
             }
             return Ok(DocumentSymbolFeature::get_symbols(session, &file_info));
+        }
+        Ok(None)
+    }
+
+    pub fn handle_semantic_tokens(session: &mut SessionInfo<'_>, params: SemanticTokensParams) -> Result<Option<SemanticTokensResult>, ResponseError> {
+        let uri = &params.text_document.uri;
+        let uri_str = uri.to_string();
+        let encoding = session.sync_odoo.encoding;
+
+        // JavaScript files
+        if uri_str.ends_with(".js") {
+            let path = match uri.to_file_path() {
+                Ok(p) => p.sanitize(),
+                Err(_) => return Ok(None),
+            };
+            if let Some(doc) = session.sync_odoo.js_documents.get(&path) {
+                let content = doc.contents().to_string();
+                return Ok(Some(SemanticTokensFeature::get_js_semantic_tokens(&content, encoding)));
+            }
+            // Fallback: read from disk
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                return Ok(Some(SemanticTokensFeature::get_js_semantic_tokens(&content, encoding)));
+            }
+            return Ok(None);
+        }
+
+        // Python and XML files
+        let (schema, path) = match uri.scheme().map(|s| s.to_lowercase()) {
+            Some(schema) if schema == "file" => {
+                let uri_s = uri.to_string();
+                if !uri_s.ends_with(".py") && !uri_s.ends_with(".pyi") && !uri_s.ends_with(".xml") {
+                    return Ok(None);
+                }
+                match uri.to_file_path() {
+                    Ok(p) => (schema, p.sanitize()),
+                    Err(_) => return Ok(None),
+                }
+            }
+            Some(schema) if schema == "untitled" => (schema, uri.to_string()),
+            _ => return Ok(None),
+        };
+        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
+        if let Some(file_info) = file_info {
+            if schema != "untitled" && file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                file_info.borrow_mut().prepare_ast(session);
+            }
+            return Ok(SemanticTokensFeature::get_semantic_tokens(encoding, &file_info));
         }
         Ok(None)
     }
