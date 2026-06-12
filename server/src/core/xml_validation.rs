@@ -2,7 +2,7 @@ use std::{
     cell::RefCell,
     rc::Rc,
 };
-use crate::utils::{HashMap, HashSet};
+use crate::{core::symbols::storage::xml::xml_field_symbol::XmlFieldName, utils::{HashMap, HashSet}};
 
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
@@ -13,7 +13,7 @@ use crate::{
     core::{
         diagnostics::{create_diagnostic, DiagnosticCode},
         entry_point::{EntryPoint, EntryPointType},
-        symbols::symbol_keys::{ModuleKey, SourceFileKey, SymbolKey, XmlFileKey},
+        symbols::symbol_keys::{ModuleKey, SourceFileKey, XmlFileKey},
     },
     threads::SessionInfo,
     Sy,
@@ -23,7 +23,7 @@ pub struct XmlValidator {
     pub xml_symbol: XmlFileKey,
     pub is_in_main_ep: bool,
     module: ModuleKey,
-    fields_cache: HashMap<OYarn, HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>>>,
+    fields_cache: HashMap<OYarn, HashSet<OYarn>>,
 }
 
 impl XmlValidator {
@@ -50,7 +50,7 @@ impl XmlValidator {
         for data_key in session.st()[self.xml_symbol].symbols().iter().cloned().collect::<Vec<_>>() {
             self.validate_data(session, data_key, &mut diagnostics, &mut dependencies, &mut model_dependencies, &mut missing_model_dependencies);
         }
-        for dep in dependencies {
+        for dep in dependencies.into_iter() {
             session.st_mut().add_dependency(self.xml_symbol.into(), dep, BuildSteps::VALIDATION, BuildSteps::ARCH_EVAL);
         }
         for model in model_dependencies.iter() {
@@ -81,48 +81,80 @@ impl XmlValidator {
     }
     fn validate_record(&mut self, session: &mut SessionInfo, xml_data_record: XmlRecordKey, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<SourceFileKey>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>, missing_model_dependencies: &mut HashSet<OYarn>) {
         let xml_record = &session.st()[xml_data_record];
-        let maybe_model = session.sync_odoo.models.get(&xml_record.model.0).cloned();
+        let (model_name, model_range) = &xml_record.model;
+        let maybe_model = session.sync_odoo.models.get(model_name).cloned();
         let model_exists = maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols(session.st())).unwrap_or(false);
         if !model_exists {
-            missing_model_dependencies.insert(xml_record.model.0.clone());
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[&xml_record.model.0]) {
+            missing_model_dependencies.insert(model_name.clone());
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[model_name]) {
                 diagnostics.push(Diagnostic {
-                    range: Range { start: Position::new(xml_record.model.1.start.try_into().unwrap(), 0), end: Position::new(xml_record.model.1.end.try_into().unwrap(), 0) },
+                    range: Range { start: Position::new(model_range.start.try_into().unwrap(), 0), end: Position::new(model_range.end.try_into().unwrap(), 0) },
                     ..diagnostic
                 });
             }
-            info!("Model '{}' does not exist", xml_record.model.0);
+            info!("Model '{}' does not exist", model_name);
             return;
         }
         let Some(model) = maybe_model else {unreachable!();};
         model_dependencies.push(model.clone());
-        let main_symbols = model.borrow().get_main_symbols(session, Some(self.module));
+        // Here we want ALL model definitions
+        let main_symbols = model.borrow().get_main_symbols(session, Some(self.module)).collect::<Vec<_>>();
         if main_symbols.is_empty() {
-            missing_model_dependencies.insert(xml_record.model.0.clone());
+            missing_model_dependencies.insert(model_name.clone());
             let module_name = session.st().name(self.module);
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05055, &[&xml_record.model.0, module_name]) {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05055, &[model_name, module_name]) {
                 diagnostics.push(Diagnostic {
-                    range: Range { start: Position::new(xml_record.model.1.start.try_into().unwrap(), 0), end: Position::new(xml_record.model.1.end.try_into().unwrap(), 0) },
+                    range: Range { start: Position::new(model_range.start.try_into().unwrap(), 0), end: Position::new(model_range.end.try_into().unwrap(), 0) },
                     ..diagnostic
                 });
             }
-            info!("Model '{}' has no symbols in module '{}'", xml_record.model.0, module_name);
+            info!("Model '{}' has no symbols in module '{}'", model_name, module_name);
             return;
         }
-        for &main_sym in main_symbols.iter() {
-            dependencies.push(session.st().get_file(main_sym.into()).unwrap());
-        }
-        let Some(&main_symbol) = main_symbols.get(0) else { return; };
-        let model_name = xml_record.model.0.clone();
+
+        dependencies.extend(
+            main_symbols
+            .iter().copied()
+            .map(|sym|
+                session.st().get_file(sym.into()).unwrap()
+            )
+        );
+        let model_name = model_name.clone();
         if !self.fields_cache.contains_key(&model_name) {
-            let all_fields = SymbolTable::all_fields(main_symbol.into(), session, Some(self.module));
+            let py_fields = main_symbols.get(0).map(|&main_symbol| {
+                SymbolTable::all_fields(main_symbol.into(), session, Some(self.module))
+            });
+            let model_ref = model.borrow();
+            let xml_field_names_yarn = {
+                model_ref
+                    .get_xml_model_field_symbols(session.st(), Some(self.module))
+                    .filter_map(|rec_key| {
+                        Some(
+                            session.st()[rec_key]
+                                .get_field_text(XmlFieldName::Name, session.st())?,
+                        )
+                    })
+                    .map(OYarn::from)
+            };
+            let all_fields = py_fields
+                .into_iter()
+                .flat_map(|m| m.into_keys())
+                .chain(xml_field_names_yarn)
+                .collect::<HashSet<_>>();
             self.fields_cache.insert(model_name.clone(), all_fields);
         }
         let all_fields = self.fields_cache.get(&model_name).unwrap();
         self.validate_fields(session, xml_data_record, all_fields, diagnostics, missing_model_dependencies);
     }
 
-    fn validate_fields(&self, session: &mut SessionInfo, xml_data_record: XmlRecordKey, all_fields: &HashMap<OYarn, Vec<(SymbolKey, Option<OYarn>)>>, diagnostics: &mut Vec<Diagnostic>, missing_model_dependencies: &mut HashSet<OYarn>) {
+    fn validate_fields(
+        &self,
+        session: &mut SessionInfo,
+        xml_data_record: XmlRecordKey,
+        all_fields: &HashSet<OYarn>,
+        diagnostics: &mut Vec<Diagnostic>,
+        missing_model_dependencies: &mut HashSet<OYarn>,
+    ) {
         let xml_record = &session.st()[xml_data_record];
         let fields = xml_record.fields().clone();
         //check each field in the record
@@ -185,7 +217,7 @@ impl XmlValidator {
                 }
             }
             //Check that the field belong to the model
-            if all_fields.contains_key(field_name) {
+            if all_fields.contains(field_name) {
                 //Check specific attributes
                 let (Some(field_text), Some(field_text_range)) = (field.text.as_ref(), field.text_range.as_ref()) else {
                     continue;
@@ -193,29 +225,39 @@ impl XmlValidator {
                 let record = &session.st()[xml_data_record];
                 match (record.model.0.as_str(), field_name.as_str()) {
                     ("ir.ui.view", "model") | ("ir.actions.act_window", "res_model") => {
-                        let model = session.sync_odoo.models.get(&Sy!(field_text.clone())).cloned();
+                        let model = session.sync_odoo.models.get(field_text.as_str()).cloned();
                         let model_exists = model.as_ref().map(|m| m.borrow_mut().has_symbols(session.st())).unwrap_or(false);
                         if !model_exists {
                             missing_model_dependencies.insert(Sy!(field_text.clone()));
-                        }
-                        let mut main_sym = vec![];
-                        if let Some(model) = model {
-                            main_sym = model.borrow().get_main_symbols(session, Some(self.module));
-                        }
-                        if !model_exists {
                             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[field_text, &record.model.0]) {
                                 diagnostics.push(Diagnostic {
                                     range: Range { start: Position::new(field_text_range.start().try_into().unwrap(), 0), end: Position::new(field_text_range.end().try_into().unwrap(), 0) },
                                     ..diagnostic
                                 });
                             }
-                        }
-                        if model_exists && main_sym.is_empty() {
-                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05055, &[field_text, session.st().name(self.module)]) {
-                                diagnostics.push(Diagnostic {
-                                    range: Range { start: Position::new(field_text_range.start().try_into().unwrap(), 0), end: Position::new(field_text_range.end().try_into().unwrap(), 0) },
-                                    ..diagnostic
-                                });
+                        } else {
+                            let model_in_deps = model
+                                .map_or(false, |m| m.borrow().model_in_deps(session, self.module));
+                            if !model_in_deps {
+                                if let Some(diagnostic) = create_diagnostic(
+                                    session,
+                                    DiagnosticCode::OLS05055,
+                                    &[field_text, session.st().name(self.module)],
+                                ) {
+                                    diagnostics.push(Diagnostic {
+                                        range: Range {
+                                            start: Position::new(
+                                                field_text_range.start().try_into().unwrap(),
+                                                0,
+                                            ),
+                                            end: Position::new(
+                                                field_text_range.end().try_into().unwrap(),
+                                                0,
+                                            ),
+                                        },
+                                        ..diagnostic
+                                    });
+                                }
                             }
                         }
                     },
