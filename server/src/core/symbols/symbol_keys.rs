@@ -2,24 +2,26 @@ use slotmap::{Key, new_key_type};
 
 use crate::constants::{PackageType, SymType};
 
-new_key_type! { pub struct RootKey; }
-new_key_type! { pub struct DiskDirKey; }
-new_key_type! { pub struct NamespaceKey; }
-new_key_type! { pub struct PythonPackageKey; }
-new_key_type! { pub struct ModuleKey; }
-new_key_type! { pub struct FileKey; }
-new_key_type! { pub struct CompiledKey; }
-new_key_type! { pub struct ClassKey; }
-new_key_type! { pub struct FunctionKey; }
-new_key_type! { pub struct VariableKey; }
-new_key_type! { pub struct XmlFileKey; }
-new_key_type! { pub struct XmlRecordKey; }
-new_key_type! { pub struct XmlFieldKey; }
-new_key_type! { pub struct XmlMenuItemKey; }
-new_key_type! { pub struct XmlTemplateKey; }
-new_key_type! { pub struct XmlAssetKey; }
-new_key_type! { pub struct XmlDeleteKey; }
-new_key_type! { pub struct CsvFileKey; }
+new_key_type! {
+    pub struct RootKey;
+    pub struct DiskDirKey;
+    pub struct NamespaceKey;
+    pub struct PythonPackageKey;
+    pub struct ModuleKey;
+    pub struct FileKey;
+    pub struct CompiledKey;
+    pub struct ClassKey;
+    pub struct FunctionKey;
+    pub struct VariableKey;
+    pub struct XmlFileKey;
+    pub struct XmlRecordKey;
+    pub struct XmlFieldKey;
+    pub struct XmlMenuItemKey;
+    pub struct XmlTemplateKey;
+    pub struct XmlAssetKey;
+    pub struct XmlDeleteKey;
+    pub struct CsvFileKey;
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SymbolKey {
@@ -301,6 +303,7 @@ impl_weak_symbol_key_from! {
     XmlDeleteKey,
     CsvFileKey,
     SourceFileKey,
+    ModelSymbolKey,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -532,5 +535,45 @@ impl From<XmlAssetKey> for XmlId {
 
 impl From<XmlDeleteKey> for XmlId {
     fn from(key: XmlDeleteKey) -> Self { XmlId::XmlDelete(key) }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum ModelSymbolKey {
+    // [Partial]Ord is implemented to sort ClassKeys before XmlRecordKeys
+    Class(ClassKey),
+    XmlRecord(XmlRecordKey),
+}
+
+impl ModelSymbolKey {
+    pub fn as_class_key(&self) -> Option<ClassKey> {
+        match self {
+            ModelSymbolKey::Class(k) => Some(*k),
+            _ => None,
+        }
+    }
+
+    pub fn as_xml_record_key(&self) -> Option<XmlRecordKey> {
+        match self {
+            ModelSymbolKey::XmlRecord(k) => Some(*k),
+            _ => None,
+        }
+    }
+}
+
+impl From<ClassKey> for ModelSymbolKey {
+    fn from(key: ClassKey) -> Self { ModelSymbolKey::Class(key) }
+}
+
+impl From<XmlRecordKey> for ModelSymbolKey {
+    fn from(key: XmlRecordKey) -> Self { ModelSymbolKey::XmlRecord(key) }
+}
+
+impl From<ModelSymbolKey> for SymbolKey {
+    fn from(key: ModelSymbolKey) -> Self {
+        match key {
+            ModelSymbolKey::Class(k) => k.into(),
+            ModelSymbolKey::XmlRecord(k) => k.into(),
+        }
+    }
 }
 

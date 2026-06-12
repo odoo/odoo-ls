@@ -36,16 +36,21 @@ pub static COUNTRY_CLASS_NAME: Lazy<fn(OdooVersion) -> &'static str> = Lazy::new
     }
 });
 
-
-/// Helper to get hover markdown string at a given (line, character)
-pub fn get_hover_markdown(session: &mut SessionInfo, file_symbol: SourceFileKey, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<String> {
-    let hover = odoo_ls_server::features::hover::HoverFeature::hover_python(
-        session,
-        file_symbol,
-        file_info,
-        line,
-        character,
-    );
+fn get_hover(
+    session: &mut SessionInfo,
+    file_symbol: SourceFileKey,
+    file_info: &Rc<RefCell<FileInfo>>,
+    line: u32,
+    character: u32,
+    callable: fn(
+        &mut SessionInfo,
+        SourceFileKey,
+        &Rc<RefCell<FileInfo>>,
+        u32,
+        u32,
+    ) -> Option<lsp_types::Hover>,
+) -> Option<String> {
+    let hover = callable(session, file_symbol, file_info, line, character);
     hover.and_then(|h| match h.contents {
         lsp_types::HoverContents::Markup(m) => Some(m.value),
         lsp_types::HoverContents::Scalar(lsp_types::MarkedString::String(s)) => Some(s),
@@ -54,22 +59,60 @@ pub fn get_hover_markdown(session: &mut SessionInfo, file_symbol: SourceFileKey,
 }
 
 /// Helper to get hover markdown string at a given (line, character)
-pub fn get_definition_locs(session: &mut SessionInfo, f_sym: SourceFileKey, f_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Vec<lsp_types::LocationLink> {
-    let locations = odoo_ls_server::features::definition::DefinitionFeature::get_location(
-                    session,
-                    f_sym,
-                    f_info,
-                    line,
-                    character,
-                );
-    let locations = locations.map(|l| {
-        match l {
+pub fn get_hover_markdown(
+    session: &mut SessionInfo,
+    file_symbol: SourceFileKey,
+    file_info: &Rc<RefCell<FileInfo>>,
+    line: u32,
+    character: u32,
+) -> Option<String> {
+    get_hover(
+        session,
+        file_symbol,
+        file_info,
+        line,
+        character,
+        odoo_ls_server::features::hover::HoverFeature::hover_python,
+    )
+}
+
+/// Helper to get XML hover markdown string at a given (line, character)
+pub fn get_hover_xml_markdown(
+    session: &mut SessionInfo,
+    file_symbol: SourceFileKey,
+    file_info: &Rc<RefCell<FileInfo>>,
+    line: u32,
+    character: u32,
+) -> Option<String> {
+    get_hover(
+        session,
+        file_symbol,
+        file_info,
+        line,
+        character,
+        odoo_ls_server::features::hover::HoverFeature::hover_xml,
+    )
+}
+
+/// Helper to get hover markdown string at a given (line, character)
+pub fn get_definition_locs(
+    session: &mut SessionInfo,
+    f_sym: SourceFileKey,
+    f_info: &Rc<RefCell<FileInfo>>,
+    line: u32,
+    character: u32,
+) -> Vec<lsp_types::LocationLink> {
+    let locations = odoo_ls_server::features::definition::DefinitionFeature::get_location(session, f_sym, f_info, line, character);
+    locations
+        .map(|l| match l {
             lsp_types::GotoDefinitionResponse::Link(locs) => locs,
             _ => unreachable!("Expected GotoDefinitionResponse::Link"),
-        }
-    }).into_iter().flatten().collect::<Vec<_>>();
-    locations
+        })
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
 }
+
 
 pub fn diag_on_line(diagnostics: &Vec<lsp_types::Diagnostic>, line: u32) -> Vec<&lsp_types::Diagnostic> {
     diagnostics.iter().filter(|d| d.range.start.line <= line && d.range.end.line >= line).collect()
@@ -79,12 +122,12 @@ pub fn diag_on_line(diagnostics: &Vec<lsp_types::Diagnostic>, line: u32) -> Vec<
  * Verify that the given diagnostics match the expected diagnostics from doc_diag, generated from comments in the source code
  */
 pub fn verify_diagnostics_against_doc(
-    diagnostics: Vec<Diagnostic>,
+    diagnostics: &Vec<Diagnostic>,
     doc_diag: Vec<(u32, Vec<String>)>
 ) {
     // Build a map from line to set of diagnostic codes found in diagnostics
     let mut diags: HashMap<u32, Vec<&Diagnostic>> = HashMap::default();
-    for diag in &diagnostics {
+    for diag in diagnostics.iter() {
         let line = diag.range.start.line;
         diags.entry(line).or_default().push(diag);
     }

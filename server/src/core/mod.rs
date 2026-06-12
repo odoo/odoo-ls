@@ -5,6 +5,7 @@ pub mod data_hooks;
 pub mod diagnostics;
 pub mod evaluation;
 pub mod evaluation_context;
+pub mod evaluation_utils;
 pub mod entry_point;
 pub mod file_mgr;
 pub mod import_resolver;

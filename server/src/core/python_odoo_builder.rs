@@ -59,9 +59,18 @@ impl PythonOdooBuilder {
             ModuleSymbol::insert_xml_id(session.st_mut(), module, xml_id_model_name, XmlId::PythonClass(sym));
         }
         match session.sync_odoo.models.get(&model_name).cloned() {
-            Some(model) => model.borrow_mut().add_symbol(session, sym),
+            Some(model) => {
+                if model.borrow().has_xml_symbols(&session.st()) {
+                    if let Some(file_sym) = session.st().get_file(self.symbol.into()) {
+                        session.sync_odoo.symbol_table.add_model_dependencies(file_sym, &model);
+                    }
+                } else {
+                    model.borrow_mut().add_symbol(session, sym)
+                }
+            }
             None => {
-                let model = Model::new(model_name.clone(), sym);
+                let mut model = Model::new(model_name.clone());
+                model.add_symbol(session, sym);
                 session.sync_odoo.models.insert(model_name.clone(), Rc::new(RefCell::new(model)));
             }
         }
@@ -160,9 +169,17 @@ impl PythonOdooBuilder {
             }
         }
         //Add inherits from delegate=True from fields
-        let all_fields = SymbolTable::all_members(self.symbol.into(), session, false, true, false, None, false);
+        let all_fields = SymbolTable::all_members(
+            self.symbol.into(),
+            session,
+            false,
+            true,
+            false,
+            None,
+            false,
+        );
         for (field_name, symbols) in all_fields.iter() {
-            for (symbol, _deps) in symbols.iter() {
+            for symbol in symbols.iter() {
                 let Some(evals) = session.st().evaluations(*symbol) else { continue };
                 for eval in evals.clone() {
                     let scope = session.st().get_file(self.symbol.into()).map(SymbolKey::from);

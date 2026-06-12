@@ -88,18 +88,18 @@ impl GotoUtils {
         };
         let mut model_found = false;
         let from_module = session.st().find_module(file_symbol);
-        let classes = model.borrow().get_symbols(session.st(), from_module);
-        let len_classes = classes.len();
-        for class_key in classes {
-            if let (Some(eval_range), Some(class_file)) = (eval.range, session.st().get_file(class_key.into())) {
-                if (file_symbol == class_file) && session.st()[class_key].range.contains(eval_range.start()) && len_classes > 1 {
+        let model_syms = model.borrow().get_model_symbols(session.st(), from_module).collect::<Vec<_>>();
+        let len_syms = model_syms.len();
+        for sym_key in model_syms.into_iter() {
+            if let (Some(eval_range), Some(class_file)) = (eval.range, session.st().get_file(sym_key.into())) {
+                if (file_symbol == class_file) && session.st().range(sym_key.into()).contains(eval_range.start()) && len_syms > 1 {
                     continue; // if we are already on the class, skip, unless it is the only result
                 }
             }
             model_found = true;
             let path = session.st().path(file_symbol).to_string();
             sources.push(GotoSource {
-                source: class_key.into(),
+                source: sym_key.into(),
                 origin_selection_range: eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &r))
             });
         }

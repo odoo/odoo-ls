@@ -1,8 +1,9 @@
 use crate::core::file_mgr::legacy_unc_paths;
 use path_slash::PathExt;
-use ruff_text_size::TextSize;
+use ruff_text_size::{TextRange, TextSize};
 use std::borrow::Cow;
 use std::ffi::OsStr;
+use std::ops::Range;
 use std::process::Command;
 use std::sync::atomic::Ordering;
 use std::{fs::{self, DirEntry}, path::{Path, PathBuf}, str::FromStr};
@@ -266,6 +267,17 @@ pub fn string_fuzzy_contains(string: &str, pattern: &str) -> bool {
         }
     }
     false
+}
+
+pub fn range_to_text_range(range: Range<usize>) -> TextRange {
+    TextRange::new(TextSize::new(range.start as u32), TextSize::new(range.end as u32))
+}
+
+pub fn text_range_to_range(text_range: &TextRange) -> Range<usize> {
+    Range {
+        start: text_range.start().into(),
+        end: text_range.end().into(),
+    }
 }
 
 /// Expand a language code into itself and its base language (if applicable).
