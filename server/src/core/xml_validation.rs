@@ -2,7 +2,7 @@ use std::{
     cell::RefCell,
     rc::Rc,
 };
-use crate::{utils::{HashMap, HashSet}, weak_collections::WeakSet};
+use crate::utils::{HashMap, HashSet};
 
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
@@ -13,7 +13,6 @@ use crate::{
     core::{
         diagnostics::{create_diagnostic, DiagnosticCode},
         entry_point::{EntryPoint, EntryPointType},
-        file_mgr::FileInfo,
         odoo::SyncOdoo,
         symbols::{ModuleSymbol, symbol_keys::{ModuleKey, SourceFileKey, SymbolKey, XmlFileKey}},
     },

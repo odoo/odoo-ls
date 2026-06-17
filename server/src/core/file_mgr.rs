@@ -1,3 +1,5 @@
+use oxc::{allocator::Allocator, diagnostics::OxcDiagnostic, parser::Parser, semantic::SemanticBuilder, span::SourceType};
+use oxc_linter::{ConfigStore, ConfigStoreBuilder, ContextSubHost, ExternalPluginStore, LintOptions, ModuleRecord};
 use ruff_python_ast::{ModModule, PySourceType, Stmt, token::{Token, TokenKind}};
 use ruff_python_parser::Parsed;
 use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent, Uri};
@@ -5,13 +7,13 @@ use lsp_types::notification::{Notification, PublishDiagnostics};
 use ruff_source_file::{OneIndexed, PositionEncoding, SourceLocation};
 use tracing::{error, warn};
 use std::{collections::hash_map::DefaultHasher, path::Path};
-use crate::utils::HashSet;
+use crate::{core::js_arch_builder::ComponentDescriptor, utils::HashSet};
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, OnceLock};
 use std::{fs};
 use crate::utils::HashMap;
-use crate::core::config::{DiagnosticFilter, DiagnosticFilterPathType};
+use crate::core::{config::{DiagnosticFilter, DiagnosticFilterPathType}, js_arch_builder, js_utils};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode, DiagnosticSetting};
 use crate::core::text_document::TextDocument;
 use crate::features::node_index_ast::IndexedModule;
@@ -74,6 +76,8 @@ pub struct FileInfoAst {
     /// Positions of OWL `static template = "some.xml_id"` string literals found in this JS file.
     /// Each entry is (LSP Range of the string content, xml_id value, enclosing class name).
     pub js_template_refs: Vec<(Range, String, Option<String>)>,
+    /// Component descriptors extracted from OXC analysis of this JS file.
+    pub js_component_descriptors: Vec<ComponentDescriptor>,
 }
 
 impl FileInfoAst {
@@ -112,6 +116,7 @@ impl FileInfo {
                 indexed_module: None,
                 ast_type: AstType::Python,
                 js_template_refs: vec![],
+                js_component_descriptors: vec![],
             })),
             diagnostics: HashMap::default(),
             noqas_blocs: HashMap::default(),

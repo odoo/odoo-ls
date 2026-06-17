@@ -1,7 +1,6 @@
 use lsp_types::{Diagnostic, Position, Range};
 use roxmltree::Node;
 use ruff_text_size::{TextRange, TextSize};
-use tracing::error;
 
 use crate::{Sy, constants::OYarn, core::{diagnostics::{DiagnosticCode, create_diagnostic}, odoo::SyncOdoo, symbols::symbol_keys::{SymbolKey, XmlFieldKey}}, oyarn, threads::SessionInfo};
 

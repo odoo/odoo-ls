@@ -3,7 +3,7 @@ use crate::core::csv_validation::CsvValidator;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::AstType;
-use crate::core::js_arch_builder::{self, ComponentDescriptor};
+use crate::core::js_arch_builder::ComponentDescriptor;
 use crate::core::js_validator::JsValidator;
 use crate::core::module_load_order::sort_by_load_order;
 use crate::core::symbols::ModuleSymbol;
@@ -159,6 +159,8 @@ pub struct SyncOdoo {
     pub test_mode: bool,
     pub tsserver_bridge: Option<TsServerBridge>,
     pub js_templates: HashMap<String, WeakSet<XmlTemplateKey>>,
+    pub component_descriptors: HashMap<String, ComponentDescriptor>,
+    pub js_component_by_template: HashMap<String, String>,
 }
 
 unsafe impl Send for SyncOdoo {}
@@ -211,6 +213,8 @@ impl SyncOdoo {
             test_mode: false,
             tsserver_bridge: None,
             js_templates: HashMap::default(),
+            component_descriptors: HashMap::default(),
+            js_component_by_template: HashMap::default(),
         };
         sync_odoo
     }

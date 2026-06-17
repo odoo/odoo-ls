@@ -4,7 +4,7 @@ use crate::{
         odoo::SyncOdoo,
         symbols::{
             ModuleSymbol, symbol_keys::{ModuleKey, SourceFileKey, SymbolKey, XmlId}
-        },
+        }
     }, threads::SessionInfo
 };
 use roxmltree::Node;
@@ -206,6 +206,21 @@ impl XmlAstUtils {
                 results.0.push(record_key.into());
             }
         }
+    }
+
+    pub fn check_js_template_validity_for_key(session: &mut SessionInfo, t_name: &String) -> bool {
+        let need_remove;
+        if let Some(templates) = session.sync_odoo.js_templates.get_mut(t_name) {
+            templates.clear_invalid(&session.sync_odoo.symbol_table);
+            need_remove = templates.is_empty();
+        } else {
+            return false;
+        }
+        if need_remove {
+            session.sync_odoo.js_templates.remove(t_name);
+            return false;
+        }
+        true
     }
 
 }
