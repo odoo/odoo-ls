@@ -244,8 +244,138 @@ impl XmlValidator {
 
     }
 
-    fn validate_template(&self, _session: &mut SessionInfo, _xml_data_template: XmlTemplateKey, _diagnostics: &mut Vec<Diagnostic>, _dependencies: &mut Vec<SourceFileKey>, _model_dependencies: &mut Vec<Rc<RefCell<Model>>>, _missing_model_dependencies: &mut HashSet<OYarn>) {
+    fn validate_template(&self, session: &mut SessionInfo, xml_data_template: XmlTemplateKey, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<SourceFileKey>, _model_dependencies: &mut Vec<Rc<RefCell<Model>>>, _missing_model_dependencies: &mut HashSet<OYarn>) {
+        if !self.is_in_main_ep {
+            return;
+        }
+        let for_web = session.st()[xml_data_template].is_web;
+        if for_web {
+            self.validate_t_calls_for_frontend(session, xml_data_template, diagnostics, dependencies, _model_dependencies, _missing_model_dependencies);
+        } else {
+            self.validate_t_calls_for_backend(session, xml_data_template, diagnostics, dependencies, _model_dependencies, _missing_model_dependencies);
+        }
+    }
 
+    fn validate_t_calls_for_frontend(&self, session: &mut SessionInfo, xml_data_template: XmlTemplateKey, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<SourceFileKey>, _model_dependencies: &mut Vec<Rc<RefCell<Model>>>, _missing_model_dependencies: &mut HashSet<OYarn>) {
+        let t_calls = session.st()[xml_data_template].t_calls.clone();
+        for (t_call_name, t_call_range) in &t_calls {
+            let t_call_str = t_call_name.as_str();
+            if t_call_str.contains("{{") || t_call_str.contains("#{") {
+                continue;
+            }
+            let Some(templates) = session.sync_odoo.js_templates.get_mut(t_call_str) else {continue};
+            templates.clear_invalid(&session.sync_odoo.symbol_table);
+            let Some(templates) = session.sync_odoo.js_templates.get(t_call_str) else {continue};
+            if templates.is_empty() {
+                session.st_mut()[self.xml_symbol].not_found_data_ids.insert(
+                    DataType::TEMPLATE(t_call_name.clone()),
+                    BuildSteps::VALIDATION,
+                );
+                session.sync_odoo.get_main_entry().borrow_mut().not_found_data_ids.insert(self.xml_symbol.into());
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05073, &[t_call_str]) {
+                    diagnostics.push(Diagnostic {
+                        range: Range {
+                            start: Position::new(t_call_range.start().into(), 0),
+                            end: Position::new(t_call_range.end().into(), 0),
+                        },
+                        ..diagnostic
+                    });
+                }
+            } else {
+                let mut found_one_valid = false;
+                for template in templates.iter_valid(&session.sync_odoo.symbol_table) {
+                    let module = session.st().find_module(template);
+                    if let Some(module) = module {
+                        let dir_name = &session.st()[module].dir_name;
+                        if ModuleSymbol::is_in_deps(session.st(), self.module, &dir_name) {
+                            found_one_valid = true;
+                            break;
+                        }
+                    }
+                }
+                // Check that the template's module is a declared dependency
+                if !found_one_valid {
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05074, &[t_call_str, session.st().name(self.module)]) {
+                        diagnostics.push(Diagnostic {
+                            range: Range {
+                                start: Position::new(t_call_range.start().into(), 0),
+                                end: Position::new(t_call_range.end().into(), 0),
+                            },
+                            ..diagnostic
+                        });
+                    }
+                }
+                // Add file-level dependencies so re-validation is triggered when the template changes
+                for template_key in templates.iter_valid(session.st()) {
+                    if let Some(xml_file) = session.st().get_file(template_key.into()) {
+                        dependencies.push(xml_file);
+                    }
+                }
+            }
+        }
+    }
+
+    fn validate_t_calls_for_backend(&self, session: &mut SessionInfo, xml_data_template: XmlTemplateKey, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<SourceFileKey>, _model_dependencies: &mut Vec<Rc<RefCell<Model>>>, _missing_model_dependencies: &mut HashSet<OYarn>) {
+        let Some(file) = session.st().get_file(xml_data_template.into()) else {return};
+        let t_calls = session.st()[xml_data_template].t_calls.clone();
+        for (t_call_name, t_call_range) in &t_calls {
+            let t_call_str = t_call_name.as_str();
+            if t_call_str.contains("{{") || t_call_str.contains("#{") {
+                continue;
+            }
+            let range = std::ops::Range {
+                start: t_call_range.start().to_usize(),
+                end: t_call_range.end().to_usize(),
+            };
+            let mut xml_ids = SyncOdoo::get_xml_ids(session, file, t_call_str, &range, diagnostics);
+            xml_ids.clear_invalid(session.st());
+            if xml_ids.is_empty() {
+                session.st_mut()[self.xml_symbol].not_found_data_ids.insert(
+                    DataType::XML_ID(t_call_name.clone()),
+                    BuildSteps::VALIDATION,
+                );
+                session.sync_odoo.get_main_entry().borrow_mut().not_found_data_ids.insert(self.xml_symbol.into());
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05073, &[t_call_str]) {
+                    diagnostics.push(Diagnostic {
+                        range: Range {
+                            start: Position::new(t_call_range.start().into(), 0),
+                            end: Position::new(t_call_range.end().into(), 0),
+                        },
+                        ..diagnostic
+                    });
+                }
+            } else {
+                let mut found_one_valid = false;
+                for template in xml_ids.iter_valid(&session.sync_odoo.symbol_table) {
+                    let module = session.st().find_module(template);
+                    if let Some(module) = module {
+                        let dir_name = &session.st()[module].dir_name;
+                        if ModuleSymbol::is_in_deps(session.st(), self.module, &dir_name) {
+                            found_one_valid = true;
+                            break;
+                        }
+                    }
+                }
+                // Check that the template's module is a declared dependency
+                if !found_one_valid {
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05074, &[t_call_str, session.st().name(self.module)]) {
+                        diagnostics.push(Diagnostic {
+                            range: Range {
+                                start: Position::new(t_call_range.start().into(), 0),
+                                end: Position::new(t_call_range.end().into(), 0),
+                            },
+                            ..diagnostic
+                        });
+                    }
+                }
+                // Add file-level dependencies so re-validation is triggered when the template changes
+                for template_key in xml_ids.iter_valid(session.st()) {
+                    if let Some(xml_file) = session.st().get_file(template_key.into()) {
+                        dependencies.push(xml_file);
+                    }
+                }
+            }
+        }
     }
 
     fn validate_delete(&self, _session: &mut SessionInfo, _xml_data_delete: XmlDeleteKey, _diagnostics: &mut Vec<Diagnostic>, _dependencies: &mut Vec<SourceFileKey>, _model_dependencies: &mut Vec<Rc<RefCell<Model>>>, _missing_model_dependencies: &mut HashSet<OYarn>) {

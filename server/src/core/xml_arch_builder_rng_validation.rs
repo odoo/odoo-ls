@@ -1,6 +1,7 @@
 use lsp_types::{Diagnostic, Position, Range};
 use roxmltree::Node;
 use ruff_text_size::{TextRange, TextSize};
+use tracing::error;
 
 use crate::{Sy, constants::OYarn, core::{diagnostics::{DiagnosticCode, create_diagnostic}, odoo::SyncOdoo, symbols::symbol_keys::{SymbolKey, XmlFieldKey}}, oyarn, threads::SessionInfo};
 
@@ -502,6 +503,19 @@ impl XmlArchBuilder {
         true
     }
 
+    fn collect_t_calls(node: &Node) -> Vec<(crate::constants::OYarn, TextRange)> {
+        let mut result = vec![];
+        for desc in node.descendants() {
+            if !desc.is_element() { continue; }
+            if let Some(attr) = desc.attribute_node("t-call") {
+                result.push((
+                    oyarn!("{}", attr.value()),
+                    TextRange::new(TextSize::new(attr.range().start as u32), TextSize::new(attr.range().end as u32))
+                ));
+            }
+        }
+        result
+    }
 
     fn load_qweb_template(&mut self, session: &mut SessionInfo, node: &Node, found_id: Option<String>, for_web: bool, diagnostics: &mut Vec<Diagnostic>) -> bool {
         let found_t_name = node.attribute("t-name").map(|s| s.to_string());
@@ -516,6 +530,22 @@ impl XmlArchBuilder {
             &TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32)),
             for_web
         );
+        let t_calls = Self::collect_t_calls(node);
+        if !t_calls.is_empty() {
+            session.st_mut()[data].t_calls = t_calls;
+        }
+        if let Some(found_t_name) = &found_t_name {
+            let module_key = session.st().find_module(self.xml_symbol).unwrap();
+            let module_name = session.st().name(module_key);
+            if !found_t_name.contains(".") || found_t_name.split(".").next() != Some(module_name) {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05071, &[]) {
+                    diagnostics.push(Diagnostic {
+                        range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                        ..diagnostic.clone()
+                    });
+                }
+            }
+        }
         self.on_operation_creation(session, found_id, found_t_name, node, data.into(), diagnostics);
         true
     }

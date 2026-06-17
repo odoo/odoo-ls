@@ -9,6 +9,8 @@ pub struct XmlTemplateSymbol {
     pub is_web: bool,
     pub is_external: bool,
     pub range: TextRange,
+    /// (template_name, attribute_range) for each t-call found in this template body
+    pub t_calls: Vec<(OYarn, TextRange)>,
 
     parent: SymbolKey,
 }
