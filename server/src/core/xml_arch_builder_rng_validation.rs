@@ -9,7 +9,7 @@ use super::xml_arch_builder::XmlArchBuilder;
 /* Contains the RelaxNG Validation part of the XmlArchBuilder */
 impl XmlArchBuilder {
 
-    pub fn load_odoo_openerp_data(&mut self, session: &mut SessionInfo, node: &Node, for_web: bool, diagnostics: &mut Vec<Diagnostic>) -> bool {
+    pub fn load_odoo_openerp_data(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
         match node.tag_name().name() {
             "odoo" | "openerp" | "data" => {
                 for attr in node.attributes() {
@@ -30,8 +30,8 @@ impl XmlArchBuilder {
 
                 for child in node.children().filter(|n| n.is_element()) {
                     if !(self.load_template(session, &child, diagnostics) //template should be tested before odoo_openerp_data
-                        || self.load_qweb_template(session, &child, None, for_web, diagnostics)
-                        || self.load_odoo_openerp_data(session, &child, for_web, diagnostics)
+                        || self.load_qweb_template(session, &child, None, false, diagnostics)
+                        || self.load_odoo_openerp_data(session, &child, diagnostics)
                         || self.load_menuitem(session, &child, false, diagnostics)
                         || self.load_record(session, &child, diagnostics)
                         || self.load_delete(session, &child, diagnostics)
@@ -50,23 +50,33 @@ impl XmlArchBuilder {
                     }
                 }
                 return true;
-            }
-            "template" | "templates" => {
-                for child in node.children().filter(|n| n.is_element()) {
-                    if !(self.load_qweb_template(session, &child, None, for_web, diagnostics)) {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05005, &[child.tag_name().name(), node.tag_name().name()]) {
-                            diagnostics.push(
-                                Diagnostic {
-                                    range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
-                                    ..diagnostic.clone()
-                                }
-                            );
-                        }
-                    }
-                }
-                return true;
             },
             _ => { return false;},
+        }
+    }
+
+    pub fn load_frontend_data(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) {
+        for attr in node.attributes() {
+            match attr.name() {
+                "t-name" => {
+                    // even if discouraged, load it so it can be used in features
+                    self.load_qweb_template(session, &node, None, true, diagnostics);
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05075, &[]) {
+                        diagnostics.push(
+                            Diagnostic {
+                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            }
+                        );
+                    }
+                    return;
+                },
+                _ => {}
+            }
+        }
+        for child in node.children().filter(|n| n.is_element()) {
+            // if not an owl template, we actually do nothing
+            self.load_qweb_template(session, &child, None, true, diagnostics);
         }
     }
 

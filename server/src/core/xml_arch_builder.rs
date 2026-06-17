@@ -41,7 +41,11 @@ impl XmlArchBuilder {
         }
         let ep = session.st().get_entry(self.xml_symbol);
         self.is_in_main_ep = ep.borrow().typ == EntryPointType::MAIN || ep.borrow().typ == EntryPointType::ADDON;
-        self.load_odoo_openerp_data(session, node, self.web_asset, &mut diagnostics);
+        if self.web_asset {
+            self.load_frontend_data(session, node, &mut diagnostics);
+        } else {
+            self.load_odoo_openerp_data(session, node, &mut diagnostics);
+        }
         session.st_mut()[self.xml_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
         file_info.replace_diagnostics(DiagnosticLevel::XML_ARCH, diagnostics);
         session.sync_odoo.add_to_validations(self.xml_symbol);

@@ -563,6 +563,10 @@ OLS05073, DiagnosticSetting::Error, "Template '{0}' not found or not in module d
 */
 OLS05074, DiagnosticSetting::Error, "Template '{0}' is not declared in any dependency of module '{1}'",
 /**
+* A t-call references a template whose module is not declared as a dependency
+*/
+OLS05075, DiagnosticSetting::Warning, "It is discouraged to declare a template at the root of the file. Consider adding an 'odoo' or 'template' node as root of the file",
+/**
 * Template not found
 */
 OLS06000, DiagnosticSetting::Error, "Template not found",
