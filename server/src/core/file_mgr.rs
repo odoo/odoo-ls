@@ -59,7 +59,8 @@ pub fn combine_noqa_info(noqas: &[NoqaInfo]) -> NoqaInfo {
 pub enum AstType {
     Python,
     Xml,
-    Csv
+    Csv,
+    Js
 }
 
 /* Structure that hold ast and text_document for FileInfo. It allows Fileinfo to hold it with a Rc<RefCell<>> to allow mutability and build on-the-fly
@@ -143,7 +144,6 @@ impl FileInfo {
             None if self.version.is_some() && !force => return false,
             _ => {},
         }
-        self.diagnostics.clear();
         if let Some(content) = content {
             // If we are in did open, we create a new text_document
             // I.E. we have one content change event with no range
@@ -174,6 +174,7 @@ impl FileInfo {
         if old_hash == self.file_info_ast.borrow().text_hash {
             return false;
         }
+        self.diagnostics.clear();
         self._build_ast(session, is_external);
         true
     }
@@ -187,6 +188,15 @@ impl FileInfo {
             self.file_info_ast.borrow_mut().ast_type = AstType::Csv;
             return;
         }
+        if self.uri.ends_with(".js") || self.uri.ends_with(".ts") {
+            self.build_js_ast(session, is_external);
+            self.file_info_ast.borrow_mut().ast_type = AstType::Js;
+            return;
+        }
+        self.build_python_ast(session, is_external);
+    }
+
+    fn build_python_ast(&mut self, session: &mut SessionInfo, is_external: bool) {
         let mut diagnostics = vec![];
         let fia_rc = self.file_info_ast.clone();
         let fia = fia_rc.borrow_mut();
@@ -219,7 +229,66 @@ impl FileInfo {
             }
         }
         self.file_info_ast.borrow_mut().indexed_module = Some(IndexedModule::new(parsed_module));
-        self.replace_diagnostics(BuildSteps::SYNTAX, diagnostics);
+
+    fn build_js_ast(&mut self, session: &mut SessionInfo, _is_external: bool) {
+        let data = self.file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
+        let path_str = self.uri.clone();
+        // SemanticBuilder uses oxc_ast_visit internally (recursive descent), which can
+        // overflow the default stack on deeply-nested ASTs (e.g. minified JS).
+        // Run parse + semantic analysis in a dedicated thread with 8 MiB stack.
+        let (diagnostics, template_refs, component_descriptors): (Vec<OxcDiagnostic>, Vec<(lsp_types::Range, String, Option<String>)>, Vec<ComponentDescriptor>) =
+            std::thread::Builder::new()
+            .stack_size(8 * 1024 * 1024)
+            .spawn(move || {
+                let path = std::path::Path::new(&path_str);
+                let source_type = SourceType::from_path(path).unwrap_or_default();
+                let allocator = Allocator::default();
+                let ret = Parser::new(&allocator, data.as_str(), source_type).parse();
+                let mut diags: Vec<OxcDiagnostic> = ret.errors;
+                let parser_module_record = ret.module_record;
+                let program = allocator.alloc(ret.program);
+
+                // Collect template references and component descriptors before semantic analysis
+                let (refs, descriptors) = js_arch_builder::visit_file(program, data.as_str(), &path_str);
+
+                let semantic_ret = SemanticBuilder::new()
+                    .with_cfg(true)
+                    .with_check_syntax_error(true)
+                    .build(program);
+                diags.extend(semantic_ret.errors);
+                let semantic = semantic_ret.semantic;
+
+                // Build the linter module record and context
+                let module_record = std::sync::Arc::new(ModuleRecord::new(path, &parser_module_record, &semantic));
+                let context_sub_host = ContextSubHost::new(semantic, module_record, 0);
+
+                // Create a linter with default (correctness) rules and run it
+                let mut external_plugin_store = ExternalPluginStore::default();
+                let config = ConfigStoreBuilder::default()
+                    .build(&mut external_plugin_store)
+                    .expect("failed to build linter config");
+                let config_store = ConfigStore::new(
+                    config,
+                    rustc_hash::FxHashMap::default(),
+                    external_plugin_store,
+                );
+                let linter = oxc_linter::Linter::new(LintOptions::default(), config_store, None);
+                let messages = linter.run(path, vec![context_sub_host], &allocator);
+                diags.extend(messages.into_iter().map(|m| m.error));
+
+                (diags, refs, descriptors)
+            })
+            .expect("failed to spawn JS parsing thread")
+            .join()
+            .unwrap_or_default();
+        self.file_info_ast.borrow_mut().js_template_refs = template_refs;
+        self.file_info_ast.borrow_mut().js_component_descriptors = component_descriptors;
+        let lsp_diags = diagnostics.iter().map(
+            |d| js_utils::oxc_diagnostic_to_lsp_diagnostic(
+                session, self, d, &FileMgr::pathname2uri(&S!(&self.uri))
+            )
+        ).flatten().collect();
+        self.replace_diagnostics(DiagnosticLevel::JS_OXC, lsp_diags); //OXC will use SYNTAX. others are reserved to tsserver
     }
 
     /* if ast has been set to none to lower memory usage, try to reload it */
@@ -329,6 +398,12 @@ impl FileInfo {
     fn update_range(&self, mut diagnostic: Diagnostic, encoding: PositionEncoding) -> Diagnostic {
         diagnostic.range.start = self.offset_to_position(diagnostic.range.start.line, encoding);
         diagnostic.range.end = self.offset_to_position(diagnostic.range.end.line, encoding);
+        if let Some(ref mut related_information) = diagnostic.related_information {
+            for related in related_information.iter_mut() {
+                related.location.range.start = self.offset_to_position(related.location.range.start.line, encoding);
+                related.location.range.end = self.offset_to_position(related.location.range.end.line, encoding);
+            }
+        }
         diagnostic
     }
     pub fn update_diagnostic_filters(&mut self, session: &SessionInfo) {
@@ -348,7 +423,17 @@ impl FileInfo {
         if self.need_push {
             let mut all_diagnostics = Vec::new();
 
-            'diagnostics: for d in self.diagnostics.values().flatten() {
+            let is_js = matches!(self.file_info_ast.borrow().ast_type, AstType::Js);
+            //We are checking ARCH as it contains Syntax diagnostics for tsserver
+            let syntax_diags = self.diagnostics.get(&DiagnosticLevel::JS_OXC);
+            let has_syntax_diags = is_js && syntax_diags.map(|v| !v.is_empty()).unwrap_or(false);
+            let diag_iter: Box<dyn Iterator<Item = &Diagnostic>> = if has_syntax_diags {
+                Box::new(self.diagnostics.get(&DiagnosticLevel::JS_OXC).unwrap().iter()) //in this case, only display OXC diagnostics
+            } else {
+                Box::new(self.diagnostics.values().flatten())
+            };
+
+            'diagnostics: for d in diag_iter {
                 //check noqa lines
                 let updated = self.update_range(d.clone(), session.sync_odoo.encoding);
                 let updated_line = updated.range.start.line;

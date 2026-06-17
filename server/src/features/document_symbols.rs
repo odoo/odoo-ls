@@ -4,7 +4,7 @@ use lsp_types::{DocumentSymbol, DocumentSymbolResponse, Range, SymbolKind};
 use ruff_python_ast::{Expr, Stmt, StmtAnnAssign, StmtAssign, StmtAugAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtGlobal, StmtIf, StmtImport, StmtImportFrom, StmtMatch, StmtNonlocal, StmtTry, StmtTypeAlias, StmtWhile, StmtWith};
 use ruff_text_size::Ranged;
 
-use crate::{core::{file_mgr::FileInfo, python_utils::{unpack_assign, Assign, AssignTargetType}}, threads::SessionInfo, S};
+use crate::{core::{file_mgr::{AstType, FileInfo}, python_utils::{unpack_assign, Assign, AssignTargetType}}, threads::SessionInfo, S};
 
 
 pub struct DocumentSymbolFeature;
@@ -13,6 +13,20 @@ impl DocumentSymbolFeature {
 
     pub fn get_symbols(session: &mut SessionInfo, file_info: &Rc<RefCell<FileInfo>>) -> Option<DocumentSymbolResponse> {
         let mut results = vec![];
+
+        // JS/TS: delegate to tsserver navtree.
+        let is_js = matches!(
+            file_info.borrow().file_info_ast.borrow().ast_type,
+            AstType::Js
+        );
+        if is_js {
+            let uri = file_info.borrow().uri.clone();
+            if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
+                results = bridge.get_nav_tree(&uri);
+            }
+            return if results.is_empty() { None } else { Some(DocumentSymbolResponse::Nested(results)) };
+        }
+
         let file_info_bw = file_info.borrow();
         let file_info_ast = file_info_bw.file_info_ast.borrow();
         if let Some(ast) = &file_info_ast.get_stmts() {

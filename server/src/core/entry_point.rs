@@ -5,7 +5,7 @@ use crate::utils::HashMap;
 use slotmap::Key;
 use tracing::{error, info, warn};
 
-use crate::core::symbols::symbol_keys::{FileKey, RootKey, SourceFileKey, SymbolKey, Wk};
+use crate::core::symbols::symbol_keys::{FileKey, JsFileKey, RootKey, SourceFileKey, SymbolKey, Wk};
 use crate::{
     tree::Tree,
     constants::{BuildSteps, OYarn},
@@ -387,6 +387,7 @@ pub struct EntryPoint {
     pub not_found_symbols_for_models: WeakSet<SourceFileKey>,
     pub to_delete: bool,
     pub data_symbols: HashMap<String, Wk<SourceFileKey>>, //key is path, weak to Rc that is hold by the module symbol
+    pub js_symbols: HashMap<String, Wk<JsFileKey>>, //key is path, weak to Rc that is hold by the module symbol
 }
 impl EntryPoint {
     pub fn new(symbol_table: &mut SymbolTable, path: String, tree: Vec<OYarn>, typ: EntryPointType, addon_to_odoo_path: Option<String>, addon_to_odoo_tree: Option<Vec<OYarn>>) -> Rc<RefCell<Self>> {
@@ -400,6 +401,7 @@ impl EntryPoint {
             root: RootKey::null(), // set below
             to_delete: false,
             data_symbols: HashMap::default(),
+            js_symbols: HashMap::default(),
         }));
         let root = symbol_table.new_root(entry.clone());
         entry.borrow_mut().root = root;
@@ -425,6 +427,7 @@ impl EntryPoint {
             root,
             to_delete: false,
             data_symbols: HashMap::default(),
+            js_symbols: HashMap::default(),
         }))
     }
 

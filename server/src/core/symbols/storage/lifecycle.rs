@@ -180,6 +180,18 @@ impl SymbolTable {
         csv_file_key
     }
 
+    pub fn add_new_js_file(&mut self, parent: ModuleKey, name: &str, path: &str) -> JsFileKey {
+        let parent_symbol = &self.modules[parent];
+        let mut js_file_symbol = JsFileSymbol::new(name, path, parent, parent_symbol.is_external);
+        js_file_symbol.set_in_workspace(parent_symbol.in_workspace);
+        let js_file_key = self.js_files.insert(js_file_symbol);
+        let rc_entry = self.get_entry(parent);
+        let mut entry_bw = rc_entry.borrow_mut();
+        self.add_to_module_js_symbols(parent, path, js_file_key);
+        self.add_to_js_entry_symbols(&mut entry_bw, path, js_file_key.into());
+        js_file_key
+    }
+
     pub fn add_new_ext_symbol(
         &mut self,
         target: SymbolKey,
@@ -341,6 +353,17 @@ impl SymbolTable {
         }
     }
 
+    fn add_to_module_js_symbols(&mut self, parent: ModuleKey, path: &str, js_key: JsFileKey) {
+        let replaced_key = self.modules[parent].js_symbols.insert(path.to_string(), js_key);
+        if let Some(replaced_key) = replaced_key {
+            self.remove(replaced_key.into());
+        }
+    }
+
+    fn add_to_js_entry_symbols(&mut self, entry: &mut EntryPoint, path: &str, js_file: JsFileKey) {
+        entry.js_symbols.insert(path.to_string(), Wk::from(js_file));
+    }
+
     /* used by add_new_ext_symbol. Do not call directly */
     fn get_section_for_key(&self, owner: SymbolKey, position: u32) -> u32 {
         match owner {
@@ -405,6 +428,7 @@ impl SymbolTable {
             SymbolKey::XmlTemplate(k) => { self.xml_templates.remove(k); }
             SymbolKey::XmlDelete(k) => { self.xml_deletes.remove(k); }
             SymbolKey::CsvFile(k) => { self.csv_files.remove(k); }
+            SymbolKey::JsFile(k) => { self.js_files.remove(k); }
         }
     }
 
@@ -428,6 +452,7 @@ impl SymbolTable {
             SymbolKey::XmlTemplate(x) => self[x].children(),
             SymbolKey::XmlDelete(x) => self[x].children(),
             SymbolKey::CsvFile(c) => self[c].children(),
+            SymbolKey::JsFile(j) => self[j].children(),
         }
     }
 
@@ -449,6 +474,9 @@ impl SymbolTable {
                 SymbolKey::CsvFile(c) => {
                     self.modules[m].data_symbols.remove(&self.csv_files[c].path);
                 },
+                SymbolKey::JsFile(f) => {
+                    self.modules[m].js_symbols.remove(&self.js_files[f].path);
+                }
                 _ => {
                     if self.is_file_content(child) {
                         self.modules[m].symbols.remove(&child_name);
@@ -477,6 +505,7 @@ impl SymbolTable {
             SymbolKey::XmlTemplate(_) => { panic!("An XML template cannot be a parent") },
             SymbolKey::XmlDelete(_) => { panic!("An XML delete cannot be a parent") },
             SymbolKey::CsvFile(_) => { panic!("A CSV file symbol cannot be a parent") },
+            SymbolKey::JsFile(_) => { panic!("A JS file symbol cannot be a parent") },
         }
     }
 

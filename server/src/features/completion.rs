@@ -1248,5 +1248,6 @@ fn get_completion_item_kind(typ: &SymType) -> CompletionItemKind {
         SymType::XML_TEMPLATE => CompletionItemKind::CONSTANT,
         SymType::XML_ASSET => CompletionItemKind::CONSTANT,
         SymType::XML_DELETE => CompletionItemKind::CONSTANT,
+        SymType::JS_FILE => CompletionItemKind::FILE,
     }
 }

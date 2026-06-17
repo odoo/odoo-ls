@@ -184,7 +184,7 @@ impl CliBackend {
 
         let mut server = SyncOdoo::new();
         let (s, r) = crossbeam_channel::unbounded();
-        let mut session = SessionInfo::new_from_custom_channel(s.clone(), r.clone(), &mut server);
+        let mut session = SessionInfo::new_from_custom_channel(s.clone(), r.clone(), None, &mut server);
         session.sync_odoo.load_odoo_addons = false;
 
         // Add workspace folders once
@@ -301,7 +301,7 @@ mod tests {
         // Create a session with workspace folders for config loading
         let mut server = SyncOdoo::new();
         let (s, r) = crossbeam_channel::unbounded();
-        let mut session = SessionInfo::new_from_custom_channel(s, r, &mut server);
+        let mut session = SessionInfo::new_from_custom_channel(s, r, None, &mut server);
 
         // Add workspace folders to session
         for (id, path) in &ws_folders {

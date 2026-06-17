@@ -57,6 +57,24 @@ impl ReferenceFeature {
      */
     /// TODO: Odoo specific (XML field refs, string-based model refs)
     pub fn get_references(session: &mut SessionInfo, file_symbol: SourceFileKey, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Vec<Location>> {
+        if matches!(file_info.borrow().file_info_ast.borrow().ast_type, AstType::Js) {
+            let file_path = &file_info.borrow().uri;
+            let locs: Vec<Location> = if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
+                bridge.get_references(&file_path, line, character)
+                    .into_iter()
+                    .map(|(target_file, sl, sc, el, ec)| Location {
+                        uri: FileMgr::pathname2uri(&target_file),
+                        range: lsp_types::Range {
+                            start: lsp_types::Position { line: sl, character: sc },
+                            end:   lsp_types::Position { line: el, character: ec },
+                        },
+                    })
+                    .collect()
+            } else {
+                vec![]
+            };
+            return if locs.is_empty() { None } else { Some(locs) };
+        }
         //We want to search for references of the definition, and not the current symbol. Let's use definition feature for that
         SyncOdoo::process_rebuilds(session, false);
         let def_sources = match file_info.borrow().file_info_ast.borrow().ast_type {
@@ -68,7 +86,8 @@ impl ReferenceFeature {
             },
             AstType::Csv => {
                 GotoUtils::get_symbols_csv(session, file_symbol, file_info, line, character)
-            }
+            },
+            AstType::Js => unreachable!(),
         };
 
 
@@ -154,7 +173,8 @@ impl ReferenceFeature {
                                         }
                                     }
                                 }
-                            }
+                            },
+                            SourceFileKey::JsFile(_) => { unreachable!("tsserverbridge should have handled js references")}
                         }
                     }
                     //add definition
@@ -223,6 +243,7 @@ impl ReferenceFeature {
                                     let mut csv_reader = csv::ReaderBuilder::new().from_reader(data.as_bytes());
                                     locations.extend(CsvAstReferenceVisitor::search_target(session, csv_file, &mut csv_reader, None, &ReferenceTarget::String(full_xml_id), &data));
                                 },
+                                SourceFileKey::JsFile(_) => {unreachable!("tsserverbridge should have handled js references")}
                             }
                         }
                     }

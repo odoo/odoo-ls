@@ -1,4 +1,5 @@
 use lsp_types::{Hover, HoverContents, MarkupContent};
+use tracing::error;
 use crate::core::evaluation::Evaluation;
 use crate::core::file_mgr::FileInfo;
 use crate::core::symbols::symbol_keys::{SourceFileKey, SymbolKey};
@@ -57,6 +58,23 @@ impl HoverFeature {
     }
 
     pub fn hover_csv(_session: &mut SessionInfo, _file_symbol: SourceFileKey, _file_info: &Rc<RefCell<FileInfo>>, _line: u32, _character: u32) -> Option<Hover> {
+        None
+    }
+
+    pub fn hover_js(session: &mut SessionInfo, _file_symbol: SourceFileKey, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Hover> {
+        let file_path = &file_info.borrow().uri;
+        if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
+            if let Some(hover) = bridge.get_hover(&file_path, line, character) {
+                error!("returned hover: {}", hover);
+                return Some(Hover { contents:
+                    HoverContents::Markup(MarkupContent {
+                        kind: lsp_types::MarkupKind::Markdown,
+                        value: hover
+                    }),
+                    range: None
+                })
+            }
+        }
         None
     }
 }

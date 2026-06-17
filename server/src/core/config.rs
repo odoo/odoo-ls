@@ -332,7 +332,7 @@ impl ConfigFile {
                     "python_path", "stdlib", "additional_stubs", "additional_stubs_merge", "additional_languages",
                     "refresh_mode", "file_cache", "diag_missing_imports",
                     "ac_filter_model_names", "auto_refresh_delay",
-                    "diagnostic_settings", "diagnostic_filters", "no_typeshed_stubs"
+                    "diagnostic_settings", "diagnostic_filters", "no_typeshed_stubs", "tsserver_command"
                 ];
                 for key in order {
                     if let Some(val) = map.get(key) {
@@ -646,6 +646,10 @@ pub struct ConfigEntryRaw {
     #[serde(default, serialize_with = "serialize_option_as_default")]
     no_typeshed_stubs: Option<Sourced<bool>>,
 
+    #[serde(default, serialize_with = "serialize_option_as_default")]
+    #[schemars(with = "Option<String>")]
+    tsserver_command: Option<Sourced<String>>,
+
     #[serde(skip_deserializing, rename(serialize = "abstract"))]
     abstract_: bool
 }
@@ -704,6 +708,7 @@ impl Default for ConfigEntryRaw {
             diagnostic_filters: vec![],
             stdlib: None,
             no_typeshed_stubs: None,
+            tsserver_command: None,
         }
     }
 }
@@ -745,6 +750,7 @@ pub struct ConfigEntry {
     pub auto_refresh_delay: u64,
     pub stdlib: String,
     pub no_typeshed_stubs: bool,
+    pub tsserver_command: String,
     pub abstract_: bool,
     pub diagnostic_settings: HashMap<DiagnosticCode, DiagnosticSetting>,
     pub diagnostic_filters: Vec<DiagnosticFilter>,
@@ -765,6 +771,7 @@ impl Default for ConfigEntry {
             auto_refresh_delay: 1000,
             stdlib: S!(""),
             no_typeshed_stubs: false,
+            tsserver_command: S!("tsserver"),
             abstract_: false,
             diagnostic_settings: Default::default(),
             diagnostic_filters: vec![],
@@ -1414,6 +1421,12 @@ fn merge_all_workspaces(
                 key.clone(),
                 "no_typeshed_stubs".to_string(),
             )?;
+            merged_entry.tsserver_command = merge_sourced_options(
+                merged_entry.tsserver_command.clone(),
+                raw_entry.tsserver_command.clone(),
+                key.clone(),
+                "tsserver_command".to_string(),
+            )?;
         }
     }
     // Only infer odoo_path from workspace folders at this stage, to give priority to the user-defined one
@@ -1458,6 +1471,7 @@ fn merge_all_workspaces(
                 diagnostic_filters: raw_entry.diagnostic_filters.into_iter().map(|f| f.value).collect(),
                 stdlib: raw_entry.stdlib.into_iter().map(|f| f.value).collect(),
                 no_typeshed_stubs: raw_entry.no_typeshed_stubs.map(|f| f.value).unwrap_or_default(),
+                tsserver_command: raw_entry.tsserver_command.map(|f| f.value).unwrap_or_else(|| S!("tsserver")),
                 ..Default::default()
             },
         );
@@ -1493,6 +1507,7 @@ pub fn needs_restart(old: &ConfigEntry, new: &ConfigEntry) -> bool {
     old.addons_paths != new.addons_paths ||
     old.python_path != new.python_path ||
     old.additional_stubs != new.additional_stubs ||
+    old.tsserver_command != new.tsserver_command ||
     old.stdlib != new.stdlib ||
     old.no_typeshed_stubs != new.no_typeshed_stubs
 

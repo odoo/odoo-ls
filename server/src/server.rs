@@ -9,7 +9,7 @@ use serde_json::json;
 use nix;
 use tracing::{error, info, warn};
 
-use crate::{constants::{DEBUG_THREADS, EXTENSION_VERSION}, core::odoo::SyncOdoo, threads::{delayed_changes_process_thread, message_processor_thread_main, DelayedProcessingMessage}, S, crash_buffer};
+use crate::{S, constants::{DEBUG_THREADS, EXTENSION_VERSION}, core::odoo::SyncOdoo, crash_buffer, threads::{DelayedProcessingMessage, ThreadMessage, delayed_changes_process_thread, message_processor_thread_main}};
 
 
 /**
@@ -23,8 +23,8 @@ pub struct Server {
     receivers_w_to_s: Vec<Receiver<Message>>,
     msg_id: i32,
     main_thread: JoinHandle<()>,
-    res_sender_s_to_main: Sender<Message>, // specific channel to threads, to handle responses (main -> s -> client and back)
-    req_sender_s_to_main: Sender<Message>, //channel server to main threads. Will handle new request message (client -> s -> main and back)
+    response_sender_to_main: Sender<Message>, // specific channel to threads, to handle responses (main -> s -> client and back)
+    generic_sender_to_main: Sender<ThreadMessage>, //channel server to main threads. Will handle new request message (client -> s -> main and back)
     delayed_process_thread: JoinHandle<()>,
     sender_to_delayed_process: Sender<DelayedProcessingMessage>, //unique channel to delayed process thread
     sync_odoo: Arc<Mutex<SyncOdoo>>,
@@ -70,6 +70,17 @@ impl Server {
         Server::init(conn, io_threads)
     }
 
+    /**
+     * Initialize the server, by creating the threads and channels for communication.
+     * threads and channels:
+     * main thread - process messages and handle requests.
+     *    channel generic_to_main - channel to send requests and notifications to main thread. Sender available in a session, to send custom processing tasks
+     *    channel response_to_main - channel to send specific response to a request to main thread. Receiver available in a session
+     *    channel main_to_server - channel to send messages from main thread to server, then to client. Sender available in a session
+     * delayed_process_thread - handle delayed processing of changes.
+     *    channel server_to_delayed - channel to send messages from server to delayed process thread. Sender available in a session
+     *    channel delayed_to_server - channel to send messages from delayed process thread to server, then to client.
+     */
     fn init(conn: Connection, _io_threads: IoThreads) -> Self {
         let sync_odoo = Arc::new(Mutex::new(SyncOdoo::new()));
         let interrupt_rebuild_boolean = sync_odoo.lock().unwrap().interrupt_rebuild.clone();
@@ -77,8 +88,8 @@ impl Server {
         let running_request_ids = sync_odoo.lock().unwrap().running_request_ids.clone();
         let mut receivers_w_to_s = vec![];
         let (sender_to_delayed_process, receiver_delayed_process) = crossbeam_channel::unbounded();
-        let (req_sender_s_to_main, generic_receiver_s_to_main) = crossbeam_channel::unbounded(); //unique channel to dispatch to any ready main thread
-        let (res_sender_s_to_main, receiver_s_to_main) = crossbeam_channel::unbounded();
+        let (generic_sender_to_main, generic_receiver_to_main) = crossbeam_channel::unbounded(); //unique channel to dispatch to any ready main thread
+        let (response_sender_to_main, response_receiver_to_main) = crossbeam_channel::unbounded();
         let (sender_main_to_s, receiver_main_to_s) = crossbeam_channel::unbounded();
         receivers_w_to_s.push(receiver_main_to_s);
 
@@ -86,8 +97,9 @@ impl Server {
             let sync_odoo = sync_odoo.clone();
             let sender_to_delayed_process = sender_to_delayed_process.clone();
             let running_request_ids = running_request_ids.clone();
+            let generic_sender_to_main = generic_sender_to_main.clone();
             std::thread::spawn(move || {
-                message_processor_thread_main(sync_odoo, generic_receiver_s_to_main, sender_main_to_s.clone(), receiver_s_to_main.clone(), sender_to_delayed_process, running_request_ids);
+                message_processor_thread_main(sync_odoo, generic_receiver_to_main, generic_sender_to_main, sender_main_to_s.clone(), response_receiver_to_main.clone(), sender_to_delayed_process, running_request_ids);
             })
         };
 
@@ -105,12 +117,12 @@ impl Server {
             msg_id: 0,
             receivers_w_to_s: receivers_w_to_s,
             main_thread,
-            req_sender_s_to_main,
-            res_sender_s_to_main,
+            generic_sender_to_main,
+            response_sender_to_main,
             sender_to_delayed_process: sender_to_delayed_process,
             delayed_process_thread,
             sync_odoo: sync_odoo,
-            interrupt_rebuild_boolean: interrupt_rebuild_boolean,
+            interrupt_rebuild_boolean,
             terminate_rebuild_boolean,
             running_request_ids: running_request_ids,
         }
@@ -125,6 +137,7 @@ impl Server {
         {
             let mut sync_odoo = self.sync_odoo.lock().unwrap();
             sync_odoo.load_capabilities(&initialize_params.capabilities);
+
         }
         if let Some(initialize_params) = initialize_params.process_id {
             self.client_process_id = initialize_params;
@@ -253,8 +266,8 @@ impl Server {
             })
         }));
         info!("End of connection initalization.");
-        self.req_sender_s_to_main.send(Message::Notification(lsp_server::Notification { method: S!("custom/server/register_capabilities"), params: serde_json::Value::Null })).unwrap();
-        self.req_sender_s_to_main.send(Message::Notification(lsp_server::Notification { method: S!("custom/server/init"), params: serde_json::Value::Null })).unwrap();
+        self.generic_sender_to_main.send(ThreadMessage::LSPMessage(Message::Notification(lsp_server::Notification { method: S!("custom/server/register_capabilities"), params: serde_json::Value::Null }))).unwrap();
+        self.generic_sender_to_main.send(ThreadMessage::LSPMessage(Message::Notification(lsp_server::Notification { method: S!("custom/server/init"), params: serde_json::Value::Null }))).unwrap();
         Ok(())
     }
 
@@ -265,8 +278,8 @@ impl Server {
             params: serde_json::Value::Null,
         });
         // Threads may already be dead during shutdown, so ignore send errors
-        let _ = self.req_sender_s_to_main.send(shutdown_notification.clone());
-        let _ = self.res_sender_s_to_main.send(shutdown_notification.clone());
+        let _ = self.generic_sender_to_main.send(ThreadMessage::LSPMessage(shutdown_notification.clone()));
+        let _ = self.response_sender_to_main.send(shutdown_notification.clone());
         info!(message);
     }
 
@@ -394,7 +407,7 @@ impl Server {
                         if DEBUG_THREADS {
                             info!("Sending request to main thread : {} - {}", r.method, r.id);
                         }
-                        self.req_sender_s_to_main.send(Message::Request(r)).unwrap();
+                        self.generic_sender_to_main.send(ThreadMessage::LSPMessage(Message::Request(r))).unwrap();
                     },
                     ResolveCompletionItem::METHOD => {
                         info!("Got ignored CompletionItem/resolve")
@@ -406,7 +419,7 @@ impl Server {
                 if DEBUG_THREADS {
                     info!("Sending response to main thread : {}", r.id);
                 }
-                self.res_sender_s_to_main.send(Message::Response(r)).unwrap();
+                self.response_sender_to_main.send(Message::Response(r)).unwrap();
             },
             Message::Notification(n) => {
                 match n.method.as_str() {
@@ -417,7 +430,7 @@ impl Server {
                             info!("Sending notification to main thread : {}", n.method);
                         }
                         self.interrupt_rebuild_boolean.store(true, std::sync::atomic::Ordering::SeqCst);
-                        self.req_sender_s_to_main.send(Message::Notification(n)).unwrap();
+                        self.generic_sender_to_main.send(ThreadMessage::LSPMessage(Message::Notification(n))).unwrap();
                     }
                     method if method.starts_with("$/") => warn!("Not handled message id: {}", n.method),
                     method => error!("Not handled Notification Id: {}", method),

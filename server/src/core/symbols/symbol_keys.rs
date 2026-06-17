@@ -21,6 +21,8 @@ new_key_type! { pub struct XmlAssetKey; }
 new_key_type! { pub struct XmlDeleteKey; }
 new_key_type! { pub struct CsvFileKey; }
 
+new_key_type! { pub struct JsFileKey; }
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SymbolKey {
     Root(RootKey),
@@ -41,6 +43,7 @@ pub enum SymbolKey {
     XmlAsset(XmlAssetKey),
     XmlDelete(XmlDeleteKey),
     CsvFile(CsvFileKey),
+    JsFile(JsFileKey),
 }
 
 impl SymbolKey {
@@ -64,6 +67,7 @@ impl SymbolKey {
             Self::XmlAsset(_) => SymType::XML_ASSET,
             Self::XmlDelete(_) => SymType::XML_DELETE,
             Self::CsvFile(_) => SymType::CSV_FILE,
+            Self::JsFile(_) => SymType::JS_FILE,
         }
     }
 
@@ -179,6 +183,13 @@ impl SymbolKey {
         }
     }
 
+    pub fn unwrap_js_file_key(&self) -> JsFileKey {
+        match self {
+            SymbolKey::JsFile(k) => *k,
+            _ => panic!("Not a JsFileKey"),
+        }
+    }
+
 }
 
 pub trait KeyValidator<K> {
@@ -258,6 +269,7 @@ impl_from_key! {
     XmlAsset(XmlAssetKey),
     XmlDelete(XmlDeleteKey),
     CsvFile(CsvFileKey),
+    JsFile(JsFileKey),
 }
 
 // Converts to a Weak of the same key type, e.g. FileKey to Weak<FileKey>
@@ -300,6 +312,7 @@ impl_weak_symbol_key_from! {
     XmlAssetKey,
     XmlDeleteKey,
     CsvFileKey,
+    JsFileKey,
     SourceFileKey,
 }
 
@@ -383,6 +396,7 @@ pub enum SourceFileKey {
     Module(ModuleKey),
     XmlFile(XmlFileKey),
     CsvFile(CsvFileKey),
+    JsFile(JsFileKey),
 }
 
 impl From<SourceFileKey> for SymbolKey {
@@ -393,6 +407,7 @@ impl From<SourceFileKey> for SymbolKey {
             SourceFileKey::Module(k) => k.into(),
             SourceFileKey::XmlFile(k) => k.into(),
             SourceFileKey::CsvFile(k) => k.into(),
+            SourceFileKey::JsFile(k) => k.into(),
         }
     }
 }
@@ -418,6 +433,10 @@ impl From<CsvFileKey> for SourceFileKey {
     fn from(key: CsvFileKey) -> Self { SourceFileKey::CsvFile(key) }
 }
 
+impl From<JsFileKey> for SourceFileKey {
+    fn from(key: JsFileKey) -> Self { SourceFileKey::JsFile(key) }
+}
+
 impl SourceFileKey {
     pub fn unwrap_xml_file_key(&self) -> XmlFileKey {
         match self {
@@ -439,6 +458,13 @@ impl SourceFileKey {
             _ => panic!("Not a CsvFileKey"),
         }
     }
+
+    pub fn unwrap_js_file_key(&self) -> JsFileKey {
+        match self {
+            SourceFileKey::JsFile(k) => *k,
+            _ => panic!("Not a JsFileKey"),
+        }
+    }
 }
 
 impl SymbolKey {
@@ -449,6 +475,7 @@ impl SymbolKey {
             SymbolKey::Module(k) => Some(k.into()),
             SymbolKey::XmlFile(k) => Some(k.into()),
             SymbolKey::CsvFile(k) => Some(k.into()),
+            SymbolKey::JsFile(k) => Some(k.into()),
             _ => None,
         }
     }
