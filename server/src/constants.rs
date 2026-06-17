@@ -67,6 +67,13 @@ pub enum SymType{
     XML_ASSET,
     XML_DELETE,
     CSV_FILE,
+    JS_FILE,
+}
+
+#[derive(Debug, Eq, Hash, PartialEq, Clone)]
+pub enum DataType {
+    XML_ID(OYarn),
+    TEMPLATE(OYarn)
 }
 
 impl fmt::Display for SymType {

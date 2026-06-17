@@ -2,18 +2,20 @@ use std::{
     cell::RefCell,
     rc::Rc,
 };
-use crate::utils::{HashMap, HashSet};
+use crate::{utils::{HashMap, HashSet}, weak_collections::WeakSet};
 
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
 
-use crate::core::{model::Model, symbols::{storage::SymbolTable, symbol_keys::{XmlAssetKey, XmlDataKey, XmlDeleteKey, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey}}};
+use crate::{constants::DiagnosticLevel, core::{model::Model, symbols::{storage::SymbolTable, symbol_keys::{XmlAssetKey, XmlDataKey, XmlDeleteKey, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey}}}};
 use crate::{
-    constants::{BuildSteps, OYarn, DEBUG_STEPS},
+    constants::{BuildSteps, DataType, OYarn, DEBUG_STEPS},
     core::{
         diagnostics::{create_diagnostic, DiagnosticCode},
         entry_point::{EntryPoint, EntryPointType},
-        symbols::symbol_keys::{ModuleKey, SourceFileKey, SymbolKey, XmlFileKey},
+        file_mgr::FileInfo,
+        odoo::SyncOdoo,
+        symbols::{ModuleSymbol, symbol_keys::{ModuleKey, SourceFileKey, SymbolKey, XmlFileKey}},
     },
     threads::SessionInfo,
     Sy,
@@ -60,10 +62,11 @@ impl XmlValidator {
             session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(self.xml_symbol.into());
         }
         session.st_mut()[self.xml_symbol].not_found_models.extend(missing_model_dependencies.into_iter().map(|m| (m, BuildSteps::VALIDATION)));
+        session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(self.xml_symbol.into());
         let Some(file_info) = SymbolTable::get_file_info_for_validation(session, self.xml_symbol.into()) else {
             return;
         };
-        file_info.borrow_mut().replace_diagnostics(BuildSteps::XML_VALIDATION, diagnostics);
+        file_info.borrow_mut().replace_diagnostics(DiagnosticLevel::XML_VALIDATION, diagnostics);
         file_info.borrow_mut().publish_diagnostics(session);
     }
 

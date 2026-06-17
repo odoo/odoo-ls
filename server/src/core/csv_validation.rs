@@ -5,7 +5,7 @@ use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
 
 use crate::{
-    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, OYarn}, core::{
+    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DataType, DiagnosticLevel, OYarn}, core::{
         diagnostics::{DiagnosticCode, create_diagnostic},
         file_mgr::FileInfo,
         symbols::{storage::SymbolTable, symbol_keys::{CsvFileKey, ModuleKey}},
@@ -127,8 +127,11 @@ impl CsvValidator {
                     }
                     continue;
                 };
+                let complete_id = format!("{}.{}", module_name, id_split.last().unwrap());
                 let Some(module) = module_symbol.upgrade(session.st()) else {continue};
                 if session.st()[module].xml_ids.get(*id_split.last().unwrap()).is_none() {
+                    session.st_mut()[csv_module].not_found_data_ids.insert(DataType::XML_ID(Sy!(complete_id)), BuildSteps::VALIDATION);
+                    session.sync_odoo.get_main_entry().borrow_mut().not_found_data_ids.insert(csv_module.into());
                     if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05001, &[]) {
                         diagnostics.push(Diagnostic {
                             range: Range { start: Position::new(start as u32, 0), end: Position::new(end as u32, 0) },

@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::{cell::RefCell, cmp, path::PathBuf, rc::Rc, u32};
+use crate::constants::DataType;
 use crate::utils::HashMap;
 
 use slotmap::Key;
@@ -383,6 +384,7 @@ pub struct EntryPoint {
     pub addon_to_odoo_tree: Option<Vec<OYarn>>, //contains the odoo tree if this is an addon entry point
     pub root: RootKey,
     pub not_found_symbols: WeakSet<SourceFileKey>,
+    pub not_found_data_ids: WeakSet<SourceFileKey>,
     /// files with pending model lookups
     pub not_found_symbols_for_models: WeakSet<SourceFileKey>,
     pub to_delete: bool,
@@ -398,6 +400,7 @@ impl EntryPoint {
             addon_to_odoo_tree,
             not_found_symbols: WeakSet::new(),
             not_found_symbols_for_models: WeakSet::new(),
+            not_found_data_ids: WeakSet::new(),
             root: RootKey::null(), // set below
             to_delete: false,
             data_symbols: HashMap::default(),
@@ -423,6 +426,7 @@ impl EntryPoint {
             addon_to_odoo_path,
             addon_to_odoo_tree,
             not_found_symbols: WeakSet::new(),
+            not_found_data_ids: WeakSet::new(),
             not_found_symbols_for_models: WeakSet::new(),
             root,
             to_delete: false,
@@ -548,6 +552,35 @@ impl EntryPoint {
             !session.st().not_found_models(sym).map(|models| models.is_empty()).unwrap_or(true)
         });
 
+    }
+
+    pub fn search_rebuild_for_data_id(&mut self, session: &mut SessionInfo, data: DataType) {
+        let mut to_add: [Vec<SourceFileKey>; 3] = [vec![], vec![], vec![]];
+        for sym_key in self.not_found_data_ids.iter_valid(session.st()) {
+            let Some(not_found_data_ids) = session.st_mut().not_found_data_ids_mut(sym_key) else {
+                continue;
+            };
+            let Some(step) = not_found_data_ids.get(&data) else {
+                continue;
+            };
+            if let BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION = step {
+                to_add[*step as usize].push(sym_key);
+            }
+            not_found_data_ids.remove(&data);
+        }
+        for &s in to_add[BuildSteps::ARCH as usize].iter() {
+            session.sync_odoo.add_to_rebuild_arch(s);
+        }
+        for &s in to_add[BuildSteps::ARCH_EVAL as usize].iter() {
+            session.sync_odoo.add_to_rebuild_arch_eval(s);
+        }
+        for &s in to_add[BuildSteps::VALIDATION as usize].iter() {
+            session.st_mut().invalidate_sub_functions(s);
+            session.sync_odoo.add_to_validations(s);
+        }
+        self.not_found_data_ids.retain_valid(session.st(), |&sym| {
+            !session.st().not_found_data_ids(sym).map(|data_ids| data_ids.is_empty()).unwrap_or(true)
+        });
     }
 }
 
