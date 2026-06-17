@@ -229,6 +229,8 @@ impl FileInfo {
             }
         }
         self.file_info_ast.borrow_mut().indexed_module = Some(IndexedModule::new(parsed_module));
+        self.replace_diagnostics(DiagnosticLevel::PY_SYNTAX, diagnostics);
+    }
 
     fn build_js_ast(&mut self, session: &mut SessionInfo, _is_external: bool) {
         let data = self.file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
@@ -383,12 +385,12 @@ impl FileInfo {
         }
     }
 
-    pub fn replace_diagnostics(&mut self, step: BuildSteps, diagnostics: Vec<Diagnostic>) {
+    pub fn replace_diagnostics(&mut self, step: DiagnosticLevel, diagnostics: Vec<Diagnostic>) {
         self.need_push = true;
         self.diagnostics.insert(step, diagnostics);
     }
 
-    pub fn update_validation_diagnostics(&mut self, diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>) {
+    pub fn update_validation_diagnostics(&mut self, diagnostics: HashMap<DiagnosticLevel, Vec<Diagnostic>>) {
         self.need_push = true;
         for (key, value) in diagnostics {
             self.diagnostics.entry(key).or_default().extend(value);
@@ -711,10 +713,7 @@ impl FileMgr {
         if let Some(to_del) = to_del {
             if SyncOdoo::is_in_workspace_or_entry(session, uri) {
                 let mut to_del = (*to_del).borrow_mut();
-                to_del.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
-                to_del.replace_diagnostics(BuildSteps::ARCH, vec![]);
-                to_del.replace_diagnostics(BuildSteps::ARCH_EVAL, vec![]);
-                to_del.replace_diagnostics(BuildSteps::VALIDATION, vec![]);
+                to_del.diagnostics.clear();
                 to_del.publish_diagnostics(session)
             }
         }
@@ -739,10 +738,7 @@ impl FileMgr {
                 continue;
             }
             let mut to_del = file.borrow_mut();
-            to_del.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
-            to_del.replace_diagnostics(BuildSteps::ARCH, vec![]);
-            to_del.replace_diagnostics(BuildSteps::ARCH_EVAL, vec![]);
-            to_del.replace_diagnostics(BuildSteps::VALIDATION, vec![]);
+            to_del.diagnostics.clear();
             to_del.publish_diagnostics(session)
         }
         drop(file_mgr);

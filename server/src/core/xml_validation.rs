@@ -63,7 +63,7 @@ impl XmlValidator {
         let Some(file_info) = SymbolTable::get_file_info_for_validation(session, self.xml_symbol.into()) else {
             return;
         };
-        file_info.borrow_mut().replace_diagnostics(BuildSteps::VALIDATION, diagnostics);
+        file_info.borrow_mut().replace_diagnostics(BuildSteps::XML_VALIDATION, diagnostics);
         file_info.borrow_mut().publish_diagnostics(session);
     }
 

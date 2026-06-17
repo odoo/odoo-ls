@@ -75,7 +75,7 @@ impl PythonValidator {
                     trace!("VALIDATION - PYTHON FILE {}", session.st().paths(symbol).first().unwrap_or(&S!("No path found")));
                 }
                 session.st_mut().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
-                file_info_rc.borrow_mut().replace_diagnostics(BuildSteps::VALIDATION, vec![]);
+                file_info_rc.borrow_mut().replace_diagnostics(DiagnosticLevel::PY_VALIDATION, vec![]);
                 if file_info_rc.borrow().file_info_ast.borrow().indexed_module.is_none() {
                     file_info_rc.borrow_mut().prepare_ast(session);
                 }
@@ -99,7 +99,7 @@ impl PythonValidator {
                     ModuleSymbol::validate_manifest(m, session);
                 }
                 let mut file_info = file_info_rc.borrow_mut();
-                file_info.replace_diagnostics(BuildSteps::VALIDATION, self.diagnostics.clone());
+                file_info.replace_diagnostics(DiagnosticLevel::PY_VALIDATION, self.diagnostics.clone());
             },
             SymbolKey::Function(f) => {
                 if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !session.st().is_external(symbol)) {

@@ -12,7 +12,7 @@ use std::vec;
 use tracing::{trace, warn};
 
 use crate::constants::{
-    BuildStatus, BuildSteps, OYarn, SymType, DEBUG_STEPS, DEBUG_STEPS_ONLY_INTERNAL,
+    BuildStatus, BuildSteps, DEBUG_STEPS, DEBUG_STEPS_ONLY_INTERNAL, DiagnosticLevel, OYarn, SymType
 };
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::import_resolver::resolve_import_stmt;
@@ -104,7 +104,7 @@ impl PythonArchBuilder {
         if self.file_mode {
             //diagnostics for functions are stored directly on funcs
             let mut file_info = file_info_rc.borrow_mut();
-            file_info.replace_diagnostics(BuildSteps::ARCH, self.diagnostics.clone());
+            file_info.replace_diagnostics(DiagnosticLevel::PY_ARCH, self.diagnostics.clone());
         }
         let file_info = file_info_rc.borrow();
         let file_info_ast_rc = file_info.file_info_ast.clone();

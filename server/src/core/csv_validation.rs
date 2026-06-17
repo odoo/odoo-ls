@@ -100,7 +100,7 @@ impl CsvValidator {
 
     fn finalize_validation(&self, session: &mut SessionInfo, csv_symbol: CsvFileKey, file_info: &Rc<RefCell<FileInfo>>, diagnostics: Vec<Diagnostic>) {
         session.sync_odoo.symbol_table.set_build_status(csv_symbol.into(), BuildSteps::VALIDATION, BuildStatus::DONE);
-        file_info.borrow_mut().replace_diagnostics(BuildSteps::VALIDATION, diagnostics);
+        file_info.borrow_mut().replace_diagnostics(DiagnosticLevel::CSV_VALIDATION, diagnostics);
         file_info.borrow_mut().publish_diagnostics(session);
     }
 

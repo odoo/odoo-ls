@@ -95,6 +95,35 @@ impl From<i32> for BuildSteps {
     }
 }
 
+#[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
+pub enum DiagnosticLevel {
+    PY_SYNTAX              = 0,
+    PY_ARCH                = 1,
+    PY_ARCH_EVAL           = 2,
+    PY_VALIDATION          = 3,
+    XML_SYNTAX             = 4,
+    XML_ARCH               = 5,
+    XML_VALIDATION         = 6,
+    CSV_SYNTAX             = 7,
+    CSV_VALIDATION         = 8,
+    JS_OXC                 = 9,
+    JS_TSSERVER_SYNTAX     = 10,
+    JS_TSSERVER_SEMANTIC   = 11,
+    JS_TSSERVER_SUGGESTION = 12,
+    JS_VALIDATION          = 13,
+}
+
+impl From<BuildSteps> for DiagnosticLevel {
+    fn from(value: BuildSteps) -> Self {
+        match value {
+            BuildSteps::SYNTAX => DiagnosticLevel::PY_SYNTAX,
+            BuildSteps::ARCH => DiagnosticLevel::PY_ARCH,
+            BuildSteps::ARCH_EVAL => DiagnosticLevel::PY_ARCH_EVAL,
+            BuildSteps::VALIDATION => DiagnosticLevel::PY_VALIDATION,
+        }
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum BuildStatus {
     PENDING,
