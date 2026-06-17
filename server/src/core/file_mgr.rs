@@ -71,6 +71,9 @@ pub struct FileInfoAst {
     pub text_document: Option<TextDocument>,
     pub indexed_module: Option<Arc<IndexedModule>>,
     pub ast_type: AstType,
+    /// Positions of OWL `static template = "some.xml_id"` string literals found in this JS file.
+    /// Each entry is (LSP Range of the string content, xml_id value, enclosing class name).
+    pub js_template_refs: Vec<(Range, String, Option<String>)>,
 }
 
 impl FileInfoAst {
@@ -87,7 +90,7 @@ pub struct FileInfo {
     pub opened: bool,
     need_push: bool,
     pub file_info_ast: Rc<RefCell<FileInfoAst>>,
-    diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>,
+    diagnostics: HashMap<DiagnosticLevel, Vec<Diagnostic>>,
     pub noqas_blocs: HashMap<u32, NoqaInfo>,
     noqas_lines: HashMap<u32, NoqaInfo>,
     diagnostic_filters: Vec<DiagnosticFilter>,
@@ -108,6 +111,7 @@ impl FileInfo {
                 text_document: None,
                 indexed_module: None,
                 ast_type: AstType::Python,
+                js_template_refs: vec![],
             })),
             diagnostics: HashMap::default(),
             noqas_blocs: HashMap::default(),

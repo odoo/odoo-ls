@@ -84,6 +84,7 @@ impl PythonArchEval {
         drop(file_info);
         if let SymbolKey::Module(m) = symbol  {
             ModuleSymbol::load_data(m, session);
+            ModuleSymbol::load_assets(m, session);
         }
         if file_info_ast.borrow().indexed_module.is_some() {
             let old_noqa = session.current_noqa.clone();

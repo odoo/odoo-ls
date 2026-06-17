@@ -158,6 +158,7 @@ pub struct SyncOdoo {
 
     pub test_mode: bool,
     pub tsserver_bridge: Option<TsServerBridge>,
+    pub js_templates: HashMap<String, WeakSet<XmlTemplateKey>>,
 }
 
 unsafe impl Send for SyncOdoo {}
@@ -209,6 +210,7 @@ impl SyncOdoo {
 
             test_mode: false,
             tsserver_bridge: None,
+            js_templates: HashMap::default(),
         };
         sync_odoo
     }

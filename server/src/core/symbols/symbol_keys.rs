@@ -342,6 +342,13 @@ impl XmlDataKey {
             _ => None,
         }
     }
+
+    pub fn as_xml_template_key(&self) -> Option<XmlTemplateKey> {
+        match self {
+            XmlDataKey::TEMPLATE(k) => Some(*k),
+            _ => None,
+        }
+    }
 }
 
 impl From<XmlDataKey> for SymbolKey {

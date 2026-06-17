@@ -13,8 +13,8 @@ use crate::{
     constants::{OYarn, PackageType, SymType},
     core::{
         entry_point::{EntryPoint, EntryPointCleanupToken}, odoo::SyncOdoo, symbols::{
-            ClassSymbol, CompiledSymbol, CsvFileSymbol, Dependencies, DiskDirSymbol, FileSymbol, FunctionSymbol, ModuleSymbol, NamespaceSymbol, PythonPackageSymbol, RootSymbol, SymbolTable, VariableSymbol, XmlFileSymbol, storage::xml::{xml_asset_symbol::XmlAssetSymbol, xml_delete_symbol::XmlDeleteSymbol, xml_field_symbol::XmlFieldSymbol, xml_menuitem_symbol::XmlMenuItemSymbol, xml_record_symbol::XmlRecordSymbol, xml_template_symbol::XmlTemplateSymbol}, symbol_keys::{
-                ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey, VariableKey, XmlAssetKey, XmlDataKey, XmlDeleteKey, XmlFieldKey, XmlFileKey, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey
+            ClassSymbol, CompiledSymbol, CsvFileSymbol, Dependencies, DiskDirSymbol, FileSymbol, FunctionSymbol, JsFileSymbol, ModuleSymbol, NamespaceSymbol, PythonPackageSymbol, RootSymbol, SymbolTable, VariableSymbol, XmlFileSymbol, storage::xml::{xml_asset_symbol::XmlAssetSymbol, xml_delete_symbol::XmlDeleteSymbol, xml_field_symbol::XmlFieldSymbol, xml_menuitem_symbol::XmlMenuItemSymbol, xml_record_symbol::XmlRecordSymbol, xml_template_symbol::XmlTemplateSymbol}, symbol_keys::{
+                ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, JsFileKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey, VariableKey, Wk, XmlAssetKey, XmlDataKey, XmlDeleteKey, XmlFieldKey, XmlFileKey, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey
             }, symbol_mgr::SymbolMgr
         }
     },
@@ -163,9 +163,9 @@ impl SymbolTable {
         xml_field_key
     }
 
-    pub fn add_new_xml_template(&mut self, parent: XmlFileKey, name: Option<OYarn>, range: &TextRange) -> XmlTemplateKey {
+    pub fn add_new_xml_template(&mut self, parent: XmlFileKey, name: Option<OYarn>, t_name: Option<OYarn>, range: &TextRange, is_web: bool) -> XmlTemplateKey {
         let is_external = self.is_external(parent.into());
-        let xml_template_sym = XmlTemplateSymbol::new(name, range.clone(), parent.into(), is_external);
+        let xml_template_sym = XmlTemplateSymbol::new(name, t_name, range.clone(), parent.into(), is_web, is_external);
         let xml_template_key = self.xml_templates.insert(xml_template_sym);
         self.add_xml_data_to_file(parent.into(), xml_template_key.into());
         xml_template_key

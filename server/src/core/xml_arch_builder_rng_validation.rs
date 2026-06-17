@@ -9,7 +9,7 @@ use super::xml_arch_builder::XmlArchBuilder;
 /* Contains the RelaxNG Validation part of the XmlArchBuilder */
 impl XmlArchBuilder {
 
-    pub fn load_odoo_openerp_data(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
+    pub fn load_odoo_openerp_data(&mut self, session: &mut SessionInfo, node: &Node, for_web: bool, diagnostics: &mut Vec<Diagnostic>) -> bool {
         match node.tag_name().name() {
             "odoo" | "openerp" | "data" => {
                 for attr in node.attributes() {
@@ -29,10 +29,11 @@ impl XmlArchBuilder {
                 }
 
                 for child in node.children().filter(|n| n.is_element()) {
-                    if !(self.load_odoo_openerp_data(session, &child, diagnostics)
+                    if !(self.load_template(session, &child, diagnostics) //template should be tested before odoo_openerp_data
+                        || self.load_qweb_template(session, &child, None, for_web, diagnostics)
+                        || self.load_odoo_openerp_data(session, &child, for_web, diagnostics)
                         || self.load_menuitem(session, &child, false, diagnostics)
                         || self.load_record(session, &child, diagnostics)
-                        || self.load_template(session, &child, diagnostics)
                         || self.load_delete(session, &child, diagnostics)
                         || self.load_function(session, &child, diagnostics)
                         || self.load_asset(session, &child, diagnostics)
@@ -50,6 +51,21 @@ impl XmlArchBuilder {
                 }
                 return true;
             }
+            "template" | "templates" => {
+                for child in node.children().filter(|n| n.is_element()) {
+                    if !(self.load_qweb_template(session, &child, None, for_web, diagnostics)) {
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05005, &[child.tag_name().name(), node.tag_name().name()]) {
+                            diagnostics.push(
+                                Diagnostic {
+                                    range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
+                                    ..diagnostic.clone()
+                                }
+                            );
+                        }
+                    }
+                }
+                return true;
+            },
             _ => { return false;},
         }
     }
@@ -175,7 +191,7 @@ impl XmlArchBuilder {
             found_id.clone().map(OYarn::from),
             &TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32))
         );
-        self.on_operation_creation(session, found_id, node, data.into(), diagnostics);
+        self.on_operation_creation(session, found_id, None, node, data.into(), diagnostics);
         true
     }
 
@@ -228,7 +244,7 @@ impl XmlArchBuilder {
                 }
             }
         }
-        self.on_operation_creation(session, found_id, node, record.into(), diagnostics);
+        self.on_operation_creation(session, found_id, None, node, record.into(), diagnostics);
         true
     }
 
@@ -482,12 +498,25 @@ impl XmlArchBuilder {
         if node.tag_name().name() != "template" { return false; }
         //no interesting rule to check, as 'any' is valid
         let found_id = node.attribute("id").map(|s| s.to_string());
+        self.load_qweb_template(session, &node, found_id, false, diagnostics);
+        true
+    }
+
+
+    fn load_qweb_template(&mut self, session: &mut SessionInfo, node: &Node, found_id: Option<String>, for_web: bool, diagnostics: &mut Vec<Diagnostic>) -> bool {
+        let found_t_name = node.attribute("t-name").map(|s| s.to_string());
+        let found_inherit = node.attribute("t-inherit").is_some();
+        if found_id.is_none() && found_t_name.is_none() && !found_inherit {
+            return false;
+        }
         let data = session.st_mut().add_new_xml_template(
             self.xml_symbol,
             found_id.clone().map(|id| oyarn!("{}", id)),
-            &TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32))
+            found_t_name.clone().map(|t_name| oyarn!("{}", t_name)),
+            &TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32)),
+            for_web
         );
-        self.on_operation_creation(session, found_id, node, data.into(), diagnostics);
+        self.on_operation_creation(session, found_id, found_t_name, node, data.into(), diagnostics);
         true
     }
 
@@ -526,7 +555,7 @@ impl XmlArchBuilder {
             &TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32)),
             Sy!(node.attribute("model").unwrap().to_string())
         );
-        self.on_operation_creation(session, found_id, node, data.into(), diagnostics);
+        self.on_operation_creation(session, found_id, None, node, data.into(), diagnostics);
         true
     }
 
@@ -708,7 +737,7 @@ impl XmlArchBuilder {
                 });
             }
         }
-        self.on_operation_creation(session, found_id, node, asset.into(), diagnostics);
+        self.on_operation_creation(session, found_id, None, node, asset.into(), diagnostics);
         true
     }
 }
