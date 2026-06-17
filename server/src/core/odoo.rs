@@ -1679,7 +1679,7 @@ impl Odoo {
         let options = DidChangeWatchedFilesRegistrationOptions {
             watchers: vec![
                 FileSystemWatcher {
-                    glob_pattern: GlobPattern::String("**/*.{py,pyi,xml,csv}".to_string()),
+                    glob_pattern: GlobPattern::String("**/*.{py,pyi,xml,csv,js,ts}".to_string()),
                     kind: Some(WatchKind::Change | WatchKind::Create | WatchKind::Delete),
                 },
             ],
@@ -1778,7 +1778,7 @@ impl Odoo {
                         return Ok(HoverFeature::hover_csv(session, file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                     },
                     AstType::Js => {
-                        return Ok(HoverFeature::hover_js(session, file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                        return Ok(HoverFeature::hover_js(session, &file_info.borrow().uri, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                     }
                 }
             }

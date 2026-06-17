@@ -294,11 +294,15 @@ impl FileInfo {
             .unwrap_or_default();
         self.file_info_ast.borrow_mut().js_template_refs = template_refs;
         self.file_info_ast.borrow_mut().js_component_descriptors = component_descriptors;
-        let lsp_diags = diagnostics.iter().map(
-            |d| js_utils::oxc_diagnostic_to_lsp_diagnostic(
-                session, self, d, &FileMgr::pathname2uri(&S!(&self.uri))
-            )
-        ).flatten().collect();
+        let is_lib = self.uri.contains("/static/lib/");
+        let lsp_diags = match is_lib {
+            true => Vec::new(),
+            false => diagnostics.iter().map(
+                |d| js_utils::oxc_diagnostic_to_lsp_diagnostic(
+                    session, self, d, &FileMgr::pathname2uri(&S!(&self.uri))
+                )
+            ).flatten().collect(),
+        };
         self.replace_diagnostics(DiagnosticLevel::JS_OXC, lsp_diags); //OXC will use SYNTAX. others are reserved to tsserver
     }
 
