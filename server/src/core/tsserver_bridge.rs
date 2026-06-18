@@ -554,7 +554,7 @@ fn handle_message(
 
 fn handle_event(sender_to_main: &crossbeam_channel::Sender<ThreadMessage>, event: &Value) {
     let event_name = event.get("event").and_then(Value::as_str).unwrap_or("<unknown>");
-    debug!("tsserver event '{}': {}", event_name, event);
+    debug!("tsserver event '{}'", event_name);
     match event_name {
         "syntaxDiag" | "semanticDiag" | "suggestionDiag" => {
             if let Some(body) = event.get("body") {

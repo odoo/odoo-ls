@@ -6,7 +6,7 @@ use std::{
 };
 use crate::{core::evaluation_context::ContextKey, constants::DataType, utils::{HashMap, HashSet}};
 
-use lsp_types::{Diagnostic, DiagnosticTag, Range, SymbolKind};
+use lsp_types::{Diagnostic, DiagnosticTag, OneOf, Range, SymbolKind};
 use ruff_text_size::TextRange;
 use tracing::{trace, warn};
 
@@ -599,6 +599,14 @@ impl SymbolTable {
         let path_str = path.sanitize_cow();
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") || FileMgr::is_untitled(&path_str) {
             return Some(session.st_mut().add_new_file(parent, &name, &path_str).into());
+        }
+        if path_str.ends_with(".js") {
+            match parent {
+                SymbolKey::DiskDir(d) => {
+                    return Some(session.st_mut().add_new_js_file(OneOf::Right(d), &name, &path_str).into());
+                },
+                _ => {}
+            }
         }
         let main_entry_tree = session.sync_odoo.get_main_entry_tree(parent);
         if main_entry_tree == (&["odoo", "addons"], &[]) && path.join("__manifest__.py").exists() {
@@ -1208,6 +1216,7 @@ impl SymbolTable {
                 SymbolKey::PythonPackage(p) => return Some(p.into()),
                 SymbolKey::XmlFile(x) => return Some(x.into()),
                 SymbolKey::CsvFile(c) => return Some(c.into()),
+                SymbolKey::JsFile(js) => return Some(js.into()),
                 _ => {}
             }
             key = self.parent(key)?;
@@ -1219,6 +1228,9 @@ impl SymbolTable {
             target,
             &[
                 SymType::FILE,
+                SymType::JS_FILE,
+                SymType::XML_FILE,
+                SymType::CSV_FILE,
                 SymType::PACKAGE(PackageType::PYTHON_PACKAGE),
                 SymType::PACKAGE(PackageType::MODULE),
                 SymType::FUNCTION,

@@ -219,6 +219,12 @@ impl EntryPointMgr {
                     }
                     return false;
                 }
+                SymbolKey::JsFile(f) => {
+                    session.st_mut()[f].self_import = true;
+                    //arch of js files is done in build_ast of file_info, so we have to directly reload validations instead
+                    SyncOdoo::add_to_validations(session.sync_odoo, new_sym);
+                    return true;
+                }
                 _ => {panic!("Unexpected symbol type: {:?}", new_sym);}
             }
             SyncOdoo::add_to_rebuild_arch(session.sync_odoo, new_sym);

@@ -124,6 +124,7 @@ impl ModuleSymbol {
         self.symbols.values().flat_map(|section| section.values()).flatten()
             .chain(self.module_symbols.values()).copied()
             .chain(self.data_symbols.values().map(|&key| key.into()))
+            .chain(self.js_symbols.values().map(|&key| key.into()))
             .collect()
     }
 

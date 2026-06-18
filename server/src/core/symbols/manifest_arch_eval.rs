@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use itertools::Itertools;
-use lsp_types::{Diagnostic, Position, Range};
+use lsp_types::{Diagnostic, OneOf, Position, Range};
 use tracing::info;
 
 use crate::{constants::{BuildSteps, DEBUG_STEPS, DiagnosticLevel}, core::{csv_arch_builder::CsvArchBuilder, data_hooks, diagnostics::{DiagnosticCode, create_diagnostic}, symbols::{ModuleSymbol, SymbolTable, XmlFileSymbol, symbol_keys::{ModuleKey, SourceFileKey}}, xml_arch_builder::XmlArchBuilder}, threads::SessionInfo, utils::PathSanitizer};
@@ -135,7 +135,7 @@ impl ModuleSymbol {
                         continue;
                     }
                     let file_name = PathBuf::from(file_path).file_name().unwrap().to_str().unwrap().to_string();
-                    let js_key = session.st_mut().add_new_js_file(module, &file_name, &file_path);
+                    let js_key = session.st_mut().add_new_js_file(OneOf::Left(module), &file_name, &file_path);
                     session.st_mut().add_dependency(module.into(), js_key.into(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
                     session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &file_path, None, None, false); //create ast if not in cache
                     session.sync_odoo.add_to_validations(js_key);

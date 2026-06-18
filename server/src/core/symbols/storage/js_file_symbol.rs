@@ -1,6 +1,6 @@
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, DataType, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{storage::dependency_mgr::{DependenciesTable, DependentsTable}, symbol_keys::{ModuleKey, SymbolKey}}}, oyarn, utils::HashMap};
+use crate::{constants::{BuildStatus, BuildSteps, DataType, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{Buildable, storage::dependency_mgr::{DependenciesTable, DependentsTable}, symbol_keys::SymbolKey}}, oyarn, utils::HashMap};
 use std::{cell::RefCell, rc::Weak};
 
 #[derive(Debug)]
@@ -8,12 +8,13 @@ pub struct JsFileSymbol {
     pub name: OYarn,
     pub path: String,
     pub is_external: bool,
-    parent: ModuleKey,
+    parent: SymbolKey, //Should be either a module or a disk dir
     pub arch_status: BuildStatus,
     pub validation_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     pub not_found_data_ids: HashMap<DataType, BuildSteps>,
     pub (super) in_workspace: bool,
+    pub self_import: bool,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
     pub dependencies: DependenciesTable,
     pub dependents: DependentsTable,
@@ -23,7 +24,8 @@ pub struct JsFileSymbol {
 
 impl JsFileSymbol {
 
-    pub fn new(name: &str, path: &str, parent: ModuleKey, is_external: bool) -> Self {
+    pub fn new(name: &str, path: &str, parent: SymbolKey, is_external: bool) -> Self {
+        debug_assert!(matches!(parent, SymbolKey::Module(_) | SymbolKey::DiskDir(_)));
         let res = Self {
             name: oyarn!("{}", name),
             path: path.to_string(),
@@ -34,6 +36,7 @@ impl JsFileSymbol {
             not_found_paths: vec![],
             not_found_data_ids: HashMap::default(),
             in_workspace: false,
+            self_import: false,
             model_dependencies: PtrWeakHashSet::new(),
             dependencies: DependenciesTable::default(),
             dependents: DependentsTable::default(),
@@ -43,7 +46,7 @@ impl JsFileSymbol {
         res
     }
 
-    pub fn parent(&self) -> ModuleKey {
+    pub fn parent(&self) -> SymbolKey {
         self.parent
     }
 
@@ -51,4 +54,23 @@ impl JsFileSymbol {
         vec![]
     }
 
+}
+
+impl Buildable for JsFileSymbol {
+    fn build_status(&self, step: BuildSteps) -> BuildStatus {
+        match step {
+            BuildSteps::SYNTAX => panic!(),
+            BuildSteps::ARCH => self.arch_status,
+            BuildSteps::ARCH_EVAL => panic!(),
+            BuildSteps::VALIDATION => self.validation_status,
+        }
+    }
+    fn set_build_status(&mut self, step: BuildSteps, status: BuildStatus) {
+        match step {
+            BuildSteps::SYNTAX => panic!(),
+            BuildSteps::ARCH => self.arch_status = status,
+            BuildSteps::ARCH_EVAL => panic!(),
+            BuildSteps::VALIDATION => self.validation_status = status,
+        }
+    }
 }

@@ -781,6 +781,11 @@ impl SyncOdoo {
                 SymbolKey::File(f) => {
                     session.st_mut()[f].self_import = true;
                 },
+                SymbolKey::JsFile(f) => {
+                    session.st_mut()[f].self_import = true;
+                    session.sync_odoo.add_to_validations(new_symbol);
+                    continue;
+                }
                 SymbolKey::Module(_) => {}
                 SymbolKey::Namespace(_) => continue, // A module became a namespace, due to __init__ deletion/renaming
                 _ => {panic!("Unexpected symbol type: {:?}", new_symbol);}
@@ -1179,6 +1184,12 @@ impl SyncOdoo {
                     session.sync_odoo.must_reload_paths.push((file.parent().into(), file.path.clone()));
                 }
             },
+            SymbolKey::JsFile(file_key) => {
+                let file = &session.st()[file_key];
+                if file.self_import {
+                    session.sync_odoo.must_reload_paths.push((file.parent().into(), file.path.clone()));
+                }
+            },
             SymbolKey::Module(module_key) => {
                 let module = &session.sync_odoo.symbol_table[module_key];
                 session.sync_odoo.modules.remove(&module.dir_name);
@@ -1226,7 +1237,6 @@ impl SyncOdoo {
                 if let Some(sym) = sym.upgrade(session.st()) {
                     return Some(sym.into());
                 }
-                continue;
             }
             if (entry.borrow().typ == EntryPointType::MAIN || entry.borrow().addon_to_odoo_path.is_some()) && entry.borrow().is_valid_for(path) {
                 let tree = entry.borrow().get_tree_for_entry(path);
@@ -1246,6 +1256,12 @@ impl SyncOdoo {
                     return Some(sym);
                 }
                 continue;
+            }
+            let sym_in_js = entry.borrow().js_symbols.get(path.sanitize().as_str()).cloned();
+            if let Some(sym) = sym_in_js {
+                if let Some(sym) = sym.upgrade(session.st()) {
+                    return Some(sym.into());
+                }
             }
             if !entry.borrow().is_public() && &path_in_tree == &PathBuf::from(&entry.borrow().path) {
                 found_an_entry = true;

@@ -14,13 +14,14 @@ use crate::{
     core::{
         entry_point::{EntryPoint, EntryPointCleanupToken}, odoo::SyncOdoo, symbols::{
             ClassSymbol, CompiledSymbol, CsvFileSymbol, Dependencies, DiskDirSymbol, FileSymbol, FunctionSymbol, JsFileSymbol, ModuleSymbol, NamespaceSymbol, PythonPackageSymbol, RootSymbol, SymbolTable, VariableSymbol, XmlFileSymbol, storage::xml::{xml_asset_symbol::XmlAssetSymbol, xml_delete_symbol::XmlDeleteSymbol, xml_field_symbol::XmlFieldSymbol, xml_menuitem_symbol::XmlMenuItemSymbol, xml_record_symbol::XmlRecordSymbol, xml_template_symbol::XmlTemplateSymbol}, symbol_keys::{
-                ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, JsFileKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey, VariableKey, Wk, XmlAssetKey, XmlDataKey, XmlDeleteKey, XmlFieldKey, XmlFileKey, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey
+                ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, JsFileKey, KeyValidator, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey, VariableKey, Wk, XmlAssetKey, XmlDataKey, XmlDeleteKey, XmlFieldKey, XmlFileKey, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey
             }, symbol_mgr::SymbolMgr
         }
     },
     oyarn,
     threads::SessionInfo,
 };
+use lsp_types::OneOf;
 use ruff_text_size::{TextRange, TextSize};
 use std::{cell::RefCell, ops::Range, path::PathBuf, rc::Rc};
 
@@ -180,14 +181,17 @@ impl SymbolTable {
         csv_file_key
     }
 
-    pub fn add_new_js_file(&mut self, parent: ModuleKey, name: &str, path: &str) -> JsFileKey {
-        let parent_symbol = &self.modules[parent];
-        let mut js_file_symbol = JsFileSymbol::new(name, path, parent, parent_symbol.is_external);
-        js_file_symbol.set_in_workspace(parent_symbol.in_workspace);
+    pub fn add_new_js_file(&mut self, parent: OneOf<ModuleKey, DiskDirKey>, name: &str, path: &str) -> JsFileKey {
+        let parent_key: SymbolKey = match parent {
+            OneOf::Left(module) => module.into(),
+            OneOf::Right(disk_dir) => disk_dir.into(),
+        };
+        let mut js_file_symbol = JsFileSymbol::new(name, path, parent_key, self.is_external(parent_key));
+        js_file_symbol.set_in_workspace(self.in_workspace(parent_key));
         let js_file_key = self.js_files.insert(js_file_symbol);
-        let rc_entry = self.get_entry(parent);
+        let rc_entry = self.get_entry(parent_key);
         let mut entry_bw = rc_entry.borrow_mut();
-        self.add_to_module_js_symbols(parent, path, js_file_key);
+        self.add_to_module_js_symbols(parent_key, path, js_file_key);
         self.add_to_js_entry_symbols(&mut entry_bw, path, js_file_key.into());
         js_file_key
     }
@@ -349,14 +353,35 @@ impl SymbolTable {
     fn add_to_module_data_symbols(&mut self, parent: ModuleKey, path: &str, data_file: SourceFileKey) {
         let replaced_key = self.modules[parent].data_symbols.insert(path.to_string(), data_file);
         if let Some(replaced_key) = replaced_key {
-            self.remove(replaced_key.into());
+            if self.is_key_valid(replaced_key) {
+                self.remove(replaced_key.into());
+            }
         }
     }
 
-    fn add_to_module_js_symbols(&mut self, parent: ModuleKey, path: &str, js_key: JsFileKey) {
-        let replaced_key = self.modules[parent].js_symbols.insert(path.to_string(), js_key);
-        if let Some(replaced_key) = replaced_key {
-            self.remove(replaced_key.into());
+    fn add_to_module_js_symbols(&mut self, parent: SymbolKey, path: &str, js_key: JsFileKey) {
+        match parent {
+            SymbolKey::Module(m) => {
+                let module = &mut self.modules[m];
+                let replaced_key = module.js_symbols.insert(path.to_string(), js_key);
+                if let Some(replaced_key) = replaced_key {
+                    if self.is_key_valid(replaced_key) {
+                        self.remove(replaced_key.into());
+                    }
+                }
+            },
+            SymbolKey::DiskDir(d) => {
+                let disk_dir = &mut self.disk_dirs[d];
+                let replaced_key = disk_dir.js_symbols.insert(path.to_string(), js_key);
+                if let Some(replaced_key) = replaced_key {
+                    if self.is_key_valid(replaced_key) {
+                        self.remove(replaced_key.into());
+                    }
+                }
+            },
+            _ => {
+                panic!("Impossible to add a JsFileKey to a {}", parent.typ());
+            }
         }
     }
 

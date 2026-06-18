@@ -1,7 +1,7 @@
 use weak_table::PtrWeakHashSet;
 
 use crate::constants::DataType;
-use crate::core::symbols::{Buildable, JsFileSymbol};
+use crate::core::symbols::Buildable;
 use crate::core::symbols::storage::dependency_mgr::{DependenciesTable, DependentsTable};
 use crate::core::symbols::symbol_keys::{ModuleKey, XmlDataKey};
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_keys::SymbolKey}, oyarn};
@@ -78,27 +78,6 @@ impl Buildable for CsvFileSymbol {
             BuildSteps::SYNTAX => panic!(),
             BuildSteps::ARCH => self.arch_status,
             BuildSteps::ARCH_EVAL => self.arch_status,
-            BuildSteps::VALIDATION => self.validation_status,
-        }
-    }
-    fn set_build_status(&mut self, step: BuildSteps, status: BuildStatus) {
-        match step {
-            BuildSteps::SYNTAX => panic!(),
-            BuildSteps::ARCH => self.arch_status = status,
-            BuildSteps::ARCH_EVAL => panic!(),
-            BuildSteps::VALIDATION => self.validation_status = status,
-        }
-    }
-}
-
-
-
-impl Buildable for JsFileSymbol {
-    fn build_status(&self, step: BuildSteps) -> BuildStatus {
-        match step {
-            BuildSteps::SYNTAX => panic!(),
-            BuildSteps::ARCH => self.arch_status,
-            BuildSteps::ARCH_EVAL => panic!(),
             BuildSteps::VALIDATION => self.validation_status,
         }
     }
