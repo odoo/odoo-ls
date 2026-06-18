@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - '[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-test-build'
+
+permissions: {}
 
 env:
   CARGO_TERM_COLOR: always
@@ -11,6 +14,8 @@ env:
 jobs:
   build:
     name: Build for ${{ matrix.os }} ${{ matrix.arch }}
+    permissions:
+      contents: read
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -53,11 +58,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          override: true
-          target: ${{ matrix.target }}
+          targets: ${{ matrix.target }}
 
       - name: Install AArch64 cross-linker
         if: matrix.target == 'aarch64-unknown-linux-gnu'
@@ -118,7 +121,10 @@ jobs:
   release:
     name: Create GitHub Release
     needs: build
+    if: ${{ !endsWith(github.ref_name, '-test-build') }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -193,17 +199,19 @@ jobs:
           zip -r ../typeshed.zip .
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: ${{ steps.version.outputs.title }}
-          tag_name: ${{ github.ref_name }}
-          prerelease: ${{ steps.version.outputs.prerelease }}
-          body_path: RELEASE_NOTES.md
-          files: |
-            ./artifacts/*.zip
-            ./artifacts/*.tar.gz
-            ./artifacts/config_schema/config_schema.json
-            ./typeshed.zip
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PRERELEASE_FLAG=""
+          if [ "${{ steps.version.outputs.prerelease }}" = "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ steps.version.outputs.title }}" \
+            --notes-file RELEASE_NOTES.md \
+            $PRERELEASE_FLAG \
+            ./artifacts/*.zip \
+            ./artifacts/*.tar.gz \
+            ./artifacts/config_schema/config_schema.json \
+            ./typeshed.zip
 
