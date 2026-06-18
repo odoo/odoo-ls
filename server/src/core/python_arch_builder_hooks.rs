@@ -88,7 +88,7 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
     PythonArchClassHook {
         odoo_entry: true,
         trees: vec![
-            ((15, 0), (999, 0), (&["odoo", "addons", "base", "models", "ir_rule"], &["IrRule"])),
+            ((15, 0), (19, 4), (&["odoo", "addons", "base", "models", "ir_rule"], &["IrRule"])),
         ],
         func: |symbol_table: &mut SymbolTable, class: ClassKey| {
             let range = symbol_table[class].range.clone();
