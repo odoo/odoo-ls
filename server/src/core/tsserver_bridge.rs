@@ -681,6 +681,32 @@ fn nav_span_to_range(span: &Value) -> Option<Range> {
     })
 }
 
+fn range_contains(outer: Range, inner: Range) -> bool {
+    (outer.start.line < inner.start.line
+        || (outer.start.line == inner.start.line && outer.start.character <= inner.start.character))
+    && (inner.end.line < outer.end.line
+        || (inner.end.line == outer.end.line && inner.end.character <= outer.end.character))
+}
+
+fn nav_spans_to_range(spans: &[Value]) -> Option<Range> {
+    // Merge all spans into one bounding range so that a nameSpan that falls in
+    // a later span (e.g. prototype augmentations) is still contained within the
+    // reported fullRange.
+    let mut merged: Option<Range> = None;
+    for span in spans {
+        if let Some(r) = nav_span_to_range(span) {
+            merged = Some(match merged {
+                None => r,
+                Some(m) => Range {
+                    start: if m.start < r.start { m.start } else { r.start },
+                    end:   if m.end   > r.end   { m.end   } else { r.end   },
+                },
+            });
+        }
+    }
+    merged
+}
+
 fn nav_node_to_document_symbol(node: &Value) -> Option<DocumentSymbol> {
     let name = node.get("text").and_then(Value::as_str)?;
     if name.is_empty() || name == "<global>" {
@@ -688,10 +714,13 @@ fn nav_node_to_document_symbol(node: &Value) -> Option<DocumentSymbol> {
     }
     let kind_str = node.get("kind").and_then(Value::as_str).unwrap_or("unknown");
 
-    let span = node.get("spans").and_then(Value::as_array)?.first()?;
-    let range = nav_span_to_range(span)?;
+    let spans = node.get("spans").and_then(Value::as_array)?;
+    let range = nav_spans_to_range(spans)?;
+    // nameSpan must be contained within range per the LSP spec; fall back to
+    // range if tsserver returns a nameSpan outside the merged fullRange.
     let selection_range = node.get("nameSpan")
         .and_then(nav_span_to_range)
+        .filter(|sr| range_contains(range, *sr))
         .unwrap_or(range);
 
     let children: Option<Vec<DocumentSymbol>> = node
