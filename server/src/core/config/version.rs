@@ -17,8 +17,9 @@ use tracing::error;
 
 use crate::S;
 use crate::core::config::ConfigKey;
-use crate::utils::{HashMap, HashSet, PathSanitizer, fill_validate_path};
+use crate::utils::{HashMap, HashSet, PathSanitizer};
 
+use super::paths::{SymlinkPolicy, fill_template_path, resolve_path};
 use super::value::{PipelineCtx, Profile, ProfileSet, config_dir, default_sources};
 
 static VERSION_REGEX: LazyLock<Regex> =
@@ -80,20 +81,17 @@ fn process_version(
     ctx: &PipelineCtx,
 ) -> Result<String, String> {
     let dir = config_dir(sources);
-    let filled = match fill_validate_path(
-        ctx.unique_ws_folders,
-        ctx.current_ws,
-        value,
-        |p: &str| PathBuf::from(p).exists(),
-        HashMap::default(),
-        &dir,
-    ) {
-        // Not a (resolvable) path → treat as a plain version string.
-        Ok(filled) => filled,
-        Err(_) => return Ok(value.to_string()),
+    // Expand templates, then make it absolute + canonical. A value that is not a
+    // (resolvable, existing) path is treated as a plain version string.
+    let resolved = match fill_template_path(ctx.unique_ws_folders, ctx.current_ws, value, HashMap::default())
+        .ok()
+        .and_then(|filled| resolve_path(&filled, &dir, SymlinkPolicy::Resolve).ok())
+    {
+        Some(resolved) => resolved,
+        None => return Ok(value.to_string()),
     };
 
-    let path = PathBuf::from(&filled);
+    let path = PathBuf::from(&resolved);
     if path.is_file()
         && path
             .file_name()
@@ -114,10 +112,8 @@ fn process_version(
         };
     }
 
-    let canon = path
-        .canonicalize()
-        .map_err(|err| format!("Failed to canonicalize $version path {path:?}: {err}"))?;
-    match canon.components().next_back() {
+    // `resolved` is already canonical; its last component is the version dir.
+    match path.components().next_back() {
         Some(suffix) => Ok(suffix.as_os_str().to_string_lossy().to_string()),
         None => Err(format!("Could not extract a version from path {path:?}")),
     }
@@ -218,14 +214,9 @@ fn resolve_split_version(profile: &mut Profile, ctx: &PipelineCtx) -> Result<Vec
         return Ok(Vec::new());
     };
     let dir = config_dir(&version_sources);
-    let parent_resolved = match fill_validate_path(
-        ctx.unique_ws_folders,
-        ctx.current_ws,
-        &parent.sanitize(),
-        |p: &str| PathBuf::from(p).is_dir(),
-        HashMap::default(),
-        &dir,
-    ) {
+    let parent_resolved = match fill_template_path(ctx.unique_ws_folders, ctx.current_ws, &parent.sanitize(), HashMap::default())
+        .and_then(|filled| resolve_path(&filled, &dir, SymlinkPolicy::Resolve).map_err(|e| e.to_string()))
+    {
         Ok(p) => PathBuf::from(p),
         Err(err) => {
             error!(
