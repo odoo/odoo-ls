@@ -12,6 +12,7 @@ use std::sync::LazyLock;
 use crate::utils::HashMap;
 
 use super::config_key_spec::ConfigKey;
+use super::paths::SymlinkPolicy;
 use super::value::{ConfigValue, PipelineCtx, Profile};
 
 // ---------------------------------------------------------------------------
@@ -94,6 +95,9 @@ pub(crate) struct FieldSpec {
     pub restart: bool,
     /// local configs that do not cause conflict among workspaces
     pub local: bool,
+    /// How path-valued fields canonicalize symlinks (see `paths::resolve_path`).
+    /// Defaults to `Resolve`; only path settings consult it.
+    pub symlink_policy: SymlinkPolicy,
     pub stages: Vec<StageHook>,
 }
 
@@ -114,6 +118,7 @@ impl FieldSpec {
             merge,
             restart: false,
             local: false,
+            symlink_policy: SymlinkPolicy::default(),
             stages: Vec::new(),
         }
     }
@@ -132,6 +137,10 @@ impl FieldSpec {
     }
     pub(crate) fn merge(mut self, rule: MergeRule) -> Self {
         self.merge = rule;
+        self
+    }
+    pub(crate) fn symlink_policy(mut self, policy: SymlinkPolicy) -> Self {
+        self.symlink_policy = policy;
         self
     }
     pub(crate) fn stage(mut self, stage: Stage, run: HookFn) -> Self {
@@ -199,6 +208,9 @@ impl ConfigKey {
     }
     pub(crate) fn kind(self) -> ConfigFieldSpecKind {
         self.spec().kind
+    }
+    pub(super) fn symlink_policy(self) -> SymlinkPolicy {
+        self.spec().symlink_policy
     }
     pub(super) fn default_value(self) -> Option<ConfigValue> {
         self.spec().default.clone()

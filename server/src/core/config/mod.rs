@@ -8,6 +8,7 @@ pub mod render;
 mod build;
 mod config_key_spec;
 mod parse;
+mod paths;
 mod runtime;
 mod schema_gen;
 mod spec;
