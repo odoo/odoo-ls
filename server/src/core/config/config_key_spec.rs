@@ -6,6 +6,7 @@
 //! row here. If it needs custom processing, write a hook function (in the stages
 //! module) and attach it with `.stage(Stage::X, my_hook)`.
 
+use super::paths::SymlinkPolicy;
 use super::spec::FieldSpec;
 use super::value::ConfigValue;
 
@@ -60,8 +61,12 @@ pub(super) fn specs() -> Vec<FieldSpec> {
             .stage(ResolvePaths, stages::canon_addons_paths)
             .stage(AutoDetectPaths, stages::infer_addons),
         FieldSpec::new(AddonsMerge, "addons_merge", MergeMethod).local(),
+        // Preserve a symlinked leaf: a venv's `bin/python` is a symlink to the
+        // base interpreter, and resolving it would hide the venv from Python's
+        // `pyvenv.cfg` detection.
         FieldSpec::new(PythonPath, "python_path", Str)
             .triggers_restart()
+            .symlink_policy(SymlinkPolicy::PreserveLeaf)
             .stage(ResolvePaths, stages::canon_python_path)
             .stage(PostMergeProcessing, stages::default_python_path),
         FieldSpec::new(Stdlib, "stdlib", Str)
