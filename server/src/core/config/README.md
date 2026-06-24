@@ -15,6 +15,7 @@ derived from that declaration.
 | `value.rs` | The data model flowing through the pipeline: public value enums (`DiagMissingImportsMode`, `DiagnosticFilter`, …), the `Sourced<T>` provenance wrapper + merge helpers + shared `config_dir`, the internal `Scalar`/`ConfigValue`, and the `Profile` working structure. |
 | `spec.rs` | The field-declaration system behind each `specs()` row: `ConfigFieldSpecKind`, `FieldSpec`/`MergeRule`/`Stage`/`StageHook`, and the `registry()`/`all()`/`from_name()` derived from `specs()` (plus `ConfigKey`'s accessors). |
 | `parse.rs` | Spec-driven TOML → `Profile` (dispatch on `ConfigFieldSpecKind`); rejects unknown keys. |
+| `paths.rs` | `${...}` template expansion (`fill_template_path`) and the absolute-canonical form every path setting resolves to (`resolve_path` + `SymlinkPolicy`). |
 | `stages.rs` | Per-field stage hooks (language expansion, path canonicalization, addon/odoo inference, filter-pattern expansion). |
 | `version.rs` | `${detectVersion}`/`${splitVersion}` (set-level) + `$version` value resolution. |
 | `runtime.rs` | [`ConfigEntry`] (the runtime config: resolved map + typed getters) and `needs_restart`. |

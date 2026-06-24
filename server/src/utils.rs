@@ -1,20 +1,13 @@
 use crate::core::file_mgr::legacy_unc_paths;
 use path_slash::PathExt;
-use regex::Regex;
 use ruff_text_size::TextSize;
 use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::process::Command;
 use std::sync::atomic::Ordering;
-use std::{fs::{self, DirEntry}, path::{Path, PathBuf}, str::FromStr, sync::LazyLock};
+use std::{fs::{self, DirEntry}, path::{Path, PathBuf}, str::FromStr};
 
 use crate::{tree::Tree, oyarn};
-
-/// Template for filling paths with variables. Variables are in the format ${var_name}.
-static TEMPLATE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\$\{([^}]+)\}").unwrap()
-});
-static HOME_DIR: LazyLock<Option<String>> = LazyLock::new(|| dirs::home_dir().map(|buf| buf.sanitize()));
 
 #[macro_export]
 macro_rules! S {
@@ -227,87 +220,6 @@ pub trait MaxTextSize {
 impl MaxTextSize for TextSize {
     const MAX: TextSize = TextSize::new(u32::MAX);
 }
-
-pub fn has_template(template: &str) -> bool {
-    TEMPLATE_REGEX.is_match(template)
-}
-
-pub fn fill_template(template: &str, vars: &HashMap<String, String>) -> Result<String, String> {
-    let mut invalid = None;
-
-    let result = TEMPLATE_REGEX.replace_all(template, |captures: &regex::Captures| -> String{
-        let key = captures[1].to_string();
-        if let Some(value) = vars.get(&key) {
-            value.clone()
-        } else {
-            invalid = Some(format!("Invalid key ({}) in pattern", key));
-            S!("")
-        }
-    });
-    match invalid {
-        Some(err) => Err(err),
-        None => Ok(S!(result)),
-    }
-}
-
-
-pub fn build_pattern_map(unique_ws_folders: &HashMap<String, String>) -> HashMap<String, String> {
-    // TODO: Maybe cache this
-    let mut pattern_map = HashMap::default();
-    if let Some(home_dir) = HOME_DIR.as_ref() {
-        pattern_map.insert(S!("userHome"), home_dir.clone());
-    }
-    for (ws_name, ws_path) in unique_ws_folders.iter(){
-        pattern_map.insert(format!("workspaceFolder:{}", ws_name.clone()), ws_path.clone());
-    }
-    pattern_map
-}
-
-
-/// Fill the template with the given pattern map.
-/// While also checking it with the predicate function.
-/// pass `|_| true` to skip the predicate check.
-/// Currently, only the workspaceFolder[:workspace_name] and userHome variables are supported.
-/// unique_ws_folders: mapping of **unique** workspace folder names to their paths
-pub fn fill_validate_path<F, P>(
-    unique_ws_folders: &HashMap<String, String>,
-    current_ws: Option<&(String, String)>,
-    template: &str,
-    predicate: F,
-    var_map: HashMap<String, String>,
-    parent_path: P,
-) -> Result<String, String>
-where
-    F: Fn(&str) -> bool,
-    P: AsRef<Path>
-{
-    let mut pattern_map: HashMap<String, String> = build_pattern_map(unique_ws_folders).into_iter().chain(var_map.into_iter()).collect();
-    if let Some((_, path)) = current_ws {
-        pattern_map.insert(S!("workspaceFolder"), path.clone());
-    }
-    // Check for ambiguous workspaceFolder:<name> pattern
-    if template.contains("workspaceFolder:") {
-        let re = Regex::new(r"\$\{workspaceFolder:([^}]+)\}").unwrap();
-        for cap in re.captures_iter(template) {
-            let ws_name = &cap[1];
-            if !unique_ws_folders.contains_key(ws_name) {
-                return Err(format!("Pattern '${{workspaceFolder:{}}}' ignored due to ambiguous or missing workspace name.", ws_name));
-            }
-        }
-    }
-    let path = fill_template(template, &pattern_map)?;
-    if predicate(&path) {
-        return Ok(path);
-    }
-    // Attempt to convert the path to an absolute path
-    if let Ok(abs_path) = std::fs::canonicalize(parent_path.as_ref().join(&path)) {
-        let abs_path = abs_path.sanitize();
-        if predicate(&abs_path) {
-            return Ok(abs_path);
-        }
-    }
-    Err(format!("Failed to fill and validate path: {} from template {}", path, template))
-    }
 
 fn is_really_module(directory_path: &str, entry: &DirEntry) -> bool {
     let module_name = entry.file_name();

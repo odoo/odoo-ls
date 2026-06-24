@@ -409,6 +409,85 @@ fn single_odools_toml_scalars() {
     assert!(html.contains("1234"));
 }
 
+// ===========================================================================
+// Path canonicalization & symlinks
+// ===========================================================================
+
+/// The absolute path of a real Python interpreter (its `sys.executable`), or
+/// `None` if none is available — symlink tests below need a genuinely runnable
+/// target because `is_python_path` executes the binary.
+#[cfg(unix)]
+fn real_python() -> Option<std::path::PathBuf> {
+    for cmd in ["python3", "python"] {
+        if let Ok(out) = std::process::Command::new(cmd)
+            .args(["-c", "import sys; print(sys.executable)"])
+            .output()
+            && out.status.success()
+        {
+            let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !p.is_empty() {
+                return Some(std::path::PathBuf::from(p));
+            }
+        }
+    }
+    None
+}
+
+/// A `python_path` pointing at a virtualenv interpreter (a symlink to the base
+/// interpreter) keeps the venv path — resolving the symlink would hide the venv
+/// from Python's `pyvenv.cfg` detection. The template form skips
+/// `canon_python_path`'s "already runnable" early return, so this exercises the
+/// `PreserveLeaf` canonicalization.
+#[cfg(unix)]
+#[test]
+fn python_path_preserves_venv_symlink() {
+    let Some(base_interpreter) = real_python() else {
+        eprintln!("skipping python_path_preserves_venv_symlink: no python interpreter found");
+        return;
+    };
+    let mut c = Cfg::new();
+    let ws = c.ws("ws1");
+    let venv_bin = ws.child("venv").child("bin");
+    venv_bin.create_dir_all().unwrap();
+    let python = venv_bin.child("python");
+    std::os::unix::fs::symlink(&base_interpreter, python.path()).unwrap();
+
+    write_odools(&ws, r#"
+        [[config]]
+        name = "default"
+        python_path = "${workspaceFolder}/venv/bin/python"
+    "#);
+
+    let cfg = c.default();
+    // The venv path is kept verbatim (only the parent is canonicalized)...
+    assert_eq!(cfg.python_path(), python.path().sanitize());
+    // ...and is NOT collapsed to the base interpreter the symlink points at.
+    assert_ne!(cfg.python_path(), base_interpreter.sanitize());
+}
+
+/// In contrast, a directory setting (`odoo_path`) fully resolves symlinks, so
+/// two routes to the same checkout compare equal.
+#[cfg(unix)]
+#[test]
+fn odoo_path_resolves_symlink() {
+    let mut c = Cfg::new();
+    let real_odoo = c.dir("real_odoo");
+    make_odoo(&real_odoo);
+    let ws = c.ws("ws1");
+    std::os::unix::fs::symlink(real_odoo.path(), ws.child("odoo_link").path()).unwrap();
+
+    write_odools(&ws, r#"
+        [[config]]
+        name = "default"
+        odoo_path = "${workspaceFolder}/odoo_link"
+    "#);
+
+    let cfg = c.default();
+    // The symlink is followed down to the real checkout.
+    assert_eq!(cfg.odoo_path().as_deref(), Some(real_odoo.path().sanitize().as_str()));
+    assert_ne!(cfg.odoo_path().as_deref(), Some(ws.child("odoo_link").path().sanitize().as_str()));
+}
+
 #[test]
 fn minimal_config_named_profile_with_odoo_path() {
     // Wiki minimal config: a named profile pointing at an Odoo checkout.

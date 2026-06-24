@@ -9,10 +9,11 @@ use crate::{
     core::config::ConfigKey,
     utils::{
         HashMap, HashSet, PathSanitizer, default_python_command, expand_language_code,
-        fill_validate_path, has_template, is_addon_path, is_odoo_path, is_python_path,
+        is_addon_path, is_odoo_path, is_python_path,
     },
 };
 
+use super::paths::{SymlinkPolicy, fill_template_path, has_template, resolve_path};
 use super::value::{ConfigValue, PipelineCtx, Profile, Sourced, config_dir, group_sourced_iters};
 
 /// List token that requests auto-detection of `addons_paths` (see `infer_addons`).
@@ -81,43 +82,30 @@ fn var_map(profile: &Profile) -> HashMap<String, String> {
     map
 }
 
+/// Expand any `${...}` template, resolve to an absolute canonical path (relative
+/// to its config file's dir) per `policy`, then validate with `predicate`.
 fn canonicalize_value<F: Fn(&str) -> bool>(
     sourced: &Sourced<String>,
     ctx: &PipelineCtx,
     predicate: F,
+    policy: SymlinkPolicy,
     vars: HashMap<String, String>,
 ) -> Result<Sourced<String>, String> {
     let dir = config_dir(sourced.sources());
-    let make = |value: String| Sourced::with_sources(value, sourced.sources().clone());
-
-    if has_template(sourced.value()) {
-        let filled = fill_validate_path(
-            ctx.unique_ws_folders,
-            ctx.current_ws,
-            sourced.value(),
-            &predicate,
-            vars,
-            &dir,
-        )?;
-        let canon = std::fs::canonicalize(PathBuf::from(&filled))
-            .map_err(|e| e.to_string())?
-            .sanitize();
-        return Ok(make(canon));
-    }
-
-    let mut path = PathBuf::from(sourced.value());
-    if path.is_relative() {
-        path = dir.join(sourced.value());
-    }
-    let canon = std::fs::canonicalize(path)
-        .map_err(|e| e.to_string())?
-        .sanitize();
+    // Templates expand first; a bare path passes through unchanged. Either way
+    // `resolve_path` is the single place the value becomes absolute + canonical.
+    let filled = if has_template(sourced.value()) {
+        fill_template_path(ctx.unique_ws_folders, ctx.current_ws, sourced.value(), vars)?
+    } else {
+        sourced.value().clone()
+    };
+    let canon = resolve_path(&filled, &dir, policy).map_err(|e| e.to_string())?;
     if !predicate(&canon) {
         return Err(format!(
             "path '{canon}' does not satisfy the required conditions"
         ));
     }
-    Ok(make(canon))
+    Ok(Sourced::with_sources(canon, sourced.sources().clone()))
 }
 
 fn canonicalize_scalar<F: Fn(&str) -> bool + Copy>(
@@ -130,7 +118,7 @@ fn canonicalize_scalar<F: Fn(&str) -> bool + Copy>(
         return Ok(());
     };
     let vars = var_map(profile);
-    match canonicalize_value(&sourced, ctx, predicate, vars) {
+    match canonicalize_value(&sourced, ctx, predicate, key.symlink_policy(), vars) {
         Ok(c) => profile.set_scalar_str(key, c.value, c.sources),
         // Invalid: drop from the runtime values (so it falls back to unset rather
         // than using a bad path), but record it so the config panel surfaces the
@@ -160,6 +148,7 @@ fn canonicalize_list<F: Fn(&str) -> bool + Copy>(
     };
     let items = items.clone();
     let vars = var_map(profile);
+    let policy = key.symlink_policy();
     let mut out = Vec::new();
     for item in &items {
         // `$autoDetectAddons` is an inference token, handled in the
@@ -168,7 +157,7 @@ fn canonicalize_list<F: Fn(&str) -> bool + Copy>(
             out.push(item.clone());
             continue;
         }
-        match canonicalize_value(item, ctx, predicate, vars.clone()) {
+        match canonicalize_value(item, ctx, predicate, policy, vars.clone()) {
             Ok(canon) => out.push(canon),
             // Capture the invalid entry for the panel instead of dropping it.
             Err(err) => profile.add_rejected(
@@ -200,8 +189,9 @@ pub(super) fn canon_stdlib(
     canonicalize_scalar(profile, key, ctx, |p: &str| Path::new(p).is_dir())
 }
 
-/// `python_path` may be a bare command (e.g. `python3`); if it already looks
-/// like one, keep it verbatim — otherwise resolve it as a path.
+/// `python_path` may be a bare command (e.g. `python3`); keep it verbatim if so,
+/// otherwise resolve it as a path (the spec's `PreserveLeaf` policy keeps a venv
+/// symlink intact).
 pub(super) fn canon_python_path(
     profile: &mut Profile,
     key: ConfigKey,
@@ -244,23 +234,18 @@ pub(super) fn expand_filter_patterns(
         return Ok(());
     };
     for filter in filters.iter_mut() {
-        let dir = config_dir(filter.sources());
         let mut info_lines = vec![];
         let new_paths: Vec<glob::Pattern> = filter
             .value
             .paths
             .iter()
             .filter_map(|pattern| {
-                let raw = pattern.to_string();
-                let result = fill_validate_path(
-                    ctx.unique_ws_folders,
-                    ctx.current_ws,
-                    &raw,
-                    |_: &str| true,
-                    vars.clone(),
-                    &dir,
-                )
-                .and_then(|p| glob::Pattern::new(&p).map_err(|e| e.to_string()));
+                let raw = pattern.as_str();
+                // Filter patterns are globs (may contain `*`/`**`), so they are
+                // only template-expanded, never canonicalized.
+                let result =
+                    fill_template_path(ctx.unique_ws_folders, ctx.current_ws, raw, vars.clone())
+                        .and_then(|p| glob::Pattern::new(&p).map_err(|e| e.to_string()));
                 match result {
                     Ok(p) => Some(p),
                     Err(err) => {
