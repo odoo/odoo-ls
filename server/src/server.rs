@@ -399,6 +399,8 @@ impl Server {
                     ResolveCompletionItem::METHOD => {
                         info!("Got ignored CompletionItem/resolve")
                     }
+                    // wtf?? we rely on the lsp client being well-behaved and not sending us random requests
+                    // we should simply ignore them and log a warning
                     _ => {panic!("Not handled Request Id: {}", r.method)}
                 }
             },
