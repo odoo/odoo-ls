@@ -302,7 +302,7 @@ impl Server {
                 }
                 if e.is_disconnected() {
                     warn!("Channel disconnected. Exiting program.");
-                    break;
+                    std::process::exit(0);
                 }
             }
             let msg = res.unwrap();
