@@ -2,9 +2,9 @@ use std::{collections::VecDeque, path::PathBuf, sync::{Arc, Mutex}, time::Instan
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use lsp_server::{Message, RequestId, Response, ResponseError};
-use lsp_types::{CompletionResponse, DocumentSymbolResponse, GotoDefinitionResponse, Hover, Location, LogMessageParams, MessageType, ShowMessageParams, WorkspaceSymbol, WorkspaceSymbolResponse, notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders,
+use lsp_types::{CompletionResponse, DocumentSymbolResponse, GotoDefinitionResponse, Hover, Location, LogMessageParams, MessageType, SemanticTokensResult, ShowMessageParams, WorkspaceSymbol, WorkspaceSymbolResponse, notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders,
     DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, LogMessage,
-    Notification, ShowMessage}, request::{Completion, DocumentSymbolRequest, GotoDeclaration, GotoDeclarationResponse, GotoDefinition, HoverRequest, References, Request, Shutdown, WorkspaceSymbolRequest, WorkspaceSymbolResolve}};
+    Notification, ShowMessage}, request::{Completion, DocumentSymbolRequest, GotoDeclaration, GotoDeclarationResponse, GotoDefinition, HoverRequest, References, Request, SemanticTokensFullRequest, Shutdown, WorkspaceSymbolRequest, WorkspaceSymbolResolve}};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tracing::{error, info, warn};
@@ -384,7 +384,7 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>,
     sender_to_s: Sender<Message>,
     receiver_to_s: Receiver<Message>,
     delayed_process_sender: Sender<DelayedProcessingMessage>,
-    running_request_ids: Arc<Mutex<Vec<RequestId>>>) 
+    running_request_ids: Arc<Mutex<Vec<RequestId>>>)
 {
     let mut buffer = VecDeque::new();
     loop {
@@ -466,6 +466,11 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>,
                             let mut session = create_session!(sender_to_s, receiver_to_s, Some(generic_sender_to_main.clone()), sync_odoo, delayed_process_sender);
                             SyncOdoo::process_rebuilds(&mut session, true);
                             to_value::<CompletionResponse>(Odoo::handle_autocomplete(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
+                        SemanticTokensFullRequest::METHOD => {
+                            let mut session = create_session!(sender_to_s, receiver_to_s, Some(generic_sender_to_main.clone()), sync_odoo, delayed_process_sender);
+                            SyncOdoo::process_rebuilds(&mut session, true);
+                            to_value::<SemanticTokensResult>(Odoo::handle_semantic_tokens(&mut session, serde_json::from_value(r.params).unwrap()))
                         },
                         _ => {error!("Request not handled by main thread: {}", r.method); (None, Some(ResponseError{
                             code: 1,
