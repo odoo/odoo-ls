@@ -10,9 +10,13 @@
 //! `method` to the model's `Function` member transitively). We never walk an
 //! attribute base by hand, so that behaviour keeps working for free.
 //!
+//! Parameter *definition* sites (the names in `def`/method/`lambda` signatures) are
+//! the one exception: we color them directly as `parameter` (with the `declaration`
+//! modifier) so a parameter looks the same at its binding and at its body uses.
+//!
 //! Deliberately deferred for a later iteration:
-//! - definition-site tokens (`def`/`class` names, parameters at the signature,
-//!   decorators highlighted as decorators),
+//! - definition-site tokens (`def`/`class` names, decorators highlighted as
+//!   decorators),
 //! - emitting tokens for subscript results or model-name string literals,
 //! - dedicated Odoo-field detection (Odoo fields are surfaced as plain `property`),
 //! - any scope/result caching.
@@ -20,8 +24,8 @@
 //! String/number/keyword literals are left entirely to the grammar.
 
 use lsp_types::{Range, SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokens, SemanticTokensLegend};
-use ruff_python_ast::visitor::{walk_expr, Visitor};
-use ruff_python_ast::Expr;
+use ruff_python_ast::visitor::{walk_expr, walk_parameter, Visitor};
+use ruff_python_ast::{Expr, Parameter};
 use ruff_text_size::Ranged;
 
 use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr, ExprOrIdent};
@@ -54,7 +58,7 @@ enum TokType {
 /// order MUST match `legend().token_modifiers`.
 #[repr(u32)]
 #[derive(Clone, Copy)]
-#[allow(dead_code)] // Declaration / Definition / Readonly are reserved legend slots, not emitted in v1.
+#[allow(dead_code)] // Definition / Readonly are reserved legend slots, not emitted in v1.
 enum TokMod {
     Declaration = 0,
     Definition = 1,
@@ -164,6 +168,14 @@ impl SemanticTokensFeature {
     }
 }
 
+/// `self`/`cls` are left entirely to the client grammar's special-self/cls rule —
+/// at both their signature binding and their body uses — so we never emit a token
+/// for them. Shared by the parameter override and the `Expr::Name` body guard so
+/// the two cannot drift.
+fn is_grammar_owned_self(name: &str) -> bool {
+    matches!(name, "self" | "cls")
+}
+
 /// Source-order traversal that resolves each usage site through the engine and
 /// pushes one raw token per coloured site. Holds `&mut SessionInfo` directly; the
 /// AST nodes are borrowed with lifetime `'a` from the file's `file_info_ast`.
@@ -223,10 +235,10 @@ impl<'a, 'b, 's> Visitor<'a> for SemanticTokenVisitor<'a, 'b, 's> {
     fn visit_expr(&mut self, expr: &'a Expr) {
         match expr {
             Expr::Name(name) => {
-                if matches!(name.id.as_str(), "self" | "cls") {
-                    // Leave to the grammar's special-self/cls rule for consistency
-                    // with the (currently un-tokenized) signature parameter.
-                } else {
+                // Leave `self`/`cls` to the grammar's special-self/cls rule: both
+                // the signature binding and these body uses are deliberately not
+                // tokenized here, so the grammar owns their coloring everywhere.
+                if !is_grammar_owned_self(name.id.as_str()) {
                     // Resolve the name through the engine and color it at its own range.
                     let offset = name.range().start().to_u32();
                     self.resolve_and_push(&ExprOrIdent::Expr(expr), offset, name.range(), TokenOrigin::Name);
@@ -244,6 +256,23 @@ impl<'a, 'b, 's> Visitor<'a> for SemanticTokenVisitor<'a, 'b, 's> {
         }
         // Always descend fully (never stop early) so nested segments are visited.
         walk_expr(self, expr);
+    }
+
+    fn visit_parameter(&mut self, parameter: &'a Parameter) {
+        // The default traversal reaches every parameter kind uniformly — positional-
+        // only, positional-or-keyword, `*args`, keyword-only and `**kwargs` — for both
+        // `def`/method signatures (via `walk_stmt`) and `lambda`s (via `walk_expr`).
+        // A signature param is definitionally a `parameter`, so we color it directly
+        // (no engine resolution) and never set `defaultLibrary`: a binding introduced
+        // here is local. We color the NAME identifier only; the annotation and default
+        // are visited normally so they keep their own tokens.
+        let name = &parameter.name;
+        if !is_grammar_owned_self(name.as_str()) {
+            let range = self.file_info.borrow().text_range_to_range(&name.range(), self.session.sync_odoo.encoding);
+            self.raw.push((range, TokType::Parameter as u32, TokMod::Declaration.bit()));
+        }
+        // Keep descending so the annotation expr still gets its own token.
+        walk_parameter(self, parameter);
     }
 }
 
