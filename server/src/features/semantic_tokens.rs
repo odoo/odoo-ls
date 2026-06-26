@@ -223,9 +223,14 @@ impl<'a, 'b, 's> Visitor<'a> for SemanticTokenVisitor<'a, 'b, 's> {
     fn visit_expr(&mut self, expr: &'a Expr) {
         match expr {
             Expr::Name(name) => {
-                // Resolve the name through the engine and color it at its own range.
-                let offset = name.range().start().to_u32();
-                self.resolve_and_push(&ExprOrIdent::Expr(expr), offset, name.range(), TokenOrigin::Name);
+                if matches!(name.id.as_str(), "self" | "cls") {
+                    // Leave to the grammar's special-self/cls rule for consistency
+                    // with the (currently un-tokenized) signature parameter.
+                } else {
+                    // Resolve the name through the engine and color it at its own range.
+                    let offset = name.range().start().to_u32();
+                    self.resolve_and_push(&ExprOrIdent::Expr(expr), offset, name.range(), TokenOrigin::Name);
+                }
             }
             Expr::Attribute(attribute) => {
                 // CRITICAL: resolve on the WHOLE attribute expr so the engine resolves
