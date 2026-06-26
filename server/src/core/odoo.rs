@@ -18,6 +18,7 @@ use crate::features::declaration::DeclarationFeature;
 use crate::features::completion::CompletionFeature;
 use crate::features::definition::DefinitionFeature;
 use crate::features::hover::HoverFeature;
+use crate::features::semantic_tokens::SemanticTokensFeature;
 use crate::threads::SessionInfo;
 use crate::weak_collections::{WeakMap, WeakSet};
 use crate::utils::{HashMap, is_dir_cs, is_file_cs};
@@ -1677,6 +1678,51 @@ impl Odoo {
                     AstType::Csv => {
                         return Ok(HoverFeature::hover_csv(session, file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                     },
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    pub fn handle_semantic_tokens(session: &mut SessionInfo, params: SemanticTokensParams) -> Result<Option<SemanticTokensResult>, ResponseError> {
+        if session.sync_odoo.state_init == InitState::NOT_READY {
+            return Ok(None);
+        }
+        let path = match params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
+            Some(schema) if schema == "file" => {
+                let uri = params.text_document.uri.to_string();
+                if !uri.ends_with(".py") {
+                    return Ok(None);
+                }
+                match params.text_document.uri.to_file_path() {
+                    Ok(path) => path.sanitize(),
+                    Err(_) => return Err(
+                        ResponseError {
+                            code: ErrorCode::InvalidParams as i32,
+                            message: format!("Invalid file URI: {}", params.text_document.uri.to_string()),
+                            data: None,
+                        }
+                    ),
+                }
+            },
+            _ => return Ok(None),
+        };
+        let file_path_buf = PathBuf::from(path.clone());
+        if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &file_path_buf) {
+            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
+            if let Some(file_info) = file_info {
+                if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                    file_info.borrow_mut().prepare_ast(session);
+                }
+                let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
+                match ast_type {
+                    AstType::Python => {
+                        if file_info.borrow().file_info_ast.borrow().indexed_module.is_some() {
+                            let tokens = SemanticTokensFeature::tokens_python(session, file_symbol, &file_info);
+                            return Ok(Some(SemanticTokensResult::Tokens(tokens)));
+                        }
+                    },
+                    _ => {},
                 }
             }
         }
