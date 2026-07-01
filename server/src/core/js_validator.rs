@@ -51,7 +51,7 @@ impl JsValidator {
             } else if let Some(imps) = session.sync_odoo.js_templates.get_mut(&template_ref.t_name) {
                 for template_imp in imps.iter_valid(&session.sync_odoo.symbol_table) {
                     let xml_file = session.st().get_file(template_imp.into()).expect("Template should be in a file");
-                    session.st_mut().add_dependency(self.js_symbol.into(), xml_file.into(), BuildSteps::VALIDATION, BuildSteps::ARCH_EVAL);
+                    session.st_mut().add_dependency(self.js_symbol.into(), xml_file, BuildSteps::VALIDATION, BuildSteps::ARCH_EVAL);
                 }
             }
         }

@@ -161,7 +161,7 @@ impl ModuleSymbol {
             if session.st()[module].js_symbols().contains_key(file_path_str.as_ref()) {
                 continue;
             }
-            let file_name = PathBuf::from(file_path).file_name().unwrap().to_str().unwrap().to_string();
+            let file_name = file_path.file_name().unwrap().to_str().unwrap().to_string();
             let js_key = session.st_mut().add_new_js_file(module.into(), &file_name, file_path_str.as_ref());
             session.st_mut().add_dependency(module.into(), js_key.into(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
             session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, file_path_str.as_ref(), None, None, false); //create ast if not in cache

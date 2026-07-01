@@ -132,8 +132,7 @@ impl XmlAstUtils {
                             false => None,
                         };
                         results.0.extend(
-                            model.borrow().get_model_symbols(session.st(), from_module)
-                                .into_iter().map(SymbolKey::from)
+                            model.borrow().get_model_symbols(session.st(), from_module).map(SymbolKey::from)
                             );
                         results.1 = Some(attr.range_value());
                     }
@@ -305,8 +304,7 @@ impl XmlAstUtils {
                 false => None,
             };
             results.0.extend(
-                model.borrow().get_model_symbols(session.st(), from_module)
-                    .into_iter().map(SymbolKey::from)
+                model.borrow().get_model_symbols(session.st(), from_module).map(SymbolKey::from)
             );
             results.1 = Some(node.range());
         }

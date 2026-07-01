@@ -19,7 +19,6 @@ use ruff_python_ast::{
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use std::cmp::{max, min};
 use crate::utils::{HashMap, HashSet};
-use std::i32;
 
 use super::file_mgr::FileMgr;
 use super::symbols::function_symbol::{Argument, ArgumentType};
@@ -1266,7 +1265,7 @@ impl Evaluation {
                 diagnostics.extend(diags);
                 let (orelse_evals, diags) = Evaluation::eval_from_ast(session, &if_expr.orelse, parent, max_infer, false, required_dependencies);
                 diagnostics.extend(diags);
-                evals.extend(body_evals.into_iter().chain(orelse_evals.into_iter()));
+                evals.extend(body_evals.into_iter().chain(orelse_evals));
             },
             ExprOrIdent::Expr(Expr::UnaryOp(unary_operator)) => 'u_op_block: {
                 let method = match unary_operator.op {
@@ -1427,7 +1426,7 @@ impl Evaluation {
             ExprOrIdent::Expr(Expr::Await(await_expr)) =>{
                 let (evaluations, diags) = Evaluation::eval_from_ast(session, &await_expr.value, parent, max_infer, false, required_dependencies);
                 diagnostics.extend(diags);
-                evals.extend(evaluations.into_iter());
+                evals.extend(evaluations);
             },
             ExprOrIdent::Expr(Expr::Slice(slice_expr)) => {
                 if is_in_validation || odoo.evaluation_search.is_some() {

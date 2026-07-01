@@ -1,10 +1,10 @@
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::{u32, vec};
+use std::vec;
 
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use ruff_python_ast::{Alias, AnyRootNodeRef, Expr, ExprNamed, FStringPart, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
+use ruff_python_ast::{Alias, AnyRootNodeRef, ExceptHandler, Expr, ExprNamed, FStringPart, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{debug, trace, warn};
 
@@ -137,7 +137,8 @@ impl PythonArchEval {
         session.st_mut().set_build_status(self.sym_stack[0], BuildSteps::ARCH_EVAL, BuildStatus::DONE);
         if session.st().is_external(self.sym_stack[0]) && (!self.file_mode  || !file_info_rc.borrow().opened) {
             if self.file_mode {
-                FileMgr::delete_file_path(session, &session.st().file_path(self.file).to_string());
+                let file_path = session.st().file_path(self.file).to_string();
+                FileMgr::delete_file_path(session, &file_path);
             }
         } else {
             if self.file_mode {

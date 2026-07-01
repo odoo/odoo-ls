@@ -246,8 +246,8 @@ impl CsvAstUtils {
             && relational_field == XmlFieldName::Id.as_str()  // Only id because we will only look for xml_ids
             {
                 // 1. find relational field in current model
-                let mut deep_field_walker = DeepFieldEvalWalker::new(main_symbol.into(), module);
-                let _ = deep_field_walker.get_model_fields(session, main_symbol.into(), field_name);
+                let mut deep_field_walker = DeepFieldEvalWalker::new(main_symbol, module);
+                let _ = deep_field_walker.get_model_fields(session, main_symbol, field_name);
                 let Some(_) = deep_field_walker.get_model_symbol(session) else {
                     return;
                 };

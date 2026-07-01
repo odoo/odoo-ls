@@ -266,11 +266,11 @@ impl XmlValidator {
                                 diagnostics.push(Diagnostic {
                                     range: Range {
                                         start: Position::new(
-                                            field_text_range.start().try_into().unwrap(),
+                                            field_text_range.start().into(),
                                             0,
                                         ),
                                         end: Position::new(
-                                            field_text_range.end().try_into().unwrap(),
+                                            field_text_range.end().into(),
                                             0,
                                         ),
                                     },

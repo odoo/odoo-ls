@@ -576,7 +576,7 @@ impl FeaturesUtils {
             let from_module = session.st().find_module(symbol);
             let sym_type_tag = FeaturesUtils::get_type_symbol_tag(&session.sync_odoo.symbol_table, symbol);
             let return_types: Vec<TypeInfo> = evaluation_ptrs.iter().map(|eval| FeaturesUtils::get_inferred_types(session, eval, Some(context), &symbol_type)).unique().collect();
-            let inferred_types = evaluation_ptrs.into_iter().zip(return_types.into_iter()).map(|(eval_ptr, eval_info)| InferredType{eval_ptr, eval_info}).collect();
+            let inferred_types = evaluation_ptrs.into_iter().zip(return_types).map(|(eval_ptr, eval_info)| InferredType{eval_ptr, eval_info}).collect();
 
             aggregator.entry(SymbolGroupKey { name: symbol_name.clone(), type_: symbol_type }).or_default().push(
                 SymbolInfo { sym_type_tag, from_module, inferred_types}

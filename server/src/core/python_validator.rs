@@ -676,7 +676,6 @@ impl PythonValidator {
             && let conflicting_symbols = model
                 .borrow()
                 .get_main_symbols(session, maybe_from_module)
-                .into_iter()
                 .filter(|&main_sym| main_sym != class.into())
                 .collect::<Vec<_>>()
             && !conflicting_symbols.is_empty()

@@ -44,7 +44,7 @@ impl CsvAstReferenceVisitor {
                     let Some(next_base) = deep_field_walker.get_model_symbol(session) else {
                         continue;
                     };
-                    let sub_symbols = deep_field_walker.get_model_fields(session, next_base.into(), header_elts[1]);
+                    let sub_symbols = deep_field_walker.get_model_fields(session, next_base, header_elts[1]);
                     if sub_symbols.contains(&target_sym) {
                         results.push(Location {
                             uri: uri.clone(),

@@ -2084,7 +2084,7 @@ impl SymbolTable {
             if let Some(base_model) = get_base_model_symbol(session.sync_odoo) {
                 let (s, s_diagnostic) = Self::get_member_symbol(
                     session,
-                    base_model.into(),
+                    base_model,
                     name,
                     from_module,
                     prevent_comodel,
