@@ -11,7 +11,7 @@ use crate::core::symbols::symbol_keys::ModelSymbolKey;
 use crate::core::symbols::symbol_keys::SourceFileKey;
 use crate::core::symbols::symbol_keys::SymbolKey;
 use crate::core::symbols::symbol_keys::XmlRecordKey;
-use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey};
+use crate::core::symbols::symbol_keys::{ClassKey, ClassWithModule, ModuleKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::threads::SessionInfo;
 use crate::weak_collections::WeakSet;
@@ -268,7 +268,7 @@ impl Model {
         &self,
         session: &SessionInfo,
         from_module: Option<ModuleKey>,
-    ) -> impl Iterator<Item = (ClassKey, Option<OYarn>)> {
+    ) -> impl Iterator<Item = ClassWithModule> {
         Self::attach_module_dependencies(
             self.get_python_symbols(session.st()),
             session.st(),

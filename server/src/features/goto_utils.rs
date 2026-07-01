@@ -66,12 +66,12 @@ impl GotoUtils {
         );
         let mut domain_found = false;
         string_domain_fields.iter().for_each(|(field, field_range)| {
-            if let Some(_) = session.st().get_file(*field) {
+            if session.st().get_file(*field).is_some() {
                 domain_found = true;
                 let path = session.st().path(file_symbol).to_string();
                 sources.push(GotoSource {
-                    source: GotoSourceType::SymbolKey(field.clone()),
-                    origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &field_range))
+                    source: GotoSourceType::SymbolKey(*field),
+                    origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, field_range))
                 });
             }
         });

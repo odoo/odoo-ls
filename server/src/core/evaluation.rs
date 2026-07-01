@@ -819,7 +819,8 @@ impl Evaluation {
                                         return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                                     }
                                     let class_sym_weak_eval= class_eval[0].symbol.get_symbol_as_weak(session, Some(context), &mut diagnostics, None);
-                                    let res = class_sym_weak_eval.weak.upgrade(session.st()).and_then(|class_sym|{
+                                    
+                                    class_sym_weak_eval.weak.upgrade(session.st()).and_then(|class_sym|{
                                         let class_sym_weak_eval = &SymbolTable::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
                                             class_sym, None, false
                                         )), session, None, false, false, None, None)[0];

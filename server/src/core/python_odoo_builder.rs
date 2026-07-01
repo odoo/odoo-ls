@@ -188,7 +188,7 @@ impl PythonOdooBuilder {
                     if session.st().name(eval_symbol) != &Sy!("Many2one") { continue; }
                     let context = &symbol_weak.context;
                     let Some(delegate) = context.get(ContextKey::Delegate) else { continue };
-                    if delegate.as_bool() == true && let Some(comodel) = context.get(ContextKey::ComodelName) {
+                    if delegate.as_bool() && let Some(comodel) = context.get(ContextKey::ComodelName) {
                         let comodel_name = oyarn!("{}", comodel.as_str());
                         session.st_mut()[self.symbol]._model.as_mut().unwrap().inherits.push((comodel_name, field_name.clone()));
                     }

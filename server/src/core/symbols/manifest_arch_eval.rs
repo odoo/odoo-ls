@@ -36,7 +36,7 @@ impl ModuleSymbol {
                     });
                 }
                 continue;
-            } else if path.extension().map_or(true, |ext| !["xml", "csv", "sql"].contains(&ext.to_str().unwrap_or(""))) {
+            } else if path.extension().is_none_or(|ext| !["xml", "csv", "sql"].contains(&ext.to_str().unwrap_or(""))) {
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05050, &[&path_string]) {
                     diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(data_range.start().to_u32(), 0), Position::new(data_range.end().to_u32(), 0)),

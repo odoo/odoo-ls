@@ -215,7 +215,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
                 }
             }
             // we found it ! store the result if not already done
-            if result[name_index as usize].found == false {
+            if !result[name_index as usize].found {
                 result[name_index as usize].found = true;
                 if alias.asname.is_some() {
                     result[name_index as usize].symbols = last_symbol.as_ref().unwrap().clone();
@@ -515,7 +515,7 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: Source
             &entry,
             &source_path,
             from_symbol.clone(),
-            &import_parts[0..import_parts.len()-1].iter().map(|s| oyarn!("{}", *s)).collect(),
+            &import_parts[0..import_parts.len()-1].iter().map(|s| oyarn!("{}", *s)).collect::<Vec<_>>(),
             None,
             level,
         );

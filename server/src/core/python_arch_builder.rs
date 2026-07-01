@@ -368,8 +368,8 @@ impl PythonArchBuilder {
                     session.st_mut().as_mut_symbol_mgr(scope).add_section(
                         expr.range().start(),
                         Some(SectionIndex::INDEX(prev_section))
-                    ).index;
-                    self.visit_expr(session, &expr);
+                    );
+                    self.visit_expr(session, expr);
                     prev_section = session.st().as_symbol_mgr(scope).get_last_index();
                     SectionIndex::INDEX(prev_section)
                 }).collect::<Vec<_>>();

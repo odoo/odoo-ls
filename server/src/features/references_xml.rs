@@ -69,18 +69,18 @@ impl XmlAstReferenceVisitor {
     /// AND verify the surrounding `record_model` matches the method's class model.
     fn visit_button<'a>(session: &mut SessionInfo<'_>, node: &Node<'a, '_>, from_module: Option<ModuleKey>, scope: XmlScope<'a>, results: &mut Vec<Range<usize>>, target: &ReferenceTarget) {
         let is_action_type = node.attribute("type") == Some("action");
-        if !is_action_type {
-            if let &ReferenceTarget::Symbol(SymbolKey::Function(target_fn)) = target {
-                for attr in node.attributes() {
-                    if attr.name() != "name" { continue; }
-                    if session.st()[target_fn].name != attr.value() { continue; }
-                    let target_class = session.st().get_in_parents(target_fn.into(), &[SymType::CLASS], true);
-                    let Some(SymbolKey::Class(target_class)) = target_class else { continue; };
-                    let Some(target_model) = session.st()[target_class]._model.as_ref() else { continue; };
-                    let Some(record_model) = scope.record_model.filter(|m| !m.is_empty()) else { continue; };
-                    if target_model.name == *record_model {
-                        results.push(attr.range_value());
-                    }
+        if !is_action_type
+            && let &ReferenceTarget::Symbol(SymbolKey::Function(target_fn)) = target
+        {
+            for attr in node.attributes() {
+                if attr.name() != "name" { continue; }
+                if session.st()[target_fn].name != attr.value() { continue; }
+                let target_class = session.st().get_in_parents(target_fn.into(), &[SymType::CLASS], true);
+                let Some(SymbolKey::Class(target_class)) = target_class else { continue; };
+                let Some(target_model) = session.st()[target_class]._model.as_ref() else { continue; };
+                let Some(record_model) = scope.record_model.filter(|m| !m.is_empty()) else { continue; };
+                if target_model.name == *record_model {
+                    results.push(attr.range_value());
                 }
             }
         }
@@ -144,10 +144,10 @@ impl XmlAstReferenceVisitor {
         // Inside a view's `<field name="arch">`, sub-elements resolve against the
         // view's target model (captured at the ir.ui.view record), not the
         // surrounding ir.ui.view itself.
-        if node.attribute("name") == Some("arch") {
-            if let Some(target) = scope.view_target_model {
-                child_scope.record_model = Some(target);
-            }
+        if node.attribute("name") == Some("arch")
+            && let Some(target) = scope.view_target_model
+        {
+            child_scope.record_model = Some(target);
         }
         for child in node.children() {
             XmlAstReferenceVisitor::visit_node(session, &child, from_module, child_scope, results, target);

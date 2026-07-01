@@ -119,19 +119,19 @@ pub fn is_symlink_cs(path: String) -> bool {
 }
 
 pub trait ToFilePath {
-    fn to_file_path(&self) -> Result<PathBuf, ()>;
+    fn to_file_path(&self) -> Result<PathBuf, Box<dyn std::error::Error>>;
 }
 
 impl ToFilePath for lsp_types::Uri {
-    fn to_file_path(&self) -> Result<PathBuf, ()> {
+    fn to_file_path(&self) -> Result<PathBuf, Box<dyn std::error::Error>> {
         let s = self.as_str();
         // Detect legacy UNC path (file:////)
         if s.starts_with("file:////") {
             legacy_unc_paths().store(true, Ordering::Relaxed);
         }
         let str_repr = s.replace("file:////", "file://");
-        let url = url::Url::from_str(&str_repr).map_err(|_| ())?;
-        url.to_file_path()
+        let url = url::Url::from_str(&str_repr)?;
+        url.to_file_path().map_err(|_| Box::<dyn std::error::Error>::from("Failed to convert URL to file path"))
     }
 }
 
@@ -289,7 +289,7 @@ pub fn expand_language_code(code: &str) -> impl Iterator<Item = String> + use<> 
 #[macro_export]
 macro_rules! warn_or_panic {
     ($($arg:tt)*) => {
-        if *crate::constants::IS_RELEASE {
+        if *$crate::constants::IS_RELEASE {
             let bt = std::backtrace::Backtrace::force_capture();
             tracing::warn!("{}\nBacktrace:\n{:?}", format!($($arg)*), bt);
         } else {

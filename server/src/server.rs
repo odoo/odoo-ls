@@ -291,10 +291,8 @@ impl Server {
                         let _ = connection.sender.send(Message::Response(r));
                     },
                     Message::Notification(n) if n.method != Shutdown::METHOD => {
-                        if n.method != Shutdown::METHOD {
                             let _ = connection.sender.send(Message::Notification(n));
-                        }
-                    },
+                        },
                     _ => {}, // Skip shutdown (not possible) and requests (should not happen / not useful at this stage)
                 }
             }

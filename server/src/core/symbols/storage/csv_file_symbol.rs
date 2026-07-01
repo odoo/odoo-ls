@@ -35,7 +35,8 @@ pub struct CsvFileSymbol {
 impl CsvFileSymbol {
 
     pub fn new(name: &str, path: &str, parent: ModuleKey, is_external: bool) -> Self {
-        let res = Self {
+        
+        Self {
             name: oyarn!("{}", name),
             path: path.to_string(),
             is_external,

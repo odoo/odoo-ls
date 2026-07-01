@@ -136,10 +136,8 @@ impl XmlValidator {
                 model_ref
                     .get_xml_model_field_symbols(session.st(), Some(self.module))
                     .filter_map(|rec_key| {
-                        Some(
-                            session.st()[rec_key]
-                                .get_field_text(XmlFieldName::Name, session.st())?,
-                        )
+                        session.st()[rec_key]
+                                .get_field_text(XmlFieldName::Name, session.st())
                     })
                     .map(OYarn::from)
             };
@@ -159,12 +157,11 @@ impl XmlValidator {
         let inner_model_name = session.st()[xml_data_record]
             .get_field_text(XmlFieldName::Model, session.st())
             .map(|t| oyarn!("{}", t.trim()));
-        if let Some(inner_model_name) = inner_model_name {
-            if !inner_model_name.is_empty() && inner_model_name != model_name {
-                if let Some(target_model) = session.sync_odoo.models.get(&inner_model_name).cloned() {
-                    model_dependencies.push(target_model);
-                }
-            }
+        if let Some(inner_model_name) = inner_model_name
+            && !inner_model_name.is_empty() && inner_model_name != model_name
+            && let Some(target_model) = session.sync_odoo.models.get(&inner_model_name).cloned()
+        {
+            model_dependencies.push(target_model);
         }
     }
 
@@ -255,7 +252,7 @@ impl XmlValidator {
                             }
                         } else {
                             let model_in_deps = model
-                                .map_or(false, |m| m.borrow().model_in_deps(session, self.module));
+                                .is_some_and(|m| m.borrow().model_in_deps(session, self.module));
                             if !model_in_deps
                                 && let Some(diagnostic) = create_diagnostic(
                                     session,

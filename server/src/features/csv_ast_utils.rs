@@ -99,7 +99,7 @@ impl<'a> Iterator for CsvRecordIter<'a> {
         let end = match self.second_record {
             Some(Ok(ref rec)) => rec.position()?.byte() as u32,
             Some(Err(ref err)) => err.position()?.byte() as u32,
-            None => self.content.as_bytes().len() as u32,
+            None => self.content.len() as u32,
         };
         self.first_record = self.second_record.take();
         self.second_record = self.records.next();

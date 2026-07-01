@@ -408,7 +408,7 @@ impl PythonValidator {
                                 break 'related_check;
                             }
                             let Some(field_type) = SymbolTable::get_member_symbol(session, symbol, "type", None, false, false, false, false, false) .0.first()
-                                .and_then(|field_type_var| session.st().evaluations(*field_type_var).cloned())
+                                .and_then(|field_type_var| session.st().evaluations(*field_type_var))
                                 .and_then(|evals| evals.first().cloned())
                                 .and_then(|eval| eval.value.clone())
                                 .and_then(|value| value.as_string_literal().map(|s| s.value.to_string())) else {

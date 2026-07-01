@@ -11,7 +11,7 @@ use crate::{constants::*, oyarn};
 use ruff_text_size::TextRange;
 use std::cell::RefCell;
 use crate::utils::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::Path;
 use std::rc::Weak;
 use weak_table::PtrWeakHashSet;
 

@@ -71,7 +71,7 @@ impl CompletionFeature {
             if is_completion_invoked {
                 // Only complete names on empty result if invoked manually not with trigger character
                 // This avoid autocompleting on every dot or parenthesis or comma, which is not always wanted
-                complete_name(session, file_symbol, offset, false, &S!(""))
+                complete_name(session, file_symbol, offset, false, "")
             } else {
                 None
             }
@@ -105,7 +105,7 @@ fn complete_stmt(session: &mut SessionInfo, file: SourceFileKey, stmt: &Stmt, of
         Stmt::ImportFrom(stmt_import_from) => complete_import_from_stmt(session, file, stmt_import_from, offset),
         Stmt::Global(stmt_global) => complete_global_stmt(session, file, stmt_global, offset),
         Stmt::Nonlocal(stmt_nonlocal) => complete_nonlocal_stmt(session, file, stmt_nonlocal, offset),
-        Stmt::Expr(stmt_expr) => complete_expr(&stmt_expr.value, session, file, offset, false, &vec![]),
+        Stmt::Expr(stmt_expr) => complete_expr(&stmt_expr.value, session, file, offset, false, &[]),
         Stmt::Pass(_) => None,
         Stmt::Break(_) => None,
         Stmt::Continue(_) => None,
@@ -174,7 +174,7 @@ fn complete_return_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt
 fn complete_delete_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_delete: &ruff_python_ast::StmtDelete, offset: usize) -> Option<CompletionResponse> {
     for target in stmt_delete.targets.iter() {
         if offset > target.range().start().to_usize() && offset <= target.range().end().to_usize() {
-            return complete_expr( target, session, file, offset, false, &vec![]);
+            return complete_expr( target, session, file, offset, false, &[]);
         }
     }
     None
@@ -487,7 +487,7 @@ fn complete_dict(session: &mut SessionInfo, file: SourceFileKey, expr_dict: &ruf
                 let expected_type= expected_type.iter().map(|e| match e {
                     ExpectedType::INHERITS => ExpectedType::MODEL_NAME,
                     _ => e.clone(),
-                }).collect();
+                }).collect::<Vec<_>>();
                 return complete_expr( dict_item_key, session, file, offset, is_param, &expected_type);
             }
             if offset > dict_item.value.range().start().to_usize() && offset <= dict_item.value.range().end().to_usize() {
@@ -496,7 +496,7 @@ fn complete_dict(session: &mut SessionInfo, file: SourceFileKey, expr_dict: &ruf
                 let expected_type = expected_type.iter().map(|e| match e {
                     ExpectedType::INHERITS => ExpectedType::SIMPLE_FIELD(Some(Sy!("Many2one"))),
                     _ => e.clone(),
-                }).collect();
+                }).collect::<Vec<_>>();
                 return complete_expr( &dict_item.value, session, file, offset, is_param, &expected_type);
             }
         }
@@ -623,7 +623,7 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
             if callable_sym.typ() == SymType::CLASS
             && arg_index == 0
             && SymbolTable::is_specific_field_class(session, callable_sym, &["Many2one", "One2many", "Many2many"]) {
-                    return complete_expr(arg, session, file, offset, is_param, &vec![ExpectedType::MODEL_NAME]);
+                    return complete_expr(arg, session, file, offset, is_param, &[ExpectedType::MODEL_NAME]);
             }
             // if class get __init__ method, we need to get the argument from there
             let func_key = if callable_sym.typ() == SymType::CLASS {
@@ -931,7 +931,7 @@ fn complete_subscript(session: &mut SessionInfo, file: SourceFileKey, expr_subsc
                         if evaluations.len() == 1 {
                             let get_item_eval = evaluations.first().unwrap();
                             if get_item_eval.symbol.get_symbol_hook.as_ref().map(|hook| hook.name == HookName::EvalEnvGetItem).unwrap_or_default() {
-                                return complete_expr(&expr_subscript.slice, session, file, offset, is_param, &vec![ExpectedType::MODEL_NAME]);
+                                return complete_expr(&expr_subscript.slice, session, file, offset, is_param, &[ExpectedType::MODEL_NAME]);
                             }
                         }
                     }
@@ -978,13 +978,13 @@ fn complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, list_o
                     if offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize() {
                         match expr {
                             Expr::StringLiteral(expr_string_literal) => {
-                                return complete_string_literal(session, file, expr_string_literal, offset, is_param, &vec![ExpectedType::DOMAIN_OPERATOR]);
+                                return complete_string_literal(session, file, expr_string_literal, offset, is_param, &[ExpectedType::DOMAIN_OPERATOR]);
                             },
                             Expr::Tuple(_) => {
-                                return complete_expr(expr, session, file, offset, is_param, &vec![ExpectedType::DOMAIN_LIST(parent)]);
+                                return complete_expr(expr, session, file, offset, is_param, &[ExpectedType::DOMAIN_LIST(parent)]);
                             },
                             Expr::List(_) => {
-                                return complete_expr(expr, session, file, offset, is_param, &vec![ExpectedType::DOMAIN_LIST(parent)]);
+                                return complete_expr(expr, session, file, offset, is_param, &[ExpectedType::DOMAIN_LIST(parent)]);
                             }
                             _ => {}
                         }
@@ -1032,7 +1032,7 @@ fn complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, list_o
             ExpectedType::MODEL_NAME => { //In case of Model_name, transfer this expected type to items. It is used in _inherit = [""] for example, but can maybe be wrong elsewhere?
                 for expr in list_or_tuple_elts.iter() {
                     if offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize() {
-                        return complete_expr(expr, session, file, offset, is_param, &vec![ExpectedType::MODEL_NAME]);
+                        return complete_expr(expr, session, file, offset, is_param, &[ExpectedType::MODEL_NAME]);
                     }
                 }
             }

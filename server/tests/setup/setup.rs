@@ -3,7 +3,7 @@ use core::str;
 use odoo_ls_server::utils::HashMap;
 use std::{env, fs};
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 
 use lsp_server::Message;

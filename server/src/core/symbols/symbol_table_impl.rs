@@ -1,8 +1,5 @@
 use std::{
-    cell::RefCell,
-    collections::{VecDeque, hash_map},
-    path::PathBuf,
-    rc::Rc,
+    cell::RefCell, collections::{VecDeque, hash_map}, path::Path, rc::Rc,
 };
 use crate::{
     Sy, constants::MissingDataSource, core::{
@@ -1724,7 +1721,7 @@ impl SymbolTable {
             // otherwise just add it to result
             _ => {
                 session.st().all_symbols(symbol_key).into_iter().for_each(|s|
-                    if !(only_fields && !Self::is_field(session, s)) {
+                    if !only_fields || Self::is_field(session, s) {
                         let name = session.st().name(s).clone();
                         append_result(name, s);
                     }
@@ -1992,7 +1989,7 @@ impl SymbolTable {
         symbol: SymbolKey,
         session: &mut SessionInfo,
         from_module: Option<ModuleKey>,
-    ) -> MembersByName {
+    ) -> HashMap<OYarn, Vec<SymbolKey>> {
         Self::all_members(symbol, session, true, true, false, from_module, false)
     }
 
@@ -2643,10 +2640,10 @@ mod get_symbol_tests {
                 ])),
             );
         }
-        let class_if = st.add_new_class(file_key, "A", range_at(21), &TextSize::new(21));
-        let m_if = st.add_new_function(class_if.into(), "m", range_at(22), &TextSize::new(22));
-        let class_else = st.add_new_class(file_key, "A", range_at(31), &TextSize::new(31));
-        let m_else = st.add_new_function(class_else.into(), "m", range_at(32), &TextSize::new(32));
+        let class_if = st.add_new_class(file_key, "A", range_at(21), TextSize::new(21));
+        let m_if = st.add_new_function(class_if.into(), "m", range_at(22), TextSize::new(22));
+        let class_else = st.add_new_class(file_key, "A", range_at(31), TextSize::new(31));
+        let m_else = st.add_new_function(class_else.into(), "m", range_at(32), TextSize::new(32));
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["A", "m"];

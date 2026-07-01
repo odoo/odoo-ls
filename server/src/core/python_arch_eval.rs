@@ -749,13 +749,13 @@ impl PythonArchEval {
                     let v = arg_sym.unwrap_variable_key();
                     session.st_mut()[v].evaluations = eval;
                     self.diagnostics.extend(diags);
-                } else if arg.default.is_some() {
+                } else if let Some(default) = &arg.default {
                     let mut deps = vec![vec![], vec![]];
                     if !self.file_mode {
                         deps.push(vec![]);
                     }
                     let (eval, diags) = Evaluation::eval_from_ast(session,
-                                                arg.default.as_ref().unwrap(),
+                                                default,
                                                 scope,
                                                 &func_stmt.range.start(),
                                                 false,

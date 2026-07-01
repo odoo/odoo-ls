@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, path::PathBuf, sync::{Arc, Mutex}, time::Instant};
+use std::{collections::VecDeque, path::{Path, PathBuf}, sync::{Arc, Mutex}, time::Instant};
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use lsp_server::{Message, RequestId, Response, ResponseError};

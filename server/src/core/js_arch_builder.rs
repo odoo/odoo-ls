@@ -186,7 +186,7 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
                                 };
                                 if let Some(prop_name) = get_key_name(&p.key) {
                                     let range = key_span(&p.key)
-                                        .map(|s| span_to_textrange(s))
+                                        .map(span_to_textrange)
                                         .unwrap_or_default();
                                     desc.members.push(ComponentMember {
                                         name: prop_name,
@@ -220,7 +220,7 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
             if let Some(name) = get_key_name(&it.key)
                 && !name.starts_with('#') {
                     let range = key_span(&it.key)
-                        .map(|s| span_to_textrange(s))
+                        .map(span_to_textrange)
                         .unwrap_or_default();
                     desc.members.push(ComponentMember {
                         name,
@@ -244,7 +244,7 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
         if let Some(ref name) = name
             && let Some(desc) = self.descriptor_stack.last_mut() {
                 let range = key_span(&it.key)
-                    .map(|s| span_to_textrange(s))
+                    .map(span_to_textrange)
                     .unwrap_or_default();
                 match it.kind {
                     MethodDefinitionKind::Get if !it.r#static => {

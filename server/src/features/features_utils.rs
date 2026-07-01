@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use itertools::Itertools;
 use ruff_python_ast::{Expr, ExprCall, Keyword};
 use ruff_text_size::{Ranged, TextRange, TextSize};
@@ -31,12 +33,14 @@ pub enum TypeInfo {
     CALLABLE(CallableSignature),
     VALUE(String),
 }
-impl TypeInfo {
-    pub(crate) fn to_string(&self) -> String {
-        match self {
+
+impl Display for TypeInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let value = match self {
             TypeInfo::CALLABLE(CallableSignature { arguments, return_types }) => format!("(({}) -> {})", arguments, return_types),
             TypeInfo::VALUE(value) => value.clone(),
-        }
+        };
+        write!(f, "{}", value)
     }
 }
 #[derive(Clone)]
@@ -660,7 +664,7 @@ impl FeaturesUtils {
                                     }
                                 }
                             };
-                            let mut ctx = context.map(|ctx| ctx.clone());
+                            let mut ctx = context.cloned();
                             if let Some(ctx) = ctx.as_mut() {
                                 ctx.insert(ContextKey::BaseCall, ContextValue::SYMBOL(call_parent));
                             }

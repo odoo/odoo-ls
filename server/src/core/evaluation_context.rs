@@ -64,11 +64,10 @@ pub enum ContextValue {
     EMPTY,
 }
 
-
-impl Context {
+impl FromIterator<(ContextKey, ContextValue)> for Context {
     /// Builds a Context from an iterable of key-value pairs. Keys must be unique.
-    pub fn from_iter(entries: impl IntoIterator<Item = (ContextKey, ContextValue)>) -> Self {
-        let entries: ThinVec<_> = entries.into_iter().collect();
+    fn from_iter<T: IntoIterator<Item = (ContextKey, ContextValue)>>(iter: T) -> Self {
+        let entries: ThinVec<_> = iter.into_iter().collect();
         debug_assert!({
             let unique_keys = entries.iter().map(|(k, _)| *k).collect::<crate::utils::HashSet<_>>();
             unique_keys.len() == entries.len()
@@ -80,7 +79,9 @@ impl Context {
         );
         Context { entries }
     }
+}
 
+impl Context {
     pub fn insert(&mut self, key: ContextKey, value: ContextValue) {
         let mut empty_slot = None;
         // update value if key already exists

@@ -765,6 +765,12 @@ pub struct FileMgr {
     workspace_folders: HashSet<(String, Uri)>,
 }
 
+impl Default for FileMgr {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FileMgr {
 
     pub fn new() -> Self {

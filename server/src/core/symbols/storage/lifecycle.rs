@@ -22,7 +22,7 @@ use crate::{
     threads::SessionInfo,
 };
 use ruff_text_size::{TextRange, TextSize};
-use std::{cell::RefCell, ops::Range, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, ops::Range, path::{Path, PathBuf}, rc::Rc};
 
 impl SymbolTable {
 

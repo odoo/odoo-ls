@@ -400,7 +400,8 @@ impl SyncOdoo {
                             session.send_config_diagnostic(ConfigDiagnosticAction::EXTEND, &[
                                 ConfigDiagnosticMessage {
                                     level: ConfigDiagnosticMessageLevel::WARNING,
-                                    message: format!("tsserver unable to start. Make sure that tsserver is installed and available in your PATH. You can install it with 'npm install -g typescript'. If you want to disable tsserver, set the tsserver_command configuration to an empty string."),
+                                    message:
+                                    "tsserver unable to start. Make sure that tsserver is installed and available in your PATH. You can install it with 'npm install -g typescript'. If you want to disable tsserver, set the tsserver_command configuration to an empty string.".to_string(),
                                 }
                             ]);
                         } else {
@@ -543,9 +544,9 @@ impl SyncOdoo {
         }
     }
 
-    pub fn read_version(session: &mut SessionInfo, release_path: PathBuf) -> OdooVersion {
+    pub fn read_version(session: &mut SessionInfo, release_path: &Path) -> OdooVersion {
         let mut version = OdooVersion::new(14, 0, 0);
-        let release_file = fs::read_to_string(release_path.sanitize());
+        let release_file = fs::read_to_string(release_path);
         let release_file = match release_file {
             Ok(release_file) => release_file,
             Err(_) => {
@@ -594,7 +595,7 @@ impl SyncOdoo {
             session.log_message(MessageType::ERROR, String::from("Unable to find release.py - Aborting and switching to non-odoo mode"));
             return false;
         }
-        let version = SyncOdoo::read_version(session, release_path);
+        let version = SyncOdoo::read_version(session, &release_path);
         if version.major == 0 {
             return false;
         }
@@ -1524,7 +1525,7 @@ impl SyncOdoo {
             warn!("Module not found for id: {}", xml_id);
             return WeakSet::new();
         };
-        ModuleSymbol::get_xml_id(session.st(), module_key, *id_split.last().unwrap()).unwrap_or(WeakSet::new())
+        ModuleSymbol::get_xml_id(session.st(), module_key, id_split.last().unwrap()).unwrap_or_default()
     }
 
     pub fn get_ts_dict(&mut self) -> Wk<SymbolKey> {
@@ -2149,7 +2150,7 @@ impl Odoo {
             let file_extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
             let (valid, updated) = Odoo::update_file_cache(session, &path.sanitize(), file_extension, None, -100);
             if valid && updated {
-                Odoo::update_file_index(session, path.clone(), file_extension, false, true);
+                Odoo::update_file_index(session, &path, file_extension, false, true);
             }
         }
     }
@@ -2182,15 +2183,15 @@ impl Odoo {
                             let tree_path = path.to_tree_path();
                             if tree.is_none() ||
                             (session.st().get_symbol(session.sync_odoo.get_main_entry().borrow().root.into(), tree.as_ref().unwrap().as_slice(), u32::MAX).is_empty()
-                            && session.sync_odoo.get_main_entry().borrow().data_symbols.get(&sanitized_path).is_none()
-                            && session.sync_odoo.get_main_entry().borrow().js_symbols.get(&sanitized_path).is_none())
+                            && !session.sync_odoo.get_main_entry().borrow().data_symbols.contains_key(&sanitized_path)
+                            && !session.sync_odoo.get_main_entry().borrow().js_symbols.contains_key(&sanitized_path))
                             {
                                 //main entry doesn't handle this file. Let's test customs entries, or create a new one
                                 let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
                                 for custom_entry in ep_mgr.borrow().custom_entry_points.iter() {
                                     if custom_entry.borrow().path == tree_path.sanitize() {
                                         if updated{
-                                            Odoo::update_file_index(session, path.clone(), file_extension, true, false);
+                                            Odoo::update_file_index(session, &path, file_extension, true, false);
                                         }
                                         return;
                                     }
@@ -2246,8 +2247,8 @@ impl Odoo {
             Some(schema) if schema == "file" => {
                 match params.text_document.uri.to_file_path().map(|path_buf| path_buf.sanitize()){
                     Ok(path) => path,
-                    Err(_) => {
-                        warn!("Invalid file URI: {}", params.text_document.uri.to_string());
+                    Err(error) => {
+                        warn!("Invalid file URI: {}: {}", params.text_document.uri.to_string(), error);
                         return;
                     }
                 }
@@ -2332,7 +2333,7 @@ impl Odoo {
             session.log_message(MessageType::INFO, format!("Renaming {} to {}", old_path, new_path));
             //1 - delete old uri
             session.sync_odoo.opened_files.retain(|x| x != &old_path.clone());
-            let _ = SyncOdoo::unload_path(session, &PathBuf::from(&old_path));
+            SyncOdoo::unload_path(session, &PathBuf::from(&old_path));
             FileMgr::delete_path(session, &old_path);
             session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&mut session.sync_odoo.symbol_table, &old_path);
             SyncOdoo::process_rebuilds(session, false);
@@ -2371,7 +2372,7 @@ impl Odoo {
             let tree = session.sync_odoo.path_to_main_entry_tree(&PathBuf::from(path.clone()));
             if PathBuf::from(&path).is_file() && (tree.is_none() || (
                 session.st().get_symbol(session.sync_odoo.get_main_entry().borrow().root.into(), tree.unwrap().as_slice(), u32::MAX).is_empty()
-                && session.sync_odoo.get_main_entry().borrow().data_symbols.get(&path_updated).is_none()
+                && !session.sync_odoo.get_main_entry().borrow().data_symbols.contains_key(&path_updated)
             )) {
                 //file has not been added to main entry. Let's build a new entry point
                 EntryPointMgr::create_new_custom_entry_for_path(session, &path_updated, &path);
@@ -2400,8 +2401,8 @@ impl Odoo {
             Some(schema) if schema == "file" => {
                 match params.text_document.uri.to_file_path(){
                     Ok(path) => (schema, path.sanitize()),
-                    Err(_) => {
-                        warn!("Invalid file URI: {}", params.text_document.uri.to_string());
+                    Err(error) => {
+                        warn!("Invalid file URI: {}: {}", params.text_document.uri.to_string(), error);
                         return;
                     }
                 }
@@ -2480,9 +2481,9 @@ impl Odoo {
         (false, false)
     }
 
-    pub fn update_file_index(session: &mut SessionInfo, path: PathBuf, extension: &str, _is_open: bool, force_delay: bool) {
+    pub fn update_file_index(session: &mut SessionInfo, path: &Path, extension: &str, _is_open: bool, force_delay: bool) {
         if ["py", "xml", "csv", "js", "ts"].contains(&extension) || Odoo::is_config_workspace_file(session, &path){
-            SessionInfo::request_update_file_index(session, &path, force_delay);
+            SessionInfo::request_update_file_index(session, path, force_delay);
         }
     }
 
@@ -2498,8 +2499,8 @@ impl Odoo {
                 }
                 match params.text_document.uri.to_file_path(){
                     Ok(path) => (schema, path.sanitize()),
-                    Err(_) => {
-                        warn!("Invalid file URI: {}", params.text_document.uri.to_string());
+                    Err(error) => {
+                        warn!("Invalid file URI: {}: {}", params.text_document.uri.to_string(), error);
                         return Ok(None);
                     }
                 }
