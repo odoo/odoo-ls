@@ -20,8 +20,7 @@ use crate::tree::OYarnExt;
 use crate::{Sy, S};
 use itertools::Itertools;
 use lsp_types::{
-    CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionList,
-    CompletionResponse, MarkupContent,
+    CompletionContext, CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionList, CompletionResponse, MarkupContent,
 };
 use ruff_python_ast::{
     Decorator, ExceptHandler, Expr, ExprAttribute, ExprIf, ExprName, ExprSlice, ExprSubscript,
@@ -57,6 +56,7 @@ impl CompletionFeature {
     pub fn autocomplete(session: &mut SessionInfo,
         file_symbol: SourceFileKey,
         file_info: &Rc<RefCell<FileInfo>>,
+        completion_context: Option<CompletionContext>,
         line: u32,
         character: u32
     ) -> Option<CompletionResponse> {
@@ -64,7 +64,18 @@ impl CompletionFeature {
         let file_info_ast = file_info.borrow().file_info_ast.clone();
         let file_info_ast = file_info_ast.borrow();
         let ast = file_info_ast.get_stmts().unwrap();
-        complete_vec_stmt(ast, session, file_symbol, offset).or_else(|| complete_name(session, file_symbol, offset, false, &S!("")))
+        let is_completion_invoked = completion_context.as_ref().is_none_or(|context| {
+            context.trigger_kind == lsp_types::CompletionTriggerKind::INVOKED
+        });
+        complete_vec_stmt(ast, session, file_symbol, offset).or_else(|| {
+            if is_completion_invoked {
+                // Only complete names on empty result if invoked manually not with trigger character
+                // This avoid autocompleting on every dot or parenthesis or comma, which is not always wanted
+                complete_name(session, file_symbol, offset, false, &S!(""))
+            } else {
+                None
+            }
+        })
     }
 }
 
