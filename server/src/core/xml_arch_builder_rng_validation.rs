@@ -58,21 +58,18 @@ impl XmlArchBuilder {
 
     pub fn load_frontend_data(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) {
         for attr in node.attributes() {
-            match attr.name() {
-                "t-name" => {
-                    // even if discouraged, load it so it can be used in features
-                    self.load_qweb_template(session, &node, None, true, diagnostics);
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05075, &[]) {
-                        diagnostics.push(
-                            Diagnostic {
-                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                                ..diagnostic
-                            }
-                        );
-                    }
-                    return;
-                },
-                _ => {}
+            if attr.name() == "t-name" {
+                // even if discouraged, load it so it can be used in features
+                self.load_qweb_template(session, node, None, true, diagnostics);
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05075, &[]) {
+                    diagnostics.push(
+                        Diagnostic {
+                            range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                            ..diagnostic
+                        }
+                    );
+                }
+                return;
             }
         }
         for child in node.children().filter(|n| n.is_element()) {

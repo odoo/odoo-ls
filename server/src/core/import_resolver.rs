@@ -65,17 +65,11 @@ fn resolve_import_stmt_hook(alias: &Alias, from_symbols: &Option<Vec<SymbolKey>>
 pub fn manual_import(session: &mut SessionInfo, source_file_symbol: SymbolKey, from_stmt:Option<String>, name: &str, asname: Option<String>, level: u32, diagnostics: &mut Option<&mut Vec<Diagnostic>>) -> Vec<ImportResult> {
     let name_aliases = vec![Alias {
         name: Identifier { id: Name::new(name), range: TextRange::default(), node_index: AtomicNodeIndex::default() },
-        asname: match asname {
-            Some(asname_inner) => Some(Identifier { id: Name::new(asname_inner), range: TextRange::default(), node_index: AtomicNodeIndex::default() }),
-            None => None,
-        },
+        asname: asname.map(|asname_inner| Identifier { id: Name::new(asname_inner), range: TextRange::default(), node_index: AtomicNodeIndex::default() }),
         range: TextRange::default(),
         node_index: AtomicNodeIndex::default()
     }];
-    let from_stmt = match from_stmt {
-        Some(from_stmt_inner) => Some(Identifier { id: Name::new(from_stmt_inner), range: TextRange::default(), node_index: AtomicNodeIndex::default() }),
-        None => None,
-    };
+    let from_stmt = from_stmt.map(|from_stmt_inner| Identifier { id: Name::new(from_stmt_inner), range: TextRange::default(), node_index: AtomicNodeIndex::default() });
     resolve_import_stmt(session, source_file_symbol, from_stmt.as_ref(), &name_aliases, level, diagnostics)
 }
 
@@ -303,10 +297,7 @@ fn get_or_create_symbol(
                 for &s in symbols.iter() {
                     let mut current_batch_symbol = session.st().get_module_symbol(s, branch);
                     if current_batch_symbol.is_none() && matches!(s, SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::Compiled(_) | SymbolKey::DiskDir(_)) {
-                        current_batch_symbol = match resolve_new_symbol(session, s, &branch, asname) {
-                            Ok(v) => Some(v),
-                            Err(_) => None
-                        }
+                        current_batch_symbol = resolve_new_symbol(session, s, branch, asname).ok()
                     }
                     next_symbol.extend(current_batch_symbol);
                 }
@@ -350,10 +341,7 @@ fn get_or_create_symbol(
                         if let Some(entry_point) = entry_point {
                             let mut next_symbol = session.st().get_module_symbol(entry_point, branch);
                             if next_symbol.is_none() && matches!(entry_point, SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::Compiled(_) | SymbolKey::DiskDir(_)) {
-                                next_symbol = match resolve_new_symbol(session, entry_point, &branch, asname) {
-                                    Ok(v) => Some(v),
-                                    Err(_) => None,
-                                }
+                                next_symbol = resolve_new_symbol(session, entry_point, branch, asname).ok()
                             }
                             let Some(next_symbol) = next_symbol else {
                                 continue;

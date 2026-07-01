@@ -36,10 +36,7 @@ pub enum EvaluationValue {
 
 impl EvaluationValue {
     pub fn as_any(&self) -> bool {
-        match self {
-            EvaluationValue::ANY() => true,
-            _ => false
-        }
+        matches!(self, EvaluationValue::ANY())
     }
 
     pub fn as_constant(&self) -> &ruff_python_ast::Expr {
@@ -1090,13 +1087,10 @@ impl Evaluation {
                                         _ => None
                                     };
                                     let mut eval = Evaluation::eval_from_symbol(session.st(), attribute, instance);
-                                    match eval.symbol.sym {
-                                        EvaluationSymbolPtr::WEAK(ref mut weak) => {
-                                            weak.context.insert(ContextKey::BaseAttr, ContextValue::SYMBOL(base_loc.into()));
-                                            weak.context.insert(ContextKey::BaseIsSelf, ContextValue::BOOLEAN(base_is_self));
-                                            weak.context.insert(ContextKey::IsAttrOfInstance, ContextValue::BOOLEAN(is_instance));
-                                        },
-                                        _ => {}
+                                    if let EvaluationSymbolPtr::WEAK(ref mut weak) = eval.symbol.sym {
+                                        weak.context.insert(ContextKey::BaseAttr, ContextValue::SYMBOL(base_loc.into()));
+                                        weak.context.insert(ContextKey::BaseIsSelf, ContextValue::BOOLEAN(base_is_self));
+                                        weak.context.insert(ContextKey::IsAttrOfInstance, ContextValue::BOOLEAN(is_instance));
                                     }
                                     evals.push(eval);
                                 });
@@ -1132,12 +1126,9 @@ impl Evaluation {
                         unreachable!();
                     }
                 };
-                match ast {
-                    ExprOrIdent::Expr(Expr::Named(expr))  => {
-                        let (_, diags) = Evaluation::eval_from_ast(session, &expr.value, parent, max_infer, false, required_dependencies);
-                        diagnostics.extend(diags.clone());
-                    }
-                    _ => {}
+                if let ExprOrIdent::Expr(Expr::Named(expr)) = ast {
+                    let (_, diags) = Evaluation::eval_from_ast(session, &expr.value, parent, max_infer, false, required_dependencies);
+                    diagnostics.extend(diags.clone());
                 }
 
                 if inferred_syms.symbols.is_empty() {
@@ -2136,15 +2127,12 @@ impl EvaluationSymbolPtr {
     }
 
     pub(crate) fn has_weak(&self) -> bool {
-        match self {
-            EvaluationSymbolPtr::WEAK(_) | EvaluationSymbolPtr::SELF(_) => true,
-            _ => false
-        }
+        matches!(self, EvaluationSymbolPtr::WEAK(_) | EvaluationSymbolPtr::SELF(_))
     }
 
     pub(crate) fn get_weak(&self) -> &EvaluationSymbolWeak {
         match self {
-            EvaluationSymbolPtr::WEAK(w) | EvaluationSymbolPtr::SELF(w) => &w,
+            EvaluationSymbolPtr::WEAK(w) | EvaluationSymbolPtr::SELF(w) => w,
             _ => panic!("Not an EvaluationSymbolWeak")
         }
     }

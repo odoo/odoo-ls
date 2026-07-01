@@ -336,8 +336,8 @@ impl PythonArchBuilder {
                     self.visit_expr(session, &stmt_type_alias.value);
                 },
                 Stmt::Raise(stmt_raise) => {
-                    stmt_raise.exc.as_ref().map(|stmt_exc| self.visit_expr(session, &stmt_exc));
-                    stmt_raise.cause.as_ref().map(|stmt_cause| self.visit_expr(session, &stmt_cause));
+                    if let Some(stmt_exc) = stmt_raise.exc.as_ref() { self.visit_expr(session, stmt_exc) }
+                    if let Some(stmt_cause) = stmt_raise.cause.as_ref() { self.visit_expr(session, stmt_cause) }
                 },
                 Stmt::Global(_stmt_global) => {},
                 Stmt::Nonlocal(_stmt_nonlocal) => {},
@@ -392,7 +392,7 @@ impl PythonArchBuilder {
             Expr::Dict(dict_expr) => {
                 dict_expr.iter().for_each(
                     |dict_item| {
-                        dict_item.key.as_ref().map(|dict_key_expr| self.visit_expr(session, dict_key_expr));
+                        if let Some(dict_key_expr) = dict_item.key.as_ref() { self.visit_expr(session, dict_key_expr) }
                         self.visit_expr(session, &dict_item.value);
                     }
                 );
@@ -418,7 +418,7 @@ impl PythonArchBuilder {
                 self.visit_expr(session, &expr_await.value);
             },
             Expr::Yield(expr_yield) => {
-                expr_yield.value.as_ref().map(|yield_value| self.visit_expr(session, &yield_value));
+                if let Some(yield_value) = expr_yield.value.as_ref() { self.visit_expr(session, yield_value) }
             },
             Expr::YieldFrom(expr_yield_from) => {
                 self.visit_expr(session, &expr_yield_from.value);
@@ -459,8 +459,8 @@ impl PythonArchBuilder {
                 expr_tuple.elts.iter().for_each(|elt_expr| self.visit_expr(session, elt_expr));
             },
             Expr::Slice(expr_slice) => {
-                expr_slice.upper.as_ref().map(|upper_expr| self.visit_expr(session, &upper_expr));
-                expr_slice.lower.as_ref().map(|lower_expr| self.visit_expr(session, &lower_expr));
+                if let Some(upper_expr) = expr_slice.upper.as_ref() { self.visit_expr(session, upper_expr) }
+                if let Some(lower_expr) = expr_slice.lower.as_ref() { self.visit_expr(session, lower_expr) }
             },
             // Expressions that cannot contained a named expressions are not traversed
             Expr::Lambda(lambda_expr) => {
@@ -1158,7 +1158,7 @@ impl PythonArchBuilder {
         let previous_section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
         let mut stmt_sections = vec![previous_section.clone()];
         for case in match_stmt.cases.iter() {
-            case.guard.as_ref().map(|test_clause| self.visit_expr(session, test_clause));
+            if let Some(test_clause) = case.guard.as_ref() { self.visit_expr(session, test_clause) }
             if matches!(&case.pattern, ruff_python_ast::Pattern::MatchAs(_)){
                 stmt_sections.remove(0); // When we have a wildcard pattern, previous section is shadowed
             }

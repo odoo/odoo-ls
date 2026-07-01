@@ -474,11 +474,9 @@ impl FileInfo {
         let is_lib = self.uri.contains("/static/lib/");
         let lsp_diags = match is_lib {
             true => Vec::new(),
-            false => diagnostics.iter().map(
-                |d| js_utils::oxc_diagnostic_to_lsp_diagnostic(
+            false => diagnostics.iter().filter_map(|d| js_utils::oxc_diagnostic_to_lsp_diagnostic(
                     d, &FileMgr::pathname2uri(&self.uri)
-                )
-            ).flatten().collect(),
+                )).collect(),
         };
         self.replace_diagnostics(DiagnosticSource::JS_OXC, lsp_diags); //OXC will use SYNTAX. others are reserved to tsserver
     }
@@ -678,12 +676,14 @@ impl FileInfo {
                         let Some(severity) = &updated.severity else {
                             continue;
                         };
-                        if !filter.types.iter().any(|t| match (t, severity) {
-                            (DiagnosticSetting::Error, &DiagnosticSeverity::ERROR)
-                            | (DiagnosticSetting::Warning, &DiagnosticSeverity::WARNING)
-                            | (DiagnosticSetting::Info, &DiagnosticSeverity::INFORMATION)
-                            | (DiagnosticSetting::Hint, &DiagnosticSeverity::HINT) => true,
-                            _ => false,
+                        if !filter.types.iter().any(|t| {
+                            matches!(
+                                (t, severity),
+                                (DiagnosticSetting::Error, &DiagnosticSeverity::ERROR)
+                                    | (DiagnosticSetting::Warning, &DiagnosticSeverity::WARNING)
+                                    | (DiagnosticSetting::Info, &DiagnosticSeverity::INFORMATION)
+                                    | (DiagnosticSetting::Hint, &DiagnosticSeverity::HINT)
+                            )
                         }) {
                             continue;
                         }
