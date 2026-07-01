@@ -35,6 +35,6 @@ fn test_ols04001_to_20() {
     for path in paths.iter() {
         let doc_diags = get_diagnostics_test_comments(&mut session, &path);
         let diagnostics = diagnostics_map.get(path).cloned().unwrap_or_default();
-        verify_diagnostics_against_doc(&diagnostics, doc_diags);
+        verify_diagnostics_against_doc(&diagnostics, &doc_diags);
     }
 }

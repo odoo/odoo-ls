@@ -272,7 +272,7 @@ impl PythonArchBuilder {
         }
     }
 
-    fn visit_node(&mut self, session: &mut SessionInfo, nodes: &Vec<Stmt>) {
+    fn visit_node(&mut self, session: &mut SessionInfo, nodes: &[Stmt]) {
         for stmt in nodes.iter() {
             match stmt {
                 Stmt::Import(import_stmt) => {
@@ -829,21 +829,21 @@ impl PythonArchBuilder {
         }
     }
 
-    fn check_tuples(&self, version: &Vec<u32>, op: &CmpOp, tuple: &ExprTuple) -> bool {
+    fn check_tuples(&self, version: &[u32], op: &CmpOp, tuple: &ExprTuple) -> bool {
         let mut tuple = tuple.elts.iter().map(|elt| {
             if let Expr::NumberLiteral(num) = elt {
                 if num.value.is_int() {
                     num.value.as_int().unwrap().as_u32().unwrap()
                 } else {
-                    0 as u32
+                    0_u32
                 }
             } else {
-                0 as u32 // If not a number, treat as 0
+                0_u32 // If not a number, treat as 0
             }
         }).collect::<Vec<u32>>();
         // ensure that the vec is sized of 3
         tuple.resize(3, 0);
-        return match op {
+        match op {
             CmpOp::Gt => {
                 version[0] > tuple[0] ||
                 (version[0] == tuple[0] && version[1] > tuple[1]) ||

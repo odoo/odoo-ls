@@ -369,12 +369,12 @@ struct ReferenceVisitor {
 
 impl ReferenceVisitor {
 
-    pub fn browse_file(&mut self, session: &mut SessionInfo, file_symbol: SourceFileKey, stmts: &Vec<Stmt>) {
+    pub fn browse_file(&mut self, session: &mut SessionInfo, file_symbol: SourceFileKey, stmts: &[Stmt]) {
         self.sym_stack.push(file_symbol.into());
         self.visit_vec_stmt(session, stmts);
     }
 
-    pub fn visit_vec_stmt(&mut self, session: &mut SessionInfo, vec_ast: &Vec<Stmt>) {
+    pub fn visit_vec_stmt(&mut self, session: &mut SessionInfo, vec_ast: &[Stmt]) {
         for stmt in vec_ast.iter() {
             match stmt {
                 Stmt::FunctionDef(f) => {

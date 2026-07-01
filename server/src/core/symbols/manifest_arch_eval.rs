@@ -117,7 +117,7 @@ impl ModuleSymbol {
         }
     }
 
-    fn load_xml_assets(session: &mut SessionInfo, module: ModuleKey, files_to_imports: &Vec<PathBuf>) {
+    fn load_xml_assets(session: &mut SessionInfo, module: ModuleKey, files_to_imports: &[PathBuf]) {
         for file_path in files_to_imports.iter().filter(|p| p.extension().map(|ext| ext == "xml").unwrap_or(false)) {
             let file_path_str = file_path.sanitize_cow();
             let file_name = file_path.file_name().unwrap().to_str().unwrap().to_string();
@@ -155,7 +155,7 @@ impl ModuleSymbol {
         }
     }
 
-    fn load_js_assets(session: &mut SessionInfo, module: ModuleKey, files_to_imports: &Vec<PathBuf>) {
+    fn load_js_assets(session: &mut SessionInfo, module: ModuleKey, files_to_imports: &[PathBuf]) {
         for file_path in files_to_imports.iter().filter(|p| p.extension().map_or(false, |ext| ext == "js")) {
             let file_path_str = file_path.sanitize_cow();
             if session.st()[module].js_symbols().contains_key(file_path_str.as_ref()) {

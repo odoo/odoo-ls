@@ -398,7 +398,7 @@ fn complete_nonlocal_stmt(_session: &mut SessionInfo, _file: SourceFileKey, _stm
 **************************** Expressions *******************************
 ********************************************************************* */
 
-fn complete_expr(expr: &Expr, session: &mut SessionInfo, file: SourceFileKey, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+fn complete_expr(expr: &Expr, session: &mut SessionInfo, file: SourceFileKey, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     match expr {
         Expr::BoolOp(expr_bool_op) => compare_bool_op(session, file, expr_bool_op, offset, is_param, expected_type),
         Expr::Named(expr_named) => compare_named(session, file, expr_named, offset, is_param, expected_type),
@@ -436,7 +436,7 @@ fn complete_expr(expr: &Expr, session: &mut SessionInfo, file: SourceFileKey, of
     }
 }
 
-fn compare_bool_op(session: &mut SessionInfo, file: SourceFileKey, expr_bool_op: &ruff_python_ast::ExprBoolOp, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+fn compare_bool_op(session: &mut SessionInfo, file: SourceFileKey, expr_bool_op: &ruff_python_ast::ExprBoolOp, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     for value in expr_bool_op.values.iter() {
         if offset > value.range().start().to_usize() && offset <= value.range().end().to_usize() {
             return complete_expr( value, session, file, offset, is_param, expected_type);
@@ -445,14 +445,14 @@ fn compare_bool_op(session: &mut SessionInfo, file: SourceFileKey, expr_bool_op:
     None
 }
 
-fn compare_named(session: &mut SessionInfo, file: SourceFileKey, expr_named: &ruff_python_ast::ExprNamed, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+fn compare_named(session: &mut SessionInfo, file: SourceFileKey, expr_named: &ruff_python_ast::ExprNamed, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     if offset > expr_named.value.range().start().to_usize() && offset <= expr_named.value.range().end().to_usize() {
         return complete_expr( &expr_named.value, session, file, offset, is_param, expected_type);
     }
     None
 }
 
-fn compare_bin_op(session: &mut SessionInfo, file: SourceFileKey, expr_bin_op: &ruff_python_ast::ExprBinOp, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+fn compare_bin_op(session: &mut SessionInfo, file: SourceFileKey, expr_bin_op: &ruff_python_ast::ExprBinOp, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     if offset > expr_bin_op.left.range().start().to_usize() && offset <= expr_bin_op.left.range().end().to_usize() {
         return complete_expr( &expr_bin_op.left, session, file, offset, is_param, expected_type);
     }
@@ -462,14 +462,14 @@ fn compare_bin_op(session: &mut SessionInfo, file: SourceFileKey, expr_bin_op: &
     None
 }
 
-fn compare_unary_op(session: &mut SessionInfo, file: SourceFileKey, expr_unary_op: &ruff_python_ast::ExprUnaryOp, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+fn compare_unary_op(session: &mut SessionInfo, file: SourceFileKey, expr_unary_op: &ruff_python_ast::ExprUnaryOp, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     if offset > expr_unary_op.operand.range().start().to_usize() && offset <= expr_unary_op.operand.range().end().to_usize() {
         return complete_expr( &expr_unary_op.operand, session, file, offset, is_param, expected_type);
     }
     None
 }
 
-fn compare_lambda(session: &mut SessionInfo, file: SourceFileKey, expr_lambda: &ruff_python_ast::ExprLambda, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+fn compare_lambda(session: &mut SessionInfo, file: SourceFileKey, expr_lambda: &ruff_python_ast::ExprLambda, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     if offset > expr_lambda.body.range().start().to_usize() && offset <= expr_lambda.body.range().end().to_usize() {
         return complete_expr( &expr_lambda.body, session, file, offset, is_param, expected_type);
     }
@@ -477,7 +477,7 @@ fn compare_lambda(session: &mut SessionInfo, file: SourceFileKey, expr_lambda: &
 }
 
 //Expr if, used in "a if b else c"
-fn complete_if_expr(session: &mut SessionInfo, file: SourceFileKey, expr_if: &ExprIf, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+fn complete_if_expr(session: &mut SessionInfo, file: SourceFileKey, expr_if: &ExprIf, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     if offset > expr_if.test.range().start().to_usize() && offset <= expr_if.test.range().end().to_usize() {
         return complete_expr( &expr_if.test, session, file, offset, is_param, expected_type);
     }
@@ -490,7 +490,7 @@ fn complete_if_expr(session: &mut SessionInfo, file: SourceFileKey, expr_if: &Ex
     None
 }
 
-fn complete_dict(session: &mut SessionInfo, file: SourceFileKey, expr_dict: &ruff_python_ast::ExprDict, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+fn complete_dict(session: &mut SessionInfo, file: SourceFileKey, expr_dict: &ruff_python_ast::ExprDict, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     for dict_item in expr_dict.items.iter() {
         if let Some(dict_item_key) = &dict_item.key {
             // For expected type INHERITS, we want to complete the model name for the key
@@ -516,28 +516,30 @@ fn complete_dict(session: &mut SessionInfo, file: SourceFileKey, expr_dict: &ruf
     None
 }
 
-fn complete_set(session: &mut SessionInfo, file: SourceFileKey, expr_set: &ruff_python_ast::ExprSet, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+fn complete_set(session: &mut SessionInfo, file: SourceFileKey, expr_set: &ruff_python_ast::ExprSet, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     for set_item in expr_set.elts.iter() {
         if offset > set_item.range().start().to_usize() && offset <= set_item.range().end().to_usize() {
             // A set expression here is just starting to write the inherits dict
             let expected_type= expected_type.iter().map(|e| match e {
                 ExpectedType::INHERITS => ExpectedType::MODEL_NAME,
                 _ => e.clone(),
-            }).collect();
-            return complete_expr( set_item, session, file, offset, is_param, &expected_type);
+            }).collect::<Vec<_>>();
+            return complete_expr(set_item, session, file, offset, is_param, &expected_type);
         }
     }
     None
 }
 
-fn complete_yield(session: &mut SessionInfo, file: SourceFileKey, expr_yield: &ExprYield, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
-    if expr_yield.value.is_some() && offset > expr_yield.value.as_ref().unwrap().range().start().to_usize() && offset <= expr_yield.value.as_ref().unwrap().range().end().to_usize() {
-        return complete_expr( expr_yield.value.as_ref().unwrap(), session, file, offset, is_param, expected_type);
+fn complete_yield(session: &mut SessionInfo, file: SourceFileKey, expr_yield: &ExprYield, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
+    if let Some(expr) = &expr_yield.value
+        && offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize()
+    {
+        return complete_expr(expr, session, file, offset, is_param, expected_type);
     }
     None
 }
 
-fn complete_compare(session: &mut SessionInfo, file: SourceFileKey, expr_compare: &ruff_python_ast::ExprCompare, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+fn complete_compare(session: &mut SessionInfo, file: SourceFileKey, expr_compare: &ruff_python_ast::ExprCompare, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     if offset > expr_compare.left.range().start().to_usize() && offset <= expr_compare.left.range().end().to_usize() {
         return complete_expr( &expr_compare.left, session, file, offset, is_param, expected_type);
     }
@@ -600,14 +602,14 @@ fn complete_decorator_call(
         // } else
         for arg in decorator_args.args.iter() {
             if offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize() {
-                return complete_expr(arg, session, file, offset, false, &expected_types);
+                return complete_expr(arg, session, file, offset, false, expected_types);
             }
         }
     }
     None
 }
 
-fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruff_python_ast::ExprCall, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruff_python_ast::ExprCall, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     if offset > expr_call.func.range().start().to_usize() && offset <= expr_call.func.range().end().to_usize() {
         return complete_expr( &expr_call.func, session, file, offset, is_param, expected_type);
     }
@@ -745,10 +747,10 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
         };
         return complete_expr(&keyword.value, session, file, offset, is_param, &expected_type);
     }
-    return complete_expr(&keyword.value, session, file, offset, is_param, &vec![]);
+    complete_expr(&keyword.value, session, file, offset, is_param, &[])
 }
 
-fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_string_literal: &ruff_python_ast::ExprStringLiteral, _offset: usize, _is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_string_literal: &ruff_python_ast::ExprStringLiteral, _offset: usize, _is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     let mut items = vec![];
     let current_module = session.st().find_module(file);
     let models = session.sync_odoo.models.clone();
@@ -895,7 +897,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
     }))
 }
 
-fn complete_attribut(session: &mut SessionInfo, file: SourceFileKey, attr: &ExprAttribute, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+fn complete_attribut(session: &mut SessionInfo, file: SourceFileKey, attr: &ExprAttribute, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     let mut items = vec![];
     let start_expr = attr.range.start().to_u32();
     //TODO actually using start_expr instead of offset, because when we complete an attr, like "self.", the ast is invalid, preventing any rebuild
@@ -927,7 +929,7 @@ fn complete_attribut(session: &mut SessionInfo, file: SourceFileKey, attr: &Expr
     }))
 }
 
-fn complete_subscript(session: &mut SessionInfo, file: SourceFileKey, expr_subscript: &ExprSubscript, offset: usize, is_param: bool, _expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+fn complete_subscript(session: &mut SessionInfo, file: SourceFileKey, expr_subscript: &ExprSubscript, offset: usize, is_param: bool, _expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     let scope = session.st().get_scope_symbol(file, offset as u32, is_param);
     AstUtils::build_scope(session, scope);
     let subscripted = Evaluation::eval_from_ast(session, &expr_subscript.value, scope, &expr_subscript.value.range().start(), false, &mut vec![]).0;
@@ -1063,19 +1065,19 @@ fn complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, list_o
     None
 }
 
-fn complete_slice(session: &mut SessionInfo, file: SourceFileKey, expr_slice: &ExprSlice, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
-    // An incomplete subscript is always a slice, so self.env["ffff is a slice with ffff as lower
+fn complete_slice(session: &mut SessionInfo, file: SourceFileKey, expr_slice: &ExprSlice, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
+    // And incomplete subscript is always a slice, so self.env["ffff is a slice with ffff as lower
     if let Some(expr) = expr_slice.lower.as_ref()
-        && offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize() {
+        && offset > expr.range().start().to_usize()
+        && offset <= expr.range().end().to_usize()
+    {
         return complete_expr(expr, session, file, offset, is_param, expected_type);
     }
-    if let Some(expr) = expr_slice.upper.as_ref()
-        && offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize() {
-        return complete_expr(expr, session, file, offset, is_param, &vec![]);
-    }
-    if let Some(expr) = expr_slice.step.as_ref()
-        && offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize() {
-        return complete_expr(expr, session, file, offset, is_param, &vec![]);
+    if let Some(expr) = expr_slice.upper.as_ref().or(expr_slice.step.as_ref())
+        && offset > expr.range().start().to_usize()
+        && offset <= expr.range().end().to_usize()
+    {
+        return complete_expr(expr, session, file, offset, is_param, &[]);
     }
     None
 }

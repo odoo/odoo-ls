@@ -71,21 +71,21 @@ impl EvaluationValue {
         }
     }
 
-    pub fn as_dict(&self) -> &Vec<(ruff_python_ast::Expr, ruff_python_ast::Expr)> {
+    pub fn as_dict(&self) -> &[(ruff_python_ast::Expr, ruff_python_ast::Expr)] {
         match self {
             EvaluationValue::DICT(d) => d,
             _ => panic!("Not a dict")
         }
     }
 
-    pub fn as_list(&self) -> &Vec<ruff_python_ast::Expr> {
+    pub fn as_list(&self) -> &[ruff_python_ast::Expr] {
         match self {
             EvaluationValue::LIST(l) => l,
             _ => panic!("Not a list")
         }
     }
 
-    pub fn as_tuple(&self) -> &Vec<ruff_python_ast::Expr> {
+    pub fn as_tuple(&self) -> &[ruff_python_ast::Expr] {
         match self {
             EvaluationValue::TUPLE(t) => t,
             _ => panic!("Not a tuple")

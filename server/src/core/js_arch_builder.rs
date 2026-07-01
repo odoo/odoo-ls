@@ -341,7 +341,7 @@ pub fn visit_file(program: &Program<'_>, file_path: &str) -> (Vec<JsTemplateRef>
     )
 }
 
-pub fn build(session: &mut SessionInfo, templates_ref: &Vec<JsTemplateRef>, components: &Vec<ComponentDescriptor>) {
+pub fn build(session: &mut SessionInfo, templates_ref: &[JsTemplateRef], components: &[ComponentDescriptor]) {
     // Populate template→class_name mapping
     for tr in templates_ref.iter() {
         if let Some(cn) = &tr.class_name {

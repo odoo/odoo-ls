@@ -2121,16 +2121,19 @@ impl Odoo {
         }
     }
 
-    fn handle_file_update(session: &mut SessionInfo, file_uris: &Vec<Uri>) {
+    fn handle_file_update(session: &mut SessionInfo, file_uris: &[Uri]) {
         if session.sync_odoo.state_init == InitState::NOT_READY {
             return
         }
         for uri in file_uris.iter() {
-            let Ok(path) = uri.to_file_path() else {
-                let msg = format!("Invalid file URI: {}", uri.to_string());
-                session.log_message(MessageType::ERROR, msg.clone());
-                warn!("{}", &msg);
-                continue;
+            let path = match uri.to_file_path() {
+                Ok(path) => path,
+                Err(error) => {
+                    let msg = format!("Invalid file URI: {}: {}", **uri, error);
+                    session.log_message(MessageType::ERROR, msg.clone());
+                    warn!("{}", &msg);
+                    continue;
+                }
             };
             if Odoo::check_handle_config_file_update(session, &path) {
                 continue; //config file update, handled by the config file handler

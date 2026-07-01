@@ -108,7 +108,7 @@ impl CsvValidator {
         file_info.borrow_mut().publish_diagnostics(session);
     }
 
-    fn validate_record(&self, session: &mut SessionInfo, csv_module: ModuleKey, headers_is_xml: &Vec<bool>, record: &StringRecord, diagnostics: &mut Vec<Diagnostic>, data: &str) {
+    fn validate_record(&self, session: &mut SessionInfo, csv_module: ModuleKey, headers_is_xml: &[bool], record: &StringRecord, diagnostics: &mut Vec<Diagnostic>, data: &str) {
         let Some(field_iter) = CsvFieldIter::new(record, data) else { return; };
         for (idx, (start, end, field)) in field_iter.enumerate() {
             let Some(&should_be_xml_id) = headers_is_xml.get(idx) else { break;};

@@ -583,7 +583,7 @@ impl SymbolTable {
         }
     }
 
-    pub fn not_found_paths(&self, target: SourceFileKey) -> &Vec<(BuildSteps, Vec<OYarn>)> {
+    pub fn not_found_paths(&self, target: SourceFileKey) -> &[(BuildSteps, Vec<OYarn>)] {
         match target {
             SourceFileKey::File(f) => { &self[f].not_found_paths },
             SourceFileKey::Module(m) => &self[m].not_found_paths,

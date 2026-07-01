@@ -172,35 +172,34 @@ impl PythonValidator {
                     return;
                 }
                 let file = symbol.as_source_file_key().unwrap();
-                FileMgr::delete_file_path(session, &session.st().file_path(file).to_string());
+                let file_path = session.sync_odoo.symbol_table.file_path(file).to_string();
+                FileMgr::delete_file_path(session, &file_path);
             } else {
                 self.file_info.as_ref().unwrap().borrow_mut().publish_diagnostics(session);
             }
             if !session.sync_odoo.config.file_cache() {
                 if let SymbolKey::Module(m) = symbol {
                     let manifest_path = PathBuf::from(&session.st()[m].path).join("__manifest__.py");
-                    if let Some(manifest_file) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize_cow()) {
-                        if !manifest_file.borrow().opened {
+                    if let Some(manifest_file) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize_cow())
+                        && !manifest_file.borrow().opened {
                             let manifest_file = manifest_file.borrow();
                             manifest_file.file_info_ast.borrow_mut().ast.as_py_ast_mut().indexed_module = None;
                             manifest_file.file_info_ast.borrow_mut().text_document = None;
                             manifest_file.file_info_ast.borrow_mut().text_hash = 0;
                         }
-                    }
                 }
-                if let Some(file) = self.file_info.as_ref() {
-                    if ! file.borrow().opened {
+                if let Some(file) = self.file_info.as_ref()
+                    && ! file.borrow().opened {
                         let f = file.borrow();
                         f.file_info_ast.borrow_mut().ast.as_py_ast_mut().indexed_module = None;
                         f.file_info_ast.borrow_mut().text_document = None;
                         f.file_info_ast.borrow_mut().text_hash = 0;
                     }
-                }
             }
         }
     }
 
-    fn validate_body(&mut self, session: &mut SessionInfo, vec_ast: &Vec<Stmt>) {
+    fn validate_body(&mut self, session: &mut SessionInfo, vec_ast: &[Stmt]) {
         for stmt in vec_ast.iter() {
             match stmt {
                 Stmt::FunctionDef(f) => {

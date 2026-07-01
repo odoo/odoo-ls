@@ -114,7 +114,7 @@ pub fn get_definition_locs(
 }
 
 
-pub fn diag_on_line(diagnostics: &Vec<lsp_types::Diagnostic>, line: u32) -> Vec<&lsp_types::Diagnostic> {
+pub fn diag_on_line(diagnostics: &[lsp_types::Diagnostic], line: u32) -> Vec<&lsp_types::Diagnostic> {
     diagnostics.iter().filter(|d| d.range.start.line <= line && d.range.end.line >= line).collect()
 }
 
@@ -122,18 +122,18 @@ pub fn diag_on_line(diagnostics: &Vec<lsp_types::Diagnostic>, line: u32) -> Vec<
  * Verify that the given diagnostics match the expected diagnostics from doc_diag, generated from comments in the source code
  */
 pub fn verify_diagnostics_against_doc(
-    diagnostics: &Vec<Diagnostic>,
-    doc_diag: Vec<(u32, Vec<String>)>
+    diagnostics: &[Diagnostic],
+    doc_diag: &[(u32, Vec<String>)]
 ) {
     // Build a map from line to set of diagnostic codes found in diagnostics
     let mut diags: HashMap<u32, Vec<&Diagnostic>> = HashMap::default();
-    for diag in diagnostics.iter() {
+    for diag in diagnostics {
         let line = diag.range.start.line;
         diags.entry(line).or_default().push(diag);
     }
 
     // Check expected codes and unexpected codes in a single loop
-    for (line, expected_codes) in &doc_diag {
+    for (line, expected_codes) in doc_diag {
         let found_codes = diags.get(line);
         assert!(found_codes.is_some(), "No diagnostics found on line {}. {} {} expected", line + 1, expected_codes.join(", "), if expected_codes.len() > 1 { "were" } else { "was" });
 

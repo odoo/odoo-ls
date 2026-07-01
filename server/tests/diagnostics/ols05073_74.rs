@@ -5,7 +5,7 @@ use odoo_ls_server::{S, utils::PathSanitizer};
 
 use crate::{setup::setup::*, test_utils::diag_on_line};
 
-fn check_xml_diagnostic(diagnostics: &Vec<Diagnostic>, ols_code: &str, line: u32, severity: DiagnosticSeverity) {
+fn check_xml_diagnostic(diagnostics: &[Diagnostic], ols_code: &str, line: u32, severity: DiagnosticSeverity) {
     let line_diagnostics = diag_on_line(diagnostics, line);
     assert_eq!(
         line_diagnostics.len(), 1,

@@ -683,7 +683,7 @@ impl PythonArchEval {
         }
     }
 
-    fn visit_sub_stmts(&mut self, session: &mut SessionInfo, stmts: &Vec<Stmt>){
+    fn visit_sub_stmts(&mut self, session: &mut SessionInfo, stmts: &[Stmt]){
         stmts.iter().for_each(|stmt| self.visit_stmt(session, stmt));
     }
 
@@ -1018,7 +1018,7 @@ impl PythonArchEval {
     // we have a body but no return statement, which defaults to return None at the end
     fn handle_func_evaluations(
         symbol_table: &mut SymbolTable,
-        func_body: &Vec<Stmt>,
+        func_body: &[Stmt],
         func_sym: FunctionKey,
     ){
         let func_mut = &mut symbol_table[func_sym];

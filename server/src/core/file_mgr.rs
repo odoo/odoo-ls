@@ -199,10 +199,10 @@ pub struct FileInfoAst {
 }
 
 impl FileInfoAst {
-    pub fn get_stmts(&self) -> Option<&Vec<Stmt>> {
+    pub fn get_stmts(&self) -> Option<&[Stmt]> {
         match &self.ast {
             Ast::PythonAst(python_ast) => {
-                python_ast.indexed_module.as_ref().map(|module| &module.parsed.syntax().body)
+                python_ast.indexed_module.as_ref().map(|module| module.parsed.syntax().body.as_slice())
             },
             _ => None
         }

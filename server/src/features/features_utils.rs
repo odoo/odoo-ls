@@ -710,7 +710,7 @@ impl FeaturesUtils {
     parameters:   (type_sym)  symbol: inferred_types
     For example: "(parameter) self: type[Self@ResPartner]"
      */
-    fn build_block_1(session: &mut SessionInfo, symbol_type: SymType, symbol_name: &OYarn, type_sym: Vec<String>, inferred_types: &Vec<InferredType>) -> String {
+    fn build_block_1(session: &mut SessionInfo, symbol_type: SymType, symbol_name: &OYarn, type_sym: Vec<String>, inferred_types: &[InferredType]) -> String {
         //python code balise
         let mut value = S!(format!("```python{}", FeaturesUtils::get_line_break(session)));
         //type name
@@ -804,7 +804,7 @@ impl FeaturesUtils {
     }
 
     /// Documentation block that includes the source module(s) and docstrings if found
-    fn get_documentation_block(session: &SessionInfo, from_modules: &Vec<OYarn>, type_refs: &Vec<InferredType>) -> Option<String> {
+    fn get_documentation_block(session: &SessionInfo, from_modules: &[OYarn], type_refs: &[InferredType]    ) -> Option<String> {
         let symbol_table = &session.sync_odoo.symbol_table;
         let mut documentation_block = None;
         if !from_modules.is_empty(){

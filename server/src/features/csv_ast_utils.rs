@@ -202,7 +202,7 @@ impl CsvAstUtils {
     fn get_symbols_in_record(
         session: &mut SessionInfo,
         offset: usize,
-        headers: &Vec<OYarn>,
+        headers: &[OYarn],
         record: &StringRecord,
         results: &mut Vec<GotoSource>,
         csv_symbol: CsvFileKey,

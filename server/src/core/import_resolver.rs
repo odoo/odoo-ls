@@ -275,20 +275,17 @@ fn resolve_packages(symbol_table: &SymbolTable, from_file: SymbolKey, level: u32
             }
         }
     }
-    match from_stmt {
-        Some(from_stmt_inner) => {
-            let split = from_stmt_inner.as_str().split(".");
-            for i in split {
-                first_part_tree.push(oyarn!("{}", i));
-            }
-        },
-        None => ()
+    if let Some(from_stmt_inner) = from_stmt {
+        let split = from_stmt_inner.as_str().split(".");
+        for i in split {
+            first_part_tree.push(oyarn!("{}", i));
+        }
     }
     Some(first_part_tree)
 }
 
 fn get_or_create_symbol(
-    session: &mut SessionInfo, for_entry: &Rc<RefCell<EntryPoint>>, from_path: &str, symbol: Option<Vec<SymbolKey>>, names: &Vec<OYarn>, asname: Option<&str>, level: u32
+    session: &mut SessionInfo, for_entry: &Rc<RefCell<EntryPoint>>, from_path: &str, symbol: Option<Vec<SymbolKey>>, names: &[OYarn], asname: Option<&str>, level: u32
 ) -> (Option<Vec<SymbolKey>>, Option<Vec<SymbolKey>>) {
     let mut syms = symbol.clone();
     let mut last_symbols = symbol;

@@ -14,10 +14,10 @@ fn test_ols05000_2_3_py_file() {
     assert!(PathBuf::from(&bikes_py_path).exists(), "Test file does not exist: {}", bikes_py_path.display());
     let bikes_py_diagnostics = get_diagnostics_for_path(&mut session, &bikes_py_path.sanitize());
     let doc_diags = get_diagnostics_test_comments(&mut session, &bikes_py_path.sanitize());
-    verify_diagnostics_against_doc(&bikes_py_diagnostics, doc_diags); // OLS05002 & OLS05003 & OLS05051
+    verify_diagnostics_against_doc(&bikes_py_diagnostics, &doc_diags); // OLS05002 & OLS05003 & OLS05051
 }
 
-fn check_xml_diagnostic(diagnostics: &Vec<Diagnostic>, ols_code: &str, line: u32, severity: DiagnosticSeverity) {
+fn check_xml_diagnostic(diagnostics: &[Diagnostic], ols_code: &str, line: u32, severity: DiagnosticSeverity) {
     let line_diagnostics = diag_on_line(diagnostics, line);
     assert_eq!(line_diagnostics.len(), 1);
     let diag = &line_diagnostics[0];
@@ -120,5 +120,5 @@ fn test_ols05000s_manifest() {
     assert!(PathBuf::from(&bikes_py_path).exists(), "Test file does not exist: {}", bikes_py_path.display());
     let bikes_py_diagnostics = get_diagnostics_for_path(&mut session, &bikes_py_path.sanitize());
     let doc_diags = get_diagnostics_test_comments(&mut session, &bikes_py_path.sanitize());
-    verify_diagnostics_against_doc(&bikes_py_diagnostics, doc_diags); // OLS05049 & OLS05050
+    verify_diagnostics_against_doc(&bikes_py_diagnostics, &doc_diags); // OLS05049 & OLS05050
 }
