@@ -70,7 +70,7 @@ fn test_untitled_file_lifecycle() {
     assert!(hover_content.contains("def foo()"), "Hover should show function signature, got: {}", hover_content);
 
     // Completion at return
-    let completion = CompletionFeature::autocomplete(&mut session, file_symbol, &file_info, 1, 11);
+    let completion = CompletionFeature::autocomplete(&mut session, file_symbol, &file_info, None, 1, 11);
     assert!(completion.is_some(), "Completion result should be Some");
     let completion_items = match completion.unwrap() {
         lsp_types::CompletionResponse::Array(items) => items,
