@@ -1348,7 +1348,7 @@ impl PythonArchEvalHooks {
         let module = session.sync_odoo.modules.get(module_name);
         if module.is_none() {
             if in_validation {
-                if xml_id.len() == 0 {
+                if xml_id.is_empty() {
                     if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05002, &[]) {
                         diagnostics.push(Diagnostic {
                             range: FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),

@@ -414,11 +414,11 @@ impl FeaturesUtils {
         let from_module = session.st().find_module(file_symbol);
         let scope = session.st().get_scope_symbol(file_symbol, offset as u32, false);
         let string_domain_fields_syms = FeaturesUtils::find_argument_symbols(session, scope, from_module,  string_val, call_expr, offset, field_range);
-        if string_domain_fields_syms.len() >= 1 {
+        if !string_domain_fields_syms.is_empty() {
             return string_domain_fields_syms.into_iter().map(|(sym, _)| sym).collect();
         }
         let kwarg_syms = FeaturesUtils::find_kwarg_methods_symbols(session, scope, from_module,  string_val, call_expr, &offset);
-        if kwarg_syms.len() >= 1{
+        if !kwarg_syms.is_empty(){
             return kwarg_syms;
         }
         vec![]

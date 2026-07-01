@@ -356,7 +356,7 @@ impl PythonArchEval {
         }
         if *import_diag_level == DiagMissingImportsMode::OnlyOdoo {
             let tree = odoo.symbol_table.get_tree(symbol);
-            if tree.0.len() > 0 && tree.0[0] == "odoo" {
+            if !tree.0.is_empty() && tree.0[0] == "odoo" {
                 return true;
             }
         }
@@ -616,9 +616,9 @@ impl PythonArchEval {
             session.st_mut().insert_dependencies(self.file, &deps, BuildSteps::ARCH_EVAL);
             self.diagnostics.extend(eval_base.1);
             let eval_base = eval_base.0;
-            if eval_base.len() == 0 {
+            if eval_base.is_empty() {
                 //TODO build tree for not_found_path
-                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01001, &[&AstUtils::flatten_expr(base)]) {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01001, &[&AstUtils::flatten_expr(base)]) {
                     self.diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(base.range().start().to_u32(), 0), Position::new(base.range().end().to_u32(), 0)),
                         ..diagnostic
@@ -976,7 +976,7 @@ impl PythonArchEval {
             // Check for type annotation `typing.Self`, if so, return a `self` evaluation
             // And give it priority over other evaluations
             if evaluations.iter().any(|evaluation|
-                SymbolTable::follow_ref(
+                !SymbolTable::follow_ref(
                     &evaluation.symbol.get_symbol(session, None, diagnostics, None),
                     session,
                     None,
@@ -984,7 +984,7 @@ impl PythonArchEval {
                     false,
                     Some((&["typing"], &["Self"])),
                     None
-                ).len() > 0
+                ).is_empty()
             ){
                 if let Some(base) = session.st().get_in_parents(func_sym.into(), &[SymType::CLASS], true) {
                     let is_class_method = session.st()[func_sym].is_class_method;

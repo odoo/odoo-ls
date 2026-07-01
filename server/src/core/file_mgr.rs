@@ -529,16 +529,16 @@ impl FileInfo {
                 TokenKind::Comment => {
                     let text = &source[token.range()];
                     if text.starts_with("#noqa") || text.starts_with("# noqa") || text.starts_with("# odools: noqa") {
-                        let after_noqa = text.split("noqa").skip(1).next();
+                        let after_noqa = text.split("noqa").nth(1);
                         if let Some(after_noqa) = after_noqa {
                             let mut codes = vec![];
                             for code in after_noqa.split(|c: char| c == ',' || c.is_whitespace() || c == ':') {
                                 let code = code.trim();
-                                if code.len() > 0 {
+                                if !code.is_empty() {
                                     codes.push(code.to_string());
                                 }
                             }
-                            if codes.len() > 0 {
+                            if !codes.is_empty() {
                                 noqa_to_add = Some(NoqaInfo::Codes(codes));
                             } else {
                                 noqa_to_add = Some(NoqaInfo::All);

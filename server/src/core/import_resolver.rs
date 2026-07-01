@@ -212,7 +212,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
             if last_symbol.is_none() { //If not a file/package, try to look up in symbols in current file (second parameter of get_symbol)
                 //TODO what if multiple values?
                 let name_symbol_vec = next_symbol.as_ref().unwrap().iter().flat_map(|&s| session.st().get_symbol(s, (&[], &name_last_name), u32::MAX)).collect::<Vec<_>>();
-                last_symbol = if name_symbol_vec.len() > 0 {Some(name_symbol_vec.clone())} else {None};
+                last_symbol = if !name_symbol_vec.is_empty() {Some(name_symbol_vec.clone())} else {None};
                 if last_symbol.is_none() {
                     if alias.asname.is_some() {
                         result[name_index as usize].symbols = fallback_sym.clone().unwrap_or_else(|| vec![source_root]);
@@ -294,7 +294,7 @@ fn get_or_create_symbol(
         if branch.is_empty() {
             continue;
         }
-        if matches!(&syms, Some(s) if s.len() == 0) {
+        if matches!(&syms, Some(s) if s.is_empty()) {
             syms = None;
         }
         match syms {

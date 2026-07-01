@@ -85,7 +85,7 @@ impl PythonOdooBuilder {
         let _inherit = session.st().get_symbol(symbol.into(), (&[], &["_inherit"]), u32::MAX);
         let Some(&SymbolKey::Variable(_inherit)) = _inherit.last() else { return };
         let evaluations = &session.st()[_inherit].evaluations;
-        if evaluations.len() == 0 {
+        if evaluations.is_empty() {
             error!("wrong _inherit structure");
             return;
         }

@@ -795,15 +795,15 @@ impl Evaluation {
 
                 print(c) <= string/int with value 5. if we had a parameter to 'other_test', only string with value 5
                 */
-                if base_evals.len() == 0 {
+                if base_evals.is_empty() {
                     /*TODO if multiple evals are found, we could maybe try to validate that they all have the same signature in case of diamond inheritance?
                     However, other cases should be handled by arch step or syntax? */
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base_eval_ptrs: Vec<EvaluationSymbolPtr> = base_evals.iter().map(|base_eval| {
+                let base_eval_ptrs: Vec<EvaluationSymbolPtr> = base_evals.iter().flat_map(|base_eval| {
                     let base_sym_weak_eval_base = base_eval.symbol.get_symbol(session, Some(context), &mut diagnostics, None);
                     SymbolTable::follow_ref(&base_sym_weak_eval_base, session, Some(context), true, false, None, None)
-                }).flatten().collect();
+                }).collect();
 
                 let mut call_argument_diagnostics = Vec::new();
                 for base_eval_ptr in base_eval_ptrs.iter() {
