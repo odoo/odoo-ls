@@ -92,17 +92,17 @@ impl SymbolTable {
         self.add_to_parent_symbols(parent, variable_key.into(), name, range.start().to_u32());
         variable_key
     }
-    pub fn add_new_function(&mut self, parent: SymbolKey, name: &str, range: TextRange, body_start: &TextSize) -> FunctionKey {
+    pub fn add_new_function(&mut self, parent: SymbolKey, name: &str, range: TextRange, body_start: TextSize) -> FunctionKey {
         let is_external = self.is_external(parent);
-        let function_symbol = FunctionSymbol::new(name, parent, range, body_start.clone(), is_external);
+        let function_symbol = FunctionSymbol::new(name, parent, range, body_start, is_external);
         let function_key = self.functions.insert(function_symbol);
         self.add_to_parent_symbols(parent, function_key.into(), name, range.start().to_u32());
         function_key
     }
 
-    pub fn add_new_class(&mut self, parent: SymbolKey, name: &str, range: TextRange, body_start: &TextSize) -> ClassKey {
+    pub fn add_new_class(&mut self, parent: SymbolKey, name: &str, range: TextRange, body_start: TextSize) -> ClassKey {
         let is_external = self.is_external(parent);
-        let class_symbol = ClassSymbol::new(name, parent, range, *body_start, is_external);
+        let class_symbol = ClassSymbol::new(name, parent, range, body_start, is_external);
         let class_key = self.classes.insert(class_symbol);
         self.add_to_parent_symbols(parent, class_key.into(), name, range.start().to_u32());
         class_key

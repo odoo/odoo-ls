@@ -341,7 +341,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
             }
             Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
                 // inactivity timeout, process messages
-                to_wait = config_delay.clone(); //reset timer, as maybe a previous process call set it to 0
+                to_wait = config_delay; //reset timer, as maybe a previous process call set it to 0
             },
             Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
                 error!("Delayed processing channel disconnected, exiting thread");

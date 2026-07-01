@@ -850,7 +850,7 @@ impl Evaluation {
                                                 let (object_or_type_eval, diags) = Evaluation::eval_from_ast(session, &expr.arguments.args[1], parent, max_infer, false, required_dependencies);
                                                 diagnostics.extend(diags);
                                                 if object_or_type_eval.len() != 1 {
-                                                    return Some((class_sym_weak_eval.weak.clone(), Some(default_instance)))
+                                                    return Some((class_sym_weak_eval.weak, Some(default_instance)))
                                                 }
                                                 let object_or_type_weak_eval = &SymbolTable::follow_ref(
                                                     &object_or_type_eval[0].symbol.get_symbol(

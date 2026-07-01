@@ -372,7 +372,7 @@ impl DocumentSymbolFeature {
             #[allow(deprecated)]
             deprecated: None,
             range,
-            selection_range: range.clone(),
+            selection_range: range,
             children: Some(children),
         });
     }

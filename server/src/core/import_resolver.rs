@@ -124,7 +124,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
             found: false,
             symbols: fallback_syms.as_ref().unwrap().clone(),
             file_tree: file_tree.clone(),
-            range: alias.range.clone()
+            range: alias.range
         })
     }
     if from_symbols.is_none()

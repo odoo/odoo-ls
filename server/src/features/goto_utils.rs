@@ -366,7 +366,7 @@ impl GotoUtils {
                         if let Some(file) = session.st().get_file(*symbol_key) {
                             let path = session.st().path(file).to_string();
                             let range = if session.st().has_range(*symbol_key) {
-                                let range = session.st().range(*symbol_key).clone();
+                                let range = *session.st().range(*symbol_key);
                                 session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &range)
                             } else {
                                 Range::default()
@@ -384,7 +384,7 @@ impl GotoUtils {
                     return vec![];
                 };
                 vec![LocationLink{
-                    origin_selection_range: def.origin_selection_range.clone(),
+                    origin_selection_range: def.origin_selection_range,
                     target_uri: FileMgr::pathname2uri(&path),
                     target_selection_range: range,
                     target_range: range,
@@ -392,7 +392,7 @@ impl GotoUtils {
             },
             GotoSourceType::Location { uri, range } => {
                 vec![LocationLink{
-                    origin_selection_range: def.origin_selection_range.clone(),
+                    origin_selection_range: def.origin_selection_range,
                     target_uri: FileMgr::pathname2uri(uri),
                     target_selection_range: session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, uri, range),
                     target_range: session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, uri, range),

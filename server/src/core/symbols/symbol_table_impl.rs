@@ -1478,7 +1478,7 @@ impl SymbolTable {
                 continue;
             }
             visited.insert(sym_key);
-            let next_ref_weak_instance = next_ref_weak.instance.clone();
+            let next_ref_weak_instance = next_ref_weak.instance;
             match sym_key {
                 SymbolKey::Variable(v) => {
                     // let sym = sym_key.borrow();
@@ -2483,7 +2483,7 @@ mod get_symbol_tests {
     fn file_plus_one_content() {
         let (mut st, root) = empty_table_with_root();
         let file = st.add_new_file(root, "my_file", "/test/my_file.py");
-        let class = st.add_new_class(file.into(), "MyClass", range_at(0), &TextSize::new(0));
+        let class = st.add_new_class(file.into(), "MyClass", range_at(0), TextSize::new(0));
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["MyClass"];
@@ -2497,8 +2497,8 @@ mod get_symbol_tests {
     fn file_plus_nested_content() {
         let (mut st, root) = empty_table_with_root();
         let file = st.add_new_file(root, "my_file", "/test/my_file.py");
-        let class = st.add_new_class(file.into(), "MyClass", range_at(0), &TextSize::new(0));
-        let method = st.add_new_function(class.into(), "method", range_at(1), &TextSize::new(1));
+        let class = st.add_new_class(file.into(), "MyClass", range_at(0), TextSize::new(0));
+        let method = st.add_new_function(class.into(), "method", range_at(1), TextSize::new(1));
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["MyClass", "method"];
@@ -2513,8 +2513,8 @@ mod get_symbol_tests {
         // Content path longer than 2: file -> Outer -> Inner -> v
         let (mut st, root) = empty_table_with_root();
         let file = st.add_new_file(root, "my_file", "/test/my_file.py");
-        let outer = st.add_new_class(file.into(), "Outer", range_at(0), &TextSize::new(0));
-        let inner = st.add_new_class(outer.into(), "Inner", range_at(1), &TextSize::new(1));
+        let outer = st.add_new_class(file.into(), "Outer", range_at(0), TextSize::new(0));
+        let inner = st.add_new_class(outer.into(), "Inner", range_at(1), TextSize::new(1));
         let var = st.add_new_variable(SymbolKey::Class(inner), "v", range_at(2));
 
         let files: &[&str] = &["my_file"];
@@ -2531,7 +2531,7 @@ mod get_symbol_tests {
         let (mut st, root) = empty_table_with_root();
         let package = st.add_new_python_package(root, "pkg", "/test/pkg", "");
         let file = st.add_new_file(package.into(), "mod", "/test/pkg/mod.py");
-        let class = st.add_new_class(file.into(), "Cls", range_at(0), &TextSize::new(0));
+        let class = st.add_new_class(file.into(), "Cls", range_at(0), TextSize::new(0));
 
         let files: &[&str] = &["pkg", "mod"];
         let content: &[&str] = &["Cls"];
@@ -2555,7 +2555,7 @@ mod get_symbol_tests {
     fn missing_content_returns_empty() {
         let (mut st, root) = empty_table_with_root();
         let file = st.add_new_file(root, "my_file", "/test/my_file.py");
-        st.add_new_class(file.into(), "MyClass", range_at(0), &TextSize::new(0));
+        st.add_new_class(file.into(), "MyClass", range_at(0), TextSize::new(0));
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["Missing"];

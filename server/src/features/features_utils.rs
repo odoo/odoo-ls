@@ -275,10 +275,10 @@ impl FeaturesUtils {
                     if [vec![Sy!("onchange")], vec![Sy!("constrains")]].contains(&func_sym_tree.1) && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0) {
                         arg_symbols.extend(
                             FeaturesUtils::find_simple_decorator_field_symbol(session, scope, from_module, field_name)
-                            .into_iter().map(|symbol| (symbol, field_range.clone()))
+                            .into_iter().map(|symbol| (symbol, field_range))
                         );
                         continue;
-                    } else if func_sym_tree.1 == &["depends"] && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0){
+                    } else if func_sym_tree.1 == ["depends"] && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0){
                         arg_symbols.extend(
                             FeaturesUtils::find_nested_fields_in_class(session, scope, from_module, &field_range, field_name, &offset)
                         );

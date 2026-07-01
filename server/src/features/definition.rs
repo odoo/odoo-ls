@@ -41,7 +41,7 @@ impl DefinitionFeature {
                 for template in templates.iter_valid(&session.sync_odoo.symbol_table) {
                     locations.extend(GotoUtils::goto_source_to_location(session, &GotoSource {
                         source: GotoSourceType::SymbolKey(template.into()),
-                        origin_selection_range: Some(range.clone()),
+                        origin_selection_range: Some(range),
                     }));
                 }
                 return Some(GotoDefinitionResponse::Link(locations));

@@ -33,10 +33,10 @@ static arch_class_hooks: LazyLock<Vec<PythonArchClassHook>> = LazyLock::new(|| {
             let symbol_key: SymbolKey = class.into();
             let env = symbol_table.get_symbol(symbol_key, (&[], &["env"]), u32::MAX);
             if env.is_empty() {
-                let mut range = symbol_table[class].range.clone();
+                let mut range = symbol_table[class].range;
                 let slots = symbol_table.get_symbol(symbol_key, (&[], &["__slots__"]), u32::MAX);
                 if slots.len() == 1 {
-                    range = symbol_table.range(slots[0]).clone();
+                    range = *symbol_table.range(slots[0]);
                 }
                 symbol_table.add_new_variable(symbol_key, "env", range);
             }
@@ -54,7 +54,7 @@ static arch_class_hooks: LazyLock<Vec<PythonArchClassHook>> = LazyLock::new(|| {
             if has_env {
                 return;
             }
-            let range = symbol_table[class].range.clone();
+            let range = symbol_table[class].range;
             symbol_table.add_new_variable(class, "env", range);
         }
     },
@@ -66,9 +66,9 @@ static arch_class_hooks: LazyLock<Vec<PythonArchClassHook>> = LazyLock::new(|| {
         ],
         func: |symbol_table: &mut SymbolTable, class: ClassKey| {
             let new_sym = symbol_table.get_symbol(class.into(), (&[], &["__new__"]), u32::MAX);
-            let mut range = symbol_table[class].range.clone();
+            let mut range = symbol_table[class].range;
             if new_sym.len() == 1 {
-                range = symbol_table.range(new_sym[0]).clone();
+                range = *symbol_table.range(new_sym[0]);
             }
             // ----------- env.cr ------------
             symbol_table.add_new_variable(class, "cr", range);
@@ -91,7 +91,7 @@ static arch_class_hooks: LazyLock<Vec<PythonArchClassHook>> = LazyLock::new(|| {
             ((15, 0), (19, 4), (&["odoo", "addons", "base", "models", "ir_rule"], &["IrRule"])),
         ],
         func: |symbol_table: &mut SymbolTable, class: ClassKey| {
-            let range = symbol_table[class].range.clone();
+            let range = symbol_table[class].range;
             // ----------- global ------------
             symbol_table.add_new_variable(class, "global", range);
         }
@@ -144,7 +144,7 @@ static arch_class_hooks: LazyLock<Vec<PythonArchClassHook>> = LazyLock::new(|| {
         ],
         func: |symbol_table: &mut SymbolTable, class: ClassKey| {
             let symbol_key: SymbolKey = class.into();
-            let range = symbol_table[class].range.clone();
+            let range = symbol_table[class].range;
             // ----------- __get__ ------------
             let get_sym = symbol_table.get_symbol(symbol_key, (&[], &["__get__"]), u32::MAX);
             if get_sym.is_empty() {

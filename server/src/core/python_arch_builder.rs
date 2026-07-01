@@ -465,7 +465,7 @@ impl PythonArchBuilder {
             // Expressions that cannot contained a named expressions are not traversed
             Expr::Lambda(lambda_expr) => {
                 let function_key = session.st_mut().add_new_function(
-                    *self.sym_stack.last().unwrap(), &S!("<lambda>"), lambda_expr.range, &lambda_expr.body.range().start()
+                    *self.sym_stack.last().unwrap(), &S!("<lambda>"), lambda_expr.range, lambda_expr.body.range().start()
                 );
                 if let Some(parameters) = &lambda_expr.parameters {
                     PythonArchBuilder::handle_func_args(function_key, session, parameters);
@@ -728,7 +728,7 @@ impl PythonArchBuilder {
             return; //if body is empty, it usually means that the ast of the class is invalid. Skip it
         }
         let function_key = session.st_mut().add_new_function(*self.sym_stack.last().unwrap(),
-            &func_def.name.id, func_def.range, &func_def.body.get(0).unwrap().range().start());
+            &func_def.name.id, func_def.range, func_def.body.get(0).unwrap().range().start());
         let func_sym = &mut session.st_mut()[function_key];
         func_sym.node_index.set(func_def.node_index.load());
         for decorator in func_def.decorator_list.iter() {
@@ -792,7 +792,7 @@ impl PythonArchBuilder {
         }
         let parent = *self.sym_stack.last().unwrap();
         let class_key = session.st_mut().add_new_class(
-            parent, class_def.name.id.as_str(), class_def.range, &class_def.body.get(0).unwrap().range().start());
+            parent, class_def.name.id.as_str(), class_def.range, class_def.body.get(0).unwrap().range().start());
         let class_sym = &mut session.sync_odoo.symbol_table[class_key];
 
         if class_def.body.len() > 0 && class_def.body[0].is_expr_stmt() {

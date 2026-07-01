@@ -123,7 +123,7 @@ impl AstUtils {
                             let res = resolve_import_stmt(session, file_symbol.into(), None, &[
                                 Alias { //create a dummy alias with a asname to force full import
                                     name: Identifier { id: Name::new(to_analyze), range: TextRange::default(), node_index: AtomicNodeIndex::default() },
-                                    asname: Some(Identifier { id: Name::new("fake_name"), range: alias.name.range().clone(), node_index: AtomicNodeIndex::default() }),
+                                    asname: Some(Identifier { id: Name::new("fake_name"), range: alias.name.range(), node_index: AtomicNodeIndex::default() }),
                                     range: alias.range(),
                                     node_index: AtomicNodeIndex::default()
                                 }], 0, &mut None);

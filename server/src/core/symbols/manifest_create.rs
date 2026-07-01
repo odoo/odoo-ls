@@ -172,7 +172,7 @@ impl ModuleSymbol {
                     }
                 } else {
                     let module = &mut session.st_mut()[module_key];
-                    module.data.push((data.as_string_literal_expr().unwrap().value.to_string(), data.range().clone()));
+                    module.data.push((data.as_string_literal_expr().unwrap().value.to_string(), data.range()));
                 }
             }
         }
@@ -216,10 +216,10 @@ impl ModuleSymbol {
                 for item in data.value.as_list_expr().unwrap().iter() {
                     let module = &mut session.st_mut()[module_key];
                     if item.is_string_literal_expr() {
-                        module.assets.push((item.as_string_literal_expr().unwrap().value.to_string(), item.range().clone()));
+                        module.assets.push((item.as_string_literal_expr().unwrap().value.to_string(), item.range()));
                     } else if item.is_tuple_expr() {
-                        if item.as_tuple_expr().unwrap().elts.len() == 0 {
-                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04018, &[]) {
+                        if item.as_tuple_expr().unwrap().elts.is_empty() {
+                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04018, &[]) {
                                 diagnostics.push(Diagnostic {
                                     range: Range::new(Position::new(item.range().start().to_u32(), 0), Position::new(item.range().end().to_u32(), 0)),
                                     ..diagnostic

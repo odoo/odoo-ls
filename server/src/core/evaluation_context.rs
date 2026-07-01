@@ -172,7 +172,7 @@ impl ContextValue {
 
     pub fn as_text_range(&self) -> TextRange {
         match self {
-            ContextValue::RANGE(r) => r.clone(),
+            ContextValue::RANGE(r) => *r,
             _ => panic!("Not a TextRange")
         }
     }

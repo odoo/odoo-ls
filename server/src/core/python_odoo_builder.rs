@@ -302,7 +302,7 @@ impl PythonOdooBuilder {
         let symbol = self.symbol;
         //These magic fields are added at odoo step, but it should be ok as most usage will be done in functions, not outside.
         //id
-        let range = session.st()[symbol].range.clone();
+        let range = session.st()[symbol].range;
         let id = session.st_mut().add_new_variable(symbol, "id", range);
         let id_field = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Id"]), u32::MAX);
         if let Some(&id_field) = id_field.last() {

@@ -685,7 +685,7 @@ impl PythonValidator {
             // and it is not inherited, so it is basically shadowing the existing model.
             let _name = session.st().get_symbol(class.into(), (&[], &["_name"]), u32::MAX);
             if let Some(&_name) = _name.last() {
-                let mut range = session.st().range(_name).clone();
+                let mut range = *session.st().range(_name);
                 let evals = session.st().evaluations(_name).cloned().unwrap();
                 // Try to get the string value range, otherwise stick to _name var range.
                 if let Some(eval_range) = evals.iter().find_map(|e|
