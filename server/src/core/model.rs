@@ -319,12 +319,12 @@ impl Model {
         .collect()
     }
 
-    pub fn all_symbols_inherits(&self, session: &SessionInfo, from_module: Option<ModuleKey>) -> (Vec<(ClassKey, Option<OYarn>)>, Vec<(ClassKey, Option<OYarn>)>) {
+    pub fn all_symbols_inherits(&self, session: &SessionInfo, from_module: Option<ModuleKey>) -> (Vec<ClassWithModule>, Vec<ClassWithModule>) {
         let mut visited_models = HashSet::default();
         self.all_inherits_helper(session, from_module, &mut visited_models)
     }
 
-    fn all_inherits_helper(&self, session: &SessionInfo, from_module: Option<ModuleKey>, visited_models: &mut HashSet<OYarn>) -> (Vec<(ClassKey, Option<OYarn>)>, Vec<(ClassKey, Option<OYarn>)>) {
+    fn all_inherits_helper(&self, session: &SessionInfo, from_module: Option<ModuleKey>, visited_models: &mut HashSet<OYarn>) -> (Vec<ClassWithModule>, Vec<ClassWithModule>) {
         if visited_models.contains(&self.name) {
             return (Vec::new(), Vec::new());
         }

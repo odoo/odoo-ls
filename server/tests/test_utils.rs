@@ -36,19 +36,21 @@ pub static COUNTRY_CLASS_NAME: LazyLock<fn(OdooVersion) -> &'static str> = LazyL
     }
 });
 
+type HoverCallable = fn(
+    &mut SessionInfo,
+    SourceFileKey,
+    &Rc<RefCell<FileInfo>>,
+    u32,
+    u32,
+) -> Option<lsp_types::Hover>;
+
 fn get_hover(
     session: &mut SessionInfo,
     file_symbol: SourceFileKey,
     file_info: &Rc<RefCell<FileInfo>>,
     line: u32,
     character: u32,
-    callable: fn(
-        &mut SessionInfo,
-        SourceFileKey,
-        &Rc<RefCell<FileInfo>>,
-        u32,
-        u32,
-    ) -> Option<lsp_types::Hover>,
+    callable: HoverCallable,
 ) -> Option<String> {
     let hover = callable(session, file_symbol, file_info, line, character);
     hover.and_then(|h| match h.contents {
