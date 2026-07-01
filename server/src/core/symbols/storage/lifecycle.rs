@@ -1,13 +1,13 @@
 //! Symbol creation and destruction.
 
-/// All slotmap insertions/removals and parent/child relationship mutations are
-/// centralized here.
-///
-/// The `symbols` and `module_symbols` fields on variant structs
-/// are `pub(super)`, so only code within the storage module can mutate them.
-/// Combined with private slotmaps, this guarantees that `parent`, `symbols`, and
-/// `module_symbols` always hold valid keys — they can be trusted without validity
-/// checks, unlike keys stored elsewhere (as Weak).
+//! All slotmap insertions/removals and parent/child relationship mutations are
+//! centralized here.
+//!
+//! The `symbols` and `module_symbols` fields on variant structs
+//! are `pub(super)`, so only code within the storage module can mutate them.
+//! Combined with private slotmaps, this guarantees that `parent`, `symbols`, and
+//! `module_symbols` always hold valid keys — they can be trusted without validity
+//! checks, unlike keys stored elsewhere (as Weak).
 
 use crate::{
     constants::{OYarn, PackageType, SymType},

@@ -1220,8 +1220,8 @@ impl PythonArchEvalHooks {
     /// For @api.returns decorator, which can take a string or self
     /// - self: self
     /// - string: model name if exists + validate
-    /// Adds evaluation to the function symbol
-    /// Returns a vector of diagnostics if the model is not found or not in the dependencies of the module
+    ///   Adds evaluation to the function symbol
+    ///   Returns a vector of diagnostics if the model is not found or not in the dependencies of the module
     fn handle_api_returns_decorator(session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments) -> Vec<Diagnostic>{
         let mut diagnostics = vec![];
         let Some(Expr::StringLiteral(expr)) = arguments.args.first() else {return diagnostics};
