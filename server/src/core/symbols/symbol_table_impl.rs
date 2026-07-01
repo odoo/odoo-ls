@@ -2032,7 +2032,7 @@ impl SymbolTable {
         is_super: bool
     ) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
         let mut visited_classes: HashSet<ClassKey> = HashSet::default();
-        return Self::_get_member_symbol_helper(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super, &mut visited_classes);
+        Self::_get_member_symbol_helper(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super, &mut visited_classes)
     }
 
     fn _get_member_symbol_helper(
