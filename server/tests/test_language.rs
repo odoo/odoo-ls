@@ -1,5 +1,5 @@
 use odoo_ls_server::utils::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use lsp_types::{NumberOrString, TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier};
 use odoo_ls_server::core::config::{ConfigView, ConfigKey};
@@ -42,7 +42,7 @@ fn assert_language_registered(session: &mut SessionInfo<'_>, lang: &str, should_
 /// Helper to simulate a file change via LSP didChange
 fn simulate_file_change(
     session: &mut SessionInfo<'_>,
-    path: &PathBuf,
+    path: &Path,
     content: &str,
     version: i32,
 ) {

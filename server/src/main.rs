@@ -1,6 +1,6 @@
 use lsp_server::Notification;
 use serde_json::json;
-use odoo_ls_server::{args::{Cli, LogLevel}, cli_backend::CliBackend, constants::*, server::Server, utils::PathSanitizer, crash_buffer};
+use odoo_ls_server::{args::{Cli, LogLevel}, cli_backend::CliBackend, constants::*, server::Server, crash_buffer};
 use clap::Parser;
 use tracing::{info, Level};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
@@ -47,13 +47,13 @@ fn main() {
     let mut exe_dir = env::current_exe().expect("Unable to get binary directory... aborting");
     exe_dir.pop();
 
-    let mut log_dir = exe_dir.join("logs").sanitize();
-    if let Some(log_directory) = cli.logs_directory.clone() {
-        let pathbuf = PathBuf::from(log_directory);
-        if pathbuf.exists() {
-            log_dir = pathbuf.sanitize();
+    let mut log_dir = exe_dir.as_path().join("logs");
+    if let Some(log_directory) = cli.logs_directory.as_ref() {
+        let path = PathBuf::from(log_directory);
+        if path.exists() {
+            log_dir = path;
         } else {
-            println!("Given log directory path is invalid, fallbacking to default directory {}", log_dir);
+            println!("Given log directory path is invalid, fallbacking to default directory {}", log_dir.display());
         }
     }
 

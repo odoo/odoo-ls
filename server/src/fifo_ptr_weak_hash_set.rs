@@ -8,6 +8,12 @@ pub struct FifoWeakHashSet<T: Copy + Eq + Hash> {
     queue: VecDeque<T>,
 }
 
+impl<T: Copy + Eq + Hash> Default for FifoWeakHashSet<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Copy + Eq + Hash> FifoWeakHashSet<T> {
     pub fn new() -> Self {
         Self {

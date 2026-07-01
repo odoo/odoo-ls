@@ -25,9 +25,9 @@ impl WorkspaceSymbolFeature {
         let mut symbols = vec![];
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         let mut can_resolve_location_range = false;
-        if let Some(cap_workspace) = session.sync_odoo.capabilities.workspace.as_ref() {
-            if let Some(workspace_symb) = cap_workspace.symbol.as_ref() {
-                if let Some(resolve_support) = workspace_symb.resolve_support.as_ref() {
+        if let Some(cap_workspace) = session.sync_odoo.capabilities.workspace.as_ref()
+            && let Some(workspace_symb) = cap_workspace.symbol.as_ref()
+                && let Some(resolve_support) = workspace_symb.resolve_support.as_ref() {
                     for resolvable_property in &resolve_support.properties {
                         if resolvable_property == "location.range" {
                             can_resolve_location_range = true;
@@ -35,8 +35,6 @@ impl WorkspaceSymbolFeature {
                         }
                     }
                 }
-            }
-        }
         for entry in ep_mgr.borrow().iter_all() {
             if entry.borrow().typ == EntryPointType::BUILTIN || entry.borrow().typ == EntryPointType::PUBLIC { //We don't want to search in builtins
                 continue;
@@ -118,7 +116,7 @@ impl WorkspaceSymbolFeature {
     /**
      * Return true if the request has been cancelled and the cancellation should be propagated
      */
-    fn browse_symbol(session: &mut SessionInfo, symbol: SymbolKey, query: &String, parent: Option<String>, parent_path: Option<&String>, can_resolve_location_range: bool, results: &mut Vec<WorkspaceSymbol>) -> bool {
+    fn browse_symbol(session: &mut SessionInfo, symbol: SymbolKey, query: &str, parent: Option<String>, parent_path: Option<&String>, can_resolve_location_range: bool, results: &mut Vec<WorkspaceSymbol>) -> bool {
         if symbol.typ() == SymType::VARIABLE {
             return false;
         }
@@ -127,25 +125,23 @@ impl WorkspaceSymbolFeature {
                 return true;
             }
         }
-        let container_name = match &parent {
-            Some(p) => Some(p.clone()),
-            None => None,
-        };
+        let container_name = parent.clone();
         let path = session.st().paths(symbol);
         let path = if path.len() == 1 {
             Some(&path[0])
-        } else if path.len() == 0{
+        } else if path.is_empty(){
             parent_path
         } else {
             None
         };
-        if path.is_some() && session.st().has_range(symbol) {
+        if let Some(path) = path
+        && session.st().has_range(symbol) {
             //Test if symbol should be returned
-            if string_fuzzy_contains(&session.st().name(symbol), &query) {
+            if string_fuzzy_contains(session.st().name(symbol), query) {
                 let name = session.st().name(symbol).to_string();
                 let range = session.st().range(symbol).clone();
                 let kind = SymbolTable::get_lsp_symbol_kind(symbol);
-                WorkspaceSymbolFeature::add_symbol_to_results(session, kind, &name, path.unwrap(), container_name.clone(), Some(&range), can_resolve_location_range, results);
+                WorkspaceSymbolFeature::add_symbol_to_results(session, kind, &name, path, container_name.clone(), Some(&range), can_resolve_location_range, results);
             }
             //Test if symbol is a model
             if let SymbolKey::Class(class_key) = symbol && let Some(model_data) = session.st()[class_key]._model.as_ref() {
@@ -153,7 +149,7 @@ impl WorkspaceSymbolFeature {
                 let range = session.st().range(symbol).clone();
                 if string_fuzzy_contains(&model_name, &query) {
                     let kind = SymbolTable::get_lsp_symbol_kind(symbol);
-                    WorkspaceSymbolFeature::add_symbol_to_results(session, kind, &model_name, path.unwrap(), container_name.clone(), Some(&range), can_resolve_location_range, results);
+                    WorkspaceSymbolFeature::add_symbol_to_results(session, kind, &model_name, path, container_name.clone(), Some(&range), can_resolve_location_range, results);
                 }
             }
         }
@@ -161,14 +157,14 @@ impl WorkspaceSymbolFeature {
             let mut res_to_add = vec![];
             for (xml_id_name, data_set) in session.st()[module_key].xml_ids.iter() {
                 let xml_name = S!("xmlid.") + xml_id_name;
-                if string_fuzzy_contains(&xml_name, &query) {
+                if string_fuzzy_contains(&xml_name, query) {
                     for data in data_set.iter_valid(session.st()) {
                         let xml_file_symbol = session.st().get_file(data.into());
                         if let Some(SourceFileKey::XmlFile(xml_file_key)) = xml_file_symbol {
                             let xml_file = &session.st()[xml_file_key];
                             let name = xml_file.name.to_string();
                             let path = xml_file.path.clone();
-                            let data_range = session.st().range(data.into()).clone();
+                            let data_range = *session.st().range(data.into());
                             res_to_add.push((xml_file_key, xml_name.clone(), path, name, data_range));
                         }
                     }
@@ -187,7 +183,7 @@ impl WorkspaceSymbolFeature {
         false
     }
 
-    fn add_symbol_to_results(session: &mut SessionInfo, kind: SymbolKind, name: &String, path: &String, container_name: Option<String>, range: Option<&TextRange>, can_resolve_location_range: bool, results: &mut Vec<WorkspaceSymbol>) {
+    fn add_symbol_to_results(session: &mut SessionInfo, kind: SymbolKind, name: &str, path: &str, container_name: Option<String>, range: Option<&TextRange>, can_resolve_location_range: bool, results: &mut Vec<WorkspaceSymbol>) {
         let location = if can_resolve_location_range {
             lsp_types::OneOf::Right(WorkspaceLocation {
                 uri: FileMgr::pathname2uri(path)
@@ -206,21 +202,22 @@ impl WorkspaceSymbolFeature {
                 return;
             }
         };
-        let data = if can_resolve_location_range && range.is_some() {
+        let data = if can_resolve_location_range
+        && let Some(range) = range {
             Some(lsp_types::LSPAny::Array(vec![
-                lsp_types::LSPAny::Number(serde_json::Number::from(range.as_ref().unwrap().start().to_u32())),
-                lsp_types::LSPAny::Number(serde_json::Number::from(range.as_ref().unwrap().end().to_u32())),
+                lsp_types::LSPAny::Number(serde_json::Number::from(range.start().to_u32())),
+                lsp_types::LSPAny::Number(serde_json::Number::from(range.end().to_u32())),
             ]))
         } else {
             None
         };
         results.push(WorkspaceSymbol {
-            name: name.clone(),
+            name: name.to_string(),
             kind,
             tags: None,
             container_name,
-            location: location,
-            data: data,
+            location,
+            data,
         });
     }
 
@@ -253,21 +250,21 @@ impl WorkspaceSymbolFeature {
                                     code: ErrorCode::ContentModified as i32, message: S!("Unable to resolve Workspace Symbol - File content modified"), data: None
                                 })
                             }
-                            return Ok(resolved_symbol)
+                            Ok(resolved_symbol)
                         } else {
-                            return Err(ResponseError { code: ErrorCode::InternalError as i32, message: S!("Unable to resolve Workspace Symbol - Invalid data to resolve range"), data: None })
+                            Err(ResponseError { code: ErrorCode::InternalError as i32, message: S!("Unable to resolve Workspace Symbol - Invalid data to resolve range"), data: None })
                         }
                     } else {
-                        return Err(ResponseError { code: ErrorCode::InternalError as i32, message: S!("Unable to resolve Workspace Symbol - Invalid data to resolve range"), data: None })
+                        Err(ResponseError { code: ErrorCode::InternalError as i32, message: S!("Unable to resolve Workspace Symbol - Invalid data to resolve range"), data: None })
                     }
                 } else {
-                    return Err(ResponseError { code: ErrorCode::InternalError as i32, message: S!("Unable to resolve Workspace Symbol - No data to resolve range"), data: None })
+                    Err(ResponseError { code: ErrorCode::InternalError as i32, message: S!("Unable to resolve Workspace Symbol - No data to resolve range"), data: None })
                 }
             } else {
-                return Err(ResponseError { code: ErrorCode::InternalError as i32, message: S!("Unable to resolve Workspace Symbol - No file info"), data: None })
+                Err(ResponseError { code: ErrorCode::InternalError as i32, message: S!("Unable to resolve Workspace Symbol - No file info"), data: None })
             }
         } else {
-            return Err(ResponseError { code: ErrorCode::InternalError as i32, message: S!("Unable to resolve Workspace Symbol - no provided location to resolve"), data: None })
+            Err(ResponseError { code: ErrorCode::InternalError as i32, message: S!("Unable to resolve Workspace Symbol - no provided location to resolve"), data: None })
         }
     }
 

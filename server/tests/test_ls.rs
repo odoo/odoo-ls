@@ -64,7 +64,7 @@ fn test_imports(odoo: &SyncOdoo) {
     assert!(st.all_symbols(constants_dir).len() == 3);
     assert!(st.get_symbol(constants_dir, (&[], &["CONSTANT_1"]), u32::MAX).len() == 1);
     assert!(st.get_symbol(constants_dir, (&[], &["CONSTANT_2"]), u32::MAX).len() == 1);
-    assert!(st.get_symbol(constants_dir, (&[], &["CONSTANT_3"]), u32::MAX).len() == 0);
+    assert!(st.get_symbol(constants_dir, (&[], &["CONSTANT_3"]), u32::MAX).is_empty());
     assert!(st.get_symbol(constants_dir, (&["data"], &[]), u32::MAX).len() == 1);
     assert!(st.evaluations(st.get_symbol(constants_dir, (&[], &["CONSTANT_1"]), u32::MAX)[0]).as_ref().unwrap().len() == 1);
     assert!(st.evaluations(st.get_symbol(constants_dir, (&[], &["CONSTANT_1"]), u32::MAX)[0]).as_ref().unwrap()[0].value.is_none());
@@ -76,7 +76,7 @@ fn test_imports(odoo: &SyncOdoo) {
     assert!(st.all_symbols(data_dir).len() == 4);
     assert!(st.get_symbol(data_dir, (&[], &["CONSTANT_1"]), u32::MAX).len() == 1);
     assert!(st.get_symbol(data_dir, (&[], &["CONSTANT_2"]), u32::MAX).len() == 1);
-    assert!(st.get_symbol(data_dir, (&[], &["CONSTANT_3"]), u32::MAX).len() == 0);
+    assert!(st.get_symbol(data_dir, (&[], &["CONSTANT_3"]), u32::MAX).is_empty());
     assert!(st.get_symbol(data_dir, (&["constants"], &[]), u32::MAX).len() == 1);
     assert!(st.evaluations(st.get_symbol(data_dir, (&[], &["CONSTANT_1"]), u32::MAX)[0]).as_ref().unwrap().len() == 1);
     assert!(st.evaluations(st.get_symbol(data_dir, (&[], &["CONSTANT_1"]), u32::MAX)[0]).as_ref().unwrap()[0].value.is_none());

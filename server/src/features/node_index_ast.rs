@@ -1,5 +1,5 @@
-/// From https://github.com/astral-sh/ruff/blob/c433865801e2ee06902199d6b0a223cfca52269b/crates/ruff_db/src/parsed.rs#L160
-/// License MIT: https://github.com/astral-sh/ruff?tab=MIT-1-ov-file#readme
+// From https://github.com/astral-sh/ruff/blob/c433865801e2ee06902199d6b0a223cfca52269b/crates/ruff_db/src/parsed.rs#L160
+// License MIT: https://github.com/astral-sh/ruff?tab=MIT-1-ov-file#readme
 
 use std::sync::Arc;
 

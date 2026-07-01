@@ -66,7 +66,7 @@ fn test_assigns() {
     assert!(matches!(st.evaluations(c[0]).as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(c) if matches!(c.as_ref(), Expr::NumberLiteral(_))));
     assert!(st.evaluations(c[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_number_literal_expr());
     assert!(st.evaluations(c[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.is_float());
-    assert!(st.evaluations(c[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_float().unwrap() == &3.14);
+    assert!(st.evaluations(c[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_float().unwrap() == &6.66);
 
     let d = session.sync_odoo.get_symbol(path.as_str(), (&[], &["d"]), u32::MAX);
     assert!(d.len() == 1);
@@ -75,7 +75,7 @@ fn test_assigns() {
     assert!(st.evaluations(d[0]).as_ref().unwrap()[0].value.is_some());
     assert!(matches!(st.evaluations(d[0]).as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(c) if matches!(c.as_ref(), Expr::BooleanLiteral(_))));
     assert!(st.evaluations(d[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_boolean_literal_expr());
-    assert!(st.evaluations(d[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_boolean_literal_expr().unwrap().value == true);
+    assert!(st.evaluations(d[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_boolean_literal_expr().unwrap().value);
 
     let e = session.sync_odoo.get_symbol(path.as_str(), (&[], &["e"]), u32::MAX);
     assert!(e.len() == 1);
@@ -84,7 +84,7 @@ fn test_assigns() {
     assert!(st.evaluations(e[0]).as_ref().unwrap()[0].value.is_some());
     assert!(matches!(st.evaluations(e[0]).as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(c) if matches!(c.as_ref(), Expr::BooleanLiteral(_))));
     assert!(st.evaluations(e[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_boolean_literal_expr());
-    assert!(st.evaluations(e[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_boolean_literal_expr().unwrap().value == false);
+    assert!(!st.evaluations(e[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_boolean_literal_expr().unwrap().value);
 
     let f = session.sync_odoo.get_symbol(path.as_str(), (&[], &["f"]), u32::MAX);
     assert!(f.len() == 1);

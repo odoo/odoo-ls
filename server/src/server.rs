@@ -116,16 +116,16 @@ impl Server {
             connection: Some(conn),
             client_process_id: 0,
             msg_id: 0,
-            receivers_w_to_s: receivers_w_to_s,
+            receivers_w_to_s,
             main_thread,
             generic_sender_to_main,
             response_sender_to_main,
-            sender_to_delayed_process: sender_to_delayed_process,
+            sender_to_delayed_process,
             delayed_process_thread,
-            sync_odoo: sync_odoo,
+            sync_odoo,
             interrupt_rebuild_boolean,
             terminate_rebuild_boolean,
-            running_request_ids: running_request_ids,
+            running_request_ids,
         }
     }
 
@@ -302,10 +302,8 @@ impl Server {
                         let _ = connection.sender.send(Message::Response(r));
                     },
                     Message::Notification(n) if n.method != Shutdown::METHOD => {
-                        if n.method != Shutdown::METHOD {
                             let _ = connection.sender.send(Message::Notification(n));
-                        }
-                    },
+                        },
                     _ => {}, // Skip shutdown (not possible) and requests (should not happen / not useful at this stage)
                 }
             }

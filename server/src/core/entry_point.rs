@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::{cell::RefCell, cmp, path::PathBuf, rc::Rc, u32};
+use std::{cell::RefCell, cmp, path::PathBuf, rc::Rc};
 use crate::constants::MissingDataSource;
 use crate::utils::HashMap;
 
@@ -27,6 +27,12 @@ pub struct EntryPointMgr {
     pub addons_entry_points: Vec<Rc<RefCell<EntryPoint>>>,
     pub custom_entry_points: Vec<Rc<RefCell<EntryPoint>>>,
     pub untitled_entry_points: Vec<Rc<RefCell<EntryPoint>>>,
+}
+
+impl Default for EntryPointMgr {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl EntryPointMgr {
@@ -57,15 +63,15 @@ impl EntryPointMgr {
         );
         session.sync_odoo.entry_point_mgr.borrow_mut().untitled_entry_points.push(entry.clone());
         // Create one file symbol under the root for the untitled file
-        let name: String = PathBuf::from(&path).with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
-        let file_sym = session.st_mut().add_new_file(entry.borrow().root.into(), &name, &path);
-        file_sym
+        let name: String = PathBuf::from(&path).with_extension("").components().next_back().unwrap().as_os_str().to_str().unwrap().to_string();
+
+        session.st_mut().add_new_file(entry.borrow().root.into(), &name, &path)
     }
 
     /**
      * Create each required directory symbols for a given path.
      * /!\ path must point to a directory on disk */
-    pub fn create_dir_symbols_from_path_to_entry(session: &mut SessionInfo, path: &PathBuf, entry: Rc<RefCell<EntryPoint>>) -> Option<SymbolKey> {
+    pub fn create_dir_symbols_from_path_to_entry(session: &mut SessionInfo, path: &Path, entry: Rc<RefCell<EntryPoint>>) -> Option<SymbolKey> {
         let mut iter_path = PathBuf::new();
         let mut current_sym: SymbolKey = entry.borrow().root.into();
         let component_count = path.components().count();
@@ -101,8 +107,8 @@ impl EntryPointMgr {
             None,
             None);
         session.sync_odoo.entry_point_mgr.borrow_mut().main_entry_point = Some(entry.clone());
-        let sym = EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry);
-        sym
+        
+        EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry)
     }
 
     /* Create a new entry to builtins.
@@ -119,8 +125,8 @@ impl EntryPointMgr {
             None,
             None);
         session.sync_odoo.entry_point_mgr.borrow_mut().builtins_entry_points.push(entry.clone());
-        let sym = EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry);
-        sym
+        
+        EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry)
     }
 
     /* Create a new entry to public.
@@ -129,11 +135,11 @@ impl EntryPointMgr {
     pub fn add_entry_to_public(session: &mut SessionInfo, path: String) -> Option<SymbolKey> {
         info!("Adding new public entry point: {}", path);
         //Prevent adding entry point from sys.path or other config that is matching odoo or addons paths
-        if let Some(odoo_path) = &session.sync_odoo.config.odoo_path() {
-            if &path == odoo_path {
-                warn!("Public entry point {} is equal to odoo path {}, this is not supported and will be ignored", path, odoo_path);
-                return None;
-            }
+        if let Some(odoo_path) = &session.sync_odoo.config.odoo_path()
+            && &path == odoo_path
+        {
+            warn!("Public entry point {} is equal to odoo path {}, this is not supported and will be ignored", path, odoo_path);
+            return None;
         }
         for addon_path in &session.sync_odoo.config.addons_paths() {
             if &path == addon_path {
@@ -150,8 +156,8 @@ impl EntryPointMgr {
             None,
             None);
         session.sync_odoo.entry_point_mgr.borrow_mut().public_entry_points.push(entry.clone());
-        let sym = EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry);
-        sym
+        
+        EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry)
     }
 
     /* Create a new entry to addons.
@@ -177,28 +183,28 @@ impl EntryPointMgr {
     /* Create a new entry to public.
     return the symbol at the end of the path
      */
-    pub fn add_entry_to_customs(session: &mut SessionInfo, path: String) -> Option<SymbolKey> {
+    pub fn add_entry_to_customs(session: &mut SessionInfo, path: &str) -> Option<SymbolKey> {
         info!("Adding new custom entry point: {}", path);
-        let entry_point_tree = PathBuf::from(&path).to_tree();
+        let entry_point_tree = PathBuf::from(path).to_tree();
         let entry = EntryPoint::new(
             &mut session.sync_odoo.symbol_table,
-            path.clone(),
+            path.to_string(),
             entry_point_tree.flatten(),
             EntryPointType::CUSTOM,
             None,
             None);
         session.sync_odoo.entry_point_mgr.borrow_mut().custom_entry_points.push(entry.clone());
-        EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry)
+        EntryPointMgr::_create_dir_symbols_for_new_entry(session, path, entry)
     }
 
-    fn _create_dir_symbols_for_new_entry(session: &mut SessionInfo, path: &String, entry: Rc<RefCell<EntryPoint>>) -> Option<SymbolKey> {
-        EntryPointMgr::create_dir_symbols_from_path_to_entry(session, &PathBuf::from(path), entry)
+    fn _create_dir_symbols_for_new_entry(session: &mut SessionInfo, path: &str, entry: Rc<RefCell<EntryPoint>>) -> Option<SymbolKey> {
+        EntryPointMgr::create_dir_symbols_from_path_to_entry(session, Path::new(path), entry)
     }
 
     /// Create a new custom entry point for a given tree path and file path.
     /// tree_path can possibly be the path stripped from __manifest__/__init__.py
-    pub fn create_new_custom_entry_for_path(session: &mut SessionInfo, tree_path: &String, file_path: &String) -> bool {
-        let new_sym = EntryPointMgr::add_entry_to_customs(session, tree_path.clone());
+    pub fn create_new_custom_entry_for_path(session: &mut SessionInfo, tree_path: &str, file_path: &str) -> bool {
+        let new_sym = EntryPointMgr::add_entry_to_customs(session, tree_path);
         if let Some(new_sym) = new_sym {
             session.st_mut().set_is_external(new_sym, false);
             match new_sym {
@@ -232,8 +238,8 @@ impl EntryPointMgr {
         true
     }
 
-    pub fn create_new_untitled_entry_for_path(session: &mut SessionInfo, file_name: &String) -> bool {
-        let new_sym = EntryPointMgr::add_entry_to_untitled(session, file_name.clone());
+    pub fn create_new_untitled_entry_for_path(session: &mut SessionInfo, file_name: &str) -> bool {
+        let new_sym = EntryPointMgr::add_entry_to_untitled(session, file_name.to_string());
         session.sync_odoo.symbol_table[new_sym].self_import = true;
         SyncOdoo::add_to_rebuild_arch(session.sync_odoo, new_sym);
         true
@@ -272,7 +278,7 @@ impl EntryPointMgr {
     pub fn iter_main(&self) -> impl Iterator<Item = &Rc<RefCell<EntryPoint>>>
     {
         let mut collected = self.main_entry_point.iter().chain(self.addons_entry_points.iter()).collect::<Vec<_>>();
-        collected.sort_by(|x, y| y.borrow().tree.len().cmp(&x.borrow().tree.len()));
+        collected.sort_by_key(|ep| std::cmp::Reverse(ep.borrow().tree.len()));
         collected.into_iter()
     }
 
@@ -304,7 +310,7 @@ impl EntryPointMgr {
         }
     }
 
-    pub fn remove_entries_with_path(&mut self, symbol_table: &mut SymbolTable, path: &String) {
+    pub fn remove_entries_with_path(&mut self, symbol_table: &mut SymbolTable, path: &str) {
         for entry in self.iter_all() {
             if (entry.borrow().typ == EntryPointType::UNTITLED && entry.borrow().path == *path)
             || (entry.borrow().typ != EntryPointType::UNTITLED
@@ -315,7 +321,7 @@ impl EntryPointMgr {
         self.clean_entries(symbol_table);
     }
 
-    pub fn check_custom_entry_to_delete_with_path(&mut self, path: &String) {
+    pub fn check_custom_entry_to_delete_with_path(&mut self, path: &str) {
         for entry in self.custom_entry_points.iter() {
             if entry.borrow().path == *path {
                 entry.borrow_mut().to_delete = true;
@@ -324,15 +330,14 @@ impl EntryPointMgr {
     }
 
     pub fn clean_entries(&mut self, symbol_table: &mut SymbolTable) {
-        if let Some(main) = self.main_entry_point.as_ref() {
-            if main.borrow().to_delete {
+        if let Some(main) = self.main_entry_point.as_ref()
+            && main.borrow().to_delete {
                 info!("Dropping main entry point");
                 Self::drop_entry(symbol_table, main);
                 self.main_entry_point = None;
                 // addons entries share the same root as the main entry
                 self.addons_entry_points.clear();
             }
-        }
         let mut drop_if_flagged = |label: &str, entries: &mut Vec<Rc<RefCell<EntryPoint>>>| {
             entries.retain(|entry| {
                 if entry.borrow().to_delete {
@@ -467,7 +472,7 @@ impl EntryPoint {
     }
 
     //it assumes that the path is valid for the entry
-    pub fn get_tree_for_entry(&self, path: &PathBuf) -> Tree {
+    pub fn get_tree_for_entry(&self, path: &Path) -> Tree {
         if let Some(addon_to_odoo_path) = self.addon_to_odoo_path.as_ref() {
             let path = path.strip_prefix(&self.path).unwrap();
             let path = PathBuf::from(addon_to_odoo_path.clone()).join(path.to_str().unwrap());
@@ -524,7 +529,7 @@ impl EntryPoint {
 
     /* Consider the given 'tree' path as updated (or new) and move all symbols that were searching for it
     from the not_found_symbols list to the rebuild list. Return True is something should be rebuilt */
-    pub fn search_symbols_to_rebuild(&mut self, session: &mut SessionInfo, path: &String, tree: Tree) {
+    pub fn search_symbols_to_rebuild(&mut self, session: &mut SessionInfo, path: &str, tree: Tree) {
         let flat_tree = tree.flatten();
         let mut to_add = [vec![], vec![], vec![]];
         for s in self.not_found_symbols.iter_valid(session.st()) {

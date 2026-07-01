@@ -1,6 +1,6 @@
-/// From https://github.com/astral-sh/ruff/blob/c7ff9826d614a34a940c924f494ea98dc1030445/crates/ruff_server/src/edit/text_document.rs
-/// From https://github.com/astral-sh/ruff/blob/c7ff9826d614a34a940c924f494ea98dc1030445/crates/ruff_server/src/edit/range.rs
-/// License MIT: https://github.com/astral-sh/ruff?tab=MIT-1-ov-file#readme
+// From https://github.com/astral-sh/ruff/blob/c7ff9826d614a34a940c924f494ea98dc1030445/crates/ruff_server/src/edit/text_document.rs
+// From https://github.com/astral-sh/ruff/blob/c7ff9826d614a34a940c924f494ea98dc1030445/crates/ruff_server/src/edit/range.rs
+// License MIT: https://github.com/astral-sh/ruff?tab=MIT-1-ov-file#readme
 
 use lsp_types::TextDocumentContentChangeEvent;
 use ruff_source_file::{LineIndex, OneIndexed, PositionEncoding, SourceLocation};
@@ -151,7 +151,7 @@ impl TextDocument {
 
                 new_contents.replace_range(
                     usize::from(range.start())..usize::from(range.end()),
-                    &change,
+                    change,
                 );
             } else {
                 new_contents = change.to_string();

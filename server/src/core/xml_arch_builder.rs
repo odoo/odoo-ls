@@ -1,6 +1,6 @@
 use super::file_mgr::FileInfo;
 use crate::{
-    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, MissingDataSource, DiagnosticSource, OYarn}, core::{entry_point::EntryPointType, symbols::{ModuleSymbol, symbol_keys::{XmlDataKey, XmlId}}}, features::xml_ast_utils::XmlAstUtils, threads::SessionInfo, weak_collections::WeakSet
+    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, MissingDataSource, DiagnosticSource, OYarn}, core::{entry_point::EntryPointType, symbols::{ModuleSymbol, symbol_keys::{XmlDataKey, XmlId}}}, features::xml_ast_utils::XmlAstUtils, threads::SessionInfo
 };
 use crate::{
     core::{
@@ -113,7 +113,7 @@ impl XmlArchBuilder {
                     return;
                 };
                 session.sync_odoo.get_main_entry().borrow_mut().search_rebuild_for_data_id(session, MissingDataSource::TEMPLATE(Sy!(t_name.clone())));
-                session.sync_odoo.js_templates.entry(t_name).or_insert_with(|| WeakSet::default()).insert(template);
+                session.sync_odoo.js_templates.entry(t_name).or_default().insert(template);
             }
         }
     }

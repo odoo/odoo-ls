@@ -372,7 +372,7 @@ impl DocumentSymbolFeature {
             #[allow(deprecated)]
             deprecated: None,
             range,
-            selection_range: range.clone(),
+            selection_range: range,
             children: Some(children),
         });
     }
@@ -413,14 +413,14 @@ impl DocumentSymbolFeature {
             _ => node.tag_name().name().to_string(),
         };
         results.push(DocumentSymbol {
-            name: name,
+            name,
             detail: None,
-            kind: kind,
+            kind,
             tags: None,
             #[allow(deprecated)]
             deprecated: None,
             range,
-            selection_range: range.clone(),
+            selection_range: range,
             children: Some(children),
         });
     }

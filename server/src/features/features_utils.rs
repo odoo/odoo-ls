@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use itertools::Itertools;
 use ruff_python_ast::{Expr, ExprCall, Keyword};
 use ruff_text_size::{Ranged, TextRange, TextSize};
@@ -31,12 +33,14 @@ pub enum TypeInfo {
     CALLABLE(CallableSignature),
     VALUE(String),
 }
-impl TypeInfo {
-    pub(crate) fn to_string(&self) -> String {
-        match self {
+
+impl Display for TypeInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let value = match self {
             TypeInfo::CALLABLE(CallableSignature { arguments, return_types }) => format!("(({}) -> {})", arguments, return_types),
             TypeInfo::VALUE(value) => value.clone(),
-        }
+        };
+        write!(f, "{}", value)
     }
 }
 #[derive(Clone)]
@@ -287,10 +291,10 @@ impl FeaturesUtils {
                     if [vec![Sy!("onchange")], vec![Sy!("constrains")]].contains(&func_sym_tree.1) && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0) {
                         arg_symbols.extend(
                             FeaturesUtils::find_simple_decorator_field_symbol(session, scope, from_module, field_name)
-                            .into_iter().map(|symbol| (symbol, field_range.clone()))
+                            .into_iter().map(|symbol| (symbol, field_range))
                         );
                         continue;
-                    } else if func_sym_tree.1 == &["depends"] && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0){
+                    } else if func_sym_tree.1 == ["depends"] && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0){
                         arg_symbols.extend(
                             FeaturesUtils::find_nested_fields_in_class(session, scope, from_module, &field_range, field_name, pick)
                         );
@@ -428,11 +432,11 @@ impl FeaturesUtils {
         let from_module = session.st().find_module(file_symbol);
         let scope = session.st().get_scope_symbol(file_symbol, offset as u32, false);
         let string_domain_fields_syms = FeaturesUtils::find_argument_symbols(session, scope, from_module,  string_val, call_expr, field_range, SegmentPick::Cursor(offset));
-        if string_domain_fields_syms.len() >= 1 {
+        if !string_domain_fields_syms.is_empty() {
             return string_domain_fields_syms.into_iter().map(|(sym, _)| sym).collect();
         }
         let kwarg_syms = FeaturesUtils::find_kwarg_methods_symbols(session, scope, from_module,  string_val, call_expr, &offset);
-        if kwarg_syms.len() >= 1{
+        if !kwarg_syms.is_empty(){
             return kwarg_syms;
         }
         vec![]
@@ -492,8 +496,8 @@ impl FeaturesUtils {
     pub fn build_markdown_description(
         session: &mut SessionInfo,
         file_symbol: Option<SourceFileKey>,
-        file_path: Option<&String>,
-        evals: &Vec<Evaluation>,
+        file_path: Option<&str>,
+        evals: &[Evaluation],
         call_expr: &Option<ExprCall>,
         offset: Option<usize>
     ) -> String {
@@ -606,12 +610,11 @@ impl FeaturesUtils {
                 if let Some(file_sym) = file_symbol {
                     let xml_ids = SyncOdoo::get_xml_ids(session, file_sym, str, &std::ops::Range { start: 0, end: 0 }, &mut vec![]);
                     for xml_id in xml_ids.iter_valid(session.st()) {
-                        if let XmlId::XmlRecord(record_key) = xml_id {
-                            if let Some(xml_block) = FeaturesUtils::format_xml_record_block(session, record_key) {
+                        if let XmlId::XmlRecord(record_key) = xml_id
+                            && let Some(xml_block) = FeaturesUtils::format_xml_record_block(session, record_key) {
                                 blocks.push(xml_block);
                                 string_handled = true;
                             }
-                        }
                     }
                 }
                 if string_handled {
@@ -642,7 +645,7 @@ impl FeaturesUtils {
             let from_module = session.st().find_module(symbol);
             let sym_type_tag = FeaturesUtils::get_type_symbol_tag(&session.sync_odoo.symbol_table, symbol);
             let return_types: Vec<TypeInfo> = evaluation_ptrs.iter().map(|eval| FeaturesUtils::get_inferred_types(session, eval, Some(context), &symbol_type)).unique().collect();
-            let inferred_types = evaluation_ptrs.into_iter().zip(return_types.into_iter()).map(|(eval_ptr, eval_info)| InferredType{eval_ptr, eval_info}).collect();
+            let inferred_types = evaluation_ptrs.into_iter().zip(return_types).map(|(eval_ptr, eval_info)| InferredType{eval_ptr, eval_info}).collect();
 
             aggregator.entry(SymbolGroupKey { name: symbol_name.clone(), type_: symbol_type }).or_default().push(
                 SymbolInfo { sym_type_tag, from_module, inferred_types}
@@ -688,7 +691,7 @@ impl FeaturesUtils {
         match arg.annotation.as_ref() {
             Some(anno_expr) => {
                 let Some(type_symbol) = session.st().parent(arg_symbol)
-                .and_then(|parent| Evaluation::eval_from_ast(session, &anno_expr, parent, &anno_expr.range().start(), false, &mut vec![]).0.first().cloned())
+                .and_then(|parent| Evaluation::eval_from_ast(session, anno_expr, parent, &anno_expr.range().start(), false, &mut vec![]).0.first().cloned())
                 .and_then(|type_evaluation| type_evaluation.symbol.get_symbol_as_weak(session, None, &mut vec![], None).weak.upgrade(session.st()))
                  else {
                     return arg_name.to_string()
@@ -726,7 +729,7 @@ impl FeaturesUtils {
                                     }
                                 }
                             };
-                            let mut ctx = context.map(|ctx| ctx.clone());
+                            let mut ctx = context.cloned();
                             if let Some(ctx) = ctx.as_mut() {
                                 ctx.insert(ContextKey::BaseCall, ContextValue::SYMBOL(call_parent));
                             }
@@ -775,7 +778,7 @@ impl FeaturesUtils {
     parameters:   (type_sym)  symbol: inferred_types
     For example: "(parameter) self: type[Self@ResPartner]"
      */
-    fn build_block_1(session: &mut SessionInfo, symbol_type: SymType, symbol_name: &OYarn, type_sym: Vec<String>, inferred_types: &Vec<InferredType>) -> String {
+    fn build_block_1(session: &mut SessionInfo, symbol_type: SymType, symbol_name: &OYarn, type_sym: Vec<String>, inferred_types: &[InferredType]) -> String {
         //python code balise
         let mut value = S!(format!("```python{}", FeaturesUtils::get_line_break(session)));
         //type name
@@ -869,7 +872,7 @@ impl FeaturesUtils {
     }
 
     /// Documentation block that includes the source module(s) and docstrings if found
-    fn get_documentation_block(session: &SessionInfo, from_modules: &Vec<OYarn>, type_refs: &Vec<InferredType>) -> Option<String> {
+    fn get_documentation_block(session: &SessionInfo, from_modules: &[OYarn], type_refs: &[InferredType]    ) -> Option<String> {
         let symbol_table = &session.sync_odoo.symbol_table;
         let mut documentation_block = None;
         if !from_modules.is_empty(){
@@ -930,14 +933,12 @@ impl FeaturesUtils {
                 _ => continue,
             };
             for eval in evals {
-                if let EvaluationSymbolPtr::WEAK(weak) = eval.symbol.get_mut_symbol_ptr() {
-                    if let Some(field_parent) = weak.context.get(ContextKey::FieldParent).cloned() {
-                        if !weak.context.contains_key(&ContextKey::BaseAttr) {
+                if let EvaluationSymbolPtr::WEAK(weak) = eval.symbol.get_mut_symbol_ptr()
+                    && let Some(field_parent) = weak.context.get(ContextKey::FieldParent).cloned()
+                        && !weak.context.contains_key(&ContextKey::BaseAttr) {
                             weak.context.insert(ContextKey::BaseAttr, field_parent);
                             weak.context.insert(ContextKey::BaseAttrInserted, ContextValue::BOOLEAN(true));
                         }
-                    }
-                }
             }
         }
     }
@@ -951,12 +952,11 @@ impl FeaturesUtils {
                 _ => continue,
             };
             for eval in evals {
-                if let EvaluationSymbolPtr::WEAK(weak) = eval.symbol.get_mut_symbol_ptr() {
-                    if let Some(ContextValue::BOOLEAN(true)) = weak.context.get(ContextKey::BaseAttrInserted) {
+                if let EvaluationSymbolPtr::WEAK(weak) = eval.symbol.get_mut_symbol_ptr()
+                    && let Some(ContextValue::BOOLEAN(true)) = weak.context.get(ContextKey::BaseAttrInserted) {
                         weak.context.remove(ContextKey::BaseAttrInserted);
                         weak.context.remove(ContextKey::BaseAttr);
                     }
-                }
             }
         }
     }

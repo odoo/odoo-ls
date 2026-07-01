@@ -1,6 +1,6 @@
 use slotmap::{Key, new_key_type};
 
-use crate::constants::{PackageType, SymType};
+use crate::constants::{OYarn, PackageType, SymType};
 
 new_key_type! {
     pub struct RootKey;
@@ -24,6 +24,12 @@ new_key_type! {
 }
 
 new_key_type! { pub struct JsFileKey; }
+
+/// A class symbol paired with its origin module's `dir_name`, set only when the
+/// class lives outside the queried module's dependencies (`None` when in-deps).
+pub type ClassWithModule = (ClassKey, Option<OYarn>);
+/// A member symbol paired with its origin module's `dir_name` (see [`ClassWithModule`]).
+pub type MemberWithModule = (SymbolKey, Option<OYarn>);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SymbolKey {

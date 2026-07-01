@@ -42,19 +42,18 @@ fn resolve_import_stmt_hook(alias: &Alias, from_symbols: &Option<Vec<SymbolKey>>
         return None;
     }
     for &from_symbol in from_symbols.iter().flatten() {
-        if session.sync_odoo.get_main_entry_tree(from_symbol).0 != &["odoo", "tests", "common"] {
+        if session.sync_odoo.get_main_entry_tree(from_symbol).0 != ["odoo", "tests", "common"] {
             continue;
         }
-        let mut results = resolve_import_stmt(session, source_file_symbol, Some(&Identifier::new(S!("odoo.tests"), from_stmt.unwrap().range)), &[alias.clone()], level, &mut None);
-        if let Some(diagnostic) = diagnostics.as_mut() {
-            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03301, &[]) {
+        let mut results = resolve_import_stmt(session, source_file_symbol, Some(&Identifier::new(S!("odoo.tests"), from_stmt.unwrap().range)), std::slice::from_ref(alias), level, &mut None);
+        if let Some(diagnostic) = diagnostics.as_mut()
+            && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03301, &[]) {
                 diagnostic.push(Diagnostic {
                     range: Range::new(Position::new(alias.range.start().to_u32(), 0), Position::new(alias.range.end().to_u32(), 0)),
                     tags: Some(vec![DiagnosticTag::DEPRECATED]),
                     ..diagnostic_base
                 });
             }
-        }
         return results.pop()
     }
     None
@@ -66,17 +65,11 @@ fn resolve_import_stmt_hook(alias: &Alias, from_symbols: &Option<Vec<SymbolKey>>
 pub fn manual_import(session: &mut SessionInfo, source_file_symbol: SymbolKey, from_stmt:Option<String>, name: &str, asname: Option<String>, level: u32, diagnostics: &mut Option<&mut Vec<Diagnostic>>) -> Vec<ImportResult> {
     let name_aliases = vec![Alias {
         name: Identifier { id: Name::new(name), range: TextRange::default(), node_index: AtomicNodeIndex::default() },
-        asname: match asname {
-            Some(asname_inner) => Some(Identifier { id: Name::new(asname_inner), range: TextRange::default(), node_index: AtomicNodeIndex::default() }),
-            None => None,
-        },
+        asname: asname.map(|asname_inner| Identifier { id: Name::new(asname_inner), range: TextRange::default(), node_index: AtomicNodeIndex::default() }),
         range: TextRange::default(),
         node_index: AtomicNodeIndex::default()
     }];
-    let from_stmt = match from_stmt {
-        Some(from_stmt_inner) => Some(Identifier { id: Name::new(from_stmt_inner), range: TextRange::default(), node_index: AtomicNodeIndex::default() }),
-        None => None,
-    };
+    let from_stmt = from_stmt.map(|from_stmt_inner| Identifier { id: Name::new(from_stmt_inner), range: TextRange::default(), node_index: AtomicNodeIndex::default() });
     resolve_import_stmt(session, source_file_symbol, from_stmt.as_ref(), &name_aliases, level, diagnostics)
 }
 
@@ -125,7 +118,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
             found: false,
             symbols: fallback_syms.as_ref().unwrap().clone(),
             file_tree: file_tree.clone(),
-            range: alias.range.clone()
+            range: alias.range
         })
     }
     if from_symbols.is_none()
@@ -164,10 +157,12 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
             &name_first_part,
             None,
         0);
-        if next_symbol.is_none() && name_split.len() == 1 && from_symbols.is_some() {
+        if next_symbol.is_none()
+            && name_split.len() == 1
+            && let Some(from_symbols) = from_symbols.as_ref() {
             //check the last name is not a symbol in the file
-            let name_symbol_vec = from_symbols.as_ref().unwrap().iter().flat_map(|&s| session.st().get_symbol(s, (&[], &name_first_part), u32::MAX)).collect::<Vec<_>>();
-            next_symbol = if name_symbol_vec.len() > 0 {Some(name_symbol_vec.clone())} else {None};
+            let name_symbol_vec = from_symbols.iter().flat_map(|&s| session.st().get_symbol(s, (&[], &name_first_part), u32::MAX)).collect::<Vec<_>>();
+            next_symbol = if !name_symbol_vec.is_empty() {Some(name_symbol_vec.clone())} else {None};
         }
         if next_symbol.is_none() {
             result[name_index as usize].symbols = fallback_sym.clone().unwrap_or_else(|| vec![source_root]);
@@ -211,7 +206,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
             if last_symbol.is_none() { //If not a file/package, try to look up in symbols in current file (second parameter of get_symbol)
                 //TODO what if multiple values?
                 let name_symbol_vec = next_symbol.as_ref().unwrap().iter().flat_map(|&s| session.st().get_symbol(s, (&[], &name_last_name), u32::MAX)).collect::<Vec<_>>();
-                last_symbol = if name_symbol_vec.len() > 0 {Some(name_symbol_vec.clone())} else {None};
+                last_symbol = if !name_symbol_vec.is_empty() {Some(name_symbol_vec.clone())} else {None};
                 if last_symbol.is_none() {
                     if alias.asname.is_some() {
                         result[name_index as usize].symbols = fallback_sym.clone().unwrap_or_else(|| vec![source_root]);
@@ -220,7 +215,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
                 }
             }
             // we found it ! store the result if not already done
-            if result[name_index as usize].found == false {
+            if !result[name_index as usize].found {
                 result[name_index as usize].found = true;
                 if alias.asname.is_some() {
                     result[name_index as usize].symbols = last_symbol.as_ref().unwrap().clone();
@@ -234,7 +229,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
         }
     }
 
-    return result;
+    result
 }
 
 pub fn create_module_from_name(session: &mut SessionInfo, odoo_addons: NamespaceKey, name: &str) -> Option<ModuleKey> {
@@ -275,20 +270,17 @@ fn resolve_packages(symbol_table: &SymbolTable, from_file: SymbolKey, level: u32
             }
         }
     }
-    match from_stmt {
-        Some(from_stmt_inner) => {
-            let split = from_stmt_inner.as_str().split(".");
-            for i in split {
-                first_part_tree.push(oyarn!("{}", i));
-            }
-        },
-        None => ()
+    if let Some(from_stmt_inner) = from_stmt {
+        let split = from_stmt_inner.as_str().split(".");
+        for i in split {
+            first_part_tree.push(oyarn!("{}", i));
+        }
     }
     Some(first_part_tree)
 }
 
 fn get_or_create_symbol(
-    session: &mut SessionInfo, for_entry: &Rc<RefCell<EntryPoint>>, from_path: &str, symbol: Option<Vec<SymbolKey>>, names: &Vec<OYarn>, asname: Option<&str>, level: u32
+    session: &mut SessionInfo, for_entry: &Rc<RefCell<EntryPoint>>, from_path: &str, symbol: Option<Vec<SymbolKey>>, names: &[OYarn], asname: Option<&str>, level: u32
 ) -> (Option<Vec<SymbolKey>>, Option<Vec<SymbolKey>>) {
     let mut syms = symbol.clone();
     let mut last_symbols = symbol;
@@ -296,7 +288,7 @@ fn get_or_create_symbol(
         if branch.is_empty() {
             continue;
         }
-        if matches!(&syms, Some(s) if s.len() == 0) {
+        if matches!(&syms, Some(s) if s.is_empty()) {
             syms = None;
         }
         match syms {
@@ -305,10 +297,7 @@ fn get_or_create_symbol(
                 for &s in symbols.iter() {
                     let mut current_batch_symbol = session.st().get_module_symbol(s, branch);
                     if current_batch_symbol.is_none() && matches!(s, SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::Compiled(_) | SymbolKey::DiskDir(_)) {
-                        current_batch_symbol = match resolve_new_symbol(session, s, &branch, asname) {
-                            Ok(v) => Some(v),
-                            Err(_) => None
-                        }
+                        current_batch_symbol = resolve_new_symbol(session, s, branch, asname).ok()
                     }
                     next_symbol.extend(current_batch_symbol);
                 }
@@ -321,8 +310,8 @@ fn get_or_create_symbol(
             },
             None => {
                 // Can we have sym None and level != 0 ? maybe on get_all_valid_names? tbc
-                if level == 0 {
-                    if let Some(ref cache) = session.sync_odoo.import_cache {
+                if level == 0
+                    && let Some(ref cache) = session.sync_odoo.import_cache {
                         let cache_module = if for_entry.borrow().typ == EntryPointType::MAIN || for_entry.borrow().typ == EntryPointType::ADDON {
                             cache.main_modules.get(branch)
                         } else {
@@ -341,7 +330,6 @@ fn get_or_create_symbol(
                             }
                         }
                     }
-                }
                 let mut found = false;
                 let entry_point_mgr = session.sync_odoo.entry_point_mgr.clone();
                 let entry_point_mgr = entry_point_mgr.borrow();
@@ -353,10 +341,7 @@ fn get_or_create_symbol(
                         if let Some(entry_point) = entry_point {
                             let mut next_symbol = session.st().get_module_symbol(entry_point, branch);
                             if next_symbol.is_none() && matches!(entry_point, SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::Compiled(_) | SymbolKey::DiskDir(_)) {
-                                next_symbol = match resolve_new_symbol(session, entry_point, &branch, asname) {
-                                    Ok(v) => Some(v),
-                                    Err(_) => None,
-                                }
+                                next_symbol = resolve_new_symbol(session, entry_point, branch, asname).ok()
                             }
                             let Some(next_symbol) = next_symbol else {
                                 continue;
@@ -366,11 +351,10 @@ fn get_or_create_symbol(
                                     if let Some(cache) = session.sync_odoo.import_cache.as_mut() {
                                         cache.modules.insert(branch.clone(), Some(vec![next_symbol]));
                                     }
-                                } else if matches!(entry.borrow().typ, EntryPointType::MAIN | EntryPointType::ADDON) {
-                                    if let Some(cache) = session.sync_odoo.import_cache.as_mut() {
+                                } else if matches!(entry.borrow().typ, EntryPointType::MAIN | EntryPointType::ADDON)
+                                    && let Some(cache) = session.sync_odoo.import_cache.as_mut() {
                                         cache.main_modules.insert(branch.clone(), Some(vec![next_symbol]));
                                     }
-                                }
                             }
                             found = true;
                             syms = Some(vec![next_symbol]);
@@ -380,15 +364,14 @@ fn get_or_create_symbol(
                     }
                 }
                 if !found {
-                    if for_entry.borrow().typ != EntryPointType::CUSTOM {
-                        if let Some(cache) = session.sync_odoo.import_cache.as_mut() {
+                    if for_entry.borrow().typ != EntryPointType::CUSTOM
+                        && let Some(cache) = session.sync_odoo.import_cache.as_mut() {
                             if for_entry.borrow().typ == EntryPointType::MAIN || for_entry.borrow().typ == EntryPointType::ADDON {
                                 cache.main_modules.insert(branch.clone(), None);
                             } else {
                                 cache.modules.insert(branch.clone(), None);
                             }
                         }
-                    }
                     syms = None;
                     last_symbols = None;
                     break;
@@ -396,7 +379,7 @@ fn get_or_create_symbol(
             }
         }
     }
-    return (syms, last_symbols)
+    (syms, last_symbols)
 }
 
 /// Resolve a new symbol from disk, creating it if found, or just creating a COMPILED symbol if a parent is COMPILED
@@ -465,7 +448,7 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
             }
         }
     }
-    return Err("Symbol not found")
+    Err("Symbol not found")
 }
 
 /*
@@ -532,7 +515,7 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: Source
             &entry,
             &source_path,
             from_symbol.clone(),
-            &import_parts[0..import_parts.len()-1].iter().map(|s| oyarn!("{}", *s)).collect(),
+            &import_parts[0..import_parts.len()-1].iter().map(|s| oyarn!("{}", *s)).collect::<Vec<_>>(),
             None,
             level,
         );
@@ -584,40 +567,40 @@ fn valid_names_for_a_symbol(symbol_table: &SymbolTable, symbol: SymbolKey, start
     res
 }
 
-fn valid_name_from_disk(path: &String, start_filter: &str) -> HashMap<OYarn, SymType> {
+fn valid_name_from_disk(path: &str, start_filter: &str) -> HashMap<OYarn, SymType> {
     let mut res = HashMap::default();
-    if is_dir_cs(path) {
-        if let Ok(entries) = std::fs::read_dir(path) {
+    if is_dir_cs(path)
+        && let Ok(entries) = std::fs::read_dir(path) {
             for entry in entries {
-                if let Ok(entry) = entry {
-                    let Ok(file_type) = entry.file_type() else {
-                        continue;
-                    };
-                    if file_type.is_dir() {
-                        let dir_name = entry.file_name();
-                        let dir_name_str = dir_name.to_string_lossy();
-                        if dir_name_str.starts_with(start_filter) {
-                            let mut typ = SymType::NAMESPACE;
-                            if Path::new(&path).join(dir_name_str.to_string()).join("__init__.py").exists() {
-                                typ = SymType::PACKAGE(PackageType::PYTHON_PACKAGE);
-                            }
-                            res.insert(Sy!(dir_name_str.to_string()), typ);
+                let Ok(entry) = entry else {
+                    continue;
+                };
+                let Ok(file_type) = entry.file_type() else {
+                    continue;
+                };
+                if file_type.is_dir() {
+                    let dir_name = entry.file_name();
+                    let dir_name_str = dir_name.to_string_lossy();
+                    if dir_name_str.starts_with(start_filter) {
+                        let mut typ = SymType::NAMESPACE;
+                        if Path::new(&path).join(dir_name_str.to_string()).join("__init__.py").exists() {
+                            typ = SymType::PACKAGE(PackageType::PYTHON_PACKAGE);
                         }
-                    } else if file_type.is_file() {
-                        let file_name = entry.file_name();
-                        let file_name_str = file_name.to_string_lossy().to_string();
-                        if (file_name_str.ends_with(".py") || file_name_str.ends_with(".pyi")) && file_name_str.starts_with(start_filter) {
-                            let Some(stem) = Path::new(&file_name_str).file_stem() else {continue};
-                            let Some(filename) = stem.to_str() else {continue};
-                            if filename == "__init__" {continue;}
-                            res.insert(Sy!(filename.to_string()), SymType::FILE);
-                        }
+                        res.insert(Sy!(dir_name_str.to_string()), typ);
                     }
-                    //TODO support for symlinks?
+                } else if file_type.is_file() {
+                    let file_name = entry.file_name();
+                    let file_name_str = file_name.to_string_lossy().to_string();
+                    if (file_name_str.ends_with(".py") || file_name_str.ends_with(".pyi")) && file_name_str.starts_with(start_filter) {
+                        let Some(stem) = Path::new(&file_name_str).file_stem() else {continue};
+                        let Some(filename) = stem.to_str() else {continue};
+                        if filename == "__init__" {continue;}
+                        res.insert(Sy!(filename.to_string()), SymType::FILE);
+                    }
                 }
+                //TODO support for symlinks?
             }
         }
-    }
     res
 }
 

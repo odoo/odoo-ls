@@ -220,6 +220,12 @@ pub struct PythonAst {
     pub indexed_module: Option<Arc<IndexedModule>>,
 }
 
+impl Default for PythonAst {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PythonAst {
     pub fn new() -> Self {
         Self {
@@ -244,6 +250,12 @@ pub struct JsAst {
     /// The subset of [`Self::js_imports`] reached through a re-export — tracked apart as
     /// one of the two type-propagating edges of `core::js_import_graph`.
     pub js_reexports: Vec<String>,
+}
+
+impl Default for JsAst {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl JsAst {
@@ -310,10 +322,10 @@ pub struct FileInfoAst {
 }
 
 impl FileInfoAst {
-    pub fn get_stmts(&self) -> Option<&Vec<Stmt>> {
+    pub fn get_stmts(&self) -> Option<&[Stmt]> {
         match &self.ast {
             Ast::PythonAst(python_ast) => {
-                python_ast.indexed_module.as_ref().map(|module| &module.parsed.syntax().body)
+                python_ast.indexed_module.as_ref().map(|module| module.parsed.syntax().body.as_slice())
             },
             _ => None
         }
@@ -630,16 +642,16 @@ impl FileInfo {
                 TokenKind::Comment => {
                     let text = &source[token.range()];
                     if text.starts_with("#noqa") || text.starts_with("# noqa") || text.starts_with("# odools: noqa") {
-                        let after_noqa = text.split("noqa").skip(1).next();
+                        let after_noqa = text.split("noqa").nth(1);
                         if let Some(after_noqa) = after_noqa {
                             let mut codes = vec![];
                             for code in after_noqa.split(|c: char| c == ',' || c.is_whitespace() || c == ':') {
                                 let code = code.trim();
-                                if code.len() > 0 {
+                                if !code.is_empty() {
                                     codes.push(code.to_string());
                                 }
                             }
-                            if codes.len() > 0 {
+                            if !codes.is_empty() {
                                 noqa_to_add = Some(NoqaInfo::Codes(codes));
                             } else {
                                 noqa_to_add = Some(NoqaInfo::All);
@@ -659,13 +671,12 @@ impl FileInfo {
                             }
                         }
                     }
-                    if parse_test_comments {
-                        if text.starts_with("#OLS") || text.starts_with("# OLS") {
+                    if parse_test_comments
+                        && (text.starts_with("#OLS") || text.starts_with("# OLS")) {
                             let codes = text.split(",").map(|s| s.trim().trim_start_matches('#').trim().to_string()).collect::<Vec<String>>();
                             let source_location = text_document.index().source_location(token.start(), text_document.contents(), encoding);
                             test_comments.push((source_location.line.to_zero_indexed() as u32, codes));
                         }
-                    }
                 },
                 TokenKind::Class | TokenKind::Def => {
                     if noqa_to_add.is_some() {
@@ -707,7 +718,7 @@ impl FileInfo {
         diagnostic
     }
     pub fn update_diagnostic_filters(&mut self, session: &SessionInfo) {
-        self.diagnostic_filters = session.sync_odoo.config.diagnostic_filters().iter().cloned().filter(|filter| {
+        self.diagnostic_filters = session.sync_odoo.config.diagnostic_filters().iter().filter(|filter| {
             match filter.path_type {
                 DiagnosticFilterPathType::In => {
                     filter.paths.iter().any(|p| p.matches(&self.uri))
@@ -716,7 +727,7 @@ impl FileInfo {
                     !filter.paths.iter().any(|p| p.matches(&self.uri))
                 }
             }
-        }).collect::<Vec<_>>();
+        }).cloned().collect::<Vec<_>>();
     }
 
     pub fn publish_diagnostics(&mut self, session: &mut SessionInfo) {
@@ -753,7 +764,7 @@ impl FileInfo {
                                     }
                                 },
                                 Some(NumberOrString::String(s)) => {
-                                    if codes.contains(&s) {
+                                    if codes.contains(s) {
                                         continue;
                                     }
                                 }
@@ -780,12 +791,14 @@ impl FileInfo {
                         let Some(severity) = &updated.severity else {
                             continue;
                         };
-                        if !filter.types.iter().any(|t| match (t, severity) {
-                            (DiagnosticSetting::Error, &DiagnosticSeverity::ERROR)
-                            | (DiagnosticSetting::Warning, &DiagnosticSeverity::WARNING)
-                            | (DiagnosticSetting::Info, &DiagnosticSeverity::INFORMATION)
-                            | (DiagnosticSetting::Hint, &DiagnosticSeverity::HINT) => true,
-                            _ => false,
+                        if !filter.types.iter().any(|t| {
+                            matches!(
+                                (t, severity),
+                                (DiagnosticSetting::Error, &DiagnosticSeverity::ERROR)
+                                    | (DiagnosticSetting::Warning, &DiagnosticSeverity::WARNING)
+                                    | (DiagnosticSetting::Info, &DiagnosticSeverity::INFORMATION)
+                                    | (DiagnosticSetting::Hint, &DiagnosticSeverity::HINT)
+                            )
                         }) {
                             continue;
                         }
@@ -859,6 +872,12 @@ pub struct FileMgr {
     workspace_folders: HashSet<(String, Uri)>,
 }
 
+impl Default for FileMgr {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FileMgr {
 
     pub fn new() -> Self {
@@ -884,7 +903,7 @@ impl FileMgr {
         }
     }
 
-    pub fn text_range_to_range(&self, session: &mut SessionInfo, path: &String, range: &TextRange) -> Range {
+    pub fn text_range_to_range(&self, session: &mut SessionInfo, path: &str, range: &TextRange) -> Range {
         let file = if Self::is_untitled(path) {
             self.untitled_files.get(path)
         } else {
@@ -1001,13 +1020,12 @@ impl FileMgr {
     /// Helper for delete_path and delete_file_path
     fn delete_entry(session: &mut SessionInfo, key: &str, uri: &str) {
         let to_del = session.sync_odoo.get_file_mgr().borrow_mut().files.remove(key);
-        if let Some(to_del) = to_del {
-            if SyncOdoo::is_in_workspace_or_entry(session, uri) {
+        if let Some(to_del) = to_del
+            && SyncOdoo::is_in_workspace_or_entry(session, uri) {
                 let mut to_del = (*to_del).borrow_mut();
                 to_del.diagnostics.clear();
                 to_del.publish_diagnostics(session)
             }
-        }
     }
 
     pub fn clear(session: &mut SessionInfo) {
@@ -1020,7 +1038,7 @@ impl FileMgr {
             let mut found = false;
             for entry in session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter() {
                 let entry = entry.borrow();
-                if &file.borrow().uri == &entry.path {
+                if file.borrow().uri == entry.path {
                     found = true;
                     break;
                 }

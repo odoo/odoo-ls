@@ -298,14 +298,14 @@ fn test_definition() {
     assert_eq!(compute_arg_locs[0].target_uri.to_file_path().unwrap().sanitize(), module1_test_file, "Expected location to be in the same file");
     let sym_compute_something = session.st().get_symbol(m1_tf_file_symbol.into(), (&[], &["BaseTestModel", "_compute_something"]), u32::MAX);
     assert_eq!(sym_compute_something.len(), 1, "Expected 1 symbol for _compute_something");
-    let range = session.st().range(sym_compute_something[0]).clone();
+    let range = *session.st().range(sym_compute_something[0]);
     assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, &range), compute_arg_locs[0].target_range, "Expected _compute_something to be at the same location as the compute argument");
 
     // Test definition for model class BaseTestModel compute something in module_2, first on the super call
     let compute_arg_locs = test_utils::get_definition_locs(&mut session, m2_tf_file_symbol, &m2_tf_file_info, 10, 36);
     assert_eq!(compute_arg_locs.len(), 1, "Expected 1 location for compute method '_compute_something'");
     assert_eq!(compute_arg_locs[0].target_uri.to_file_path().unwrap().sanitize(), module1_test_file, "Expected location to be in module_1 file");
-    let range = session.st().range(sym_compute_something[0]).clone();
+    let range = *session.st().range(sym_compute_something[0]);
     assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, &range), compute_arg_locs[0].target_range, "Expected _compute_something to be at the same location as the compute argument");
 
     // Then on the compute keyword argument in module_2, it should point to both methods in module_1 and module_2
@@ -317,9 +317,9 @@ fn test_definition() {
     assert_eq!(sym_compute_something_m2.len(), 1, "Expected 1 symbol for _compute_something in module_2");
 
     // Check that compute_kwarg_locs contains the range of the compute something syms from both files
-    let range = session.st().range(sym_compute_something[0]).clone();
+    let range = *session.st().range(sym_compute_something[0]);
     assert!(compute_kwarg_locs.iter().any(|loc| file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, &range) == loc.target_range), "Expected _compute_something to be at the same location as the compute keyword argument in module_1");
-    let range_m2 = session.st().range(sym_compute_something_m2[0]).clone();
+    let range_m2 = *session.st().range(sym_compute_something_m2[0]);
     assert!(compute_kwarg_locs.iter().any(|loc| file_mgr.borrow().text_range_to_range(&mut session, &module2_test_file, &range_m2) == loc.target_range), "Expected _compute_something to be at the same location as the compute keyword argument in module_2");
 
     // Now test go to def of `partner_id.country_id.phone_code` on each field.
@@ -328,28 +328,28 @@ fn test_definition() {
     assert_eq!(partner_id_locs[0].target_uri.to_file_path().unwrap().sanitize(), module1_test_file, "Expected location to be in the same file");
     let sym_partner_id = session.st().get_symbol(m1_tf_file_symbol.into(), (&[], &["BaseTestModel", "partner_id"]), u32::MAX);
     assert_eq!(sym_partner_id.len(), 1, "Expected 1 symbol for partner_id");
-    let range = session.st().range(sym_partner_id[0]).clone();
+    let range = *session.st().range(sym_partner_id[0]);
     assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, &range), partner_id_locs[0].target_range, "Expected partner_id to be at the same location as the field");
 
     let country_id_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, &m1_tf_file_info, 10, 74);
     let country_id_field_sym = session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "base", "models", "res_partner"], &[partner_class_name, "country_id"]), u32::MAX);
     assert_eq!(country_id_field_sym.len(), 1, "Expected 1 location for country_id");
-    let country_id_field_sym = country_id_field_sym[0].clone();
+    let country_id_field_sym = country_id_field_sym[0];
     let country_id_file = session.st().path(session.st().get_file(country_id_field_sym).unwrap()).to_string();
     assert_eq!(country_id_locs[0].target_uri.to_file_path().unwrap().sanitize(), country_id_file);
     // check that one of the country_id_locs is the same as the country_id field symbol
-    let range = session.st().range(country_id_field_sym).clone();
+    let range = *session.st().range(country_id_field_sym);
     assert!(country_id_locs.iter().any(|loc| loc.target_range == file_mgr.borrow().text_range_to_range(&mut session, &country_id_file, &range)), "Expected country_id to be at the same location as the field");
 
     // now the same for phone_code
     let phone_code_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, &m1_tf_file_info, 10, 86);
     let phone_code_field_sym = session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "base", "models", "res_country"], &[country_class_name, "phone_code"]), u32::MAX);
     assert_eq!(phone_code_field_sym.len(), 1, "Expected 1 location for phone_code");
-    let phone_code_field_sym = phone_code_field_sym[0].clone();
+    let phone_code_field_sym = phone_code_field_sym[0];
     let phone_code_file = session.st().path(session.st().get_file(phone_code_field_sym).unwrap()).to_string();
     assert_eq!(phone_code_locs[0].target_uri.to_file_path().unwrap().sanitize(), phone_code_file);
     // check that one of the phone_code_locs is the same as the phone_code field
-    let range = session.st().range(phone_code_field_sym).clone();
+    let range = *session.st().range(phone_code_field_sym);
     assert!(phone_code_locs.iter().any(|loc| loc.target_range == file_mgr.borrow().text_range_to_range(&mut session, &phone_code_file, &range)), "Expected phone_code to be at the same location as the field");
 }
 
@@ -389,23 +389,23 @@ fn test_definition_csv() {
     assert_eq!(country_id_loc[0].target_uri.to_file_path().unwrap().sanitize(), path, "Expected location to be in res_country.py file");
     let country_id_sym = session.st().get_symbol(res_country_file, (&[], &["ResCountryState", "country_id"]), u32::MAX);
     assert_eq!(country_id_sym.len(), 1, "Expected 1 symbol for country_id_sym");
-    let range = session.st().range(country_id_sym[0]).clone();
+    let range = *session.st().range(country_id_sym[0]);
     assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &path, &range), country_id_loc[0].target_range, "Expected country_id to be at the same location as the compute argument");
 
     // Test definition for code header (id part)
     let ir_model_file = session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "base", "models", "ir_model"], &[]), u32::MAX);
     assert!(ir_model_file.len() == 1);
-    let ir_model_file = ir_model_file[0].clone();
+    let ir_model_file = ir_model_file[0];
     let path = session.st().file_path(ir_model_file.as_source_file_key().unwrap()).to_string();
     let country_id_id_loc = test_utils::get_definition_locs(&mut session, mcsv_tf_file_symbol, &mcsv_tf_file_info, 0, 19);
-    assert!(country_id_id_loc.len() >= 1, "Expected at least 1 location for header 'country_id_id_loc'");
+    assert!(!country_id_id_loc.is_empty(), "Expected at least 1 location for header 'country_id_id_loc'");
     let mut found_base = false;
     for loc in country_id_id_loc.iter() {
         if loc.target_uri.to_file_path().unwrap().sanitize() == path {
             found_base = true;
             let base_sym = session.st().get_symbol(ir_model_file, (&[], &["Base"]), u32::MAX);
             assert_eq!(base_sym.len(), 1, "Expected 1 symbol for Base id field");
-            let range = session.st().range(base_sym[0]).clone();
+            let range = *session.st().range(base_sym[0]);
             assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &path, &range), loc.target_range, "Expected the location of Base class");
         }
     }
@@ -427,7 +427,7 @@ fn test_definition_csv() {
     assert!(res_country_file.is_some());
     let res_country_file = res_country_file.unwrap();
     let base_au = test_utils::get_definition_locs(&mut session, mcsv_tf_file_symbol, &mcsv_tf_file_info, 1, 22);
-    assert!(base_au.len() >= 1, "Expected 1 location for record field 'base_au'");
+    assert!(!base_au.is_empty(), "Expected 1 location for record field 'base_au'");
     let path = session.st().file_path(res_country_file);
     assert_eq!(base_au[0].target_uri.to_file_path().unwrap().sanitize(), path, "Expected location to be at least in res_country_data.xml file");
     let xml_id_data = session.st()[base_module].xml_ids.get(&Sy!("au")).cloned();
@@ -440,7 +440,7 @@ fn test_definition_csv() {
         let file_symbol = session.st().get_file(xml_id.into()).unwrap();
         let path = session.st().file_path(file_symbol).to_string();
         if definition.target_uri.to_file_path().unwrap().sanitize() == path {
-            let range = session.st().range(xml_id.into()).clone();
+            let range = *session.st().range(xml_id.into());
             let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(&mut session, &path, &range);
             assert!(definition.target_range == range, "Expected base.au to be at the same location as the xml_id symbol");
             found_one = true;
@@ -585,7 +585,7 @@ fn test_csv_ranges_unquoted_lf(session: &mut SessionInfo) {
     // Field "country_id:id" spans bytes 3-16
     // When clicking on just "country_id" (before the colon), origin_selection_range should cover it
     let country_id_click = test_utils::get_definition_locs(session, file_symbol, &file_info, 0, 8);
-    assert!(country_id_click.len() >= 1, "Expected at least 1 location for country_id field");
+    assert!(!country_id_click.is_empty(), "Expected at least 1 location for country_id field");
     assert!(country_id_click[0].origin_selection_range.is_some(), "origin_selection_range should be set for header field");
 
     let origin_range = country_id_click[0].origin_selection_range.unwrap();
@@ -596,13 +596,13 @@ fn test_csv_ranges_unquoted_lf(session: &mut SessionInfo) {
 
     // Test header: click on "id" part (position 15 in "country_id:id")
     let id_part_click = test_utils::get_definition_locs(session, file_symbol, &file_info, 0, 15);
-    assert!(id_part_click.len() >= 1, "Expected at least 1 location for id part in header");
+    assert!(!id_part_click.is_empty(), "Expected at least 1 location for id part in header");
     assert!(id_part_click[0].origin_selection_range.is_some(), "origin_selection_range should be set for id part");
 
     let id_range = id_part_click[0].origin_selection_range.unwrap();
     assert_eq!(id_range.start.line, 0, "Header id part should be on line 0");
     // The "id" part after the colon should have its range at or after country_id end
-    assert!(id_range.start.character >= origin_range.end.character as u32, "id part range should be at or after country_id range end");
+    assert!(id_range.start.character >= origin_range.end.character, "id part range should be at or after country_id range end");
 
     // Test record: get_symbol on first record's id field
     // Line 1, char 5 should be in "state_unquoted_1" (positions 0-16)
@@ -651,7 +651,7 @@ fn test_csv_ranges_quoted_lf(session: &mut SessionInfo) {
     // The quoted field "country_id:id" spans 5-19 (with quotes at 5 and 19)
     // Position 8 is 'u' in "country_id"
     let country_id_click = test_utils::get_definition_locs(session, file_symbol, &file_info, 0, 8);
-    assert!(country_id_click.len() >= 1, "Expected at least 1 location for country_id in quoted header");
+    assert!(!country_id_click.is_empty(), "Expected at least 1 location for country_id in quoted header");
     assert!(country_id_click[0].origin_selection_range.is_some(), "origin_selection_range should be set");
 
     let origin_range = country_id_click[0].origin_selection_range.unwrap();
@@ -663,13 +663,13 @@ fn test_csv_ranges_quoted_lf(session: &mut SessionInfo) {
 
     // Test header: click on "id" part (position 17 in "country_id:id", the 'i' after colon)
     let id_part_click = test_utils::get_definition_locs(session, file_symbol, &file_info, 0, 17);
-    assert!(id_part_click.len() >= 1, "Expected at least 1 location for id part in quoted header");
+    assert!(!id_part_click.is_empty(), "Expected at least 1 location for id part in quoted header");
     assert!(id_part_click[0].origin_selection_range.is_some(), "origin_selection_range should be set for id part");
 
     let id_range = id_part_click[0].origin_selection_range.unwrap();
     assert_eq!(id_range.start.line, 0, "Header id part should be on line 0");
     // The "id" part should be a separate range
-    assert!(id_range.start.character >= origin_range.end.character as u32, "id part range should not overlap with country_id");
+    assert!(id_range.start.character >= origin_range.end.character, "id part range should not overlap with country_id");
 
     // Test record: get_symbol on first record's id field
     // Line 1: "state_quoted_1" - the entire field with quotes is 16 chars (positions 0-15)
@@ -715,7 +715,7 @@ fn test_csv_ranges_unquoted_crlf(session: &mut SessionInfo) {
     // Header format is same as LF: id,country_id:id,name,code (positions 0-26)
     // CRLF doesn't affect character positions, only affects how lines are split
     let country_id_click = test_utils::get_definition_locs(session, file_symbol, &file_info, 0, 8);
-    assert!(country_id_click.len() >= 1, "Expected at least 1 location for country_id field (CRLF)");
+    assert!(!country_id_click.is_empty(), "Expected at least 1 location for country_id field (CRLF)");
     assert!(country_id_click[0].origin_selection_range.is_some(), "origin_selection_range should be set");
 
     let origin_range = country_id_click[0].origin_selection_range.unwrap();
@@ -725,13 +725,13 @@ fn test_csv_ranges_unquoted_crlf(session: &mut SessionInfo) {
 
     // Test header: click on "id" part (after the colon)
     let id_part_click = test_utils::get_definition_locs(session, file_symbol, &file_info, 0, 15);
-    assert!(id_part_click.len() >= 1, "Expected at least 1 location for id part in header (CRLF)");
+    assert!(!id_part_click.is_empty(), "Expected at least 1 location for id part in header (CRLF)");
     assert!(id_part_click[0].origin_selection_range.is_some(), "origin_selection_range should be set for id part");
 
     let id_range = id_part_click[0].origin_selection_range.unwrap();
     assert_eq!(id_range.start.line, 0, "Header id part should be on line 0");
     // The "id" part should be a separate range
-    assert!(id_range.start.character >= origin_range.end.character as u32, "id part range should not overlap with country_id");
+    assert!(id_range.start.character >= origin_range.end.character, "id part range should not overlap with country_id");
 
     // Test record: get_symbol on first record's id field with CRLF line endings
     // Line 1, char 8 should be in "state_unquoted_crlf_1" (positions 0-20, the name is 21 chars)
@@ -781,7 +781,7 @@ fn test_csv_ranges_quoted_crlf(session: &mut SessionInfo) {
     // The quoted field "country_id:id" spans 5-19 (with quotes at 5 and 19)
     // Position 8 is 'u' in "country_id"
     let country_id_click = test_utils::get_definition_locs(session, file_symbol, &file_info, 0, 8);
-    assert!(country_id_click.len() >= 1, "Expected at least 1 location for country_id in quoted header (CRLF)");
+    assert!(!country_id_click.is_empty(), "Expected at least 1 location for country_id in quoted header (CRLF)");
     assert!(country_id_click[0].origin_selection_range.is_some(), "origin_selection_range should be set");
 
     let origin_range = country_id_click[0].origin_selection_range.unwrap();
@@ -791,13 +791,13 @@ fn test_csv_ranges_quoted_crlf(session: &mut SessionInfo) {
 
     // Test header: click on "id" part (position 17, the 'i' after colon, with CRLF)
     let id_part_click = test_utils::get_definition_locs(session, file_symbol, &file_info, 0, 17);
-    assert!(id_part_click.len() >= 1, "Expected at least 1 location for id part in quoted header (CRLF)");
+    assert!(!id_part_click.is_empty(), "Expected at least 1 location for id part in quoted header (CRLF)");
     assert!(id_part_click[0].origin_selection_range.is_some(), "origin_selection_range should be set");
 
     let id_range = id_part_click[0].origin_selection_range.unwrap();
     assert_eq!(id_range.start.line, 0, "Header id part should be on line 0");
     // The "id" part should be a separate range
-    assert!(id_range.start.character >= origin_range.end.character as u32, "id part range should not overlap with country_id");
+    assert!(id_range.start.character >= origin_range.end.character, "id part range should not overlap with country_id");
 
     // Test record: get_symbol on first record's id field
     // Line 1: "state_quoted_crlf_1" - the entire field with quotes is 21 chars (positions 0-20)

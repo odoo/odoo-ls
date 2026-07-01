@@ -14,6 +14,12 @@ use std::{cell::RefCell, rc::Rc};
 pub struct CsvValidator {
 }
 
+impl Default for CsvValidator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CsvValidator {
 
     pub fn new() -> Self {
@@ -108,7 +114,7 @@ impl CsvValidator {
         file_info.borrow_mut().publish_diagnostics(session);
     }
 
-    fn validate_record(&self, session: &mut SessionInfo, csv_module: ModuleKey, headers_is_xml: &Vec<bool>, record: &StringRecord, diagnostics: &mut Vec<Diagnostic>, data: &str) {
+    fn validate_record(&self, session: &mut SessionInfo, csv_module: ModuleKey, headers_is_xml: &[bool], record: &StringRecord, diagnostics: &mut Vec<Diagnostic>, data: &str) {
         let Some(field_iter) = CsvFieldIter::new(record, data) else { return; };
         for (idx, (start, end, field)) in field_iter.enumerate() {
             let Some(&should_be_xml_id) = headers_is_xml.get(idx) else { break;};
@@ -117,9 +123,9 @@ impl CsvValidator {
                 let id_split = field.split(".").collect::<Vec<&str>>();
                 let mut module_name = session.st().name(csv_module).as_str();
                 if id_split.len() == 2 {
-                    module_name = id_split.get(0).unwrap();
+                    module_name = id_split.first().unwrap();
                 }
-                if id_split.last().unwrap().len() == 0 { //if user want to set None value
+                if id_split.last().unwrap().is_empty() { //if user want to set None value
                     continue;
                 }
                 let Some(&module_symbol) = session.sync_odoo.modules.get(module_name) else {
@@ -133,7 +139,7 @@ impl CsvValidator {
                 };
                 let complete_id = oyarn!("{}.{}", module_name, id_split.last().unwrap());
                 let Some(module) = module_symbol.upgrade(session.st()) else {continue};
-                if session.st()[module].xml_ids.get(*id_split.last().unwrap()).is_none() {
+                if !session.st()[module].xml_ids.contains_key(*id_split.last().unwrap()) {
                     session.st_mut()[csv_module].not_found_data_ids.insert(MissingDataSource::XML_ID(complete_id), BuildSteps::VALIDATION);
                     session.sync_odoo.get_main_entry().borrow_mut().not_found_data_ids.insert(csv_module.into());
                     if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05001, &[]) {

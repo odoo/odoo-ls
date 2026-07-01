@@ -56,7 +56,7 @@ impl PythonArchBuilder {
         let file_mode = symbol == file;
 
         Some(PythonArchBuilder {
-            entry_point: entry_point,
+            entry_point,
             file,
             file_mode,
             current_step: if file_mode {BuildSteps::ARCH} else {BuildSteps::VALIDATION},
@@ -117,23 +117,23 @@ impl PythonArchBuilder {
         };
         drop(file_info);
         let file_info_ast= file_info_ast_rc.borrow();
-        if file_info_ast.ast.as_py_ast().indexed_module.is_some() {
+        if let Some(indexed_module) = &file_info_ast.ast.as_py_ast().indexed_module {
             let ast = if self.file_mode {
                 file_info_ast.get_stmts().unwrap()
             } else {
                 let f = self.sym_stack[0].unwrap_function_key();
                 let ast_index = session.st()[f].node_index.load();
                 if ast_index.as_u32().is_some() {
-                    let func = file_info_ast.ast.as_py_ast().indexed_module.as_ref().unwrap().get_by_index(ast_index);
+                    let func = indexed_module.get_by_index(ast_index);
                     match func {
                         AnyRootNodeRef::Stmt(Stmt::FunctionDef(func_stmt)) => {
-                            &func_stmt.body
+                            func_stmt.body.as_slice()
                         },
                         _ => panic!("Expected function definition")
                     }
                 } else {
                     //if ast_index is empty, this is because the function has been added manually and do not belong to the ast. Skip it's building
-                    &vec![]
+                    &[]
                 }
             };
             let old_stack_noqa = session.noqas_stack.clone();
@@ -155,7 +155,7 @@ impl PythonArchBuilder {
                 session.current_noqa = noqas;
                 old
             };
-            let _ = self.visit_node(session, &ast);
+            let _ = self.visit_node(session, ast);
             session.current_noqa = old_noqa;
             session.noqas_stack = old_stack_noqa;
             self._resolve_all_symbols(session);
@@ -202,7 +202,7 @@ impl PythonArchBuilder {
                         let all_value = SymbolTable::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
                             all, None, false
                         )), session, None, false, true, None, None);
-                        if let Some(all_value_first) = all_value.get(0) {
+                        if let Some(all_value_first) = all_value.first() {
                             if !all_value_first.is_expired_if_weak(session.st()) {
                                 let all_upgraded = all_value_first.upgrade_weak(session.st());
                                 if let Some(all_upgraded_unwrapped) = all_upgraded {
@@ -272,7 +272,7 @@ impl PythonArchBuilder {
         }
     }
 
-    fn visit_node(&mut self, session: &mut SessionInfo, nodes: &Vec<Stmt>) {
+    fn visit_node(&mut self, session: &mut SessionInfo, nodes: &[Stmt]) {
         for stmt in nodes.iter() {
             match stmt {
                 Stmt::Import(import_stmt) => {
@@ -319,7 +319,7 @@ impl PythonArchBuilder {
                 },
                 Stmt::Return(return_stmt) => {
                     if let Some(value) = return_stmt.value.as_ref() {
-                        self.visit_expr(session, &value);
+                        self.visit_expr(session, value);
                     }
                 },
                 Stmt::Assert(assert_stmt) => {
@@ -336,8 +336,8 @@ impl PythonArchBuilder {
                     self.visit_expr(session, &stmt_type_alias.value);
                 },
                 Stmt::Raise(stmt_raise) => {
-                    stmt_raise.exc.as_ref().map(|stmt_exc| self.visit_expr(session, &stmt_exc));
-                    stmt_raise.cause.as_ref().map(|stmt_cause| self.visit_expr(session, &stmt_cause));
+                    if let Some(stmt_exc) = stmt_raise.exc.as_ref() { self.visit_expr(session, stmt_exc) }
+                    if let Some(stmt_cause) = stmt_raise.cause.as_ref() { self.visit_expr(session, stmt_cause) }
                 },
                 Stmt::Global(_stmt_global) => {},
                 Stmt::Nonlocal(_stmt_nonlocal) => {},
@@ -352,7 +352,7 @@ impl PythonArchBuilder {
     fn visit_expr(&mut self, session: &mut SessionInfo, expr: &Expr){
         match expr {
             Expr::Named(named_expr) =>{
-                self.visit_named_expr(session, &named_expr);
+                self.visit_named_expr(session, named_expr);
             },
             Expr::BoolOp(bool_op_expr) => {
                 // introduce sections here
@@ -368,8 +368,8 @@ impl PythonArchBuilder {
                     session.st_mut().as_mut_symbol_mgr(scope).add_section(
                         expr.range().start(),
                         Some(SectionIndex::INDEX(prev_section))
-                    ).index;
-                    self.visit_expr(session, &expr);
+                    );
+                    self.visit_expr(session, expr);
                     prev_section = session.st().as_symbol_mgr(scope).get_last_index();
                     SectionIndex::INDEX(prev_section)
                 }).collect::<Vec<_>>();
@@ -392,7 +392,7 @@ impl PythonArchBuilder {
             Expr::Dict(dict_expr) => {
                 dict_expr.iter().for_each(
                     |dict_item| {
-                        dict_item.key.as_ref().map(|dict_key_expr| self.visit_expr(session, dict_key_expr));
+                        if let Some(dict_key_expr) = dict_item.key.as_ref() { self.visit_expr(session, dict_key_expr) }
                         self.visit_expr(session, &dict_item.value);
                     }
                 );
@@ -418,7 +418,7 @@ impl PythonArchBuilder {
                 self.visit_expr(session, &expr_await.value);
             },
             Expr::Yield(expr_yield) => {
-                expr_yield.value.as_ref().map(|yield_value| self.visit_expr(session, &yield_value));
+                if let Some(yield_value) = expr_yield.value.as_ref() { self.visit_expr(session, yield_value) }
             },
             Expr::YieldFrom(expr_yield_from) => {
                 self.visit_expr(session, &expr_yield_from.value);
@@ -459,16 +459,16 @@ impl PythonArchBuilder {
                 expr_tuple.elts.iter().for_each(|elt_expr| self.visit_expr(session, elt_expr));
             },
             Expr::Slice(expr_slice) => {
-                expr_slice.upper.as_ref().map(|upper_expr| self.visit_expr(session, &upper_expr));
-                expr_slice.lower.as_ref().map(|lower_expr| self.visit_expr(session, &lower_expr));
+                if let Some(upper_expr) = expr_slice.upper.as_ref() { self.visit_expr(session, upper_expr) }
+                if let Some(lower_expr) = expr_slice.lower.as_ref() { self.visit_expr(session, lower_expr) }
             },
             // Expressions that cannot contained a named expressions are not traversed
             Expr::Lambda(lambda_expr) => {
                 let function_key = session.st_mut().add_new_function(
-                    *self.sym_stack.last().unwrap(), &S!("<lambda>"), lambda_expr.range, &lambda_expr.body.range().start()
+                    *self.sym_stack.last().unwrap(), &S!("<lambda>"), lambda_expr.range, lambda_expr.body.range().start()
                 );
                 if let Some(parameters) = &lambda_expr.parameters {
-                    PythonArchBuilder::handle_func_args(function_key, session, &parameters);
+                    PythonArchBuilder::handle_func_args(function_key, session, parameters);
                 }
                 self.sym_stack.push(function_key.into());
                 self.visit_expr(session, &lambda_expr.body);
@@ -573,14 +573,16 @@ impl PythonArchBuilder {
                 AssignTargetType::Name(ref name_expr) => {
                     let variable_key = session.st_mut().add_new_variable(*self.sym_stack.last().unwrap(), &name_expr.id, name_expr.range);
                     let variable = &session.st()[variable_key];
-                    if self.file_mode && variable.name == "__all__" && assign.value.is_some() {
+                    if self.file_mode && variable.name == "__all__"
+                        && let Some(value) = &assign.value
+                    {
                         let mut deps = vec![vec![]]; //only arch level
-                        let eval = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), variable.parent(), &assign_stmt.range.start(), false, &mut deps);
+                        let eval = Evaluation::eval_from_ast(session, value, variable.parent(), &assign_stmt.range.start(), false, &mut deps);
                         session.st_mut().insert_dependencies(self.file, &deps, BuildSteps::ARCH);
                         session.st_mut()[variable_key].evaluations = eval.0;
                         self.diagnostics.extend(eval.1);
-                        if let Some(evaluation) = session.st()[variable_key].evaluations.get(0) {
-                            if session.st().is_external(*self.sym_stack.last().unwrap()) {
+                        if let Some(evaluation) = session.st()[variable_key].evaluations.first()
+                            && session.st().is_external(*self.sym_stack.last().unwrap()) {
                                 // external packages often import symbols from compiled files
                                 // or with meta programmation like globals["var"] = __get_func().
                                 // we don't want to handle that, so just declare __all__ content
@@ -593,7 +595,6 @@ impl PythonArchBuilder {
                                     }
                                 }
                             }
-                        }
                     }
                 },
                 AssignTargetType::Attribute(ref _attr_expr) => {
@@ -727,7 +728,7 @@ impl PythonArchBuilder {
             return; //if body is empty, it usually means that the ast of the class is invalid. Skip it
         }
         let function_key = session.st_mut().add_new_function(*self.sym_stack.last().unwrap(),
-            &func_def.name.id, func_def.range, &func_def.body.get(0).unwrap().range().start());
+            &func_def.name.id, func_def.range, func_def.body.first().unwrap().range().start());
         let func_sym = &mut session.st_mut()[function_key];
         func_sym.node_index.set(func_def.node_index.load());
         for decorator in func_def.decorator_list.iter() {
@@ -791,10 +792,10 @@ impl PythonArchBuilder {
         }
         let parent = *self.sym_stack.last().unwrap();
         let class_key = session.st_mut().add_new_class(
-            parent, class_def.name.id.as_str(), class_def.range, &class_def.body.get(0).unwrap().range().start());
+            parent, class_def.name.id.as_str(), class_def.range, class_def.body.first().unwrap().range().start());
         let class_sym = &mut session.sync_odoo.symbol_table[class_key];
 
-        if class_def.body.len() > 0 && class_def.body[0].is_expr_stmt() {
+        if !class_def.body.is_empty() && class_def.body[0].is_expr_stmt() {
             let expr = class_def.body[0].as_expr_stmt().unwrap();
             if expr.value.is_literal_expr() {
                 let const_expr = expr.value.as_literal_expr().unwrap();
@@ -829,21 +830,21 @@ impl PythonArchBuilder {
         }
     }
 
-    fn check_tuples(&self, version: &Vec<u32>, op: &CmpOp, tuple: &ExprTuple) -> bool {
+    fn check_tuples(&self, version: &[u32], op: &CmpOp, tuple: &ExprTuple) -> bool {
         let mut tuple = tuple.elts.iter().map(|elt| {
             if let Expr::NumberLiteral(num) = elt {
                 if num.value.is_int() {
                     num.value.as_int().unwrap().as_u32().unwrap()
                 } else {
-                    0 as u32
+                    0_u32
                 }
             } else {
-                0 as u32 // If not a number, treat as 0
+                0_u32 // If not a number, treat as 0
             }
         }).collect::<Vec<u32>>();
         // ensure that the vec is sized of 3
         tuple.resize(3, 0);
-        return match op {
+        match op {
             CmpOp::Gt => {
                 version[0] > tuple[0] ||
                 (version[0] == tuple[0] && version[1] > tuple[1]) ||
@@ -888,8 +889,8 @@ impl PythonArchBuilder {
         if session.sync_odoo.python_version[0] == 0 {
             return (true, false); //unknown python version
         }
-        if let Expr::Compare(expr_comp) = expr {
-            if expr_comp.comparators.len() == 1 {
+        if let Expr::Compare(expr_comp) = expr
+            && expr_comp.comparators.len() == 1 {
                 let p1 = expr_comp.left.as_ref();
                 let p2 = expr_comp.comparators.first().unwrap();
                 if !p1.is_tuple_expr() && !p2.is_tuple_expr() {
@@ -903,8 +904,8 @@ impl PythonArchBuilder {
                 } else {
                     (p2.as_tuple_expr().unwrap(), p1.as_attribute_expr().unwrap())
                 };
-                if attr.value.is_name_expr() && attr.value.as_name_expr().unwrap().id == "sys" {
-                    if attr.attr.id == "version_info" {
+                if attr.value.is_name_expr() && attr.value.as_name_expr().unwrap().id == "sys"
+                    && attr.attr.id == "version_info" {
                         let mut op = expr_comp.ops.first().unwrap();
                         if p1.is_tuple_expr() { //invert if tuple is in front
                             if op.is_gt() {
@@ -919,9 +920,7 @@ impl PythonArchBuilder {
                         }
                         return (self.check_tuples(&session.sync_odoo.python_version, op, tuple), true)
                     }
-                }
             }
-        }
         (true, false)
     }
 
@@ -977,8 +976,8 @@ impl PythonArchBuilder {
                 elif_else_clause.body[0].range().start(),
                 Some(SectionIndex::INDEX(last_test_section))
             );
-            if elif_else_clause.test.is_some() {
-                let version_check = self._check_sys_version_condition(session, elif_else_clause.test.as_ref().unwrap());
+            if let Some(test_clause) = &elif_else_clause.test {
+                let version_check = self._check_sys_version_condition(session, test_clause);
                 if version_check.0 {
                     if version_check.1 {
                         body_version_ok = true;
@@ -1159,7 +1158,7 @@ impl PythonArchBuilder {
         let previous_section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
         let mut stmt_sections = vec![previous_section.clone()];
         for case in match_stmt.cases.iter() {
-            case.guard.as_ref().map(|test_clause| self.visit_expr(session, test_clause));
+            if let Some(test_clause) = case.guard.as_ref() { self.visit_expr(session, test_clause) }
             if matches!(&case.pattern, ruff_python_ast::Pattern::MatchAs(_)){
                 stmt_sections.remove(0); // When we have a wildcard pattern, previous section is shadowed
             }

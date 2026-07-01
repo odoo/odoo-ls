@@ -240,8 +240,8 @@ impl GotoUtils {
         let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
         let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
         let mut csv_reader = csv::ReaderBuilder::new().quoting(true).from_reader(data.as_bytes());
-        let sources = CsvAstUtils::get_symbols(session, file_symbol.unwrap_csv_file_key(), &mut csv_reader, &model_name, offset, &data);
-        sources
+        
+        CsvAstUtils::get_symbols(session, file_symbol.unwrap_csv_file_key(), &mut csv_reader, &model_name, offset, &data)
     }
 
     pub fn goto_source_to_location(session: &mut SessionInfo, def: &GotoSource) -> Vec<LocationLink> {
@@ -259,7 +259,7 @@ impl GotoUtils {
                         if let Some(file) = session.st().get_file(*symbol_key) {
                             let path = session.st().path(file).to_string();
                             let range = if session.st().has_range(*symbol_key) {
-                                let range = session.st().range(*symbol_key).clone();
+                                let range = *session.st().range(*symbol_key);
                                 session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &range)
                             } else {
                                 Range::default()
@@ -277,7 +277,7 @@ impl GotoUtils {
                     return vec![];
                 };
                 vec![LocationLink{
-                    origin_selection_range: def.origin_selection_range.clone(),
+                    origin_selection_range: def.origin_selection_range,
                     target_uri: FileMgr::pathname2uri(&path),
                     target_selection_range: range,
                     target_range: range,
@@ -285,10 +285,10 @@ impl GotoUtils {
             },
             GotoSourceType::Location { uri, range } => {
                 vec![LocationLink{
-                    origin_selection_range: def.origin_selection_range.clone(),
-                    target_uri: FileMgr::pathname2uri(&uri),
-                    target_selection_range: session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &uri, &range),
-                    target_range: session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &uri, &range),
+                    origin_selection_range: def.origin_selection_range,
+                    target_uri: FileMgr::pathname2uri(uri),
+                    target_selection_range: session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, uri, range),
+                    target_range: session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, uri, range),
                 }]
             }
         }
