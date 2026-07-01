@@ -24,13 +24,13 @@ impl XmlAstReferenceVisitor {
         }
         let path = session.st()[file_symbol].path.clone();
         let uri = FileMgr::pathname2uri(&path);
-        let result_locations = results.iter().map(|range|
+        
+        results.iter().map(|range|
             Location {
                 uri: uri.clone(),
                 range: session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, range),
             }
-        ).collect();
-        result_locations
+        ).collect()
     }
 
     fn visit_node<'a>(session: &mut SessionInfo<'_>, node: &Node<'a, '_>, from_module: Option<ModuleKey>, scope: XmlScope<'a>, results: &mut Vec<Range<usize>>, target: &ReferenceTarget) {
@@ -69,18 +69,18 @@ impl XmlAstReferenceVisitor {
     /// AND verify the surrounding `record_model` matches the method's class model.
     fn visit_button<'a>(session: &mut SessionInfo<'_>, node: &Node<'a, '_>, from_module: Option<ModuleKey>, scope: XmlScope<'a>, results: &mut Vec<Range<usize>>, target: &ReferenceTarget) {
         let is_action_type = node.attribute("type") == Some("action");
-        if !is_action_type {
-            if let &ReferenceTarget::Symbol(SymbolKey::Function(target_fn)) = target {
-                for attr in node.attributes() {
-                    if attr.name() != "name" { continue; }
-                    if session.st()[target_fn].name != attr.value() { continue; }
-                    let target_class = session.st().get_in_parents(target_fn.into(), &[SymType::CLASS], true);
-                    let Some(SymbolKey::Class(target_class)) = target_class else { continue; };
-                    let Some(target_model) = session.st()[target_class]._model.as_ref() else { continue; };
-                    let Some(record_model) = scope.record_model.filter(|m| !m.is_empty()) else { continue; };
-                    if target_model.name == *record_model {
-                        results.push(attr.range_value());
-                    }
+        if !is_action_type
+            && let &ReferenceTarget::Symbol(SymbolKey::Function(target_fn)) = target
+        {
+            for attr in node.attributes() {
+                if attr.name() != "name" { continue; }
+                if session.st()[target_fn].name != attr.value() { continue; }
+                let target_class = session.st().get_in_parents(target_fn.into(), &[SymType::CLASS], true);
+                let Some(SymbolKey::Class(target_class)) = target_class else { continue; };
+                let Some(target_model) = session.st()[target_class]._model.as_ref() else { continue; };
+                let Some(record_model) = scope.record_model.filter(|m| !m.is_empty()) else { continue; };
+                if target_model.name == *record_model {
+                    results.push(attr.range_value());
                 }
             }
         }
@@ -100,20 +100,17 @@ impl XmlAstReferenceVisitor {
                         }
                     },
                     ReferenceTarget::Symbol(s) => {
-                        if let &SymbolKey::Class(class_key) = s {
-                            if let Some(model) = &session.st()[class_key]._model {
-                                if model.name == attr.value() {
+                        if let &SymbolKey::Class(class_key) = s
+                            && let Some(model) = &session.st()[class_key]._model
+                                && model.name == attr.value() {
                                     results.push(attr.range_value());
                                 }
-                            }
-                        }
                     }
                 }
-            } else if attr.name() == "id" {
-                if XmlAstReferenceVisitor::test_attr_as_xml_id(session.st(), &attr, from_module, target) {
+            } else if attr.name() == "id"
+                && XmlAstReferenceVisitor::test_attr_as_xml_id(session.st(), &attr, from_module, target) {
                     results.push(attr.range_value());
                 }
-            }
         }
         if scope.record_model == Some("ir.ui.view") {
             scope.view_target_model = XmlAstUtils::view_target_model(node);
@@ -139,19 +136,18 @@ impl XmlAstReferenceVisitor {
                 if model.name == *model_name {
                     results.push(attr.range_value());
                 }
-            } else if attr.name() == "ref" {
-                if XmlAstReferenceVisitor::test_attr_as_xml_id(session.st(), &attr, from_module, target) {
+            } else if attr.name() == "ref"
+                && XmlAstReferenceVisitor::test_attr_as_xml_id(session.st(), &attr, from_module, target) {
                     results.push(attr.range_value());
                 }
-            }
         }
         // Inside a view's `<field name="arch">`, sub-elements resolve against the
         // view's target model (captured at the ir.ui.view record), not the
         // surrounding ir.ui.view itself.
-        if node.attribute("name") == Some("arch") {
-            if let Some(target) = scope.view_target_model {
-                child_scope.record_model = Some(target);
-            }
+        if node.attribute("name") == Some("arch")
+            && let Some(target) = scope.view_target_model
+        {
+            child_scope.record_model = Some(target);
         }
         for child in node.children() {
             XmlAstReferenceVisitor::visit_node(session, &child, from_module, child_scope, results, target);
@@ -165,15 +161,12 @@ impl XmlAstReferenceVisitor {
         ) else {
             return;
         };
-        if field == "model" || field == "res_model" {
-            if let &ReferenceTarget::Symbol(SymbolKey::Class(target)) = target {
-                if let Some(model) = &session.st()[target]._model {
-                    if model.name == node.text().unwrap() {
+        if (field == "model" || field == "res_model")
+            && let &ReferenceTarget::Symbol(SymbolKey::Class(target)) = target
+                && let Some(model) = &session.st()[target]._model
+                    && model.name == node.text().unwrap() {
                         results.push(node.range());
                     }
-                }
-            }
-        }
         if field == "context" {
             //TODO
         }
@@ -230,11 +223,10 @@ impl XmlAstReferenceVisitor {
                 if XmlAstReferenceVisitor::test_attr_as_xml_id(session.st(), &attr, from_module, target) {
                     results.push(attr.range_value());
                 }
-            } else if attr.name() == "parent" {
-                if XmlAstReferenceVisitor::test_attr_as_xml_id(session.st(), &attr, from_module, target) {
+            } else if attr.name() == "parent"
+                && XmlAstReferenceVisitor::test_attr_as_xml_id(session.st(), &attr, from_module, target) {
                     results.push(attr.range_value());
                 }
-            }
         }
         for child in node.children() {
             XmlAstReferenceVisitor::visit_node(session, &child, from_module, scope, results, target);
@@ -243,11 +235,7 @@ impl XmlAstReferenceVisitor {
 
     fn visit_template<'a>(session: &mut SessionInfo<'_>, node: &Node<'a, '_>, from_module: Option<ModuleKey>, scope: XmlScope<'a>, results: &mut Vec<Range<usize>>, target: &ReferenceTarget) {
         for attr in node.attributes() {
-            if attr.name() == "id" {
-                if XmlAstReferenceVisitor::test_attr_as_xml_id(session.st(), &attr, from_module, target) {
-                    results.push(attr.range_value());
-                }
-            } else if attr.name() == "inherit_id" {
+            if matches!(attr.name(), "id" | "inherit_id") {
                 if XmlAstReferenceVisitor::test_attr_as_xml_id(session.st(), &attr, from_module, target) {
                     results.push(attr.range_value());
                 }

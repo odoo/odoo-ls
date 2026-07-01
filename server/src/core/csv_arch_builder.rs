@@ -16,6 +16,12 @@ use tracing::{error, info};
 pub struct CsvArchBuilder {
 }
 
+impl Default for CsvArchBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CsvArchBuilder {
 
     pub fn new() -> Self {
@@ -23,7 +29,7 @@ impl CsvArchBuilder {
         }
     }
 
-    pub fn load_csv(&mut self, session: &mut SessionInfo, csv_symbol: CsvFileKey, content: &String) -> Vec<Diagnostic> {
+    pub fn load_csv(&mut self, session: &mut SessionInfo, csv_symbol: CsvFileKey, content: &str) -> Vec<Diagnostic> {
         let mut diagnostics = vec![];
         session.st_mut()[csv_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
         let model_name_pb = PathBuf::from(&session.st()[csv_symbol].path);
@@ -37,13 +43,12 @@ impl CsvArchBuilder {
         }
         let csv = &mut session.st_mut()[csv_symbol];
         let mut rdr = csv::ReaderBuilder::new().from_reader(content.as_bytes());
-        if rdr.has_headers() {
-            if let Ok(header) = rdr.headers() {
+        if rdr.has_headers()
+            && let Ok(header) = rdr.headers() {
                 for h in header.iter() {
                     csv.headers.push(oyarn!("{}", h));
                 }
             }
-        }
         if csv.headers.contains(&Sy!("id")) {
             for (start, end, result) in CsvRecordIter::new(&mut rdr, content) {
                 match result {
@@ -101,18 +106,18 @@ impl CsvArchBuilder {
         diagnostics
     }
 
-    fn extract_record(&self, session: &mut SessionInfo, file_symbol: CsvFileKey, model_name: OYarn, record: &StringRecord, content: &String) -> Option<XmlRecordKey> {
+    fn extract_record(&self, session: &mut SessionInfo, file_symbol: CsvFileKey, model_name: OYarn, record: &StringRecord, content: &str) -> Option<XmlRecordKey> {
         let field_iter = CsvFieldIter::new(record, content)?;
         let mut last_end = 0;
         let mut xml_id = None;
         let record_key = session.st_mut().add_new_xml_record(
             file_symbol.into(),
             (model_name, core::ops::Range {
-                start: 0 as usize,
-                end: 1 as usize
+                start: 0_usize,
+                end: 1_usize
             }),
             None, //dummy
-            TextRange::new(TextSize::new(0), TextSize::new(0 as u32)) //dummy
+            TextRange::new(TextSize::new(0), TextSize::new(0_u32)) //dummy
         );
         let headers = &session.st()[file_symbol].headers.clone();
         for (idx, (start, end, field)) in field_iter.enumerate() {

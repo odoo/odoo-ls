@@ -35,7 +35,7 @@ impl PythonOdooBuilder {
 
     pub fn new(symbol: ClassKey) -> PythonOdooBuilder {
         PythonOdooBuilder {
-            symbol: symbol,
+            symbol,
         }
     }
 
@@ -61,7 +61,7 @@ impl PythonOdooBuilder {
         }
         match session.sync_odoo.models.get(&model_name).cloned() {
             Some(model) => {
-                if model.borrow().has_xml_symbols(&session.st()) {
+                if model.borrow().has_xml_symbols(session.st()) {
                     if let Some(file_sym) = session.st().get_file(self.symbol.into()) {
                         session.sync_odoo.symbol_table.add_model_dependencies(file_sym, &model);
                     }
@@ -85,7 +85,7 @@ impl PythonOdooBuilder {
         let _inherit = session.st().get_symbol(symbol.into(), (&[], &["_inherit"]), u32::MAX);
         let Some(&SymbolKey::Variable(_inherit)) = _inherit.last() else { return };
         let evaluations = &session.st()[_inherit].evaluations;
-        if evaluations.len() == 0 {
+        if evaluations.is_empty() {
             error!("wrong _inherit structure");
             return;
         }
@@ -151,8 +151,8 @@ impl PythonOdooBuilder {
     fn _load_class_inherits(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) {
         let symbol = self.symbol;
         let _inherits = session.st().get_symbol(symbol.into(), (&[], &["_inherits"]), u32::MAX);
-        if let Some(&SymbolKey::Variable(_inherits)) = _inherits.last() {
-            if let Some(eval) = session.st()[_inherits].evaluations.last().cloned() {
+        if let Some(&SymbolKey::Variable(_inherits)) = _inherits.last()
+            && let Some(eval) = session.st()[_inherits].evaluations.last().cloned() {
                 let eval = eval.follow_ref_and_get_value(session, None, diagnostics);
                 let model = session.st_mut()[symbol]._model.as_mut().unwrap();
                 model.inherits.clear();
@@ -168,7 +168,6 @@ impl PythonOdooBuilder {
                     error!("wrong _inherits value");
                 }
             }
-        }
         //Add inherits from delegate=True from fields
         let all_fields = SymbolTable::all_members(
             self.symbol.into(),
@@ -189,7 +188,7 @@ impl PythonOdooBuilder {
                     if session.st().name(eval_symbol) != &Sy!("Many2one") { continue; }
                     let context = &symbol_weak.context;
                     let Some(delegate) = context.get(ContextKey::Delegate) else { continue };
-                    if delegate.as_bool() == true && let Some(comodel) = context.get(ContextKey::ComodelName) {
+                    if delegate.as_bool() && let Some(comodel) = context.get(ContextKey::ComodelName) {
                         let comodel_name = oyarn!("{}", comodel.as_str());
                         session.st_mut()[self.symbol]._model.as_mut().unwrap().inherits.push((comodel_name, field_name.clone()));
                     }
@@ -303,16 +302,16 @@ impl PythonOdooBuilder {
         let symbol = self.symbol;
         //These magic fields are added at odoo step, but it should be ok as most usage will be done in functions, not outside.
         //id
-        let range = session.st()[symbol].range.clone();
+        let range = session.st()[symbol].range;
         let id = session.st_mut().add_new_variable(symbol, "id", range);
-        let id_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Id"]), u32::MAX);
+        let id_field = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Id"]), u32::MAX);
         if let Some(&id_field) = id_field.last() {
             let evaluation = Evaluation::eval_from_symbol(session.st(), id_field, Some(true));
             session.st_mut()[id].evaluations.push(evaluation);
         }
         //display_name
         let display_name = session.st_mut().add_new_variable(symbol, "display_name", range);
-        let char_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Char"]), u32::MAX);
+        let char_field = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Char"]), u32::MAX);
         if let Some(&char_field) = char_field.last() {
             let evaluation = Evaluation::eval_from_symbol(session.st(), char_field, Some(true));
             session.st_mut()[display_name].evaluations.push(evaluation);
@@ -321,28 +320,28 @@ impl PythonOdooBuilder {
         if session.st()[symbol]._model.as_ref().unwrap().log_access {
             //create_uid
             let create_uid = session.st_mut().add_new_variable(symbol, "create_uid", range);
-            let many2one_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Many2one"]), u32::MAX);
+            let many2one_field = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Many2one"]), u32::MAX);
             if let Some(&many2one_field) = many2one_field.last() {
                 let evaluation = Evaluation::eval_from_symbol(session.st(), many2one_field, Some(true));
                 session.st_mut()[create_uid].evaluations.push(evaluation);
             }
             //create_date
             let create_date = session.st_mut().add_new_variable(symbol, "create_date", range);
-            let datetime_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Datetime"]), u32::MAX);
+            let datetime_field = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Datetime"]), u32::MAX);
             if let Some(&datetime_field) = datetime_field.last() {
                 let evaluation = Evaluation::eval_from_symbol(session.st(), datetime_field, Some(true));
                 session.st_mut()[create_date].evaluations.push(evaluation);
             }
             //write_uid
             let write_uid = session.st_mut().add_new_variable(symbol, "write_uid", range);
-            let many2one_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Many2one"]), u32::MAX);
+            let many2one_field = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Many2one"]), u32::MAX);
             if let Some(&many2one_field) = many2one_field.last() {
                 let evaluation = Evaluation::eval_from_symbol(session.st(), many2one_field, Some(true));
                 session.st_mut()[write_uid].evaluations.push(evaluation);
             }
             //write_date
             let write_date = session.st_mut().add_new_variable(symbol, "write_date", range);
-            let datetime_field = session.sync_odoo.get_symbol(&session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Datetime"]), u32::MAX);
+            let datetime_field = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Datetime"]), u32::MAX);
             if let Some(&datetime_field) = datetime_field.last() {
                 let evaluation = Evaluation::eval_from_symbol(session.st(), datetime_field, Some(true));
                 session.st_mut()[write_date].evaluations.push(evaluation);
@@ -380,7 +379,7 @@ impl PythonOdooBuilder {
                     eval.follow_ref_and_get_value(session, None, diagnostics)?.as_bool_literal()
             ).collect();
             // If we have exactly *one* False value evaluation, we consider _register = False, thus it is an abstract model
-            if register_evals_values == &[false] {
+            if register_evals_values == [false] {
                 return false;
             }
         }

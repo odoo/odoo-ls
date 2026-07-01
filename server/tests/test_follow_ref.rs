@@ -34,9 +34,9 @@ fn test_variable_type_resolution(
     file_info: &Rc<RefCell<FileInfo>>,
     file_symbol: SourceFileKey,
 ) {
-    let test_class = session.st().get_sub_symbol(file_symbol.into(), "TestClass", u32::MAX).symbols[0].clone();
-    let int_type = session.sync_odoo.get_symbol("", (&["builtins"], &["int"]), u32::MAX)[0].clone();
-    let str_type = session.sync_odoo.get_symbol("", (&["builtins"], &["str"]), u32::MAX)[0].clone();
+    let test_class = session.st().get_sub_symbol(file_symbol.into(), "TestClass", u32::MAX).symbols[0];
+    let int_type = session.sync_odoo.get_symbol("", (&["builtins"], &["int"]), u32::MAX)[0];
+    let str_type = session.sync_odoo.get_symbol("", (&["builtins"], &["str"]), u32::MAX)[0];
 
     // Test cases: (var_name, (line, character), expected_types)
     let test_cases = [

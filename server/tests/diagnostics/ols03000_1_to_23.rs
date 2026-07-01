@@ -17,5 +17,5 @@ fn test_ols03001_23() {
     let line_diagnostics = diag_on_line(&diagnostics, 125);
     assert_eq!(line_diagnostics.len(), 0, "Expected no diagnostics on line 126, but found some: {:?}", line_diagnostics);
     // Verify all diagnostics against those specified in the document
-    verify_diagnostics_against_doc(&diagnostics, doc_diags);
+    verify_diagnostics_against_doc(&diagnostics, &doc_diags);
 }

@@ -93,7 +93,7 @@ fn test_xml_fields() {
 
     // Look for OLS03303 diagnostic on py_test_model.py
     let doc_diags = setup::setup::get_diagnostics_test_comments(&mut session, &file_paths[&TestDataFiles::PyTestModel]);
-    test_utils::verify_diagnostics_against_doc(&diagnostics[&TestDataFiles::PyTestModel], doc_diags);
+    test_utils::verify_diagnostics_against_doc(&diagnostics[&TestDataFiles::PyTestModel], &doc_diags);
 }
 
 #[test]

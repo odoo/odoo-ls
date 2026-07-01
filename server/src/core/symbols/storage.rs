@@ -54,6 +54,12 @@ pub struct SymbolTable {
     xml_declared_models: SparseSecondaryMap<XmlRecordKey, OYarn>,
 }
 
+impl Default for SymbolTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SymbolTable {
     pub fn new() -> Self {
         Self {

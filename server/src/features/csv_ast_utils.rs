@@ -99,7 +99,7 @@ impl<'a> Iterator for CsvRecordIter<'a> {
         let end = match self.second_record {
             Some(Ok(ref rec)) => rec.position()?.byte() as u32,
             Some(Err(ref err)) => err.position()?.byte() as u32,
-            None => self.content.as_bytes().len() as u32,
+            None => self.content.len() as u32,
         };
         self.first_record = self.second_record.take();
         self.second_record = self.records.next();
@@ -202,7 +202,7 @@ impl CsvAstUtils {
     fn get_symbols_in_record(
         session: &mut SessionInfo,
         offset: usize,
-        headers: &Vec<OYarn>,
+        headers: &[OYarn],
         record: &StringRecord,
         results: &mut Vec<GotoSource>,
         csv_symbol: CsvFileKey,
@@ -230,14 +230,14 @@ impl CsvAstUtils {
                     if let Some(record_key) = data.as_xml_record_key() {
                         let record = &session.st()[record_key];
                         let Some(record_xml_id) = &record.xml_id else {continue;};
-                        if record.range.contains_range(field_range) && field_data == *record_xml_id {
-                            if let Some(xml_id) = record.fields().get(XmlFieldName::Id.as_str()) {
-                                results.push(GotoSource {
-                                    source: GotoSourceType::SymbolKey((*xml_id).into()),
-                                    origin_selection_range: None,
-                                });
-                                break;
-                            }
+                        if record.range.contains_range(field_range) && field_data == *record_xml_id
+                            && let Some(xml_id) = record.fields().get(XmlFieldName::Id.as_str())
+                        {
+                            results.push(GotoSource {
+                                source: GotoSourceType::SymbolKey((*xml_id).into()),
+                                origin_selection_range: None,
+                            });
+                            break;
                         }
                     }
                 }
@@ -246,8 +246,8 @@ impl CsvAstUtils {
             && relational_field == XmlFieldName::Id.as_str()  // Only id because we will only look for xml_ids
             {
                 // 1. find relational field in current model
-                let mut deep_field_walker = DeepFieldEvalWalker::new(main_symbol.into(), module);
-                let _ = deep_field_walker.get_model_fields(session, main_symbol.into(), field_name);
+                let mut deep_field_walker = DeepFieldEvalWalker::new(main_symbol, module);
+                let _ = deep_field_walker.get_model_fields(session, main_symbol, field_name);
                 let Some(_) = deep_field_walker.get_model_symbol(session) else {
                     return;
                 };

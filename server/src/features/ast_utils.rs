@@ -52,7 +52,7 @@ impl AstUtils {
             (ContextKey::Module, from_module),
             (ContextKey::Range, ContextValue::RANGE(expr.range()))
         ]);
-        let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(session, &expr, parent_symbol, &expr.range().end(), &mut context, false, &mut vec![]);
+        let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(session, expr, parent_symbol, &expr.range().end(), &mut context, false, &mut vec![]);
         (analyse_ast_result, Some(expr.range()))
     }
 
@@ -123,7 +123,7 @@ impl AstUtils {
                             let res = resolve_import_stmt(session, file_symbol.into(), None, &[
                                 Alias { //create a dummy alias with a asname to force full import
                                     name: Identifier { id: Name::new(to_analyze), range: TextRange::default(), node_index: AtomicNodeIndex::default() },
-                                    asname: Some(Identifier { id: Name::new("fake_name"), range: alias.name.range().clone(), node_index: AtomicNodeIndex::default() }),
+                                    asname: Some(Identifier { id: Name::new("fake_name"), range: alias.name.range(), node_index: AtomicNodeIndex::default() }),
                                     range: alias.range(),
                                     node_index: AtomicNodeIndex::default()
                                 }], 0, &mut None);
@@ -145,8 +145,7 @@ impl AstUtils {
             },
             Stmt::ImportFrom(stmt) => {
                 //only check module as names are already supported by default ast walking and name resolution
-                if stmt.module.is_some() && stmt.module.as_ref().unwrap().range().contains(TextSize::new(offset)) {
-                    let module = stmt.module.as_ref().unwrap();
+                if let Some(module) = stmt.module.as_ref() && module.range().contains(TextSize::new(offset)) {
                     let (to_analyze, range) = if module.range().contains(TextSize::new(offset)) {
                         let next_dot_offset = module.id.as_str()[offset as usize - module.range().start().to_usize()..].find(".");
                         if let Some(next_dot_offset) = next_dot_offset {
@@ -210,11 +209,10 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
 
     fn visit_expr(&mut self, expr: &'a Expr) {
         if expr.range().contains(self.offset) {
-            if let Expr::Call(expr_call) = expr {
-                if expr_call.arguments.range().contains(self.offset){
+            if let Expr::Call(expr_call) = expr
+                && expr_call.arguments.range().contains(self.offset){
                     self.last_call_expr = Some(expr_call);
                 }
-            }
             walk_expr(self, expr);
             if self.expr.is_none() {
                 self.expr = Some(ExprOrIdent::Expr(expr));
@@ -229,11 +227,10 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
         if self.expr.is_none() {
             if alias.name.range().contains(self.offset) {
                 self.expr = Some(ExprOrIdent::Ident(&alias.name));
-            } else if let Some(ref asname) = alias.asname {
-                if asname.range().contains(self.offset) {
+            } else if let Some(ref asname) = alias.asname
+                && asname.range().contains(self.offset) {
                     self.expr = Some(ExprOrIdent::Ident(asname))
                 }
-            }
         }
     }
 
@@ -241,11 +238,10 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
         walk_except_handler(self, except_handler);
         if self.expr.is_none() {
             let ExceptHandler::ExceptHandler(ref handler) = *except_handler;
-            if let Some(ref ident) = handler.name {
-                if ident.clone().range().contains(self.offset) {
+            if let Some(ref ident) = handler.name
+                && ident.clone().range().contains(self.offset) {
                     self.expr = Some(ExprOrIdent::Ident(ident));
                 }
-            }
         } else {
             walk_except_handler(self, except_handler);
         }
@@ -262,11 +258,10 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
         walk_keyword(self, keyword);
 
         if self.expr.is_none() {
-            if let Some(ref ident) = keyword.arg {
-                if ident.range().contains(self.offset) {
+            if let Some(ref ident) = keyword.arg
+                && ident.range().contains(self.offset) {
                     self.expr = Some(ExprOrIdent::Ident(ident));
                 }
-            }
         } else {
             walk_keyword(self, keyword)
         }
@@ -292,9 +287,10 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
                     TypeParam::TypeVarTuple(t) => Some(&t.name),
                 };
 
-                if ident.is_some() && ident.unwrap().range().contains(self.offset) {
-                    self.expr = Some(ExprOrIdent::Ident(ident.unwrap()));
-                }
+                if let Some(ident) = ident
+                    && ident.range().contains(self.offset) {
+                        self.expr = Some(ExprOrIdent::Ident(ident));
+                    }
 
             }
         } else {
@@ -303,8 +299,8 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
     }
 
     fn visit_pattern(&mut self, pattern: &'a Pattern) {
-        if pattern.range().contains(self.offset) {
-            if self.expr.is_none() {
+        if pattern.range().contains(self.offset)
+            && self.expr.is_none() {
                 walk_pattern(self, pattern);
                 let ident  = match pattern {
                     Pattern::MatchMapping(mapping) => &mapping.rest,
@@ -313,13 +309,11 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
                     _ => &None
                 };
 
-                if let Some(ident) = ident {
-                    if ident.range().contains(self.offset) {
+                if let Some(ident) = ident
+                    && ident.range().contains(self.offset) {
                         self.expr = Some(ExprOrIdent::Ident(ident));
                     }
-                }
             }
-        }
     }
 
     fn visit_stmt(&mut self, stmt: &'a Stmt) {

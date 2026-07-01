@@ -40,8 +40,8 @@ impl XmlArchBuilder {
                         || self.load_function(session, &child, diagnostics)
                         || self.load_asset(session, &child, diagnostics)
                         || child.is_text() || child.is_comment()
-                    ) {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05005, &[child.tag_name().name(), node.tag_name().name()]) {
+                    )
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05005, &[child.tag_name().name(), node.tag_name().name()]) {
                             diagnostics.push(
                                 Diagnostic {
                                     range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
@@ -49,31 +49,27 @@ impl XmlArchBuilder {
                                 }
                             );
                         }
-                    }
                 }
-                return true;
+                true
             },
-            _ => { return false;},
+            _ => false,
         }
     }
 
     pub fn load_frontend_data(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) {
         for attr in node.attributes() {
-            match attr.name() {
-                "t-name" => {
-                    // even if discouraged, load it so it can be used in features
-                    self.load_qweb_template(session, &node, None, true, diagnostics);
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05075, &[]) {
-                        diagnostics.push(
-                            Diagnostic {
-                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                                ..diagnostic
-                            }
-                        );
-                    }
-                    return;
-                },
-                _ => {}
+            if attr.name() == "t-name" {
+                // even if discouraged, load it so it can be used in features
+                self.load_qweb_template(session, node, None, true, diagnostics);
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05075, &[]) {
+                    diagnostics.push(
+                        Diagnostic {
+                            range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                            ..diagnostic
+                        }
+                    );
+                }
+                return;
             }
         }
         for child in node.children().filter(|n| n.is_element()) {
@@ -92,28 +88,26 @@ impl XmlArchBuilder {
                     found_id = Some(attr.value().to_string());
                 },
                 "sequence" => {
-                    if attr.value().parse::<i32>().is_err() {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05008, &[]) {
+                    if attr.value().parse::<i32>().is_err()
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05008, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
                                 ..diagnostic.clone()
                             });
                         }
-                    }
                 },
                 "groups" => {
                     let missing_groups = attr.value().split(",")
                         .filter(|group| self.get_group_ids(session, group.trim_start_matches("-"), &attr, diagnostics).is_empty())
                         .collect::<Vec<&str>>()
                         .join(",");
-                    if missing_groups.len() > 0 {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05054, &[&missing_groups]) {
+                    if !missing_groups.is_empty()
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05054, &[&missing_groups]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
                                 ..diagnostic.clone()
                             });
                         }
-                    }
                 },
                 "name" | "active" => {},
                 "action" => {
@@ -128,13 +122,13 @@ impl XmlArchBuilder {
                         }
                     }
                     //check that action exists
-                    if SyncOdoo::get_xml_ids(session, self.xml_symbol.into(), attr.value(), &attr.range(), diagnostics).is_empty(&session.sync_odoo.symbol_table) {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05053, &[attr.value()]) {
-                            diagnostics.push(Diagnostic {
-                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                                ..diagnostic.clone()
-                            });
-                        }
+                    if SyncOdoo::get_xml_ids(session, self.xml_symbol.into(), attr.value(), &attr.range(), diagnostics).is_empty(&session.sync_odoo.symbol_table)
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05053, &[attr.value()])
+                    {
+                        diagnostics.push(Diagnostic {
+                            range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                            ..diagnostic.clone()
+                        });
                     }
                 }
                 "parent" => {
@@ -147,25 +141,24 @@ impl XmlArchBuilder {
                         }
                     } else {
                         //check that parent exists
-                        if SyncOdoo::get_xml_ids(session, self.xml_symbol.into(), attr.value(), &attr.range(), diagnostics).is_empty(&session.sync_odoo.symbol_table) {
-                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05052, &[attr.value()]) {
-                                diagnostics.push(Diagnostic {
-                                    range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                                    ..diagnostic.clone()
-                                });
-                            }
-                        }
-                    }
-                },
-                "web_icon" => {
-                    if has_parent || is_submenu {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05010, &[]) {
+                        if SyncOdoo::get_xml_ids(session, self.xml_symbol.into(), attr.value(), &attr.range(), diagnostics).is_empty(&session.sync_odoo.symbol_table)
+                            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05052, &[attr.value()])
+                        {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
                                 ..diagnostic.clone()
                             });
                         }
                     }
+                },
+                "web_icon" => {
+                    if (has_parent || is_submenu)
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05010, &[]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
+                                ..diagnostic.clone()
+                            });
+                        }
                 }
                 _ => {
                     if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05007, &[attr.name()]) {
@@ -177,14 +170,13 @@ impl XmlArchBuilder {
                 }
             }
         }
-        if found_id.is_none() {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05006, &[]) {
+        if found_id.is_none()
+            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05006, &[]) {
                 diagnostics.push(Diagnostic {
                     range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
                     ..diagnostic.clone()
                 });
             }
-        }
         for child in node.children().filter(|n| n.is_element()) {
             if child.tag_name().name() != "menuitem" {
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05011, &[child.tag_name().name()]) {
@@ -295,53 +287,48 @@ impl XmlArchBuilder {
             match field_type {
                 "int" => {
                     let content = node.text().unwrap_or("");
-                    if !(content.parse::<i32>().is_ok() || content == "None") {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05018, &[content]) {
+                    if !(content.parse::<i32>().is_ok() || content == "None")
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05018, &[content]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
                                 ..diagnostic.clone()
                             });
                         }
-                    }
                 }
                 "float" => {
                     let content = node.text().unwrap_or("");
-                    if content.parse::<f64>().is_err() {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05019, &[content]) {
+                    if content.parse::<f64>().is_err()
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05019, &[content]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
                                 ..diagnostic.clone()
                             });
                         }
-                    }
                 }
                 "list" | "tuple" => {
                     iterable_child_node = true;
                     for child in node.children() {
-                        if !self.load_value(session, &child, diagnostics) {
-                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05020, &[child.tag_name().name()]) {
+                        if !self.load_value(session, &child, diagnostics)
+                            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05020, &[child.tag_name().name()]) {
                                 diagnostics.push(Diagnostic {
                                     range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
                                     ..diagnostic.clone()
                                 });
                             }
-                        }
                     }
                 }
                 "html" | "xml" => {
                     is_xml_or_html = true;
                 }
                 "base64" | "char" | "file" => {
-                    if node.has_attribute("file") {
-                        if node.text().is_some() {
-                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05021, &[]) {
+                    if node.has_attribute("file")
+                        && node.text().is_some()
+                            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05021, &[]) {
                                 diagnostics.push(Diagnostic {
                                     range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
                                     ..diagnostic.clone()
                                 });
                             }
-                        }
-                    }
                 }
                 _ => {},
             }
@@ -350,34 +337,31 @@ impl XmlArchBuilder {
             match attr.name() {
                 "name" | "type" | "file" => {},
                 "ref" | "eval" | "search" => {
-                    if node.text().is_some() {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05022, &[attr.name()]) {
+                    if node.text().is_some()
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05022, &[attr.name()]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
                                 ..diagnostic.clone()
                             });
                         }
-                    }
                 },
                 "model" => {
-                    if !has_eval && !has_search {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05023, &[]) {
+                    if !has_eval && !has_search
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05023, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
                                 ..diagnostic.clone()
                             });
                         }
-                    }
                 },
                 "use" => {
-                    if !has_search {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05024, &[]) {
+                    if !has_search
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05024, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
                                 ..diagnostic.clone()
                             });
                         }
-                    }
                 }
                 _ => {
                     if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05025, &[attr.name()]) {
@@ -390,14 +374,13 @@ impl XmlArchBuilder {
             }
         }
         for child in node.children() {
-            if !self.load_record(session, &child, diagnostics) && !child.is_text() && !child.is_comment() && !is_xml_or_html && !iterable_child_node{
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05026, &[]) {
+            if !self.load_record(session, &child, diagnostics) && !child.is_text() && !child.is_comment() && !is_xml_or_html && !iterable_child_node
+                && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05026, &[]) {
                     diagnostics.push(Diagnostic {
                         range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
                         ..diagnostic.clone()
                     });
                 }
-            }
         }
         let mut text = None;
         let mut text_range = None;
@@ -427,65 +410,59 @@ impl XmlArchBuilder {
                 "name" | "model" | "use" => {},
                 "search" => {
                     has_search = true;
-                    if has_eval || has_type_or_file_or_text {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05027, &[]) {
+                    if (has_eval || has_type_or_file_or_text)
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05027, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
                                 ..diagnostic.clone()
                             });
                         }
-                    }
                 },
                 "eval" => {
                     has_eval = true;
-                    if has_search || has_type_or_file_or_text {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05028, &[]) {
+                    if (has_search || has_type_or_file_or_text)
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05028, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
                                 ..diagnostic.clone()
                             });
                         }
-                    }
                 },
                 "type" => {
                     has_type_or_file_or_text = true;
-                    if has_search || has_eval {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05029, &[]) {
+                    if (has_search || has_eval)
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05029, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
                                 ..diagnostic.clone()
                             });
                             continue;
                         }
-                    }
-                    if !node.has_attribute("file") && !node.text().is_some() {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05036, &[]) {
+                    if !node.has_attribute("file") && node.text().is_none()
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05036, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
                                 ..diagnostic.clone()
                             });
                         }
-                    }
                 },
                 "file" => {
                     has_type_or_file_or_text = true;
-                    if node.text().is_some() {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05030, &[]) {
+                    if node.text().is_some()
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05030, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
                                 ..diagnostic.clone()
                             });
                             continue;
                         }
-                    }
-                    if has_search || has_eval {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05031, &[]) {
+                    if (has_search || has_eval)
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05031, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
                                 ..diagnostic.clone()
                             });
                         }
-                    }
                 }
                 _ => {
                     if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05032, &[attr.name()]) {
@@ -497,14 +474,13 @@ impl XmlArchBuilder {
                 }
             }
         }
-        if !has_search && !has_eval && !has_type_or_file_or_text {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05037, &[]) {
+        if !has_search && !has_eval && !has_type_or_file_or_text
+            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05037, &[]) {
                 diagnostics.push(Diagnostic {
                     range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
                     ..diagnostic.clone()
                 });
             }
-        }
         true
     }
 
@@ -512,7 +488,7 @@ impl XmlArchBuilder {
         if node.tag_name().name() != "template" { return false; }
         //no interesting rule to check, as 'any' is valid
         let found_id = node.attribute("id").map(|s| s.to_string());
-        self.load_qweb_template(session, &node, found_id, false, diagnostics);
+        self.load_qweb_template(session, node, found_id, false, diagnostics);
         true
     }
 
@@ -590,22 +566,20 @@ impl XmlArchBuilder {
         }
         let found_id = node.attribute("id").map(|s| s.to_string());
         let has_search = node.attribute("search").is_some();
-        if found_id.is_some() && has_search {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05034, &[]) {
+        if found_id.is_some() && has_search
+            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05034, &[]) {
                 diagnostics.push(Diagnostic {
                     range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
                     ..diagnostic.clone()
                 });
             }
-        }
-        if found_id.is_none() && !has_search {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05035, &[]) {
+        if found_id.is_none() && !has_search
+            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05035, &[]) {
                 diagnostics.push(Diagnostic {
                     range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
                     ..diagnostic.clone()
                 });
             }
-        }
         let data = session.st_mut().add_new_xml_delete(
             self.xml_symbol,
             found_id.clone().map(|id| oyarn!("{}", id)),
@@ -619,14 +593,13 @@ impl XmlArchBuilder {
     fn load_function(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
         if node.tag_name().name() != "function" { return false; }
         for attr in ["model", "name"] {
-            if node.attribute(attr).is_none() {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05044, &[attr]) {
+            if node.attribute(attr).is_none()
+                && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05044, &[attr]) {
                     diagnostics.push(Diagnostic {
                         range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
                         ..diagnostic.clone()
                     });
                 }
-            }
         }
         let mut has_eval = false;
         for attr in node.attributes() {
@@ -649,23 +622,21 @@ impl XmlArchBuilder {
         }
         for child in node.children().filter(|n| n.is_element()) {
             if self.load_value(session, &child, diagnostics) {
-                if has_eval {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05045, &[]) {
+                if has_eval
+                    && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05045, &[]) {
                         diagnostics.push(Diagnostic {
                             range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
                             ..diagnostic.clone()
                         });
                     }
-                }
             } else if self.load_function(session, &child, diagnostics) {
-                if has_eval {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05047, &[]) {
+                if has_eval
+                    && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05047, &[]) {
                         diagnostics.push(Diagnostic {
                             range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
                             ..diagnostic.clone()
                         });
                     }
-                }
             } else {
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05048, &[child.tag_name().name()]) {
                     diagnostics.push(Diagnostic {
@@ -706,14 +677,13 @@ impl XmlArchBuilder {
                 });
             }
         }
-        else if !has_name {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05060, &[]) {
+        else if !has_name
+            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05060, &[]) {
                 diagnostics.push(Diagnostic {
                     range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
                     ..diagnostic.clone()
                 });
             }
-        }
         let asset = session.st_mut().add_new_xml_asset(
             self.xml_symbol,
             found_id.clone().map(OYarn::from),
@@ -725,23 +695,21 @@ impl XmlArchBuilder {
                 "bundle" => {
                     has_bundle = true;
                     for attr in child.attributes() {
-                        if attr.name() != "directive" {
-                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05061, &[attr.name()]) {
+                        if attr.name() != "directive"
+                            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05061, &[attr.name()]) {
                                 diagnostics.push(Diagnostic {
                                     range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
                                     ..diagnostic.clone()
                                 });
                             }
-                        }
                     }
-                    if child.text().is_none() {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05066, &[]) {
+                    if child.text().is_none()
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05066, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
                                 ..diagnostic.clone()
                             });
                         }
-                    }
                 },
                 "path" => {
                     has_path = true;
@@ -755,14 +723,13 @@ impl XmlArchBuilder {
                             }
                         }
                     }
-                    if child.text().is_none() {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05067, &[]) {
+                    if child.text().is_none()
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05067, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
                                 ..diagnostic.clone()
                             });
                         }
-                    }
                 },
                 "field" => {
                     self.load_field(session, &child, asset.into(), diagnostics);
@@ -778,22 +745,20 @@ impl XmlArchBuilder {
                 }
             }
         }
-        if !has_bundle {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05064, &[]) {
+        if !has_bundle
+            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05064, &[]) {
                 diagnostics.push(Diagnostic {
                     range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
                     ..diagnostic.clone()
                 });
             }
-        }
-        if !has_path {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05065, &[]) {
+        if !has_path
+            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05065, &[]) {
                 diagnostics.push(Diagnostic {
                     range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
                     ..diagnostic.clone()
                 });
             }
-        }
         self.on_operation_creation(session, found_id, None, node, asset.into(), diagnostics);
         true
     }

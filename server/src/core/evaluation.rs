@@ -19,7 +19,6 @@ use ruff_python_ast::{
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use std::cmp::{max, min};
 use crate::utils::{HashMap, HashSet};
-use std::i32;
 
 use super::file_mgr::FileMgr;
 use super::symbols::function_symbol::{Argument, ArgumentType};
@@ -36,10 +35,7 @@ pub enum EvaluationValue {
 
 impl EvaluationValue {
     pub fn as_any(&self) -> bool {
-        match self {
-            EvaluationValue::ANY() => true,
-            _ => false
-        }
+        matches!(self, EvaluationValue::ANY())
     }
 
     pub fn as_constant(&self) -> &ruff_python_ast::Expr {
@@ -71,21 +67,21 @@ impl EvaluationValue {
         }
     }
 
-    pub fn as_dict(&self) -> &Vec<(ruff_python_ast::Expr, ruff_python_ast::Expr)> {
+    pub fn as_dict(&self) -> &[(ruff_python_ast::Expr, ruff_python_ast::Expr)] {
         match self {
             EvaluationValue::DICT(d) => d,
             _ => panic!("Not a dict")
         }
     }
 
-    pub fn as_list(&self) -> &Vec<ruff_python_ast::Expr> {
+    pub fn as_list(&self) -> &[ruff_python_ast::Expr] {
         match self {
             EvaluationValue::LIST(l) => l,
             _ => panic!("Not a list")
         }
     }
 
-    pub fn as_tuple(&self) -> &Vec<ruff_python_ast::Expr> {
+    pub fn as_tuple(&self) -> &[ruff_python_ast::Expr] {
         match self {
             EvaluationValue::TUPLE(t) => t,
             _ => panic!("Not a tuple")
@@ -204,7 +200,7 @@ impl EvaluationSymbolWeak {
     }
 
     pub fn is_instance(&self) -> Option<bool> {
-        return self.instance;
+        self.instance
     }
 }
 
@@ -430,7 +426,7 @@ impl Evaluation {
                     if !sym.is_expired_if_weak(&session.sync_odoo.symbol_table) {
                         res.push(Evaluation {
                             symbol: EvaluationSymbol {
-                                sym: sym,
+                                sym,
                                 get_symbol_hook: None,
                             },
                             value: None,
@@ -447,8 +443,8 @@ impl Evaluation {
     }
 
     pub fn follow_ref_and_get_value(&self, session: &mut SessionInfo, context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>) -> Option<EvaluationValue> {
-        if self.value.is_some() {
-            return Some(self.value.as_ref().unwrap().clone())
+        if let Some(value) = &self.value {
+            return Some(value.clone());
         }
         let eval_symbol = self.symbol.get_symbol(session, None, diagnostics, None);
         if eval_symbol.is_expired_if_weak(session.st()) {
@@ -513,7 +509,7 @@ impl Evaluation {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
                     weak: symbol,
                     context: Context::default(),
-                    instance: instance,
+                    instance,
                     is_super: false,
                 }),
                 get_symbol_hook: None
@@ -555,7 +551,7 @@ impl Evaluation {
             (ContextKey::Range, ContextValue::RANGE(ast.range()))
         ]);
         let analyze_result = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context, for_annotation, required_dependencies);
-        return (analyze_result.evaluations, analyze_result.diagnostics)
+        (analyze_result.evaluations, analyze_result.diagnostics)
     }
 
     /* Given an Expr, try to return the represented String. None if it can't be achieved */
@@ -574,19 +570,11 @@ impl Evaluation {
         if value.evaluations.len() == 1 { //only handle strict evaluations
             let eval = &value.evaluations[0];
             let v = eval.follow_ref_and_get_value(session, None, diagnostics);
-            if let Some(v) = v {
-                match v {
-                    EvaluationValue::CONSTANT(v) => {
-                        match *v {
-                            Expr::StringLiteral(s) => {
-                                return (Some(s.value.to_string()), value.diagnostics);
-                            },
-                            _ => {}
-                        }
-                    },
-                    _ => {}
-                }
-            }
+            if let Some(v) = v
+                && let EvaluationValue::CONSTANT(v) = v
+                    && let Expr::StringLiteral(s) = *v {
+                        return (Some(s.value.to_string()), value.diagnostics);
+                    }
         }
         (None, value.diagnostics)
     }
@@ -607,19 +595,11 @@ impl Evaluation {
         if value.evaluations.len() == 1 { //only handle strict evaluations
             let eval = &value.evaluations[0];
             let v = eval.follow_ref_and_get_value(session, None, diagnostics);
-            if let Some(v) = v {
-                match v {
-                    EvaluationValue::CONSTANT(v) => {
-                        match *v {
-                            Expr::BooleanLiteral(s) => {
-                                return (Some(s.value), value.diagnostics);
-                            },
-                            _ => {}
-                        }
-                    },
-                    _ => {}
-                }
-            }
+            if let Some(v) = v
+                && let EvaluationValue::CONSTANT(v) = v
+                    && let Expr::BooleanLiteral(s) = *v {
+                        return (Some(s.value), value.diagnostics);
+                    }
         }
         (None, value.diagnostics)
     }
@@ -744,7 +724,7 @@ impl Evaluation {
                 for dict_item in expr.iter() {
                     let dict_value = &dict_item.value;
                     if is_in_validation || session.sync_odoo.evaluation_search.is_some() {
-                        let (_, diags) = Evaluation::eval_from_ast(session, &dict_value, parent, max_infer, false, required_dependencies);
+                        let (_, diags) = Evaluation::eval_from_ast(session, dict_value, parent, max_infer, false, required_dependencies);
                         if is_in_validation {
                             diagnostics.extend(diags);
                         }
@@ -781,7 +761,7 @@ impl Evaluation {
                 // Check argument expressions for references and diagnostics
                 if is_in_validation || odoo.evaluation_search.is_some() {
                     for param in expr.arguments.args.iter().chain(expr.arguments.keywords.iter().map(|k| &k.value)) {
-                        let (_, diags) = Evaluation::eval_from_ast(session, &param, parent, max_infer, false, required_dependencies);
+                        let (_, diags) = Evaluation::eval_from_ast(session, param, parent, max_infer, false, required_dependencies);
                         diagnostics.extend(diags);
                     }
                 }
@@ -811,15 +791,15 @@ impl Evaluation {
 
                 print(c) <= string/int with value 5. if we had a parameter to 'other_test', only string with value 5
                 */
-                if base_evals.len() == 0 {
+                if base_evals.is_empty() {
                     /*TODO if multiple evals are found, we could maybe try to validate that they all have the same signature in case of diamond inheritance?
                     However, other cases should be handled by arch step or syntax? */
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base_eval_ptrs: Vec<EvaluationSymbolPtr> = base_evals.iter().map(|base_eval| {
+                let base_eval_ptrs: Vec<EvaluationSymbolPtr> = base_evals.iter().flat_map(|base_eval| {
                     let base_sym_weak_eval_base = base_eval.symbol.get_symbol(session, Some(context), &mut diagnostics, None);
                     SymbolTable::follow_ref(&base_sym_weak_eval_base, session, Some(context), true, false, None, None)
-                }).flatten().collect();
+                }).collect();
 
                 let mut call_argument_diagnostics = Vec::new();
                 for base_eval_ptr in base_eval_ptrs.iter() {
@@ -839,7 +819,8 @@ impl Evaluation {
                                         return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                                     }
                                     let class_sym_weak_eval= class_eval[0].symbol.get_symbol_as_weak(session, Some(context), &mut diagnostics, None);
-                                    let res = class_sym_weak_eval.weak.upgrade(session.st()).and_then(|class_sym|{
+                                    
+                                    class_sym_weak_eval.weak.upgrade(session.st()).and_then(|class_sym|{
                                         let class_sym_weak_eval = &SymbolTable::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
                                             class_sym, None, false
                                         )), session, None, false, false, None, None)[0];
@@ -848,7 +829,7 @@ impl Evaluation {
                                         }
                                         let class_sym_weak_eval = class_sym_weak_eval.get_weak();
                                         if class_sym_weak_eval.instance.unwrap_or(false) {
-                                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS01005, &[]) {
+                                            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS01005, &[]) {
                                                 diagnostics.push(Diagnostic {
                                                     range: Range::new(Position::new(expr.arguments.args[0].range().start().to_u32(), 0),
                                                     Position::new(expr.arguments.args[0].range().end().to_u32(), 0)),
@@ -866,7 +847,7 @@ impl Evaluation {
                                                 let (object_or_type_eval, diags) = Evaluation::eval_from_ast(session, &expr.arguments.args[1], parent, max_infer, false, required_dependencies);
                                                 diagnostics.extend(diags);
                                                 if object_or_type_eval.len() != 1 {
-                                                    return Some((class_sym_weak_eval.weak.clone(), Some(default_instance)))
+                                                    return Some((class_sym_weak_eval.weak, Some(default_instance)))
                                                 }
                                                 let object_or_type_weak_eval = &SymbolTable::follow_ref(
                                                     &object_or_type_eval[0].symbol.get_symbol(
@@ -880,13 +861,12 @@ impl Evaluation {
                                             }
                                             Some((class_sym_weak_eval.weak, is_instance))
                                         }
-                                    });
-                                    res
+                                    })
                                 //  - Otherwise we get the encapsulating class
                                 } else {
                                     match session.st().get_in_parents(parent, &[SymType::CLASS], true) {
                                         None => {
-                                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01006, &[]) {
+                                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01006, &[]) {
                                                 diagnostics.push(Diagnostic {
                                                     range: Range::new(Position::new(expr.range().start().to_u32(), 0),
                                                     Position::new(expr.range().end().to_u32(), 0)),
@@ -1055,7 +1035,7 @@ impl Evaluation {
                         context.remove(ContextKey::BaseCall);
                     }
                 }
-                diagnostics.extend(Evaluation::process_argument_diagnostics(&session, expr, call_argument_diagnostics, base_eval_ptrs.len()));
+                diagnostics.extend(Evaluation::process_argument_diagnostics(session, expr, call_argument_diagnostics, base_eval_ptrs.len()));
             },
             ExprOrIdent::Expr(Expr::Attribute(expr)) => {
                 let (base_evals, diags) = Evaluation::eval_from_ast(session, &expr.value, parent, max_infer, false, required_dependencies);
@@ -1107,13 +1087,10 @@ impl Evaluation {
                                         _ => None
                                     };
                                     let mut eval = Evaluation::eval_from_symbol(session.st(), attribute, instance);
-                                    match eval.symbol.sym {
-                                        EvaluationSymbolPtr::WEAK(ref mut weak) => {
-                                            weak.context.insert(ContextKey::BaseAttr, ContextValue::SYMBOL(base_loc.into()));
-                                            weak.context.insert(ContextKey::BaseIsSelf, ContextValue::BOOLEAN(base_is_self));
-                                            weak.context.insert(ContextKey::IsAttrOfInstance, ContextValue::BOOLEAN(is_instance));
-                                        },
-                                        _ => {}
+                                    if let EvaluationSymbolPtr::WEAK(ref mut weak) = eval.symbol.sym {
+                                        weak.context.insert(ContextKey::BaseAttr, ContextValue::SYMBOL(base_loc.into()));
+                                        weak.context.insert(ContextKey::BaseIsSelf, ContextValue::BOOLEAN(base_is_self));
+                                        weak.context.insert(ContextKey::IsAttrOfInstance, ContextValue::BOOLEAN(is_instance));
                                     }
                                     evals.push(eval);
                                 });
@@ -1149,12 +1126,9 @@ impl Evaluation {
                         unreachable!();
                     }
                 };
-                match ast {
-                    ExprOrIdent::Expr(Expr::Named(expr))  => {
-                        let (_, diags) = Evaluation::eval_from_ast(session, &expr.value, parent, max_infer, false, required_dependencies);
-                        diagnostics.extend(diags.clone());
-                    }
-                    _ => {}
+                if let ExprOrIdent::Expr(Expr::Named(expr)) = ast {
+                    let (_, diags) = Evaluation::eval_from_ast(session, &expr.value, parent, max_infer, false, required_dependencies);
+                    diagnostics.extend(diags.clone());
                 }
 
                 if inferred_syms.symbols.is_empty() {
@@ -1191,7 +1165,7 @@ impl Evaluation {
                 if base.is_expired_if_weak(session.st()) {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let bases = SymbolTable::follow_ref(&base, session, None, false, false, None, None);
+                let bases = SymbolTable::follow_ref(base, session, None, false, false, None, None);
                 let value = Evaluation::expr_to_str(session, &sub.slice, parent, max_infer, false, &mut diagnostics);
                 diagnostics.extend(value.1);
                 for base in bases.iter() {
@@ -1292,7 +1266,7 @@ impl Evaluation {
                 diagnostics.extend(diags);
                 let (orelse_evals, diags) = Evaluation::eval_from_ast(session, &if_expr.orelse, parent, max_infer, false, required_dependencies);
                 diagnostics.extend(diags);
-                evals.extend(body_evals.into_iter().chain(orelse_evals.into_iter()));
+                evals.extend(body_evals.into_iter().chain(orelse_evals));
             },
             ExprOrIdent::Expr(Expr::UnaryOp(unary_operator)) => 'u_op_block: {
                 let method = match unary_operator.op {
@@ -1453,7 +1427,7 @@ impl Evaluation {
             ExprOrIdent::Expr(Expr::Await(await_expr)) =>{
                 let (evaluations, diags) = Evaluation::eval_from_ast(session, &await_expr.value, parent, max_infer, false, required_dependencies);
                 diagnostics.extend(diags);
-                evals.extend(evaluations.into_iter());
+                evals.extend(evaluations);
             },
             ExprOrIdent::Expr(Expr::Slice(slice_expr)) => {
                 if is_in_validation || odoo.evaluation_search.is_some() {
@@ -1528,14 +1502,13 @@ impl Evaluation {
                     //if we have multiple matches, it means that that ast can reference it multiple times, but we only want to know if that ast matches or not
                     break;
                 }
-                if eval.symbol.sym.has_weak() && let Some(weak) = eval.symbol.sym.get_weak().weak.upgrade(session.st()) {
-                    if let Some(evaluation_search_sym) = evaluation_search.as_symbol() && weak == evaluation_search_sym {
+                if eval.symbol.sym.has_weak() && let Some(weak) = eval.symbol.sym.get_weak().weak.upgrade(session.st())
+                    && let Some(evaluation_search_sym) = evaluation_search.as_symbol() && weak == evaluation_search_sym {
                         found_one_reference |= record_evaluation_hit(session, parent, ast.range());
                     }
-                }
-                if let Some(value) = eval.value.as_ref() {
-                    if let EvaluationValue::CONSTANT(c) = value {
-                        if let Expr::StringLiteral(constant) = c.as_ref() {
+                if let Some(value) = eval.value.as_ref()
+                    && let EvaluationValue::CONSTANT(c) = value
+                        && let Expr::StringLiteral(constant) = c.as_ref() {
                             match evaluation_search {
                                 ReferenceTarget::String(evaluation_search_string) => {
                                     if constant.value.to_str() == evaluation_search_string {
@@ -1543,18 +1516,14 @@ impl Evaluation {
                                     }
                                 },
                                 ReferenceTarget::Symbol(evaluation_search_sym) => {
-                                    if let SymbolKey::Class(class_key) = *evaluation_search_sym {
-                                        if let Some(model_data) = session.st()[class_key]._model.as_ref() {
-                                            if model_data.name == constant.value.to_str() {
+                                    if let SymbolKey::Class(class_key) = *evaluation_search_sym
+                                        && let Some(model_data) = session.st()[class_key]._model.as_ref()
+                                            && model_data.name == constant.value.to_str() {
                                                 record_evaluation_hit(session, parent, constant.range);
                                             }
-                                        }
-                                    }
                                 }
                             }
                         }
-                    }
-                }
             }
         }
         AnalyzeAstResult { evaluations: evals, diagnostics }
@@ -1605,9 +1574,9 @@ impl Evaluation {
                 }
             }
         }
-        if !function.is_static {
-            if object_instance.is_some_and(|x| x) || //on instance
-             object_instance.is_some_and(|x| !x) && function.is_class_method { //on classmethod
+        if !function.is_static
+            && (object_instance.is_some_and(|x| x) || //on instance
+             object_instance.is_some_and(|x| !x) && function.is_class_method) { //on classmethod
                 //check that there is at least one positional argument
                 let mut pos_arg = false;
                 for arg in function.args.iter() {
@@ -1630,7 +1599,6 @@ impl Evaluation {
                 }
                 arg_index += 1;
             }
-        }
         for arg in expr_call.arguments.args.iter() {
             if arg.is_starred_expr() {
                 //TODO try to unpack the starred
@@ -1679,23 +1647,22 @@ impl Evaluation {
                         if func_arg.arg_type == ArgumentType::ARG {
                             found_pos_arg_with_kw += 1;
                         } else if func_arg.arg_type == ArgumentType::KWORD_ONLY {
-                            kword_only_args.retain(|x| &x.symbol != &func_arg.symbol);
+                            kword_only_args.retain(|x| x.symbol != func_arg.symbol);
                         }
                         found_one = true;
                         break;
                     }
                 }
-                if !found_one && kwarg_index == i32::MAX {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01008, &[&function_name, &arg_identifier.id]) {
+                if !found_one && kwarg_index == i32::MAX
+                    && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01008, &[&function_name, &arg_identifier.id]) {
                         diagnostics.push(Diagnostic {
                             range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
                             ..diagnostic
                         });
                     }
-                }
             } else {
                 // if arg is None, it means that it is a **arg, which could replace all args (except pos-only args, of which some could have been set already)
-                found_pos_arg_with_kw = number_pos_arg as i32 - (pos_only_args.len() as i32 - arg_index).max(0);
+                found_pos_arg_with_kw = number_pos_arg - (pos_only_args.len() as i32 - arg_index).max(0);
                 kword_only_args.clear();
             }
         }
@@ -1715,14 +1682,13 @@ impl Evaluation {
                 kword_only_arg_missing.push(name);
             }
         }
-        if !kword_only_arg_missing.is_empty() {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01010, &[&kword_only_arg_missing.join(", ")]) {
+        if !kword_only_arg_missing.is_empty()
+            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01010, &[&kword_only_arg_missing.join(", ")]) {
                 diagnostics.push(Diagnostic {
                     range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
                     ..diagnostic
                 });
             }
-        }
         diagnostics
     }
 
@@ -1849,14 +1815,13 @@ impl Evaluation {
                 }
             }
         }
-        if need_tuple > 0 {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03010, &[]) {
+        if need_tuple > 0
+            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03010, &[]) {
                 diagnostics.push(Diagnostic {
                     range: Range::new(Position::new(value.range().start().to_u32(), 0), Position::new(value.range().end().to_u32(), 0)),
                     ..diagnostic
                 });
             }
-        }
         diagnostics
     }
 
@@ -1898,13 +1863,13 @@ impl Evaluation {
             let split_expr = value.split(".").collect::<Vec<_>>();
             'split_name: for (index, field_name) in split_expr.iter().enumerate() {
                 if date_mode {
-                    if !["year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"].contains(&field_name) {
-                        if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03012, &[]) {
-                            diagnostics.push(Diagnostic {
-                                range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
-                                ..diagnostic_base
-                            });
-                        }
+                    if !["year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"].contains(field_name)
+                        && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03012, &[])
+                    {
+                        diagnostics.push(Diagnostic {
+                            range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
+                            ..diagnostic_base
+                        });
                     }
                     date_mode = false;
                     continue;
@@ -1974,8 +1939,8 @@ impl Evaluation {
                         _ => {}
                     }
                 }
-                if index == split_expr.len() - 1 && access_op && !date_mode && !access_field_valid {
-                    if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03027, &[])
+                if index == split_expr.len() - 1 && access_op && !date_mode && !access_field_valid
+                    && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03027, &[])
                     {
                         diagnostics.push(Diagnostic {
                             range: Range::new(
@@ -1985,24 +1950,20 @@ impl Evaluation {
                             ..diagnostic_base
                         });
                     }
-                }
-
             }
         }
         if access_op
-            && let Expr::StringLiteral(str_expr) = elt3
-            && !ACCESS_OPERATOR_OPTIONS.contains(&str_expr.value.to_str())
+          && let Expr::StringLiteral(str_expr) = elt3
+          && !ACCESS_OPERATOR_OPTIONS.contains(&str_expr.value.to_str())
+          && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03026, &[])
         {
-            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03026, &[])
-            {
-                diagnostics.push(Diagnostic {
-                    range: Range::new(
-                        Position::new(str_expr.range().start().to_u32(), 0),
-                        Position::new(str_expr.range().end().to_u32(), 0),
-                    ),
-                    ..diagnostic_base
-                });
-            }
+            diagnostics.push(Diagnostic {
+                range: Range::new(
+                    Position::new(str_expr.range().start().to_u32(), 0),
+                    Position::new(str_expr.range().end().to_u32(), 0),
+                ),
+                ..diagnostic_base
+            });
         }
     }
 
@@ -2011,11 +1972,10 @@ impl Evaluation {
         let mut diagnostics = vec![];
         let Some(symbol) = function_arg.symbol.upgrade(st) else { return diagnostics; };
         let evaluations = &st[symbol].evaluations;
-        if evaluations.len() == 1 {
-            if let EvaluationSymbolPtr::DOMAIN = evaluations[0].symbol.sym {
+        if evaluations.len() == 1
+            && let EvaluationSymbolPtr::DOMAIN = evaluations[0].symbol.sym {
                 diagnostics.extend(Evaluation::validate_domain(session, on_object, from_module, arg));
             }
-        }
         diagnostics
     }
 
@@ -2035,7 +1995,7 @@ impl Evaluation {
 impl EvaluationSymbol {
 
     pub fn new_with_symbol(symbol: Wk<SymbolKey>, instance: Option<bool>, context: Context, get_symbol_hook: Option<GetSymbolHook>) -> Self {
-        Self { sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: symbol, context, instance: instance, is_super: false}), get_symbol_hook }
+        Self { sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: symbol, context, instance, is_super: false}), get_symbol_hook }
     }
 
     pub fn new_self(get_symbol_hook: Option<GetSymbolHook>, base: Wk<SymbolKey>, instance: Option<bool>) -> EvaluationSymbol {
@@ -2167,15 +2127,12 @@ impl EvaluationSymbolPtr {
     }
 
     pub(crate) fn has_weak(&self) -> bool {
-        match self {
-            EvaluationSymbolPtr::WEAK(_) | EvaluationSymbolPtr::SELF(_) => true,
-            _ => false
-        }
+        matches!(self, EvaluationSymbolPtr::WEAK(_) | EvaluationSymbolPtr::SELF(_))
     }
 
     pub(crate) fn get_weak(&self) -> &EvaluationSymbolWeak {
         match self {
-            EvaluationSymbolPtr::WEAK(w) | EvaluationSymbolPtr::SELF(w) => &w,
+            EvaluationSymbolPtr::WEAK(w) | EvaluationSymbolPtr::SELF(w) => w,
             _ => panic!("Not an EvaluationSymbolWeak")
         }
     }

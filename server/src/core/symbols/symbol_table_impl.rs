@@ -1,8 +1,5 @@
 use std::{
-    cell::RefCell,
-    collections::{VecDeque, hash_map},
-    path::PathBuf,
-    rc::Rc,
+    cell::RefCell, collections::{VecDeque, hash_map}, path::Path, rc::Rc,
 };
 use crate::{
     Sy, constants::MissingDataSource, core::{
@@ -369,10 +366,7 @@ impl SymbolTable {
     }
 
     pub fn has_modules(&self, target: SymbolKey) -> bool {
-        match target {
-            SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::DiskDir(_) => true,
-            _ => false
-        }
+        matches!(target, SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::DiskDir(_))
     }
 
 
@@ -583,7 +577,7 @@ impl SymbolTable {
         }
     }
 
-    pub fn not_found_paths(&self, target: SourceFileKey) -> &Vec<(BuildSteps, Vec<OYarn>)> {
+    pub fn not_found_paths(&self, target: SourceFileKey) -> &[(BuildSteps, Vec<OYarn>)] {
         match target {
             SourceFileKey::File(f) => { &self[f].not_found_paths },
             SourceFileKey::Module(m) => &self[m].not_found_paths,
@@ -662,7 +656,7 @@ impl SymbolTable {
     }
 
     ///Given a path, create the appropriated symbol and attach it to the given parent
-    pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: SymbolKey, require_module: bool) -> Option<SymbolKey> {
+    pub fn create_from_path(session: &mut SessionInfo, path: &Path, parent: SymbolKey, require_module: bool) -> Option<SymbolKey> {
         if require_module {
             let SymbolKey::Namespace(addons) = parent else {
                 return None;
@@ -678,16 +672,12 @@ impl SymbolTable {
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") || FileMgr::is_untitled(&path_str) {
             return Some(session.st_mut().add_new_file(parent, &name, &path_str).into());
         }
-        if path_str.ends_with(".js") && !session.sync_odoo.config.is_javascript_disabled() {
-            match parent {
-                //js file created here is because of js in a custom entrypoint, and that should be created under a diskdir.
-                //JS files under a Module should be created by the module loading, through load_assets
-                SymbolKey::DiskDir(d) => {
-                    return Some(session.st_mut().add_new_js_file(d.into(), &name, &path_str).into());
-                },
-                //
-                _ => {}
-            }
+        if path_str.ends_with(".js") && !session.sync_odoo.config.is_javascript_disabled()
+            && let SymbolKey::DiskDir(d) = parent
+        {
+            //js file created here is because of js in a custom entrypoint, and that should be created under a diskdir.
+            //JS files under a Module should be created by the module loading, through load_assets
+            return Some(session.st_mut().add_new_js_file(d.into(), &name, &path_str).into());
         }
         let main_entry_tree = session.sync_odoo.get_main_entry_tree(parent);
         if main_entry_tree == (&["odoo", "addons"], &[]) && path.join("__manifest__.py").exists() {
@@ -725,12 +715,12 @@ impl SymbolTable {
         None
     }
 
-    pub fn create_module_from_path(session: &mut SessionInfo, path: &PathBuf, addons: NamespaceKey) -> Option<ModuleKey> {
+    pub fn create_module_from_path(session: &mut SessionInfo, path: &Path, addons: NamespaceKey) -> Option<ModuleKey> {
         let main_entry_tree = session.sync_odoo.get_main_entry_tree(addons);
         if !(main_entry_tree == (&["odoo", "addons"], &[]) && path.join("__manifest__.py").exists()) {
             return None;
         }
-        let name = path.components().last().unwrap().as_os_str().to_str().unwrap();
+        let name = path.components().next_back().unwrap().as_os_str().to_str().unwrap();
         let module = Self::add_new_module_package(session, addons, name, path);
         let dir_name = session.sync_odoo.symbol_table[module].dir_name.clone();
         session.sync_odoo.modules.insert(dir_name, module.into());
@@ -876,7 +866,7 @@ impl SymbolTable {
     }
 
     /// Return all symbols before the given position that are visible in the body of this symbol.
-    pub fn get_all_visible_symbols(&self, target: SymbolKey, name_prefix: &String, position: u32) -> HashMap<OYarn, Vec<SymbolKey>> {
+    pub fn get_all_visible_symbols(&self, target: SymbolKey, name_prefix: &str, position: u32) -> HashMap<OYarn, Vec<SymbolKey>> {
         let Some(target_sym_mgr) = self.try_as_symbol_mgr(target) else {
             return HashMap::default();
         };
@@ -1350,11 +1340,10 @@ impl SymbolTable {
                 let mut eval = Evaluation::eval_from_symbol(session.st(), get_result.weak, get_result.instance);
                 match eval.symbol.get_mut_symbol_ptr() {
                     EvaluationSymbolPtr::WEAK(weak) | EvaluationSymbolPtr::SELF(weak) => {
-                        if let Some(eval_sym) = weak.weak.upgrade(session.st()) {
-                            if eval_sym == class_key {
+                        if let Some(eval_sym) = weak.weak.upgrade(session.st())
+                            && eval_sym == class_key {
                                 continue;
                             }
-                        }
                         weak.context.insert(ContextKey::BaseAttr, ContextValue::SYMBOL(base_attr.into()));
                         res.push(eval.symbol.get_symbol_ptr().clone());
                     },
@@ -1377,16 +1366,14 @@ impl SymbolTable {
         for eval in evaluations.iter() {
             let mut sym = eval.symbol.get_symbol(session, Some(ctx), &mut vec![], None);
             if let EvaluationSymbolPtr::WEAK(w) | EvaluationSymbolPtr::SELF(w) = &mut sym {
-                if let Some(base_attr) = symbol_context.get(ContextKey::BaseAttr) {
-                    if !w.context.get(ContextKey::IsAttrOfInstance).map(|x| x.as_bool()).unwrap_or(false) {
+                if let Some(base_attr) = symbol_context.get(ContextKey::BaseAttr)
+                    && !w.context.get(ContextKey::IsAttrOfInstance).map(|x| x.as_bool()).unwrap_or(false) {
                         w.context.insert(ContextKey::BaseAttr, base_attr.clone());
                     }
-                }
-                if let Some(base_attr) = symbol_context.get(ContextKey::IsAttrOfInstance) {
-                    if !w.context.get(ContextKey::IsAttrOfInstance).map(|x| x.as_bool()).unwrap_or(false) {
+                if let Some(base_attr) = symbol_context.get(ContextKey::IsAttrOfInstance)
+                    && !w.context.get(ContextKey::IsAttrOfInstance).map(|x| x.as_bool()).unwrap_or(false) {
                         w.context.insert(ContextKey::IsAttrOfInstance, base_attr.clone());
                     }
-                }
             }
             if !sym.is_expired_if_weak(&session.sync_odoo.symbol_table) {
                 res.push(sym);
@@ -1437,15 +1424,14 @@ impl SymbolTable {
         let Some(symbol_key) = w.weak.upgrade(session.st()) else {
             return default_result;
         };
-        if stop_on_value {
-            if let Some(evals) = session.st().evaluations(symbol_key) {
+        if stop_on_value
+            && let Some(evals) = session.st().evaluations(symbol_key) {
                 for eval in evals.iter() {
                     if eval.value.is_some() {
                         return default_result;
                     }
                 }
             }
-        }
         let can_eval_external = !session.st().is_external(symbol_key);
         //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
         let mut work_queue: VecDeque<_> = Self::next_refs(session, symbol_key, context, &w.context, stop_on_type).into_iter().collect();
@@ -1482,7 +1468,7 @@ impl SymbolTable {
                 continue;
             }
             visited.insert(sym_key);
-            let next_ref_weak_instance = next_ref_weak.instance.clone();
+            let next_ref_weak_instance = next_ref_weak.instance;
             match sym_key {
                 SymbolKey::Variable(v) => {
                     // let sym = sym_key.borrow();
@@ -1495,12 +1481,11 @@ impl SymbolTable {
                         results.push(current_eval);
                         continue;
                     }
-                    if let Some(stop_on_tree_syms) = stop_on_tree_syms.as_ref() {
-                        if stop_on_tree_syms.iter().any(|s| *s == sym_key) {
+                    if let Some(stop_on_tree_syms) = stop_on_tree_syms.as_ref()
+                        && stop_on_tree_syms.contains(&sym_key) {
                             results.push(current_eval);
                             continue;
                         }
-                    }
                     if var.evaluations.is_empty() && var.name != "__all__" && can_eval_external {
                         //no evaluation? let's check that the file has been evaluated
                         if let Some(file_symbol) = session.st().get_file(sym_key) {
@@ -1550,7 +1535,7 @@ impl SymbolTable {
                 match r {
                     EvaluationSymbolPtr::WEAK(weak) | EvaluationSymbolPtr::SELF(weak) => {
                         if let Some(key) = weak.weak.upgrade(session.st()) {
-                            stop_on_tree_syms.iter().any(|&s| s == key)
+                            stop_on_tree_syms.contains(&key)
                         } else {
                             false
                         }
@@ -1633,7 +1618,7 @@ impl SymbolTable {
         let mut result: HashMap<OYarn, Vec<SymbolKey>> = HashMap::default();
         let mut acc = HashSet::default();
         Self::_all_members(symbol, session, &mut result, with_co_models, only_fields, only_methods, from_module, &mut acc, is_super);
-        return  result;
+        result
     }
 
     fn _all_members(
@@ -1720,7 +1705,7 @@ impl SymbolTable {
                     return;
                 };
                 let model_ref = model.borrow();
-                let fields = model_ref.get_xml_model_field_symbols(&session.st(), from_module);
+                let fields = model_ref.get_xml_model_field_symbols(session.st(), from_module);
                 let fields_with_names = fields.filter_map(|f_key| {
                     let field_name =
                         session.st()[f_key].get_field_text(XmlFieldName::Name, session.st())?;
@@ -1736,7 +1721,7 @@ impl SymbolTable {
             // otherwise just add it to result
             _ => {
                 session.st().all_symbols(symbol_key).into_iter().for_each(|s|
-                    if !(only_fields && !Self::is_field(session, s)) {
+                    if !only_fields || Self::is_field(session, s) {
                         let name = session.st().name(s).clone();
                         append_result(name, s);
                     }
@@ -1750,7 +1735,7 @@ impl SymbolTable {
         let mut result = file.into();
         let file_sym_mgr = self.as_symbol_mgr(result); // formely Rc (strong)
         let section_id = file_sym_mgr.get_section_for(offset);
-        for (_, sym_map) in file_sym_mgr.symbols() {
+        for sym_map in file_sym_mgr.symbols().values() {
             let Some(symbols) = sym_map.get(&section_id.index) else { continue };
             for &key in symbols {
                 match key {
@@ -1781,9 +1766,9 @@ impl SymbolTable {
         result
     }
 
-    pub fn get_all_inferred_names(&self, on_symbol: SymbolKey, name: &String, position: u32) -> HashMap<OYarn, Vec<SymbolKey>> {
+    pub fn get_all_inferred_names(&self, on_symbol: SymbolKey, name: &str, position: u32) -> HashMap<OYarn, Vec<SymbolKey>> {
         fn helper(
-            symbol_table: &SymbolTable, on_symbol: SymbolKey, name: &String, position: u32, acc: &mut HashMap<OYarn, Vec<SymbolKey>>
+            symbol_table: &SymbolTable, on_symbol: SymbolKey, name: &str, position: u32, acc: &mut HashMap<OYarn, Vec<SymbolKey>>
         ) {
             // Add symbols from files and functions
             if matches!(on_symbol.typ(), SymType::FILE | SymType::FUNCTION) {
@@ -1795,11 +1780,10 @@ impl SymbolTable {
                 }
             }
             // Traverse upwards if we are under a class or a function
-            if matches!(on_symbol.typ(), SymType::CLASS | SymType::FUNCTION) {
-                if let Some(parent) = symbol_table.parent(on_symbol) {
+            if matches!(on_symbol.typ(), SymType::CLASS | SymType::FUNCTION)
+                && let Some(parent) = symbol_table.parent(on_symbol) {
                     helper(symbol_table, parent, name, position, acc);
                 }
-            }
         }
         let mut results = HashMap::default();
         helper(self, on_symbol, name, position, &mut results);
@@ -1807,7 +1791,7 @@ impl SymbolTable {
     }
 
     //infer a name, given a position
-    pub fn infer_name(odoo: &SyncOdoo, on_symbol: SymbolKey, name: &String, position: Option<u32>) -> ContentSymbols {
+    pub fn infer_name(odoo: &SyncOdoo, on_symbol: SymbolKey, name: &str, position: Option<u32>) -> ContentSymbols {
         let symbol_table = &odoo.symbol_table;
         let results = symbol_table.get_content_symbol(on_symbol, name, position.unwrap_or(u32::MAX));
         if !results.symbols.is_empty() {
@@ -1837,8 +1821,8 @@ impl SymbolTable {
     fn member_symbol_hook(session: &SessionInfo, target: SymbolKey, name: &str, diagnostics: &mut Vec<Diagnostic>){
         if session.sync_odoo.version.major >= 17 && name == "Form"{
             let tree = session.sync_odoo.symbol_table.get_tree(target);
-            if tree.0.ends_with_strs(&["odoo", "tests", "common"]) && tree.1.is_empty() {
-                if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03301, &[]) {
+            if tree.0.ends_with_strs(&["odoo", "tests", "common"]) && tree.1.is_empty()
+                && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03301, &[]) {
                     diagnostics.push(
                         Diagnostic {
                             range: Range::default(),
@@ -1847,7 +1831,6 @@ impl SymbolTable {
                         }
                     );
                 }
-            }
         }
     }
 
@@ -1862,11 +1845,10 @@ impl SymbolTable {
             let symbol = eval.symbol.get_symbol(session, None,  &mut vec![], None);
             let eval_weaks = Self::follow_ref(&symbol, session, None, true, false, None, None);
             for eval_weak in eval_weaks.iter() {
-                if let Some(key) = eval_weak.upgrade_weak(&session.sync_odoo.symbol_table) {
-                    if Self::is_field_class(session, key) {
+                if let Some(key) = eval_weak.upgrade_weak(&session.sync_odoo.symbol_table)
+                    && Self::is_field_class(session, key) {
                         return true;
                     }
-                }
             }
         }
         false
@@ -1886,11 +1868,10 @@ impl SymbolTable {
             let symbol = eval.symbol.get_symbol(session, None,  &mut vec![], None);
             let eval_weaks = Self::follow_ref(&symbol, session, None, true, false, None, None);
             for eval_weak in eval_weaks.iter() {
-                if let Some(key) = eval_weak.upgrade_weak(&session.sync_odoo.symbol_table) {
-                    if matches!(key, SymbolKey::Function(_)) {
+                if let Some(key) = eval_weak.upgrade_weak(&session.sync_odoo.symbol_table)
+                    && matches!(key, SymbolKey::Function(_)) {
                         return true;
                     }
-                }
             }
         }
         false
@@ -1965,12 +1946,11 @@ impl SymbolTable {
                 return true;
             }
         } else {
-            if tree.0.len() == 2 && tree.1.len() == 1 && tree.0[0] == "odoo" && tree.0[1] == "fields" {
-                if matches!(tree.1[0].as_str(), "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
+            if tree.0.len() == 2 && tree.1.len() == 1 && tree.0[0] == "odoo" && tree.0[1] == "fields"
+                && matches!(tree.1[0].as_str(), "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
             "Binary" | "Image" | "Selection" | "Reference" | "Json" | "Properties" | "PropertiesDefinition" | "Id" | "Many2one" | "One2many" | "Many2many" | "Many2oneReference") {
                     return true;
                 }
-            }
         }
         if Self::is_inheriting_from_field(session, class_key) {
             return true;
@@ -1983,7 +1963,7 @@ impl SymbolTable {
         let Some(tree_last) = tree.last() else {
             return false;
         };
-        return Self::is_field_class(session, target)
+        Self::is_field_class(session, target)
             && field_names.iter().any(|&name| { tree_last == name })
     }
 
@@ -1996,11 +1976,10 @@ impl SymbolTable {
             let symbol = eval.symbol.get_symbol(session, None, &mut vec![], None);
             let eval_weaks = Self::follow_ref(&symbol, session, None, true, false, None, None);
             for eval_weak in eval_weaks.iter() {
-                if let Some(symbol) = eval_weak.upgrade_weak(session.st()) {
-                    if Self::is_specific_field_class(session, symbol, field_names){
+                if let Some(symbol) = eval_weak.upgrade_weak(session.st())
+                    && Self::is_specific_field_class(session, symbol, field_names){
                         return true;
                     }
-                }
             }
         }
         false
@@ -2032,7 +2011,7 @@ impl SymbolTable {
         is_super: bool
     ) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
         let mut visited_classes: HashSet<ClassKey> = HashSet::default();
-        return Self::_get_member_symbol_helper(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super, &mut visited_classes);
+        Self::_get_member_symbol_helper(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super, &mut visited_classes)
     }
 
     fn _get_member_symbol_helper(
@@ -2060,22 +2039,21 @@ impl SymbolTable {
         let mut diagnostics: Vec<Diagnostic> = vec![];
         Self::member_symbol_hook(session, target, name, &mut diagnostics);
         let mod_sym = session.st().get_module_symbol(target, name);
-        if let Some(mod_sym) = mod_sym {
-            if !only_fields {
+        if let Some(mod_sym) = mod_sym
+            && !only_fields {
                 if all {
                     extend_result(vec![mod_sym], &mut result, &mut visited_symbols);
                 } else {
                     return (vec![mod_sym], diagnostics);
                 }
             }
-        }
         if !is_super {
             let mut content_syms = session.st().get_sub_symbol(target, name, u32::MAX).symbols;
             if only_fields {
-                content_syms = content_syms.iter().filter(|&&x| Self::is_field(session, x)).copied().collect();
+                content_syms.retain(|&x| Self::is_field(session, x));
             }
             if only_methods {
-                content_syms = content_syms.iter().filter(|&&x| Self::is_method(session, x)).copied().collect();
+                content_syms.retain(|&x| Self::is_method(session, x));
             }
             if !content_syms.is_empty() {
                 if all {
@@ -2089,7 +2067,7 @@ impl SymbolTable {
             && let Some(model) = SymbolTable::get_xml_defined_model(session, xml_record_key)
         {
             let model_ref = model.borrow();
-            let fields = model_ref.get_xml_model_field_symbols(&session.st(), from_module);
+            let fields = model_ref.get_xml_model_field_symbols(session.st(), from_module);
             let matching_fields = fields.filter_map(|f_key| {
                 let field_name =
                     session.st()[f_key].get_field_text(XmlFieldName::Name, session.st())?;
@@ -2100,10 +2078,10 @@ impl SymbolTable {
                 }
             });
             extend_result(matching_fields.collect(), &mut result, &mut visited_symbols);
-            if let Some(base_model) = get_base_model_symbol(&mut session.sync_odoo) {
+            if let Some(base_model) = get_base_model_symbol(session.sync_odoo) {
                 let (s, s_diagnostic) = Self::get_member_symbol(
                     session,
-                    base_model.into(),
+                    base_model,
                     name,
                     from_module,
                     prevent_comodel,
@@ -2432,7 +2410,7 @@ impl SymbolTable {
                         session.sync_odoo.symbol_table.name(symbol),
                         tree_path
                     );
-                    return None;
+                    None
                 }
             }
         }
@@ -2495,7 +2473,7 @@ mod get_symbol_tests {
     fn file_plus_one_content() {
         let (mut st, root) = empty_table_with_root();
         let file = st.add_new_file(root, "my_file", "/test/my_file.py");
-        let class = st.add_new_class(file.into(), "MyClass", range_at(0), &TextSize::new(0));
+        let class = st.add_new_class(file.into(), "MyClass", range_at(0), TextSize::new(0));
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["MyClass"];
@@ -2509,8 +2487,8 @@ mod get_symbol_tests {
     fn file_plus_nested_content() {
         let (mut st, root) = empty_table_with_root();
         let file = st.add_new_file(root, "my_file", "/test/my_file.py");
-        let class = st.add_new_class(file.into(), "MyClass", range_at(0), &TextSize::new(0));
-        let method = st.add_new_function(class.into(), "method", range_at(1), &TextSize::new(1));
+        let class = st.add_new_class(file.into(), "MyClass", range_at(0), TextSize::new(0));
+        let method = st.add_new_function(class.into(), "method", range_at(1), TextSize::new(1));
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["MyClass", "method"];
@@ -2525,8 +2503,8 @@ mod get_symbol_tests {
         // Content path longer than 2: file -> Outer -> Inner -> v
         let (mut st, root) = empty_table_with_root();
         let file = st.add_new_file(root, "my_file", "/test/my_file.py");
-        let outer = st.add_new_class(file.into(), "Outer", range_at(0), &TextSize::new(0));
-        let inner = st.add_new_class(outer.into(), "Inner", range_at(1), &TextSize::new(1));
+        let outer = st.add_new_class(file.into(), "Outer", range_at(0), TextSize::new(0));
+        let inner = st.add_new_class(outer.into(), "Inner", range_at(1), TextSize::new(1));
         let var = st.add_new_variable(SymbolKey::Class(inner), "v", range_at(2));
 
         let files: &[&str] = &["my_file"];
@@ -2543,7 +2521,7 @@ mod get_symbol_tests {
         let (mut st, root) = empty_table_with_root();
         let package = st.add_new_python_package(root, "pkg", "/test/pkg", "");
         let file = st.add_new_file(package.into(), "mod", "/test/pkg/mod.py");
-        let class = st.add_new_class(file.into(), "Cls", range_at(0), &TextSize::new(0));
+        let class = st.add_new_class(file.into(), "Cls", range_at(0), TextSize::new(0));
 
         let files: &[&str] = &["pkg", "mod"];
         let content: &[&str] = &["Cls"];
@@ -2567,7 +2545,7 @@ mod get_symbol_tests {
     fn missing_content_returns_empty() {
         let (mut st, root) = empty_table_with_root();
         let file = st.add_new_file(root, "my_file", "/test/my_file.py");
-        st.add_new_class(file.into(), "MyClass", range_at(0), &TextSize::new(0));
+        st.add_new_class(file.into(), "MyClass", range_at(0), TextSize::new(0));
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["Missing"];
@@ -2662,10 +2640,10 @@ mod get_symbol_tests {
                 ])),
             );
         }
-        let class_if = st.add_new_class(file_key, "A", range_at(21), &TextSize::new(21));
-        let m_if = st.add_new_function(class_if.into(), "m", range_at(22), &TextSize::new(22));
-        let class_else = st.add_new_class(file_key, "A", range_at(31), &TextSize::new(31));
-        let m_else = st.add_new_function(class_else.into(), "m", range_at(32), &TextSize::new(32));
+        let class_if = st.add_new_class(file_key, "A", range_at(21), TextSize::new(21));
+        let m_if = st.add_new_function(class_if.into(), "m", range_at(22), TextSize::new(22));
+        let class_else = st.add_new_class(file_key, "A", range_at(31), TextSize::new(31));
+        let m_else = st.add_new_function(class_else.into(), "m", range_at(32), TextSize::new(32));
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["A", "m"];

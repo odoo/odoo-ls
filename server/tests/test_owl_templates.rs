@@ -67,6 +67,6 @@ fn test_goto_definition_from_js_template_to_xml() {
     assert!(
         locs[0].target_uri.to_string().ends_with("counter.xml"),
         "expected definition to land in counter.xml, got {}",
-        locs[0].target_uri.to_string()
+        *locs[0].target_uri
     );
 }

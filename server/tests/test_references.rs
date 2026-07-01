@@ -37,7 +37,7 @@ fn test_references() {
     assert_in_result(&mut references, "module_1/models/diagnostics.py", 20, 34);
     assert_in_result(&mut references, "module_1/models/diagnostics.py", 22, 34);
     assert_in_result(&mut references, "module_2/models/base_test_models.py", 5, 15);
-    assert!(references.len() == 0, "Some references were not expected: {}",
+    assert!(references.is_empty(), "Some references were not expected: {}",
         references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
     );
 
@@ -45,7 +45,7 @@ fn test_references() {
     let mut references = get_references(&mut session, &test_file, Position::new(9, 8));
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 9, 4);
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 39, 18);
-    assert!(references.len() == 0, "Some references were not expected: {}",
+    assert!(references.is_empty(), "Some references were not expected: {}",
         references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
     );
 
@@ -79,7 +79,7 @@ fn test_references() {
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 63, 17);
     // usage as left-hand side of a binary operation
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 64, 12);
-    assert!(references.len() == 0, "Some references were not expected: {}",
+    assert!(references.is_empty(), "Some references were not expected: {}",
         references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
     );
 
@@ -93,7 +93,7 @@ fn test_references() {
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 68, 59);
     // usage in the return statement
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 70, 11);
-    assert!(references.len() == 0, "Some references were not expected: {}",
+    assert!(references.is_empty(), "Some references were not expected: {}",
         references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
     );
 
@@ -150,8 +150,8 @@ fn assert_in_result(references: &mut Vec<Location>, end_path: &str, line: u32, c
     assert!(before_len == after_len + 1, "Duplicated reference found: {}:{}:{}", end_path, line + 1, character + 1);
 }
 
-fn get_references(session: &mut SessionInfo, path: &String, position: Position)-> Vec<Location> {
-    let test_file_uri = FileMgr::pathname2uri(&path);
+fn get_references(session: &mut SessionInfo, path: &str, position: Position)-> Vec<Location> {
+    let test_file_uri = FileMgr::pathname2uri(path);
     let references_params = lsp_types::ReferenceParams {
         text_document_position: lsp_types::TextDocumentPositionParams {
             text_document: lsp_types::TextDocumentIdentifier {

@@ -80,14 +80,13 @@ impl ExtSymbolStore {
             return vec![];
         };
         let mut result = vec![];
-        if let Some(object_decl_symbols) = decl_ext_symbols.get(&target) {
-            if let Some(symbols) = object_decl_symbols.get(name) {
+        if let Some(object_decl_symbols) = decl_ext_symbols.get(&target)
+            && let Some(symbols) = object_decl_symbols.get(name) {
                 for end_symbols in symbols.values() {
                     //TODO actually we don't take position into account, but can we really?
                     result.extend(end_symbols);
                 }
             }
-        }
         result
     }
 }

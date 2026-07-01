@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, path::PathBuf, sync::{Arc, Mutex}, time::Instant};
+use std::{collections::VecDeque, path::{Path, PathBuf}, sync::{Arc, Mutex}, time::Instant};
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use lsp_server::{Message, RequestId, Response, ResponseError};
@@ -43,11 +43,10 @@ impl <'a> SessionInfo<'a> {
                 method: LogMessage::METHOD.to_string(),
                 params: serde_json::to_value(&LogMessageParams{typ: msg_type, message: msg}).unwrap()
             })
-        ) {
-            if !self.sync_odoo.terminate_rebuild.load(std::sync::atomic::Ordering::SeqCst) {
+        )
+            && !self.sync_odoo.terminate_rebuild.load(std::sync::atomic::Ordering::SeqCst) {
                 panic!("Failed to send log_message ({:?}), but server is not shutting down", e);
             }
-        }
     }
 
     /// Clone of the outgoing message channel. Lets a helper emit notifications
@@ -67,11 +66,10 @@ impl <'a> SessionInfo<'a> {
                 method: method.to_string(),
                 params: param
             })
-        ) {
-            if !self.sync_odoo.terminate_rebuild.load(std::sync::atomic::Ordering::SeqCst) {
+        )
+            && !self.sync_odoo.terminate_rebuild.load(std::sync::atomic::Ordering::SeqCst) {
                 panic!("Failed to send_notification({}), error: {:?}, but server is not shutting down", method, e);
             }
-        }
     }
 
     pub fn show_message(&self, msg_type: MessageType, msg: String) {
@@ -80,11 +78,10 @@ impl <'a> SessionInfo<'a> {
                 method: ShowMessage::METHOD.to_string(),
                 params: serde_json::to_value(&ShowMessageParams{typ: msg_type, message: msg}).unwrap()
             })
-        ) {
-            if !self.sync_odoo.terminate_rebuild.load(std::sync::atomic::Ordering::SeqCst) {
+        )
+            && !self.sync_odoo.terminate_rebuild.load(std::sync::atomic::Ordering::SeqCst) {
                 panic!("Failed to send show_message ({:?}), but server is not shutting down", e);
             }
-        }
     }
 
     pub fn send_request<T: Serialize, U: DeserializeOwned>(&self, method: &str, params: T) -> Result<Option<U>, ServerError> {
@@ -101,7 +98,7 @@ impl <'a> SessionInfo<'a> {
                 //We can't check the response ID because it is set by Server. This is the reason Server must check that the id is correct.
                 if let Some(resp_error) = r.error {
                     error!("Got error for response of {}: {}", method, resp_error.message);
-                    return Err(ServerError::ResponseError(resp_error));
+                    Err(ServerError::ResponseError(resp_error))
                 } else {
                     match r.result {
                         Some(res) => {
@@ -111,7 +108,7 @@ impl <'a> SessionInfo<'a> {
                                 Err(e) => Err(ServerError::Serialization(e))
                             }
                         },
-                        None => {return Ok(None)},
+                        None => {Ok(None)},
                     }
                 }
             },
@@ -119,10 +116,10 @@ impl <'a> SessionInfo<'a> {
                 if r.method == Shutdown::METHOD {
                     return Err(ServerError::ServerError("Server is shutting down, cancelling request".to_string()));
                 }
-                return Err(ServerError::ServerError("Not a Response.".to_string()))
+                Err(ServerError::ServerError("Not a Response.".to_string()))
             }
-            Ok(_) => return Err(ServerError::ServerError("Not a Response.".to_string())),
-            Err(_) => return Err(ServerError::ServerError("Server disconnected".to_string())),
+            Ok(_) => Err(ServerError::ServerError("Not a Response.".to_string())),
+            Err(_) => Err(ServerError::ServerError("Server disconnected".to_string())),
         }
     }
 
@@ -138,7 +135,7 @@ impl <'a> SessionInfo<'a> {
     * path: path of the file
     * forced_delay: indicate that we want to force a delay
      */
-    pub fn request_update_file_index(session: &mut SessionInfo, path: &PathBuf, forced_delay: bool) {
+    pub fn request_update_file_index(session: &mut SessionInfo, path: &Path, forced_delay: bool) {
         if forced_delay {
             session.sync_odoo.watched_file_updates += 1;
         }
@@ -146,14 +143,13 @@ impl <'a> SessionInfo<'a> {
             let _ = session.delayed_process_sender.as_ref().unwrap().send(DelayedProcessingMessage::RESTART);
             return;
         }
-        SyncOdoo::unload_path(session, &path);
+        SyncOdoo::unload_path(session, path);
         Odoo::search_symbols_to_rebuild(session, &path.sanitize());
-        if (!forced_delay || session.delayed_process_sender.is_none()) && !session.sync_odoo.need_rebuild {
-            if session.sync_odoo.get_rebuild_queue_size() < 10 {
+        if (!forced_delay || session.delayed_process_sender.is_none()) && !session.sync_odoo.need_rebuild
+            && session.sync_odoo.get_rebuild_queue_size() < 10 {
                 SyncOdoo::process_rebuilds(session, false);
                 return;
             }
-        }
         let _ = session.delayed_process_sender.as_ref().unwrap().send(DelayedProcessingMessage::PROCESS(std::time::Instant::now()));
     }
 
@@ -218,10 +214,7 @@ fn to_value<T: Serialize + std::fmt::Debug>(result: Result<Option<T>, ResponseEr
         Ok(None) => Some(serde_json::Value::Null),
         Err(_) => None
     };
-    let mut error = None;
-    if result.is_err() {
-        error = Some(result.unwrap_err());
-    }
+    let error = result.err();
     (value, error)
 }
 
@@ -230,10 +223,7 @@ fn to_value_not_null<T: Serialize + std::fmt::Debug>(result: Result<T, ResponseE
         Ok(r) => Some(serde_json::json!(r)),
         Err(_) => None
     };
-    let mut error = None;
-    if result.is_err() {
-        error = Some(result.unwrap_err());
-    }
+    let error = result.err();
     (value, error)
 }
 
@@ -306,8 +296,8 @@ fn notify_git_lock(sync_odoo: &Arc<Mutex<SyncOdoo>>, sender_session: &Sender<Mes
 pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_session: Receiver<Message>, receiver: Receiver<DelayedProcessingMessage>, sync_odoo: Arc<Mutex<SyncOdoo>>, delayed_process_sender: Sender<DelayedProcessingMessage>) {
     const MAX_DELAY: u64 = 15000;
     const MIN_DELAY: u64 = 1000;
-    let mut config_delay = std::time::Duration::from_millis(std::cmp::max(MIN_DELAY, std::cmp::min(sync_odoo.lock().unwrap().config.auto_refresh_delay(), MAX_DELAY)));
-    let mut to_wait = config_delay.clone();
+    let mut config_delay = std::time::Duration::from_millis(sync_odoo.lock().unwrap().config.auto_refresh_delay().clamp(MIN_DELAY, MAX_DELAY));
+    let mut to_wait = config_delay;
     let mut got_process = false;
     let mut waiting_restart = false;
     loop {
@@ -317,7 +307,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
             Ok(DelayedProcessingMessage::RESTART) => {
                 let main_entry_path = sync_odoo.lock().unwrap().config.odoo_path().as_ref().cloned(); //avoid keeping lock
                 if let Some(main_entry_path) = main_entry_path {
-                    let index_lock_path = PathBuf::from(main_entry_path).join(".git").join("index.lock");
+                    let index_lock_path = Path::new(&main_entry_path).join(".git").join("index.lock");
                     let mut notified = false;
                     while index_lock_path.exists(){
                         if !notified {
@@ -342,8 +332,8 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                 continue;
             }
             Ok(DelayedProcessingMessage::UPDATE_DELAY(d)) => {
-                config_delay = std::time::Duration::from_millis(std::cmp::max(MIN_DELAY, std::cmp::min(d, MAX_DELAY)));
-                to_wait = config_delay.clone();
+                config_delay = std::time::Duration::from_millis(d.clamp(MIN_DELAY, MAX_DELAY));
+                to_wait = config_delay;
                 continue;
             }
             Ok(DelayedProcessingMessage::EXIT) => {
@@ -351,7 +341,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
             }
             Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
                 // inactivity timeout, process messages
-                to_wait = config_delay.clone(); //reset timer, as maybe a previous process call set it to 0
+                to_wait = config_delay; //reset timer, as maybe a previous process call set it to 0
             },
             Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
                 error!("Delayed processing channel disconnected, exiting thread");
@@ -486,7 +476,7 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>,
                     };
                     sync_odoo.lock().unwrap().current_request_id = None;
                     running_request_ids.lock().unwrap().retain(|id| id != &r.id);
-                    sender_to_s.send(Message::Response(Response { id: r.id, result: value, error: error })).unwrap();
+                    sender_to_s.send(Message::Response(Response { id: r.id, result: value, error })).unwrap();
                 },
                 ThreadMessage::LSPMessage(Message::Notification(n)) => {
                     match n.method.as_str() {

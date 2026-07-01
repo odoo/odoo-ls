@@ -19,13 +19,11 @@ impl HoverFeature {
         let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
         let file_info_ast_clone = file_info.borrow().file_info_ast.clone();
         let file_info_ast_ref = file_info_ast_clone.borrow();
-        let (analyse_ast_result, range, expr, call_expr) = AstUtils::get_symbols(session, &file_info_ast_ref, file_symbol, offset as u32);
+        let (analyse_ast_result, range, _expr, call_expr) = AstUtils::get_symbols(session, &file_info_ast_ref, file_symbol, offset as u32);
         let evals = analyse_ast_result.evaluations;
         if evals.is_empty() {
             return None;
         };
-        drop(expr);
-        drop(file_info_ast_ref);
         let value = FeaturesUtils::build_markdown_description(
             session, Some(file_symbol), Some(&file_info.borrow().uri), &evals, &call_expr, Some(offset)
         );
@@ -78,8 +76,8 @@ impl HoverFeature {
     }
 
     pub fn hover_js(session: &mut SessionInfo, file_path: &str, line: u32, character: u32) -> Option<Hover> {
-        if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
-            if let Some(hover) = bridge.get_hover(&file_path, line, character) {
+        if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut()
+            && let Some(hover) = bridge.get_hover(file_path, line, character) {
                 return Some(Hover { contents:
                     HoverContents::Markup(MarkupContent {
                         kind: lsp_types::MarkupKind::Markdown,
@@ -88,7 +86,6 @@ impl HoverFeature {
                     range: None
                 })
             }
-        }
         None
     }
 }

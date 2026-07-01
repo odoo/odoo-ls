@@ -87,11 +87,11 @@ impl XmlAstUtils {
                     results.0.extend(found);
                     results.1 = Some(attr.range_value());
                 }
-            } else if attr.name() == "groups" {
-                if let Some(file_module) = from_module {
-                    XmlAstUtils::add_xml_id_result(session, attr.value(), file_module.into(), attr.range_value(), results, on_dep_only);
-                    results.1 = Some(attr.range_value());
-                }
+            } else if attr.name() == "groups"
+            && let Some(file_module) = from_module
+            {
+                XmlAstUtils::add_xml_id_result(session, attr.value(), file_module.into(), attr.range_value(), results, on_dep_only);
+                results.1 = Some(attr.range_value());
             }
         }
         for child in node.children() {
@@ -125,25 +125,23 @@ impl XmlAstUtils {
         for attr in node.attributes() {
             if attr.name() == "model" {
                 scope.record_model = Some(attr.value());
-                if attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    if let Some(model) = session.sync_odoo.models.get(attr.value()).cloned() {
-                        let from_module = match on_dep_only {
-                            true => from_module,
-                            false => None,
-                        };
-                        results.0.extend(
-                            model.borrow().get_model_symbols(session.st(), from_module)
-                                .into_iter().map(SymbolKey::from)
-                            );
-                        results.1 = Some(attr.range_value());
-                    }
+                if attr.range_value().start <= offset && attr.range_value().end >= offset
+                    && let Some(model) = session.sync_odoo.models.get(attr.value()).cloned()
+                {
+                    let from_module = match on_dep_only {
+                        true => from_module,
+                        false => None,
+                    };
+                    results.0.extend(
+                        model.borrow().get_model_symbols(session.st(), from_module).map(SymbolKey::from)
+                        );
+                    results.1 = Some(attr.range_value());
                 }
-            } else if attr.name() == "id" {
-                if attr.range_value().start <= offset && attr.range_value().end >= offset {
+            } else if attr.name() == "id"
+                && attr.range_value().start <= offset && attr.range_value().end >= offset {
                     XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
                     results.1 = Some(attr.range_value());
                 }
-            }
         }
         if scope.record_model == Some("ir.ui.view") {
             scope.view_target_model = XmlAstUtils::view_target_model(node);
@@ -158,29 +156,28 @@ impl XmlAstUtils {
         for attr in node.attributes() {
             if attr.name() == "name" {
                 child_scope.field_name = Some(attr.value());
-                if attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    if let Some(model_name) = scope.record_model.filter(|m| !m.is_empty()) {
-                        let found = XmlAstUtils::resolve_member_on_model(session, model_name, attr.value(), from_module, on_dep_only);
-                        if !found.is_empty() {
-                            results.0.extend(found);
-                            results.1 = Some(attr.range_value());
-                        }
+                if attr.range_value().start <= offset && attr.range_value().end >= offset
+                    && let Some(model_name) = scope.record_model.filter(|m| !m.is_empty())
+                {
+                    let found = XmlAstUtils::resolve_member_on_model(session, model_name, attr.value(), from_module, on_dep_only);
+                    if !found.is_empty() {
+                        results.0.extend(found);
+                        results.1 = Some(attr.range_value());
                     }
                 }
-            } else if attr.name() == "ref" {
-                if attr.range_value().start <= offset && attr.range_value().end >= offset {
+            } else if attr.name() == "ref"
+                && attr.range_value().start <= offset && attr.range_value().end >= offset {
                     XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
                     results.1 = Some(attr.range_value());
                 }
-            }
         }
         // Inside a view's `<field name="arch">`, sub-elements resolve against the
         // view's target model (captured at the ir.ui.view record), not the
         // surrounding ir.ui.view itself.
-        if node.attribute("name") == Some("arch") {
-            if let Some(target) = scope.view_target_model {
-                child_scope.record_model = Some(target);
-            }
+        if node.attribute("name") == Some("arch")
+            && let Some(target) = scope.view_target_model
+        {
+            child_scope.record_model = Some(target);
         }
         for child in node.children() {
             XmlAstUtils::visit_node(session, &child, offset, from_module, child_scope, results, on_dep_only);
@@ -208,12 +205,11 @@ impl XmlAstUtils {
                     XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
                     results.1 = Some(attr.range_value());
                 }
-            } else if attr.name() == "groups" {
-                if attr.range_value().start <= offset && attr.range_value().end >= offset {
+            } else if attr.name() == "groups"
+                && attr.range_value().start <= offset && attr.range_value().end >= offset {
                     XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
                     results.1 = Some(attr.range_value());
                 }
-            }
         }
         for child in node.children() {
             XmlAstUtils::visit_node(session, &child, offset, from_module, scope, results, on_dep_only);
@@ -227,12 +223,11 @@ impl XmlAstUtils {
                     XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
                     results.1 = Some(attr.range_value());
                 }
-            } else if attr.name() == "groups" {
-                if attr.range_value().start <= offset && attr.range_value().end >= offset {
+            } else if attr.name() == "groups"
+                && attr.range_value().start <= offset && attr.range_value().end >= offset {
                     XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
                     results.1 = Some(attr.range_value());
                 }
-            }
         }
         for child in node.children() {
             XmlAstUtils::visit_node(session, &child, offset, from_module, scope, results, on_dep_only);
@@ -274,16 +269,16 @@ impl XmlAstUtils {
         let bytes = value.as_bytes();
         let mut i = 0;
         while i + 3 < bytes.len() {
-            if bytes[i] == b'%' && bytes[i + 1] == b'(' {
-                if let Some(close_off) = bytes[i + 2..].iter().position(|&b| b == b')') {
-                    let inner_start = i + 2;
-                    let inner_end = i + 2 + close_off;
-                    let after = inner_end + 1;
-                    if after < bytes.len() && matches!(bytes[after], b'd' | b's' | b'i') {
-                        f(&value[inner_start..inner_end], attr_start + inner_start..attr_start + inner_end);
-                        i = after + 1;
-                        continue;
-                    }
+            if bytes[i] == b'%' && bytes[i + 1] == b'('
+                && let Some(close_off) = bytes[i + 2..].iter().position(|&b| b == b')')
+            {
+                let inner_start = i + 2;
+                let inner_end = i + 2 + close_off;
+                let after = inner_end + 1;
+                if after < bytes.len() && matches!(bytes[after], b'd' | b's' | b'i') {
+                    f(&value[inner_start..inner_end], attr_start + inner_start..attr_start + inner_end);
+                    i = after + 1;
+                    continue;
                 }
             }
             i += 1;
@@ -297,12 +292,11 @@ impl XmlAstUtils {
             if child.is_element()
                 && child.tag_name().name() == "field"
                 && child.attribute("name") == Some("model")
+                && let Some(text) = child.text()
             {
-                if let Some(text) = child.text() {
-                    let model = text.trim();
-                    if !model.is_empty() {
-                        return Some(model);
-                    }
+                let model = text.trim();
+                if !model.is_empty() {
+                    return Some(model);
                 }
             }
         }
@@ -316,8 +310,7 @@ impl XmlAstUtils {
                 false => None,
             };
             results.0.extend(
-                model.borrow().get_model_symbols(session.st(), from_module)
-                    .into_iter().map(SymbolKey::from)
+                model.borrow().get_model_symbols(session.st(), from_module).map(SymbolKey::from)
             );
             results.1 = Some(node.range());
         }
@@ -327,17 +320,15 @@ impl XmlAstUtils {
         let xml_ids = SyncOdoo::get_xml_ids(session, file_symbol, xml_id, &range, &mut vec![]);
 
         for xml_id in xml_ids.iter_valid(session.st()) {
-            if on_dep_only {
-                if let Some(module) = session.st().find_module(xml_id) {
-                    if !ModuleSymbol::is_in_deps(
+            if on_dep_only
+                && let Some(module) = session.st().find_module(xml_id)
+                    && !ModuleSymbol::is_in_deps(
                         session.st(),
                         session.st().find_module(file_symbol).unwrap(),
                         &session.st()[module].name,
                     ) {
                         continue;
                     }
-                }
-            }
             if let XmlId::XmlRecord(record_key) = xml_id {
                 results.0.push(record_key.into());
             } else if let XmlId::PythonClass(record_key) = xml_id {

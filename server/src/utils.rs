@@ -26,11 +26,10 @@ macro_rules! Sy {
 
 pub fn get_python_command() -> Option<String> {
     for cmd in &["python3", "python"] {
-        if let Ok(output) = Command::new(cmd).arg("--version").output() {
-            if output.status.success() {
+        if let Ok(output) = Command::new(cmd).arg("--version").output()
+            && output.status.success() {
                 return Some(S!(*cmd));
             }
-        }
     }
     None
 }
@@ -84,7 +83,7 @@ pub fn is_dir_cs(path: &str) -> bool {
             if let Ok(entries) = fs::read_dir(p.parent().unwrap()) {
                 for entry in entries {
                     if let Ok(entry) = entry {
-                        if entry.file_name() == p.components().last().unwrap().as_os_str() {
+                        if entry.file_name() == p.components().next_back().unwrap().as_os_str() {
                             found = true;
                             break;
                         }
@@ -120,19 +119,19 @@ pub fn is_symlink_cs(path: String) -> bool {
 }
 
 pub trait ToFilePath {
-    fn to_file_path(&self) -> Result<PathBuf, ()>;
+    fn to_file_path(&self) -> Result<PathBuf, Box<dyn std::error::Error>>;
 }
 
 impl ToFilePath for lsp_types::Uri {
-    fn to_file_path(&self) -> Result<PathBuf, ()> {
+    fn to_file_path(&self) -> Result<PathBuf, Box<dyn std::error::Error>> {
         let s = self.as_str();
         // Detect legacy UNC path (file:////)
         if s.starts_with("file:////") {
             legacy_unc_paths().store(true, Ordering::Relaxed);
         }
         let str_repr = s.replace("file:////", "file://");
-        let url = url::Url::from_str(&str_repr).map_err(|_| ())?;
-        url.to_file_path()
+        let url = url::Url::from_str(&str_repr)?;
+        url.to_file_path().map_err(|_| Box::<dyn std::error::Error>::from("Failed to convert URL to file path"))
     }
 }
 
@@ -205,11 +204,10 @@ impl PathSanitizer for Path {
 
     /// Convert the path to a path valid for the tree structure (without __init__.py or __manifest__.py).
     fn to_tree_path(&self) -> PathBuf {
-        if let Some(file_name) = self.file_name() {
-            if file_name.to_str().unwrap() == "__init__.py" || file_name.to_str().unwrap() == "__manifest__.py" {
+        if let Some(file_name) = self.file_name()
+            && (file_name.to_str().unwrap() == "__init__.py" || file_name.to_str().unwrap() == "__manifest__.py") {
                 return self.parent().unwrap().to_path_buf();
             }
-        }
         self.to_path_buf()
     }
 }
@@ -291,7 +289,7 @@ pub fn expand_language_code(code: &str) -> impl Iterator<Item = String> + use<> 
 #[macro_export]
 macro_rules! warn_or_panic {
     ($($arg:tt)*) => {
-        if *crate::constants::IS_RELEASE {
+        if *$crate::constants::IS_RELEASE {
             let bt = std::backtrace::Backtrace::force_capture();
             tracing::warn!("{}\nBacktrace:\n{:?}", format!($($arg)*), bt);
         } else {

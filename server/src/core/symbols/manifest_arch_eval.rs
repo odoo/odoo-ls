@@ -37,7 +37,7 @@ impl ModuleSymbol {
                     });
                 }
                 continue;
-            } else if path.extension().map_or(true, |ext| !["xml", "csv", "sql"].contains(&ext.to_str().unwrap_or(""))) {
+            } else if path.extension().is_none_or(|ext| !["xml", "csv", "sql"].contains(&ext.to_str().unwrap_or(""))) {
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05050, &[&path_string]) {
                     diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(data_range.start().to_u32(), 0), Position::new(data_range.end().to_u32(), 0)),
@@ -142,7 +142,7 @@ impl ModuleSymbol {
         }
     }
 
-    fn load_xml_assets(session: &mut SessionInfo, module: ModuleKey, files_to_imports: &Vec<PathBuf>) {
+    fn load_xml_assets(session: &mut SessionInfo, module: ModuleKey, files_to_imports: &[PathBuf]) {
         for file_path in files_to_imports.iter().filter(|p| p.extension().map(|ext| ext == "xml").unwrap_or(false)) {
             let file_path_str = file_path.sanitize_cow();
             let file_name = file_path.file_name().unwrap().to_str().unwrap().to_string();
@@ -174,19 +174,19 @@ impl ModuleSymbol {
             xml_builder.load_arch(session, file_info, &root);
         } else if data.len() > 0 {
             let mut diagnostics = vec![];
-            XmlFileSymbol::build_syntax_diagnostics(&session, &mut diagnostics, file_info, &document.unwrap_err());
+            XmlFileSymbol::build_syntax_diagnostics(session, &mut diagnostics, file_info, &document.unwrap_err());
             file_info.replace_diagnostics(DiagnosticSource::XML_SYNTAX, diagnostics);
             file_info.publish_diagnostics(session);
         }
     }
 
-    fn load_js_assets(session: &mut SessionInfo, module: ModuleKey, files_to_imports: &Vec<PathBuf>) {
+    fn load_js_assets(session: &mut SessionInfo, module: ModuleKey, files_to_imports: &[PathBuf]) {
         for file_path in files_to_imports.iter().filter(|p| p.extension().map_or(false, |ext| ext == "js")) {
             let file_path_str = file_path.sanitize_cow();
             if session.st()[module].js_symbols().contains_key(file_path_str.as_ref()) {
                 continue;
             }
-            let file_name = PathBuf::from(file_path).file_name().unwrap().to_str().unwrap().to_string();
+            let file_name = file_path.file_name().unwrap().to_str().unwrap().to_string();
             let js_key = session.st_mut().add_new_js_file(module.into(), &file_name, file_path_str.as_ref());
             session.st_mut().add_dependency(module.into(), js_key.into(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
             session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, file_path_str.as_ref(), None, None, false); //create ast if not in cache

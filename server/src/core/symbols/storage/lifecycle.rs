@@ -1,13 +1,13 @@
 //! Symbol creation and destruction.
 
-/// All slotmap insertions/removals and parent/child relationship mutations are
-/// centralized here.
-///
-/// The `symbols` and `module_symbols` fields on variant structs
-/// are `pub(super)`, so only code within the storage module can mutate them.
-/// Combined with private slotmaps, this guarantees that `parent`, `symbols`, and
-/// `module_symbols` always hold valid keys — they can be trusted without validity
-/// checks, unlike keys stored elsewhere (as Weak).
+//! All slotmap insertions/removals and parent/child relationship mutations are
+//! centralized here.
+//!
+//! The `symbols` and `module_symbols` fields on variant structs
+//! are `pub(super)`, so only code within the storage module can mutate them.
+//! Combined with private slotmaps, this guarantees that `parent`, `symbols`, and
+//! `module_symbols` always hold valid keys — they can be trusted without validity
+//! checks, unlike keys stored elsewhere (as Weak).
 
 use crate::{
     constants::{OYarn, PackageType, SymType},
@@ -22,7 +22,7 @@ use crate::{
     threads::SessionInfo,
 };
 use ruff_text_size::{TextRange, TextSize};
-use std::{cell::RefCell, ops::Range, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, ops::Range, path::{Path, PathBuf}, rc::Rc};
 
 impl SymbolTable {
 
@@ -74,7 +74,7 @@ impl SymbolTable {
         compiled_key
     }
 
-    pub fn add_new_module_package(session: &mut SessionInfo, parent: NamespaceKey, name: &str, path: &PathBuf) -> ModuleKey {
+    pub fn add_new_module_package(session: &mut SessionInfo, parent: NamespaceKey, name: &str, path: &Path) -> ModuleKey {
         let is_external = session.sync_odoo.symbol_table.is_external(parent.into());
         let module = ModuleSymbol::new(name, path, parent, is_external);
         let path_str = module.path.clone();
@@ -92,17 +92,17 @@ impl SymbolTable {
         self.add_to_parent_symbols(parent, variable_key.into(), name, range.start().to_u32());
         variable_key
     }
-    pub fn add_new_function(&mut self, parent: SymbolKey, name: &str, range: TextRange, body_start: &TextSize) -> FunctionKey {
+    pub fn add_new_function(&mut self, parent: SymbolKey, name: &str, range: TextRange, body_start: TextSize) -> FunctionKey {
         let is_external = self.is_external(parent);
-        let function_symbol = FunctionSymbol::new(name, parent, range, body_start.clone(), is_external);
+        let function_symbol = FunctionSymbol::new(name, parent, range, body_start, is_external);
         let function_key = self.functions.insert(function_symbol);
         self.add_to_parent_symbols(parent, function_key.into(), name, range.start().to_u32());
         function_key
     }
 
-    pub fn add_new_class(&mut self, parent: SymbolKey, name: &str, range: TextRange, body_start: &TextSize) -> ClassKey {
+    pub fn add_new_class(&mut self, parent: SymbolKey, name: &str, range: TextRange, body_start: TextSize) -> ClassKey {
         let is_external = self.is_external(parent);
-        let class_symbol = ClassSymbol::new(name, parent, range, *body_start, is_external);
+        let class_symbol = ClassSymbol::new(name, parent, range, body_start, is_external);
         let class_key = self.classes.insert(class_symbol);
         self.add_to_parent_symbols(parent, class_key.into(), name, range.start().to_u32());
         class_key

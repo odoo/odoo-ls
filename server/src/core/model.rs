@@ -11,7 +11,7 @@ use crate::core::symbols::symbol_keys::ModelSymbolKey;
 use crate::core::symbols::symbol_keys::SourceFileKey;
 use crate::core::symbols::symbol_keys::SymbolKey;
 use crate::core::symbols::symbol_keys::XmlRecordKey;
-use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey};
+use crate::core::symbols::symbol_keys::{ClassKey, ClassWithModule, ModuleKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::threads::SessionInfo;
 use crate::weak_collections::WeakSet;
@@ -42,6 +42,12 @@ pub struct ModelData {
     pub fold_name: String,
     /// Key: compute function name, Value: field names that are computed by this function
     pub computes: HashMap<OYarn, HashSet<OYarn>>,
+}
+
+impl Default for ModelData {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ModelData {
@@ -219,15 +225,14 @@ impl Model {
             for &key in symbols.iter() {
                 let Some(model_data) = &st[key]._model else {continue};
                 for inherit in model_data.inherit.iter() {
-                    if let Some(model) = session.sync_odoo.models.get(inherit).cloned() {
-                        if !already_in.contains(&model.borrow().name) {
+                    if let Some(model) = session.sync_odoo.models.get(inherit).cloned()
+                        && !already_in.contains(&model.borrow().name) {
                             already_in.insert(model.borrow().name.clone());
                             queue.push_back(model.clone());
                         }
-                    }
                 }
             }
-            symbol_set.extend(symbols.into_iter());
+            symbol_set.extend(symbols);
         }
         symbol_set
     }
@@ -243,12 +248,11 @@ impl Model {
                 continue;
             };
             for (model_name, _field) in model_data.inherits.iter() {
-                if let Some(model) = session.sync_odoo.models.get(model_name).cloned() {
-                    if !already_in.contains(&model.borrow().name) {
+                if let Some(model) = session.sync_odoo.models.get(model_name).cloned()
+                    && !already_in.contains(&model.borrow().name) {
                         res.push(model.clone());
                         already_in.insert(model.borrow().name.clone());
                     }
-                }
             }
         }
         res
@@ -264,7 +268,7 @@ impl Model {
         &self,
         session: &SessionInfo,
         from_module: Option<ModuleKey>,
-    ) -> impl Iterator<Item = (ClassKey, Option<OYarn>)> {
+    ) -> impl Iterator<Item = ClassWithModule> {
         Self::attach_module_dependencies(
             self.get_python_symbols(session.st()),
             session.st(),
@@ -319,12 +323,12 @@ impl Model {
         .collect()
     }
 
-    pub fn all_symbols_inherits(&self, session: &SessionInfo, from_module: Option<ModuleKey>) -> (Vec<(ClassKey, Option<OYarn>)>, Vec<(ClassKey, Option<OYarn>)>) {
+    pub fn all_symbols_inherits(&self, session: &SessionInfo, from_module: Option<ModuleKey>) -> (Vec<ClassWithModule>, Vec<ClassWithModule>) {
         let mut visited_models = HashSet::default();
         self.all_inherits_helper(session, from_module, &mut visited_models)
     }
 
-    fn all_inherits_helper(&self, session: &SessionInfo, from_module: Option<ModuleKey>, visited_models: &mut HashSet<OYarn>) -> (Vec<(ClassKey, Option<OYarn>)>, Vec<(ClassKey, Option<OYarn>)>) {
+    fn all_inherits_helper(&self, session: &SessionInfo, from_module: Option<ModuleKey>, visited_models: &mut HashSet<OYarn>) -> (Vec<ClassWithModule>, Vec<ClassWithModule>) {
         if visited_models.contains(&self.name) {
             return (Vec::new(), Vec::new());
         }
@@ -403,11 +407,10 @@ impl Model {
                     if inherit == &base.borrow().name {
                         return true;
                     }
-                    if let Some(model) = session.sync_odoo.models.get(inherit).cloned() {
-                        if inner(&model.borrow(), session, base, checked) {
+                    if let Some(model) = session.sync_odoo.models.get(inherit).cloned()
+                        && inner(&model.borrow(), session, base, checked) {
                             return true;
                         }
-                    }
                 }
             }
             false

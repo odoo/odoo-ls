@@ -51,7 +51,7 @@ macro_rules! diagnostic_codes {
             }
         }
 
-        pub static DIAGNOSTIC_INFOS: std::sync::LazyLock<crate::utils::HashMap<DiagnosticCode, DiagnosticInfo>> = std::sync::LazyLock::new(|| crate::utils::HashMap::from_iter([
+        pub static DIAGNOSTIC_INFOS: std::sync::LazyLock<$crate::utils::HashMap<DiagnosticCode, DiagnosticInfo>> = std::sync::LazyLock::new(|| $crate::utils::HashMap::from_iter([
             $( (DiagnosticCode::$name, DiagnosticInfo { default_setting: $default_setting, template: $msg }), )*
         ]));
     }

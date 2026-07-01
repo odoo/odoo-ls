@@ -1,0 +1,7 @@
+too-many-arguments-threshold = 10 # TODO move it back to 7 and fix warnings
+
+# lsp_types::Uri wraps fluent_uri::Uri<String>, which nests a Cell<NonZeroU32>
+# used only by the mutable &mut [u8] storage variant. For the String variant
+# it's never mutated, and Hash/Ord/Eq only ever read `as_str()`, so it's safe
+# to use as a HashMap/HashSet key.
+ignore-interior-mutability = ["bytes::Bytes", "lsp_types::Uri"]

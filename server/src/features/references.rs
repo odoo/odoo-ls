@@ -124,9 +124,10 @@ impl ReferenceFeature {
                     } else {
                         None
                     };
-                    if let Some(SymbolKey::Class(class_model)) = class_model_to_check 
-                    && let Some(model_data) = session.st()[class_model]._model.as_ref() 
-                    && let Some(model) = session.sync_odoo.models.get(&model_data.name).cloned() {
+                    if let Some(SymbolKey::Class(class_model)) = class_model_to_check
+                        && let Some(model_data) = session.st()[class_model]._model.as_ref()
+                        && let Some(model) = session.sync_odoo.models.get(&model_data.name).cloned()
+                    {
                         files_to_check.extend(model.borrow().dependents.iter_valid(session.st()));
                         for symbol in model.borrow().get_model_symbols(session.st(), None) {
                             if let Some(file) = session.st().get_file(symbol.into()) {
@@ -160,12 +161,11 @@ impl ReferenceFeature {
                                     let data = dep_file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
                                     let mut csv_reader = csv::ReaderBuilder::new().from_reader(data.as_bytes());
                                     let model_class = session.st().get_in_parents(definition_source, &[SymType::CLASS], true);
-                                    if let Some(SymbolKey::Class(model_class)) = model_class {
-                                        if let Some(model) = &session.st()[model_class]._model {
+                                    if let Some(SymbolKey::Class(model_class)) = model_class
+                                        && let Some(model) = &session.st()[model_class]._model {
                                             let model_name = model.name.clone();
                                             locations.extend(CsvAstReferenceVisitor::search_target(session, csv_file, &mut csv_reader, Some(&model_name), &ReferenceTarget::Symbol(definition_source), &data));
                                         }
-                                    }
                                 }
                             },
                             SourceFileKey::JsFile(_) => { unreachable!("tsserverbridge should have handled js references")}
@@ -181,7 +181,7 @@ impl ReferenceFeature {
                             let transformed_range = file_info.borrow().text_range_to_range(session.st().range(definition_source), session.sync_odoo.encoding);
                             let uri = FileMgr::pathname2uri(path);
                             locations.push(Location {
-                                uri: uri,
+                                uri,
                                 range: transformed_range,
                             });
                         }
@@ -470,12 +470,12 @@ struct ReferenceVisitor {
 
 impl ReferenceVisitor {
 
-    pub fn browse_file(&mut self, session: &mut SessionInfo, file_symbol: SourceFileKey, stmts: &Vec<Stmt>) {
+    pub fn browse_file(&mut self, session: &mut SessionInfo, file_symbol: SourceFileKey, stmts: &[Stmt]) {
         self.sym_stack.push(file_symbol.into());
         self.visit_vec_stmt(session, stmts);
     }
 
-    pub fn visit_vec_stmt(&mut self, session: &mut SessionInfo, vec_ast: &Vec<Stmt>) {
+    pub fn visit_vec_stmt(&mut self, session: &mut SessionInfo, vec_ast: &[Stmt]) {
         for stmt in vec_ast.iter() {
             match stmt {
                 Stmt::FunctionDef(f) => {
@@ -556,10 +556,9 @@ impl ReferenceVisitor {
             if alias.name.id == "*" {
                 continue;
             }
-            let var_name = if alias.asname.is_none() {
-                alias.name.split(".").next().unwrap()
-            } else {
-                alias.asname.as_ref().unwrap()
+            let var_name = match alias.asname.as_ref() {
+                Some(asname) => asname.id.as_str(),
+                None => alias.name.id.split(".").next().unwrap(),
             };
             let variable = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), var_name, &alias.range);
             let Some(SymbolKey::Variable(variable_key)) = variable else { continue };
@@ -568,16 +567,15 @@ impl ReferenceVisitor {
                 let EvaluationSymbolPtr::WEAK(w) = eval_sym else {
                     panic!("Internal error: evaluated has invalid evaluationType");
                 };
-                if let Some(symbol) = w.weak.upgrade(session.st()) {
-                    if symbol == eval_search_sym {
+                if let Some(symbol) = w.weak.upgrade(session.st())
+                    && symbol == eval_search_sym {
                         let path = session.st().path(file_symbol).to_string();
                         let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &alias.range);
                         session.sync_odoo.evaluation_locations.push(Location {
                             uri: FileMgr::pathname2uri(&path),
-                            range: range,
+                            range,
                         });
                     }
-                }
             }
         }
     }

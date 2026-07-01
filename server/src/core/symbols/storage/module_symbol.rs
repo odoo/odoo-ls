@@ -11,7 +11,7 @@ use crate::{constants::*, oyarn};
 use ruff_text_size::TextRange;
 use std::cell::RefCell;
 use crate::utils::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::Path;
 use std::rc::Weak;
 use weak_table::PtrWeakHashSet;
 
@@ -57,7 +57,7 @@ pub struct ModuleSymbol {
 
 impl ModuleSymbol {
 
-    pub fn new(name: &str, dir_path: &PathBuf, parent: NamespaceKey, is_external: bool) -> Self {
+    pub fn new(name: &str, dir_path: &Path, parent: NamespaceKey, is_external: bool) -> Self {
         let path = dir_path.sanitize();
         let dir_name = oyarn!("{}", dir_path.with_extension("").components().next_back().unwrap().as_os_str().to_str().unwrap());
         let depends = if dir_name == "base" {
@@ -147,7 +147,7 @@ impl ModuleSymbol {
     //given an xml_id without "module." part, return all XmlData that declare it ("this_module.xml_id"), regardless of the module declaring it.
     pub fn get_xml_id(symbol_table: &SymbolTable, target: ModuleKey, xml_id: &str) -> Option<WeakSet<XmlId>> {
         let target_module = &symbol_table[target];
-        return target_module.xml_ids.get(xml_id).cloned();
+        target_module.xml_ids.get(xml_id).cloned()
     }
 
 }
