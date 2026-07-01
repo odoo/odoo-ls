@@ -1060,9 +1060,7 @@ impl PythonArchEvalHooks {
 
     fn eval_relational(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: Option<&Context>, _diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
     {
-        let Some(context) = context else {
-            return None;
-        };
+        let context = context?;
         if let Some(comodel) = context.get(ContextKey::ComodelName) {
             return PythonArchEvalHooks::eval_relational_with_comodel(session, comodel, context, scope);
         }
@@ -1112,9 +1110,9 @@ impl PythonArchEvalHooks {
 
     fn eval_init_common(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: Option<&Context>, _diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>, relational: bool, one2many: bool) -> Option<EvaluationSymbolPtr>
     {
-        let Some(context) = maybe_context else {return None};
+        let context = maybe_context?;
 
-        let Some(parameters) = context.get(ContextKey::Parameters).map(|ps| ps.as_arguments()) else {return None};
+        let parameters = context.get(ContextKey::Parameters).map(|ps| ps.as_arguments())?;
 
         let parent = session.st().get_scope_symbol(
             file_symbol.unwrap(),

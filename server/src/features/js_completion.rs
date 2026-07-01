@@ -32,9 +32,9 @@ pub fn owl_completion(
         find_owl_attr_at_offset(&document.root_element(), offset)?;
 
     let text_to_cursor = &attr_value[..cursor_rel.min(attr_value.len())];
-    let prefix = match text_to_cursor.rfind("this") {
-        Some(idx) => &text_to_cursor[idx..],
-        None => return None,
+    let prefix = {
+        let idx = text_to_cursor.rfind("this")?;
+        &text_to_cursor[idx..]
     };
 
     let class_name = session.sync_odoo.js_component_by_template.get(&t_name)?.clone();

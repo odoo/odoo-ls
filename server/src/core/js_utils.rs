@@ -3,7 +3,7 @@ use oxc::diagnostics::OxcDiagnostic;
 use crate::{S, constants::EXTENSION_NAME};
 
 pub fn oxc_diagnostic_to_lsp_diagnostic(diag: &OxcDiagnostic, uri: &lsp_types::Uri) -> Option<lsp_types::Diagnostic> {
-    let Some(labels) = diag.labels.as_ref() else {return None;};
+    let labels = diag.labels.as_ref()?;
     let first_label = labels.first().unwrap();
     let range = lsp_types::Range {
         start: lsp_types::Position { line: first_label.offset() as u32, character: 0 },

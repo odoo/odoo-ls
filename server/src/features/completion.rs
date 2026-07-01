@@ -695,12 +695,11 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
             return complete_expr(arg, session, file, offset, is_param, &expected_type);
         }
         //if we didn't find anything, still try to complete
-        return complete_expr(arg, session, file, offset, is_param, &vec![]);
+        return complete_expr(arg, session, file, offset, is_param, &[]);
     }
-    let Some(keyword) = expr_call.arguments.keywords.iter().find(|arg|
-        offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize()) else {
-        return None;
-    };
+    let keyword = expr_call.arguments.keywords.iter().find(|arg| {
+        offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize()
+    })?;
     for callable_eval_sym_ptr in callable_eval_sym_ptrs.iter() {
         let callable_option = callable_eval_sym_ptr.upgrade_weak(session.st());
         let Some(callable_sym) = callable_option else {continue};
