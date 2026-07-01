@@ -256,7 +256,7 @@ impl ReferenceFeature {
     fn get_reference_js(session: &mut SessionInfo, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Vec<Location>> {
         let file_path = &file_info.borrow().uri;
         let locs: Vec<Location> = if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
-            bridge.get_references(&file_path, line, character)
+            bridge.get_references(file_path, line, character)
                 .into_iter()
                 .map(|(target_file, sl, sc, el, ec)| Location {
                     uri: FileMgr::pathname2uri(&target_file),

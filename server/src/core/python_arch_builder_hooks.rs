@@ -148,7 +148,7 @@ static arch_class_hooks: LazyLock<Vec<PythonArchClassHook>> = LazyLock::new(|| {
             // ----------- __get__ ------------
             let get_sym = symbol_table.get_symbol(symbol_key, (&[], &["__get__"]), u32::MAX);
             if get_sym.is_empty() {
-                symbol_table.add_new_function(symbol_key, &S!("__get__"), range, &range.end());
+                symbol_table.add_new_function(symbol_key, &S!("__get__"), range, range.end());
             } else {
                 let name = &symbol_table[class].name;
                 if !["Id", "One2many"].contains(&name.as_str()) {
@@ -158,7 +158,7 @@ static arch_class_hooks: LazyLock<Vec<PythonArchClassHook>> = LazyLock::new(|| {
             // ----------- __init__ ------------
             let get_sym = symbol_table.get_symbol(symbol_key, (&[], &["__init__"]), u32::MAX);
             if get_sym.is_empty() {
-                symbol_table.add_new_function(symbol_key, &S!("__init__"), range, &range.end());
+                symbol_table.add_new_function(symbol_key, &S!("__init__"), range, range.end());
             }
         }
     },

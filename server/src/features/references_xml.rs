@@ -24,13 +24,13 @@ impl XmlAstReferenceVisitor {
         }
         let path = session.st()[file_symbol].path.clone();
         let uri = FileMgr::pathname2uri(&path);
-        let result_locations = results.iter().map(|range|
+        
+        results.iter().map(|range|
             Location {
                 uri: uri.clone(),
                 range: session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, range),
             }
-        ).collect();
-        result_locations
+        ).collect()
     }
 
     fn visit_node<'a>(session: &mut SessionInfo<'_>, node: &Node<'a, '_>, from_module: Option<ModuleKey>, scope: XmlScope<'a>, results: &mut Vec<Range<usize>>, target: &ReferenceTarget) {

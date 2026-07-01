@@ -54,7 +54,7 @@ impl ModuleSymbol {
                 let entry = session.st().get_entry(symbol_key);
                 entry.borrow_mut().not_found_symbols.insert(symbol_key.into());
                 session.st_mut()[symbol_key].not_found_paths.push((BuildSteps::ARCH, vec![Sy!("odoo"), Sy!("addons"), depend.clone()]));
-                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS04010, &[&name, &depend]) {
+                if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS04010, &[&name, depend]) {
                     diagnostics.push(Diagnostic {
                         range: FileMgr::textRange_to_temporary_Range(range),
                         ..diagnostic_base.clone()

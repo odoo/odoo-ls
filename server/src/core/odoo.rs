@@ -322,7 +322,7 @@ impl SyncOdoo {
             for stub_dir in session.sync_odoo.stubs_dirs.clone().iter() {
                 EntryPointMgr::add_entry_to_public(session, stub_dir.clone());
             }
-            match Command::new(session.sync_odoo.config.python_path().clone()).args(&["-c", "import sys; import json; print(json.dumps(sys.path))"]).output() {
+            match Command::new(session.sync_odoo.config.python_path().clone()).args(["-c", "import sys; import json; print(json.dumps(sys.path))"]).output() {
                 Err(err) => {
                     warn!("Wrong python command: {}, error: {}", session.sync_odoo.config.python_path().clone(), err);
                     session.send_notification("$Odoo/invalid_python_path", ());
@@ -348,7 +348,7 @@ impl SyncOdoo {
                     }
                 }
             }
-            match Command::new(session.sync_odoo.config.python_path().clone()).args(&["-c", "import sys, importlib.machinery, json; print(json.dumps({'version_info': list(sys.version_info)[:3], 'ext_suffixes': list(importlib.machinery.EXTENSION_SUFFIXES)}))"]).output() {
+            match Command::new(session.sync_odoo.config.python_path().clone()).args(["-c", "import sys, importlib.machinery, json; print(json.dumps({'version_info': list(sys.version_info)[:3], 'ext_suffixes': list(importlib.machinery.EXTENSION_SUFFIXES)}))"]).output() {
                 Err(err) => {
                     warn!("Wrong python command: {}, error: {}", session.sync_odoo.config.python_path().clone(), err);
                     session.send_notification("$Odoo/invalid_python_path", ());
@@ -829,7 +829,7 @@ impl SyncOdoo {
                     .map(|y| y.as_str())
                     .chain(tree.0.iter().copied())
                     .collect();
-                let symbols = self.symbol_table.get_symbol(entry_point.root.into(), (&tree_0, &tree.1), position);
+                let symbols = self.symbol_table.get_symbol(entry_point.root.into(), (&tree_0, tree.1), position);
                 if !symbols.is_empty() {
                     return symbols;
                 }
@@ -1776,7 +1776,7 @@ impl Odoo {
             return;
         }
         let config = config.and_then(|(ce, _)|{
-            ce.get(&selected_config).cloned().ok_or(format!("Unable to find selected configuration \"{}\"", &selected_config))
+            ce.get(&selected_config).cloned().ok_or(format!("Unable to find selected configuration \"{}\"", selected_config))
         });
         match config {
             Ok(config) => {

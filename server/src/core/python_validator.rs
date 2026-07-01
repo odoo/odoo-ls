@@ -399,7 +399,7 @@ impl PythonValidator {
                             };
                             let syms = PythonArchEval::get_nested_sub_field(session, related_field_name, class, maybe_from_module);
                             if syms.is_empty() {
-                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03014, &[related_field_name, &model_name]) {
+                                if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03014, &[related_field_name, &model_name]) {
                                     self.diagnostics.push(Diagnostic {
                                         range: Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
                                         ..diagnostic_base.clone()
@@ -457,7 +457,7 @@ impl PythonValidator {
                                 session.st_mut().add_model_dependencies(file_symbol, &model);
                                 let Some(from_module) = maybe_from_module else {break 'comodel_check;};
                                 if !model.clone().borrow().model_in_deps(session, from_module) {
-                                    if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03015, &[comodel_field_name]) {
+                                    if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03015, &[comodel_field_name]) {
                                         self.diagnostics.push(Diagnostic {
                                             range: Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
                                             ..diagnostic_base.clone()
@@ -467,7 +467,7 @@ impl PythonValidator {
                                     break 'comodel_check;
                                 }
                             } else {
-                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03016, &[comodel_field_name]) {
+                                if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03016, &[comodel_field_name]) {
                                     self.diagnostics.push(Diagnostic {
                                         range: Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
                                         ..diagnostic_base.clone()
@@ -504,7 +504,7 @@ impl PythonValidator {
                             let Some(arg_range) = eval_weak.get_weak().context.get(special_fn_field_arg_range).map(|ctx_val| ctx_val.as_text_range()) else {
                                 continue;
                             };
-                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03018, &[method_name]) {
+                            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03018, &[method_name]) {
                                 self.diagnostics.push(Diagnostic {
                                     range: Range::new(Position::new(arg_range.start().to_u32(), 0), Position::new(arg_range.end().to_u32(), 0)),
                                     ..diagnostic_base.clone()
@@ -564,7 +564,7 @@ impl PythonValidator {
                             let Some(arg_range) = eval_weak.get_weak().context.get(ContextKey::InverseNameArgRange).map(|ctx_val| ctx_val.as_text_range()) else {
                                 continue;
                             };
-                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03021, &[inverse_name, comodel_name]) {
+                            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03021, &[inverse_name, comodel_name]) {
                                 self.diagnostics.push(Diagnostic {
                                     range: Range::new(Position::new(arg_range.start().to_u32(), 0), Position::new(arg_range.end().to_u32(), 0)),
                                     ..diagnostic_base.clone()
@@ -575,7 +575,7 @@ impl PythonValidator {
                             let Some(arg_range) = eval_weak.get_weak().context.get(ContextKey::InverseNameArgRange).map(|ctx_val| ctx_val.as_text_range()) else {
                                 continue;
                             };
-                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03022, &[]) {
+                            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03022, &[]) {
                                 self.diagnostics.push(Diagnostic {
                                     range: Range::new(Position::new(arg_range.start().to_u32(), 0), Position::new(arg_range.end().to_u32(), 0)),
                                     ..diagnostic_base.clone()
@@ -620,7 +620,7 @@ impl PythonValidator {
                                 let Some(arg_range) = eval_weak.get_weak().context.get(ContextKey::InverseNameArgRange).map(|ctx_val| ctx_val.as_text_range()) else {
                                     continue;
                                 };
-                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03023, &[inverse_name, &model_name, &comodel_name]) {
+                                if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03023, &[inverse_name, &model_name, &comodel_name]) {
                                     self.diagnostics.push(Diagnostic {
                                         range: Range::new(Position::new(arg_range.start().to_u32(), 0), Position::new(arg_range.end().to_u32(), 0)),
                                         ..diagnostic_base.clone()
@@ -702,7 +702,7 @@ impl PythonValidator {
                 } else {
                     DiagnosticCode::OLS03020
                 };
-                if let Some(diagnostic) = create_diagnostic(&session, diagnostic_code, &[&model_name]) {
+                if let Some(diagnostic) = create_diagnostic(session, diagnostic_code, &[&model_name]) {
                     self.diagnostics.push(Diagnostic {
                         range: FileMgr::textRange_to_temporary_Range(&range),
                         ..diagnostic
@@ -755,14 +755,14 @@ impl PythonValidator {
             }
             if !found_one {
                 if !main_modules.is_empty() {
-                    if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03004, &[]) {
+                    if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03004, &[]) {
                         self.diagnostics.push(Diagnostic {
                             range: Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
                             ..diagnostic_base
                         });
                     }
                 } else {
-                    if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03005, &[]) {
+                    if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03005, &[]) {
                         self.diagnostics.push(Diagnostic {
                             range: Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
                             ..diagnostic_base
@@ -771,7 +771,7 @@ impl PythonValidator {
                 }
             }
         } else {
-            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03002, &[]) {
+            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03002, &[]) {
                 self.diagnostics.push(Diagnostic {
                     range: Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
                     ..diagnostic_base

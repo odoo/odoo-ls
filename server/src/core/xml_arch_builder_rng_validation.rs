@@ -491,7 +491,7 @@ impl XmlArchBuilder {
         if node.tag_name().name() != "template" { return false; }
         //no interesting rule to check, as 'any' is valid
         let found_id = node.attribute("id").map(|s| s.to_string());
-        self.load_qweb_template(session, &node, found_id, false, diagnostics);
+        self.load_qweb_template(session, node, found_id, false, diagnostics);
         true
     }
 

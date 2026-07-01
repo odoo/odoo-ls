@@ -102,26 +102,26 @@ impl PythonArchEval {
                     let fun_index = session.st()[f].node_index.load();
                     if fun_index == NodeIndex::NONE{ // uninitialized node index
                         // Function has no body or is dynamically created from a hook
-                        (&vec![], None) // essentially skip evaluation
+                        (Default::default(), None) // essentially skip evaluation
                     } else {
                         let func_stmt = file_info_ast_bw.ast.as_py_ast().indexed_module.as_ref().unwrap().get_by_index(fun_index);
                         match func_stmt {
                             AnyRootNodeRef::Stmt(Stmt::FunctionDef(func_stmt)) => {
-                                (&func_stmt.body, Some(func_stmt))
+                                (func_stmt.body.as_slice(), Some(func_stmt))
                             },
                             _ => panic!("Expected function definition")
                         }
                     }
                 }
             };
-            self.visit_sub_stmts(session, &ast);
+            self.visit_sub_stmts(session, ast);
             if !self.file_mode && let Some(func_stmt) = maybe_func_stmt {
                 let f = self.sym_stack[0].unwrap_function_key();
                 self.diagnostics.extend(
                     PythonArchEvalHooks::handle_func_decorators(session, func_stmt, f, self.file, self.current_step)
                 );
                 PythonArchEval::handle_function_returns(session, func_stmt, f, &ast.last().unwrap().range().end(), &mut self.diagnostics);
-                PythonArchEval::handle_func_evaluations(&mut session.sync_odoo.symbol_table, &ast, f);
+                PythonArchEval::handle_func_evaluations(&mut session.sync_odoo.symbol_table, ast, f);
             }
             session.current_noqa = old_noqa;
         }
@@ -188,7 +188,7 @@ impl PythonArchEval {
                 self.visit_while(session, while_stmt);
             },
             Stmt::Expr(stmt_expression) => {
-                self.visit_expr(session, &*stmt_expression.value);
+                self.visit_expr(session, &stmt_expression.value);
             },
             Stmt::Assert(assert_stmt) => {
                 self.visit_expr(session, &assert_stmt.test);
@@ -219,11 +219,11 @@ impl PythonArchEval {
     fn visit_expr(&mut self, session: &mut SessionInfo, expr: &Expr){
         match expr {
             Expr::Named(named_expr) => {
-                self.visit_named_expr(session, &named_expr);
+                self.visit_named_expr(session, named_expr);
             },
             Expr::BoolOp(bool_op_expr) => {
                 for expr in bool_op_expr.values.iter() {
-                    self.visit_expr(session, &expr);
+                    self.visit_expr(session, expr);
                 }
             },
             Expr::BinOp(bin_op_expr) => {
@@ -627,7 +627,7 @@ impl PythonArchEval {
                 continue;
             }
             if eval_base.len() > 1 {
-                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01003, &[&AstUtils::flatten_expr(base)]) {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01003, &[&AstUtils::flatten_expr(base)]) {
                     self.diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(base.range().start().to_u32(), 0), Position::new(base.range().end().to_u32(), 0)),
                         ..diagnostic
@@ -639,7 +639,7 @@ impl PythonArchEval {
             let eval_symbol = eval_base.symbol.get_symbol(session, None, &mut vec![], None);
             let ref_sym = SymbolTable::follow_ref(&eval_symbol, session, None, false, true, None, None);
             if ref_sym.len() > 1 {
-                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01003, &[&AstUtils::flatten_expr(base)]) {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01003, &[&AstUtils::flatten_expr(base)]) {
                     self.diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(base.range().start().to_u32(), 0), Position::new(base.range().end().to_u32(), 0)),
                         ..diagnostic
@@ -667,7 +667,7 @@ impl PythonArchEval {
                 }
                 session.st_mut()[loc_sym].bases.push(c.into());
             } else if !matches!(symbol, SymbolKey::Variable(_)) || session.st()[symbol.unwrap_variable_key()].is_value() { // if it's a variable and not a value, it means we can't evaluate it, let's skip diagnostic
-                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01002, &[&AstUtils::flatten_expr(base)]) {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01002, &[&AstUtils::flatten_expr(base)]) {
                     self.diagnostics.push(Diagnostic {
                         range: Range::new(Position::new(base.start().to_u32(), 0), Position::new(base.end().to_u32(), 0)),
                         ..diagnostic
@@ -694,7 +694,7 @@ impl PythonArchEval {
         self.sym_stack.pop();
         if !session.st().is_external(self.sym_stack[0]) && session.st().get_entry(self.sym_stack[0]).borrow().typ == EntryPointType::MAIN {
             if session.st().get_in_parents(class_key, &[SymType::FUNCTION], true).is_some() {
-                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS03024, &[]) {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03024, &[]) {
                     self.diagnostics.push(Diagnostic {
                         range: FileMgr::textRange_to_temporary_Range(&class_stmt.name.range),
                         ..diagnostic
@@ -967,7 +967,7 @@ impl PythonArchEval {
             let parent = session.st()[func_sym].parent();
             let (mut evaluations, diags) = Evaluation::eval_from_ast(
                 session,
-                &returns_ann,
+                returns_ann,
                 parent,
                 max_infer,
                 true,

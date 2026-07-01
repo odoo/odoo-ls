@@ -79,14 +79,14 @@ impl WorkspaceSymbolFeature {
             let mut res_to_add = vec![];
             for (xml_id_name, data_set) in session.st()[module_key].xml_ids.iter() {
                 let xml_name = S!("xmlid.") + xml_id_name;
-                if string_fuzzy_contains(&xml_name, &query) {
+                if string_fuzzy_contains(&xml_name, query) {
                     for data in data_set.iter_valid(session.st()) {
                         let xml_file_symbol = session.st().get_file(data.into());
                         if let Some(SourceFileKey::XmlFile(xml_file_key)) = xml_file_symbol {
                             let xml_file = &session.st()[xml_file_key];
                             let name = xml_file.name.to_string();
                             let path = xml_file.path.clone();
-                            let data_range = session.st().range(data.into()).clone();
+                            let data_range = *session.st().range(data.into());
                             res_to_add.push((xml_file_key, xml_name.clone(), path, name, data_range));
                         }
                     }

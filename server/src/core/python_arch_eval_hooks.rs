@@ -654,7 +654,7 @@ static arch_eval_function_hooks: LazyLock<Vec<PythonArchEvalFunctionHook>> = Laz
                         ((18, 1), (999, 0), (&["odoo", "orm", "fields_misc"], &["Id", "__get__"]))], //We have to put it at function level hook to remove evaluation from existing code
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, entry_point: &Rc<RefCell<EntryPoint>>, symbol: FunctionKey| {
-        PythonArchEvalHooks::_update_get_eval_func_level(odoo, &entry_point, symbol, (&["builtins"], &["int"]));
+        PythonArchEvalHooks::_update_get_eval_func_level(odoo, entry_point, symbol, (&["builtins"], &["int"]));
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
                         tree: vec![((0, 0), (18, 1), (&["odoo", "fields"], &["One2many", "__get__"])),
@@ -818,7 +818,7 @@ impl PythonArchEvalHooks {
             }
             let parent = session.st()[func_sym].parent();
             let mut deps = vec![vec![], vec![], vec![]];
-            let (dec_evals, diags) = Evaluation::eval_from_ast(session, &decorator_base, parent, &func_stmt.range.start(), false, &mut deps);
+            let (dec_evals, diags) = Evaluation::eval_from_ast(session, decorator_base, parent, &func_stmt.range.start(), false, &mut deps);
             session.st_mut().insert_dependencies(file, &deps, current_step);
             diagnostics.extend(diags);
             let mut followed_evals = vec![];
@@ -899,7 +899,7 @@ impl PythonArchEvalHooks {
                     let symbols = model.get_main_symbols(session, None).collect::<Vec<_>>();
                     if symbols.is_empty() {
                         // Model exists, but has no main symbols
-                        if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03005, &[]) { // Is this error code correct?
+                        if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03005, &[]) { // Is this error code correct?
                             diagnostics.push(Diagnostic {
                                 range: FileMgr::textRange_to_temporary_Range(&context.get(ContextKey::Range).unwrap().as_text_range()),
                                 ..diagnostic_base.clone()
@@ -911,7 +911,7 @@ impl PythonArchEvalHooks {
                             Some(sym) => session.st().name(sym).clone(),
                             None => Sy!("Unknown")
                         }).collect();
-                        if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03001, &[&format!("{:?}", valid_modules)]) {
+                        if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03001, &[&format!("{:?}", valid_modules)]) {
                             diagnostics.push(Diagnostic {
                                 range: FileMgr::textRange_to_temporary_Range(&context.get(ContextKey::Range).unwrap().as_text_range()),
                                 ..diagnostic_base.clone()
@@ -920,7 +920,7 @@ impl PythonArchEvalHooks {
                     }
                 } else {
                     // Model exists, but has no main symbols
-                    if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03005, &[]) {
+                    if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03005, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: FileMgr::textRange_to_temporary_Range(&context.get(ContextKey::Range).unwrap().as_text_range()),
                                 ..diagnostic_base
@@ -930,7 +930,7 @@ impl PythonArchEvalHooks {
             }
         } else if in_validation && has_class_in_parents {
             // Model Unknown
-            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03002, &[]) {
+            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03002, &[]) {
                 diagnostics.push(Diagnostic {
                     range: FileMgr::textRange_to_temporary_Range(&context.get(ContextKey::Range).unwrap().as_text_range()),
                     ..diagnostic_base
@@ -1234,7 +1234,7 @@ impl PythonArchEvalHooks {
             return diagnostics;
         }
         let Some(model) = session.sync_odoo.models.get(returns_str).cloned() else {
-            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03002, &[]) {
+            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03002, &[]) {
                 diagnostics.push(Diagnostic {
                     range: FileMgr::textRange_to_temporary_Range(&expr.range()),
                     ..diagnostic_base

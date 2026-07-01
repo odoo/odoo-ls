@@ -1715,7 +1715,7 @@ impl SymbolTable {
                     return;
                 };
                 let model_ref = model.borrow();
-                let fields = model_ref.get_xml_model_field_symbols(&session.st(), from_module);
+                let fields = model_ref.get_xml_model_field_symbols(session.st(), from_module);
                 let fields_with_names = fields.filter_map(|f_key| {
                     let field_name =
                         session.st()[f_key].get_field_text(XmlFieldName::Name, session.st())?;
@@ -2077,7 +2077,7 @@ impl SymbolTable {
             && let Some(model) = SymbolTable::get_xml_defined_model(session, xml_record_key)
         {
             let model_ref = model.borrow();
-            let fields = model_ref.get_xml_model_field_symbols(&session.st(), from_module);
+            let fields = model_ref.get_xml_model_field_symbols(session.st(), from_module);
             let matching_fields = fields.filter_map(|f_key| {
                 let field_name =
                     session.st()[f_key].get_field_text(XmlFieldName::Name, session.st())?;
@@ -2088,7 +2088,7 @@ impl SymbolTable {
                 }
             });
             extend_result(matching_fields.collect(), &mut result, &mut visited_symbols);
-            if let Some(base_model) = get_base_model_symbol(&mut session.sync_odoo) {
+            if let Some(base_model) = get_base_model_symbol(session.sync_odoo) {
                 let (s, s_diagnostic) = Self::get_member_symbol(
                     session,
                     base_model.into(),

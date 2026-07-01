@@ -622,7 +622,7 @@ impl FeaturesUtils {
         match arg.annotation.as_ref() {
             Some(anno_expr) => {
                 let Some(type_symbol) = session.st().parent(arg_symbol)
-                .and_then(|parent| Evaluation::eval_from_ast(session, &anno_expr, parent, &anno_expr.range().start(), false, &mut vec![]).0.first().cloned())
+                .and_then(|parent| Evaluation::eval_from_ast(session, anno_expr, parent, &anno_expr.range().start(), false, &mut vec![]).0.first().cloned())
                 .and_then(|type_evaluation| type_evaluation.symbol.get_symbol_as_weak(session, None, &mut vec![], None).weak.upgrade(session.st()))
                  else {
                     return arg_name.to_string()

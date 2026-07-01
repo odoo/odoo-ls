@@ -728,7 +728,7 @@ impl Evaluation {
                 for dict_item in expr.iter() {
                     let dict_value = &dict_item.value;
                     if is_in_validation || session.sync_odoo.evaluation_search.is_some() {
-                        let (_, diags) = Evaluation::eval_from_ast(session, &dict_value, parent, max_infer, false, required_dependencies);
+                        let (_, diags) = Evaluation::eval_from_ast(session, dict_value, parent, max_infer, false, required_dependencies);
                         if is_in_validation {
                             diagnostics.extend(diags);
                         }
@@ -765,7 +765,7 @@ impl Evaluation {
                 // Check argument expressions for references and diagnostics
                 if is_in_validation || odoo.evaluation_search.is_some() {
                     for param in expr.arguments.args.iter().chain(expr.arguments.keywords.iter().map(|k| &k.value)) {
-                        let (_, diags) = Evaluation::eval_from_ast(session, &param, parent, max_infer, false, required_dependencies);
+                        let (_, diags) = Evaluation::eval_from_ast(session, param, parent, max_infer, false, required_dependencies);
                         diagnostics.extend(diags);
                     }
                 }
@@ -832,7 +832,7 @@ impl Evaluation {
                                         }
                                         let class_sym_weak_eval = class_sym_weak_eval.get_weak();
                                         if class_sym_weak_eval.instance.unwrap_or(false) {
-                                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS01005, &[]) {
+                                            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS01005, &[]) {
                                                 diagnostics.push(Diagnostic {
                                                     range: Range::new(Position::new(expr.arguments.args[0].range().start().to_u32(), 0),
                                                     Position::new(expr.arguments.args[0].range().end().to_u32(), 0)),
@@ -1038,7 +1038,7 @@ impl Evaluation {
                         context.remove(ContextKey::BaseCall);
                     }
                 }
-                diagnostics.extend(Evaluation::process_argument_diagnostics(&session, expr, call_argument_diagnostics, base_eval_ptrs.len()));
+                diagnostics.extend(Evaluation::process_argument_diagnostics(session, expr, call_argument_diagnostics, base_eval_ptrs.len()));
             },
             ExprOrIdent::Expr(Expr::Attribute(expr)) => {
                 let (base_evals, diags) = Evaluation::eval_from_ast(session, &expr.value, parent, max_infer, false, required_dependencies);
@@ -1174,7 +1174,7 @@ impl Evaluation {
                 if base.is_expired_if_weak(session.st()) {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let bases = SymbolTable::follow_ref(&base, session, None, false, false, None, None);
+                let bases = SymbolTable::follow_ref(base, session, None, false, false, None, None);
                 let value = Evaluation::expr_to_str(session, &sub.slice, parent, max_infer, false, &mut diagnostics);
                 diagnostics.extend(value.1);
                 for base in bases.iter() {
@@ -1872,7 +1872,7 @@ impl Evaluation {
             let split_expr = value.split(".").collect::<Vec<_>>();
             'split_name: for (index, field_name) in split_expr.iter().enumerate() {
                 if date_mode {
-                    if !["year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"].contains(&field_name)
+                    if !["year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"].contains(field_name)
                         && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03012, &[])
                     {
                         diagnostics.push(Diagnostic {

@@ -38,7 +38,7 @@ impl ModuleSymbol {
         let file_info_ast = file_info.file_info_ast.borrow();
         let ast = file_info_ast.get_stmts().unwrap();
         if ast.len() != 1 || !matches!(ast.first(), Some(Stmt::Expr(expr)) if expr.value.is_dict_expr()) {
-            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04001, &[]) {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04001, &[]) {
                 res.push(Diagnostic {
                     range: Range::new(Position::new(0, 0), Position::new(0, 1)),
                     ..diagnostic
@@ -91,7 +91,7 @@ impl ModuleSymbol {
                     }
                 },
                 None => {
-                    if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS04011, &[]) {
+                    if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS04011, &[]) {
                         res.push(Diagnostic {
                             range: Range::new(Position::new(0, 0), Position::new(0, 1)),
                             ..diagnostic_base.clone()
@@ -106,7 +106,7 @@ impl ModuleSymbol {
 
     fn load_manifest_name(session: &mut SessionInfo, module_key: ModuleKey, diagnostics: &mut Vec<Diagnostic>, key_literal: &ExprStringLiteral, value: &Expr) {
         if !value.is_string_literal_expr() {
-            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04003, &[]) {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04003, &[]) {
                 diagnostics.push(Diagnostic {
                     range: Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
                     ..diagnostic
@@ -120,7 +120,7 @@ impl ModuleSymbol {
 
     fn load_manifest_depends(session: &mut SessionInfo, module_key: ModuleKey, diagnostics: &mut Vec<Diagnostic>, key_literal: &ExprStringLiteral, value: &Expr) {
         if !value.is_list_expr() {
-            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04004, &[]) {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04004, &[]) {
                 diagnostics.push(Diagnostic {
                     range: Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
                     ..diagnostic
@@ -129,7 +129,7 @@ impl ModuleSymbol {
         } else {
             for depend in value.as_list_expr().unwrap().elts.iter() {
                 if !depend.is_string_literal_expr() {
-                    if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04005, &[]) {
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04005, &[]) {
                         diagnostics.push(Diagnostic {
                             range: Range::new(Position::new(depend.range().start().to_u32(), 0), Position::new(depend.range().end().to_u32(), 0)),
                             ..diagnostic
@@ -139,14 +139,14 @@ impl ModuleSymbol {
                     let depend_value = oyarn!("{}", depend.as_string_literal_expr().unwrap().value);
                     let module = &mut session.st_mut()[module_key];
                     if depend_value == module.dir_name {
-                        if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04006, &[]) {
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04006, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range::new(Position::new(depend.range().start().to_u32(), 0), Position::new(depend.range().end().to_u32(), 0)),
                                 ..diagnostic
                             });
                         }
                     } else {
-                        module.depends.push((depend_value, depend.range().clone()));
+                        module.depends.push((depend_value, depend.range()));
                     }
                 }
             }
@@ -155,7 +155,7 @@ impl ModuleSymbol {
 
     fn load_manifest_data(session: &mut SessionInfo, module_key: ModuleKey, diagnostics: &mut Vec<Diagnostic>, key_literal: &ExprStringLiteral, value: &Expr) {
         if !value.is_list_expr() {
-            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04007, &[]) {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04007, &[]) {
                 diagnostics.push(Diagnostic {
                     range: Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
                     ..diagnostic
@@ -164,7 +164,7 @@ impl ModuleSymbol {
         } else {
             for data in value.as_list_expr().unwrap().elts.iter() {
                 if !data.is_string_literal_expr() {
-                    if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04008, &[]) {
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04008, &[]) {
                         diagnostics.push(Diagnostic {
                             range: Range::new(Position::new(data.range().start().to_u32(), 0), Position::new(data.range().end().to_u32(), 0)),
                             ..diagnostic
@@ -180,7 +180,7 @@ impl ModuleSymbol {
 
     fn load_manifest_assets(session: &mut SessionInfo, module_key: ModuleKey, diagnostics: &mut Vec<Diagnostic>, key_literal: &ExprStringLiteral, value: &Expr) {
         if !value.is_dict_expr() {
-            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04013, &[]) {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04013, &[]) {
                 diagnostics.push(Diagnostic {
                     range: Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
                     ..diagnostic
@@ -189,7 +189,7 @@ impl ModuleSymbol {
         } else {
             for data in value.as_dict_expr().unwrap().items.iter() {
                 if data.key.is_none() {
-                    if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04014, &[]) {
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04014, &[]) {
                         diagnostics.push(Diagnostic {
                             range: Range::new(Position::new(data.range().start().to_u32(), 0), Position::new(data.range().end().to_u32(), 0)),
                             ..diagnostic
@@ -229,7 +229,7 @@ impl ModuleSymbol {
                         }
                         let first_element = item.as_tuple_expr().unwrap().elts.first().unwrap();
                         if !first_element.is_string_literal_expr() {
-                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04018, &[]) {
+                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04018, &[]) {
                                 diagnostics.push(Diagnostic {
                                     range: Range::new(Position::new(item.range().start().to_u32(), 0), Position::new(item.range().end().to_u32(), 0)),
                                     ..diagnostic
@@ -241,7 +241,7 @@ impl ModuleSymbol {
                         match first_element_str {
                             "before" | "after" | "replace" => {
                                 if item.as_tuple_expr().unwrap().elts.len() != 3 {
-                                    if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04020, &["3"]) {
+                                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04020, &["3"]) {
                                         diagnostics.push(Diagnostic {
                                             range: Range::new(Position::new(item.range().start().to_u32(), 0), Position::new(item.range().end().to_u32(), 0)),
                                             ..diagnostic
@@ -251,7 +251,7 @@ impl ModuleSymbol {
                                 }
                                 for value in item.as_tuple_expr().unwrap().elts.iter().skip(1) {
                                     if !value.is_string_literal_expr() {
-                                        if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04018, &[]) {
+                                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04018, &[]) {
                                             diagnostics.push(Diagnostic {
                                                 range: Range::new(Position::new(value.range().start().to_u32(), 0), Position::new(value.range().end().to_u32(), 0)),
                                                 ..diagnostic
@@ -263,7 +263,7 @@ impl ModuleSymbol {
                             },
                             "append" | "include" | "remove" | "prepend" => {
                                 if item.as_tuple_expr().unwrap().elts.len() != 2 {
-                                    if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04020, &["2"]) {
+                                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04020, &["2"]) {
                                         diagnostics.push(Diagnostic {
                                             range: Range::new(Position::new(item.range().start().to_u32(), 0), Position::new(item.range().end().to_u32(), 0)),
                                             ..diagnostic
@@ -273,7 +273,7 @@ impl ModuleSymbol {
                                 }
                                 for value in item.as_tuple_expr().unwrap().elts.iter().skip(1) {
                                     if !value.is_string_literal_expr() {
-                                        if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04018, &[]) {
+                                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04018, &[]) {
                                             diagnostics.push(Diagnostic {
                                                 range: Range::new(Position::new(value.range().start().to_u32(), 0), Position::new(value.range().end().to_u32(), 0)),
                                                 ..diagnostic
@@ -284,7 +284,7 @@ impl ModuleSymbol {
                                 }
                             }
                             _ => {
-                                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04019, &[]) {
+                                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04019, &[]) {
                                     diagnostics.push(Diagnostic {
                                         range: Range::new(Position::new(first_element.range().start().to_u32(), 0), Position::new(first_element.range().end().to_u32(), 0)),
                                         ..diagnostic
@@ -294,7 +294,7 @@ impl ModuleSymbol {
                             }
                         }
                     } else {
-                        if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04017, &[]) {
+                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04017, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range::new(Position::new(item.range().start().to_u32(), 0), Position::new(item.range().end().to_u32(), 0)),
                                 ..diagnostic

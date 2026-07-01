@@ -59,7 +59,7 @@ impl XmlValidator {
             session.st_mut().add_dependency(self.xml_symbol.into(), dep, BuildSteps::VALIDATION, BuildSteps::ARCH_EVAL);
         }
         for model in model_dependencies.iter() {
-            session.st_mut().add_model_dependencies(self.xml_symbol.into(), &model);
+            session.st_mut().add_model_dependencies(self.xml_symbol.into(), model);
         }
         if !missing_model_dependencies.is_empty() {
             session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(self.xml_symbol.into());
@@ -286,9 +286,9 @@ impl XmlValidator {
                     continue;
                 }
                 let record = &session.st()[xml_data_record];
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05057, &[&field_name, &record.model.0]) {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05057, &[field_name, &record.model.0]) {
                     diagnostics.push(Diagnostic {
-                        range: Range { start: Position::new(field.range.start().try_into().unwrap(), 0), end: Position::new(field.range.end().try_into().unwrap(), 0) },
+                        range: Range { start: Position::new(field.range.start().into(), 0), end: Position::new(field.range.end().into(), 0) },
                         ..diagnostic
                     });
                 }
@@ -341,7 +341,7 @@ impl XmlValidator {
                     let module = session.st().find_module(template);
                     if let Some(module) = module {
                         let dir_name = &session.st()[module].dir_name;
-                        if ModuleSymbol::is_in_deps(session.st(), self.module, &dir_name) {
+                        if ModuleSymbol::is_in_deps(session.st(), self.module, dir_name) {
                             found_one_valid = true;
                             break;
                         }
@@ -402,7 +402,7 @@ impl XmlValidator {
                     let module = session.st().find_module(template);
                     if let Some(module) = module {
                         let dir_name = &session.st()[module].dir_name;
-                        if ModuleSymbol::is_in_deps(session.st(), self.module, &dir_name) {
+                        if ModuleSymbol::is_in_deps(session.st(), self.module, dir_name) {
                             found_one_valid = true;
                             break;
                         }

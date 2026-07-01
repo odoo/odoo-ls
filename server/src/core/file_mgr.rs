@@ -651,7 +651,7 @@ impl FileInfo {
                                     }
                                 },
                                 Some(NumberOrString::String(s)) => {
-                                    if codes.contains(&s) {
+                                    if codes.contains(s) {
                                         continue;
                                     }
                                 }

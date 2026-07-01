@@ -52,7 +52,7 @@ impl AstUtils {
             (ContextKey::Module, from_module),
             (ContextKey::Range, ContextValue::RANGE(expr.range()))
         ]);
-        let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(session, &expr, parent_symbol, &expr.range().end(), &mut context, false, &mut vec![]);
+        let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(session, expr, parent_symbol, &expr.range().end(), &mut context, false, &mut vec![]);
         (analyse_ast_result, Some(expr.range()))
     }
 

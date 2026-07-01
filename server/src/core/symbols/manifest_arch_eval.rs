@@ -149,7 +149,7 @@ impl ModuleSymbol {
             xml_builder.load_arch(session, file_info, &root);
         } else if data.len() > 0 {
             let mut diagnostics = vec![];
-            XmlFileSymbol::build_syntax_diagnostics(&session, &mut diagnostics, file_info, &document.unwrap_err());
+            XmlFileSymbol::build_syntax_diagnostics(session, &mut diagnostics, file_info, &document.unwrap_err());
             file_info.replace_diagnostics(DiagnosticSource::XML_SYNTAX, diagnostics);
             file_info.publish_diagnostics(session);
         }

@@ -393,9 +393,9 @@ impl GotoUtils {
             GotoSourceType::Location { uri, range } => {
                 vec![LocationLink{
                     origin_selection_range: def.origin_selection_range.clone(),
-                    target_uri: FileMgr::pathname2uri(&uri),
-                    target_selection_range: session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &uri, &range),
-                    target_range: session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &uri, &range),
+                    target_uri: FileMgr::pathname2uri(uri),
+                    target_selection_range: session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, uri, range),
+                    target_range: session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, uri, range),
                 }]
             }
         }

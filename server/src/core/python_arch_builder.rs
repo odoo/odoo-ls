@@ -155,7 +155,7 @@ impl PythonArchBuilder {
                 session.current_noqa = noqas;
                 old
             };
-            let _ = self.visit_node(session, &ast);
+            let _ = self.visit_node(session, ast);
             session.current_noqa = old_noqa;
             session.noqas_stack = old_stack_noqa;
             self._resolve_all_symbols(session);
@@ -319,7 +319,7 @@ impl PythonArchBuilder {
                 },
                 Stmt::Return(return_stmt) => {
                     if let Some(value) = return_stmt.value.as_ref() {
-                        self.visit_expr(session, &value);
+                        self.visit_expr(session, value);
                     }
                 },
                 Stmt::Assert(assert_stmt) => {
@@ -352,7 +352,7 @@ impl PythonArchBuilder {
     fn visit_expr(&mut self, session: &mut SessionInfo, expr: &Expr){
         match expr {
             Expr::Named(named_expr) =>{
-                self.visit_named_expr(session, &named_expr);
+                self.visit_named_expr(session, named_expr);
             },
             Expr::BoolOp(bool_op_expr) => {
                 // introduce sections here
@@ -468,7 +468,7 @@ impl PythonArchBuilder {
                     *self.sym_stack.last().unwrap(), &S!("<lambda>"), lambda_expr.range, &lambda_expr.body.range().start()
                 );
                 if let Some(parameters) = &lambda_expr.parameters {
-                    PythonArchBuilder::handle_func_args(function_key, session, &parameters);
+                    PythonArchBuilder::handle_func_args(function_key, session, parameters);
                 }
                 self.sym_stack.push(function_key.into());
                 self.visit_expr(session, &lambda_expr.body);

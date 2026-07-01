@@ -557,7 +557,7 @@ fn complete_decorator_call(
     }
     let scope = session.st().get_scope_symbol(file, offset as u32, false);
     AstUtils::build_scope(session, scope);
-    let dec_evals = Evaluation::eval_from_ast(session, &decorator_base, scope, max_infer, false, &mut vec![]).0;
+    let dec_evals = Evaluation::eval_from_ast(session, decorator_base, scope, max_infer, false, &mut vec![]).0;
     let mut followed_evals = vec![];
     for eval in dec_evals {
         followed_evals.extend(
@@ -749,7 +749,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
                     None => "",
                 };
                 for (model_name, model) in models.iter() {
-                    if !model.borrow_mut().has_symbols(&session.st()) {
+                    if !model.borrow_mut().has_symbols(session.st()) {
                         continue;
                     }
                     if model_name.starts_with(prefix) && model_name != "_unknown" {

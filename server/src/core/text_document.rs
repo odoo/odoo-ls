@@ -152,7 +152,7 @@ impl TextDocument {
 
                 new_contents.replace_range(
                     usize::from(range.start())..usize::from(range.end()),
-                    &change,
+                    change,
                 );
             } else {
                 new_contents = change.to_string();
