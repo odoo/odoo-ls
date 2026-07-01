@@ -33,7 +33,7 @@ where
 
     let my_class = session.sync_odoo.get_symbol(path.as_str(), (&[], &["MyClass"]), u32::MAX);
     assert!(!my_class.is_empty(), "MyClass should be found in the test file");
-    let my_class = my_class[0].clone();
+    let my_class = my_class[0];
 
     f(&mut session, &file_info, file_symbol, my_class);
 }

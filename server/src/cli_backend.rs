@@ -356,7 +356,7 @@ mod tests {
         let (_, config) = setup_with_config(&backend).expect("Expected a config entry to be returned");
 
         assert_eq!(config.auto_refresh_delay(), 9999);
-        assert_eq!(config.file_cache(), false);
+        assert!(!config.file_cache());
     }
 
     /// Without `--config-path`, setup should succeed and return the default `ConfigEntry`.

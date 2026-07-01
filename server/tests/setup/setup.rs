@@ -78,7 +78,7 @@ pub fn prepare_custom_entry_point(session: &mut SessionInfo, path: &str){
     let event = [TextDocumentContentChangeEvent{
         range: None,
         range_length: None,
-        text: text}];
+        text}];
     let content = Some(event.as_slice());
     EntryPointMgr::create_new_custom_entry_for_path(session, &ep_path, &ep_path);
     let (_file_updated, _file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path, content, Some(1), false);
@@ -88,39 +88,31 @@ pub fn prepare_custom_entry_point(session: &mut SessionInfo, path: &str){
 pub fn get_diagnostics_for_path(session: &mut SessionInfo, path: &str) -> Vec<Diagnostic> {
     let mut res = vec![];
     while let Some(msg) = session._consume_message() {
-        match msg {
-            Message::Notification(n) => {
-                if n.method == PublishDiagnostics::METHOD {
-                    let params: PublishDiagnosticsParams = serde_json::from_value(n.params).expect("Unable to parse PublishDiagnosticsParams");
-                    let params_path = FileMgr::uri2pathname(params.uri.as_str());
-                    if params_path == path {
-                        res.extend(params.diagnostics);
-                    }
+        if let Message::Notification(n) = msg
+            && n.method == PublishDiagnostics::METHOD {
+                let params: PublishDiagnosticsParams = serde_json::from_value(n.params).expect("Unable to parse PublishDiagnosticsParams");
+                let params_path = FileMgr::uri2pathname(params.uri.as_str());
+                if params_path == path {
+                    res.extend(params.diagnostics);
                 }
-            },
-            _ => {}
-        }
+            }
     }
-    return res;
+    res
 }
 
 pub fn get_diagnostics_for_paths(session: &mut SessionInfo, paths: &[String]) -> HashMap<String, Vec<Diagnostic>> {
     let mut res = HashMap::default();
     while let Some(msg) = session._consume_message() {
-        match msg {
-            Message::Notification(n) => {
-                if n.method == PublishDiagnostics::METHOD {
-                    let params: PublishDiagnosticsParams = serde_json::from_value(n.params).expect("Unable to parse PublishDiagnosticsParams");
-                    let params_path = FileMgr::uri2pathname(params.uri.as_str());
-                    if paths.contains(&params_path) {
-                        res.entry(params_path).or_insert_with(Vec::new).extend(params.diagnostics);
-                    }
+        if let Message::Notification(n) = msg
+            && n.method == PublishDiagnostics::METHOD {
+                let params: PublishDiagnosticsParams = serde_json::from_value(n.params).expect("Unable to parse PublishDiagnosticsParams");
+                let params_path = FileMgr::uri2pathname(params.uri.as_str());
+                if paths.contains(&params_path) {
+                    res.entry(params_path).or_insert_with(Vec::new).extend(params.diagnostics);
                 }
-            },
-            _ => {}
-        }
+            }
     }
-    return res;
+    res
 }
 
 pub fn get_diagnostics_test_comments(session: &mut SessionInfo, path: &str) -> Vec<(u32, Vec<String>)> {

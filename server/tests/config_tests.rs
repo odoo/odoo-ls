@@ -399,7 +399,7 @@ fn single_odools_toml_scalars() {
 
     let cfg = c.default();
     assert_eq!(cfg.python_path(), "python");
-    assert_eq!(cfg.file_cache(), false);
+    assert!(!cfg.file_cache());
     assert_eq!(cfg.auto_refresh_delay(), 1234);
 
     // Render view serializes the same values.
@@ -527,7 +527,7 @@ file_cache = false
 "#);
 
     let cfg = c.default();
-    assert_eq!(cfg.file_cache(), false);
+    assert!(!cfg.file_cache());
 }
 
 #[test]
@@ -553,7 +553,7 @@ fn deeper_odools_toml_shadows_shallower() {
     let cfg = c.default();
     // Deeper file wins for set keys; an unset key falls back to the parent.
     assert_eq!(cfg.python_path(), "python");
-    assert_eq!(cfg.file_cache(), false);
+    assert!(!cfg.file_cache());
     assert_eq!(cfg.auto_refresh_delay(), 1111);
 
     let html = c.view().to_html_string();
@@ -614,7 +614,7 @@ fn extends_inherits_and_child_shadows() {
 
     let cfg = c.default();
     assert_eq!(cfg.python_path(), "python");
-    assert_eq!(cfg.file_cache(), true);
+    assert!(cfg.file_cache());
     assert_eq!(cfg.auto_refresh_delay(), 3333);
 
     let html = c.view().to_html_string();
@@ -647,7 +647,7 @@ addons_paths = ["./project_a"]
 "#, canonicalized(community.path())));
 
     let cfg = c.entry("project A");
-    assert_eq!(cfg.file_cache(), false);
+    assert!(!cfg.file_cache());
     assert_eq!(cfg.odoo_path().as_ref().unwrap(), &canonicalized(community.path()));
     assert!(cfg.addons_paths().contains(&canonicalized(project_a.path())));
 }
@@ -675,7 +675,7 @@ addons_paths = ["./my_addons"]
 "#);
 
     let cfg = c.entry("my_project");
-    assert_eq!(cfg.file_cache(), false);
+    assert!(!cfg.file_cache());
     assert_eq!(cfg.odoo_path().as_ref().unwrap(), &canonicalized(community.path()));
     assert!(cfg.addons_paths().contains(&canonicalized(addons.path())));
 }
@@ -711,10 +711,10 @@ fn extends_chain_resolves_regardless_of_order_and_file() {
     "#);
 
     let cfg = c.default();
-    assert_eq!(cfg.file_cache(), false);
+    assert!(!cfg.file_cache());
     assert_eq!(cfg.auto_refresh_delay(), 1111);
     assert_eq!(format!("{:?}", cfg.diag_missing_imports()).to_lowercase(), "onlyodoo");
-    assert_eq!(cfg.ac_filter_model_names(), true);
+    assert!(cfg.ac_filter_model_names());
 
     // Swap base/mid order in the parent file: result unchanged.
     write_odools(&c.temp, r#"
@@ -734,10 +734,10 @@ fn extends_chain_resolves_regardless_of_order_and_file() {
         diag_missing_imports = "only_odoo"
     "#);
     let cfg2 = c.default();
-    assert_eq!(cfg2.file_cache(), false);
+    assert!(!cfg2.file_cache());
     assert_eq!(cfg2.auto_refresh_delay(), 1111);
     assert_eq!(format!("{:?}", cfg2.diag_missing_imports()).to_lowercase(), "onlyodoo");
-    assert_eq!(cfg2.ac_filter_model_names(), true);
+    assert!(cfg2.ac_filter_model_names());
 
     // Move `base` into the workspace (deeper) file, mid+default in parent: the
     // chain still resolves, and now ac_filter_model_names comes from base.
@@ -759,10 +759,10 @@ fn extends_chain_resolves_regardless_of_order_and_file() {
         diag_missing_imports = "only_odoo"
     "#);
     let cfg3 = c.default();
-    assert_eq!(cfg3.file_cache(), false);
+    assert!(!cfg3.file_cache());
     assert_eq!(cfg3.auto_refresh_delay(), 1111);
     assert_eq!(format!("{:?}", cfg3.diag_missing_imports()).to_lowercase(), "onlyodoo");
-    assert_eq!(cfg3.ac_filter_model_names(), false);
+    assert!(!cfg3.ac_filter_model_names());
 }
 
 #[test]
@@ -1224,7 +1224,7 @@ fn provenance_json_serialization() {
     "#,
     );
 
-    let json = serde_json::to_value(&c.view()).unwrap();
+    let json = serde_json::to_value(c.view()).unwrap();
     let config_arr = json.get("config").unwrap().as_array().unwrap();
     let root = config_arr.iter().find(|p| p.get("name").unwrap() == "default").unwrap();
 
@@ -1353,8 +1353,8 @@ fn merge_boolean_field_parent_inherited_child_overrides() {
     write_odools(&ws, "[[config]]\nname = \"default\"\nac_filter_model_names = true\n");
 
     let cfg = c.default();
-    assert_eq!(cfg.file_cache(), false);
-    assert_eq!(cfg.ac_filter_model_names(), true);
+    assert!(!cfg.file_cache());
+    assert!(cfg.ac_filter_model_names());
 }
 
 /// addons_merge: default merge keeps parent + child; "override" drops the parent list.
@@ -1571,7 +1571,7 @@ fn extra_config_file_merged_with_workspace() {
     c.with_config_file(canonicalized(ext.path()));
 
     let cfg = c.default();
-    assert_eq!(cfg.file_cache(), false);
+    assert!(!cfg.file_cache());
     assert_eq!(cfg.auto_refresh_delay(), 4321);
     let paths = cfg.addons_paths().clone();
     assert!(paths.contains(&canonicalized(ws_addon.path())), "should contain ws_addon path");
@@ -2341,12 +2341,12 @@ name = "default"
     let config = cfg.default();
 
     // Wiki "Configuration reference" table defaults.
-    assert_eq!(config.file_cache(), true);
+    assert!(config.file_cache());
     assert_eq!(config.diag_missing_imports(),
         odoo_ls_server::core::config::DiagMissingImportsMode::All);
-    assert_eq!(config.ac_filter_model_names(), true);
+    assert!(config.ac_filter_model_names());
     assert_eq!(config.auto_refresh_delay(), 1000);
-    assert_eq!(config.no_typeshed_stubs(), false);
+    assert!(!config.no_typeshed_stubs());
 }
 
 #[test]
@@ -2392,12 +2392,12 @@ no_typeshed_stubs = true
     assert!(config.additional_stubs().contains(&canonicalized(stubs_dir.path())));
     assert!(config.additional_languages().contains("fr_BE"));
     assert!(config.additional_languages().contains("es"));
-    assert_eq!(config.file_cache(), false);
+    assert!(!config.file_cache());
     assert_eq!(config.diag_missing_imports(),
         odoo_ls_server::core::config::DiagMissingImportsMode::OnlyOdoo);
-    assert_eq!(config.ac_filter_model_names(), false);
+    assert!(!config.ac_filter_model_names());
     assert_eq!(config.auto_refresh_delay(), 5000);
-    assert_eq!(config.no_typeshed_stubs(), true);
+    assert!(config.no_typeshed_stubs());
 }
 
 #[test]
@@ -2808,7 +2808,7 @@ refresh_mode = "lazy"
 
     // Resolution succeeds and the known key still applies.
     let config = cfg.default();
-    assert_eq!(config.file_cache(), false);
+    assert!(!config.file_cache());
 }
 
 /// A `config` key of the wrong shape (a table, not an array of tables) is a
