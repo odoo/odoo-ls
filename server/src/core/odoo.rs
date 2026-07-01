@@ -1852,7 +1852,7 @@ impl Odoo {
             return Ok(None);
         }
         session.log_message(MessageType::INFO, format!("Hover requested on {} at {} - {}",
-            params.text_document_position_params.text_document.uri.to_string(),
+            *params.text_document_position_params.text_document.uri,
             params.text_document_position_params.position.line,
             params.text_document_position_params.position.character));
         let path = match params.text_document_position_params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
@@ -1863,10 +1863,10 @@ impl Odoo {
                 }
                 match params.text_document_position_params.text_document.uri.to_file_path(){
                     Ok(path) => path.sanitize(),
-                    Err(_) => return Err(
+                    Err(error) => return Err(
                         ResponseError {
                             code: ErrorCode::InvalidParams as i32,
-                            message: format!("Invalid file URI: {}", params.text_document_position_params.text_document.uri.to_string()),
+                            message: format!("Invalid file URI: {}: {}", *params.text_document_position_params.text_document.uri, error),
                             data: None,
                         }
                     ),
@@ -1925,7 +1925,7 @@ impl Odoo {
                 false => "GoToDefinition",
                 true => "GoToDeclaration"
             },
-            params.text_document_position_params.text_document.uri.to_string(),
+            *params.text_document_position_params.text_document.uri,
             params.text_document_position_params.position.line,
             params.text_document_position_params.position.character));
         let path = match params.text_document_position_params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
@@ -1936,10 +1936,10 @@ impl Odoo {
                 }
                 match params.text_document_position_params.text_document.uri.to_file_path(){
                     Ok(path) => path.sanitize(),
-                    Err(_) => return Err(
+                    Err(error) => return Err(
                         ResponseError {
                             code: ErrorCode::InvalidParams as i32,
-                            message: format!("Invalid file URI: {}", params.text_document_position_params.text_document.uri.to_string()),
+                            message: format!("Invalid file URI: {}: {}", *params.text_document_position_params.text_document.uri, error),
                             data: None,
                         }
                     ),
@@ -2025,10 +2025,10 @@ impl Odoo {
                 }
                 match params.text_document_position.text_document.uri.to_file_path(){
                     Ok(path) => (schema, path.sanitize()),
-                    Err(_) => return Err(
+                    Err(error) => return Err(
                         ResponseError {
                             code: ErrorCode::InvalidParams as i32,
-                            message: format!("Invalid file URI: {}", params.text_document_position.text_document.uri.to_string()),
+                            message: format!("Invalid file URI: {}: {}", *params.text_document_position.text_document.uri, error),
                             data: None,
                         }
                     ),
