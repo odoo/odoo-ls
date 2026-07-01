@@ -99,7 +99,7 @@ fn complete_stmt(session: &mut SessionInfo, file: SourceFileKey, stmt: &Stmt, of
     }
 }
 
-fn complete_vec_stmt(stmts: &Vec<Stmt>, session: &mut SessionInfo, file_symbol: SourceFileKey, offset: usize) -> Option<CompletionResponse> {
+fn complete_vec_stmt(stmts: &[Stmt], session: &mut SessionInfo, file_symbol: SourceFileKey, offset: usize) -> Option<CompletionResponse> {
     let mut previous = None;
     for stmt in stmts.iter() {
         if previous.is_none() {
@@ -114,8 +114,10 @@ fn complete_vec_stmt(stmts: &Vec<Stmt>, session: &mut SessionInfo, file_symbol: 
         previous = Some(stmt);
     }
     //if the right stmt is the last one
-    if !stmts.is_empty() && stmts.iter().last().unwrap().range().end().to_usize() >= offset {
-        return complete_stmt(session, file_symbol, stmts.iter().last().unwrap(), offset);
+    if let Some(last_statement) = previous
+        && last_statement.end().to_usize() >= offset
+    {
+        return complete_stmt(session, file_symbol, last_statement, offset);
     }
     //The user is writing after the last stmt
     None
@@ -127,10 +129,10 @@ fn complete_function_def_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey
             return Some(result);
         }
     }
-    if !stmt_function_def.body.is_empty() {
-        if offset > stmt_function_def.body.first().unwrap().range().start().to_usize() && stmt_function_def.body.last().unwrap().range().end().to_usize() >= offset {
-            return complete_vec_stmt(&stmt_function_def.body, session, file, offset);
-        }
+    if !stmt_function_def.body.is_empty()
+        && offset > stmt_function_def.body.first().unwrap().range().start().to_usize() && stmt_function_def.body.last().unwrap().range().end().to_usize() >= offset
+    {
+        return complete_vec_stmt(&stmt_function_def.body, session, file, offset);
     }
     None
 }
@@ -787,7 +789,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
             },
             ExpectedType::DOMAIN(_) => {},
             ExpectedType::DOMAIN_OPERATOR => {
-                for operator in vec!["!", "&", "|"].iter() {
+                for operator in ["!", "&", "|"].iter() {
                     items.push(CompletionItem {
                         label: operator.to_string(),
                         insert_text: None,
@@ -857,7 +859,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
     }
     Some(CompletionResponse::List(CompletionList {
         is_incomplete: false,
-        items: items
+        items
     }))
 }
 
@@ -941,14 +943,14 @@ fn complete_name(session: &mut SessionInfo, file: SourceFileKey, offset: usize, 
 }
 
 fn complete_list(session: &mut SessionInfo, file: SourceFileKey, expr_list: &ruff_python_ast::ExprList, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
-    _complete_list_or_tuple(session, file, &expr_list.elts, offset, is_param, expected_type)
+    complete_list_or_tuple(session, file, &expr_list.elts, offset, is_param, expected_type)
 }
 
 pub fn complete_tuple(session: &mut SessionInfo, file: SourceFileKey, expr_tuple: &ruff_python_ast::ExprTuple, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
-    _complete_list_or_tuple(session, file, &expr_tuple.elts, offset, is_param, expected_type)
+    complete_list_or_tuple(session, file, &expr_tuple.elts, offset, is_param, expected_type)
 }
 
-pub fn _complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, list_or_tuple_elts: &Vec<Expr>, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+fn complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, list_or_tuple_elts: &Vec<Expr>, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
     for expected_type in expected_type.iter() {
         match expected_type {
             &ExpectedType::DOMAIN(parent) => {
@@ -970,7 +972,7 @@ pub fn _complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, l
                 }
             },
             &ExpectedType::DOMAIN_LIST(parent) => {
-                if list_or_tuple_elts.len() == 0 {
+                if list_or_tuple_elts.is_empty() {
                     if let Some(completion) = session.sync_odoo.capabilities.text_document.as_ref()
                             .and_then(|capability_text_doc| capability_text_doc.completion.as_ref())
                             .and_then(|completion| completion.completion_item.as_ref()){
@@ -1020,15 +1022,18 @@ pub fn _complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, l
 }
 
 fn complete_slice(session: &mut SessionInfo, file: SourceFileKey, expr_slice: &ExprSlice, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
-    // And incomplete subscript is always a slice, so self.env["ffff is a slice with ffff as lower
-    if expr_slice.lower.is_some() && offset > expr_slice.lower.as_ref().unwrap().range().start().to_usize() && offset <= expr_slice.lower.as_ref().unwrap().range().end().to_usize() {
-        return complete_expr( expr_slice.lower.as_ref().unwrap(), session, file, offset, is_param, expected_type);
+    // An incomplete subscript is always a slice, so self.env["ffff is a slice with ffff as lower
+    if let Some(expr) = expr_slice.lower.as_ref()
+        && offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize() {
+        return complete_expr(expr, session, file, offset, is_param, expected_type);
     }
-    if expr_slice.upper.is_some() && offset > expr_slice.upper.as_ref().unwrap().range().start().to_usize() && offset <= expr_slice.upper.as_ref().unwrap().range().end().to_usize() {
-        return complete_expr( expr_slice.upper.as_ref().unwrap(), session, file, offset, is_param, &vec![]);
+    if let Some(expr) = expr_slice.upper.as_ref()
+        && offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize() {
+        return complete_expr(expr, session, file, offset, is_param, &vec![]);
     }
-    if expr_slice.step.is_some() && offset > expr_slice.step.as_ref().unwrap().range().start().to_usize() && offset <= expr_slice.step.as_ref().unwrap().range().end().to_usize() {
-        return complete_expr( expr_slice.step.as_ref().unwrap(), session, file, offset, is_param, &vec![]);
+    if let Some(expr) = expr_slice.step.as_ref()
+        && offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize() {
+        return complete_expr(expr, session, file, offset, is_param, &vec![]);
     }
     None
 }
@@ -1140,10 +1145,10 @@ fn add_model_attributes(
         let Some((final_sym, _dep)) = symbols.first() else {
             continue;
         };
-        if let Some(field_type) = specific_field_type {
-            if !SymbolTable::is_specific_field(session, *final_sym, &[field_type.as_str()]) {
-                continue;
-            }
+        if let Some(field_type) = specific_field_type
+            && !SymbolTable::is_specific_field(session, *final_sym, &[field_type.as_str()])
+        {
+            continue;
         }
         if symbol_name.starts_with(attribute_name) {
             let context_of_symbol = Context::from_iter([(ContextKey::BaseAttr, ContextValue::SYMBOL(parent_sym.into()))]);
