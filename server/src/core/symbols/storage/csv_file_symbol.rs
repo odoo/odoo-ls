@@ -54,8 +54,7 @@ impl CsvFileSymbol {
             dependents: DependentsTable::default(),
             processed_text_hash: 0,
             noqas: NoqaInfo::None,
-        };
-        res
+        }
     }
 
     pub fn parent(&self) -> ModuleKey {

@@ -25,7 +25,8 @@ pub struct JsFileSymbol {
 impl JsFileSymbol {
 
     pub fn new(name: &str, path: &str, parent: JsFileParent, is_external: bool) -> Self {
-        let res = Self {
+        
+        Self {
             name: oyarn!("{}", name),
             path: path.to_string(),
             is_external,
@@ -41,8 +42,7 @@ impl JsFileSymbol {
             dependents: DependentsTable::default(),
             processed_text_hash: 0,
             noqas: NoqaInfo::None,
-        };
-        res
+        }
     }
 
     pub fn parent(&self) -> JsFileParent {

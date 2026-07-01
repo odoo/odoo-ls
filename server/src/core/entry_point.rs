@@ -107,8 +107,8 @@ impl EntryPointMgr {
             None,
             None);
         session.sync_odoo.entry_point_mgr.borrow_mut().main_entry_point = Some(entry.clone());
-        let sym = EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry);
-        sym
+        
+        EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry)
     }
 
     /* Create a new entry to builtins.
@@ -125,8 +125,8 @@ impl EntryPointMgr {
             None,
             None);
         session.sync_odoo.entry_point_mgr.borrow_mut().builtins_entry_points.push(entry.clone());
-        let sym = EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry);
-        sym
+        
+        EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry)
     }
 
     /* Create a new entry to public.
@@ -156,8 +156,8 @@ impl EntryPointMgr {
             None,
             None);
         session.sync_odoo.entry_point_mgr.borrow_mut().public_entry_points.push(entry.clone());
-        let sym = EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry);
-        sym
+        
+        EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry)
     }
 
     /* Create a new entry to addons.

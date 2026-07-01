@@ -864,13 +864,12 @@ impl Evaluation {
                                             }
                                             Some((class_sym_weak_eval.weak, is_instance))
                                         }
-                                    });
-                                    res
+                                    })
                                 //  - Otherwise we get the encapsulating class
                                 } else {
                                     match session.st().get_in_parents(parent, &[SymType::CLASS], true) {
                                         None => {
-                                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS01006, &[]) {
+                                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01006, &[]) {
                                                 diagnostics.push(Diagnostic {
                                                     range: Range::new(Position::new(expr.range().start().to_u32(), 0),
                                                     Position::new(expr.range().end().to_u32(), 0)),

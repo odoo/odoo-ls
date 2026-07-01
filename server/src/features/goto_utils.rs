@@ -347,8 +347,8 @@ impl GotoUtils {
         let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
         let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
         let mut csv_reader = csv::ReaderBuilder::new().quoting(true).from_reader(data.as_bytes());
-        let sources = CsvAstUtils::get_symbols(session, file_symbol.unwrap_csv_file_key(), &mut csv_reader, &model_name, offset, &data);
-        sources
+        
+        CsvAstUtils::get_symbols(session, file_symbol.unwrap_csv_file_key(), &mut csv_reader, &model_name, offset, &data)
     }
 
     pub fn goto_source_to_location(session: &mut SessionInfo, def: &GotoSource) -> Vec<LocationLink> {

@@ -184,7 +184,7 @@ impl Default for SyncOdoo {
 impl SyncOdoo {
 
     pub fn new() -> Self {
-        
+
         Self {
             version: OdooVersion::default(),
             python_version: vec![0, 0, 0],
@@ -234,8 +234,7 @@ impl SyncOdoo {
             js_templates: HashMap::default(),
             component_descriptors: HashMap::default(),
             js_component_by_template: HashMap::default(),
-        };
-        sync_odoo
+        }
     }
 
     pub fn reset(session: &mut SessionInfo, config: ConfigEntry) {
