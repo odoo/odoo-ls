@@ -42,7 +42,7 @@ fn assert_language_registered(session: &mut SessionInfo<'_>, lang: &str, should_
 /// Helper to simulate a file change via LSP didChange
 fn simulate_file_change(
     session: &mut SessionInfo<'_>,
-    path: &PathBuf,
+    path: &Path,
     content: &str,
     version: i32,
 ) {

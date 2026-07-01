@@ -73,7 +73,7 @@ pub fn create_init_session<'a>(odoo: &'a mut SyncOdoo, config: ConfigEntry) -> S
 }
 
 pub fn prepare_custom_entry_point(session: &mut SessionInfo, path: &str){
-    let ep_path = PathBuf::from(path).sanitize();
+    let ep_path = Path::new(path).sanitize_cow();
     let text = fs::read_to_string(path).expect("unable to read provided path");
     let event = [TextDocumentContentChangeEvent{
         range: None,

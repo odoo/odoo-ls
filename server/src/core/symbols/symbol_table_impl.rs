@@ -662,7 +662,7 @@ impl SymbolTable {
     }
 
     ///Given a path, create the appropriated symbol and attach it to the given parent
-    pub fn create_from_path(session: &mut SessionInfo, path: &PathBuf, parent: SymbolKey, require_module: bool) -> Option<SymbolKey> {
+    pub fn create_from_path(session: &mut SessionInfo, path: &Path, parent: SymbolKey, require_module: bool) -> Option<SymbolKey> {
         if require_module {
             let SymbolKey::Namespace(addons) = parent else {
                 return None;
@@ -725,12 +725,12 @@ impl SymbolTable {
         None
     }
 
-    pub fn create_module_from_path(session: &mut SessionInfo, path: &PathBuf, addons: NamespaceKey) -> Option<ModuleKey> {
+    pub fn create_module_from_path(session: &mut SessionInfo, path: &Path, addons: NamespaceKey) -> Option<ModuleKey> {
         let main_entry_tree = session.sync_odoo.get_main_entry_tree(addons);
         if !(main_entry_tree == (&["odoo", "addons"], &[]) && path.join("__manifest__.py").exists()) {
             return None;
         }
-        let name = path.components().last().unwrap().as_os_str().to_str().unwrap();
+        let name = path.components().next_back().unwrap().as_os_str().to_str().unwrap();
         let module = Self::add_new_module_package(session, addons, name, path);
         let dir_name = session.sync_odoo.symbol_table[module].dir_name.clone();
         session.sync_odoo.modules.insert(dir_name, module.into());

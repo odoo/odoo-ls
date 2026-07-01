@@ -57,7 +57,7 @@ pub struct ModuleSymbol {
 
 impl ModuleSymbol {
 
-    pub fn new(name: &str, dir_path: &PathBuf, parent: NamespaceKey, is_external: bool) -> Self {
+    pub fn new(name: &str, dir_path: &Path, parent: NamespaceKey, is_external: bool) -> Self {
         let path = dir_path.sanitize();
         let dir_name = oyarn!("{}", dir_path.with_extension("").components().next_back().unwrap().as_os_str().to_str().unwrap());
         let depends = if dir_name == "base" {

@@ -138,7 +138,7 @@ impl <'a> SessionInfo<'a> {
     * path: path of the file
     * forced_delay: indicate that we want to force a delay
      */
-    pub fn request_update_file_index(session: &mut SessionInfo, path: &PathBuf, forced_delay: bool) {
+    pub fn request_update_file_index(session: &mut SessionInfo, path: &Path, forced_delay: bool) {
         if forced_delay {
             session.sync_odoo.watched_file_updates += 1;
         }
@@ -317,7 +317,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
             Ok(DelayedProcessingMessage::RESTART) => {
                 let main_entry_path = sync_odoo.lock().unwrap().config.odoo_path().as_ref().cloned(); //avoid keeping lock
                 if let Some(main_entry_path) = main_entry_path {
-                    let index_lock_path = PathBuf::from(main_entry_path).join(".git").join("index.lock");
+                    let index_lock_path = Path::new(&main_entry_path).join(".git").join("index.lock");
                     let mut notified = false;
                     while index_lock_path.exists(){
                         if !notified {

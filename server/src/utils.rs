@@ -84,7 +84,7 @@ pub fn is_dir_cs(path: &str) -> bool {
             if let Ok(entries) = fs::read_dir(p.parent().unwrap()) {
                 for entry in entries {
                     if let Ok(entry) = entry {
-                        if entry.file_name() == p.components().last().unwrap().as_os_str() {
+                        if entry.file_name() == p.components().next_back().unwrap().as_os_str() {
                             found = true;
                             break;
                         }

@@ -57,15 +57,15 @@ impl EntryPointMgr {
         );
         session.sync_odoo.entry_point_mgr.borrow_mut().untitled_entry_points.push(entry.clone());
         // Create one file symbol under the root for the untitled file
-        let name: String = PathBuf::from(&path).with_extension("").components().last().unwrap().as_os_str().to_str().unwrap().to_string();
-        let file_sym = session.st_mut().add_new_file(entry.borrow().root.into(), &name, &path);
-        file_sym
+        let name: String = PathBuf::from(&path).with_extension("").components().next_back().unwrap().as_os_str().to_str().unwrap().to_string();
+        
+        session.st_mut().add_new_file(entry.borrow().root.into(), &name, &path)
     }
 
     /**
      * Create each required directory symbols for a given path.
      * /!\ path must point to a directory on disk */
-    pub fn create_dir_symbols_from_path_to_entry(session: &mut SessionInfo, path: &PathBuf, entry: Rc<RefCell<EntryPoint>>) -> Option<SymbolKey> {
+    pub fn create_dir_symbols_from_path_to_entry(session: &mut SessionInfo, path: &Path, entry: Rc<RefCell<EntryPoint>>) -> Option<SymbolKey> {
         let mut iter_path = PathBuf::new();
         let mut current_sym: SymbolKey = entry.borrow().root.into();
         let component_count = path.components().count();
@@ -467,7 +467,7 @@ impl EntryPoint {
     }
 
     //it assumes that the path is valid for the entry
-    pub fn get_tree_for_entry(&self, path: &PathBuf) -> Tree {
+    pub fn get_tree_for_entry(&self, path: &Path) -> Tree {
         if let Some(addon_to_odoo_path) = self.addon_to_odoo_path.as_ref() {
             let path = path.strip_prefix(&self.path).unwrap();
             let path = PathBuf::from(addon_to_odoo_path.clone()).join(path.to_str().unwrap());

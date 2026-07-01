@@ -74,7 +74,7 @@ impl SymbolTable {
         compiled_key
     }
 
-    pub fn add_new_module_package(session: &mut SessionInfo, parent: NamespaceKey, name: &str, path: &PathBuf) -> ModuleKey {
+    pub fn add_new_module_package(session: &mut SessionInfo, parent: NamespaceKey, name: &str, path: &Path) -> ModuleKey {
         let is_external = session.sync_odoo.symbol_table.is_external(parent.into());
         let module = ModuleSymbol::new(name, path, parent, is_external);
         let path_str = module.path.clone();

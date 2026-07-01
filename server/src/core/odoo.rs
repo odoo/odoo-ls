@@ -1223,7 +1223,7 @@ impl SyncOdoo {
         self.file_mgr.clone()
     }
 
-    pub fn unload_path(session: &mut SessionInfo, path: &PathBuf) {
+    pub fn unload_path(session: &mut SessionInfo, path: &Path) {
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_all() {
             let path_str = path.sanitize_cow();
@@ -1309,7 +1309,7 @@ impl SyncOdoo {
      * could have it in dependencies but are not the main entry. If not found, create a new entry (is useful if the entry was dropped before
      * due to an inclusion in main entry then removed)
      */
-    pub fn get_symbol_of_opened_file(session: &mut SessionInfo, path: &PathBuf) -> Option<SourceFileKey> {
+    pub fn get_symbol_of_opened_file(session: &mut SessionInfo, path: &Path) -> Option<SourceFileKey> {
         let path_str = path.sanitize();
         let path_in_tree = path.to_tree_path();
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
@@ -1385,7 +1385,7 @@ impl SyncOdoo {
     /*
     * Given a path, return a tree that is valid for main entry, transformed by relational entries if necessary
      */
-    pub fn path_to_main_entry_tree(&self, path: &PathBuf) -> Option<Tree> {
+    pub fn path_to_main_entry_tree(&self, path: &Path) -> Option<Tree> {
         for entry in self.entry_point_mgr.borrow().iter_main() {
             if (entry.borrow().typ == EntryPointType::MAIN || entry.borrow().addon_to_odoo_path.is_some()) && entry.borrow().is_valid_for(path) {
                 let tree = entry.borrow().get_tree_for_entry(path);
@@ -1439,14 +1439,14 @@ impl SyncOdoo {
         path.starts_with(session.sync_odoo.main_entry_tree.as_slice())
     }
 
-    fn is_non_main_manifest_file(symbol_table: &SymbolTable, file_symbol: SourceFileKey, file_path_buff: &PathBuf) -> bool {
+    fn is_non_main_manifest_file(symbol_table: &SymbolTable, file_symbol: SourceFileKey, file_path_buff: &Path) -> bool {
         !symbol_table.get_entry(file_symbol).borrow().is_main()
         && file_path_buff.components().next_back()
             .is_some_and(|c| c.as_os_str().to_str().is_some_and(|s| s == "__manifest__.py"))
     }
 
     pub fn get_rebuild_queue_size(&self) -> usize {
-        return self.rebuild_arch.len() + self.rebuild_arch_eval.len() + self.rebuild_validation.len()
+        self.rebuild_arch.len() + self.rebuild_arch_eval.len() + self.rebuild_validation.len()
     }
 
     pub fn load_capabilities(&mut self, capabilities: &lsp_types::ClientCapabilities) {
@@ -2534,7 +2534,7 @@ impl Odoo {
     }
 
     /// Checks if the given path is a configuration file under one of the workspace folders.
-    fn is_config_workspace_file(session: &mut SessionInfo, path: &PathBuf) -> bool {
+    fn is_config_workspace_file(session: &mut SessionInfo, path: &Path) -> bool {
         session.sync_odoo
         .get_file_mgr()
         .borrow()
@@ -2545,7 +2545,7 @@ impl Odoo {
 
     /// Checks if the given path is a configuration file and handles the update accordingly.
     /// Returns true if the path is a configuration file and was handled, false otherwise.
-    fn check_handle_config_file_update(session: &mut SessionInfo, path: &PathBuf) -> bool {
+    fn check_handle_config_file_update(session: &mut SessionInfo, path: &Path) -> bool {
         // Check if the change is affecting a config file
         if Odoo::is_config_workspace_file(session, path) {
             let config_result = config::get_configuration(session)
