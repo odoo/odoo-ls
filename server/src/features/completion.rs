@@ -575,10 +575,10 @@ fn complete_decorator_call(
         let is_18_1_or_later = session.sync_odoo.version >= (18, 1);
         let expected_types = if (!is_18_1_or_later && dec_sym_tree.0.ends_with_strs(&["odoo", "api"])) ||
                 (is_18_1_or_later && dec_sym_tree.0.ends_with_strs(&["odoo", "orm", "decorators"])) {
-            if (dec_sym_tree.1 == &["onchange"] || dec_sym_tree.1 == &["constrains"]) && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0) {
-                &vec![ExpectedType::SIMPLE_FIELD(None)]
-            } else if dec_sym_tree.1 == &["depends"] && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0){
-                &vec![ExpectedType::NESTED_FIELD(None)]
+            if (dec_sym_tree.1 == ["onchange"] || dec_sym_tree.1 == ["constrains"]) && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0) {
+                &[ExpectedType::SIMPLE_FIELD(None)]
+            } else if dec_sym_tree.1 == ["depends"] && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0){
+                &[ExpectedType::NESTED_FIELD(None)]
             } else {
                 continue;
             }

@@ -1361,7 +1361,7 @@ impl SyncOdoo {
                 }
                 continue;
             }
-            if !entry.borrow().is_public() && &path_in_tree == &PathBuf::from(&entry.borrow().path) {
+            if !entry.borrow().is_public() && path_in_tree == Path::new(&entry.borrow().path) {
                 found_an_entry = true;
                 let tree = entry.borrow().get_tree_for_entry(path);
                 let path_symbol = session.st().get_symbol(entry.borrow().root.into(), tree.as_slice(), u32::MAX);
@@ -1421,7 +1421,7 @@ impl SyncOdoo {
                 continue;
             }
             for (index, tree_el) in entry.borrow().tree.iter().enumerate() {
-                if &self_tree.0[index] != tree_el {
+                if self_tree.0[index] != *tree_el {
                     continue 'outer;
                 }
             }

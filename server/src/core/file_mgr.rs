@@ -925,7 +925,7 @@ impl FileMgr {
             let mut found = false;
             for entry in session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter() {
                 let entry = entry.borrow();
-                if &file.borrow().uri == &entry.path {
+                if file.borrow().uri == entry.path {
                     found = true;
                     break;
                 }

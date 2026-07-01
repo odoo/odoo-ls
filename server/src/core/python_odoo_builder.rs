@@ -379,7 +379,7 @@ impl PythonOdooBuilder {
                     eval.follow_ref_and_get_value(session, None, diagnostics)?.as_bool_literal()
             ).collect();
             // If we have exactly *one* False value evaluation, we consider _register = False, thus it is an abstract model
-            if register_evals_values == &[false] {
+            if register_evals_values == [false] {
                 return false;
             }
         }
