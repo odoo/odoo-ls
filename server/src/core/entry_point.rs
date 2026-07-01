@@ -177,28 +177,28 @@ impl EntryPointMgr {
     /* Create a new entry to public.
     return the symbol at the end of the path
      */
-    pub fn add_entry_to_customs(session: &mut SessionInfo, path: String) -> Option<SymbolKey> {
+    pub fn add_entry_to_customs(session: &mut SessionInfo, path: &str) -> Option<SymbolKey> {
         info!("Adding new custom entry point: {}", path);
-        let entry_point_tree = PathBuf::from(&path).to_tree();
+        let entry_point_tree = PathBuf::from(path).to_tree();
         let entry = EntryPoint::new(
             &mut session.sync_odoo.symbol_table,
-            path.clone(),
+            path.to_string(),
             entry_point_tree.flatten(),
             EntryPointType::CUSTOM,
             None,
             None);
         session.sync_odoo.entry_point_mgr.borrow_mut().custom_entry_points.push(entry.clone());
-        EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry)
+        EntryPointMgr::_create_dir_symbols_for_new_entry(session, path, entry)
     }
 
-    fn _create_dir_symbols_for_new_entry(session: &mut SessionInfo, path: &String, entry: Rc<RefCell<EntryPoint>>) -> Option<SymbolKey> {
-        EntryPointMgr::create_dir_symbols_from_path_to_entry(session, &PathBuf::from(path), entry)
+    fn _create_dir_symbols_for_new_entry(session: &mut SessionInfo, path: &str, entry: Rc<RefCell<EntryPoint>>) -> Option<SymbolKey> {
+        EntryPointMgr::create_dir_symbols_from_path_to_entry(session, Path::new(path), entry)
     }
 
     /// Create a new custom entry point for a given tree path and file path.
     /// tree_path can possibly be the path stripped from __manifest__/__init__.py
-    pub fn create_new_custom_entry_for_path(session: &mut SessionInfo, tree_path: &String, file_path: &String) -> bool {
-        let new_sym = EntryPointMgr::add_entry_to_customs(session, tree_path.clone());
+    pub fn create_new_custom_entry_for_path(session: &mut SessionInfo, tree_path: &str, file_path: &str) -> bool {
+        let new_sym = EntryPointMgr::add_entry_to_customs(session, tree_path);
         if let Some(new_sym) = new_sym {
             session.st_mut().set_is_external(new_sym, false);
             match new_sym {
@@ -232,8 +232,8 @@ impl EntryPointMgr {
         true
     }
 
-    pub fn create_new_untitled_entry_for_path(session: &mut SessionInfo, file_name: &String) -> bool {
-        let new_sym = EntryPointMgr::add_entry_to_untitled(session, file_name.clone());
+    pub fn create_new_untitled_entry_for_path(session: &mut SessionInfo, file_name: &str) -> bool {
+        let new_sym = EntryPointMgr::add_entry_to_untitled(session, file_name.to_string());
         session.sync_odoo.symbol_table[new_sym].self_import = true;
         SyncOdoo::add_to_rebuild_arch(session.sync_odoo, new_sym);
         true
@@ -304,7 +304,7 @@ impl EntryPointMgr {
         }
     }
 
-    pub fn remove_entries_with_path(&mut self, symbol_table: &mut SymbolTable, path: &String) {
+    pub fn remove_entries_with_path(&mut self, symbol_table: &mut SymbolTable, path: &str) {
         for entry in self.iter_all() {
             if (entry.borrow().typ == EntryPointType::UNTITLED && entry.borrow().path == *path)
             || (entry.borrow().typ != EntryPointType::UNTITLED
@@ -315,7 +315,7 @@ impl EntryPointMgr {
         self.clean_entries(symbol_table);
     }
 
-    pub fn check_custom_entry_to_delete_with_path(&mut self, path: &String) {
+    pub fn check_custom_entry_to_delete_with_path(&mut self, path: &str) {
         for entry in self.custom_entry_points.iter() {
             if entry.borrow().path == *path {
                 entry.borrow_mut().to_delete = true;
@@ -524,7 +524,7 @@ impl EntryPoint {
 
     /* Consider the given 'tree' path as updated (or new) and move all symbols that were searching for it
     from the not_found_symbols list to the rebuild list. Return True is something should be rebuilt */
-    pub fn search_symbols_to_rebuild(&mut self, session: &mut SessionInfo, path: &String, tree: Tree) {
+    pub fn search_symbols_to_rebuild(&mut self, session: &mut SessionInfo, path: &str, tree: Tree) {
         let flat_tree = tree.flatten();
         let mut to_add = [vec![], vec![], vec![]];
         for s in self.not_found_symbols.iter_valid(session.st()) {

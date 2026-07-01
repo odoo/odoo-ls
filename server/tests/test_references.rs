@@ -150,7 +150,7 @@ fn assert_in_result(references: &mut Vec<Location>, end_path: &str, line: u32, c
     assert!(before_len == after_len + 1, "Duplicated reference found: {}:{}:{}", end_path, line + 1, character + 1);
 }
 
-fn get_references(session: &mut SessionInfo, path: &String, position: Position)-> Vec<Location> {
+fn get_references(session: &mut SessionInfo, path: &str, position: Position)-> Vec<Location> {
     let test_file_uri = FileMgr::pathname2uri(&path);
     let references_params = lsp_types::ReferenceParams {
         text_document_position: lsp_types::TextDocumentPositionParams {

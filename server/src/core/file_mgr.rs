@@ -779,7 +779,7 @@ impl FileMgr {
         }
     }
 
-    pub fn text_range_to_range(&self, session: &mut SessionInfo, path: &String, range: &TextRange) -> Range {
+    pub fn text_range_to_range(&self, session: &mut SessionInfo, path: &str, range: &TextRange) -> Range {
         let file = if Self::is_untitled(path) {
             self.untitled_files.get(path)
         } else {

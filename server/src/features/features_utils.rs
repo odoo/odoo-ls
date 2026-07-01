@@ -427,8 +427,8 @@ impl FeaturesUtils {
     pub fn build_markdown_description(
         session: &mut SessionInfo,
         file_symbol: Option<SourceFileKey>,
-        file_path: Option<&String>,
-        evals: &Vec<Evaluation>,
+        file_path: Option<&str>,
+        evals: &[Evaluation],
         call_expr: &Option<ExprCall>,
         offset: Option<usize>
     ) -> String {

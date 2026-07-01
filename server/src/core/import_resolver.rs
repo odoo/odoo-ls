@@ -584,40 +584,40 @@ fn valid_names_for_a_symbol(symbol_table: &SymbolTable, symbol: SymbolKey, start
     res
 }
 
-fn valid_name_from_disk(path: &String, start_filter: &str) -> HashMap<OYarn, SymType> {
+fn valid_name_from_disk(path: &str, start_filter: &str) -> HashMap<OYarn, SymType> {
     let mut res = HashMap::default();
-    if is_dir_cs(path) {
-        if let Ok(entries) = std::fs::read_dir(path) {
+    if is_dir_cs(path)
+        && let Ok(entries) = std::fs::read_dir(path) {
             for entry in entries {
-                if let Ok(entry) = entry {
-                    let Ok(file_type) = entry.file_type() else {
-                        continue;
-                    };
-                    if file_type.is_dir() {
-                        let dir_name = entry.file_name();
-                        let dir_name_str = dir_name.to_string_lossy();
-                        if dir_name_str.starts_with(start_filter) {
-                            let mut typ = SymType::NAMESPACE;
-                            if Path::new(&path).join(dir_name_str.to_string()).join("__init__.py").exists() {
-                                typ = SymType::PACKAGE(PackageType::PYTHON_PACKAGE);
-                            }
-                            res.insert(Sy!(dir_name_str.to_string()), typ);
+                let Ok(entry) = entry else {
+                    continue;
+                };
+                let Ok(file_type) = entry.file_type() else {
+                    continue;
+                };
+                if file_type.is_dir() {
+                    let dir_name = entry.file_name();
+                    let dir_name_str = dir_name.to_string_lossy();
+                    if dir_name_str.starts_with(start_filter) {
+                        let mut typ = SymType::NAMESPACE;
+                        if Path::new(&path).join(dir_name_str.to_string()).join("__init__.py").exists() {
+                            typ = SymType::PACKAGE(PackageType::PYTHON_PACKAGE);
                         }
-                    } else if file_type.is_file() {
-                        let file_name = entry.file_name();
-                        let file_name_str = file_name.to_string_lossy().to_string();
-                        if (file_name_str.ends_with(".py") || file_name_str.ends_with(".pyi")) && file_name_str.starts_with(start_filter) {
-                            let Some(stem) = Path::new(&file_name_str).file_stem() else {continue};
-                            let Some(filename) = stem.to_str() else {continue};
-                            if filename == "__init__" {continue;}
-                            res.insert(Sy!(filename.to_string()), SymType::FILE);
-                        }
+                        res.insert(Sy!(dir_name_str.to_string()), typ);
                     }
-                    //TODO support for symlinks?
+                } else if file_type.is_file() {
+                    let file_name = entry.file_name();
+                    let file_name_str = file_name.to_string_lossy().to_string();
+                    if (file_name_str.ends_with(".py") || file_name_str.ends_with(".pyi")) && file_name_str.starts_with(start_filter) {
+                        let Some(stem) = Path::new(&file_name_str).file_stem() else {continue};
+                        let Some(filename) = stem.to_str() else {continue};
+                        if filename == "__init__" {continue;}
+                        res.insert(Sy!(filename.to_string()), SymType::FILE);
+                    }
                 }
+                //TODO support for symlinks?
             }
         }
-    }
     res
 }
 

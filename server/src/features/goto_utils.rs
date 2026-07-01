@@ -112,7 +112,7 @@ impl GotoUtils {
         model_found
     }
 
-    fn check_for_module_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: SourceFileKey, file_path: &String, sources: &mut Vec<GotoSource>) -> bool {
+    fn check_for_module_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: SourceFileKey, file_path: &str, sources: &mut Vec<GotoSource>) -> bool {
         let SourceFileKey::Module(module_key) = file_symbol else {
             return false;
         };

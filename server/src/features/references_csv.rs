@@ -56,40 +56,21 @@ impl CsvAstReferenceVisitor {
                     }
                 }
             }
-        }
         if !headers.is_empty() && headers[0] == "id" && matches!(target, ReferenceTarget::String(_)) {
-            for result in csv_reader.records() {
-                if let Ok(result) = result {
-                    results.extend(CsvAstReferenceVisitor::search_in_record(session, module, &uri, &path, &headers, &result, target, content));
-                }
+            for result in csv_reader.records().flatten() {
+                results.extend(CsvAstReferenceVisitor::search_in_record(session, module, &uri, &path, &headers, &result, target, content));
             }
         }
         results
     }
 
-    fn search_in_record(session: &mut SessionInfo, module: Option<ModuleKey>, uri: &Uri, path: &String, headers: &Vec<OYarn>, record: &StringRecord, reference_target: &ReferenceTarget, content: &str) -> Vec<Location> {
+    fn search_in_record(session: &mut SessionInfo, module: Option<ModuleKey>, uri: &Uri, path: &str, headers: &[OYarn], record: &StringRecord, reference_target: &ReferenceTarget, content: &str) -> Vec<Location> {
         let Some(field_iter) = CsvFieldIter::new(record, content) else { return vec![]; };
         let mut locations = vec![];
         let module_name = module.map(|m| session.st()[m].name.clone()).unwrap_or_else(|| Sy!(""));
         for (idx, (start, end, field)) in field_iter.enumerate() {
             let field_name = headers.get(idx).unwrap().clone();
-            if field_name == "id" {
-                let xml_id = if field.contains(".") {
-                    oyarn!("{}", field)
-                } else {
-                    oyarn!("{}.{}", module_name, field)
-                };
-                let ReferenceTarget::String(search_str) = reference_target else {continue;};
-                if xml_id == *search_str {
-                    locations.push(Location {
-                        uri: uri.clone(),
-                        range: session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, path, &std::ops::Range {
-                            start,
-                            end,
-                        }),
-                    })
-                }
-            } else if field_name.ends_with(":id") {
+            if field_name == "id" || field_name.ends_with(":id") {
                 let xml_id = if field.contains(".") {
                     oyarn!("{}", field)
                 } else {

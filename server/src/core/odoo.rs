@@ -2269,19 +2269,18 @@ impl Odoo {
         session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&mut session.sync_odoo.symbol_table, &PathBuf::from(path).to_tree_path().sanitize());
     }
 
-    pub fn search_symbols_to_rebuild(session: &mut SessionInfo, path: &String) {
-        let path_for_tree = PathBuf::from(path.clone()).to_tree_path();
+    pub fn search_symbols_to_rebuild(session: &mut SessionInfo, path: &str) {
+        let path_for_tree = PathBuf::from(path).to_tree_path();
         //search if the path does match a missing file path somewhere
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
-        let tree = session.sync_odoo.path_to_main_entry_tree(&PathBuf::from(path.clone()));
-        if let Some(tree) = tree {
-            if let Some(main) = ep_mgr.borrow().main_entry_point.as_ref() {
+        let tree = session.sync_odoo.path_to_main_entry_tree(Path::new(path));
+        if let Some(tree) = tree
+            && let Some(main) = ep_mgr.borrow().main_entry_point.as_ref() {
                 main.borrow_mut().search_symbols_to_rebuild(session, path, tree);
             }
-        }
         for entry in ep_mgr.borrow().iter_all_but_main() {
-            if entry.borrow().is_valid_for(&PathBuf::from(path)) {
-                let tree = entry.borrow().get_tree_for_entry(&PathBuf::from(path.clone()));
+            if entry.borrow().is_valid_for(Path::new(path)) {
+                let tree = entry.borrow().get_tree_for_entry(Path::new(path));
                 entry.borrow_mut().search_symbols_to_rebuild(session, path, tree);
             }
         }
@@ -2414,13 +2413,13 @@ impl Odoo {
         let path_buf = PathBuf::from(&path);
         session.log_message(MessageType::INFO, format!("File changed: {}", path));
         let file_extension = match scheme.as_str() {
-            "file" => path_buf.extension().clone().and_then(|s| s.to_str()).unwrap_or(""),
+            "file" => path_buf.extension().and_then(|s| s.to_str()).unwrap_or(""),
             "untitled" => "py",
             _ => return,
         };
         let (valid, updated) = Odoo::update_file_cache(session, &path, file_extension, Some(&params.content_changes), params.text_document.version);
         if session.sync_odoo.state_init != InitState::NOT_READY && valid && updated {
-            Odoo::update_file_index(session, path_buf.clone(), file_extension, false, false);
+            Odoo::update_file_index(session, &path_buf, file_extension, false, false);
             if ["js", "ts"].contains(&file_extension) {
                 if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
                     for change in &params.content_changes {
@@ -2447,24 +2446,26 @@ impl Odoo {
     }
 
     pub fn handle_did_save(session: &mut SessionInfo, params: DidSaveTextDocumentParams) {
-        let Ok(path) = params.text_document.uri.to_file_path() else {
-            let msg = format!("Invalid file URI: {}", params.text_document.uri.to_string());
-            session.log_message(MessageType::ERROR, msg.clone());
-            warn!("{}", &msg);
-            return;
+        let path = match params.text_document.uri.to_file_path() {
+            Ok(path) => path,
+            Err(error) => {
+                let msg = format!("Invalid file URI: {}: {}", *params.text_document.uri, error);
+                session.log_message(MessageType::ERROR, msg.clone());
+                warn!("{}", &msg);
+                return;
+            }
         };
         if Odoo::check_handle_config_file_update(session, &path) {
             return; //config file update, handled by the config file handler
         }
         session.log_message(MessageType::INFO, format!("File saved: {}", path.sanitize()));
-        return;
         //No need to update the index on save, as the file change event will do it
         //Odoo::update_file_index(session, path,true, false, false);
     }
 
     // return (valid, updated) booleans
     // if the file has been updated, is valid for an index reload, and contents have been changed
-    fn update_file_cache(session: &mut SessionInfo, path: &String, extension: &str, content: Option<&[TextDocumentContentChangeEvent]>, version: i32) -> (bool, bool) {
+    fn update_file_cache(session: &mut SessionInfo, path: &str, extension: &str, content: Option<&[TextDocumentContentChangeEvent]>, version: i32) -> (bool, bool) {
         if ["py", "xml", "csv", "js", "ts"].contains(&extension) || Odoo::is_config_workspace_file(session, &PathBuf::from(path)){
             session.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path, version));
             let (file_updated, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path, content, Some(version), false);

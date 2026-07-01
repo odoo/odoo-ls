@@ -876,7 +876,7 @@ impl SymbolTable {
     }
 
     /// Return all symbols before the given position that are visible in the body of this symbol.
-    pub fn get_all_visible_symbols(&self, target: SymbolKey, name_prefix: &String, position: u32) -> HashMap<OYarn, Vec<SymbolKey>> {
+    pub fn get_all_visible_symbols(&self, target: SymbolKey, name_prefix: &str, position: u32) -> HashMap<OYarn, Vec<SymbolKey>> {
         let Some(target_sym_mgr) = self.try_as_symbol_mgr(target) else {
             return HashMap::default();
         };
@@ -1781,9 +1781,9 @@ impl SymbolTable {
         result
     }
 
-    pub fn get_all_inferred_names(&self, on_symbol: SymbolKey, name: &String, position: u32) -> HashMap<OYarn, Vec<SymbolKey>> {
+    pub fn get_all_inferred_names(&self, on_symbol: SymbolKey, name: &str, position: u32) -> HashMap<OYarn, Vec<SymbolKey>> {
         fn helper(
-            symbol_table: &SymbolTable, on_symbol: SymbolKey, name: &String, position: u32, acc: &mut HashMap<OYarn, Vec<SymbolKey>>
+            symbol_table: &SymbolTable, on_symbol: SymbolKey, name: &str, position: u32, acc: &mut HashMap<OYarn, Vec<SymbolKey>>
         ) {
             // Add symbols from files and functions
             if matches!(on_symbol.typ(), SymType::FILE | SymType::FUNCTION) {
@@ -1807,7 +1807,7 @@ impl SymbolTable {
     }
 
     //infer a name, given a position
-    pub fn infer_name(odoo: &SyncOdoo, on_symbol: SymbolKey, name: &String, position: Option<u32>) -> ContentSymbols {
+    pub fn infer_name(odoo: &SyncOdoo, on_symbol: SymbolKey, name: &str, position: Option<u32>) -> ContentSymbols {
         let symbol_table = &odoo.symbol_table;
         let results = symbol_table.get_content_symbol(on_symbol, name, position.unwrap_or(u32::MAX));
         if !results.symbols.is_empty() {

@@ -951,18 +951,18 @@ fn complete_subscript(session: &mut SessionInfo, file: SourceFileKey, expr_subsc
             }
         }
     }
-    complete_expr(&expr_subscript.slice, session, file, offset, false, &vec![])
+    complete_expr(&expr_subscript.slice, session, file, offset, false, &[])
 }
 
-fn complete_name_expression(session: &mut SessionInfo, file: SourceFileKey, expr_name: &ExprName, offset: usize, is_param: bool, _expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+fn complete_name_expression(session: &mut SessionInfo, file: SourceFileKey, expr_name: &ExprName, offset: usize, is_param: bool, _expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     if expr_name.range.end().to_usize() == offset {
-        complete_name(session, file, offset, is_param, &expr_name.id.to_string())
+        complete_name(session, file, offset, is_param, &expr_name.id)
     } else {
         None
     }
 }
 
-fn complete_name(session: &mut SessionInfo, file: SourceFileKey, offset: usize, is_param: bool, name: &String) -> Option<CompletionResponse> {
+fn complete_name(session: &mut SessionInfo, file: SourceFileKey, offset: usize, is_param: bool, name: &str) -> Option<CompletionResponse> {
     let scope = session.st().get_scope_symbol(file, offset as u32, is_param);
     AstUtils::build_scope(session, scope);
     let symbols = session.st().get_all_inferred_names(scope, name, offset as u32);
@@ -974,15 +974,15 @@ fn complete_name(session: &mut SessionInfo, file: SourceFileKey, offset: usize, 
     }))
 }
 
-fn complete_list(session: &mut SessionInfo, file: SourceFileKey, expr_list: &ruff_python_ast::ExprList, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+fn complete_list(session: &mut SessionInfo, file: SourceFileKey, expr_list: &ruff_python_ast::ExprList, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     complete_list_or_tuple(session, file, &expr_list.elts, offset, is_param, expected_type)
 }
 
-pub fn complete_tuple(session: &mut SessionInfo, file: SourceFileKey, expr_tuple: &ruff_python_ast::ExprTuple, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+pub fn complete_tuple(session: &mut SessionInfo, file: SourceFileKey, expr_tuple: &ruff_python_ast::ExprTuple, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     complete_list_or_tuple(session, file, &expr_tuple.elts, offset, is_param, expected_type)
 }
 
-fn complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, list_or_tuple_elts: &Vec<Expr>, offset: usize, is_param: bool, expected_type: &Vec<ExpectedType>) -> Option<CompletionResponse> {
+fn complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, list_or_tuple_elts: &[Expr], offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     for expected_type in expected_type.iter() {
         match expected_type {
             &ExpectedType::DOMAIN(parent) => {

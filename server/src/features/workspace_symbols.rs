@@ -42,7 +42,7 @@ impl WorkspaceSymbolFeature {
     /**
      * Return true if the request has been cancelled and the cancellation should be propagated
      */
-    fn browse_symbol(session: &mut SessionInfo, symbol: SymbolKey, query: &String, parent: Option<String>, parent_path: Option<&String>, can_resolve_location_range: bool, results: &mut Vec<WorkspaceSymbol>) -> bool {
+    fn browse_symbol(session: &mut SessionInfo, symbol: SymbolKey, query: &str, parent: Option<String>, parent_path: Option<&String>, can_resolve_location_range: bool, results: &mut Vec<WorkspaceSymbol>) -> bool {
         if symbol.typ() == SymType::VARIABLE {
             return false;
         }
@@ -108,7 +108,7 @@ impl WorkspaceSymbolFeature {
         false
     }
 
-    fn add_symbol_to_results(session: &mut SessionInfo, symbol: SymbolKey, name: &String, path: &String, container_name: Option<String>, range: Option<&TextRange>, can_resolve_location_range: bool, results: &mut Vec<WorkspaceSymbol>) {
+    fn add_symbol_to_results(session: &mut SessionInfo, symbol: SymbolKey, name: &str, path: &str, container_name: Option<String>, range: Option<&TextRange>, can_resolve_location_range: bool, results: &mut Vec<WorkspaceSymbol>) {
         let location = if can_resolve_location_range {
             lsp_types::OneOf::Right(WorkspaceLocation {
                 uri: FileMgr::pathname2uri(path)
