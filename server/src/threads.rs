@@ -296,8 +296,8 @@ fn notify_git_lock(sync_odoo: &Arc<Mutex<SyncOdoo>>, sender_session: &Sender<Mes
 pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_session: Receiver<Message>, receiver: Receiver<DelayedProcessingMessage>, sync_odoo: Arc<Mutex<SyncOdoo>>, delayed_process_sender: Sender<DelayedProcessingMessage>) {
     const MAX_DELAY: u64 = 15000;
     const MIN_DELAY: u64 = 1000;
-    let mut config_delay = std::time::Duration::from_millis(std::cmp::max(MIN_DELAY, std::cmp::min(sync_odoo.lock().unwrap().config.auto_refresh_delay(), MAX_DELAY)));
-    let mut to_wait = config_delay.clone();
+    let mut config_delay = std::time::Duration::from_millis(sync_odoo.lock().unwrap().config.auto_refresh_delay().clamp(MIN_DELAY, MAX_DELAY));
+    let mut to_wait = config_delay;
     let mut got_process = false;
     let mut waiting_restart = false;
     loop {
@@ -332,8 +332,8 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                 continue;
             }
             Ok(DelayedProcessingMessage::UPDATE_DELAY(d)) => {
-                config_delay = std::time::Duration::from_millis(std::cmp::max(MIN_DELAY, std::cmp::min(d, MAX_DELAY)));
-                to_wait = config_delay.clone();
+                config_delay = std::time::Duration::from_millis(d.clamp(MIN_DELAY, MAX_DELAY));
+                to_wait = config_delay;
                 continue;
             }
             Ok(DelayedProcessingMessage::EXIT) => {
