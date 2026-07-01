@@ -1,6 +1,6 @@
 a = 5
 b = "test"
-c = 3.14
+c = 6.66
 d = True
 e = False
 f = None

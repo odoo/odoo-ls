@@ -66,7 +66,7 @@ fn test_assigns() {
     assert!(matches!(st.evaluations(c[0]).as_ref().unwrap()[0].value.as_ref().unwrap(), EvaluationValue::CONSTANT(c) if matches!(c.as_ref(), Expr::NumberLiteral(_))));
     assert!(st.evaluations(c[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().is_number_literal_expr());
     assert!(st.evaluations(c[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.is_float());
-    assert!(st.evaluations(c[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_float().unwrap() == &3.14);
+    assert!(st.evaluations(c[0]).as_ref().unwrap()[0].value.as_ref().unwrap().as_constant().as_number_literal_expr().unwrap().value.as_float().unwrap() == &6.66);
 
     let d = session.sync_odoo.get_symbol(path.as_str(), (&[], &["d"]), u32::MAX);
     assert!(d.len() == 1);
