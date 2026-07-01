@@ -1,0 +1,18 @@
+# Revisions to ignore in `git blame`.
+#
+# These are the bulk clippy cleanup commits: large, mechanical, lint-driven
+# reformattings that touch many lines without changing behaviour. Ignoring
+# them keeps `git blame` pointing at the commit that authored the real logic
+# instead of the reformatting.
+#
+# Enable locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# One full commit SHA per line; the preceding comment names the change.
+
+# [IMP] clippy: add clippy.toml and .git-blame-ignore-revs
+5646708a08a09530ab966a1524943ddd2a4d01f1
+# [IMP] fix clippy in new code 
+5d203922bbe9b210c09737f9452b2ba3cc7b6cc5
+# [IMP] Use Path instead of PathBuf whenever possible
+c1c09c86a2faf2ae059c45c786e4440e2e295af4
