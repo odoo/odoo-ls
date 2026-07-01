@@ -234,11 +234,7 @@ impl XmlAstReferenceVisitor {
 
     fn visit_template<'a>(session: &mut SessionInfo<'_>, node: &Node<'a, '_>, from_module: Option<ModuleKey>, scope: XmlScope<'a>, results: &mut Vec<Range<usize>>, target: &ReferenceTarget) {
         for attr in node.attributes() {
-            if attr.name() == "id" {
-                if XmlAstReferenceVisitor::test_attr_as_xml_id(session.st(), &attr, from_module, target) {
-                    results.push(attr.range_value());
-                }
-            } else if attr.name() == "inherit_id" {
+            if matches!(attr.name(), "id" | "inherit_id") {
                 if XmlAstReferenceVisitor::test_attr_as_xml_id(session.st(), &attr, from_module, target) {
                     results.push(attr.range_value());
                 }
