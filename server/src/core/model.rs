@@ -44,6 +44,12 @@ pub struct ModelData {
     pub computes: HashMap<OYarn, HashSet<OYarn>>,
 }
 
+impl Default for ModelData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ModelData {
     pub fn new() -> Self {
         Self {

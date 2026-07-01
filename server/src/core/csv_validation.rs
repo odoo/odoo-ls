@@ -14,6 +14,12 @@ use std::{cell::RefCell, rc::Rc};
 pub struct CsvValidator {
 }
 
+impl Default for CsvValidator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CsvValidator {
 
     pub fn new() -> Self {

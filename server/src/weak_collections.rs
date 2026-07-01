@@ -66,6 +66,12 @@ pub struct WeakMap<K: Eq + Hash + Copy, V> {
     map: HashMap<K, V>,
 }
 
+impl<K: Eq + Hash + Copy, V> Default for WeakMap<K, V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<K: Eq + Hash + Copy, V> WeakMap<K, V> {
     pub fn new() -> Self {
         Self {

@@ -121,6 +121,12 @@ pub struct PythonAst {
     pub indexed_module: Option<Arc<IndexedModule>>,
 }
 
+impl Default for PythonAst {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PythonAst {
     pub fn new() -> Self {
         Self {
@@ -136,6 +142,12 @@ pub struct JsAst {
     pub js_template_refs: Vec<JsTemplateRef>,
     /// Component descriptors extracted from OXC analysis of this JS file.
     pub js_component_descriptors: Vec<ComponentDescriptor>,
+}
+
+impl Default for JsAst {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl JsAst {

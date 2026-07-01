@@ -16,6 +16,12 @@ use tracing::{error, info};
 pub struct CsvArchBuilder {
 }
 
+impl Default for CsvArchBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CsvArchBuilder {
 
     pub fn new() -> Self {

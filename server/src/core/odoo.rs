@@ -89,6 +89,12 @@ pub struct TypeshedWeakReferences {
     object: Wk<SymbolKey>,
 }
 
+impl Default for TypeshedWeakReferences {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TypeshedWeakReferences {
 
     pub fn new() -> Self {
@@ -169,10 +175,17 @@ pub struct SyncOdoo {
 
 unsafe impl Send for SyncOdoo {}
 
+impl Default for SyncOdoo {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SyncOdoo {
 
     pub fn new() -> Self {
-        let sync_odoo = Self {
+        
+        Self {
             version: OdooVersion::default(),
             python_version: vec![0, 0, 0],
             python_ext_suffixes: Vec::new(),

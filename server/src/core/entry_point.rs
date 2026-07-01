@@ -29,6 +29,12 @@ pub struct EntryPointMgr {
     pub untitled_entry_points: Vec<Rc<RefCell<EntryPoint>>>,
 }
 
+impl Default for EntryPointMgr {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EntryPointMgr {
 
     pub fn new() -> Self {
