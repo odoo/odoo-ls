@@ -278,7 +278,7 @@ impl EntryPointMgr {
     pub fn iter_main(&self) -> impl Iterator<Item = &Rc<RefCell<EntryPoint>>>
     {
         let mut collected = self.main_entry_point.iter().chain(self.addons_entry_points.iter()).collect::<Vec<_>>();
-        collected.sort_by(|x, y| y.borrow().tree.len().cmp(&x.borrow().tree.len()));
+        collected.sort_by_key(|ep| std::cmp::Reverse(ep.borrow().tree.len()));
         collected.into_iter()
     }
 

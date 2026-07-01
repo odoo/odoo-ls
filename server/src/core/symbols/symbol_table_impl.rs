@@ -1538,7 +1538,7 @@ impl SymbolTable {
                 match r {
                     EvaluationSymbolPtr::WEAK(weak) | EvaluationSymbolPtr::SELF(weak) => {
                         if let Some(key) = weak.weak.upgrade(session.st()) {
-                            stop_on_tree_syms.iter().any(|&s| s == key)
+                            stop_on_tree_syms.contains(&key)
                         } else {
                             false
                         }
@@ -1738,7 +1738,7 @@ impl SymbolTable {
         let mut result = file.into();
         let file_sym_mgr = self.as_symbol_mgr(result); // formely Rc (strong)
         let section_id = file_sym_mgr.get_section_for(offset);
-        for (_, sym_map) in file_sym_mgr.symbols() {
+        for sym_map in file_sym_mgr.symbols().values() {
             let Some(symbols) = sym_map.get(&section_id.index) else { continue };
             for &key in symbols {
                 match key {

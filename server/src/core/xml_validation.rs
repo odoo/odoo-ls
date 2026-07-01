@@ -128,7 +128,7 @@ impl XmlValidator {
         );
         let model_name = model_name.clone();
         if !self.fields_cache.contains_key(&model_name) {
-            let py_fields = main_symbols.get(0).map(|&main_symbol| {
+            let py_fields = main_symbols.first().map(|&main_symbol| {
                 SymbolTable::all_fields(main_symbol.into(), session, Some(self.module))
             });
             let model_ref = model.borrow();

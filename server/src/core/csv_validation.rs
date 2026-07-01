@@ -123,9 +123,9 @@ impl CsvValidator {
                 let id_split = field.split(".").collect::<Vec<&str>>();
                 let mut module_name = session.st().name(csv_module).as_str();
                 if id_split.len() == 2 {
-                    module_name = id_split.get(0).unwrap();
+                    module_name = id_split.first().unwrap();
                 }
-                if id_split.last().unwrap().len() == 0 { //if user want to set None value
+                if id_split.last().unwrap().is_empty() { //if user want to set None value
                     continue;
                 }
                 let Some(&module_symbol) = session.sync_odoo.modules.get(module_name) else {

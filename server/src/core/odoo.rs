@@ -1700,7 +1700,7 @@ impl Odoo {
                 return Err(S!("Unable to get configuration from client, client not available"));
             }
         };
-        let config = config.get(0);
+        let config = config.first();
         if config.is_none() {
             session.log_message(MessageType::ERROR, String::from("No config found for Odoo. Exiting..."));
             return Err(S!("No config found for Odoo"));

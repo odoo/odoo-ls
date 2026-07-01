@@ -32,7 +32,7 @@ impl CsvAstReferenceVisitor {
                     let mut deep_field_walker = DeepFieldEvalWalker::new(main_symbol.into(), module);
                     let symbols =
                         deep_field_walker.get_model_fields(session, main_symbol.into(), header_elts[0]);
-                    if symbols.iter().any(|&sym| target_sym == sym) {
+                    if symbols.contains(&target_sym) {
                         results.push(Location {
                             uri: uri.clone(),
                             range: session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, &std::ops::Range {
@@ -45,7 +45,7 @@ impl CsvAstReferenceVisitor {
                         continue;
                     };
                     let sub_symbols = deep_field_walker.get_model_fields(session, next_base.into(), header_elts[1]);
-                    if sub_symbols.iter().any(|&sym| target_sym == sym) {
+                    if sub_symbols.contains(&target_sym) {
                         results.push(Location {
                             uri: uri.clone(),
                             range: session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, &std::ops::Range {

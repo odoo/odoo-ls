@@ -202,7 +202,7 @@ impl PythonArchBuilder {
                         let all_value = SymbolTable::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
                             all, None, false
                         )), session, None, false, true, None, None);
-                        if let Some(all_value_first) = all_value.get(0) {
+                        if let Some(all_value_first) = all_value.first() {
                             if !all_value_first.is_expired_if_weak(session.st()) {
                                 let all_upgraded = all_value_first.upgrade_weak(session.st());
                                 if let Some(all_upgraded_unwrapped) = all_upgraded {
@@ -728,7 +728,7 @@ impl PythonArchBuilder {
             return; //if body is empty, it usually means that the ast of the class is invalid. Skip it
         }
         let function_key = session.st_mut().add_new_function(*self.sym_stack.last().unwrap(),
-            &func_def.name.id, func_def.range, func_def.body.get(0).unwrap().range().start());
+            &func_def.name.id, func_def.range, func_def.body.first().unwrap().range().start());
         let func_sym = &mut session.st_mut()[function_key];
         func_sym.node_index.set(func_def.node_index.load());
         for decorator in func_def.decorator_list.iter() {
@@ -792,10 +792,10 @@ impl PythonArchBuilder {
         }
         let parent = *self.sym_stack.last().unwrap();
         let class_key = session.st_mut().add_new_class(
-            parent, class_def.name.id.as_str(), class_def.range, class_def.body.get(0).unwrap().range().start());
+            parent, class_def.name.id.as_str(), class_def.range, class_def.body.first().unwrap().range().start());
         let class_sym = &mut session.sync_odoo.symbol_table[class_key];
 
-        if class_def.body.len() > 0 && class_def.body[0].is_expr_stmt() {
+        if !class_def.body.is_empty() && class_def.body[0].is_expr_stmt() {
             let expr = class_def.body[0].as_expr_stmt().unwrap();
             if expr.value.is_literal_expr() {
                 let const_expr = expr.value.as_literal_expr().unwrap();
