@@ -1,0 +1,66 @@
+# Revisions to ignore in `git blame`.
+#
+# These are the bulk clippy cleanup commits: large, mechanical, lint-driven
+# reformattings that touch many lines without changing behaviour. Ignoring
+# them keeps `git blame` pointing at the commit that authored the real logic
+# instead of the reformatting.
+#
+# Enable locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# One full commit SHA per line; the preceding comment names the change.
+
+# [IMP] clippy: take &str instead of &String in function args
+1b0c6453cf15dfcb2b60ae0dde492b591b1cb86e
+# [IMP] clippy: take &Path / Path::new instead of &PathBuf
+e0bf37dadc9b6a01bbeecfbf2e20968fcc98a867
+# [IMP] clippy: take slices instead of &Vec / &mut Vec in fn args
+c80219323c55ef1149dbaee27e67f7ceb6db8c6b
+# [IMP] clippy: extract type aliases for complex types
+d839f9f5140242dd5e1490f979c965f441bf6f9e
+# [IMP] clippy: derive Default / add missing Default impls
+b4dab1f4dd42febc6c37dda0f66508d2b99afe54
+# [IMP] clippy: collapse nested if / if-let into let chains
+407303307a93b8a8f5296a3a9931ac103ee3ecfe
+# [IMP] clippy: merge if/else branches with identical bodies
+c9600c1e31eea404ecd83d15c485479acb6f90b3
+# [IMP] clippy: replace is_some()/is_ok() + unwrap() with if let
+d4186986760663749535e9ad4663ee1d44209c2c
+# [IMP] clippy: use the ? operator where applicable
+81ca2167760987edf7e62fb386c97e8a0049cac9
+# [IMP] clippy: remove needless return statements
+c7817e9e7e275b1d6289df9e4e2e0e65de050a84
+# [IMP] clippy: return expression directly instead of let-and-return
+84870fd5e9117fcd145d380949e8c3bc2ef741d9
+# [IMP] clippy: remove needless borrows
+bbdbd62e28718754905acbc55237c9cb8d7cf4f4
+# [IMP] clippy: compare values instead of references
+7b4c1df3fc5167c72708583fa50dd0ee2f838d3d
+# [IMP] clippy: remove .clone() on Copy types
+63b83b2315e14da34a8dd7705c4ece55fe95608c
+# [IMP] clippy: use field init shorthand
+f3d3fb1aa9fa5535212cf0b64e9bfd74e4db15d5
+# [IMP] clippy: use is_empty() instead of len() comparisons
+ab68a5d2a67dd1ca0016e093f98e3c6a71733094
+# [IMP] clippy: simplify match / map expressions
+314044b69ef9704c27dbc9af45029fd0fe6ae93e
+# [IMP] clippy: use dedicated iterator/collection helpers
+76486b9f7b963b883cac1c458ccdc42a67e2ce87
+# [IMP] clippy: remove useless / redundant conversions
+c24ee2fced68f0a813236995a7d74629d0a2d50d
+# [IMP] clippy: drop to_string() in format! args
+c281a69e6e0d8ae5f00ab29a3d11946283a305f8
+# [IMP] clippy: use .clamp() instead of manual min/max
+5db2ffde9e14998624500d077f292a385de36646
+# [IMP] clippy: fix doc comment lints
+76d2dc36432cb4f5d6e9f4ceb0840bc75b792732
+# [IMP] clippy: assorted small lint fixes
+824714c7bb3dae533ce6cc6fb4d9cea5dbb6cef0
+# [IMP] clippy: fix warnings in test targets
+adf11b7c977f44f7cd4765937d77303fb5c7474e
+# [IMP] clippy: allow intentional module_inception in tests
+125eaa9c7e98cc92882db6e06b7d47859af5750e
+# [IMP] Use Path instead of PathBuf whenever possible
+4d35c3b7a4fa7a79720e6fec88d1ae6bf21c95fb
+# [IMP] Remove printlns
+123c2f928e901f2e3f94c61ea3e5da116817f75b
