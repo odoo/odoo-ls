@@ -56,7 +56,7 @@ impl PythonArchBuilder {
         let file_mode = symbol == file;
 
         Some(PythonArchBuilder {
-            entry_point: entry_point,
+            entry_point,
             file,
             file_mode,
             current_step: if file_mode {BuildSteps::ARCH} else {BuildSteps::VALIDATION},

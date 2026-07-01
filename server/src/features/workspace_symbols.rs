@@ -123,21 +123,22 @@ impl WorkspaceSymbolFeature {
                 return;
             }
         };
-        let data = if can_resolve_location_range && range.is_some() {
+        let data = if can_resolve_location_range
+        && let Some(range) = range {
             Some(lsp_types::LSPAny::Array(vec![
-                lsp_types::LSPAny::Number(serde_json::Number::from(range.as_ref().unwrap().start().to_u32())),
-                lsp_types::LSPAny::Number(serde_json::Number::from(range.as_ref().unwrap().end().to_u32())),
+                lsp_types::LSPAny::Number(serde_json::Number::from(range.start().to_u32())),
+                lsp_types::LSPAny::Number(serde_json::Number::from(range.end().to_u32())),
             ]))
         } else {
             None
         };
         results.push(WorkspaceSymbol {
-            name: name.clone(),
+            name: name.to_string(),
             kind: SymbolTable::get_lsp_symbol_kind(symbol),
             tags: None,
             container_name,
-            location: location,
-            data: data,
+            location,
+            data,
         });
     }
 

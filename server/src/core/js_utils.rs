@@ -31,7 +31,7 @@ pub fn oxc_diagnostic_to_lsp_diagnostic(diag: &OxcDiagnostic, uri: &lsp_types::U
         None => diag.message.clone().to_string(),
     };
     Some(lsp_types::Diagnostic {
-        range: range,
+        range,
         severity: Some(match diag.severity {
             oxc::diagnostics::Severity::Error => lsp_types::DiagnosticSeverity::ERROR,
             oxc::diagnostics::Severity::Warning => lsp_types::DiagnosticSeverity::WARNING,
@@ -40,7 +40,7 @@ pub fn oxc_diagnostic_to_lsp_diagnostic(diag: &OxcDiagnostic, uri: &lsp_types::U
         code: Some(lsp_types::NumberOrString::String(format!("OLSoxc{}", diag.code))),
         code_description: None,
         source: Some(S!(EXTENSION_NAME)),
-        message: message,
+        message,
         related_information: if related_information.is_empty() { None } else { Some(related_information) },
         tags: None,
         data: None,

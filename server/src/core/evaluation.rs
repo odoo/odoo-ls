@@ -430,7 +430,7 @@ impl Evaluation {
                     if !sym.is_expired_if_weak(&session.sync_odoo.symbol_table) {
                         res.push(Evaluation {
                             symbol: EvaluationSymbol {
-                                sym: sym,
+                                sym,
                                 get_symbol_hook: None,
                             },
                             value: None,
@@ -513,7 +513,7 @@ impl Evaluation {
                 sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{
                     weak: symbol,
                     context: Context::default(),
-                    instance: instance,
+                    instance,
                     is_super: false,
                 }),
                 get_symbol_hook: None
@@ -2004,7 +2004,7 @@ impl Evaluation {
 impl EvaluationSymbol {
 
     pub fn new_with_symbol(symbol: Wk<SymbolKey>, instance: Option<bool>, context: Context, get_symbol_hook: Option<GetSymbolHook>) -> Self {
-        Self { sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: symbol, context, instance: instance, is_super: false}), get_symbol_hook }
+        Self { sym: EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: symbol, context, instance, is_super: false}), get_symbol_hook }
     }
 
     pub fn new_self(get_symbol_hook: Option<GetSymbolHook>, base: Wk<SymbolKey>, instance: Option<bool>) -> EvaluationSymbol {

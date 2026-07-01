@@ -19,13 +19,11 @@ impl HoverFeature {
         let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
         let file_info_ast_clone = file_info.borrow().file_info_ast.clone();
         let file_info_ast_ref = file_info_ast_clone.borrow();
-        let (analyse_ast_result, range, expr, call_expr) = AstUtils::get_symbols(session, &file_info_ast_ref, file_symbol, offset as u32);
+        let (analyse_ast_result, range, _expr, call_expr) = AstUtils::get_symbols(session, &file_info_ast_ref, file_symbol, offset as u32);
         let evals = analyse_ast_result.evaluations;
         if evals.is_empty() {
             return None;
         };
-        drop(expr);
-        drop(file_info_ast_ref);
         let value = FeaturesUtils::build_markdown_description(
             session, Some(file_symbol), Some(&file_info.borrow().uri), &evals, &call_expr, Some(offset)
         );

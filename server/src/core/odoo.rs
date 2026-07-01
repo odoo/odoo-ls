@@ -1838,7 +1838,7 @@ impl Odoo {
             }
         ];
         let params = RegistrationParams{
-            registrations: registrations
+            registrations
         };
         let result = session.send_request::<RegistrationParams, ()>(RegisterCapability::METHOD, params);
         if let Err(e) = result {

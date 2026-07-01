@@ -465,7 +465,7 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>,
                     };
                     sync_odoo.lock().unwrap().current_request_id = None;
                     running_request_ids.lock().unwrap().retain(|id| id != &r.id);
-                    sender_to_s.send(Message::Response(Response { id: r.id, result: value, error: error })).unwrap();
+                    sender_to_s.send(Message::Response(Response { id: r.id, result: value, error })).unwrap();
                 },
                 ThreadMessage::LSPMessage(Message::Notification(n)) => {
                     match n.method.as_str() {

@@ -179,7 +179,7 @@ impl ReferenceFeature {
                             let transformed_range = file_info.borrow().text_range_to_range(session.st().range(definition_source), session.sync_odoo.encoding);
                             let uri = FileMgr::pathname2uri(path);
                             locations.push(Location {
-                                uri: uri,
+                                uri,
                                 range: transformed_range,
                             });
                         }

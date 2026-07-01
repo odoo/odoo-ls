@@ -35,7 +35,7 @@ impl PythonOdooBuilder {
 
     pub fn new(symbol: ClassKey) -> PythonOdooBuilder {
         PythonOdooBuilder {
-            symbol: symbol,
+            symbol,
         }
     }
 

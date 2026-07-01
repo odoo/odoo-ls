@@ -45,7 +45,7 @@ impl NamespaceSymbol {
     }
 
     pub fn add_path(&mut self, path: String) {
-        self.directories.push(NamespaceDirectory { path: path, module_symbols: HashMap::default() });
+        self.directories.push(NamespaceDirectory { path, module_symbols: HashMap::default() });
     }
 
     pub fn directories(&self) -> &[NamespaceDirectory] {
