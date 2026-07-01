@@ -214,10 +214,7 @@ fn to_value<T: Serialize + std::fmt::Debug>(result: Result<Option<T>, ResponseEr
         Ok(None) => Some(serde_json::Value::Null),
         Err(_) => None
     };
-    let mut error = None;
-    if result.is_err() {
-        error = Some(result.unwrap_err());
-    }
+    let error = result.err();
     (value, error)
 }
 
@@ -226,10 +223,7 @@ fn to_value_not_null<T: Serialize + std::fmt::Debug>(result: Result<T, ResponseE
         Ok(r) => Some(serde_json::json!(r)),
         Err(_) => None
     };
-    let mut error = None;
-    if result.is_err() {
-        error = Some(result.unwrap_err());
-    }
+    let error = result.err();
     (value, error)
 }
 

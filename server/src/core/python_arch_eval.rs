@@ -490,8 +490,8 @@ impl PythonArchEval {
                         let (eval, diags) = if take_value {
                             value_evaluations.unwrap()
                         } else {
-                            if value_evaluations.is_some() {
-                                ann_evaluations.as_mut().unwrap().0.extend(value_evaluations.unwrap().0);
+                            if let Some((val_eval, _diags)) = &value_evaluations {
+                                ann_evaluations.as_mut().unwrap().0.extend(val_eval.clone());
                             }
                             ann_evaluations.unwrap()
                         };
@@ -731,13 +731,13 @@ impl PythonArchEval {
                     continue;
                 }
                 is_first = false;
-                if arg.parameter.annotation.is_some() {
+                if let Some(annotation) = &arg.parameter.annotation {
                     let mut deps = vec![vec![], vec![]];
                     if !self.file_mode {
                         deps.push(vec![]);
                     }
                     let (eval, diags) = Evaluation::eval_from_ast(session,
-                                                &arg.parameter.annotation.as_ref().unwrap(),
+                                                annotation,
                                                 scope,
                                                 &func_stmt.range.start(),
                                                 true,

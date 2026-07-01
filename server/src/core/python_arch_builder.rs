@@ -117,23 +117,23 @@ impl PythonArchBuilder {
         };
         drop(file_info);
         let file_info_ast= file_info_ast_rc.borrow();
-        if file_info_ast.ast.as_py_ast().indexed_module.is_some() {
+        if let Some(indexed_module) = &file_info_ast.ast.as_py_ast().indexed_module {
             let ast = if self.file_mode {
                 file_info_ast.get_stmts().unwrap()
             } else {
                 let f = self.sym_stack[0].unwrap_function_key();
                 let ast_index = session.st()[f].node_index.load();
                 if ast_index.as_u32().is_some() {
-                    let func = file_info_ast.ast.as_py_ast().indexed_module.as_ref().unwrap().get_by_index(ast_index);
+                    let func = indexed_module.get_by_index(ast_index);
                     match func {
                         AnyRootNodeRef::Stmt(Stmt::FunctionDef(func_stmt)) => {
-                            &func_stmt.body
+                            func_stmt.body.as_slice()
                         },
                         _ => panic!("Expected function definition")
                     }
                 } else {
                     //if ast_index is empty, this is because the function has been added manually and do not belong to the ast. Skip it's building
-                    &vec![]
+                    &[]
                 }
             };
             let old_stack_noqa = session.noqas_stack.clone();
@@ -976,8 +976,8 @@ impl PythonArchBuilder {
                 elif_else_clause.body[0].range().start(),
                 Some(SectionIndex::INDEX(last_test_section))
             );
-            if elif_else_clause.test.is_some() {
-                let version_check = self._check_sys_version_condition(session, elif_else_clause.test.as_ref().unwrap());
+            if let Some(test_clause) = &elif_else_clause.test {
+                let version_check = self._check_sys_version_condition(session, test_clause);
                 if version_check.0 {
                     if version_check.1 {
                         body_version_ok = true;

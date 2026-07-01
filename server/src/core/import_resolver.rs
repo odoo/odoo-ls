@@ -163,10 +163,12 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
             &name_first_part,
             None,
         0);
-        if next_symbol.is_none() && name_split.len() == 1 && from_symbols.is_some() {
+        if next_symbol.is_none()
+            && name_split.len() == 1
+            && let Some(from_symbols) = from_symbols.as_ref() {
             //check the last name is not a symbol in the file
-            let name_symbol_vec = from_symbols.as_ref().unwrap().iter().flat_map(|&s| session.st().get_symbol(s, (&[], &name_first_part), u32::MAX)).collect::<Vec<_>>();
-            next_symbol = if name_symbol_vec.len() > 0 {Some(name_symbol_vec.clone())} else {None};
+            let name_symbol_vec = from_symbols.iter().flat_map(|&s| session.st().get_symbol(s, (&[], &name_first_part), u32::MAX)).collect::<Vec<_>>();
+            next_symbol = if !name_symbol_vec.is_empty() {Some(name_symbol_vec.clone())} else {None};
         }
         if next_symbol.is_none() {
             result[name_index as usize].symbols = fallback_sym.clone().unwrap_or_else(|| vec![source_root]);

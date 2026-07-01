@@ -145,8 +145,7 @@ impl AstUtils {
             },
             Stmt::ImportFrom(stmt) => {
                 //only check module as names are already supported by default ast walking and name resolution
-                if stmt.module.is_some() && stmt.module.as_ref().unwrap().range().contains(TextSize::new(offset)) {
-                    let module = stmt.module.as_ref().unwrap();
+                if let Some(module) = stmt.module.as_ref() && module.range().contains(TextSize::new(offset)) {
                     let (to_analyze, range) = if module.range().contains(TextSize::new(offset)) {
                         let next_dot_offset = module.id.as_str()[offset as usize - module.range().start().to_usize()..].find(".");
                         if let Some(next_dot_offset) = next_dot_offset {
@@ -288,9 +287,10 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
                     TypeParam::TypeVarTuple(t) => Some(&t.name),
                 };
 
-                if ident.is_some() && ident.unwrap().range().contains(self.offset) {
-                    self.expr = Some(ExprOrIdent::Ident(ident.unwrap()));
-                }
+                if let Some(ident) = ident
+                    && ident.range().contains(self.offset) {
+                        self.expr = Some(ExprOrIdent::Ident(ident));
+                    }
 
             }
         } else {

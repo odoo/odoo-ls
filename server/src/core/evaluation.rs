@@ -447,8 +447,8 @@ impl Evaluation {
     }
 
     pub fn follow_ref_and_get_value(&self, session: &mut SessionInfo, context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>) -> Option<EvaluationValue> {
-        if self.value.is_some() {
-            return Some(self.value.as_ref().unwrap().clone())
+        if let Some(value) = &self.value {
+            return Some(value.clone());
         }
         let eval_symbol = self.symbol.get_symbol(session, None, diagnostics, None);
         if eval_symbol.is_expired_if_weak(session.st()) {

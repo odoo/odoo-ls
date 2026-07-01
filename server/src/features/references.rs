@@ -455,10 +455,9 @@ impl ReferenceVisitor {
             if alias.name.id == "*" {
                 continue;
             }
-            let var_name = if alias.asname.is_none() {
-                alias.name.split(".").next().unwrap()
-            } else {
-                alias.asname.as_ref().unwrap()
+            let var_name = match alias.asname.as_ref() {
+                Some(asname) => asname.id.as_str(),
+                None => alias.name.id.split(".").next().unwrap(),
             };
             let variable = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), var_name, &alias.range);
             let Some(SymbolKey::Variable(variable_key)) = variable else { continue };

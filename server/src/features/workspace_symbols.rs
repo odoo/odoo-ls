@@ -49,31 +49,29 @@ impl WorkspaceSymbolFeature {
                 return true;
             }
         }
-        let container_name = match &parent {
-            Some(p) => Some(p.clone()),
-            None => None,
-        };
+        let container_name = parent.clone();
         let path = session.st().paths(symbol);
         let path = if path.len() == 1 {
             Some(&path[0])
-        } else if path.len() == 0{
+        } else if path.is_empty(){
             parent_path
         } else {
             None
         };
-        if path.is_some() && session.st().has_range(symbol) {
+        if let Some(path) = path
+        && session.st().has_range(symbol) {
             //Test if symbol should be returned
-            if string_fuzzy_contains(&session.st().name(symbol), &query) {
+            if string_fuzzy_contains(session.st().name(symbol), query) {
                 let name = session.st().name(symbol).to_string();
-                let range = session.st().range(symbol).clone();
-                WorkspaceSymbolFeature::add_symbol_to_results(session, symbol, &name, path.unwrap(), container_name.clone(), Some(&range), can_resolve_location_range, results);
+                let range = *session.st().range(symbol);
+                WorkspaceSymbolFeature::add_symbol_to_results(session, symbol, &name, path, container_name.clone(), Some(&range), can_resolve_location_range, results);
             }
             //Test if symbol is a model
             if let SymbolKey::Class(class_key) = symbol && let Some(model_data) = session.st()[class_key]._model.as_ref() {
                 let model_name = S!("\"") + &model_data.name + "\"";
-                let range = session.st().range(symbol).clone();
-                if string_fuzzy_contains(&model_name, &query) {
-                    WorkspaceSymbolFeature::add_symbol_to_results(session, symbol, &model_name, path.unwrap(), container_name.clone(), Some(&range), can_resolve_location_range, results);
+                let range = *session.st().range(symbol);
+                if string_fuzzy_contains(&model_name, query) {
+                    WorkspaceSymbolFeature::add_symbol_to_results(session, symbol, &model_name, path, container_name.clone(), Some(&range), can_resolve_location_range, results);
                 }
             }
         }

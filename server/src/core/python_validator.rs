@@ -136,10 +136,10 @@ impl PythonValidator {
                 let file_info_ast_rc = file_info.file_info_ast.clone();
                 let file_info_ast = file_info_ast_rc.borrow();
                 drop(file_info);
-                if file_info_ast.ast.as_py_ast().indexed_module.is_some() {
+                if let Some(indexed_module) = &file_info_ast.ast.as_py_ast().indexed_module {
                     let func_index = session.st()[f].node_index.load();
                     if func_index != NodeIndex::NONE {
-                        let stmt = file_info_ast.ast.as_py_ast().indexed_module.as_ref().unwrap().get_by_index(func_index);
+                        let stmt = indexed_module.get_by_index(func_index);
                         let body = match stmt {
                             AnyRootNodeRef::Stmt(Stmt::FunctionDef(s)) => {
                                 &s.body
@@ -312,11 +312,10 @@ impl PythonValidator {
             if alias.name.id == "*" {
                 continue;
             }
-            if self.current_module.is_some() {
-                let var_name = if alias.asname.is_none() {
-                    alias.name.split(".").next().unwrap()
-                } else {
-                    alias.asname.as_ref().unwrap()
+            if let Some(current_module) = self.current_module {
+                let var_name = match &alias.asname {
+                    Some(asname) => asname,
+                    None => alias.name.split(".").next().unwrap(),
                 };
                 let variable = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), var_name, &alias.range);
                 if let Some(variable) = variable {
