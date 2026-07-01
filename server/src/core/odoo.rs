@@ -1827,7 +1827,16 @@ impl Odoo {
                     file_info.borrow_mut().prepare_ast(session);
                 }
                 if file_info.borrow_mut().file_info_ast.borrow().indexed_module.is_some() {
-                    return Ok(CompletionFeature::autocomplete(session, file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
+                    return Ok(
+                        CompletionFeature::autocomplete(
+                            session,
+                            file_symbol,
+                            &file_info,
+                            params.context,
+                            params.text_document_position.position.line,
+                            params.text_document_position.position.character
+                        )
+                    );
                 }
             }
         }
