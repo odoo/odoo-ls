@@ -296,11 +296,10 @@ impl PythonValidator {
         let mut safe_import = false;
         for handler in node.handlers.iter() {
             let handler = handler.as_except_handler().unwrap();
-            if let Some(type_) = &handler.type_ {
-                if type_.is_name_expr() && type_.as_name_expr().unwrap().id == "ImportError" {
+            if let Some(type_) = &handler.type_
+                && type_.is_name_expr() && type_.as_name_expr().unwrap().id == "ImportError" {
                     safe_import = true;
                 }
-            }
         }
         self.safe_imports.push(safe_import);
         self.validate_body(session, &node.body);
@@ -330,14 +329,13 @@ impl PythonValidator {
                                     let module = session.st().find_module(symbol);
                                     if let Some(module) = module {
                                         let dir_name = &session.st()[module].dir_name;
-                                        if !ModuleSymbol::is_in_deps(session.st(), self.current_module.unwrap(), dir_name) && !self.safe_imports.last().unwrap() {
-                                            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03003, &[dir_name]) {
+                                        if !ModuleSymbol::is_in_deps(session.st(), current_module, dir_name) && !self.safe_imports.last().unwrap()
+                                            && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03003, &[dir_name]) {
                                                 self.diagnostics.push(Diagnostic {
                                                     range: Range::new(Position::new(alias.range.start().to_u32(), 0), Position::new(alias.range.end().to_u32(), 0)),
                                                     ..diagnostic_base.clone()
                                                 });
                                             }
-                                        }
                                     }
                                 }
                             },
@@ -427,26 +425,23 @@ impl PythonValidator {
                                     let Some(related_field_class_sym) = related_eval_weak.upgrade_weak(session.st()) else {
                                         return false
                                     };
-                                    let found =
-                                        SymbolTable::get_member_symbol(session, related_field_class_sym, "type", None, false, false, false, false, false)
+
+                                    SymbolTable::get_member_symbol(session, related_field_class_sym, "type", None, false, false, false, false, false)
                                         .0.first()
-                                        .and_then(|field_type_var| session.st().evaluations(*field_type_var).cloned())
+                                        .and_then(|field_type_var| session.st().evaluations(*field_type_var))
                                         .and_then(|evals| evals.first().cloned())
                                         .and_then(|eval| eval.value.clone())
                                         .map(|value| value.as_string_literal().is_some_and(|s| s.value.to_str() == field_type))
-                                        .unwrap_or(false);
-                                    found
+                                        .unwrap_or(false)
                                 })
                             });
-                            if !found_same_type_match{
-                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03017, &[]) {
+                            if !found_same_type_match
+                                && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03017, &[]) {
                                     self.diagnostics.push(Diagnostic {
                                         range: Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
                                         ..diagnostic_base.clone()
                                     });
                                 }
-
-                            }
                         }
                     }
                     'comodel_check: {

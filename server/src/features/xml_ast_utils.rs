@@ -137,13 +137,11 @@ impl XmlAstUtils {
                             );
                         results.1 = Some(attr.range_value());
                     }
-                }
-            } else if attr.name() == "id" {
-                if attr.range_value().start <= offset && attr.range_value().end >= offset {
+            } else if attr.name() == "id"
+                && attr.range_value().start <= offset && attr.range_value().end >= offset {
                     XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
                     results.1 = Some(attr.range_value());
                 }
-            }
         }
         if scope.record_model == Some("ir.ui.view") {
             scope.view_target_model = XmlAstUtils::view_target_model(node);
@@ -167,12 +165,11 @@ impl XmlAstUtils {
                         }
                     }
                 }
-            } else if attr.name() == "ref" {
-                if attr.range_value().start <= offset && attr.range_value().end >= offset {
+            } else if attr.name() == "ref"
+                && attr.range_value().start <= offset && attr.range_value().end >= offset {
                     XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
                     results.1 = Some(attr.range_value());
                 }
-            }
         }
         // Inside a view's `<field name="arch">`, sub-elements resolve against the
         // view's target model (captured at the ir.ui.view record), not the
@@ -208,12 +205,11 @@ impl XmlAstUtils {
                     XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
                     results.1 = Some(attr.range_value());
                 }
-            } else if attr.name() == "groups" {
-                if attr.range_value().start <= offset && attr.range_value().end >= offset {
+            } else if attr.name() == "groups"
+                && attr.range_value().start <= offset && attr.range_value().end >= offset {
                     XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
                     results.1 = Some(attr.range_value());
                 }
-            }
         }
         for child in node.children() {
             XmlAstUtils::visit_node(session, &child, offset, from_module, scope, results, on_dep_only);
@@ -227,12 +223,11 @@ impl XmlAstUtils {
                     XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
                     results.1 = Some(attr.range_value());
                 }
-            } else if attr.name() == "groups" {
-                if attr.range_value().start <= offset && attr.range_value().end >= offset {
+            } else if attr.name() == "groups"
+                && attr.range_value().start <= offset && attr.range_value().end >= offset {
                     XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
                     results.1 = Some(attr.range_value());
                 }
-            }
         }
         for child in node.children() {
             XmlAstUtils::visit_node(session, &child, offset, from_module, scope, results, on_dep_only);
@@ -321,17 +316,15 @@ impl XmlAstUtils {
         let xml_ids = SyncOdoo::get_xml_ids(session, file_symbol, xml_id, &range, &mut vec![]);
 
         for xml_id in xml_ids.iter_valid(session.st()) {
-            if on_dep_only {
-                if let Some(module) = session.st().find_module(xml_id) {
-                    if !ModuleSymbol::is_in_deps(
+            if on_dep_only
+                && let Some(module) = session.st().find_module(xml_id)
+                    && !ModuleSymbol::is_in_deps(
                         session.st(),
                         session.st().find_module(file_symbol).unwrap(),
                         &session.st()[module].name,
                     ) {
                         continue;
                     }
-                }
-            }
             if let XmlId::XmlRecord(record_key) = xml_id {
                 results.0.push(record_key.into());
             } else if let XmlId::PythonClass(record_key) = xml_id {

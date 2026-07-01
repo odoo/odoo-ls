@@ -573,14 +573,16 @@ impl PythonArchBuilder {
                 AssignTargetType::Name(ref name_expr) => {
                     let variable_key = session.st_mut().add_new_variable(*self.sym_stack.last().unwrap(), &name_expr.id, name_expr.range);
                     let variable = &session.st()[variable_key];
-                    if self.file_mode && variable.name == "__all__" && assign.value.is_some() {
+                    if self.file_mode && variable.name == "__all__"
+                        && let Some(value) = &assign.value
+                    {
                         let mut deps = vec![vec![]]; //only arch level
-                        let eval = Evaluation::eval_from_ast(session, &assign.value.as_ref().unwrap(), variable.parent(), &assign_stmt.range.start(), false, &mut deps);
+                        let eval = Evaluation::eval_from_ast(session, value, variable.parent(), &assign_stmt.range.start(), false, &mut deps);
                         session.st_mut().insert_dependencies(self.file, &deps, BuildSteps::ARCH);
                         session.st_mut()[variable_key].evaluations = eval.0;
                         self.diagnostics.extend(eval.1);
-                        if let Some(evaluation) = session.st()[variable_key].evaluations.get(0) {
-                            if session.st().is_external(*self.sym_stack.last().unwrap()) {
+                        if let Some(evaluation) = session.st()[variable_key].evaluations.first()
+                            && session.st().is_external(*self.sym_stack.last().unwrap()) {
                                 // external packages often import symbols from compiled files
                                 // or with meta programmation like globals["var"] = __get_func().
                                 // we don't want to handle that, so just declare __all__ content
@@ -593,7 +595,6 @@ impl PythonArchBuilder {
                                     }
                                 }
                             }
-                        }
                     }
                 },
                 AssignTargetType::Attribute(ref _attr_expr) => {
@@ -888,8 +889,8 @@ impl PythonArchBuilder {
         if session.sync_odoo.python_version[0] == 0 {
             return (true, false); //unknown python version
         }
-        if let Expr::Compare(expr_comp) = expr {
-            if expr_comp.comparators.len() == 1 {
+        if let Expr::Compare(expr_comp) = expr
+            && expr_comp.comparators.len() == 1 {
                 let p1 = expr_comp.left.as_ref();
                 let p2 = expr_comp.comparators.first().unwrap();
                 if !p1.is_tuple_expr() && !p2.is_tuple_expr() {
@@ -903,8 +904,8 @@ impl PythonArchBuilder {
                 } else {
                     (p2.as_tuple_expr().unwrap(), p1.as_attribute_expr().unwrap())
                 };
-                if attr.value.is_name_expr() && attr.value.as_name_expr().unwrap().id == "sys" {
-                    if attr.attr.id == "version_info" {
+                if attr.value.is_name_expr() && attr.value.as_name_expr().unwrap().id == "sys"
+                    && attr.attr.id == "version_info" {
                         let mut op = expr_comp.ops.first().unwrap();
                         if p1.is_tuple_expr() { //invert if tuple is in front
                             if op.is_gt() {
@@ -919,9 +920,7 @@ impl PythonArchBuilder {
                         }
                         return (self.check_tuples(&session.sync_odoo.python_version, op, tuple), true)
                     }
-                }
             }
-        }
         (true, false)
     }
 

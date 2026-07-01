@@ -42,19 +42,18 @@ fn resolve_import_stmt_hook(alias: &Alias, from_symbols: &Option<Vec<SymbolKey>>
         return None;
     }
     for &from_symbol in from_symbols.iter().flatten() {
-        if session.sync_odoo.get_main_entry_tree(from_symbol).0 != &["odoo", "tests", "common"] {
+        if session.sync_odoo.get_main_entry_tree(from_symbol).0 != ["odoo", "tests", "common"] {
             continue;
         }
-        let mut results = resolve_import_stmt(session, source_file_symbol, Some(&Identifier::new(S!("odoo.tests"), from_stmt.unwrap().range)), &[alias.clone()], level, &mut None);
-        if let Some(diagnostic) = diagnostics.as_mut() {
-            if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03301, &[]) {
+        let mut results = resolve_import_stmt(session, source_file_symbol, Some(&Identifier::new(S!("odoo.tests"), from_stmt.unwrap().range)), std::slice::from_ref(alias), level, &mut None);
+        if let Some(diagnostic) = diagnostics.as_mut()
+            && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03301, &[]) {
                 diagnostic.push(Diagnostic {
                     range: Range::new(Position::new(alias.range.start().to_u32(), 0), Position::new(alias.range.end().to_u32(), 0)),
                     tags: Some(vec![DiagnosticTag::DEPRECATED]),
                     ..diagnostic_base
                 });
             }
-        }
         return results.pop()
     }
     None
@@ -318,8 +317,8 @@ fn get_or_create_symbol(
             },
             None => {
                 // Can we have sym None and level != 0 ? maybe on get_all_valid_names? tbc
-                if level == 0 {
-                    if let Some(ref cache) = session.sync_odoo.import_cache {
+                if level == 0
+                    && let Some(ref cache) = session.sync_odoo.import_cache {
                         let cache_module = if for_entry.borrow().typ == EntryPointType::MAIN || for_entry.borrow().typ == EntryPointType::ADDON {
                             cache.main_modules.get(branch)
                         } else {
@@ -338,7 +337,6 @@ fn get_or_create_symbol(
                             }
                         }
                     }
-                }
                 let mut found = false;
                 let entry_point_mgr = session.sync_odoo.entry_point_mgr.clone();
                 let entry_point_mgr = entry_point_mgr.borrow();
@@ -363,11 +361,10 @@ fn get_or_create_symbol(
                                     if let Some(cache) = session.sync_odoo.import_cache.as_mut() {
                                         cache.modules.insert(branch.clone(), Some(vec![next_symbol]));
                                     }
-                                } else if matches!(entry.borrow().typ, EntryPointType::MAIN | EntryPointType::ADDON) {
-                                    if let Some(cache) = session.sync_odoo.import_cache.as_mut() {
+                                } else if matches!(entry.borrow().typ, EntryPointType::MAIN | EntryPointType::ADDON)
+                                    && let Some(cache) = session.sync_odoo.import_cache.as_mut() {
                                         cache.main_modules.insert(branch.clone(), Some(vec![next_symbol]));
                                     }
-                                }
                             }
                             found = true;
                             syms = Some(vec![next_symbol]);
@@ -377,15 +374,14 @@ fn get_or_create_symbol(
                     }
                 }
                 if !found {
-                    if for_entry.borrow().typ != EntryPointType::CUSTOM {
-                        if let Some(cache) = session.sync_odoo.import_cache.as_mut() {
+                    if for_entry.borrow().typ != EntryPointType::CUSTOM
+                        && let Some(cache) = session.sync_odoo.import_cache.as_mut() {
                             if for_entry.borrow().typ == EntryPointType::MAIN || for_entry.borrow().typ == EntryPointType::ADDON {
                                 cache.main_modules.insert(branch.clone(), None);
                             } else {
                                 cache.modules.insert(branch.clone(), None);
                             }
                         }
-                    }
                     syms = None;
                     last_symbols = None;
                     break;

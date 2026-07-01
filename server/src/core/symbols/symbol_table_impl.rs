@@ -1350,11 +1350,10 @@ impl SymbolTable {
                 let mut eval = Evaluation::eval_from_symbol(session.st(), get_result.weak, get_result.instance);
                 match eval.symbol.get_mut_symbol_ptr() {
                     EvaluationSymbolPtr::WEAK(weak) | EvaluationSymbolPtr::SELF(weak) => {
-                        if let Some(eval_sym) = weak.weak.upgrade(session.st()) {
-                            if eval_sym == class_key {
+                        if let Some(eval_sym) = weak.weak.upgrade(session.st())
+                            && eval_sym == class_key {
                                 continue;
                             }
-                        }
                         weak.context.insert(ContextKey::BaseAttr, ContextValue::SYMBOL(base_attr.into()));
                         res.push(eval.symbol.get_symbol_ptr().clone());
                     },
@@ -1377,16 +1376,14 @@ impl SymbolTable {
         for eval in evaluations.iter() {
             let mut sym = eval.symbol.get_symbol(session, Some(ctx), &mut vec![], None);
             if let EvaluationSymbolPtr::WEAK(w) | EvaluationSymbolPtr::SELF(w) = &mut sym {
-                if let Some(base_attr) = symbol_context.get(ContextKey::BaseAttr) {
-                    if !w.context.get(ContextKey::IsAttrOfInstance).map(|x| x.as_bool()).unwrap_or(false) {
+                if let Some(base_attr) = symbol_context.get(ContextKey::BaseAttr)
+                    && !w.context.get(ContextKey::IsAttrOfInstance).map(|x| x.as_bool()).unwrap_or(false) {
                         w.context.insert(ContextKey::BaseAttr, base_attr.clone());
                     }
-                }
-                if let Some(base_attr) = symbol_context.get(ContextKey::IsAttrOfInstance) {
-                    if !w.context.get(ContextKey::IsAttrOfInstance).map(|x| x.as_bool()).unwrap_or(false) {
+                if let Some(base_attr) = symbol_context.get(ContextKey::IsAttrOfInstance)
+                    && !w.context.get(ContextKey::IsAttrOfInstance).map(|x| x.as_bool()).unwrap_or(false) {
                         w.context.insert(ContextKey::IsAttrOfInstance, base_attr.clone());
                     }
-                }
             }
             if !sym.is_expired_if_weak(&session.sync_odoo.symbol_table) {
                 res.push(sym);
@@ -1437,15 +1434,14 @@ impl SymbolTable {
         let Some(symbol_key) = w.weak.upgrade(session.st()) else {
             return default_result;
         };
-        if stop_on_value {
-            if let Some(evals) = session.st().evaluations(symbol_key) {
+        if stop_on_value
+            && let Some(evals) = session.st().evaluations(symbol_key) {
                 for eval in evals.iter() {
                     if eval.value.is_some() {
                         return default_result;
                     }
                 }
             }
-        }
         let can_eval_external = !session.st().is_external(symbol_key);
         //return a list of all possible evaluation: a weak ptr to the final symbol, and a bool indicating if this is an instance or not
         let mut work_queue: VecDeque<_> = Self::next_refs(session, symbol_key, context, &w.context, stop_on_type).into_iter().collect();
@@ -1495,12 +1491,11 @@ impl SymbolTable {
                         results.push(current_eval);
                         continue;
                     }
-                    if let Some(stop_on_tree_syms) = stop_on_tree_syms.as_ref() {
-                        if stop_on_tree_syms.iter().any(|s| *s == sym_key) {
+                    if let Some(stop_on_tree_syms) = stop_on_tree_syms.as_ref()
+                        && stop_on_tree_syms.contains(&sym_key) {
                             results.push(current_eval);
                             continue;
                         }
-                    }
                     if var.evaluations.is_empty() && var.name != "__all__" && can_eval_external {
                         //no evaluation? let's check that the file has been evaluated
                         if let Some(file_symbol) = session.st().get_file(sym_key) {
@@ -1795,11 +1790,10 @@ impl SymbolTable {
                 }
             }
             // Traverse upwards if we are under a class or a function
-            if matches!(on_symbol.typ(), SymType::CLASS | SymType::FUNCTION) {
-                if let Some(parent) = symbol_table.parent(on_symbol) {
+            if matches!(on_symbol.typ(), SymType::CLASS | SymType::FUNCTION)
+                && let Some(parent) = symbol_table.parent(on_symbol) {
                     helper(symbol_table, parent, name, position, acc);
                 }
-            }
         }
         let mut results = HashMap::default();
         helper(self, on_symbol, name, position, &mut results);
@@ -1837,8 +1831,8 @@ impl SymbolTable {
     fn member_symbol_hook(session: &SessionInfo, target: SymbolKey, name: &str, diagnostics: &mut Vec<Diagnostic>){
         if session.sync_odoo.version.major >= 17 && name == "Form"{
             let tree = session.sync_odoo.symbol_table.get_tree(target);
-            if tree.0.ends_with_strs(&["odoo", "tests", "common"]) && tree.1.is_empty() {
-                if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03301, &[]) {
+            if tree.0.ends_with_strs(&["odoo", "tests", "common"]) && tree.1.is_empty()
+                && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03301, &[]) {
                     diagnostics.push(
                         Diagnostic {
                             range: Range::default(),
@@ -1847,7 +1841,6 @@ impl SymbolTable {
                         }
                     );
                 }
-            }
         }
     }
 
@@ -1862,11 +1855,10 @@ impl SymbolTable {
             let symbol = eval.symbol.get_symbol(session, None,  &mut vec![], None);
             let eval_weaks = Self::follow_ref(&symbol, session, None, true, false, None, None);
             for eval_weak in eval_weaks.iter() {
-                if let Some(key) = eval_weak.upgrade_weak(&session.sync_odoo.symbol_table) {
-                    if Self::is_field_class(session, key) {
+                if let Some(key) = eval_weak.upgrade_weak(&session.sync_odoo.symbol_table)
+                    && Self::is_field_class(session, key) {
                         return true;
                     }
-                }
             }
         }
         false
@@ -1886,11 +1878,10 @@ impl SymbolTable {
             let symbol = eval.symbol.get_symbol(session, None,  &mut vec![], None);
             let eval_weaks = Self::follow_ref(&symbol, session, None, true, false, None, None);
             for eval_weak in eval_weaks.iter() {
-                if let Some(key) = eval_weak.upgrade_weak(&session.sync_odoo.symbol_table) {
-                    if matches!(key, SymbolKey::Function(_)) {
+                if let Some(key) = eval_weak.upgrade_weak(&session.sync_odoo.symbol_table)
+                    && matches!(key, SymbolKey::Function(_)) {
                         return true;
                     }
-                }
             }
         }
         false
@@ -1965,12 +1956,11 @@ impl SymbolTable {
                 return true;
             }
         } else {
-            if tree.0.len() == 2 && tree.1.len() == 1 && tree.0[0] == "odoo" && tree.0[1] == "fields" {
-                if matches!(tree.1[0].as_str(), "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
+            if tree.0.len() == 2 && tree.1.len() == 1 && tree.0[0] == "odoo" && tree.0[1] == "fields"
+                && matches!(tree.1[0].as_str(), "Boolean" | "Integer" | "Float" | "Monetary" | "Char" | "Text" | "Html" | "Date" | "Datetime" |
             "Binary" | "Image" | "Selection" | "Reference" | "Json" | "Properties" | "PropertiesDefinition" | "Id" | "Many2one" | "One2many" | "Many2many" | "Many2oneReference") {
                     return true;
                 }
-            }
         }
         if Self::is_inheriting_from_field(session, class_key) {
             return true;
@@ -1996,11 +1986,10 @@ impl SymbolTable {
             let symbol = eval.symbol.get_symbol(session, None, &mut vec![], None);
             let eval_weaks = Self::follow_ref(&symbol, session, None, true, false, None, None);
             for eval_weak in eval_weaks.iter() {
-                if let Some(symbol) = eval_weak.upgrade_weak(session.st()) {
-                    if Self::is_specific_field_class(session, symbol, field_names){
+                if let Some(symbol) = eval_weak.upgrade_weak(session.st())
+                    && Self::is_specific_field_class(session, symbol, field_names){
                         return true;
                     }
-                }
             }
         }
         false
@@ -2010,7 +1999,7 @@ impl SymbolTable {
         symbol: SymbolKey,
         session: &mut SessionInfo,
         from_module: Option<ModuleKey>,
-    ) -> HashMap<OYarn, Vec<SymbolKey>> {
+    ) -> MembersByName {
         Self::all_members(symbol, session, true, true, false, from_module, false)
     }
 
@@ -2060,22 +2049,21 @@ impl SymbolTable {
         let mut diagnostics: Vec<Diagnostic> = vec![];
         Self::member_symbol_hook(session, target, name, &mut diagnostics);
         let mod_sym = session.st().get_module_symbol(target, name);
-        if let Some(mod_sym) = mod_sym {
-            if !only_fields {
+        if let Some(mod_sym) = mod_sym
+            && !only_fields {
                 if all {
                     extend_result(vec![mod_sym], &mut result, &mut visited_symbols);
                 } else {
                     return (vec![mod_sym], diagnostics);
                 }
             }
-        }
         if !is_super {
             let mut content_syms = session.st().get_sub_symbol(target, name, u32::MAX).symbols;
             if only_fields {
-                content_syms = content_syms.iter().filter(|&&x| Self::is_field(session, x)).copied().collect();
+                content_syms.retain(|&x| Self::is_field(session, x));
             }
             if only_methods {
-                content_syms = content_syms.iter().filter(|&&x| Self::is_method(session, x)).copied().collect();
+                content_syms.retain(|&x| Self::is_method(session, x));
             }
             if !content_syms.is_empty() {
                 if all {

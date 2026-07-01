@@ -26,11 +26,10 @@ macro_rules! Sy {
 
 pub fn get_python_command() -> Option<String> {
     for cmd in &["python3", "python"] {
-        if let Ok(output) = Command::new(cmd).arg("--version").output() {
-            if output.status.success() {
+        if let Ok(output) = Command::new(cmd).arg("--version").output()
+            && output.status.success() {
                 return Some(S!(*cmd));
             }
-        }
     }
     None
 }
@@ -205,11 +204,10 @@ impl PathSanitizer for Path {
 
     /// Convert the path to a path valid for the tree structure (without __init__.py or __manifest__.py).
     fn to_tree_path(&self) -> PathBuf {
-        if let Some(file_name) = self.file_name() {
-            if file_name.to_str().unwrap() == "__init__.py" || file_name.to_str().unwrap() == "__manifest__.py" {
+        if let Some(file_name) = self.file_name()
+            && (file_name.to_str().unwrap() == "__init__.py" || file_name.to_str().unwrap() == "__manifest__.py") {
                 return self.parent().unwrap().to_path_buf();
             }
-        }
         self.to_path_buf()
     }
 }

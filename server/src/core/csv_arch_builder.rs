@@ -43,13 +43,12 @@ impl CsvArchBuilder {
         }
         let csv = &mut session.st_mut()[csv_symbol];
         let mut rdr = csv::ReaderBuilder::new().from_reader(content.as_bytes());
-        if rdr.has_headers() {
-            if let Ok(header) = rdr.headers() {
+        if rdr.has_headers()
+            && let Ok(header) = rdr.headers() {
                 for h in header.iter() {
                     csv.headers.push(oyarn!("{}", h));
                 }
             }
-        }
         if csv.headers.contains(&Sy!("id")) {
             for (start, end, result) in CsvRecordIter::new(&mut rdr, content) {
                 match result {

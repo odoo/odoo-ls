@@ -210,11 +210,10 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
 
     fn visit_expr(&mut self, expr: &'a Expr) {
         if expr.range().contains(self.offset) {
-            if let Expr::Call(expr_call) = expr {
-                if expr_call.arguments.range().contains(self.offset){
+            if let Expr::Call(expr_call) = expr
+                && expr_call.arguments.range().contains(self.offset){
                     self.last_call_expr = Some(expr_call);
                 }
-            }
             walk_expr(self, expr);
             if self.expr.is_none() {
                 self.expr = Some(ExprOrIdent::Expr(expr));
@@ -229,11 +228,10 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
         if self.expr.is_none() {
             if alias.name.range().contains(self.offset) {
                 self.expr = Some(ExprOrIdent::Ident(&alias.name));
-            } else if let Some(ref asname) = alias.asname {
-                if asname.range().contains(self.offset) {
+            } else if let Some(ref asname) = alias.asname
+                && asname.range().contains(self.offset) {
                     self.expr = Some(ExprOrIdent::Ident(asname))
                 }
-            }
         }
     }
 
@@ -241,11 +239,10 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
         walk_except_handler(self, except_handler);
         if self.expr.is_none() {
             let ExceptHandler::ExceptHandler(ref handler) = *except_handler;
-            if let Some(ref ident) = handler.name {
-                if ident.clone().range().contains(self.offset) {
+            if let Some(ref ident) = handler.name
+                && ident.clone().range().contains(self.offset) {
                     self.expr = Some(ExprOrIdent::Ident(ident));
                 }
-            }
         } else {
             walk_except_handler(self, except_handler);
         }
@@ -262,11 +259,10 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
         walk_keyword(self, keyword);
 
         if self.expr.is_none() {
-            if let Some(ref ident) = keyword.arg {
-                if ident.range().contains(self.offset) {
+            if let Some(ref ident) = keyword.arg
+                && ident.range().contains(self.offset) {
                     self.expr = Some(ExprOrIdent::Ident(ident));
                 }
-            }
         } else {
             walk_keyword(self, keyword)
         }
@@ -303,8 +299,8 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
     }
 
     fn visit_pattern(&mut self, pattern: &'a Pattern) {
-        if pattern.range().contains(self.offset) {
-            if self.expr.is_none() {
+        if pattern.range().contains(self.offset)
+            && self.expr.is_none() {
                 walk_pattern(self, pattern);
                 let ident  = match pattern {
                     Pattern::MatchMapping(mapping) => &mapping.rest,
@@ -313,13 +309,11 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
                     _ => &None
                 };
 
-                if let Some(ident) = ident {
-                    if ident.range().contains(self.offset) {
+                if let Some(ident) = ident
+                    && ident.range().contains(self.offset) {
                         self.expr = Some(ExprOrIdent::Ident(ident));
                     }
-                }
             }
-        }
     }
 
     fn visit_stmt(&mut self, stmt: &'a Stmt) {

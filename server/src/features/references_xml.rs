@@ -100,20 +100,17 @@ impl XmlAstReferenceVisitor {
                         }
                     },
                     ReferenceTarget::Symbol(s) => {
-                        if let &SymbolKey::Class(class_key) = s {
-                            if let Some(model) = &session.st()[class_key]._model {
-                                if model.name == attr.value() {
+                        if let &SymbolKey::Class(class_key) = s
+                            && let Some(model) = &session.st()[class_key]._model
+                                && model.name == attr.value() {
                                     results.push(attr.range_value());
                                 }
-                            }
-                        }
                     }
                 }
-            } else if attr.name() == "id" {
-                if XmlAstReferenceVisitor::test_attr_as_xml_id(session.st(), &attr, from_module, target) {
+            } else if attr.name() == "id"
+                && XmlAstReferenceVisitor::test_attr_as_xml_id(session.st(), &attr, from_module, target) {
                     results.push(attr.range_value());
                 }
-            }
         }
         if scope.record_model == Some("ir.ui.view") {
             scope.view_target_model = XmlAstUtils::view_target_model(node);
@@ -139,11 +136,10 @@ impl XmlAstReferenceVisitor {
                 if model.name == *model_name {
                     results.push(attr.range_value());
                 }
-            } else if attr.name() == "ref" {
-                if XmlAstReferenceVisitor::test_attr_as_xml_id(session.st(), &attr, from_module, target) {
+            } else if attr.name() == "ref"
+                && XmlAstReferenceVisitor::test_attr_as_xml_id(session.st(), &attr, from_module, target) {
                     results.push(attr.range_value());
                 }
-            }
         }
         // Inside a view's `<field name="arch">`, sub-elements resolve against the
         // view's target model (captured at the ir.ui.view record), not the
@@ -165,15 +161,12 @@ impl XmlAstReferenceVisitor {
         ) else {
             return;
         };
-        if field == "model" || field == "res_model" {
-            if let &ReferenceTarget::Symbol(SymbolKey::Class(target)) = target {
-                if let Some(model) = &session.st()[target]._model {
-                    if model.name == node.text().unwrap() {
+        if (field == "model" || field == "res_model")
+            && let &ReferenceTarget::Symbol(SymbolKey::Class(target)) = target
+                && let Some(model) = &session.st()[target]._model
+                    && model.name == node.text().unwrap() {
                         results.push(node.range());
                     }
-                }
-            }
-        }
         if field == "context" {
             //TODO
         }
@@ -229,11 +222,10 @@ impl XmlAstReferenceVisitor {
                 if XmlAstReferenceVisitor::test_attr_as_xml_id(session.st(), &attr, from_module, target) {
                     results.push(attr.range_value());
                 }
-            } else if attr.name() == "parent" {
-                if XmlAstReferenceVisitor::test_attr_as_xml_id(session.st(), &attr, from_module, target) {
+            } else if attr.name() == "parent"
+                && XmlAstReferenceVisitor::test_attr_as_xml_id(session.st(), &attr, from_module, target) {
                     results.push(attr.range_value());
                 }
-            }
         }
         for child in node.children() {
             XmlAstReferenceVisitor::visit_node(session, &child, from_module, scope, results, target);

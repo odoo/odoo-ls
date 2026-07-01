@@ -55,13 +55,12 @@ impl ModuleSymbol {
                     match key {
                         Expr::StringLiteral(key_literal) => {
                             let key_str = key_literal.value.to_str();
-                            if visited_keys.contains(key_str){
-                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04002, &[]) {
+                            if visited_keys.contains(key_str)
+                            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04002, &[]) {
                                 res.push(Diagnostic {
                                     range: Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
                                     ..diagnostic
                                 });
-                            }
                             }
                             visited_keys.insert(key_str);
                             if key_str == "name" {
@@ -72,18 +71,17 @@ impl ModuleSymbol {
                                 ModuleSymbol::load_manifest_data(session, module_key, &mut res, key_literal, value);
                             } else if key_str == "assets" {
                                 ModuleSymbol::load_manifest_assets(session, module_key, &mut res, key_literal, value);
-                            } else if key_str == "active" {
-                                if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS03302, &[]) {
+                            } else if key_str == "active"
+                                && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03302, &[]) {
                                     res.push(Diagnostic {
                                         range: Range::new(Position::new(key_literal.range().start().to_u32(), 0), Position::new(key_literal.range().end().to_u32(), 0)),
                                         tags: Some(vec![DiagnosticTag::DEPRECATED]),
                                         ..diagnostic
                                     });
                                 }
-                            }
                         }
                         _ => {
-                            if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04009, &[]) {
+                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04009, &[]) {
                                     res.push(Diagnostic {
                                         range: Range::new(Position::new(key.range().start().to_u32(), 0), Position::new(key.range().end().to_u32(), 0)),
                                         ..diagnostic
@@ -199,16 +197,15 @@ impl ModuleSymbol {
                     }
                     continue;
                 }
-                if !data.key.as_ref().unwrap().is_string_literal_expr() {
-                    if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04015, &[]) {
+                if !data.key.as_ref().unwrap().is_string_literal_expr()
+                    && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04015, &[]) {
                         diagnostics.push(Diagnostic {
                             range: Range::new(Position::new(data.range().start().to_u32(), 0), Position::new(data.range().end().to_u32(), 0)),
                             ..diagnostic
                         });
                     }
-                }
                 if !data.value.is_list_expr() {
-                    if let Some(diagnostic) = create_diagnostic(&session, DiagnosticCode::OLS04016, &[]) {
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04016, &[]) {
                         diagnostics.push(Diagnostic {
                             range: Range::new(Position::new(data.range().start().to_u32(), 0), Position::new(data.range().end().to_u32(), 0)),
                             ..diagnostic

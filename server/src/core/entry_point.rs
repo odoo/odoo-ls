@@ -64,7 +64,7 @@ impl EntryPointMgr {
         session.sync_odoo.entry_point_mgr.borrow_mut().untitled_entry_points.push(entry.clone());
         // Create one file symbol under the root for the untitled file
         let name: String = PathBuf::from(&path).with_extension("").components().next_back().unwrap().as_os_str().to_str().unwrap().to_string();
-        
+
         session.st_mut().add_new_file(entry.borrow().root.into(), &name, &path)
     }
 
@@ -135,11 +135,11 @@ impl EntryPointMgr {
     pub fn add_entry_to_public(session: &mut SessionInfo, path: String) -> Option<SymbolKey> {
         info!("Adding new public entry point: {}", path);
         //Prevent adding entry point from sys.path or other config that is matching odoo or addons paths
-        if let Some(odoo_path) = &session.sync_odoo.config.odoo_path() {
-            if &path == odoo_path {
-                warn!("Public entry point {} is equal to odoo path {}, this is not supported and will be ignored", path, odoo_path);
-                return None;
-            }
+        if let Some(odoo_path) = &session.sync_odoo.config.odoo_path()
+            && &path == odoo_path
+        {
+            warn!("Public entry point {} is equal to odoo path {}, this is not supported and will be ignored", path, odoo_path);
+            return None;
         }
         for addon_path in &session.sync_odoo.config.addons_paths() {
             if &path == addon_path {
@@ -330,15 +330,14 @@ impl EntryPointMgr {
     }
 
     pub fn clean_entries(&mut self, symbol_table: &mut SymbolTable) {
-        if let Some(main) = self.main_entry_point.as_ref() {
-            if main.borrow().to_delete {
+        if let Some(main) = self.main_entry_point.as_ref()
+            && main.borrow().to_delete {
                 info!("Dropping main entry point");
                 Self::drop_entry(symbol_table, main);
                 self.main_entry_point = None;
                 // addons entries share the same root as the main entry
                 self.addons_entry_points.clear();
             }
-        }
         let mut drop_if_flagged = |label: &str, entries: &mut Vec<Rc<RefCell<EntryPoint>>>| {
             entries.retain(|entry| {
                 if entry.borrow().to_delete {

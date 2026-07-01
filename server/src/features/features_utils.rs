@@ -541,12 +541,11 @@ impl FeaturesUtils {
                 if let Some(file_sym) = file_symbol {
                     let xml_ids = SyncOdoo::get_xml_ids(session, file_sym, str, &std::ops::Range { start: 0, end: 0 }, &mut vec![]);
                     for xml_id in xml_ids.iter_valid(session.st()) {
-                        if let XmlId::XmlRecord(record_key) = xml_id {
-                            if let Some(xml_block) = FeaturesUtils::format_xml_record_block(session, record_key) {
+                        if let XmlId::XmlRecord(record_key) = xml_id
+                            && let Some(xml_block) = FeaturesUtils::format_xml_record_block(session, record_key) {
                                 blocks.push(xml_block);
                                 string_handled = true;
                             }
-                        }
                     }
                 }
                 if string_handled {
@@ -865,14 +864,12 @@ impl FeaturesUtils {
                 _ => continue,
             };
             for eval in evals {
-                if let EvaluationSymbolPtr::WEAK(weak) = eval.symbol.get_mut_symbol_ptr() {
-                    if let Some(field_parent) = weak.context.get(ContextKey::FieldParent).cloned() {
-                        if !weak.context.contains_key(&ContextKey::BaseAttr) {
+                if let EvaluationSymbolPtr::WEAK(weak) = eval.symbol.get_mut_symbol_ptr()
+                    && let Some(field_parent) = weak.context.get(ContextKey::FieldParent).cloned()
+                        && !weak.context.contains_key(&ContextKey::BaseAttr) {
                             weak.context.insert(ContextKey::BaseAttr, field_parent);
                             weak.context.insert(ContextKey::BaseAttrInserted, ContextValue::BOOLEAN(true));
                         }
-                    }
-                }
             }
         }
     }
@@ -886,12 +883,11 @@ impl FeaturesUtils {
                 _ => continue,
             };
             for eval in evals {
-                if let EvaluationSymbolPtr::WEAK(weak) = eval.symbol.get_mut_symbol_ptr() {
-                    if let Some(ContextValue::BOOLEAN(true)) = weak.context.get(ContextKey::BaseAttrInserted) {
+                if let EvaluationSymbolPtr::WEAK(weak) = eval.symbol.get_mut_symbol_ptr()
+                    && let Some(ContextValue::BOOLEAN(true)) = weak.context.get(ContextKey::BaseAttrInserted) {
                         weak.context.remove(ContextKey::BaseAttrInserted);
                         weak.context.remove(ContextKey::BaseAttr);
                     }
-                }
             }
         }
     }

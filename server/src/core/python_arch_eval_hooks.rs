@@ -386,114 +386,104 @@ static arch_eval_file_hooks: LazyLock<Vec<PythonArchEvalFileHook>> = LazyLock::n
         let file_path = odoo.symbol_table.path(file_symbol).to_string();
         let url_decode = odoo.symbol_table.get_symbol(symbol, (&[], &["url_decode"]), u32::MAX);
         let werkzeug_url_decode = odoo.get_symbol(&file_path, (&["werkzeug", "urls"], &["url_decode"]), u32::MAX);
-        if let Some(&werkzeug_url_decode) = werkzeug_url_decode.first() {
-            if let SymbolKey::Variable(v) = werkzeug_url_decode { //if not variable, no need to patch it
+        if let Some(&werkzeug_url_decode) = werkzeug_url_decode.first()
+            && let SymbolKey::Variable(v) = werkzeug_url_decode { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_decode.first() {
                     odoo.symbol_table[v].evaluations = vec![
                         Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
             }
-        }
         let url_encode = odoo.symbol_table.get_symbol(symbol, (&[], &["url_encode"]), u32::MAX);
         let werkzeug_url_encode = odoo.get_symbol(&file_path, (&["werkzeug", "urls"], &["url_encode"]), u32::MAX);
-        if let Some(&werkzeug_url_encode) = werkzeug_url_encode.first() {
-            if let SymbolKey::Variable(v) = werkzeug_url_encode { //if not variable, no need to patch it
+        if let Some(&werkzeug_url_encode) = werkzeug_url_encode.first()
+            && let SymbolKey::Variable(v) = werkzeug_url_encode { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_encode.first() {
                     odoo.symbol_table[v].evaluations = vec![
                         Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
             }
-        }
         let url_join = odoo.symbol_table.get_symbol(symbol, (&[], &["url_join"]), u32::MAX);
         let werkzeug_url_join = odoo.get_symbol(&file_path, (&["werkzeug", "urls"], &["url_join"]), u32::MAX);
-        if let Some(&werkzeug_url_join) = werkzeug_url_join.first() {
-            if let SymbolKey::Variable(v) = werkzeug_url_join { //if not variable, no need to patch it
+        if let Some(&werkzeug_url_join) = werkzeug_url_join.first()
+            && let SymbolKey::Variable(v) = werkzeug_url_join { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_join.first() {
                     odoo.symbol_table[v].evaluations = vec![
                         Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
             }
-        }
         let url_parse = odoo.symbol_table.get_symbol(symbol, (&[], &["url_parse"]), u32::MAX);
         let werkzeug_url_parse = odoo.get_symbol(&file_path, (&["werkzeug", "urls"], &["url_parse"]), u32::MAX);
-        if let Some(&werkzeug_url_parse) = werkzeug_url_parse.first() {
-            if let SymbolKey::Variable(v) = werkzeug_url_parse { //if not variable, no need to patch it
+        if let Some(&werkzeug_url_parse) = werkzeug_url_parse.first()
+            && let SymbolKey::Variable(v) = werkzeug_url_parse { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_parse.first() {
                     odoo.symbol_table[v].evaluations = vec![
                         Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
             }
-        }
         let url_quote = odoo.symbol_table.get_symbol(symbol, (&[], &["url_quote"]), u32::MAX);
         let werkzeug_url_quote = odoo.get_symbol(&file_path, (&["werkzeug", "urls"], &["url_quote"]), u32::MAX);
-        if let Some(&werkzeug_url_quote) = werkzeug_url_quote.first() {
-            if let SymbolKey::Variable(v) = werkzeug_url_quote { //if not variable, no need to patch it
+        if let Some(&werkzeug_url_quote) = werkzeug_url_quote.first()
+            && let SymbolKey::Variable(v) = werkzeug_url_quote { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_quote.first() {
                     odoo.symbol_table[v].evaluations = vec![
                         Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
             }
-        }
         let url_unquote = odoo.symbol_table.get_symbol(symbol, (&[], &["url_unquote"]), u32::MAX);
         let werkzeug_url_unquote = odoo.get_symbol(&file_path, (&["werkzeug", "urls"], &["url_unquote"]), u32::MAX);
-        if let Some(&werkzeug_url_unquote) = werkzeug_url_unquote.first() {
-            if let SymbolKey::Variable(v) = werkzeug_url_unquote { //if not variable, no need to patch it
+        if let Some(&werkzeug_url_unquote) = werkzeug_url_unquote.first()
+            && let SymbolKey::Variable(v) = werkzeug_url_unquote { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_unquote.first() {
                     odoo.symbol_table[v].evaluations = vec![
                         Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
             }
-        }
         let url_quote_plus = odoo.symbol_table.get_symbol(symbol, (&[], &["url_quote_plus"]), u32::MAX);
         let werkzeug_url_quote_plus = odoo.get_symbol(&file_path, (&["werkzeug", "urls"], &["url_quote_plus"]), u32::MAX);
-        if let Some(&werkzeug_url_quote_plus) = werkzeug_url_quote_plus.first() {
-            if let SymbolKey::Variable(v) = werkzeug_url_quote_plus { //if not variable, no need to patch it
+        if let Some(&werkzeug_url_quote_plus) = werkzeug_url_quote_plus.first()
+            && let SymbolKey::Variable(v) = werkzeug_url_quote_plus { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_quote_plus.first() {
                     odoo.symbol_table[v].evaluations = vec![
                         Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
             }
-        }
         let url_unquote_plus = odoo.symbol_table.get_symbol(symbol, (&[], &["url_unquote_plus"]), u32::MAX);
         let werkzeug_url_unquote_plus = odoo.get_symbol(&file_path, (&["werkzeug", "urls"], &["url_unquote_plus"]), u32::MAX);
-        if let Some(&werkzeug_url_unquote_plus) = werkzeug_url_unquote_plus.first() {
-            if let SymbolKey::Variable(v) = werkzeug_url_unquote_plus { //if not variable, no need to patch it
+        if let Some(&werkzeug_url_unquote_plus) = werkzeug_url_unquote_plus.first()
+            && let SymbolKey::Variable(v) = werkzeug_url_unquote_plus { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_unquote_plus.first() {
                     odoo.symbol_table[v].evaluations = vec![
                         Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
             }
-        }
         let url_unparse = odoo.symbol_table.get_symbol(symbol, (&[], &["url_unparse"]), u32::MAX);
         let werkzeug_url_unparse = odoo.get_symbol(&file_path, (&["werkzeug", "urls"], &["url_unparse"]), u32::MAX);
-        if let Some(&werkzeug_url_unparse) = werkzeug_url_unparse.first() {
-            if let SymbolKey::Variable(v) = werkzeug_url_unparse { //if not variable, no need to patch it
+        if let Some(&werkzeug_url_unparse) = werkzeug_url_unparse.first()
+            && let SymbolKey::Variable(v) = werkzeug_url_unparse { //if not variable, no need to patch it
                 if let Some(&eval_1) = url_unparse.first() {
                     odoo.symbol_table[v].evaluations = vec![
                         Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
             }
-        }
         let url = odoo.symbol_table.get_symbol(symbol, (&[], &["URL"]), u32::MAX);
         let werkzeug_url_syms = odoo.get_symbol(&file_path, (&["werkzeug", "urls"], &["URL"]), u32::MAX);
-        if let Some(&werkzeug_url) = werkzeug_url_syms.first() {
-            if let SymbolKey::Variable(v) = werkzeug_url { //if not variable, no need to patch it
+        if let Some(&werkzeug_url) = werkzeug_url_syms.first()
+            && let SymbolKey::Variable(v) = werkzeug_url { //if not variable, no need to patch it
                 if let Some(&eval_1) = url.first() {
                     odoo.symbol_table[v].evaluations = vec![
                         Evaluation::eval_from_symbol(&odoo.symbol_table, eval_1, Some(false))
                     ];
                 }
             }
-        }
     }},
 ]});
 
@@ -602,15 +592,14 @@ static arch_eval_function_hooks: LazyLock<Vec<PythonArchEvalFunctionHook>> = Laz
         let base_model = get_base_model_symbol(odoo);
         odoo.symbol_table[symbol].evaluations = vec![Evaluation::new_self(base_model.unwrap(), Some(true))];
         let func = &odoo.symbol_table[symbol];
-        if func.args.len() > 1 {
-            if let Some(arg_symbol) = func.args.get(1).unwrap().symbol.upgrade(&odoo.symbol_table) {
+        if func.args.len() > 1
+            && let Some(arg_symbol) = func.args.get(1).unwrap().symbol.upgrade(&odoo.symbol_table) {
                 if odoo.symbol_table.name(arg_symbol) == "domain" {
                     odoo.symbol_table[arg_symbol].evaluations = vec![Evaluation::new_domain(odoo)];
                 } else {
                     warn!("domain not found on search signature")
                 }
             }
-        }
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
                         tree: vec![((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "browse"])),
@@ -960,29 +949,19 @@ impl PythonArchEvalHooks {
     pub fn eval_registry_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
     {
         let mut result = PythonArchEvalHooks::eval_env_get_item(session, evaluation_sym, context, diagnostics, scope);
-        match result.as_mut().unwrap() {
-            EvaluationSymbolPtr::WEAK(weak) => {
-                weak.instance = Some(false);
-            },
-            _ => {}
+        if let EvaluationSymbolPtr::WEAK(weak) = result.as_mut().unwrap() {
+            weak.instance = Some(false);
         }
         result
     }
 
     fn eval_get(_session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: Option<&Context>, _diagnostics: &mut Vec<Diagnostic>, _scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
     {
-        if context.is_some() {
-            let parent_instance = context.unwrap().get(ContextKey::ParentInstance);
-            if parent_instance.is_some() {
-                match parent_instance.unwrap() {
-                    ContextValue::BOOLEAN(b) => {
-                        if !*b {
-                            todo!();//TODO
-                        }
-                    },
-                    _ => {}
-                }
-            }
+        if let Some(context) = context
+            && let Some(ContextValue::BOOLEAN(b)) = context.get(ContextKey::ParentInstance)
+            && !*b
+        {
+            todo!();//TODO
         }
         Some(EvaluationSymbolPtr::WEAK(evaluation_sym.get_weak().clone()))
     }
@@ -1065,10 +1044,10 @@ impl PythonArchEvalHooks {
             }
             let module = context.get(ContextKey::Module);
             let mut from_module = None;
-            if let Some(ContextValue::MODULE(m)) = module {
-                if let Some(m) = m.upgrade(session.st()) {
-                    from_module = Some(m);
-                }
+            if let Some(ContextValue::MODULE(m)) = module
+                && let Some(m) = m.upgrade(session.st())
+            {
+                from_module = Some(m);
             }
             let comodel_sym_ref = comodel_sym.borrow();
             let mut main_symbol = comodel_sym_ref.get_main_symbols(session, from_module);
@@ -1146,14 +1125,13 @@ impl PythonArchEvalHooks {
 
         let mut contexts_to_add = HashMap::default();
         if relational {
-            if let Some(first_param) = parameters.args.get(0) {
+            if let Some(first_param) = parameters.args.first() {
                 contexts_to_add.insert(ContextKey::ComodelName, (first_param, first_param.range(), "str", ContextKey::ComodelNameArgRange));
             }
-            if one2many {
-                if let Some(second_param) = parameters.args.get(1) {
+            if one2many
+                && let Some(second_param) = parameters.args.get(1) {
                     contexts_to_add.insert(ContextKey::InverseName, (second_param, second_param.range(), "str", ContextKey::InverseNameArgRange));
                 }
-            }
         }
 
         // Keyword Arguments for fields that we would like to keep in the context
@@ -1301,14 +1279,13 @@ impl PythonArchEvalHooks {
             let Expr::StringLiteral(expr) = arg else {return diagnostics};
             let field_name = expr.value.to_str();
             let (syms, _) = SymbolTable::get_member_symbol(session, class_sym, field_name, from_module, false, true, false, true, false);
-            if syms.is_empty() {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03014, &[field_name, &model_name]) {
+            if syms.is_empty()
+                && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03014, &[field_name, &model_name]) {
                     diagnostics.push(Diagnostic {
                         range: FileMgr::textRange_to_temporary_Range(&expr.range()),
                         ..diagnostic
                     });
                 }
-            }
         }
         diagnostics
     }
@@ -1331,22 +1308,21 @@ impl PythonArchEvalHooks {
             let Expr::StringLiteral(expr) = arg else {return diagnostics};
             let field_name = expr.value.to_str();
             let syms = PythonArchEval::get_nested_sub_field(session, field_name, class_key, from_module);
-            if syms.is_empty() {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03014, &[field_name, &model_name]) {
+            if syms.is_empty()
+                && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03014, &[field_name, &model_name]) {
                     diagnostics.push(Diagnostic {
                         range: FileMgr::textRange_to_temporary_Range(&expr.range()),
                         ..diagnostic
                     });
                 }
-            }
         }
         diagnostics
     }
 
     fn eval_env_ref(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
-        let Some(context) = context else {return None};
+        let context = context?;
         let in_validation = context.get(ContextKey::IsInValidation).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool();
-        let Some(parameters) = context.get(ContextKey::Parameters).map(|ps| ps.as_arguments()) else {return None};
+        let parameters = context.get(ContextKey::Parameters).map(|ps| ps.as_arguments())?;
         if parameters.args.is_empty() {
             return None; // No arguments to process
         }
@@ -1393,16 +1369,15 @@ impl PythonArchEvalHooks {
             return None;
         }
         let module_key = module.unwrap().upgrade(session.st())?;
-        if let Some(scope) = scope && let Some(file) = session.st_mut().get_file(scope) {
-            if file != module_key.into() {
+        if let Some(scope) = scope && let Some(file) = session.st_mut().get_file(scope)
+            && file != module_key.into() {
                 session.st_mut().add_dependency(file, module_key.into(), BuildSteps::VALIDATION, BuildSteps::ARCH);
             }
-        }
         //TODO => csv xml_id
         //TODO check module dependencies
         //TODO in xml ONLY, ref can omit the 'module.' before the xml_id
         //TODO implement base.model_'nameofmodel' - to test
-        return None; //TODO implement returned value
+        None//TODO implement returned value
     }
 
     fn validation_env_ref(symbol_table: &mut SymbolTable, func_sym: FunctionKey) -> Vec<Diagnostic> {

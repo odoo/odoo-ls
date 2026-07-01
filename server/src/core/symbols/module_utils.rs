@@ -37,14 +37,13 @@ impl ModuleSymbol {
             if let Some(dependency) = session.sync_odoo.modules.get(depend).and_then(|m| m.upgrade(session.st())) {
                 // Dependency already in modules
                 SyncOdoo::build_now(session, dependency, BuildSteps::ARCH);
-                if session.st()[dependency].all_depends.contains(&name) {
-                    if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS04012, &[depend]) {
+                if session.st()[dependency].all_depends.contains(&name)
+                    && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS04012, &[depend]) {
                         diagnostics.push(Diagnostic {
                             range: FileMgr::textRange_to_temporary_Range(range),
                             ..diagnostic_base.clone()
                         });
                     }
-                }
                 ModuleSymbol::extend_dependencies(session.st_mut(), symbol_key, dependency);
             } else if let Some(dependency) = create_module_from_name(session, odoo_addons, depend) {
                 // Dependency just added to modules

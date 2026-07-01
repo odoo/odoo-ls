@@ -154,20 +154,19 @@ fn complete_function_def_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey
 fn complete_class_def_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_class_def: &ruff_python_ast::StmtClassDef, offset: usize) -> Option<CompletionResponse> {
     for base in stmt_class_def.bases().iter() {
         if offset > base.range().start().to_usize() && offset <= base.range().end().to_usize() {
-            return complete_expr( base, session, file, offset, false, &vec![]); //TODO only classes?
+            return complete_expr( base, session, file, offset, false, &[]); //TODO only classes?
         }
     }
-    if !stmt_class_def.body.is_empty() {
-        if offset > stmt_class_def.body.first().unwrap().range().start().to_usize() && stmt_class_def.body.last().unwrap().range().end().to_usize() >= offset {
+    if !stmt_class_def.body.is_empty()
+        && offset > stmt_class_def.body.first().unwrap().range().start().to_usize() && stmt_class_def.body.last().unwrap().range().end().to_usize() >= offset {
             return complete_vec_stmt(&stmt_class_def.body, session, file, offset);
         }
-    }
     None
 }
 
 fn complete_return_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_return: &ruff_python_ast::StmtReturn, offset: usize) -> Option<CompletionResponse> {
-    if stmt_return.value.is_some() {
-        return complete_expr( stmt_return.value.as_ref().unwrap(), session, file, offset, false, &vec![]);
+    if let Some(expr) = stmt_return.value.as_ref() {
+        return complete_expr( expr, session, file, offset, false, &[]);
     }
     None
 }
@@ -183,15 +182,14 @@ fn complete_delete_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt
 
 fn complete_assign_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_assign: &ruff_python_ast::StmtAssign, offset: usize) -> Option<CompletionResponse> {
     let mut expected_type = vec![];
-    if stmt_assign.targets.len() == 1 {
-        if let Some(target_name) = stmt_assign.targets.first().unwrap().as_name_expr() {
+    if stmt_assign.targets.len() == 1
+        && let Some(target_name) = stmt_assign.targets.first().unwrap().as_name_expr() {
             match target_name.id.as_str() {
                 "_inherit" => expected_type.push(ExpectedType::MODEL_NAME),
                 "_inherits" => expected_type.push(ExpectedType::INHERITS),
                 _ => {}
             }
         }
-    }
     if offset > stmt_assign.value.range().start().to_usize() && offset <= stmt_assign.value.range().end().to_usize() {
         return complete_expr( &stmt_assign.value, session, file, offset, false, &expected_type);
     }
@@ -200,17 +198,16 @@ fn complete_assign_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt
 
 fn complete_aug_assign_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_aug_assign: &ruff_python_ast::StmtAugAssign, offset: usize) -> Option<CompletionResponse> {
     if offset > stmt_aug_assign.value.range().start().to_usize() && offset <= stmt_aug_assign.value.range().end().to_usize() {
-        return complete_expr( &stmt_aug_assign.value, session, file, offset, false, &vec![]);
+        return complete_expr( &stmt_aug_assign.value, session, file, offset, false, &[]);
     }
     None
 }
 
 fn complete_ann_assign_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_ann_assign: &ruff_python_ast::StmtAnnAssign, offset: usize) -> Option<CompletionResponse> {
-    if stmt_ann_assign.value.is_some() {
-        if offset > stmt_ann_assign.value.as_ref().unwrap().range().start().to_usize() && offset <= stmt_ann_assign.value.as_ref().unwrap().range().end().to_usize() {
-            return complete_expr( stmt_ann_assign.value.as_ref().unwrap(), session, file, offset, false, &vec![]);
+    if let Some(expr) = stmt_ann_assign.value.as_ref()
+        && offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize() {
+            return complete_expr( expr, session, file, offset, false, &[]);
         }
-    }
     None
 }
 
@@ -220,37 +217,34 @@ fn complete_type_alias_stmt(_session: &mut SessionInfo<'_>, _file: SourceFileKey
 
 fn complete_for_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_for: &ruff_python_ast::StmtFor, offset: usize) -> Option<CompletionResponse> {
     if offset > stmt_for.iter.range().start().to_usize() && offset <= stmt_for.iter.range().end().to_usize() {
-        return complete_expr( &stmt_for.iter, session, file, offset, false, &vec![]);
+        return complete_expr( &stmt_for.iter, session, file, offset, false, &[]);
     }
-    if !stmt_for.body.is_empty() {
-        if offset > stmt_for.body.first().unwrap().range().start().to_usize() && stmt_for.body.last().unwrap().range().end().to_usize() >= offset {
+    if !stmt_for.body.is_empty()
+        && offset > stmt_for.body.first().unwrap().range().start().to_usize() && stmt_for.body.last().unwrap().range().end().to_usize() >= offset {
             return complete_vec_stmt(&stmt_for.body, session, file, offset);
         }
-    }
     None
 }
 
 fn complete_while_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_while: &ruff_python_ast::StmtWhile, offset: usize) -> Option<CompletionResponse> {
     if offset > stmt_while.test.range().start().to_usize() && offset <= stmt_while.test.range().end().to_usize() {
-        return complete_expr( &stmt_while.test, session, file, offset, false, &vec![]);
+        return complete_expr( &stmt_while.test, session, file, offset, false, &[]);
     }
-    if !stmt_while.body.is_empty() {
-        if offset > stmt_while.body.first().unwrap().range().start().to_usize() && stmt_while.body.last().unwrap().range().end().to_usize() >= offset {
+    if !stmt_while.body.is_empty()
+        && offset > stmt_while.body.first().unwrap().range().start().to_usize() && stmt_while.body.last().unwrap().range().end().to_usize() >= offset {
             return complete_vec_stmt(&stmt_while.body, session, file, offset);
         }
-    }
     None
 }
 
 fn complete_if_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_if: &ruff_python_ast::StmtIf, offset: usize) -> Option<CompletionResponse> {
     if offset > stmt_if.test.range().start().to_usize() && offset <= stmt_if.test.range().end().to_usize() {
-        return complete_expr( &stmt_if.test, session, file, offset, false, &vec![]);
+        return complete_expr( &stmt_if.test, session, file, offset, false, &[]);
     }
-    if !stmt_if.body.is_empty() {
-        if offset > stmt_if.body.first().unwrap().range().start().to_usize() && stmt_if.body.last().unwrap().range().end().to_usize() >= offset {
+    if !stmt_if.body.is_empty()
+        && offset > stmt_if.body.first().unwrap().range().start().to_usize() && stmt_if.body.last().unwrap().range().end().to_usize() >= offset {
             return complete_vec_stmt(&stmt_if.body, session, file, offset);
         }
-    }
     None
 }
 
@@ -263,39 +257,37 @@ fn complete_with_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_w
     //         }
     //     }
     // }
-    if !stmt_with.body.is_empty() {
-        if offset > stmt_with.body.first().unwrap().range().start().to_usize() && stmt_with.body.last().unwrap().range().end().to_usize() >= offset {
+    if !stmt_with.body.is_empty()
+        && offset > stmt_with.body.first().unwrap().range().start().to_usize() && stmt_with.body.last().unwrap().range().end().to_usize() >= offset {
             return complete_vec_stmt(&stmt_with.body, session, file, offset);
         }
-    }
     None
 }
 
 fn complete_match_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_match: &ruff_python_ast::StmtMatch, offset: usize) -> Option<CompletionResponse> {
     for case in stmt_match.cases.iter() {
-        if !case.body.is_empty() {
-            if offset > case.body.first().as_ref().unwrap().range().start().to_usize() && offset <= case.body.last().as_ref().unwrap().range().end().to_usize() {
+        if !case.body.is_empty()
+            && offset > case.body.first().as_ref().unwrap().range().start().to_usize() && offset <= case.body.last().as_ref().unwrap().range().end().to_usize() {
                 return complete_vec_stmt(&case.body, session, file, offset);
             }
-        }
     }
     None
 }
 
 fn complete_raise_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_raise: &ruff_python_ast::StmtRaise, offset: usize) -> Option<CompletionResponse> {
-    if stmt_raise.exc.is_some() {
-        if offset > stmt_raise.exc.as_ref().unwrap().range().start().to_usize() && offset <= stmt_raise.exc.as_ref().unwrap().range().end().to_usize() {
-            return complete_expr( stmt_raise.exc.as_ref().unwrap(), session, file, offset, false, &vec![]);
-        }
+    if let Some(exc) = &stmt_raise.exc
+        && offset > exc.range().start().to_usize() && offset <= exc.range().end().to_usize()
+    {
+        return complete_expr( exc, session, file, offset, false, &[]);
     }
     None
 }
 
 fn complete_try_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_try: &ruff_python_ast::StmtTry, offset: usize) -> Option<CompletionResponse> {
-    if !stmt_try.body.is_empty() {
-        if offset > stmt_try.body.first().unwrap().range().start().to_usize() && stmt_try.body.last().unwrap().range().end().to_usize() >= offset {
-            return complete_vec_stmt(&stmt_try.body, session, file, offset);
-        }
+    if !stmt_try.body.is_empty()
+        && offset > stmt_try.body.first().unwrap().range().start().to_usize() && stmt_try.body.last().unwrap().range().end().to_usize() >= offset
+    {
+        return complete_vec_stmt(&stmt_try.body, session, file, offset);
     }
     for handler in  stmt_try.handlers.iter() {
         match handler {
@@ -306,28 +298,25 @@ fn complete_try_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_tr
             },
         }
     }
-    if !stmt_try.orelse.is_empty() {
-        if offset > stmt_try.orelse.first().unwrap().range().start().to_usize() && stmt_try.orelse.last().unwrap().range().end().to_usize() >= offset {
+    if !stmt_try.orelse.is_empty()
+        && offset > stmt_try.orelse.first().unwrap().range().start().to_usize() && stmt_try.orelse.last().unwrap().range().end().to_usize() >= offset {
             return complete_vec_stmt(&stmt_try.orelse, session, file, offset);
         }
-    }
-    if !stmt_try.finalbody.is_empty() {
-        if offset > stmt_try.finalbody.first().unwrap().range().start().to_usize() && stmt_try.finalbody.last().unwrap().range().end().to_usize() >= offset {
+    if !stmt_try.finalbody.is_empty()
+        && offset > stmt_try.finalbody.first().unwrap().range().start().to_usize() && stmt_try.finalbody.last().unwrap().range().end().to_usize() >= offset {
             return complete_vec_stmt(&stmt_try.finalbody, session, file, offset);
         }
-    }
     None
 }
 
 fn complete_assert_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_assert: &ruff_python_ast::StmtAssert, offset: usize) -> Option<CompletionResponse> {
     if offset > stmt_assert.test.as_ref().range().start().to_usize() && offset <= stmt_assert.test.as_ref().range().end().to_usize() {
-        return complete_expr( stmt_assert.test.as_ref(), session, file, offset, false, &vec![]);
+        return complete_expr( stmt_assert.test.as_ref(), session, file, offset, false, &[]);
     }
-    if stmt_assert.msg.is_some() {
-        if offset > stmt_assert.msg.as_ref().unwrap().range().start().to_usize() && offset <= stmt_assert.msg.as_ref().unwrap().range().end().to_usize() {
-            return complete_expr( stmt_assert.msg.as_ref().unwrap(), session, file, offset, false, &vec![]);
+    if let Some(msg) = &stmt_assert.msg
+        && offset > msg.range().start().to_usize() && offset <= msg.range().end().to_usize() {
+            return complete_expr( msg, session, file, offset, false, &[]);
         }
-    }
     None
 }
 
@@ -354,8 +343,8 @@ fn complete_import_stmt(session: &mut SessionInfo, file: SourceFileKey, stmt_imp
 
 fn complete_import_from_stmt(session: &mut SessionInfo, file: SourceFileKey, stmt_import: &StmtImportFrom, offset: usize) -> Option<CompletionResponse> {
     let mut items = vec![];
-    if let Some(module) = stmt_import.module.as_ref() {
-        if module.range.start().to_usize() < offset && module.range.end().to_usize() >= offset {
+    if let Some(module) = stmt_import.module.as_ref()
+        && module.range.start().to_usize() < offset && module.range.end().to_usize() >= offset {
             let to_complete = module.id.to_string().get(0 .. offset - module.range.start().to_usize()).unwrap_or("").to_string();
             let names = import_resolver::get_all_valid_names(session, file, Some(to_complete), S!(""), stmt_import.level, true);
             for (name, sym_type) in names {
@@ -366,7 +355,6 @@ fn complete_import_from_stmt(session: &mut SessionInfo, file: SourceFileKey, stm
                 });
             }
         }
-    }
     for alias in stmt_import.names.iter() {
         if alias.name.range().start().to_usize() < offset && alias.name.range.end().to_usize() >= offset {
             let to_complete = alias.name.id.to_string().get(0 .. offset - alias.name.range.start().to_usize()).unwrap_or("").to_string();
@@ -688,11 +676,10 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
                         EvaluationSymbolPtr::WEAK(_weak) => {
                             //if weak, use get_symbol
                             let symbol =  evaluation.symbol.get_symbol_as_weak(session, None, &mut vec![], None);
-                            if let Some(evaluation) = symbol.weak.upgrade(session.st()) {
-                                if let SymbolKey::Class(class) = evaluation {
+                            if let Some(evaluation) = symbol.weak.upgrade(session.st())
+                                && let SymbolKey::Class(class) = evaluation {
                                     expected_type.push(ExpectedType::CLASS(class));
                                 }
-                            }
                         },
                         EvaluationSymbolPtr::DOMAIN => {
                             if let Some(parent) = callable.context.get(ContextKey::BaseAttr)
@@ -1006,11 +993,11 @@ fn complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, list_o
                 }
             },
             &ExpectedType::DOMAIN_LIST(parent) => {
-                if list_or_tuple_elts.is_empty() {
-                    if let Some(completion) = session.sync_odoo.capabilities.text_document.as_ref()
+                if list_or_tuple_elts.is_empty()
+                    && let Some(completion) = session.sync_odoo.capabilities.text_document.as_ref()
                             .and_then(|capability_text_doc| capability_text_doc.completion.as_ref())
-                            .and_then(|completion| completion.completion_item.as_ref()){
-                        if completion.snippet_support.unwrap_or(false) {
+                            .and_then(|completion| completion.completion_item.as_ref())
+                        && completion.snippet_support.unwrap_or(false) {
                             return Some(CompletionResponse::List(CompletionList {
                                 is_incomplete: false,
                                 items: vec![CompletionItem {
@@ -1022,8 +1009,6 @@ fn complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, list_o
                                 }]
                             }))
                         }
-                    }
-                }
                 let mut access_op = false;
                 for (index, expr) in list_or_tuple_elts.iter().enumerate() {
                     access_op |= index == 1

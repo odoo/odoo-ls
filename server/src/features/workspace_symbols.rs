@@ -12,9 +12,9 @@ impl WorkspaceSymbolFeature {
         let mut symbols = vec![];
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         let mut can_resolve_location_range = false;
-        if let Some(cap_workspace) = session.sync_odoo.capabilities.workspace.as_ref() {
-            if let Some(workspace_symb) = cap_workspace.symbol.as_ref() {
-                if let Some(resolve_support) = workspace_symb.resolve_support.as_ref() {
+        if let Some(cap_workspace) = session.sync_odoo.capabilities.workspace.as_ref()
+            && let Some(workspace_symb) = cap_workspace.symbol.as_ref()
+                && let Some(resolve_support) = workspace_symb.resolve_support.as_ref() {
                     for resolvable_property in &resolve_support.properties {
                         if resolvable_property == "location.range" {
                             can_resolve_location_range = true;
@@ -22,8 +22,6 @@ impl WorkspaceSymbolFeature {
                         }
                     }
                 }
-            }
-        }
         for entry in ep_mgr.borrow().iter_all() {
             if entry.borrow().typ == EntryPointType::BUILTIN || entry.borrow().typ == EntryPointType::PUBLIC { //We don't want to search in builtins
                 continue;

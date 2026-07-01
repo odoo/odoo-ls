@@ -201,17 +201,17 @@ impl PythonArchBuilderHooks {
         if name == "release" {
             if session.sync_odoo.get_main_entry_tree(symbol) == (&["odoo", "release"], &[]) {
                 let file_path = session.st().path(symbol);
-                let new_version = SyncOdoo::read_version(session, PathBuf::from(file_path));
+                let new_version = SyncOdoo::read_version(session, &PathBuf::from(file_path));
                 if new_version != session.sync_odoo.version {
                     session.sync_odoo.need_rebuild = true;
                 }
             }
         } else if name == "init" {
-            if session.sync_odoo.version >= (18, 1) {
-                if session.sync_odoo.get_main_entry_tree(symbol) == (&["odoo", "init"], &[]) {
+            if session.sync_odoo.version >= (18, 1)
+                && session.sync_odoo.get_main_entry_tree(symbol) == (&["odoo", "init"], &[]) {
                     let file_path = session.st().path(symbol);
                     let odoo_namespace = session.sync_odoo.get_symbol(file_path, (&["odoo"], &[]), u32::MAX);
-                    if let Some(&odoo_namespace) = odoo_namespace.get(0) {
+                    if let Some(&odoo_namespace) = odoo_namespace.first() {
                         // create _ and Command as ext_symbols
                         let owner = symbol.into();
                         session.st_mut().add_new_ext_symbol(odoo_namespace, "SUPERUSER_ID", TextRange::default(), owner);
@@ -220,7 +220,6 @@ impl PythonArchBuilderHooks {
                         session.st_mut().add_new_ext_symbol(odoo_namespace, "Command", TextRange::default(), owner);
                     }
                 }
-            }
         } else if name == "werkzeug" {
             if session.sync_odoo.get_main_entry_tree(symbol) == (&["odoo", "_monkeypatches", "werkzeug"], &[]) {
                 //doing this patch like this imply that an odoo project will make these functions available for all entrypoints, but heh
@@ -245,8 +244,8 @@ impl PythonArchBuilderHooks {
                     warn!("Unable to find werkzeug.urls to monkeypatch it");
                 }
             }
-        } else if name == "urls" {
-            if session.st().get_local_tree(symbol.into()) == (&["werkzeug", "urls"], &[]) {
+        } else if name == "urls"
+            && session.st().get_local_tree(symbol.into()) == (&["werkzeug", "urls"], &[]) {
                 //manually load patch, as a manual dependency
                 let full_path_monkeypatches = S!("odoo._monkeypatches");
                 let mut main_odoo_symbol = None;
@@ -264,6 +263,5 @@ impl PythonArchBuilderHooks {
                     }
                 }
             }
-        }
     }
 }

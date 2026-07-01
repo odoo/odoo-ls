@@ -188,15 +188,14 @@ impl XmlValidator {
                     has_translation = true;
 
                     // Validate language code
-                    if !session.sync_odoo.check_language_and_track(lang_code, self.xml_symbol.into()) {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05068, &[lang_code]) {
+                    if !session.sync_odoo.check_language_and_track(lang_code, self.xml_symbol.into())
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05068, &[lang_code]) {
                             let field = &session.st()[*field_key];
                             diagnostics.push(Diagnostic {
-                                range: Range { start: Position::new(field.range.start().try_into().unwrap(), 0), end: Position::new(field.range.end().try_into().unwrap(), 0) },
+                                range: Range { start: Position::new(field.range.start().into(), 0), end: Position::new(field.range.end().into(), 0) },
                                 ..diagnostic
                             });
                         }
-                    }
                 }
             }
             let field = &session.st()[*field_key];
@@ -207,30 +206,28 @@ impl XmlValidator {
                     0 => {}, // Should not happen
                     1 => { // Local reference, check that it is not empty
                         let ref_xml_id = xml_id_split[0];
-                        if ref_xml_id.is_empty() {
-                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05039, &[]) {
+                        if ref_xml_id.is_empty()
+                            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05039, &[]) {
                                 diagnostics.push(Diagnostic {
-                                    range: Range { start: Position::new(ref_key_range.start().try_into().unwrap(), 0), end: Position::new(ref_key_range.end().try_into().unwrap(), 0) },
+                                    range: Range { start: Position::new(ref_key_range.start().into(), 0), end: Position::new(ref_key_range.end().into(), 0) },
                                     ..diagnostic
                                 });
                             }
-                        }
 
                     },
                     2 => {
                         let module_name = xml_id_split[0];
-                        if session.sync_odoo.modules.get(module_name).is_none() {
-                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05003, &[]) {
+                        if !session.sync_odoo.modules.contains_key(module_name)
+                            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05003, &[]) {
                                 diagnostics.push(Diagnostic {
-                                    range: Range { start: Position::new(ref_key_range.start().try_into().unwrap(), 0), end: Position::new(ref_key_range.end().try_into().unwrap(), 0) },
+                                    range: Range { start: Position::new(ref_key_range.start().into(), 0), end: Position::new(ref_key_range.end().into(), 0) },
                                     ..diagnostic
                                 });
-                            }
-                        }},
+                            }},
                     _ => { // >= 2
                         if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05051, &[ref_key_val]) {
                             diagnostics.push(Diagnostic {
-                                range: Range { start: Position::new(ref_key_range.start().try_into().unwrap(), 0), end: Position::new(ref_key_range.end().try_into().unwrap(), 0) },
+                                range: Range { start: Position::new(ref_key_range.start().into(), 0), end: Position::new(ref_key_range.end().into(), 0) },
                                 ..diagnostic
                             });
                         }
@@ -252,35 +249,34 @@ impl XmlValidator {
                             missing_model_dependencies.insert(Sy!(field_text.clone()));
                             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[field_text, &record.model.0]) {
                                 diagnostics.push(Diagnostic {
-                                    range: Range { start: Position::new(field_text_range.start().try_into().unwrap(), 0), end: Position::new(field_text_range.end().try_into().unwrap(), 0) },
+                                    range: Range { start: Position::new(field_text_range.start().into(), 0), end: Position::new(field_text_range.end().into(), 0) },
                                     ..diagnostic
                                 });
                             }
                         } else {
                             let model_in_deps = model
                                 .map_or(false, |m| m.borrow().model_in_deps(session, self.module));
-                            if !model_in_deps {
-                                if let Some(diagnostic) = create_diagnostic(
+                            if !model_in_deps
+                                && let Some(diagnostic) = create_diagnostic(
                                     session,
                                     DiagnosticCode::OLS05055,
                                     &[field_text, session.st().name(self.module)],
-                                ) {
-                                    diagnostics.push(Diagnostic {
-                                        range: Range {
-                                            start: Position::new(
-                                                field_text_range.start().try_into().unwrap(),
-                                                0,
-                                            ),
-                                            end: Position::new(
-                                                field_text_range.end().try_into().unwrap(),
-                                                0,
-                                            ),
-                                        },
-                                        ..diagnostic
-                                    });
-                                }
+                                )
+                            {
+                                diagnostics.push(Diagnostic {
+                                    range: Range {
+                                        start: Position::new(
+                                            field_text_range.start().try_into().unwrap(),
+                                            0,
+                                        ),
+                                        end: Position::new(
+                                            field_text_range.end().try_into().unwrap(),
+                                            0,
+                                        ),
+                                    },
+                                    ..diagnostic
+                                });
                             }
-                        }
                     },
                     _ => {}
                 }
@@ -352,8 +348,8 @@ impl XmlValidator {
                     }
                 }
                 // Check that the template's module is a declared dependency
-                if !found_one_valid {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05074, &[t_call_str, session.st().name(self.module)]) {
+                if !found_one_valid
+                    && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05074, &[t_call_str, session.st().name(self.module)]) {
                         diagnostics.push(Diagnostic {
                             range: Range {
                                 start: Position::new(t_call_range.start().into(), 0),
@@ -362,7 +358,6 @@ impl XmlValidator {
                             ..diagnostic
                         });
                     }
-                }
                 // Add file-level dependencies so re-validation is triggered when the template changes
                 for template_key in templates.iter_valid(session.st()) {
                     if let Some(xml_file) = session.st().get_file(template_key.into()) {
@@ -414,8 +409,8 @@ impl XmlValidator {
                     }
                 }
                 // Check that the template's module is a declared dependency
-                if !found_one_valid {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05074, &[t_call_str, session.st().name(self.module)]) {
+                if !found_one_valid
+                    && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05074, &[t_call_str, session.st().name(self.module)]) {
                         diagnostics.push(Diagnostic {
                             range: Range {
                                 start: Position::new(t_call_range.start().into(), 0),
@@ -424,7 +419,6 @@ impl XmlValidator {
                             ..diagnostic
                         });
                     }
-                }
                 // Add file-level dependencies so re-validation is triggered when the template changes
                 for template_key in xml_ids.iter_valid(session.st()) {
                     if let Some(xml_file) = session.st().get_file(template_key.into()) {

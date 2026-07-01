@@ -152,11 +152,10 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
         if class_name.is_some() {
             self.class_stack.pop();
         }
-        if let Some(desc) = self.descriptor_stack.pop() {
-            if !desc.class_name.is_empty() {
+        if let Some(desc) = self.descriptor_stack.pop()
+            && !desc.class_name.is_empty() {
                 self.descriptors.push(desc);
             }
-        }
     }
 
     /// Catch `static template = "..."` inside a class body.
@@ -218,8 +217,8 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
             }
         } else if let Some(desc) = self.descriptor_stack.last_mut() {
             // Instance field: `myField = something`
-            if let Some(name) = get_key_name(&it.key) {
-                if !name.starts_with('#') {
+            if let Some(name) = get_key_name(&it.key)
+                && !name.starts_with('#') {
                     let range = key_span(&it.key)
                         .map(|s| span_to_textrange(s))
                         .unwrap_or_default();
@@ -230,7 +229,6 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
                         range,
                     });
                 }
-            }
         }
         walk::walk_property_definition(self, it);
     }
@@ -243,8 +241,8 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
             self.in_setup = true;
         }
 
-        if let Some(ref name) = name {
-            if let Some(desc) = self.descriptor_stack.last_mut() {
+        if let Some(ref name) = name
+            && let Some(desc) = self.descriptor_stack.last_mut() {
                 let range = key_span(&it.key)
                     .map(|s| span_to_textrange(s))
                     .unwrap_or_default();
@@ -270,16 +268,15 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
                     _ => {}
                 }
             }
-        }
 
         walk::walk_method_definition(self, it);
         self.in_setup = was_in_setup;
     }
 
     fn visit_assignment_expression(&mut self, it: &AssignmentExpression<'a>) {
-        if self.in_setup {
-            if let AssignmentTarget::StaticMemberExpression(member) = &it.left {
-                if matches!(member.object, Expression::ThisExpression(_)) {
+        if self.in_setup
+            && let AssignmentTarget::StaticMemberExpression(member) = &it.left
+                && matches!(member.object, Expression::ThisExpression(_)) {
                     let field_name = member.property.name.to_string();
                     let field_range = span_to_textrange(member.property.span);
                     let typ = match &it.right {
@@ -322,8 +319,6 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
                     }
                     return;
                 }
-            }
-        }
         walk::walk_assignment_expression(self, it);
     }
 }

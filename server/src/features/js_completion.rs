@@ -72,11 +72,10 @@ fn find_template_name<'a, 'input>(node: &Node<'a, 'input>) -> Option<String> {
     let mut current = *node;
     loop {
         let tag = current.tag_name().name();
-        if tag == "template" || tag == "t" {
-            if let Some(t_name) = current.attribute("t-name") {
+        if (tag == "template" || tag == "t")
+            && let Some(t_name) = current.attribute("t-name") {
                 return Some(t_name.to_string());
             }
-        }
         current = current.parent()?;
     }
 }

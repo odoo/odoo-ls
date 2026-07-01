@@ -102,7 +102,7 @@ impl CliBackend {
             ConfigKey::AddonsPaths,
             self.cli.addons.iter().flatten().filter_map(|p| {
                 canonicalize_and_validate(
-                    &p,
+                    p,
                     Some(is_addon_path),
                     None,
                     "Provided addons path is not a valid addon path",
@@ -110,8 +110,8 @@ impl CliBackend {
             }),
         );
 
-        if let Some(community_path) = self.cli.community_path.clone() {
-            if let Some(pb) = canonicalize_and_validate(
+        if let Some(community_path) = self.cli.community_path.clone()
+            && let Some(pb) = canonicalize_and_validate(
                 &community_path,
                 Some(is_odoo_path),
                 None,
@@ -119,7 +119,6 @@ impl CliBackend {
             ) {
                 config.set_str(ConfigKey::OdooPath, pb);
             }
-        }
 
         if let Some(stubs) = self.cli.stubs.clone() {
             config.extend_string_list(
@@ -135,8 +134,8 @@ impl CliBackend {
             );
         }
 
-        if let Some(stdlib) = self.cli.stdlib.clone() {
-            if let Some(pb) = canonicalize_and_validate(
+        if let Some(stdlib) = self.cli.stdlib.clone()
+            && let Some(pb) = canonicalize_and_validate(
                 &stdlib,
                 None,
                 Some(Path::is_dir),
@@ -144,10 +143,9 @@ impl CliBackend {
             ) {
                 config.set_str(ConfigKey::Stdlib, pb);
             }
-        }
 
-        if let Some(python_path) = self.cli.python.clone() {
-            if let Some(path) = canonicalize_and_validate(
+        if let Some(python_path) = self.cli.python.clone()
+            && let Some(path) = canonicalize_and_validate(
                 &python_path,
                 Some(is_python_path),
                 None,
@@ -155,7 +153,6 @@ impl CliBackend {
             ) {
                 config.set_str(ConfigKey::PythonPath, path);
             }
-        }
     }
 
     fn setup(&self) -> Option<HashMap<String, String>> {

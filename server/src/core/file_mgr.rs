@@ -558,13 +558,12 @@ impl FileInfo {
                             }
                         }
                     }
-                    if parse_test_comments {
-                        if text.starts_with("#OLS") || text.starts_with("# OLS") {
+                    if parse_test_comments
+                        && (text.starts_with("#OLS") || text.starts_with("# OLS")) {
                             let codes = text.split(",").map(|s| s.trim().trim_start_matches('#').trim().to_string()).collect::<Vec<String>>();
                             let source_location = text_document.index().source_location(token.start(), text_document.contents(), encoding);
                             test_comments.push((source_location.line.to_zero_indexed() as u32, codes));
                         }
-                    }
                 },
                 TokenKind::Class | TokenKind::Def => {
                     if noqa_to_add.is_some() {
@@ -908,13 +907,12 @@ impl FileMgr {
     /// Helper for delete_path and delete_file_path
     fn delete_entry(session: &mut SessionInfo, key: &str, uri: &str) {
         let to_del = session.sync_odoo.get_file_mgr().borrow_mut().files.remove(key);
-        if let Some(to_del) = to_del {
-            if SyncOdoo::is_in_workspace_or_entry(session, uri) {
+        if let Some(to_del) = to_del
+            && SyncOdoo::is_in_workspace_or_entry(session, uri) {
                 let mut to_del = (*to_del).borrow_mut();
                 to_del.diagnostics.clear();
                 to_del.publish_diagnostics(session)
             }
-        }
     }
 
     pub fn clear(session: &mut SessionInfo) {

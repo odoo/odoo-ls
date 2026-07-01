@@ -225,15 +225,14 @@ impl Model {
             for &key in symbols.iter() {
                 let Some(model_data) = &st[key]._model else {continue};
                 for inherit in model_data.inherit.iter() {
-                    if let Some(model) = session.sync_odoo.models.get(inherit).cloned() {
-                        if !already_in.contains(&model.borrow().name) {
+                    if let Some(model) = session.sync_odoo.models.get(inherit).cloned()
+                        && !already_in.contains(&model.borrow().name) {
                             already_in.insert(model.borrow().name.clone());
                             queue.push_back(model.clone());
                         }
-                    }
                 }
             }
-            symbol_set.extend(symbols.into_iter());
+            symbol_set.extend(symbols);
         }
         symbol_set
     }
@@ -249,12 +248,11 @@ impl Model {
                 continue;
             };
             for (model_name, _field) in model_data.inherits.iter() {
-                if let Some(model) = session.sync_odoo.models.get(model_name).cloned() {
-                    if !already_in.contains(&model.borrow().name) {
+                if let Some(model) = session.sync_odoo.models.get(model_name).cloned()
+                    && !already_in.contains(&model.borrow().name) {
                         res.push(model.clone());
                         already_in.insert(model.borrow().name.clone());
                     }
-                }
             }
         }
         res
@@ -409,11 +407,10 @@ impl Model {
                     if inherit == &base.borrow().name {
                         return true;
                     }
-                    if let Some(model) = session.sync_odoo.models.get(inherit).cloned() {
-                        if inner(&model.borrow(), session, base, checked) {
+                    if let Some(model) = session.sync_odoo.models.get(inherit).cloned()
+                        && inner(&model.borrow(), session, base, checked) {
                             return true;
                         }
-                    }
                 }
             }
             false

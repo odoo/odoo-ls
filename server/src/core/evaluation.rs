@@ -574,19 +574,11 @@ impl Evaluation {
         if value.evaluations.len() == 1 { //only handle strict evaluations
             let eval = &value.evaluations[0];
             let v = eval.follow_ref_and_get_value(session, None, diagnostics);
-            if let Some(v) = v {
-                match v {
-                    EvaluationValue::CONSTANT(v) => {
-                        match *v {
-                            Expr::StringLiteral(s) => {
-                                return (Some(s.value.to_string()), value.diagnostics);
-                            },
-                            _ => {}
-                        }
-                    },
-                    _ => {}
-                }
-            }
+            if let Some(v) = v
+                && let EvaluationValue::CONSTANT(v) = v
+                    && let Expr::StringLiteral(s) = *v {
+                        return (Some(s.value.to_string()), value.diagnostics);
+                    }
         }
         (None, value.diagnostics)
     }
@@ -607,19 +599,11 @@ impl Evaluation {
         if value.evaluations.len() == 1 { //only handle strict evaluations
             let eval = &value.evaluations[0];
             let v = eval.follow_ref_and_get_value(session, None, diagnostics);
-            if let Some(v) = v {
-                match v {
-                    EvaluationValue::CONSTANT(v) => {
-                        match *v {
-                            Expr::BooleanLiteral(s) => {
-                                return (Some(s.value), value.diagnostics);
-                            },
-                            _ => {}
-                        }
-                    },
-                    _ => {}
-                }
-            }
+            if let Some(v) = v
+                && let EvaluationValue::CONSTANT(v) = v
+                    && let Expr::BooleanLiteral(s) = *v {
+                        return (Some(s.value), value.diagnostics);
+                    }
         }
         (None, value.diagnostics)
     }
@@ -1528,14 +1512,13 @@ impl Evaluation {
                     //if we have multiple matches, it means that that ast can reference it multiple times, but we only want to know if that ast matches or not
                     break;
                 }
-                if eval.symbol.sym.has_weak() && let Some(weak) = eval.symbol.sym.get_weak().weak.upgrade(session.st()) {
-                    if let Some(evaluation_search_sym) = evaluation_search.as_symbol() && weak == evaluation_search_sym {
+                if eval.symbol.sym.has_weak() && let Some(weak) = eval.symbol.sym.get_weak().weak.upgrade(session.st())
+                    && let Some(evaluation_search_sym) = evaluation_search.as_symbol() && weak == evaluation_search_sym {
                         found_one_reference |= record_evaluation_hit(session, parent, ast.range());
                     }
-                }
-                if let Some(value) = eval.value.as_ref() {
-                    if let EvaluationValue::CONSTANT(c) = value {
-                        if let Expr::StringLiteral(constant) = c.as_ref() {
+                if let Some(value) = eval.value.as_ref()
+                    && let EvaluationValue::CONSTANT(c) = value
+                        && let Expr::StringLiteral(constant) = c.as_ref() {
                             match evaluation_search {
                                 ReferenceTarget::String(evaluation_search_string) => {
                                     if constant.value.to_str() == evaluation_search_string {
@@ -1543,18 +1526,14 @@ impl Evaluation {
                                     }
                                 },
                                 ReferenceTarget::Symbol(evaluation_search_sym) => {
-                                    if let SymbolKey::Class(class_key) = *evaluation_search_sym {
-                                        if let Some(model_data) = session.st()[class_key]._model.as_ref() {
-                                            if model_data.name == constant.value.to_str() {
+                                    if let SymbolKey::Class(class_key) = *evaluation_search_sym
+                                        && let Some(model_data) = session.st()[class_key]._model.as_ref()
+                                            && model_data.name == constant.value.to_str() {
                                                 record_evaluation_hit(session, parent, constant.range);
                                             }
-                                        }
-                                    }
                                 }
                             }
                         }
-                    }
-                }
             }
         }
         AnalyzeAstResult { evaluations: evals, diagnostics }
@@ -1605,9 +1584,9 @@ impl Evaluation {
                 }
             }
         }
-        if !function.is_static {
-            if object_instance.is_some_and(|x| x) || //on instance
-             object_instance.is_some_and(|x| !x) && function.is_class_method { //on classmethod
+        if !function.is_static
+            && (object_instance.is_some_and(|x| x) || //on instance
+             object_instance.is_some_and(|x| !x) && function.is_class_method) { //on classmethod
                 //check that there is at least one positional argument
                 let mut pos_arg = false;
                 for arg in function.args.iter() {
@@ -1630,7 +1609,6 @@ impl Evaluation {
                 }
                 arg_index += 1;
             }
-        }
         for arg in expr_call.arguments.args.iter() {
             if arg.is_starred_expr() {
                 //TODO try to unpack the starred
@@ -1679,23 +1657,22 @@ impl Evaluation {
                         if func_arg.arg_type == ArgumentType::ARG {
                             found_pos_arg_with_kw += 1;
                         } else if func_arg.arg_type == ArgumentType::KWORD_ONLY {
-                            kword_only_args.retain(|x| &x.symbol != &func_arg.symbol);
+                            kword_only_args.retain(|x| x.symbol != func_arg.symbol);
                         }
                         found_one = true;
                         break;
                     }
                 }
-                if !found_one && kwarg_index == i32::MAX {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01008, &[&function_name, &arg_identifier.id]) {
+                if !found_one && kwarg_index == i32::MAX
+                    && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01008, &[&function_name, &arg_identifier.id]) {
                         diagnostics.push(Diagnostic {
                             range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
                             ..diagnostic
                         });
                     }
-                }
             } else {
                 // if arg is None, it means that it is a **arg, which could replace all args (except pos-only args, of which some could have been set already)
-                found_pos_arg_with_kw = number_pos_arg as i32 - (pos_only_args.len() as i32 - arg_index).max(0);
+                found_pos_arg_with_kw = number_pos_arg - (pos_only_args.len() as i32 - arg_index).max(0);
                 kword_only_args.clear();
             }
         }
@@ -1715,14 +1692,13 @@ impl Evaluation {
                 kword_only_arg_missing.push(name);
             }
         }
-        if !kword_only_arg_missing.is_empty() {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01010, &[&kword_only_arg_missing.join(", ")]) {
+        if !kword_only_arg_missing.is_empty()
+            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01010, &[&kword_only_arg_missing.join(", ")]) {
                 diagnostics.push(Diagnostic {
                     range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
                     ..diagnostic
                 });
             }
-        }
         diagnostics
     }
 
@@ -1849,14 +1825,13 @@ impl Evaluation {
                 }
             }
         }
-        if need_tuple > 0 {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03010, &[]) {
+        if need_tuple > 0
+            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03010, &[]) {
                 diagnostics.push(Diagnostic {
                     range: Range::new(Position::new(value.range().start().to_u32(), 0), Position::new(value.range().end().to_u32(), 0)),
                     ..diagnostic
                 });
             }
-        }
         diagnostics
     }
 
@@ -1898,13 +1873,13 @@ impl Evaluation {
             let split_expr = value.split(".").collect::<Vec<_>>();
             'split_name: for (index, field_name) in split_expr.iter().enumerate() {
                 if date_mode {
-                    if !["year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"].contains(&field_name) {
-                        if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03012, &[]) {
-                            diagnostics.push(Diagnostic {
-                                range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
-                                ..diagnostic_base
-                            });
-                        }
+                    if !["year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"].contains(&field_name)
+                        && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03012, &[])
+                    {
+                        diagnostics.push(Diagnostic {
+                            range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
+                            ..diagnostic_base
+                        });
                     }
                     date_mode = false;
                     continue;
@@ -1974,8 +1949,8 @@ impl Evaluation {
                         _ => {}
                     }
                 }
-                if index == split_expr.len() - 1 && access_op && !date_mode && !access_field_valid {
-                    if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03027, &[])
+                if index == split_expr.len() - 1 && access_op && !date_mode && !access_field_valid
+                    && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03027, &[])
                     {
                         diagnostics.push(Diagnostic {
                             range: Range::new(
@@ -1985,24 +1960,20 @@ impl Evaluation {
                             ..diagnostic_base
                         });
                     }
-                }
-
             }
         }
         if access_op
-            && let Expr::StringLiteral(str_expr) = elt3
-            && !ACCESS_OPERATOR_OPTIONS.contains(&str_expr.value.to_str())
+          && let Expr::StringLiteral(str_expr) = elt3
+          && !ACCESS_OPERATOR_OPTIONS.contains(&str_expr.value.to_str())
+          && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03026, &[])
         {
-            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03026, &[])
-            {
-                diagnostics.push(Diagnostic {
-                    range: Range::new(
-                        Position::new(str_expr.range().start().to_u32(), 0),
-                        Position::new(str_expr.range().end().to_u32(), 0),
-                    ),
-                    ..diagnostic_base
-                });
-            }
+            diagnostics.push(Diagnostic {
+                range: Range::new(
+                    Position::new(str_expr.range().start().to_u32(), 0),
+                    Position::new(str_expr.range().end().to_u32(), 0),
+                ),
+                ..diagnostic_base
+            });
         }
     }
 
@@ -2011,11 +1982,10 @@ impl Evaluation {
         let mut diagnostics = vec![];
         let Some(symbol) = function_arg.symbol.upgrade(st) else { return diagnostics; };
         let evaluations = &st[symbol].evaluations;
-        if evaluations.len() == 1 {
-            if let EvaluationSymbolPtr::DOMAIN = evaluations[0].symbol.sym {
+        if evaluations.len() == 1
+            && let EvaluationSymbolPtr::DOMAIN = evaluations[0].symbol.sym {
                 diagnostics.extend(Evaluation::validate_domain(session, on_object, from_module, arg));
             }
-        }
         diagnostics
     }
 

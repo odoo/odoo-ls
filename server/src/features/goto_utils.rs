@@ -97,10 +97,10 @@ impl GotoUtils {
         let model_syms = model.borrow().get_model_symbols(session.st(), from_module).collect::<Vec<_>>();
         let len_syms = model_syms.len();
         for sym_key in model_syms.into_iter() {
-            if let (Some(eval_range), Some(class_file)) = (eval.range, session.st().get_file(sym_key.into())) {
-                if (file_symbol == class_file) && session.st().range(sym_key.into()).contains(eval_range.start()) && len_syms > 1 {
-                    continue; // if we are already on the class, skip, unless it is the only result
-                }
+            if let (Some(eval_range), Some(class_file)) = (eval.range, session.st().get_file(sym_key.into()))
+                && (file_symbol == class_file) && session.st().range(sym_key.into()).contains(eval_range.start()) && len_syms > 1
+            {
+                continue; // if we are already on the class, skip, unless it is the only result
             }
             model_found = true;
             let path = session.st().path(file_symbol).to_string();

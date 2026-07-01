@@ -78,11 +78,10 @@ impl ClassSymbol {
             ),
             session.st()[base]._model.as_ref().and_then(|model_data|
                 session.sync_odoo.models.get(&model_data.name).cloned()
-            )){
-            if self_model.borrow().inherits_from(session, &base_model) {
+            ))
+            && self_model.borrow().inherits_from(session, &base_model) {
                 return true;
             }
-        }
         false
     }
 

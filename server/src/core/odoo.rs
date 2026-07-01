@@ -696,13 +696,11 @@ impl SyncOdoo {
             if PathBuf::from(addon_path).exists() {
                 //browse all dir in path
                 for item in PathBuf::from(addon_path).read_dir().expect("Unable to browse and odoo addon directory") {
-                    if let Ok(item) = item {
-                        if item.file_type().unwrap().is_dir() && !session.sync_odoo.modules.contains_key(item.file_name().to_str().unwrap()) {
-                            if let Some(module_symbol) = SymbolTable::create_module_from_path(session, &item.path(), addons_symbol) {
+                    if let Ok(item) = item
+                        && item.file_type().unwrap().is_dir() && !session.sync_odoo.modules.contains_key(item.file_name().to_str().unwrap())
+                            && let Some(module_symbol) = SymbolTable::create_module_from_path(session, &item.path(), addons_symbol) {
                                 modules.push(module_symbol);
                             }
-                        }
-                    }
                 }
             }
         }
@@ -1125,20 +1123,18 @@ impl SyncOdoo {
                     builder.load_arch(session);
                 }
             } else if step == BuildSteps::ARCH_EVAL {
-                if DEBUG_REBUILD_NOW {
-                    if session.st().build_status(symbol, BuildSteps::ARCH) != BuildStatus::DONE {
+                if DEBUG_REBUILD_NOW
+                    && session.st().build_status(symbol, BuildSteps::ARCH) != BuildStatus::DONE {
                         panic!("An evaluation has been requested on a non-arched symbol: {}", session.st().debug_path(symbol));
                     }
-                }
                 if let Some(mut builder) = PythonArchEval::new(session.st(), entry_point, symbol) {
                     builder.eval_arch(session);
                 };
             } else if step == BuildSteps::VALIDATION {
-                if DEBUG_REBUILD_NOW {
-                    if session.st().build_status(symbol, BuildSteps::ARCH) != BuildStatus::DONE || session.st().build_status(symbol, BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
+                if DEBUG_REBUILD_NOW
+                    && (session.st().build_status(symbol, BuildSteps::ARCH) != BuildStatus::DONE || session.st().build_status(symbol, BuildSteps::ARCH_EVAL) != BuildStatus::DONE) {
                         panic!("An evaluation has been requested on a non-arched symbol: {}", session.st().debug_path(symbol));
                     }
-                }
                 let mut validator = PythonValidator::new(session.st(), entry_point, symbol);
                 validator.validate(session);
             }
@@ -1989,25 +1985,25 @@ impl Odoo {
             return Ok(None);
         }
         session.log_message(MessageType::INFO, format!("References requested on {} at {} - {}",
-            params.text_document_position.text_document.uri.to_string(),
+            *params.text_document_position.text_document.uri,
             params.text_document_position.position.line,
             params.text_document_position.position.character));
         let uri = params.text_document_position.text_document.uri.to_string();
         let path = FileMgr::uri2pathname(uri.as_str());
         let file_path_buf = PathBuf::from(path.clone());
-        if [".py", ".pyi", ".xml", ".csv", ".js", ".ts"].iter().any(|ext| uri.ends_with(ext)) {
-            if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &file_path_buf) {
-                if SyncOdoo::is_non_main_manifest_file(session.st(), file_symbol, &file_path_buf) {
-                    //If the file is not in main entry, and is a manifest file, we skip it
-                    return Ok(None);
+        if [".py", ".pyi", ".xml", ".csv", ".js", ".ts"].iter().any(|ext| uri.ends_with(ext))
+            && let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &file_path_buf)
+        {
+            if SyncOdoo::is_non_main_manifest_file(session.st(), file_symbol, &file_path_buf) {
+                //If the file is not in main entry, and is a manifest file, we skip it
+                return Ok(None);
+            }
+            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
+            if let Some(file_info) = file_info {
+                if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
+                    file_info.borrow_mut().prepare_ast(session);
                 }
-                let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
-                if let Some(file_info) = file_info {
-                    if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
-                        file_info.borrow_mut().prepare_ast(session);
-                    }
-                    return Ok(ReferenceFeature::get_references(session, file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
-                }
+                return Ok(ReferenceFeature::get_references(session, file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
             }
         }
         Ok(None)
@@ -2170,11 +2166,10 @@ impl Odoo {
                         let sanitized_path = path.sanitize();
                         session.log_message(MessageType::INFO, format!("File opened: {}", sanitized_path));
                         let file_extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                        if ["js", "ts"].contains(&file_extension) {
-                            if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
+                        if ["js", "ts"].contains(&file_extension)
+                            && let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
                                 bridge.open_file(&sanitized_path, &params.text_document.text);
                             }
-                        }
                         let (valid, updated) = Odoo::update_file_cache(session, &sanitized_path, file_extension, Some(&[TextDocumentContentChangeEvent{
                             range: None,
                             range_length: None,
@@ -2272,11 +2267,10 @@ impl Odoo {
         };
         session.log_message(MessageType::INFO, format!("File closed: {path}"));
         session.sync_odoo.opened_files.retain(|x| x != &path);
-        if path.ends_with(".js") || path.ends_with(".ts") {
-            if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
+        if (path.ends_with(".js") || path.ends_with(".ts"))
+            && let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
                 bridge.close_file(&path);
             }
-        }
         let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
         if let Some(file_info) = file_info {
             file_info.borrow_mut().opened = false;
@@ -2351,13 +2345,12 @@ impl Odoo {
             Odoo::search_symbols_to_rebuild(session, &new_path_updated);
             SyncOdoo::process_rebuilds(session, false);
             let tree = session.sync_odoo.path_to_main_entry_tree(&new_path_buf);
-            if let Some(tree) = tree {
-                if  new_path_buf.is_file() &&  session.st().get_symbol(session.sync_odoo.get_main_entry().borrow().root.into(), tree.as_slice(), u32::MAX).is_empty() {
+            if let Some(tree) = tree
+                &&  new_path_buf.is_file() &&  session.st().get_symbol(session.sync_odoo.get_main_entry().borrow().root.into(), tree.as_slice(), u32::MAX).is_empty() {
                     //file has not been added to main entry. Let's build a new entry point
                     EntryPointMgr::create_new_custom_entry_for_path(session, &new_path_updated, &new_path_buf.sanitize());
                     SyncOdoo::process_rebuilds(session, false);
                 }
-            }
             SyncOdoo::process_rebuilds(session, false);
         }
     }
@@ -2436,8 +2429,8 @@ impl Odoo {
         let (valid, updated) = Odoo::update_file_cache(session, &path, file_extension, Some(&params.content_changes), params.text_document.version);
         if session.sync_odoo.state_init != InitState::NOT_READY && valid && updated {
             Odoo::update_file_index(session, &path_buf, file_extension, false, false);
-            if ["js", "ts"].contains(&file_extension) {
-                if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
+            if ["js", "ts"].contains(&file_extension)
+                && let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
                     for change in &params.content_changes {
                         match change.range {
                             Some(range) => {
@@ -2457,7 +2450,6 @@ impl Odoo {
                         }
                     }
                 }
-            }
         }
     }
 

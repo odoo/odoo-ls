@@ -78,8 +78,8 @@ impl HoverFeature {
     }
 
     pub fn hover_js(session: &mut SessionInfo, file_path: &str, line: u32, character: u32) -> Option<Hover> {
-        if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
-            if let Some(hover) = bridge.get_hover(&file_path, line, character) {
+        if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut()
+            && let Some(hover) = bridge.get_hover(&file_path, line, character) {
                 return Some(Hover { contents:
                     HoverContents::Markup(MarkupContent {
                         kind: lsp_types::MarkupKind::Markdown,
@@ -88,7 +88,6 @@ impl HoverFeature {
                     range: None
                 })
             }
-        }
         None
     }
 }

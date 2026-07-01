@@ -151,8 +151,8 @@ impl PythonOdooBuilder {
     fn _load_class_inherits(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) {
         let symbol = self.symbol;
         let _inherits = session.st().get_symbol(symbol.into(), (&[], &["_inherits"]), u32::MAX);
-        if let Some(&SymbolKey::Variable(_inherits)) = _inherits.last() {
-            if let Some(eval) = session.st()[_inherits].evaluations.last().cloned() {
+        if let Some(&SymbolKey::Variable(_inherits)) = _inherits.last()
+            && let Some(eval) = session.st()[_inherits].evaluations.last().cloned() {
                 let eval = eval.follow_ref_and_get_value(session, None, diagnostics);
                 let model = session.st_mut()[symbol]._model.as_mut().unwrap();
                 model.inherits.clear();
@@ -168,7 +168,6 @@ impl PythonOdooBuilder {
                     error!("wrong _inherits value");
                 }
             }
-        }
         //Add inherits from delegate=True from fields
         let all_fields = SymbolTable::all_members(
             self.symbol.into(),

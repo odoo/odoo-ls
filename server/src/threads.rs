@@ -43,11 +43,10 @@ impl <'a> SessionInfo<'a> {
                 method: LogMessage::METHOD.to_string(),
                 params: serde_json::to_value(&LogMessageParams{typ: msg_type, message: msg}).unwrap()
             })
-        ) {
-            if !self.sync_odoo.terminate_rebuild.load(std::sync::atomic::Ordering::SeqCst) {
+        )
+            && !self.sync_odoo.terminate_rebuild.load(std::sync::atomic::Ordering::SeqCst) {
                 panic!("Failed to send log_message ({:?}), but server is not shutting down", e);
             }
-        }
     }
 
     /// Clone of the outgoing message channel. Lets a helper emit notifications
@@ -67,11 +66,10 @@ impl <'a> SessionInfo<'a> {
                 method: method.to_string(),
                 params: param
             })
-        ) {
-            if !self.sync_odoo.terminate_rebuild.load(std::sync::atomic::Ordering::SeqCst) {
+        )
+            && !self.sync_odoo.terminate_rebuild.load(std::sync::atomic::Ordering::SeqCst) {
                 panic!("Failed to send_notification({}), error: {:?}, but server is not shutting down", method, e);
             }
-        }
     }
 
     pub fn show_message(&self, msg_type: MessageType, msg: String) {
@@ -80,11 +78,10 @@ impl <'a> SessionInfo<'a> {
                 method: ShowMessage::METHOD.to_string(),
                 params: serde_json::to_value(&ShowMessageParams{typ: msg_type, message: msg}).unwrap()
             })
-        ) {
-            if !self.sync_odoo.terminate_rebuild.load(std::sync::atomic::Ordering::SeqCst) {
+        )
+            && !self.sync_odoo.terminate_rebuild.load(std::sync::atomic::Ordering::SeqCst) {
                 panic!("Failed to send show_message ({:?}), but server is not shutting down", e);
             }
-        }
     }
 
     pub fn send_request<T: Serialize, U: DeserializeOwned>(&self, method: &str, params: T) -> Result<Option<U>, ServerError> {
@@ -146,14 +143,13 @@ impl <'a> SessionInfo<'a> {
             let _ = session.delayed_process_sender.as_ref().unwrap().send(DelayedProcessingMessage::RESTART);
             return;
         }
-        SyncOdoo::unload_path(session, &path);
+        SyncOdoo::unload_path(session, path);
         Odoo::search_symbols_to_rebuild(session, &path.sanitize());
-        if (!forced_delay || session.delayed_process_sender.is_none()) && !session.sync_odoo.need_rebuild {
-            if session.sync_odoo.get_rebuild_queue_size() < 10 {
+        if (!forced_delay || session.delayed_process_sender.is_none()) && !session.sync_odoo.need_rebuild
+            && session.sync_odoo.get_rebuild_queue_size() < 10 {
                 SyncOdoo::process_rebuilds(session, false);
                 return;
             }
-        }
         let _ = session.delayed_process_sender.as_ref().unwrap().send(DelayedProcessingMessage::PROCESS(std::time::Instant::now()));
     }
 
