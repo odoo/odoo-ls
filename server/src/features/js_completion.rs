@@ -165,6 +165,6 @@ fn complete_members(descriptor: &ComponentDescriptor, prefix: &str) -> Vec<(Stri
             })
             .collect()
     } else {
-        return vec![]; // Current type isn't an object, can't have members
+        vec![]// Current type isn't an object, can't have members
     }
 }

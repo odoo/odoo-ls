@@ -1628,7 +1628,7 @@ impl SymbolTable {
         let mut result: HashMap<OYarn, Vec<SymbolKey>> = HashMap::default();
         let mut acc = HashSet::default();
         Self::_all_members(symbol, session, &mut result, with_co_models, only_fields, only_methods, from_module, &mut acc, is_super);
-        return  result;
+        result
     }
 
     fn _all_members(
@@ -1973,7 +1973,7 @@ impl SymbolTable {
         let Some(tree_last) = tree.last() else {
             return false;
         };
-        return Self::is_field_class(session, target)
+        Self::is_field_class(session, target)
             && field_names.iter().any(|&name| { tree_last == name })
     }
 
@@ -2420,7 +2420,7 @@ impl SymbolTable {
                         session.sync_odoo.symbol_table.name(symbol),
                         tree_path
                     );
-                    return None;
+                    None
                 }
             }
         }

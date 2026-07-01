@@ -89,7 +89,7 @@ impl CliBackend {
                     "Selected config profile ({}) not found in config file. Exiting",
                     selected_config
                 );
-                return None;
+                None
             }
         }
     }

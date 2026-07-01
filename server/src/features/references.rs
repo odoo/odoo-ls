@@ -269,7 +269,7 @@ impl ReferenceFeature {
         } else {
             vec![]
         };
-        return if locs.is_empty() { None } else { Some(locs) };
+        if locs.is_empty() { None } else { Some(locs) }
     }
 
     fn references_in_file(session: &mut SessionInfo, file_symbol: SourceFileKey, file_info: &Rc<RefCell<FileInfo>>, reference_target: &ReferenceTarget) -> Vec<Location> {

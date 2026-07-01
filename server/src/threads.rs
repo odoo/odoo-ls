@@ -98,7 +98,7 @@ impl <'a> SessionInfo<'a> {
                 //We can't check the response ID because it is set by Server. This is the reason Server must check that the id is correct.
                 if let Some(resp_error) = r.error {
                     error!("Got error for response of {}: {}", method, resp_error.message);
-                    return Err(ServerError::ResponseError(resp_error));
+                    Err(ServerError::ResponseError(resp_error))
                 } else {
                     match r.result {
                         Some(res) => {
@@ -108,7 +108,7 @@ impl <'a> SessionInfo<'a> {
                                 Err(e) => Err(ServerError::Serialization(e))
                             }
                         },
-                        None => {return Ok(None)},
+                        None => {Ok(None)},
                     }
                 }
             },
@@ -116,10 +116,10 @@ impl <'a> SessionInfo<'a> {
                 if r.method == Shutdown::METHOD {
                     return Err(ServerError::ServerError("Server is shutting down, cancelling request".to_string()));
                 }
-                return Err(ServerError::ServerError("Not a Response.".to_string()))
+                Err(ServerError::ServerError("Not a Response.".to_string()))
             }
-            Ok(_) => return Err(ServerError::ServerError("Not a Response.".to_string())),
-            Err(_) => return Err(ServerError::ServerError("Server disconnected".to_string())),
+            Ok(_) => Err(ServerError::ServerError("Not a Response.".to_string())),
+            Err(_) => Err(ServerError::ServerError("Server disconnected".to_string())),
         }
     }
 

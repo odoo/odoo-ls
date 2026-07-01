@@ -147,7 +147,7 @@ impl ModuleSymbol {
     //given an xml_id without "module." part, return all XmlData that declare it ("this_module.xml_id"), regardless of the module declaring it.
     pub fn get_xml_id(symbol_table: &SymbolTable, target: ModuleKey, xml_id: &str) -> Option<WeakSet<XmlId>> {
         let target_module = &symbol_table[target];
-        return target_module.xml_ids.get(xml_id).cloned();
+        target_module.xml_ids.get(xml_id).cloned()
     }
 
 }

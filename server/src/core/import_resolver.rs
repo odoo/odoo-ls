@@ -235,7 +235,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
         }
     }
 
-    return result;
+    result
 }
 
 pub fn create_module_from_name(session: &mut SessionInfo, odoo_addons: NamespaceKey, name: &str) -> Option<ModuleKey> {
@@ -391,7 +391,7 @@ fn get_or_create_symbol(
             }
         }
     }
-    return (syms, last_symbols)
+    (syms, last_symbols)
 }
 
 /// Resolve a new symbol from disk, creating it if found, or just creating a COMPILED symbol if a parent is COMPILED
@@ -460,7 +460,7 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
             }
         }
     }
-    return Err("Symbol not found")
+    Err("Symbol not found")
 }
 
 /*

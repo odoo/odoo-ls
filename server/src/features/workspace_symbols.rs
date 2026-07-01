@@ -170,21 +170,21 @@ impl WorkspaceSymbolFeature {
                                     code: ErrorCode::ContentModified as i32, message: S!("Unable to resolve Workspace Symbol - File content modified"), data: None
                                 })
                             }
-                            return Ok(resolved_symbol)
+                            Ok(resolved_symbol)
                         } else {
-                            return Err(ResponseError { code: ErrorCode::InternalError as i32, message: S!("Unable to resolve Workspace Symbol - Invalid data to resolve range"), data: None })
+                            Err(ResponseError { code: ErrorCode::InternalError as i32, message: S!("Unable to resolve Workspace Symbol - Invalid data to resolve range"), data: None })
                         }
                     } else {
-                        return Err(ResponseError { code: ErrorCode::InternalError as i32, message: S!("Unable to resolve Workspace Symbol - Invalid data to resolve range"), data: None })
+                        Err(ResponseError { code: ErrorCode::InternalError as i32, message: S!("Unable to resolve Workspace Symbol - Invalid data to resolve range"), data: None })
                     }
                 } else {
-                    return Err(ResponseError { code: ErrorCode::InternalError as i32, message: S!("Unable to resolve Workspace Symbol - No data to resolve range"), data: None })
+                    Err(ResponseError { code: ErrorCode::InternalError as i32, message: S!("Unable to resolve Workspace Symbol - No data to resolve range"), data: None })
                 }
             } else {
-                return Err(ResponseError { code: ErrorCode::InternalError as i32, message: S!("Unable to resolve Workspace Symbol - No file info"), data: None })
+                Err(ResponseError { code: ErrorCode::InternalError as i32, message: S!("Unable to resolve Workspace Symbol - No file info"), data: None })
             }
         } else {
-            return Err(ResponseError { code: ErrorCode::InternalError as i32, message: S!("Unable to resolve Workspace Symbol - no provided location to resolve"), data: None })
+            Err(ResponseError { code: ErrorCode::InternalError as i32, message: S!("Unable to resolve Workspace Symbol - no provided location to resolve"), data: None })
         }
     }
 

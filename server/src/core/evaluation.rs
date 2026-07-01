@@ -204,7 +204,7 @@ impl EvaluationSymbolWeak {
     }
 
     pub fn is_instance(&self) -> Option<bool> {
-        return self.instance;
+        self.instance
     }
 }
 
@@ -555,7 +555,7 @@ impl Evaluation {
             (ContextKey::Range, ContextValue::RANGE(ast.range()))
         ]);
         let analyze_result = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context, for_annotation, required_dependencies);
-        return (analyze_result.evaluations, analyze_result.diagnostics)
+        (analyze_result.evaluations, analyze_result.diagnostics)
     }
 
     /* Given an Expr, try to return the represented String. None if it can't be achieved */

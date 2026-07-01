@@ -677,7 +677,7 @@ impl SyncOdoo {
                     vec![Sy!("odoo"), Sy!("addons")]);
             }
         }
-        return true;
+        true
     }
 
     fn build_modules(session: &mut SessionInfo) {
@@ -891,7 +891,7 @@ impl SyncOdoo {
         if !set.remove(&selected_sym_unwrapped) {
             panic!("Unable to remove selected symbol from rebuild set")
         }
-        return Some(selected_sym_unwrapped);
+        Some(selected_sym_unwrapped)
     }
 
     fn add_from_self_reload(session: &mut SessionInfo) {
@@ -1711,7 +1711,7 @@ impl Odoo {
             .and_then(|c| c.get("selectedProfile"))
             .and_then(|v| v.as_str())
             .map(|v| v.to_string());
-        return Ok(value);
+        Ok(value)
     }
 
     pub fn send_all_configurations(session: &mut SessionInfo) {
@@ -1910,11 +1910,11 @@ impl Odoo {
     }
 
     pub fn handle_goto_definition(session: &mut SessionInfo, params: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>, ResponseError> {
-        return Odoo::handle_gotos(session, params, false)
+        Odoo::handle_gotos(session, params, false)
     }
 
     pub fn handle_goto_declaration(session: &mut SessionInfo, params: GotoDefinitionParams) -> Result<Option<GotoDeclarationResponse>, ResponseError> {
-        return Odoo::handle_gotos(session, params, true)
+        Odoo::handle_gotos(session, params, true)
     }
 
     fn handle_gotos(session: &mut SessionInfo, params: GotoDefinitionParams, is_declaration: bool) -> Result<Option<GotoDeclarationResponse>, ResponseError> {
@@ -2084,7 +2084,6 @@ impl Odoo {
     }
 
     pub fn handle_did_change_configuration(_session: &mut SessionInfo, _params: DidChangeConfigurationParams) {
-        return;
     }
 
     pub fn handle_did_change_workspace_folders(session: &mut SessionInfo, params: DidChangeWorkspaceFoldersParams) {
@@ -2200,16 +2199,15 @@ impl Odoo {
                                 EntryPointMgr::create_new_custom_entry_for_path(session, &tree_path.sanitize(), &sanitized_path);
                                 SyncOdoo::process_rebuilds(session, false);
                             } else if updated {
-                                Odoo::update_file_index(session, path.clone(), file_extension, true, false);
+                                Odoo::update_file_index(session, &path, file_extension, true, false);
                             }
                         }
                     },
-                    Err(_) => {
-                        let msg = format!("Invalid file URI: {}", params.text_document.uri.to_string());
+                    Err(error) => {
+                        let msg = format!("Invalid file URI: {}: {}", *params.text_document.uri, error);
                         session.log_message(MessageType::ERROR, msg.clone());
                         session.show_message(MessageType::ERROR, msg.clone());
                         warn!("{}", &msg);
-                        return;
                     }
                 }
             },

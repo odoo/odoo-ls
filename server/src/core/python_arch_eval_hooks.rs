@@ -1176,24 +1176,24 @@ impl PythonArchEvalHooks {
             Some(ContextValue::SYMBOL(weak)) if !weak.is_expired(session.st()) => *weak,
             _ => evaluation_sym.get_weak().weak,
         };
-        return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak {
+        Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak {
             weak: weak_eval,
             context: result_context,
             instance: Some(true),
             is_super: false
-        }));
+        }))
     }
 
     fn eval_init(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
-        return PythonArchEvalHooks::eval_init_common(session, evaluation_sym, maybe_context, diagnostics, file_symbol, false, false)
+        PythonArchEvalHooks::eval_init_common(session, evaluation_sym, maybe_context, diagnostics, file_symbol, false, false)
     }
 
     fn eval_init_relational(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
-        return PythonArchEvalHooks::eval_init_common(session, evaluation_sym, maybe_context, diagnostics, file_symbol, true, false)
+        PythonArchEvalHooks::eval_init_common(session, evaluation_sym, maybe_context, diagnostics, file_symbol, true, false)
     }
 
     fn eval_init_relational_one2many(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
-        return PythonArchEvalHooks::eval_init_common(session, evaluation_sym, maybe_context, diagnostics, file_symbol, true, true)
+        PythonArchEvalHooks::eval_init_common(session, evaluation_sym, maybe_context, diagnostics, file_symbol, true, true)
     }
 
     fn _update_field_init(symbol_table: &mut SymbolTable, symbol: SymbolKey, relational: Option<OYarn>) {

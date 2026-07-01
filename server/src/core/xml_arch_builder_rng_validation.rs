@@ -49,11 +49,10 @@ impl XmlArchBuilder {
                                 }
                             );
                         }
-                    }
                 }
-                return true;
+                true
             },
-            _ => { return false;},
+            _ => false,
         }
     }
 
