@@ -2,6 +2,7 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use crate::core::odoo::SyncOdoo;
+use crate::core::python_odoo_builder::ACCESS_OPERATOR_OPTIONS;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::symbol_keys::{FunctionKey, KeyValidator, ModuleKey, SourceFileKey, SymbolKey, Wk};
 use crate::core::symbols::storage::SymbolTable;
@@ -1860,7 +1861,7 @@ impl Evaluation {
         diagnostics
     }
 
-    fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: Wk<SymbolKey>, from_module: Option<ModuleKey>, elt1: &Expr, elt2: &Expr, _elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
+    fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: Wk<SymbolKey>, from_module: Option<ModuleKey>, elt1: &Expr, elt2: &Expr, elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
         //parameter 1
         let Some(on_object) = on_object.upgrade(session.st()) else { return }; //if weak is not set, we didn't manage to evalue base object. Do not validate in this case
         if let Expr::StringLiteral(s) = elt1 {
@@ -1937,32 +1938,47 @@ impl Evaluation {
             }
         }
         //parameter 2
-        match elt2 {
-            Expr::StringLiteral(s) => {
-                match s.value.to_str() {
-                    "=" | "!=" | ">" | ">=" | "<" | "<=" | "=?" | "=like" | "like" | "not like" | "ilike" |
-                    "not ilike" | "=ilike" | "in" | "not in" | "child_of" | "parent_of" | "any" | "not any" => {},
-                    "access" => {
-                        if session.sync_odoo.version < (19, 3) {
-                            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03025, &[]) {
-                                diagnostics.push(Diagnostic {
-                                    range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
-                                    ..diagnostic_base
-                                });
-                            }
-                        }
-                    }
-                    _ => {
-                        if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03009, &[]) {
+        let mut access_op = false;
+        if let Expr::StringLiteral(s) = elt2 {
+            match s.value.to_str() {
+                "=" | "!=" | ">" | ">=" | "<" | "<=" | "=?" | "=like" | "like" | "not like" | "ilike" |
+                "not ilike" | "=ilike" | "in" | "not in" | "child_of" | "parent_of" | "any" | "not any" => {},
+                "access" => {
+                    if session.sync_odoo.version < (19, 3) {
+                        if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03025, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
                                 ..diagnostic_base
                             });
                         }
+                    } else {
+                        access_op = true;
                     }
                 }
-            },
-            _ => {}
+                _ => {
+                    if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03009, &[]) {
+                        diagnostics.push(Diagnostic {
+                            range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
+                            ..diagnostic_base
+                        });
+                    }
+                }
+            }
+        }
+        if access_op
+            && let Expr::StringLiteral(str_expr) = elt3
+            && !ACCESS_OPERATOR_OPTIONS.contains(&str_expr.value.to_str())
+        {
+            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03026, &[])
+            {
+                diagnostics.push(Diagnostic {
+                    range: Range::new(
+                        Position::new(str_expr.range().start().to_u32(), 0),
+                        Position::new(str_expr.range().end().to_u32(), 0),
+                    ),
+                    ..diagnostic_base
+                });
+            }
         }
     }
 
