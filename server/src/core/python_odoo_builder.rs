@@ -25,6 +25,7 @@ pub const MAGIC_FIELDS: [&str; 6] = [
     "write_uid",
     "write_date"
 ];
+pub const ACCESS_OPERATOR_OPTIONS: [&str; 4] = ["read", "write", "create", "unlink"];
 
 pub struct PythonOdooBuilder {
     symbol: ClassKey,
