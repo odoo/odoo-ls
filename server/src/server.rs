@@ -496,7 +496,7 @@ impl Server {
                         // Other wait statuses can be ignored for this purpose
                     }
                     Err(err) => {
-                        eprintln!("Error waiting for process {}: {}", pid, err);
+                        error!("Error waiting for process {}: {}", pid, err);
                         break;
                     }
                 }
