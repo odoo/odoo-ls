@@ -30,6 +30,8 @@ use ruff_text_size::{Ranged, TextSize};
 use crate::utils::HashSet;
 use std::{cell::RefCell, rc::Rc};
 
+const ACCESS_OPERATOR_OPTIONS: [&str; 4] = ["read", "write", "create", "unlink"];
+
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone)]
@@ -40,6 +42,7 @@ pub enum ExpectedType {
     DOMAIN_OPERATOR,
     DOMAIN_FIELD(SymbolKey),
     DOMAIN_COMPARATOR,
+    DOMAIN_ACCESS_VALUE,
     CLASS(ClassKey),
     SIMPLE_FIELD(Option<OYarn>),
     NESTED_FIELD(Option<OYarn>),
@@ -825,6 +828,18 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
                     });
                 }
             },
+            ExpectedType::DOMAIN_ACCESS_VALUE => {
+                for access_value in ACCESS_OPERATOR_OPTIONS {
+                    items.push(CompletionItem {
+                        label: access_value.to_string(),
+                        insert_text: None,
+                        kind: Some(lsp_types::CompletionItemKind::TEXT),
+                        label_details: None,
+                        sort_text: None,
+                        ..Default::default()
+                    });
+                }
+            },
             ExpectedType::DOMAIN_FIELD(parent) => {
                 add_nested_field_names(session, &mut items, current_module, expr_string_literal.value.to_str(), *parent, true, &None);
             },
@@ -995,11 +1010,24 @@ pub fn _complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, l
                         }
                     }
                 }
+                let mut access_op = false;
                 for (index, expr) in list_or_tuple_elts.iter().enumerate() {
+                    if index == 1 && session.sync_odoo.version >= (19, 3){
+                        // Check if we have an index operator
+                    }
+                    access_op |= index == 1
+                        && session.sync_odoo.version >= (19, 3)
+                        && expr
+                            .as_string_literal_expr()
+                            .map(|expr_string_literal| {
+                                expr_string_literal.value.to_str() == "access"
+                            })
+                            .unwrap_or(false);
                     if offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize() {
                         let expected_type = match index {
                             0 => vec![ExpectedType::DOMAIN_FIELD(parent)],
                             1 => vec![ExpectedType::DOMAIN_COMPARATOR],
+                            2 if access_op => vec![ExpectedType::DOMAIN_ACCESS_VALUE],
                             _ => vec![],
                         };
                         return complete_expr(expr, session, file, offset, is_param, &expected_type);
