@@ -185,6 +185,10 @@ OLS03024, DiagnosticSetting::Info, "Models declared in a function are not suppor
 */
 OLS03025, DiagnosticSetting::Error, "Invalid comparison operator: 'access' is only available from Odoo version 19.3",
 /**
+* Invalid value for operator: 'access'; The value should be one of 'read', 'write', 'create', or 'unlink'
+*/
+OLS03026, DiagnosticSetting::Error, "Invalid value for operator: 'access'; The value should be one of 'read', 'write', 'create', or 'unlink'",
+/**
 * Form is no longer available on odoo.tests.common, thus it should not be imported from there.
 */
 OLS03301, DiagnosticSetting::Warning, "Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form",
