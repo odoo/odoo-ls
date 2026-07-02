@@ -8,6 +8,7 @@ use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use crate::core::file_mgr::FileInfo;
 use crate::core::import_resolver;
 use crate::core::odoo::SyncOdoo;
+use crate::core::python_odoo_builder::ACCESS_OPERATOR_OPTIONS;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::{FunctionSymbol, ModuleSymbol};
 use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey, SourceFileKey, SymbolKey};
@@ -29,8 +30,6 @@ use ruff_python_ast::{
 use ruff_text_size::{Ranged, TextSize};
 use crate::utils::HashSet;
 use std::{cell::RefCell, rc::Rc};
-
-const ACCESS_OPERATOR_OPTIONS: [&str; 4] = ["read", "write", "create", "unlink"];
 
 
 #[allow(non_camel_case_types)]
