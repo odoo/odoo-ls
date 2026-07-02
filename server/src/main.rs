@@ -53,7 +53,7 @@ fn main() {
         if path.exists() {
             log_dir = path;
         } else {
-            println!("Given log directory path is invalid, fallbacking to default directory {}", log_dir.display());
+            eprintln!("Given log directory path is invalid, fallbacking to default directory {}", log_dir.display());
         }
     }
 
