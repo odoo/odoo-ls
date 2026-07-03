@@ -17,33 +17,51 @@ use std::rc::Rc;
 
 /// Single source of truth for token *type* indices. The order here MUST match the
 /// order of `legend().token_types` so the `u32` we send to the client lines up.
+///
+/// Indices 0..=11 are laid out to exactly mirror tsserver's `ClassificationType`
+/// numbering (class, enum, interface, namespace, typeParameter, type, parameter,
+/// variable, enumMember, property, function, member). This lets the JS path forward
+/// tsserver's decoded type index through *verbatim* — no translation table. tsserver's
+/// `member` is LSP's `method` (slot 11). Slots 12+ are Python-only extras tsserver
+/// never emits.
 #[repr(u32)]
 #[derive(Clone, Copy)]
-#[allow(dead_code)] // Decorator / Keyword are reserved legend slots, not emitted in v1.
+#[allow(dead_code)] // Several slots exist only for the JS (tsserver) legend, not emitted by the Python path.
 enum TokType {
-    Namespace = 0,
-    Class = 1,
-    Function = 2,
-    Method = 3,
-    Parameter = 4,
-    Variable = 5,
-    Property = 6,
-    Decorator = 7,
-    Keyword = 8,
+    Class = 0,
+    Enum = 1,
+    Interface = 2,
+    Namespace = 3,
+    TypeParameter = 4,
+    Type = 5,
+    Parameter = 6,
+    Variable = 7,
+    EnumMember = 8,
+    Property = 9,
+    Function = 10,
+    Method = 11, // tsserver "member"
+    Decorator = 12,
+    Keyword = 13,
 }
 
 /// Single source of truth for token *modifier* bit positions. The modifier bitset
 /// sent to the client is the OR of `(1 << index)` for each active modifier, so this
 /// order MUST match `legend().token_modifiers`.
+///
+/// Bits 0..=5 mirror tsserver's `TokenModifier` numbering (declaration, static, async,
+/// readonly, defaultLibrary, local), so the JS path forwards tsserver's modifier bitset
+/// through verbatim. `Definition` (bit 6) is Python-only reserved.
 #[repr(u32)]
 #[derive(Clone, Copy)]
-#[allow(dead_code)] // Definition / Readonly are reserved legend slots, not emitted in v1.
+#[allow(dead_code)] // Several bits exist only for the JS (tsserver) legend, not emitted by the Python path.
 enum TokMod {
     Declaration = 0,
-    Definition = 1,
-    Readonly = 2,
-    Static = 3,
+    Static = 1,
+    Async = 2,
+    Readonly = 3,
     DefaultLibrary = 4,
+    Local = 5,
+    Definition = 6,
 }
 
 impl TokMod {
@@ -71,22 +89,29 @@ impl SemanticTokensFeature {
     pub fn legend() -> SemanticTokensLegend {
         SemanticTokensLegend {
             token_types: vec![
-                SemanticTokenType::NAMESPACE,   // TokType::Namespace
-                SemanticTokenType::CLASS,       // TokType::Class
-                SemanticTokenType::FUNCTION,    // TokType::Function
-                SemanticTokenType::METHOD,      // TokType::Method
-                SemanticTokenType::PARAMETER,   // TokType::Parameter
-                SemanticTokenType::VARIABLE,    // TokType::Variable
-                SemanticTokenType::PROPERTY,    // TokType::Property
-                SemanticTokenType::DECORATOR,   // TokType::Decorator
-                SemanticTokenType::KEYWORD,     // TokType::Keyword
+                SemanticTokenType::CLASS,          // TokType::Class (ts 0)
+                SemanticTokenType::ENUM,           // TokType::Enum (ts 1)
+                SemanticTokenType::INTERFACE,      // TokType::Interface (ts 2)
+                SemanticTokenType::NAMESPACE,      // TokType::Namespace (ts 3)
+                SemanticTokenType::TYPE_PARAMETER, // TokType::TypeParameter (ts 4)
+                SemanticTokenType::TYPE,           // TokType::Type (ts 5)
+                SemanticTokenType::PARAMETER,      // TokType::Parameter (ts 6)
+                SemanticTokenType::VARIABLE,       // TokType::Variable (ts 7)
+                SemanticTokenType::ENUM_MEMBER,    // TokType::EnumMember (ts 8)
+                SemanticTokenType::PROPERTY,       // TokType::Property (ts 9)
+                SemanticTokenType::FUNCTION,       // TokType::Function (ts 10)
+                SemanticTokenType::METHOD,         // TokType::Method (ts 11 "member")
+                SemanticTokenType::DECORATOR,      // TokType::Decorator (python-only)
+                SemanticTokenType::KEYWORD,        // TokType::Keyword (python-only)
             ],
             token_modifiers: vec![
-                SemanticTokenModifier::DECLARATION,     // TokMod::Declaration
-                SemanticTokenModifier::DEFINITION,      // TokMod::Definition
-                SemanticTokenModifier::READONLY,        // TokMod::Readonly
-                SemanticTokenModifier::STATIC,          // TokMod::Static
-                SemanticTokenModifier::DEFAULT_LIBRARY, // TokMod::DefaultLibrary
+                SemanticTokenModifier::DECLARATION,     // TokMod::Declaration (ts 0)
+                SemanticTokenModifier::STATIC,          // TokMod::Static (ts 1)
+                SemanticTokenModifier::ASYNC,           // TokMod::Async (ts 2)
+                SemanticTokenModifier::READONLY,        // TokMod::Readonly (ts 3)
+                SemanticTokenModifier::DEFAULT_LIBRARY, // TokMod::DefaultLibrary (ts 4)
+                SemanticTokenModifier::new("local"),    // TokMod::Local (ts 5)
+                SemanticTokenModifier::DEFINITION,      // TokMod::Definition (python-only)
             ],
         }
     }
