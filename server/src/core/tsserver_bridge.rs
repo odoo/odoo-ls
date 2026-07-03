@@ -590,6 +590,49 @@ impl TsServerBridge {
         }
     }
 
+    /// Whole-file semantic tokens from tsserver, as `(start, length, token_type, modifiers)`
+    /// tuples. `start`/`length` are UTF-16 code-unit offsets into the file; `token_type`
+    /// and `modifiers` are **already aligned to our LSP legend** (see `SemanticTokensFeature`),
+    /// because our legend's first slots mirror tsserver's numbering — so no translation is
+    /// needed here beyond splitting tsserver's packed classification value.
+    pub fn get_semantic_tokens(&mut self, file_path: &str) -> Vec<(u32, u32, u32, u32)> {
+        // A length past EOF classifies the whole file; tsserver clamps to the real end.
+        let request_seq = match self.send_request(
+            "encodedSemanticClassifications-full",
+            json!({ "file": file_path, "start": 0, "length": i32::MAX, "format": "2020" }),
+        ) {
+            Ok(seq) => seq,
+            Err(_) => return vec![],
+        };
+
+        let Some(response) = self.read_response_for_request(request_seq) else {
+            return vec![];
+        };
+
+        if !response.get("success").and_then(Value::as_bool).unwrap_or(false) {
+            return vec![];
+        }
+
+        let Some(spans) = response.get("body").and_then(|b| b.get("spans")).and_then(Value::as_array) else {
+            return vec![];
+        };
+
+        // `spans` is a flat `[start, length, classification, ...]` array. The classification
+        // (format "2020") packs the type and modifiers: `type = (class >> 8) - 1`,
+        // `modifiers = class & 0xFF`.
+        spans
+            .chunks_exact(3)
+            .filter_map(|triple| {
+                let start = triple[0].as_u64()? as u32;
+                let length = triple[1].as_u64()? as u32;
+                let classification = triple[2].as_u64()? as u32;
+                let token_type = (classification >> 8).checked_sub(1)?;
+                let modifiers = classification & 0xFF;
+                Some((start, length, token_type, modifiers))
+            })
+            .collect()
+    }
+
     fn send_request(&mut self, command: &str, arguments: Value) -> std::io::Result<u64> {
         let seq = self.seq;
         self.seq += 1;

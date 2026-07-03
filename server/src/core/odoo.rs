@@ -1907,8 +1907,8 @@ impl Odoo {
         }
         let path = match params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
             Some(schema) if schema == "file" => {
-                let uri = params.text_document.uri.to_string();
-                if !uri.ends_with(".py") {
+                let uri = params.text_document.uri.as_str();
+                if [".py", ".js", ".ts"].iter().all(|&ext| !uri.ends_with(ext) ) {
                     return Ok(None);
                 }
                 match params.text_document.uri.to_file_path() {
@@ -1938,6 +1938,11 @@ impl Odoo {
                             let tokens = SemanticTokensFeature::tokens_python(session, file_symbol, &file_info);
                             return Ok(Some(SemanticTokensResult::Tokens(tokens)));
                         }
+                    },
+                    Ast::JsAst(_) => {
+                        let uri = file_info.borrow().uri.clone();
+                        let tokens = SemanticTokensFeature::tokens_javascript(session, &uri, &file_info);
+                        return Ok(Some(SemanticTokensResult::Tokens(tokens)));
                     },
                     _ => {},
                 }
