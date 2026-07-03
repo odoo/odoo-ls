@@ -1,6 +1,6 @@
 //! Python LSP semantic tokens
 
-use lsp_types::{Range, SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokens, SemanticTokensLegend};
+use lsp_types::{Position, Range, SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokens, SemanticTokensLegend};
 use ruff_python_ast::visitor::{walk_expr, walk_parameter, Visitor};
 use ruff_python_ast::{Decorator, Expr, ExprCall, Parameter};
 use ruff_text_size::{Ranged, TextRange};
@@ -141,6 +141,35 @@ impl SemanticTokensFeature {
         Self::encode(raw)
     }
 
+    /// JavaScript/TypeScript semantic tokens, delegated wholesale to tsserver.
+    ///
+    /// Unlike the Python path (which resolves every site through our own evaluation
+    /// engine), JS semantics live in tsserver, which already ships a native semantic
+    /// classifier. Our legend is laid out to mirror tsserver's type/modifier numbering,
+    /// so the classifications come back already aligned — the only work here is turning
+    /// tsserver's UTF-16 offsets into LSP positions and reusing `encode`.
+    pub fn tokens_javascript(session: &mut SessionInfo, file_path: &str, file_info: &Rc<RefCell<FileInfo>>) -> SemanticTokens {
+        // Snapshot the content first: we need it to map offsets to positions, and we
+        // must not hold the borrow across the `&mut session` bridge call below.
+        let content = {
+            let fi = file_info.borrow();
+            let fia = fi.file_info_ast.borrow();
+            match fia.text_document.as_ref() {
+                Some(td) => td.contents().to_string(),
+                None => return SemanticTokens { result_id: None, data: vec![] },
+            }
+        };
+
+        // tsserver is the only source of JS semantics. Without it (CLI / most tests)
+        // we emit nothing and let the client's grammar handle highlighting.
+        let spans = match session.sync_odoo.tsserver_bridge.as_mut() {
+            Some(bridge) => bridge.get_semantic_tokens(file_path),
+            None => return SemanticTokens { result_id: None, data: vec![] },
+        };
+
+        Self::encode(utf16_spans_to_raw_tokens(&content, spans))
+    }
+
     /// Sort raw tokens by (line, char) and delta-encode into the flat LSP form.
     fn encode(mut raw: Vec<(Range, u32, u32)>) -> SemanticTokens {
         raw.sort_by_key(|(range, _, _)| (range.start.line, range.start.character));
@@ -170,6 +199,35 @@ impl SemanticTokensFeature {
         }
         SemanticTokens { result_id: None, data }
     }
+}
+
+/// Convert tsserver's UTF-16-offset spans into `Range`-tagged raw tokens ready for
+/// `encode`. tsserver reports each token as `(start, length, token_type, modifiers)`
+/// where `start`/`length` are UTF-16 code-unit offsets from the file start; LSP wants
+/// line/character positions (also UTF-16 by default, which is what the rest of the
+/// tsserver bridge assumes). Pure: depends only on `content` and `spans`.
+fn utf16_spans_to_raw_tokens(content: &str, spans: Vec<(u32, u32, u32, u32)>) -> Vec<(Range, u32, u32)> {
+    // Line-start offsets in UTF-16 code units — tsserver's offset space.
+    let mut line_starts: Vec<u32> = vec![0];
+    let mut u16_offset: u32 = 0;
+    for ch in content.chars() {
+        u16_offset += ch.len_utf16() as u32;
+        if ch == '\n' {
+            line_starts.push(u16_offset);
+        }
+    }
+    let to_pos = |offset: u32| -> Position {
+        let line = line_starts.partition_point(|&s| s <= offset).saturating_sub(1);
+        Position { line: line as u32, character: offset - line_starts[line] }
+    };
+
+    spans
+        .into_iter()
+        .map(|(start, length, token_type, modifiers)| {
+            let range = Range { start: to_pos(start), end: to_pos(start + length) };
+            (range, token_type, modifiers)
+        })
+        .collect()
 }
 
 /// `self`/`cls` are left entirely to the client grammar's special-self/cls rule —
