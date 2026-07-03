@@ -8,7 +8,7 @@ use crate::{core::evaluation_context::ContextKey, utils::{HashMap, HashSet}};
 
 use lsp_types::{Diagnostic, DiagnosticTag, Range, SymbolKind};
 use ruff_text_size::TextRange;
-use tracing::{trace, warn};
+use tracing::warn;
 
 use crate::{
     constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType}, core::{
@@ -645,58 +645,43 @@ impl SymbolTable {
         tree
     }
 
-
+    /// Searches for a symbol at the given tree, starting from the target symbol.
+    ///
+    /// Note:
     /// The generic type `S` allows for flexibility: `tree` can be a tuple of `&[OYarn]` or `&[&str]`
     /// To call this function with a param of type `Tree`, transform it into its slice form: `tree.as_slice()`
-    pub fn get_symbol<S: AsRef<str>>(&self, target: SymbolKey, tree: (&[S], &[S]), position: u32) -> Vec<SymbolKey> {
-        let symbol_tree_files = tree.0;
-        let symbol_tree_content = tree.1;
-        let mut iter_sym: Vec<SymbolKey>;
-        if symbol_tree_files.len() != 0 {
-            let _mod_iter_sym = self.get_module_symbol(target, symbol_tree_files[0].as_ref());
-            if _mod_iter_sym.is_none() {
-                return vec![];
-            }
-            iter_sym = vec![_mod_iter_sym.unwrap()];
-            if symbol_tree_files.len() > 1 {
-                for fk in symbol_tree_files[1..symbol_tree_files.len()].iter() {
-                    if let Some(s) = self.get_module_symbol(*iter_sym.last().unwrap(), fk.as_ref()) {
-                        iter_sym = vec![s];
-                    } else {
-                        return vec![];
-                    }
-                }
-            }
-            if symbol_tree_content.len() != 0 {
-                for fk in symbol_tree_content.iter() {
-                    if iter_sym.len() > 1 {
-                        trace!("TODO: explore all implementation possibilities");
-                    }
-                    let _iter_sym = self.get_sub_symbol(iter_sym[0], fk.as_ref(), position);
-                    iter_sym = _iter_sym.symbols;
-                    if iter_sym.is_empty() {
-                        return vec![];
-                    }
-                }
-            }
-        } else {
-            if symbol_tree_content.len() == 0 {
-                return vec![];
-            }
-            iter_sym = self.get_sub_symbol(target, symbol_tree_content[0].as_ref(), position).symbols;
+    pub fn get_symbol<S: AsRef<str>>(
+        &self,
+        target: SymbolKey,
+        tree: (&[S], &[S]),
+        position: u32,
+    ) -> Vec<SymbolKey> {
+        let (symbol_tree_files, symbol_tree_content) = tree;
+        if symbol_tree_files.is_empty() && symbol_tree_content.is_empty() {
+            return vec![];
+        }
+        let mut iter_sym: Vec<SymbolKey> = vec![target];
+        // Walk the file paths
+        for section_name in symbol_tree_files {
+            iter_sym = iter_sym
+                .iter()
+                .filter_map(|&sym| self.get_module_symbol(sym, section_name.as_ref()))
+                .collect();
             if iter_sym.is_empty() {
                 return vec![];
             }
-            if symbol_tree_content.len() > 1 {
-                if iter_sym.len() > 1 {
-                    trace!("TODO: explore all implementation possibilities");
-                }
-                for fk in symbol_tree_content[1..symbol_tree_content.len()].iter() {
-                    let _iter_sym = self.get_sub_symbol(iter_sym[0], fk.as_ref(), position);
-                    iter_sym = _iter_sym.symbols;
-                    // TODO: this is a loop that runs only once! Fix me!
-                    return iter_sym;
-                }
+        }
+        // Walk the content paths, capturing every symbol
+        for content_name in symbol_tree_content {
+            iter_sym = iter_sym
+                .iter()
+                .flat_map(|&sym| {
+                    self.get_sub_symbol(sym, content_name.as_ref(), position)
+                        .symbols
+                })
+                .collect();
+            if iter_sym.is_empty() {
+                return vec![];
             }
         }
         iter_sym
