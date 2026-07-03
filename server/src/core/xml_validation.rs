@@ -7,9 +7,9 @@ use crate::utils::{HashMap, HashSet};
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
 
-use crate::{constants::DiagnosticLevel, core::{model::Model, symbols::{storage::SymbolTable, symbol_keys::{XmlAssetKey, XmlDataKey, XmlDeleteKey, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey}}}};
+use crate::{constants::DiagnosticSource, core::{model::Model, symbols::{storage::SymbolTable, symbol_keys::{XmlAssetKey, XmlDataKey, XmlDeleteKey, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey}}}};
 use crate::{
-    constants::{BuildSteps, DataType, OYarn, DEBUG_STEPS},
+    constants::{BuildSteps, MissingDataSource, OYarn, DEBUG_STEPS},
     core::{
         diagnostics::{create_diagnostic, DiagnosticCode},
         entry_point::{EntryPoint, EntryPointType},
@@ -65,7 +65,7 @@ impl XmlValidator {
         let Some(file_info) = SymbolTable::get_file_info_for_validation(session, self.xml_symbol.into()) else {
             return;
         };
-        file_info.borrow_mut().replace_diagnostics(DiagnosticLevel::XML_VALIDATION, diagnostics);
+        file_info.borrow_mut().replace_diagnostics(DiagnosticSource::XML_VALIDATION, diagnostics);
         file_info.borrow_mut().publish_diagnostics(session);
     }
 
@@ -262,12 +262,10 @@ impl XmlValidator {
             if t_call_str.contains("{{") || t_call_str.contains("#{") {
                 continue;
             }
-            let Some(templates) = session.sync_odoo.js_templates.get_mut(t_call_str) else {continue};
-            templates.clear_invalid(&session.sync_odoo.symbol_table);
             let Some(templates) = session.sync_odoo.js_templates.get(t_call_str) else {continue};
-            if templates.is_empty() {
+            if templates.is_empty(&session.sync_odoo.symbol_table) {
                 session.st_mut()[self.xml_symbol].not_found_data_ids.insert(
-                    DataType::TEMPLATE(t_call_name.clone()),
+                    MissingDataSource::TEMPLATE(t_call_name.clone()),
                     BuildSteps::VALIDATION,
                 );
                 session.sync_odoo.get_main_entry().borrow_mut().not_found_data_ids.insert(self.xml_symbol.into());
@@ -326,11 +324,10 @@ impl XmlValidator {
                 start: t_call_range.start().to_usize(),
                 end: t_call_range.end().to_usize(),
             };
-            let mut xml_ids = SyncOdoo::get_xml_ids(session, file, t_call_str, &range, diagnostics);
-            xml_ids.clear_invalid(session.st());
-            if xml_ids.is_empty() {
+            let xml_ids = SyncOdoo::get_xml_ids(session, file, t_call_str, &range, diagnostics);
+            if xml_ids.is_empty(&session.sync_odoo.symbol_table) {
                 session.st_mut()[self.xml_symbol].not_found_data_ids.insert(
-                    DataType::XML_ID(t_call_name.clone()),
+                    MissingDataSource::XML_ID(t_call_name.clone()),
                     BuildSteps::VALIDATION,
                 );
                 session.sync_odoo.get_main_entry().borrow_mut().not_found_data_ids.insert(self.xml_symbol.into());

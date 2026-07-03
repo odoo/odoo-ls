@@ -43,58 +43,59 @@ impl DefinitionFeature {
             AstType::Python => GotoUtils::get_symbols(session, GotoRequest::Definition, file_symbol, file_info, line, character),
             AstType::Xml => GotoUtils::get_symbols_xml(session, file_symbol, file_info, line, character),
             AstType::Csv => GotoUtils::get_symbols_csv(session, file_symbol, file_info, line, character),
-            AstType::Js => {vec![]}, // Fill later directly with links from tsserver
+            AstType::Js => {return DefinitionFeature::get_js_definition(session, file_info, line, character);},
         };
-        let mut links = vec![];
-        for def in definitions_sources.iter() {
-            links.extend(GotoUtils::goto_source_to_location(session, def));
-        }
-        if matches!(ast_type, AstType::Xml) && links.is_empty() {
+        let links: Vec<LocationLink> = definitions_sources
+            .iter()
+            .flat_map(|def| GotoUtils::goto_source_to_location(session, def))
+            .collect();
+        if ast_type == AstType::Xml && links.is_empty() {
             if let Some(response) = Self::get_owl_js_definition(session, file_info, line, character) {
                 return Some(response);
             }
         }
-        if matches!(ast_type, AstType::Js) {
-            // Check if cursor is over a template reference (e.g. `static template = "module.xml_id"`)
-            let template_refs = file_info.borrow().file_info_ast.borrow().js_template_refs.clone();
-            for (range, template_name, _) in &template_refs {
-                if Self::position_in_range(line, character, range) {
-                    let Some(templates) = session.sync_odoo.js_templates.get(template_name) else { continue; };
-                    let mut locations = vec![];
-                    for template in templates.iter_valid(&session.sync_odoo.symbol_table) {
-                        locations.extend(GotoUtils::goto_source_to_location(session, &GotoSource {
-                            source: template.into(),
-                            origin_selection_range: Some(*range),
-                        }));
-                    }
-                    return Some(GotoDefinitionResponse::Link(locations));
-                }
-            }
-
-            let file_path = &file_info.borrow().uri;
-            let locs: Vec<Location> = if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
-                bridge.get_definition(&file_path, line, character)
-                    .into_iter()
-                    .filter_map(|(target_file, sl, sc, el, ec)| {
-                        let uri = FileMgr::pathname2uri(&target_file);
-                        Some(Location {
-                            uri,
-                            range: Range {
-                                start: Position { line: sl, character: sc },
-                                end:   Position { line: el, character: ec },
-                            },
-                        })
-                    })
-                    .collect()
-            } else {
-                vec![]
-            };
-            if locs.is_empty() {
-                return None;
-            }
-            return Some(GotoDefinitionResponse::Array(locs));
-        }
         Some(GotoDefinitionResponse::Link(links))
+    }
+
+    fn get_js_definition(session: &mut SessionInfo, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<GotoDefinitionResponse> {
+        // Check if cursor is over a template reference (e.g. `static template = "module.xml_id"`)
+        let template_refs = file_info.borrow().file_info_ast.borrow().js_template_refs.clone();
+        for template_ref in &template_refs {
+            if Self::position_in_range(line, character, &template_ref.range) {
+                let Some(templates) = session.sync_odoo.js_templates.get(&template_ref.xml_id) else { continue; };
+                let mut locations = vec![];
+                for template in templates.iter_valid(&session.sync_odoo.symbol_table) {
+                    locations.extend(GotoUtils::goto_source_to_location(session, &GotoSource {
+                        source: template.into(),
+                        origin_selection_range: Some(template_ref.range.clone()),
+                    }));
+                }
+                return Some(GotoDefinitionResponse::Link(locations));
+            }
+        }
+
+        let file_path = &file_info.borrow().uri;
+        let locs: Vec<Location> = if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
+            bridge.get_definition(&file_path, line, character)
+                .into_iter()
+                .map(|(target_file, sl, sc, el, ec)| {
+                    let uri = FileMgr::pathname2uri(&target_file);
+                    Location {
+                        uri,
+                        range: Range {
+                            start: Position { line: sl, character: sc },
+                            end:   Position { line: el, character: ec },
+                        },
+                    }
+                })
+                .collect()
+        } else {
+            vec![]
+        };
+        if locs.is_empty() {
+            return None;
+        }
+        return Some(GotoDefinitionResponse::Array(locs));
     }
 
     /// Resolve an OWL directive attribute expression in an XML template.

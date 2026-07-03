@@ -8,7 +8,7 @@ use lsp_types::{CompletionResponse, DocumentSymbolResponse, GotoDefinitionRespon
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tracing::{error, info, warn};
-use crate::{constants::{DiagnosticLevel, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::symbols::storage::SymbolTable, create_session};
+use crate::{constants::{DiagnosticSource, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::symbols::storage::SymbolTable, create_session};
 
 use crate::{core::{file_mgr::NoqaInfo, odoo::{Odoo, SyncOdoo}}, server::ServerError, utils::PathSanitizer, S};
 
@@ -230,15 +230,15 @@ pub struct UpdateFileIndexData {
     pub forced_delay: bool,
 }
 
-pub struct NewTsServerDiagnostics {
+pub struct TsServerDiagnostics {
     pub file: String,
-    pub diagnostic_level: DiagnosticLevel,
+    pub diagnostic_level: DiagnosticSource,
     pub diagnostics: Vec<lsp_types::Diagnostic>,
 }
 
 pub enum ThreadMessage {
     LSPMessage(Message),
-    NewTsServerDiagnostics(NewTsServerDiagnostics),
+    TsServerDiagnostics(TsServerDiagnostics),
 }
 
 #[allow(non_camel_case_types)]
@@ -527,7 +527,7 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>,
                     error!("Error: Responses should not arrives in generic channel. Exiting thread");
                     return;
                 }
-                ThreadMessage::NewTsServerDiagnostics(msg) => {
+                ThreadMessage::TsServerDiagnostics(msg) => {
                     let mut session = create_session!(sender_to_s, receiver_to_s, Some(generic_sender_to_main.clone()), sync_odoo, delayed_process_sender);
                     Odoo::handle_tsserver_new_diagnostics(&mut session, msg);
                 },

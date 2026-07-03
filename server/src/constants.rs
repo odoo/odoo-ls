@@ -71,7 +71,7 @@ pub enum SymType{
 }
 
 #[derive(Debug, Eq, Hash, PartialEq, Clone)]
-pub enum DataType {
+pub enum MissingDataSource {
     XML_ID(OYarn),
     TEMPLATE(OYarn)
 }
@@ -103,7 +103,7 @@ impl From<i32> for BuildSteps {
 }
 
 #[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
-pub enum DiagnosticLevel {
+pub enum DiagnosticSource {
     PY_SYNTAX              = 0,
     PY_ARCH                = 1,
     PY_ARCH_EVAL           = 2,
@@ -120,13 +120,13 @@ pub enum DiagnosticLevel {
     JS_VALIDATION          = 13,
 }
 
-impl From<BuildSteps> for DiagnosticLevel {
+impl From<BuildSteps> for DiagnosticSource {
     fn from(value: BuildSteps) -> Self {
         match value {
-            BuildSteps::SYNTAX => DiagnosticLevel::PY_SYNTAX,
-            BuildSteps::ARCH => DiagnosticLevel::PY_ARCH,
-            BuildSteps::ARCH_EVAL => DiagnosticLevel::PY_ARCH_EVAL,
-            BuildSteps::VALIDATION => DiagnosticLevel::PY_VALIDATION,
+            BuildSteps::SYNTAX => DiagnosticSource::PY_SYNTAX,
+            BuildSteps::ARCH => DiagnosticSource::PY_ARCH,
+            BuildSteps::ARCH_EVAL => DiagnosticSource::PY_ARCH_EVAL,
+            BuildSteps::VALIDATION => DiagnosticSource::PY_VALIDATION,
         }
     }
 }

@@ -1,6 +1,6 @@
 use super::file_mgr::FileInfo;
 use crate::{
-    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DataType, DiagnosticLevel, OYarn}, core::{entry_point::EntryPointType, symbols::{ModuleSymbol, symbol_keys::{XmlDataKey, XmlId}}}, features::xml_ast_utils::XmlAstUtils, threads::SessionInfo, weak_collections::WeakSet
+    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, MissingDataSource, DiagnosticSource, OYarn}, core::{entry_point::EntryPointType, symbols::{ModuleSymbol, symbol_keys::{XmlDataKey, XmlId}}}, features::xml_ast_utils::XmlAstUtils, threads::SessionInfo, weak_collections::WeakSet
 };
 use crate::{
     core::{
@@ -47,7 +47,7 @@ impl XmlArchBuilder {
             self.load_odoo_openerp_data(session, node, &mut diagnostics);
         }
         session.st_mut()[self.xml_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
-        file_info.replace_diagnostics(DiagnosticLevel::XML_ARCH, diagnostics);
+        file_info.replace_diagnostics(DiagnosticSource::XML_ARCH, diagnostics);
         session.sync_odoo.add_to_validations(self.xml_symbol);
     }
 
@@ -93,11 +93,11 @@ impl XmlArchBuilder {
             if let XmlDataKey::RECORD(record) = xml_data {
                 data_hooks::on_record_creation(session, self.xml_symbol.into(), record);
             }
-            session.sync_odoo.get_main_entry().borrow_mut().search_rebuild_for_data_id(session, DataType::XML_ID(Sy!(id.clone())));
+            session.sync_odoo.get_main_entry().borrow_mut().search_rebuild_for_data_id(session, MissingDataSource::XML_ID(Sy!(id.clone())));
             ModuleSymbol::insert_xml_id(session.st_mut(), xml_module, Sy!(id), XmlId::from(xml_data));
         }
         if let Some(t_name) = t_name {
-            XmlAstUtils::check_js_template_validity_for_key(session, &t_name);
+            XmlAstUtils::ensure_js_template_validity(session, &t_name);
             if session.sync_odoo.js_templates.contains_key(&t_name) {
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05072, &[]) {
                     diagnostics.push(lsp_types::Diagnostic {
@@ -113,8 +113,8 @@ impl XmlArchBuilder {
                     error!("Template data is not a XmlTemplateKey for t-name: {}", t_name);
                     return;
                 };
-                session.sync_odoo.get_main_entry().borrow_mut().search_rebuild_for_data_id(session, DataType::TEMPLATE(Sy!(t_name.clone())));
-                session.sync_odoo.js_templates.entry(t_name.clone()).or_insert_with(|| WeakSet::default()).insert(template);
+                session.sync_odoo.get_main_entry().borrow_mut().search_rebuild_for_data_id(session, MissingDataSource::TEMPLATE(Sy!(t_name.clone())));
+                session.sync_odoo.js_templates.entry(t_name).or_insert_with(|| WeakSet::default()).insert(template);
             }
         }
     }

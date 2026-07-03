@@ -194,9 +194,8 @@ impl Model {
         res
     }
 
-    pub fn has_symbols(&mut self, symbol_table: &SymbolTable) -> bool {
-        self.symbols.clear_invalid(symbol_table);
-        !self.symbols.is_empty()
+    pub fn has_symbols(&self, symbol_table: &SymbolTable) -> bool {
+        !self.symbols.is_empty(symbol_table)
     }
 
     /* Return all symbols that build this model.

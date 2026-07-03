@@ -549,7 +549,7 @@ OLS05070, DiagnosticSetting::Error, "CSV parsing error: {0}",
 /**
 * Good practice is to have a template name that is under the format module_name.template_name
 */
-OLS05071, DiagnosticSetting::Info, "Good practice is to have a template name that is under the format module_name.template_name",
+OLS05071, DiagnosticSetting::Info, "It is good practice to have template names with the format module_name.template_name",
 /**
 * Duplicate Template ID. This t-name is already used somewhere else.
 */

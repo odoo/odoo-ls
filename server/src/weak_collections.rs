@@ -28,7 +28,8 @@ impl<K: Eq + Hash + Copy> WeakSet<K> {
         self.set.borrow().contains(key)
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub fn is_empty(&self, table: &impl KeyValidator<K>) -> bool {
+        self.set.borrow_mut().retain(|k| table.is_key_valid(*k));
         self.set.borrow().is_empty()
     }
 

@@ -5,7 +5,7 @@ use ruff_python_ast::{Expr, ExprStringLiteral, Stmt};
 use ruff_text_size::Ranged;
 use tracing::info;
 
-use crate::{constants::{DEBUG_STEPS, DiagnosticLevel}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileInfo, symbols::{ModuleSymbol, symbol_keys::ModuleKey}}, oyarn, threads::SessionInfo, utils::{HashSet, PathSanitizer}};
+use crate::{constants::{DEBUG_STEPS, DiagnosticSource}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileInfo, symbols::{ModuleSymbol, symbol_keys::ModuleKey}}, oyarn, threads::SessionInfo, utils::{HashSet, PathSanitizer}};
 
 
 
@@ -25,7 +25,7 @@ impl ModuleSymbol {
         if session.sync_odoo.modules.contains_key(&session.st()[module_key].dir_name) {
             //TODO: handle multiple modules with the same name
         }
-        manifest_file_info.replace_diagnostics(DiagnosticLevel::PY_SYNTAX, diags);
+        manifest_file_info.replace_diagnostics(DiagnosticSource::PY_SYNTAX, diags);
         manifest_file_info.publish_diagnostics(session);
         info!("Detected module: {:?}", session.st()[module_key].path);
     }

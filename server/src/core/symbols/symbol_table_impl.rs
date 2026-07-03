@@ -4,9 +4,9 @@ use std::{
     path::PathBuf,
     rc::Rc,
 };
-use crate::{core::evaluation_context::ContextKey, constants::DataType, utils::{HashMap, HashSet}};
+use crate::{core::evaluation_context::ContextKey, constants::MissingDataSource, utils::{HashMap, HashSet}};
 
-use lsp_types::{Diagnostic, DiagnosticTag, OneOf, Range, SymbolKind};
+use lsp_types::{Diagnostic, DiagnosticTag, Range, SymbolKind};
 use ruff_text_size::TextRange;
 use tracing::{trace, warn};
 
@@ -549,7 +549,7 @@ impl SymbolTable {
         }
     }
 
-    pub fn not_found_data_ids(&self, target: SourceFileKey) -> Option<&HashMap<DataType, BuildSteps>> {
+    pub fn not_found_data_ids(&self, target: SourceFileKey) -> Option<&HashMap<MissingDataSource, BuildSteps>> {
         match target {
             SourceFileKey::File(f) => Some(&self[f].not_found_data_ids),
             SourceFileKey::XmlFile(f) => Some(&self[f].not_found_data_ids),
@@ -560,7 +560,7 @@ impl SymbolTable {
         }
     }
 
-    pub fn not_found_data_ids_mut(&mut self, target: SourceFileKey) -> Option<&mut HashMap<DataType, BuildSteps>> {
+    pub fn not_found_data_ids_mut(&mut self, target: SourceFileKey) -> Option<&mut HashMap<MissingDataSource, BuildSteps>> {
         match target {
             SourceFileKey::File(f) => Some(&mut self[f].not_found_data_ids),
             SourceFileKey::XmlFile(f) => Some(&mut self[f].not_found_data_ids),
@@ -602,9 +602,12 @@ impl SymbolTable {
         }
         if path_str.ends_with(".js") {
             match parent {
+                //js file created here is because of js in a custom entrypoint, and that should be created under a diskdir.
+                //JS files under a Module should be created by the module loading, through load_assets
                 SymbolKey::DiskDir(d) => {
-                    return Some(session.st_mut().add_new_js_file(OneOf::Right(d), &name, &path_str).into());
+                    return Some(session.st_mut().add_new_js_file(d.into(), &name, &path_str).into());
                 },
+                //
                 _ => {}
             }
         }

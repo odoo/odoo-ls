@@ -36,7 +36,7 @@ pub struct ModuleSymbol {
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     pub not_found_data: HashMap<String, BuildSteps>,
     pub not_found_models: HashMap<OYarn, BuildSteps>,
-    pub not_found_data_ids: HashMap<DataType, BuildSteps>,
+    pub not_found_data_ids: HashMap<MissingDataSource, BuildSteps>,
     pub(super) in_workspace: bool,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
     pub dependencies: DependenciesTable,
@@ -119,7 +119,6 @@ impl ModuleSymbol {
         self.parent
     }
 
-    /// symbols + module_symbols + data_symbols
     pub fn children(&self) -> Vec<SymbolKey> {
         self.symbols.values().flat_map(|section| section.values()).flatten()
             .chain(self.module_symbols.values()).copied()

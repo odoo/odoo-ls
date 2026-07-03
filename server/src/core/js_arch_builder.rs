@@ -5,12 +5,13 @@ use oxc::ast::ast::{
 use oxc::ast_visit::{Visit, walk};
 use oxc::span::Span;
 
+use crate::threads::SessionInfo;
+
 /// A span (byte offsets) plus the xml_id string value found in a template assignment.
-pub struct TemplateRef {
-    /// Byte offset of the opening quote of the string literal in the JS source.
-    pub start: u32,
-    /// Byte offset of the closing quote of the string literal in the JS source.
-    pub end: u32,
+#[derive(Debug, Clone)]
+pub struct JsTemplateRef {
+    /// range of the closing quote of the string literal in the JS source.
+    pub range: Range,
     /// The xml_id string value (e.g. `"sale.form_view"`).
     pub xml_id: String,
     /// The name of the enclosing class, if any.
@@ -115,11 +116,11 @@ fn extract_shape_from_object(obj: &oxc::ast::ast::ObjectExpression<'_>) -> Infer
 struct JSArchBuilderVisitor {
     source: String,
     file_path: String,
-    pub refs: Vec<TemplateRef>,
+    refs: Vec<JsTemplateRef>,
     class_stack: Vec<String>,
     in_setup: bool,
     descriptor_stack: Vec<ComponentDescriptor>,
-    pub descriptors: Vec<ComponentDescriptor>,
+    descriptors: Vec<ComponentDescriptor>,
 }
 
 impl JSArchBuilderVisitor {
@@ -177,9 +178,12 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
             let key_name = get_key_name(&it.key);
             if key_name.as_deref() == Some("template") {
                 if let Some(Expression::StringLiteral(lit)) = &it.value {
-                    self.refs.push(TemplateRef {
-                        start: lit.span.start,
-                        end: lit.span.end,
+                    let content_start = lit.span.start + 1;
+                    let content_end = lit.span.end.saturating_sub(1);
+                    let start = byte_to_position(&self.source, content_start);
+                    let end = byte_to_position(&self.source, content_end);
+                    self.refs.push(JsTemplateRef {
+                        range: Range {start, end},
                         xml_id: lit.value.to_string(),
                         class_name: self.class_stack.last().cloned(),
                     });
@@ -191,7 +195,7 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
                         Some(Expression::ObjectExpression(obj)) => {
                             for prop_kind in &obj.properties {
                                 let ObjectPropertyKind::ObjectProperty(p) = prop_kind else {
-                                    continue
+                                    continue //TODO implement SpreadProperty
                                 };
                                 if let Some(prop_name) = get_key_name(&p.key) {
                                     let range = key_span(&p.key)
@@ -336,23 +340,29 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
     }
 }
 
-pub fn visit_file(program: &Program<'_>, source: &str, file_path: &str) -> (Vec<(Range, String, Option<String>)>, Vec<ComponentDescriptor>) {
+pub fn visit_file(program: &Program<'_>, source: &str, file_path: &str) -> (Vec<JsTemplateRef>, Vec<ComponentDescriptor>) {
     let mut visitor = JSArchBuilderVisitor::new(source.to_string(), file_path.to_string());
     visitor.visit_program(program);
     (
         visitor
         .refs
         .into_iter()
-        .map(|r| {
-            // The span includes the surrounding quotes; move one byte inward.
-            let content_start = r.start + 1;
-            let content_end = r.end.saturating_sub(1);
-            let start = byte_to_position(source, content_start);
-            let end = byte_to_position(source, content_end);
-            (Range { start, end }, r.xml_id, r.class_name)
-        })
         .collect(),
 
         visitor.descriptors,
     )
+}
+
+pub fn build(session: &mut SessionInfo, templates_ref: &Vec<JsTemplateRef>, components: &Vec<ComponentDescriptor>) {
+    // Populate template→class_name mapping
+    for tr in templates_ref.iter() {
+        if let Some(cn) = &tr.class_name {
+            session.sync_odoo.js_component_by_template.insert(tr.xml_id.clone(), cn.clone());
+        }
+    }
+
+    // Populate component descriptors from this file
+    for descriptor in components.iter() {
+        session.sync_odoo.component_descriptors.insert(descriptor.class_name.clone(), descriptor.clone());
+    }
 }

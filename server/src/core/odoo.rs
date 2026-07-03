@@ -22,7 +22,7 @@ use crate::features::declaration::DeclarationFeature;
 use crate::features::completion::CompletionFeature;
 use crate::features::definition::DefinitionFeature;
 use crate::features::hover::HoverFeature;
-use crate::threads::{NewTsServerDiagnostics, SessionInfo};
+use crate::threads::{TsServerDiagnostics, SessionInfo};
 use crate::weak_collections::{WeakMap, WeakSet};
 use crate::utils::{HashMap, is_dir_cs, is_file_cs};
 use std::cell::RefCell;
@@ -299,71 +299,7 @@ impl SyncOdoo {
             };
             info!("stub {:?} - {}", stub, found)
         }
-        let tsserver_cmd = session.sync_odoo.config.tsserver_command.as_str();
-        if let Some(sender_to_main) = session.clone_sender_to_main() {
-            info!("Starting tsserver with command \"{}\"", tsserver_cmd);
-            match TsServerBridge::new(tsserver_cmd, sender_to_main) {
-                Ok(bridge) => session.sync_odoo.tsserver_bridge = Some(bridge),
-                Err(err) => {
-                    warn!("Unable to start tsserver for JS completions: {}", err);
-                }
-            }
-        } else {
-            info!("tssserver not starting as no channel to main thread has been provided");
-        }
-        if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
-            let mut paths: HashMap<String, Vec<String>> = HashMap::default();
-            let mut addon_dirs: Vec<PathBuf> = vec![];
-            if let Some(odoo_path) = &session.sync_odoo.config.odoo_path {
-                addon_dirs.push(PathBuf::from(odoo_path).join("addons"));
-            }
-            for extra in session.sync_odoo.config.addons_paths.iter() {
-                addon_dirs.push(PathBuf::from(extra));
-            }
-            for addon_dir in addon_dirs {
-                if let Ok(entries) = std::fs::read_dir(&addon_dir) {
-                    for entry in entries.flatten() {
-                        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                            let name = entry.file_name().to_string_lossy().to_string();
-                            let src = entry.path().join("static").join("src").join("*");
-                            paths.entry(format!("@{}/*", name))
-                                .or_default()
-                                .push(src.sanitize());
-                            if name == "spreadsheet" {
-                                let src = entry.path().join("static").join("src").join("index.js");
-                                paths.entry(S!("@spreadsheet"))
-                                    .or_default()
-                                    .push(src.sanitize());
-                                let src = entry.path().join("static").join("src").join("o_spreadsheet").join("o_spreadsheet.js");
-                                paths.entry(S!("@odoo/o-spreadsheet"))
-                                    .or_default()
-                                    .push(src.sanitize());
-                            } else if name == "web" {
-                                let path_entry = paths.entry(S!("@odoo/owl")).or_default();
-                                path_entry.push(entry.path().join("static").join("src").join("@types").join("owl.d.ts").sanitize());
-                                path_entry.push(entry.path().join("static").join("lib").join("owl").join("odoo_module.js").sanitize());
-                                let path_entry = paths.entry(S!("@odoo/hoot")).or_default();
-                                path_entry.push(entry.path().join("static").join("src").join("@types").join("hoot.d.ts").sanitize());
-                                let path_entry = paths.entry(S!("@odoo/hoot-dom")).or_default();
-                                path_entry.push(entry.path().join("static").join("lib").join("hoot-dom").join("hoot-dom.ts").sanitize());
-                            }
-                        }
-                    }
-                }
-            }
-            // Extract the @types directory before paths is consumed.
-            let owl_types_dir = paths.get("@odoo/owl")
-                .and_then(|v| v.first())
-                .and_then(|p| PathBuf::from(p).parent().map(|d| d.to_path_buf()));
-            bridge.open_external_project(paths);
-            if let Some(types_dir) = owl_types_dir {
-                let augment_path = types_dir.join("odoo-ls-owl-augment.d.ts").sanitize();
-                bridge.inject_virtual_declarations(
-                    &augment_path,
-                    "export {};\ndeclare module \"@odoo/owl\" {\n    interface Component {\n        props: Record<string, any>;\n    }\n}\n",
-                );
-            }
-        }
+        SyncOdoo::setup_and_start_tsserver(session);
         'python_check: {
             EntryPointMgr::add_entry_to_builtins(session, session.sync_odoo.stdlib_dir.clone());
             for stub_dir in session.sync_odoo.stubs_dirs.clone().iter() {
@@ -431,6 +367,82 @@ impl SyncOdoo {
         }
         session.send_notification("$Odoo/loadingStatusUpdate", "stop");
         session.log_message(MessageType::INFO, format!("End of initialization. Time taken: {} ms", start_time.elapsed().as_millis()));
+    }
+
+    fn setup_and_start_tsserver(session: &mut SessionInfo) {
+        let tsserver_cmd = session.sync_odoo.config.tsserver_command.as_str();
+        if let Some(sender_to_main) = session.clone_sender_to_main() {
+            info!("Starting tsserver with command \"{}\"", tsserver_cmd);
+            match TsServerBridge::new(tsserver_cmd, sender_to_main) {
+                Ok(bridge) => session.sync_odoo.tsserver_bridge = Some(bridge),
+                Err(err) => {
+                    warn!("Unable to start tsserver for JS completions: {}", err);
+                }
+            }
+        } else {
+            info!("tssserver not starting as no channel to main thread has been provided");
+        }
+        if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
+            let mut paths: HashMap<String, Vec<String>> = HashMap::default();
+            let mut addon_dirs: Vec<PathBuf> = vec![];
+            if let Some(odoo_path) = &session.sync_odoo.config.odoo_path {
+                addon_dirs.push(PathBuf::from(odoo_path).join("addons"));
+            }
+            for extra in session.sync_odoo.config.addons_paths.iter() {
+                addon_dirs.push(PathBuf::from(extra));
+            }
+            for addon_dir in addon_dirs {
+                if let Ok(entries) = std::fs::read_dir(&addon_dir) {
+                    for entry in entries.flatten() {
+                        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                            let name = entry.file_name().to_string_lossy().to_string();
+                            let src = entry.path().join("static").join("src").join("*");
+                            paths.entry(format!("@{}/*", name))
+                                .or_default()
+                                .push(src.sanitize());
+                            if name == "spreadsheet" {
+                                let src = entry.path().join("static").join("src").join("index.js");
+                                paths.entry(S!("@spreadsheet"))
+                                    .or_default()
+                                    .push(src.sanitize());
+                                let src = entry.path().join("static").join("src").join("o_spreadsheet").join("o_spreadsheet.js");
+                                paths.entry(S!("@odoo/o-spreadsheet"))
+                                    .or_default()
+                                    .push(src.sanitize());
+                            } else if name == "web" {
+                                let path_entry = paths.entry(S!("@odoo/owl")).or_default();
+                                path_entry.push(entry.path().join("static").join("src").join("@types").join("owl.d.ts").sanitize());
+                                path_entry.push(entry.path().join("static").join("lib").join("owl").join("odoo_module.js").sanitize());
+                                let path_entry = paths.entry(S!("@odoo/hoot")).or_default();
+                                path_entry.push(entry.path().join("static").join("src").join("@types").join("hoot.d.ts").sanitize());
+                                let path_entry = paths.entry(S!("@odoo/hoot-dom")).or_default();
+                                path_entry.push(entry.path().join("static").join("lib").join("hoot-dom").join("hoot-dom.ts").sanitize());
+                            }
+                        }
+                    }
+                }
+            }
+            // Extract the @types directory before paths is consumed.
+            let owl_types_dir = paths.get("@odoo/owl")
+                .and_then(|v| v.first())
+                .and_then(|p| PathBuf::from(p).parent().map(|d| d.to_path_buf()));
+            bridge.open_external_project(paths);
+            if let Some(types_dir) = owl_types_dir {
+                SyncOdoo::inject_tsserver_custom_code(bridge, &types_dir);
+            }
+        }
+    }
+
+    /**
+     * Add custom files that will help tsserver to undestand some odoo architecture
+     */
+    fn inject_tsserver_custom_code(bridge: &mut TsServerBridge, types_dir: &PathBuf) {
+        let augment_path = types_dir.join("odoo-ls-owl-augment.d.ts").sanitize();
+        //add props to component interface
+        bridge.inject_virtual_declarations(
+            &augment_path,
+            "export {};\ndeclare module \"@odoo/owl\" {\n    interface Component {\n        props: Record<string, any>;\n    }\n}\n",
+        );
     }
 
     pub fn find_stdlib_entry_point(&self) -> Rc<RefCell<EntryPoint>> {
@@ -1136,14 +1148,15 @@ impl SyncOdoo {
     pub fn unload_path(session: &mut SessionInfo, path: &PathBuf) {
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_all() {
-            let sym_in_data = entry.borrow().data_symbols.get(path.sanitize_cow().as_ref()).copied();
+            let path_str = path.sanitize_cow();
+            let sym_in_data = entry.borrow().data_symbols.get(path_str.as_ref()).copied();
             if let Some(sym) = sym_in_data {
                 if let Some(sym) = sym.upgrade(session.st()) {
                     SymbolTable::unload(session, sym.into());
                 }
                 continue;
             }
-            let sym_in_js = entry.borrow().js_symbols.get(path.sanitize().as_str()).cloned();
+            let sym_in_js = entry.borrow().js_symbols.get(path_str.as_ref()).cloned();
             if let Some(sym) = sym_in_js {
                 if let Some(sym) = sym.upgrade(session.st()) {
                     SymbolTable::unload(session, sym.into());
@@ -1189,6 +1202,8 @@ impl SyncOdoo {
                 if file.self_import {
                     session.sync_odoo.must_reload_paths.push((file.parent().into(), file.path.clone()));
                 }
+                let js_file = symbol.as_source_file_key().unwrap();
+                ModuleSymbol::on_js_file_unload(session, js_file);
             },
             SymbolKey::Module(module_key) => {
                 let module = &session.sync_odoo.symbol_table[module_key];
@@ -1207,10 +1222,6 @@ impl SyncOdoo {
                 let data_file = symbol.as_source_file_key().unwrap();
                 ModuleSymbol::on_data_file_unload(session, data_file);
             },
-            SymbolKey::JsFile(_) => {
-                let js_file = symbol.as_source_file_key().unwrap();
-                ModuleSymbol::on_js_file_unload(session, js_file);
-            }
             _ => {}
         }
 
@@ -1232,11 +1243,11 @@ impl SyncOdoo {
                 }
                 continue;
             }
-            let sym_in_js = entry.borrow().js_symbols.get(path.sanitize().as_str()).cloned();
-            if let Some(sym) = sym_in_js {
+            if let Some(sym) = entry.borrow().js_symbols.get(&path_str) {
                 if let Some(sym) = sym.upgrade(session.st()) {
                     return Some(sym.into());
                 }
+                continue;
             }
             if (entry.borrow().typ == EntryPointType::MAIN || entry.borrow().addon_to_odoo_path.is_some()) && entry.borrow().is_valid_for(path) {
                 let tree = entry.borrow().get_tree_for_entry(path);
@@ -1257,11 +1268,12 @@ impl SyncOdoo {
                 }
                 continue;
             }
-            let sym_in_js = entry.borrow().js_symbols.get(path.sanitize().as_str()).cloned();
+            let sym_in_js = entry.borrow().js_symbols.get(&path_str).cloned();
             if let Some(sym) = sym_in_js {
                 if let Some(sym) = sym.upgrade(session.st()) {
                     return Some(sym.into());
                 }
+                continue;
             }
             if !entry.borrow().is_public() && &path_in_tree == &PathBuf::from(&entry.borrow().path) {
                 found_an_entry = true;
@@ -1752,7 +1764,7 @@ impl Odoo {
         let path = match params.text_document_position_params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
             Some(schema) if schema == "file" => {
                 let uri = params.text_document_position_params.text_document.uri.to_string();
-                if !uri.ends_with(".py") && !uri.ends_with(".xml") && !uri.ends_with(".csv") && !uri.ends_with(".js") && !uri.ends_with(".ts") {
+                if [".py", ".pyi", ".xml", ".csv", ".js", ".ts"].iter().all(|ext| !uri.ends_with(ext)) {
                     return Ok(None);
                 }
                 match params.text_document_position_params.text_document.uri.to_file_path(){
@@ -1825,7 +1837,7 @@ impl Odoo {
         let path = match params.text_document_position_params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
             Some(schema) if schema == "file" => {
                 let uri = params.text_document_position_params.text_document.uri.to_string();
-                if !uri.ends_with(".py") && !uri.ends_with(".xml") && !uri.ends_with(".csv") && !uri.ends_with(".js") && !uri.ends_with(".ts") {
+                if [".py", ".pyi", ".xml", ".csv", ".js", ".ts"].iter().all(|ext| !uri.ends_with(ext)) {
                     return Ok(None);
                 }
                 match params.text_document_position_params.text_document.uri.to_file_path(){
@@ -1885,7 +1897,7 @@ impl Odoo {
         let uri = params.text_document_position.text_document.uri.to_string();
         let path = FileMgr::uri2pathname(uri.as_str());
         let file_path_buf = PathBuf::from(path.clone());
-        if uri.ends_with(".py") || uri.ends_with(".pyi") || uri.ends_with(".xml") || uri.ends_with(".csv") || uri.ends_with(".js") || uri.ends_with(".ts") {
+        if [".py", ".pyi", ".xml", ".csv", ".js", ".ts"].iter().all(|ext| !uri.ends_with(ext)) {
             if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &file_path_buf) {
                 if SyncOdoo::is_non_main_manifest_file(session.st(), file_symbol, &file_path_buf) {
                     //If the file is not in main entry, and is a manifest file, we skip it
@@ -1915,7 +1927,7 @@ impl Odoo {
         let (schema, path) = match params.text_document_position.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
             Some(schema) if schema == "file" => {
                 let uri = params.text_document_position.text_document.uri.to_string();
-                if !uri.ends_with(".py") && !uri.ends_with(".xml") && !uri.ends_with(".csv") && !uri.ends_with(".js") && !uri.ends_with(".ts") {
+                if [".py", ".pyi", ".xml", ".csv", ".js", ".ts"].iter().all(|ext| !uri.ends_with(ext)) {
                     return Ok(None);
                 }
                 match params.text_document_position.text_document.uri.to_file_path(){
@@ -1944,24 +1956,27 @@ impl Odoo {
                     file_info.borrow_mut().prepare_ast(session);
                 }
                 let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
-                if matches!(ast_type, AstType::Js) {
-                    if session.sync_odoo.tsserver_bridge.is_none() {
-                        
-                    }
-                    if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
-                        let items = bridge.completion_items_for_content(
-                            &path,
-                            params.text_document_position.position.line,
-                            params.text_document_position.position.character,
-                        );
-                        return Ok(Some(CompletionResponse::Array(items)));
-                    }
-                    return Ok(None);
-                }
-                if matches!(ast_type, AstType::Xml) {
-                    if let Some(items) = owl_completion(session, &file_info, params.text_document_position.position.line, params.text_document_position.position.character) {
-                        return Ok(Some(CompletionResponse::Array(items)));
-                    }
+                match ast_type {
+                    AstType::Js => {
+                        if session.sync_odoo.tsserver_bridge.is_none() {
+                            
+                        }
+                        if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
+                            let items = bridge.completion_items_for_content(
+                                &path,
+                                params.text_document_position.position.line,
+                                params.text_document_position.position.character,
+                            );
+                            return Ok(Some(CompletionResponse::Array(items)));
+                        }
+                        return Ok(None);
+                    },
+                    AstType::Xml => {
+                        if let Some(items) = owl_completion(session, &file_info, params.text_document_position.position.line, params.text_document_position.position.character) {
+                            return Ok(Some(CompletionResponse::Array(items)));
+                        }
+                    },
+                    _ => {}
                 }
                 if file_info.borrow_mut().file_info_ast.borrow().indexed_module.is_some() {
                     return Ok(CompletionFeature::autocomplete(session, file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
@@ -2051,9 +2066,9 @@ impl Odoo {
                         let sanitized_path = path.sanitize();
                         session.log_message(MessageType::INFO, format!("File opened: {}", sanitized_path));
                         let file_extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                        if vec!["js", "ts"].contains(&file_extension) {
+                        if ["js", "ts"].contains(&file_extension) {
                             if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
-                                bridge.open_file(&path.sanitize(), &params.text_document.text.clone());
+                                bridge.open_file(&sanitized_path, &params.text_document.text);
                             }
                         }
                         let (valid, updated) = Odoo::update_file_cache(session, &sanitized_path, file_extension, Some(&[TextDocumentContentChangeEvent{
@@ -2070,8 +2085,8 @@ impl Odoo {
                             let tree_path = path.to_tree_path();
                             if tree.is_none() ||
                             (session.st().get_symbol(session.sync_odoo.get_main_entry().borrow().root.into(), tree.as_ref().unwrap().as_slice(), u32::MAX).is_empty()
-                            && session.sync_odoo.get_main_entry().borrow().data_symbols.get(&path.sanitize()).is_none()
-                            && session.sync_odoo.get_main_entry().borrow().js_symbols.get(&path.sanitize()).is_none())
+                            && session.sync_odoo.get_main_entry().borrow().data_symbols.get(&sanitized_path).is_none()
+                            && session.sync_odoo.get_main_entry().borrow().js_symbols.get(&sanitized_path).is_none())
                             {
                                 //main entry doesn't handle this file. Let's test customs entries, or create a new one
                                 let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
@@ -2490,7 +2505,7 @@ impl Odoo {
         }
     }
 
-    pub fn handle_tsserver_new_diagnostics(session: &mut SessionInfo<'_>, msg: NewTsServerDiagnostics) {
+    pub fn handle_tsserver_new_diagnostics(session: &mut SessionInfo<'_>, msg: TsServerDiagnostics) {
         let file_mgr = session.sync_odoo.get_file_mgr();
         let file_path = PathBuf::from(&msg.file).sanitize();
         if let Some(file_info) = file_mgr.borrow().get_file_info(&file_path) {

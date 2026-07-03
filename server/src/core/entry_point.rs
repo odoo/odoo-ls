@@ -1,6 +1,6 @@
 use std::path::Path;
 use std::{cell::RefCell, cmp, path::PathBuf, rc::Rc, u32};
-use crate::constants::DataType;
+use crate::constants::MissingDataSource;
 use crate::utils::HashMap;
 
 use slotmap::Key;
@@ -394,8 +394,8 @@ pub struct EntryPoint {
     /// files with pending model lookups
     pub not_found_symbols_for_models: WeakSet<SourceFileKey>,
     pub to_delete: bool,
-    pub data_symbols: HashMap<String, Wk<SourceFileKey>>, //key is path, weak to Rc that is hold by the module symbol
-    pub js_symbols: HashMap<String, Wk<JsFileKey>>, //key is path, weak to Rc that is hold by the module symbol
+    pub data_symbols: HashMap<String, Wk<SourceFileKey>>, //key is path, value is weak key. Strong key is hold by the module symbol
+    pub js_symbols: HashMap<String, Wk<JsFileKey>>, //key is path, value is weak key. Strong key is hold by the module symbol
 }
 impl EntryPoint {
     pub fn new(symbol_table: &mut SymbolTable, path: String, tree: Vec<OYarn>, typ: EntryPointType, addon_to_odoo_path: Option<String>, addon_to_odoo_tree: Option<Vec<OYarn>>) -> Rc<RefCell<Self>> {
@@ -560,7 +560,7 @@ impl EntryPoint {
 
     }
 
-    pub fn search_rebuild_for_data_id(&mut self, session: &mut SessionInfo, data: DataType) {
+    pub fn search_rebuild_for_data_id(&mut self, session: &mut SessionInfo, data: MissingDataSource) {
         let mut to_add: [Vec<SourceFileKey>; 3] = [vec![], vec![], vec![]];
         for sym_key in self.not_found_data_ids.iter_valid(session.st()) {
             let Some(not_found_data_ids) = session.st_mut().not_found_data_ids_mut(sym_key) else {

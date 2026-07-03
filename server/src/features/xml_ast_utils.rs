@@ -208,15 +208,15 @@ impl XmlAstUtils {
         }
     }
 
-    pub fn check_js_template_validity_for_key(session: &mut SessionInfo, t_name: &String) -> bool {
-        let need_remove;
-        if let Some(templates) = session.sync_odoo.js_templates.get_mut(t_name) {
-            templates.clear_invalid(&session.sync_odoo.symbol_table);
-            need_remove = templates.is_empty();
-        } else {
+    /**
+     * Clear invalid weak values from js_templates for this template name.
+     * Return true if there is still valid values after the cleanup
+     */
+    pub fn ensure_js_template_validity(session: &mut SessionInfo, t_name: &str) -> bool {
+        let Some(templates) = session.sync_odoo.js_templates.get(t_name) else {
             return false;
-        }
-        if need_remove {
+        };
+        if templates.is_empty(&session.sync_odoo.symbol_table) {
             session.sync_odoo.js_templates.remove(t_name);
             return false;
         }

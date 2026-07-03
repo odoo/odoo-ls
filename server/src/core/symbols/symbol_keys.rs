@@ -465,13 +465,6 @@ impl SourceFileKey {
             _ => panic!("Not a CsvFileKey"),
         }
     }
-
-    pub fn unwrap_js_file_key(&self) -> JsFileKey {
-        match self {
-            SourceFileKey::JsFile(k) => *k,
-            _ => panic!("Not a JsFileKey"),
-        }
-    }
 }
 
 impl SymbolKey {
@@ -568,3 +561,20 @@ impl From<XmlDeleteKey> for XmlId {
     fn from(key: XmlDeleteKey) -> Self { XmlId::XmlDelete(key) }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum JsFileParent {
+    Module(ModuleKey),
+    DiskDir(DiskDirKey),
+}
+
+impl From<ModuleKey> for JsFileParent {
+    fn from(k: ModuleKey)  -> Self { Self::Module(k) } 
+}
+impl From<DiskDirKey> for JsFileParent {
+    fn from(k: DiskDirKey) -> Self { Self::DiskDir(k) }
+}
+impl From<JsFileParent> for SymbolKey {
+    fn from(p: JsFileParent) -> Self {
+        match p { JsFileParent::Module(k) => k.into(), JsFileParent::DiskDir(k) => k.into() }
+    }
+}

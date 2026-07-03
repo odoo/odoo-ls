@@ -1,5 +1,4 @@
 use std::fs;
-use std::path::PathBuf;
 
 use lsp_types::TextDocumentContentChangeEvent;
 use odoo_ls_server::core::file_mgr::FileMgr;
@@ -178,7 +177,7 @@ fn test_js_file_lifecycle_with_odoo() {
 }
 
 /// A JS file inside a static/lib/ path should not get OXC diagnostics.
-/// Ensures the is_lib exclusion introduced in the last commit works end-to-end.
+/// Ensures the is_lib exclusion works end-to-end.
 #[test]
 fn test_js_lib_file_no_oxc_diagnostics() {
     let (mut odoo, config) = setup::setup::setup_server(true);

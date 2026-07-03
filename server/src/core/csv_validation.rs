@@ -5,11 +5,11 @@ use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
 
 use crate::{
-    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DataType, DiagnosticLevel, OYarn}, core::{
+    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource, MissingDataSource, OYarn}, core::{
         diagnostics::{DiagnosticCode, create_diagnostic},
         file_mgr::FileInfo,
         symbols::{storage::SymbolTable, symbol_keys::{CsvFileKey, ModuleKey}},
-    }, features::csv_ast_utils::CsvFieldIter, threads::SessionInfo
+    }, features::csv_ast_utils::CsvFieldIter, oyarn, threads::SessionInfo
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -100,7 +100,7 @@ impl CsvValidator {
 
     fn finalize_validation(&self, session: &mut SessionInfo, csv_symbol: CsvFileKey, file_info: &Rc<RefCell<FileInfo>>, diagnostics: Vec<Diagnostic>) {
         session.sync_odoo.symbol_table.set_build_status(csv_symbol.into(), BuildSteps::VALIDATION, BuildStatus::DONE);
-        file_info.borrow_mut().replace_diagnostics(DiagnosticLevel::CSV_VALIDATION, diagnostics);
+        file_info.borrow_mut().replace_diagnostics(DiagnosticSource::CSV_VALIDATION, diagnostics);
         file_info.borrow_mut().publish_diagnostics(session);
     }
 
@@ -127,10 +127,10 @@ impl CsvValidator {
                     }
                     continue;
                 };
-                let complete_id = format!("{}.{}", module_name, id_split.last().unwrap());
+                let complete_id = oyarn!("{}.{}", module_name, id_split.last().unwrap());
                 let Some(module) = module_symbol.upgrade(session.st()) else {continue};
                 if session.st()[module].xml_ids.get(*id_split.last().unwrap()).is_none() {
-                    session.st_mut()[csv_module].not_found_data_ids.insert(DataType::XML_ID(Sy!(complete_id)), BuildSteps::VALIDATION);
+                    session.st_mut()[csv_module].not_found_data_ids.insert(MissingDataSource::XML_ID(complete_id), BuildSteps::VALIDATION);
                     session.sync_odoo.get_main_entry().borrow_mut().not_found_data_ids.insert(csv_module.into());
                     if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05001, &[]) {
                         diagnostics.push(Diagnostic {

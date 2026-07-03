@@ -1,15 +1,15 @@
 use lsp_types::{CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity, DocumentSymbol, NumberOrString, Position, Range, SymbolKind};
 use serde_json::{Value, json};
-use crate::utils::HashMap;
+use crate::utils::{HashMap, HashSet};
 use tracing::{debug, info, warn};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use crate::constants::DiagnosticLevel;
-use crate::threads::{NewTsServerDiagnostics, ThreadMessage};
+use crate::constants::DiagnosticSource;
+use crate::threads::{TsServerDiagnostics, ThreadMessage};
 
 const VIRTUAL_PROJECT_NAME: &str = "odoo-ls-virtual-project";
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -22,7 +22,8 @@ pub struct TsServerBridge {
     /// Notified by the reader thread every time a new response is inserted.
     response_notify: Arc<Condvar>,
     seq: u64,
-    root_files: Vec<String>,
+    root_files: HashSet<String>, //contains all files that have been opened in the tsserver project
+    //contains all tsconfig paths registered for the project, such as "@odoo/owl" as key and resolved paths matching it
     project_paths: HashMap<String, Vec<String>>,
     project_open: bool,
 }
@@ -38,44 +39,31 @@ impl std::fmt::Debug for TsServerBridge {
 impl TsServerBridge {
 
     #[cfg(target_os = "windows")]
-    pub fn new(tsserver_path: &str, sender_to_client: crossbeam_channel::Sender<ThreadMessage>) -> std::io::Result<Self> {
-        let mut child =
-            Command::new("cmd")
-                .args(["/c", tsserver_path])
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::null())
-                .spawn()?;
-        info!("tsserver process started (pid {:?})", child.id());
-
-        let responses = Arc::new(Mutex::new(HashMap::default()));
-        let response_notify = Arc::new(Condvar::new());
-        let stdin = TsServerBridge::start_threads(&mut child, sender_to_client, Arc::clone(&responses), Arc::clone(&response_notify))?;
-
-        Ok(Self {
-            child,
-            stdin,
-            responses,
-            response_notify,
-            seq: 1,
-            root_files: vec![],
-            project_paths: HashMap::default(),
-            project_open: false,
-        })
-    }
-
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    pub fn new(tsserver_path: &str, sender_to_main: crossbeam_channel::Sender<ThreadMessage>) -> std::io::Result<Self> {
-        let mut child = Command::new(tsserver_path)
+    pub fn cmd_spawn_tsserver(tsserver_path: &str) -> std::io::Result<Child> {
+        Command::new("cmd")
+            .args(["/c", tsserver_path])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .spawn()?;
+            .spawn()
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    pub fn cmd_spawn_tsserver(tsserver_path: &str) -> std::io::Result<Child> {
+        Command::new(tsserver_path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+    }
+
+    pub fn new(tsserver_path: &str, sender_to_main: crossbeam_channel::Sender<ThreadMessage>) -> std::io::Result<Self> {
+        let mut child = TsServerBridge::cmd_spawn_tsserver(tsserver_path)?;
         info!("tsserver process started (pid {:?})", child.id());
 
         let responses = Arc::new(Mutex::new(HashMap::default()));
         let response_notify = Arc::new(Condvar::new());
-        let stdin = TsServerBridge::start_threads(&mut child, sender_to_main, Arc::clone(&responses), Arc::clone(&response_notify))?;
+        let stdin = TsServerBridge::start_reader_thread(&mut child, sender_to_main, Arc::clone(&responses), Arc::clone(&response_notify))?;
 
         Ok(Self {
             child,
@@ -83,13 +71,13 @@ impl TsServerBridge {
             responses,
             response_notify,
             seq: 1,
-            root_files: vec![],
+            root_files: HashSet::default(),
             project_paths: HashMap::default(),
             project_open: false,
         })
     }
 
-    fn start_threads(
+    fn start_reader_thread(
         child: &mut Child,
         sender_to_main: crossbeam_channel::Sender<ThreadMessage>,
         responses: Arc<Mutex<HashMap<u64, Value>>>,
@@ -106,12 +94,36 @@ impl TsServerBridge {
 
         thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
+            let mut last_warn_at: Option<Instant> = None;
+            let mut suppressed_error_count: u32 = 0;
             loop {
                 match read_message_from(&mut reader) {
-                    Ok(msg) => handle_message(&sender_to_main, &responses, &response_notify, msg),
+                    Ok(msg) => {
+                        last_warn_at = None;
+                        suppressed_error_count = 0;
+                        handle_message(&sender_to_main, &responses, &response_notify, msg)
+                    }
                     Err(e) => {
-                        warn!("tsserver reader thread error: {}", e);
-                        break;
+                        if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                            warn!("tsserver reader thread stopped: {}", e);
+                            break;
+                        }
+
+                        let now = Instant::now();
+                        let should_warn = last_warn_at
+                            .map(|last| now.duration_since(last) >= Duration::from_secs(5))
+                            .unwrap_or(true);
+
+                        if should_warn {
+                            if suppressed_error_count == 0 {
+                            } else {
+                                warn!("tsserver reader thread error: {}", e);
+                            }
+                            last_warn_at = Some(now);
+                            suppressed_error_count = 0;
+                        } else {
+                            suppressed_error_count += 1;
+                        }
                     }
                 }
             }
@@ -121,9 +133,11 @@ impl TsServerBridge {
 
     pub fn open_file(&mut self, file_path: &str, file_content: &str) {
         // "open" is a fire-and-forget notification: tsserver never sends a response.
-        if !self.root_files.contains(&file_path.to_string()) {
-            self.root_files.push(file_path.to_string());
+        if !self.root_files.contains(file_path) {
+            self.root_files.insert(file_path.to_string());
             if self.project_open {
+                // As tsserver is not able to add a file to a current project, we have to open a new one with
+                // the updated root_files list, so the current file is included in it.
                 self.send_project_command();
             }
         }
@@ -146,8 +160,8 @@ impl TsServerBridge {
     /// Inject a virtual TypeScript declaration file into the project.
     /// Unlike `open_file`, this does not request diagnostics for the file.
     pub fn inject_virtual_declarations(&mut self, file_path: &str, content: &str) {
-        if !self.root_files.contains(&file_path.to_string()) {
-            self.root_files.push(file_path.to_string());
+        if !self.root_files.contains(file_path) {
+            self.root_files.insert(file_path.to_string());
             if self.project_open {
                 self.send_project_command();
             }
@@ -238,15 +252,7 @@ impl TsServerBridge {
         };
 
         body.iter().filter_map(|entry| {
-            let file = entry.get("file").and_then(Value::as_str)?.to_string();
-            let start = entry.get("start")?;
-            let end = entry.get("end")?;
-            let start_line = start.get("line").and_then(Value::as_u64)? as u32;
-            let start_offset = start.get("offset").and_then(Value::as_u64)? as u32;
-            let end_line = end.get("line").and_then(Value::as_u64)? as u32;
-            let end_offset = end.get("offset").and_then(Value::as_u64)? as u32;
-            // tsserver uses 1-based lines and offsets; convert to 0-based
-            Some((file, start_line - 1, start_offset - 1, end_line - 1, end_offset - 1))
+            TsServerBridge::value_to_location_tuple(entry)
         }).collect()
     }
 
@@ -288,16 +294,20 @@ impl TsServerBridge {
         };
 
         refs.iter().filter_map(|entry| {
-            let file = entry.get("file").and_then(Value::as_str)?.to_string();
-            let start = entry.get("start")?;
-            let end = entry.get("end")?;
-            let start_line = start.get("line").and_then(Value::as_u64)? as u32;
-            let start_offset = start.get("offset").and_then(Value::as_u64)? as u32;
-            let end_line = end.get("line").and_then(Value::as_u64)? as u32;
-            let end_offset = end.get("offset").and_then(Value::as_u64)? as u32;
-            // tsserver uses 1-based lines and offsets; convert to 0-based
-            Some((file, start_line - 1, start_offset - 1, end_line - 1, end_offset - 1))
+            TsServerBridge::value_to_location_tuple(entry)
         }).collect()
+    }
+
+    fn value_to_location_tuple(entry: &Value) -> Option<(String, u32, u32, u32, u32)> {
+        let file = entry.get("file").and_then(Value::as_str)?.to_string();
+        let start = entry.get("start")?;
+        let end = entry.get("end")?;
+        let start_line = start.get("line").and_then(Value::as_u64)? as u32;
+        let start_offset = start.get("offset").and_then(Value::as_u64)? as u32;
+        let end_line = end.get("line").and_then(Value::as_u64)? as u32;
+        let end_offset = end.get("offset").and_then(Value::as_u64)? as u32;
+        // tsserver uses 1-based lines and offsets; convert to 0-based
+        Some((file, start_line.saturating_sub(1), start_offset.saturating_sub(1), end_line.saturating_sub(1), end_offset.saturating_sub(1)))
     }
 
     /// Apply an incremental edit to an already-opened file.
@@ -335,6 +345,7 @@ impl TsServerBridge {
 
     pub fn close_file(&mut self, file_path: &str) {
         let _ = self.send_request("close", json!({ "file": file_path }));
+        self.root_files.remove(file_path);
     }
 
     /// Returns markdown hover text for the given position, or `None` if tsserver
@@ -553,30 +564,28 @@ fn handle_message(
 }
 
 fn handle_event(sender_to_main: &crossbeam_channel::Sender<ThreadMessage>, event: &Value) {
-    let event_name = event.get("event").and_then(Value::as_str).unwrap_or("<unknown>");
-    debug!("tsserver event '{}'", event_name);
+    let Some(event_name) = event.get("event").and_then(Value::as_str) else { return };
     match event_name {
         "syntaxDiag" | "semanticDiag" | "suggestionDiag" => {
-            if let Some(body) = event.get("body") {
-                if let Some((file, diagnostics)) = ts_diag_event_to_diagnostics(body) {
-                    let diagnostic_level = match_diag_to_diagnostic_level(event_name);
-                    let _ = sender_to_main.send(ThreadMessage::NewTsServerDiagnostics(NewTsServerDiagnostics {
-                        file,
-                        diagnostic_level,
-                        diagnostics,
-                    }));
-                }
+            if let Some(body) = event.get("body")
+            && let Some((file, diagnostics)) = ts_diag_event_to_diagnostics(body) {
+                let diagnostic_level = match_diag_to_diagnostic_level(event_name);
+                let _ = sender_to_main.send(ThreadMessage::TsServerDiagnostics(TsServerDiagnostics {
+                    file,
+                    diagnostic_level,
+                    diagnostics,
+                }));
             }
         }
         _ => {}
     }
 }
 
-fn match_diag_to_diagnostic_level(category: &str) -> DiagnosticLevel {
+fn match_diag_to_diagnostic_level(category: &str) -> DiagnosticSource {
     match category {
-        "syntaxDiag" => DiagnosticLevel::JS_TSSERVER_SYNTAX,
-        "semanticDiag" => DiagnosticLevel::JS_TSSERVER_SEMANTIC,
-        "suggestionDiag" => DiagnosticLevel::JS_TSSERVER_SUGGESTION,
+        "syntaxDiag" => DiagnosticSource::JS_TSSERVER_SYNTAX,
+        "semanticDiag" => DiagnosticSource::JS_TSSERVER_SEMANTIC,
+        "suggestionDiag" => DiagnosticSource::JS_TSSERVER_SUGGESTION,
         _ => unreachable!(),
     }
 }
@@ -692,19 +701,12 @@ fn nav_spans_to_range(spans: &[Value]) -> Option<Range> {
     // Merge all spans into one bounding range so that a nameSpan that falls in
     // a later span (e.g. prototype augmentations) is still contained within the
     // reported fullRange.
-    let mut merged: Option<Range> = None;
-    for span in spans {
-        if let Some(r) = nav_span_to_range(span) {
-            merged = Some(match merged {
-                None => r,
-                Some(m) => Range {
-                    start: if m.start < r.start { m.start } else { r.start },
-                    end:   if m.end   > r.end   { m.end   } else { r.end   },
-                },
-            });
-        }
-    }
-    merged
+    spans.iter()
+        .filter_map(nav_span_to_range)
+        .reduce(|merged, range| Range {
+            start: merged.start.min(range.start),
+            end: merged.end.max(range.end),
+        })
 }
 
 fn nav_node_to_document_symbol(node: &Value) -> Option<DocumentSymbol> {

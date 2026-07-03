@@ -65,7 +65,7 @@ impl XmlArchBuilder {
                         diagnostics.push(
                             Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
-                                ..diagnostic.clone()
+                                ..diagnostic
                             }
                         );
                     }
@@ -126,7 +126,7 @@ impl XmlArchBuilder {
                         }
                     }
                     //check that action exists
-                    if SyncOdoo::get_xml_ids(session, self.xml_symbol.into(), attr.value(), &attr.range(), diagnostics).is_empty() {
+                    if SyncOdoo::get_xml_ids(session, self.xml_symbol.into(), attr.value(), &attr.range(), diagnostics).is_empty(&session.sync_odoo.symbol_table) {
                         if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05053, &[attr.value()]) {
                             diagnostics.push(Diagnostic {
                                 range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
@@ -145,7 +145,7 @@ impl XmlArchBuilder {
                         }
                     } else {
                         //check that parent exists
-                        if SyncOdoo::get_xml_ids(session, self.xml_symbol.into(), attr.value(), &attr.range(), diagnostics).is_empty() {
+                        if SyncOdoo::get_xml_ids(session, self.xml_symbol.into(), attr.value(), &attr.range(), diagnostics).is_empty(&session.sync_odoo.symbol_table) {
                             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05052, &[attr.value()]) {
                                 diagnostics.push(Diagnostic {
                                     range: Range { start: Position::new(attr.range().start as u32, 0), end: Position::new(attr.range().end as u32, 0) },
@@ -199,7 +199,7 @@ impl XmlArchBuilder {
         let data = session.st_mut().add_new_xml_menuitem(
             self.xml_symbol,
             found_id.clone().map(OYarn::from),
-            &TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32))
+            TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32))
         );
         self.on_operation_creation(session, found_id, None, node, data.into(), diagnostics);
         true
@@ -241,7 +241,7 @@ impl XmlArchBuilder {
             self.xml_symbol.into(),
             (oyarn!("{}", node.attribute("model").unwrap()), node.attribute_node("model").unwrap().range()),
             found_id.clone().map(|id| oyarn!("{}", id)),
-            &TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32))
+            TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32))
         );
         for child in node.children().filter(|n| n.is_element()) {
             if self.load_field(session, &child, record.into(), diagnostics).is_none() && child.tag_name().name() != "field" {
@@ -406,7 +406,7 @@ impl XmlArchBuilder {
         let field = session.st_mut().add_new_xml_field(
             parent,
             oyarn!("{}", node_name_node.value()),
-            &TextRange::new(TextSize::new(node_name_node.range().start as u32), TextSize::new(node_name_node.range().end as u32)),
+            TextRange::new(TextSize::new(node_name_node.range().start as u32), TextSize::new(node_name_node.range().end as u32)),
             text,
             text_range.map(|r| TextRange::new(TextSize::new(r.start as u32), TextSize::new(r.end as u32))),
             ref_key);
@@ -512,7 +512,7 @@ impl XmlArchBuilder {
         true
     }
 
-    fn collect_t_calls(node: &Node) -> Vec<(crate::constants::OYarn, TextRange)> {
+    fn collect_t_calls(node: &Node) -> Vec<(OYarn, TextRange)> {
         let mut result = vec![];
         for desc in node.descendants() {
             if !desc.is_element() { continue; }
@@ -534,9 +534,9 @@ impl XmlArchBuilder {
         }
         let data = session.st_mut().add_new_xml_template(
             self.xml_symbol,
-            found_id.clone().map(|id| oyarn!("{}", id)),
-            found_t_name.clone().map(|t_name| oyarn!("{}", t_name)),
-            &TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32)),
+            found_id.as_ref().map(|id| oyarn!("{}", id)),
+            found_t_name.as_ref().map(|t_name| oyarn!("{}", t_name)),
+            TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32)),
             for_web
         );
         let t_calls = Self::collect_t_calls(node);
@@ -591,7 +591,7 @@ impl XmlArchBuilder {
         let data = session.st_mut().add_new_xml_delete(
             self.xml_symbol,
             found_id.clone().map(|id| oyarn!("{}", id)),
-            &TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32)),
+            TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32)),
             Sy!(node.attribute("model").unwrap().to_string())
         );
         self.on_operation_creation(session, found_id, None, node, data.into(), diagnostics);
@@ -699,7 +699,7 @@ impl XmlArchBuilder {
         let asset = session.st_mut().add_new_xml_asset(
             self.xml_symbol,
             found_id.clone().map(OYarn::from),
-            &TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32)));
+            TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32)));
         // Validate children: must be bundle, path, or field
         let (mut has_bundle, mut has_path) = (false, false);
         for child in node.children().filter(|n| n.is_element()) {

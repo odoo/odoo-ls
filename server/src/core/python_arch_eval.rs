@@ -127,7 +127,7 @@ impl PythonArchEval {
             session.current_noqa = old_noqa;
         }
         if self.file_mode {
-            file_info_rc.borrow_mut().replace_diagnostics(DiagnosticLevel::PY_ARCH_EVAL, self.diagnostics.clone());
+            file_info_rc.borrow_mut().replace_diagnostics(DiagnosticSource::PY_ARCH_EVAL, self.diagnostics.clone());
             PythonArchEvalHooks::on_file_eval(session, &self.entry_point, self.file);
         } else {
             //then Symbol must be a function

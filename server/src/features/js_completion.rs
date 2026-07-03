@@ -1,7 +1,9 @@
+use std::{cell::RefCell, rc::Rc};
+
 use lsp_types::{CompletionItem, CompletionItemKind, OneOf};
 use roxmltree::Node;
 
-use crate::{core::js_arch_builder::{ComponentDescriptor, InferredType, MemberKind}, threads::SessionInfo};
+use crate::{core::{file_mgr::FileInfo, js_arch_builder::{ComponentDescriptor, InferredType, MemberKind}}, threads::SessionInfo};
 
 const OWL_DIRECTIVE_ATTRS: &[&str] = &[
     "t-if", "t-elif", "t-foreach", "t-out", "t-esc", "t-value", "t-key", "t-model",
@@ -9,7 +11,7 @@ const OWL_DIRECTIVE_ATTRS: &[&str] = &[
 
 pub fn owl_completion(
     session: &mut SessionInfo,
-    file_info: &std::rc::Rc<std::cell::RefCell<crate::core::file_mgr::FileInfo>>,
+    file_info: &Rc<RefCell<FileInfo>>,
     line: u32,
     character: u32,
 ) -> Option<Vec<CompletionItem>> {
@@ -79,6 +81,9 @@ fn find_template_name<'a, 'input>(node: &Node<'a, 'input>) -> Option<String> {
     }
 }
 
+/**
+ * Return the attribute at the given offset if it is an owl directive under the form (attr_name, position of the cursor relative to the start of the attribute, and the t_name of the current template)
+ */
 fn find_owl_attr_at_offset<'a, 'input>(
     node: &Node<'a, 'input>,
     offset: usize,
@@ -112,63 +117,55 @@ fn complete_members(descriptor: &ComponentDescriptor, prefix: &str) -> Vec<(Stri
         return vec![];
     }
     // Split on dots to determine depth
-    let mut current: OneOf<&ComponentDescriptor, InferredType> = OneOf::Left(descriptor);
+    let mut current: InferredType;
     let parts: Vec<&str> = prefix.split('.').collect();
     if parts.len() <= 1 {
         return vec![];
     }
-    for part in parts[1..parts.len()-1].iter() { // skip 'this' and string to complete
-        match current {
-            OneOf::Left(desc) => {
-                if let Some(member) = desc.find_member(part) {
-                    match &member.typ {
-                        InferredType::Object(_) => current = OneOf::Right(member.typ.clone()),
-                        _ => return vec![], // Can't navigate into non-object types
-                    }
-                } else {
-                    return vec![]; // No such member
+    if parts.len() == 2 {
+        return descriptor.members.iter().filter_map(
+        |m| if m.name.starts_with(parts[1]) {
+                Some((m.name.clone(), m.kind.clone()))
+            } else {None}).collect();
+    }
+    //parts.len() is > 2
+    if let Some(member) = descriptor.find_member(parts[1]) {
+        match &member.typ {
+            InferredType::Object(_) => current = member.typ.clone(),
+            _ => return vec![], // Can't navigate into non-object types
+        }
+    } else {
+        return vec![]; // No such member
+    }
+    for part in parts[2..parts.len()-1].iter() { // skip 'this' and string to complete
+        if let InferredType::Object(fields) = current {
+            if let Some((_, field_typ)) = fields.iter().find(|(k, _)| k == part) {
+                match field_typ {
+                    InferredType::Object(_) => current = field_typ.clone(),
+                    _ => return vec![], // Can't navigate into non-object types
                 }
+            } else {
+                return vec![]; // No such field
             }
-            OneOf::Right(typ) => {
-                if let InferredType::Object(fields) = typ {
-                    if let Some((_, field_typ)) = fields.iter().find(|(k, _)| k == part) {
-                        match field_typ {
-                            InferredType::Object(_) => current = OneOf::Right(field_typ.clone()),
-                            _ => return vec![], // Can't navigate into non-object types
-                        }
-                    } else {
-                        return vec![]; // No such field
-                    }
-                } else {
-                    return vec![]; // Current type isn't an object, can't navigate further
-                }
-            }
+        } else {
+            return vec![]; // Current type isn't an object, can't navigate further
         }
     }
     // Now complete the last part
     let last_part = parts.last().unwrap();
-    match current {
-        OneOf::Left(desc) => desc.members.iter().filter_map(
-            |m| 
-                if m.name.starts_with(last_part) {
-                    Some((m.name.clone(), m.kind.clone()))
-                } else {None}).collect(),
-        OneOf::Right(typ) => {
-            if let InferredType::Object(fields) = typ {
-                // Create a fake descriptor for the current type to find members
-                fields
-                    .iter()
-                    .filter_map(|(k, _)| {
-                        if k.starts_with(last_part) {
-                            Some((k.clone(), MemberKind::Field))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect()
-            } else {
-                return vec![]; // Current type isn't an object, can't have members
-            }
-        }
+    if let InferredType::Object(fields) = current {
+        // Create a fake descriptor for the current type to find members
+        fields
+            .iter()
+            .filter_map(|(k, _)| {
+                if k.starts_with(last_part) {
+                    Some((k.clone(), MemberKind::Field))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    } else {
+        return vec![]; // Current type isn't an object, can't have members
     }
 }
