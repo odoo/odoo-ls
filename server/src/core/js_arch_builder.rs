@@ -4,6 +4,7 @@ use oxc::ast::ast::{
 };
 use oxc::ast_visit::{Visit, walk};
 use oxc::span::Span;
+use ruff_text_size::{TextRange, TextSize};
 
 use crate::threads::SessionInfo;
 
@@ -11,29 +12,18 @@ use crate::threads::SessionInfo;
 #[derive(Debug, Clone)]
 pub struct JsTemplateRef {
     /// range of the closing quote of the string literal in the JS source.
-    pub range: Range,
+    pub range: TextRange,
     /// The xml_id string value (e.g. `"sale.form_view"`).
     pub xml_id: String,
     /// The name of the enclosing class, if any.
     pub class_name: Option<String>,
 }
 
-fn byte_to_position(source: &str, offset: u32) -> Position {
-    let offset = (offset as usize).min(source.len());
-    let before = &source[..offset];
-    let line = before.bytes().filter(|&b| b == b'\n').count() as u32;
-    let col = match before.rfind('\n') {
-        Some(nl) => (offset - nl - 1) as u32,
-        None => offset as u32,
-    };
-    Position::new(line, col)
-}
-
-fn span_to_range(source: &str, span: Span) -> Range {
-    Range {
-        start: byte_to_position(source, span.start),
-        end: byte_to_position(source, span.end),
-    }
+fn span_to_textrange(span: Span) -> TextRange {
+    TextRange::new(
+        TextSize::new(span.start),
+        TextSize::new(span.end),
+    )
 }
 
 fn key_span(key: &PropertyKey<'_>) -> Option<Span> {
@@ -66,7 +56,7 @@ pub struct ComponentMember {
     pub name: String,
     pub kind: MemberKind,
     pub typ: InferredType,
-    pub range: Range,
+    pub range: TextRange,
 }
 
 #[derive(Debug, Clone)]
@@ -148,7 +138,7 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
                     name: "env".to_string(),
                     kind: MemberKind::Env,
                     typ: InferredType::Unknown,
-                    range: Range::default(),
+                    range: TextRange::default(),
                 }],
                 file_path: self.file_path.clone(),
             };
@@ -157,7 +147,7 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
                 name: "props".to_string(),
                 kind: MemberKind::Prop,
                 typ: InferredType::Unknown,
-                range: Range::default(),
+                range: TextRange::default(),
             });
             self.descriptor_stack.push(desc);
         }
@@ -180,10 +170,11 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
                 if let Some(Expression::StringLiteral(lit)) = &it.value {
                     let content_start = lit.span.start + 1;
                     let content_end = lit.span.end.saturating_sub(1);
-                    let start = byte_to_position(&self.source, content_start);
-                    let end = byte_to_position(&self.source, content_end);
                     self.refs.push(JsTemplateRef {
-                        range: Range {start, end},
+                        range: TextRange::new(
+                            TextSize::new(content_start),
+                            TextSize::new(content_end),
+                        ),
                         xml_id: lit.value.to_string(),
                         class_name: self.class_stack.last().cloned(),
                     });
@@ -199,7 +190,7 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
                                 };
                                 if let Some(prop_name) = get_key_name(&p.key) {
                                     let range = key_span(&p.key)
-                                        .map(|s| span_to_range(&self.source, s))
+                                        .map(|s| span_to_textrange(s))
                                         .unwrap_or_default();
                                     desc.members.push(ComponentMember {
                                         name: prop_name,
@@ -213,7 +204,7 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
                         Some(Expression::ArrayExpression(arr)) => {
                             for elem in &arr.elements {
                                 if let ArrayExpressionElement::StringLiteral(s) = elem {
-                                    let range = span_to_range(&self.source, s.span);
+                                    let range = span_to_textrange(s.span);
                                     desc.members.push(ComponentMember {
                                         name: s.value.to_string(),
                                         kind: MemberKind::Prop,
@@ -233,7 +224,7 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
             if let Some(name) = get_key_name(&it.key) {
                 if !name.starts_with('#') {
                     let range = key_span(&it.key)
-                        .map(|s| span_to_range(&self.source, s))
+                        .map(|s| span_to_textrange(s))
                         .unwrap_or_default();
                     desc.members.push(ComponentMember {
                         name,
@@ -258,7 +249,7 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
         if let Some(ref name) = name {
             if let Some(desc) = self.descriptor_stack.last_mut() {
                 let range = key_span(&it.key)
-                    .map(|s| span_to_range(&self.source, s))
+                    .map(|s| span_to_textrange(s))
                     .unwrap_or_default();
                 match it.kind {
                     MethodDefinitionKind::Get if !it.r#static => {
@@ -293,7 +284,7 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
             if let AssignmentTarget::StaticMemberExpression(member) = &it.left {
                 if matches!(member.object, Expression::ThisExpression(_)) {
                     let field_name = member.property.name.to_string();
-                    let field_range = span_to_range(&self.source, member.property.span);
+                    let field_range = span_to_textrange(member.property.span);
                     let typ = match &it.right {
                         Expression::CallExpression(call) => {
                             let callee_name = match &call.callee {

@@ -3,7 +3,7 @@ use lsp_types::Range;
 use ruff_text_size::{TextRange, TextSize};
 
 use crate::core::symbols::symbol_keys::CsvFileKey;
-use crate::features::goto_utils::GotoSource;
+use crate::features::goto_utils::{GotoSource, GotoSourceType};
 use crate::{
     constants::OYarn,
     core::{
@@ -148,7 +148,7 @@ impl CsvAstUtils {
                             end as u32
                         };
                         results.push(GotoSource {
-                            source: sym,
+                            source: GotoSourceType::SymbolKey(sym),
                             origin_selection_range: Some(Range {
                                 start: file_info.borrow().offset_to_position(h_start as u32, session.sync_odoo.encoding),
                                 end: file_info.borrow().offset_to_position(substring_end, session.sync_odoo.encoding),
@@ -171,7 +171,7 @@ impl CsvAstUtils {
                                 // start + quotes + field name + separator
                                 let substring_start = (h_start + header_elts[0].len() + has_quotes as usize + 1) as u32;
                                 results.push(GotoSource {
-                                    source: sym,
+                                    source: GotoSourceType::SymbolKey(sym),
                                     origin_selection_range: Some(Range {
                                         start: file_info.borrow().offset_to_position(substring_start, session.sync_odoo.encoding),
                                         end: file_info.borrow().offset_to_position(end as u32, session.sync_odoo.encoding),
@@ -225,7 +225,7 @@ impl CsvAstUtils {
                         if record.range.contains_range(field_range) && record_xml_id.as_str() == field_data.as_str() {
                             if let Some(xml_id) = record.fields().get("id") {
                                 results.push(GotoSource {
-                                    source: (*xml_id).into(),
+                                    source: GotoSourceType::SymbolKey((*xml_id).into()),
                                     origin_selection_range: None,
                                 });
                                 break;
@@ -257,7 +257,7 @@ impl CsvAstUtils {
                                 &std::ops::Range::default(), //we don't care about range as it's used only for diagnostic
                                 &mut vec![]
                             ).iter_valid(session.st()).map(|xml_id| GotoSource {
-                                source: xml_id.into(),
+                                source: GotoSourceType::SymbolKey(xml_id.into()),
                                 origin_selection_range: None,
                             }));
                         }

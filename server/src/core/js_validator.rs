@@ -55,11 +55,9 @@ impl JsValidator {
             if !XmlAstUtils::ensure_js_template_validity(session, &template_ref.xml_id) {
                 session.st_mut()[self.js_symbol].not_found_data_ids.insert(MissingDataSource::TEMPLATE(Sy!(template_ref.xml_id.clone())), BuildSteps::VALIDATION);
                 session.sync_odoo.get_main_entry().borrow_mut().not_found_data_ids.insert(self.js_symbol.into());
-                let start = file_info.position_to_offset(template_ref.range.start.line, template_ref.range.start.character, session.sync_odoo.encoding);
-                let end = file_info.position_to_offset(template_ref.range.end.line, template_ref.range.end.character, session.sync_odoo.encoding);
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS06000, &[]) {
                     diagnostics.push(Diagnostic {
-                        range: Range { start: Position::new(start as u32, 0), end: Position::new(end as u32, 0) },
+                        range: Range { start: Position::new(template_ref.range.start().to_u32(), 0), end: Position::new(template_ref.range.end().to_u32(), 0) },
                         ..diagnostic
                     });
                 }

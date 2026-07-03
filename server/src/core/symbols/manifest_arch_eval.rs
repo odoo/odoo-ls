@@ -172,7 +172,7 @@ impl ModuleSymbol {
     }
 
     fn load_js_assets(session: &mut SessionInfo, module: ModuleKey, files_to_imports: &Vec<PathBuf>) {
-        for file_path in files_to_imports.iter().filter(|p| p.ends_with(".js")) {
+        for file_path in files_to_imports.iter().filter(|p| p.extension().map_or(false, |ext| ext == "js")) {
             let file_path_str = file_path.sanitize_cow();
             if session.st()[module].js_symbols().contains_key(file_path_str.as_ref()) {
                 continue;
