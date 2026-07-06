@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
 
-use crate::{constants::{BuildSteps, DEBUG_STEPS, DiagnosticSource}, core::{csv_arch_builder::CsvArchBuilder, data_hooks, diagnostics::{DiagnosticCode, create_diagnostic}, symbols::{ModuleSymbol, SymbolTable, XmlFileSymbol, symbol_keys::{ModuleKey, SourceFileKey}}, xml_arch_builder::XmlArchBuilder}, threads::SessionInfo, utils::PathSanitizer};
+use crate::{constants::{BuildSteps, DEBUG_STEPS, DiagnosticSource}, core::{csv_arch_builder::CsvArchBuilder, data_hooks, diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileInfo, symbols::{ModuleSymbol, SymbolTable, XmlFileSymbol, symbol_keys::{ModuleKey, SourceFileKey, XmlFileKey}}, xml_arch_builder::XmlArchBuilder}, threads::SessionInfo, utils::PathSanitizer};
 
 
 
@@ -51,26 +51,7 @@ impl ModuleSymbol {
                 let xml_sym = session.st_mut().add_new_xml_file(symbol_key, &file_name, &path_string);
                 Self::on_data_file_load(session.st(), xml_sym.into());
                 session.st_mut().add_dependency(symbol_key.into(), xml_sym.into(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
-                let data = match file_info.file_info_ast.borrow().text_document.as_ref() {
-                    Some(text_document) => text_document.contents().to_string(),
-                    None => {
-                        //TODO do we want to add a diagnostic here?
-                        continue;
-                    }
-                };
-                let document = roxmltree::Document::parse(&data);
-                if let Ok(document) = document {
-                    file_info.replace_diagnostics(DiagnosticSource::XML_SYNTAX, vec![]);
-                    let root = document.root_element();
-                    let mut xml_builder = XmlArchBuilder::new(xml_sym, false);
-                    xml_builder.load_arch(session, &mut file_info, &root);
-                } else if !data.is_empty() {
-                    let mut diagnostics = vec![];
-                    XmlFileSymbol::build_syntax_diagnostics(&session, &mut diagnostics, &mut file_info, &document.unwrap_err());
-                    file_info.replace_diagnostics(DiagnosticSource::XML_SYNTAX, diagnostics);
-                    file_info.publish_diagnostics(session);
-                    continue
-                }
+                ModuleSymbol::load_xml_arch(session, xml_sym, &mut file_info, false);
             } else if file_name.ends_with(".csv") {
                 let csv_sym = session.st_mut().add_new_csv_file(symbol_key, &file_name, &path_string);
                 Self::on_data_file_load(session.st(), csv_sym.into());
@@ -153,21 +134,24 @@ impl ModuleSymbol {
                 //TODO do we want to add a diagnostic here?
                 continue;
             }
-            //That's a little bit crappy, but the SYNTAX step of XML files are done here, as lifetime of roXMLTree are not flexible enough to be separated from the Arch building
-            let data = file_info.file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
-            let document = roxmltree::Document::parse(&data);
-            if let Ok(document) = document {
-                file_info.replace_diagnostics(DiagnosticSource::XML_SYNTAX, vec![]);
-                let root = document.root_element();
-                let mut xml_builder = XmlArchBuilder::new(xml_sym, true);
-                xml_builder.load_arch(session, &mut file_info, &root);
-            } else if data.len() > 0 {
-                let mut diagnostics = vec![];
-                XmlFileSymbol::build_syntax_diagnostics(&session, &mut diagnostics, &mut file_info, &document.unwrap_err());
-                file_info.replace_diagnostics(DiagnosticSource::XML_SYNTAX, diagnostics);
-                file_info.publish_diagnostics(session);
-                continue
-            }
+            ModuleSymbol::load_xml_arch(session, xml_sym, &mut file_info, true);
+        }
+    }
+
+    fn load_xml_arch(session: &mut SessionInfo, xml_sym: XmlFileKey, file_info: &mut FileInfo, web_asset: bool) {
+        //That's a little bit crappy, but the SYNTAX step of XML files are done here, as lifetime of roXMLTree are not flexible enough to be separated from the Arch building
+        let data = file_info.file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
+        let document = roxmltree::Document::parse(&data);
+        if let Ok(document) = document {
+            file_info.replace_diagnostics(DiagnosticSource::XML_SYNTAX, vec![]);
+            let root = document.root_element();
+            let mut xml_builder = XmlArchBuilder::new(xml_sym, web_asset);
+            xml_builder.load_arch(session, file_info, &root);
+        } else if data.len() > 0 {
+            let mut diagnostics = vec![];
+            XmlFileSymbol::build_syntax_diagnostics(&session, &mut diagnostics, file_info, &document.unwrap_err());
+            file_info.replace_diagnostics(DiagnosticSource::XML_SYNTAX, diagnostics);
+            file_info.publish_diagnostics(session);
         }
     }
 
