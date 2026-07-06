@@ -2145,3 +2145,235 @@ impl SymbolTable {
     }
 
 }
+
+#[cfg(test)]
+mod get_symbol_tests {
+    use super::*;
+    use crate::core::entry_point::{EntryPoint, EntryPointType};
+    use ruff_text_size::TextSize;
+
+    /// Build an empty symbol table with a single root and return `(table, root_key)`.
+    fn empty_table_with_root() -> (SymbolTable, SymbolKey) {
+        let mut st = SymbolTable::new();
+        let entry = EntryPoint::new(
+            &mut st,
+            "/test".to_string(),
+            vec![],
+            EntryPointType::MAIN,
+            None,
+            None,
+        );
+        let root = SymbolKey::Root(entry.borrow().root);
+        (st, root)
+    }
+
+    /// Build a one-character range starting at `start`.
+    fn range_at(start: u32) -> TextRange {
+        TextRange::new(TextSize::new(start), TextSize::new(start + 1))
+    }
+
+    #[test]
+    fn empty_tree_returns_empty() {
+        let (st, root) = empty_table_with_root();
+        let files: &[&str] = &[];
+        let content: &[&str] = &[];
+        assert!(st.get_symbol(root, (files, content), u32::MAX).is_empty());
+    }
+
+    #[test]
+    fn file_only() {
+        let (mut st, root) = empty_table_with_root();
+        let file = st.add_new_file(root, "my_file", "/test/my_file.py");
+
+        let files: &[&str] = &["my_file"];
+        let content: &[&str] = &[];
+        assert_eq!(
+            st.get_symbol(root, (files, content), u32::MAX),
+            vec![SymbolKey::File(file)]
+        );
+    }
+
+    #[test]
+    fn file_plus_one_content() {
+        let (mut st, root) = empty_table_with_root();
+        let file = st.add_new_file(root, "my_file", "/test/my_file.py");
+        let class = st.add_new_class(file.into(), "MyClass", &range_at(0), &TextSize::new(0));
+
+        let files: &[&str] = &["my_file"];
+        let content: &[&str] = &["MyClass"];
+        assert_eq!(
+            st.get_symbol(root, (files, content), u32::MAX),
+            vec![SymbolKey::Class(class)]
+        );
+    }
+
+    #[test]
+    fn file_plus_nested_content() {
+        let (mut st, root) = empty_table_with_root();
+        let file = st.add_new_file(root, "my_file", "/test/my_file.py");
+        let class = st.add_new_class(file.into(), "MyClass", &range_at(0), &TextSize::new(0));
+        let method = st.add_new_function(class.into(), "method", &range_at(1), &TextSize::new(1));
+
+        let files: &[&str] = &["my_file"];
+        let content: &[&str] = &["MyClass", "method"];
+        assert_eq!(
+            st.get_symbol(root, (files, content), u32::MAX),
+            vec![SymbolKey::Function(method)]
+        );
+    }
+
+    #[test]
+    fn deeply_nested_content() {
+        // Content path longer than 2: file -> Outer -> Inner -> v
+        let (mut st, root) = empty_table_with_root();
+        let file = st.add_new_file(root, "my_file", "/test/my_file.py");
+        let outer = st.add_new_class(file.into(), "Outer", &range_at(0), &TextSize::new(0));
+        let inner = st.add_new_class(outer.into(), "Inner", &range_at(1), &TextSize::new(1));
+        let var = st.add_new_variable(SymbolKey::Class(inner), "v", &range_at(2));
+
+        let files: &[&str] = &["my_file"];
+        let content: &[&str] = &["Outer", "Inner", "v"];
+        assert_eq!(
+            st.get_symbol(root, (files, content), u32::MAX),
+            vec![SymbolKey::Variable(var)]
+        );
+    }
+
+    #[test]
+    fn nested_file_paths() {
+        // File tree with several levels: package -> file -> class
+        let (mut st, root) = empty_table_with_root();
+        let package = st.add_new_python_package(root, "pkg", "/test/pkg", "");
+        let file = st.add_new_file(package.into(), "mod", "/test/pkg/mod.py");
+        let class = st.add_new_class(file.into(), "Cls", &range_at(0), &TextSize::new(0));
+
+        let files: &[&str] = &["pkg", "mod"];
+        let content: &[&str] = &["Cls"];
+        assert_eq!(
+            st.get_symbol(root, (files, content), u32::MAX),
+            vec![SymbolKey::Class(class)]
+        );
+    }
+
+    #[test]
+    fn missing_file_returns_empty() {
+        let (mut st, root) = empty_table_with_root();
+        st.add_new_file(root, "my_file", "/test/my_file.py");
+
+        let files: &[&str] = &["does_not_exist"];
+        let content: &[&str] = &[];
+        assert!(st.get_symbol(root, (files, content), u32::MAX).is_empty());
+    }
+
+    #[test]
+    fn missing_content_returns_empty() {
+        let (mut st, root) = empty_table_with_root();
+        let file = st.add_new_file(root, "my_file", "/test/my_file.py");
+        st.add_new_class(file.into(), "MyClass", &range_at(0), &TextSize::new(0));
+
+        let files: &[&str] = &["my_file"];
+        let content: &[&str] = &["Missing"];
+        assert!(st.get_symbol(root, (files, content), u32::MAX).is_empty());
+    }
+
+    #[test]
+    fn same_name_returns_latest_declaration() {
+        // Two variables with the same name in the same section: only the last
+        // declaration visible before the position is returned.
+        let (mut st, root) = empty_table_with_root();
+        let file = st.add_new_file(root, "my_file", "/test/my_file.py");
+        let _first = st.add_new_variable(SymbolKey::File(file), "x", &range_at(5));
+        let second = st.add_new_variable(SymbolKey::File(file), "x", &range_at(15));
+
+        let files: &[&str] = &["my_file"];
+        let content: &[&str] = &["x"];
+        assert_eq!(
+            st.get_symbol(root, (files, content), u32::MAX),
+            vec![SymbolKey::Variable(second)]
+        );
+    }
+
+    #[test]
+    fn same_name_respects_position() {
+        // Querying before the second declaration returns the first one.
+        let (mut st, root) = empty_table_with_root();
+        let file = st.add_new_file(root, "my_file", "/test/my_file.py");
+        let first = st.add_new_variable(SymbolKey::File(file), "x", &range_at(5));
+        let _second = st.add_new_variable(SymbolKey::File(file), "x", &range_at(15));
+
+        let files: &[&str] = &["my_file"];
+        let content: &[&str] = &["x"];
+        // position 10 is after `first` (at 5) but before `second` (at 15)
+        assert_eq!(
+            st.get_symbol(root, (files, content), 10),
+            vec![SymbolKey::Variable(first)]
+        );
+    }
+
+    #[test]
+    fn same_name_across_branches_returns_all() {
+        // A name defined in two mutually-exclusive branches (if / else) must
+        // resolve to both symbols once the branches merge.
+        let (mut st, root) = empty_table_with_root();
+        let file = st.add_new_file(root, "my_file", "/test/my_file.py");
+        let file_key = SymbolKey::File(file);
+
+        // sections: 0 base | 1 if-test | 2 if-body | 3 else-body | 4 merge(OR[2,3])
+        {
+            let mgr = st.as_mut_symbol_mgr(file_key);
+            mgr.add_section(TextSize::new(10), None); // if test
+            mgr.add_section(TextSize::new(20), None); // if body
+            mgr.add_section(TextSize::new(30), Some(SectionIndex::INDEX(1))); // else body
+            mgr.add_section(
+                TextSize::new(40),
+                Some(SectionIndex::OR(vec![
+                    SectionIndex::INDEX(2),
+                    SectionIndex::INDEX(3),
+                ])),
+            );
+        }
+        let x_if = st.add_new_variable(file_key, "x", &range_at(21)); // if body
+        let x_else = st.add_new_variable(file_key, "x", &range_at(31)); // else body
+
+        let files: &[&str] = &["my_file"];
+        let content: &[&str] = &["x"];
+        let result = st.get_symbol(root, (files, content), u32::MAX);
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&SymbolKey::Variable(x_if)));
+        assert!(result.contains(&SymbolKey::Variable(x_else)));
+    }
+
+    #[test]
+    fn same_name_branches_propagate_to_nested_content() {
+        // The same name resolving to multiple symbols must keep walking every
+        // branch for the remaining content path (tests the flat_map behaviour).
+        let (mut st, root) = empty_table_with_root();
+        let file = st.add_new_file(root, "my_file", "/test/my_file.py");
+        let file_key = SymbolKey::File(file);
+
+        {
+            let mgr = st.as_mut_symbol_mgr(file_key);
+            mgr.add_section(TextSize::new(10), None); // if test
+            mgr.add_section(TextSize::new(20), None); // if body
+            mgr.add_section(TextSize::new(30), Some(SectionIndex::INDEX(1))); // else body
+            mgr.add_section(
+                TextSize::new(40),
+                Some(SectionIndex::OR(vec![
+                    SectionIndex::INDEX(2),
+                    SectionIndex::INDEX(3),
+                ])),
+            );
+        }
+        let class_if = st.add_new_class(file_key, "A", &range_at(21), &TextSize::new(21));
+        let m_if = st.add_new_function(class_if.into(), "m", &range_at(22), &TextSize::new(22));
+        let class_else = st.add_new_class(file_key, "A", &range_at(31), &TextSize::new(31));
+        let m_else = st.add_new_function(class_else.into(), "m", &range_at(32), &TextSize::new(32));
+
+        let files: &[&str] = &["my_file"];
+        let content: &[&str] = &["A", "m"];
+        let result = st.get_symbol(root, (files, content), u32::MAX);
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&SymbolKey::Function(m_if)));
+        assert!(result.contains(&SymbolKey::Function(m_else)));
+    }
+}
