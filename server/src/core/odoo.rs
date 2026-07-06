@@ -1910,7 +1910,7 @@ impl Odoo {
         let uri = params.text_document_position.text_document.uri.to_string();
         let path = FileMgr::uri2pathname(uri.as_str());
         let file_path_buf = PathBuf::from(path.clone());
-        if [".py", ".pyi", ".xml", ".csv", ".js", ".ts"].iter().all(|ext| !uri.ends_with(ext)) {
+        if [".py", ".pyi", ".xml", ".csv", ".js", ".ts"].iter().any(|ext| uri.ends_with(ext)) {
             if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &file_path_buf) {
                 if SyncOdoo::is_non_main_manifest_file(session.st(), file_symbol, &file_path_buf) {
                     //If the file is not in main entry, and is a manifest file, we skip it
