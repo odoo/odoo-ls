@@ -477,6 +477,51 @@ impl EntryPoint {
         path.to_tree()
     }
 
+    /// Move symbols whose pending build step is `ARCH`/`ARCH_EVAL`/`VALIDATION` into the
+    /// corresponding rebuild queue (validation additionally invalidates sub functions).
+    fn dispatch_rebuild(session: &mut SessionInfo, to_add: [Vec<SourceFileKey>; 3]) {
+        let [arch, arch_eval, validation] = to_add;
+        for s in arch {
+            session.sync_odoo.add_to_rebuild_arch(s);
+        }
+        for s in arch_eval {
+            session.sync_odoo.add_to_rebuild_arch_eval(s);
+        }
+        for s in validation {
+            session.st_mut().invalidate_sub_functions(s);
+            session.sync_odoo.add_to_validations(s);
+        }
+    }
+
+    /// Shared implementation of [`Self::search_rebuild_for_models`] and
+    /// [`Self::search_rebuild_for_data_id`]: for every symbol in `symbols` that was waiting
+    /// on `key`, move it to the appropriate rebuild queue and drop the pending entry.
+    fn search_rebuild_for_key<K: Eq + std::hash::Hash>(
+        session: &mut SessionInfo,
+        symbols: &mut WeakSet<SourceFileKey>,
+        key: &K,
+        not_found_mut: fn(&mut SymbolTable, SourceFileKey) -> Option<&mut HashMap<K, BuildSteps>>,
+        not_found: fn(&SymbolTable, SourceFileKey) -> Option<&HashMap<K, BuildSteps>>,
+    ) {
+        let mut to_add: [Vec<SourceFileKey>; 3] = [vec![], vec![], vec![]];
+        for sym_key in symbols.iter_valid(session.st()) {
+            let Some(not_found_map) = not_found_mut(session.st_mut(), sym_key) else {
+                continue;
+            };
+            let Some(step) = not_found_map.get(key) else {
+                continue;
+            };
+            if let BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION = step {
+                to_add[*step as usize].push(sym_key);
+            }
+            not_found_map.remove(key);
+        }
+        Self::dispatch_rebuild(session, to_add);
+        symbols.retain_valid(session.st(), |&sym| {
+            !not_found(session.st(), sym).map(|map| map.is_empty()).unwrap_or(true)
+        });
+    }
+
     /* Consider the given 'tree' path as updated (or new) and move all symbols that were searching for it
     from the not_found_symbols list to the rebuild list. Return True is something should be rebuilt */
     pub fn search_symbols_to_rebuild(&mut self, session: &mut SessionInfo, path: &String, tree: Tree) {
@@ -508,16 +553,7 @@ impl EntryPoint {
                 false // drop
             });
         }
-        for &s in to_add[BuildSteps::ARCH as usize].iter() {
-            session.sync_odoo.add_to_rebuild_arch(s);
-        }
-        for &s in to_add[BuildSteps::ARCH_EVAL as usize].iter() {
-            session.sync_odoo.add_to_rebuild_arch_eval(s);
-        }
-        for &s in to_add[BuildSteps::VALIDATION as usize].iter() {
-            session.st_mut().invalidate_sub_functions(s);
-            session.sync_odoo.add_to_validations(s);
-        }
+        Self::dispatch_rebuild(session, to_add);
         self.not_found_symbols.retain_valid(session.st(), |&sym| {
             if !session.st().not_found_paths(sym).is_empty() {
                 return true;
@@ -530,63 +566,23 @@ impl EntryPoint {
     }
 
     pub fn search_rebuild_for_models(&mut self, session: &mut SessionInfo, model_name: OYarn) {
-        let mut to_add: [Vec<SourceFileKey>; 3] = [vec![], vec![], vec![]];
-        for sym_key in self.not_found_symbols_for_models.iter_valid(session.st()) {
-            let Some(not_found_models) = session.st_mut().not_found_models_mut(sym_key) else {
-                continue;
-            };
-            let Some(step) = not_found_models.get(&model_name) else {
-                continue;
-            };
-            if let BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION = step {
-                to_add[*step as usize].push(sym_key);
-            }
-            not_found_models.remove(&model_name);
-
-        }
-        for &s in to_add[BuildSteps::ARCH as usize].iter() {
-            session.sync_odoo.add_to_rebuild_arch(s);
-        }
-        for &s in to_add[BuildSteps::ARCH_EVAL as usize].iter() {
-            session.sync_odoo.add_to_rebuild_arch_eval(s);
-        }
-        for &s in to_add[BuildSteps::VALIDATION as usize].iter() {
-            session.st_mut().invalidate_sub_functions(s);
-            session.sync_odoo.add_to_validations(s);
-        }
-        self.not_found_symbols_for_models.retain_valid(session.st(), |&sym| {
-            !session.st().not_found_models(sym).map(|models| models.is_empty()).unwrap_or(true)
-        });
-
+        Self::search_rebuild_for_key(
+            session,
+            &mut self.not_found_symbols_for_models,
+            &model_name,
+            SymbolTable::not_found_models_mut,
+            SymbolTable::not_found_models,
+        );
     }
 
     pub fn search_rebuild_for_data_id(&mut self, session: &mut SessionInfo, data: MissingDataSource) {
-        let mut to_add: [Vec<SourceFileKey>; 3] = [vec![], vec![], vec![]];
-        for sym_key in self.not_found_data_ids.iter_valid(session.st()) {
-            let Some(not_found_data_ids) = session.st_mut().not_found_data_ids_mut(sym_key) else {
-                continue;
-            };
-            let Some(step) = not_found_data_ids.get(&data) else {
-                continue;
-            };
-            if let BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION = step {
-                to_add[*step as usize].push(sym_key);
-            }
-            not_found_data_ids.remove(&data);
-        }
-        for &s in to_add[BuildSteps::ARCH as usize].iter() {
-            session.sync_odoo.add_to_rebuild_arch(s);
-        }
-        for &s in to_add[BuildSteps::ARCH_EVAL as usize].iter() {
-            session.sync_odoo.add_to_rebuild_arch_eval(s);
-        }
-        for &s in to_add[BuildSteps::VALIDATION as usize].iter() {
-            session.st_mut().invalidate_sub_functions(s);
-            session.sync_odoo.add_to_validations(s);
-        }
-        self.not_found_data_ids.retain_valid(session.st(), |&sym| {
-            !session.st().not_found_data_ids(sym).map(|data_ids| data_ids.is_empty()).unwrap_or(true)
-        });
+        Self::search_rebuild_for_key(
+            session,
+            &mut self.not_found_data_ids,
+            &data,
+            SymbolTable::not_found_data_ids_mut,
+            SymbolTable::not_found_data_ids,
+        );
     }
 }
 
