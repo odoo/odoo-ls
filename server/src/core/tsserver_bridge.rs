@@ -14,6 +14,14 @@ use crate::threads::{TsServerDiagnostics, ThreadMessage};
 const VIRTUAL_PROJECT_NAME: &str = "odoo-ls-virtual-project";
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/**
+ * TsserverBridge is a bridge between the LSP server and the tsserver process. It manages the tsserver process, sends requests to it, and receives responses from it.
+ * It also handles notifications from tsserver and forwards them to the main thread.
+ * All requests to tsserver are blocking for the answer, but the notifications are handled asynchronously in a separate thread.
+ * it works by opening an "external project" into tsserver with a adapted tsconfig, which contains all root files, all paths registered for the project ("@odoo/owl" for ex), etc...
+ * As this list of file is fixed, we have to open a new project each time the user open a new file, and add it to the list of root files.
+ * Only open files are injected into tsserver. All other files are only parsed by oxc.
+ */
 pub struct TsServerBridge {
     child: Child,
     stdin: ChildStdin,
