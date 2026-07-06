@@ -52,8 +52,8 @@ impl JsValidator {
         drop(file_info_ast);
 
         for template_ref in template_refs.iter() {
-            if !XmlAstUtils::ensure_js_template_validity(session, &template_ref.xml_id) {
-                session.st_mut()[self.js_symbol].not_found_data_ids.insert(MissingDataSource::TEMPLATE(Sy!(template_ref.xml_id.clone())), BuildSteps::VALIDATION);
+            if !XmlAstUtils::ensure_js_template_validity(session, &template_ref.t_name) {
+                session.st_mut()[self.js_symbol].not_found_data_ids.insert(MissingDataSource::TEMPLATE(Sy!(template_ref.t_name.clone())), BuildSteps::VALIDATION);
                 session.sync_odoo.get_main_entry().borrow_mut().not_found_data_ids.insert(self.js_symbol.into());
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS06000, &[]) {
                     diagnostics.push(Diagnostic {
@@ -61,7 +61,7 @@ impl JsValidator {
                         ..diagnostic
                     });
                 }
-            } else if let Some(imps) = session.sync_odoo.js_templates.get_mut(&template_ref.xml_id) {
+            } else if let Some(imps) = session.sync_odoo.js_templates.get_mut(&template_ref.t_name) {
                 for template_imp in imps.iter_valid(&session.sync_odoo.symbol_table) {
                     let xml_file = session.st().get_file(template_imp.into()).expect("Template should be in a file");
                     session.st_mut().add_dependency(self.js_symbol.into(), xml_file.into(), BuildSteps::VALIDATION, BuildSteps::ARCH_EVAL);

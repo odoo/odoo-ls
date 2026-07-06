@@ -36,7 +36,7 @@ impl DefinitionFeature {
         for template_ref in &template_refs {
             let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &file_info.borrow().uri, &template_ref.range);
             if Self::position_in_range(line, character, &range) {
-                let Some(templates) = session.sync_odoo.js_templates.get(&template_ref.xml_id) else { continue; };
+                let Some(templates) = session.sync_odoo.js_templates.get(&template_ref.t_name) else { continue; };
                 let mut locations = vec![];
                 for template in templates.iter_valid(&session.sync_odoo.symbol_table) {
                     locations.extend(GotoUtils::goto_source_to_location(session, &GotoSource {

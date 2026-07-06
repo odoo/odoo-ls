@@ -8,13 +8,13 @@ use ruff_text_size::{TextRange, TextSize};
 
 use crate::threads::SessionInfo;
 
-/// A span (byte offsets) plus the xml_id string value found in a template assignment.
+/// A span (byte offsets) plus the template name string value found in a template assignment.
 #[derive(Debug, Clone)]
 pub struct JsTemplateRef {
     /// range of the closing quote of the string literal in the JS source.
     pub range: TextRange,
-    /// The xml_id string value (e.g. `"sale.form_view"`).
-    pub xml_id: String,
+    /// The template name string value (e.g. `"sale.form_view"`).
+    pub t_name: String,
     /// The name of the enclosing class, if any.
     pub class_name: Option<String>,
 }
@@ -175,7 +175,7 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
                             TextSize::new(content_start),
                             TextSize::new(content_end),
                         ),
-                        xml_id: lit.value.to_string(),
+                        t_name: lit.value.to_string(),
                         class_name: self.class_stack.last().cloned(),
                     });
                     return; // no need to recurse into value
@@ -348,7 +348,7 @@ pub fn build(session: &mut SessionInfo, templates_ref: &Vec<JsTemplateRef>, comp
     // Populate template→class_name mapping
     for tr in templates_ref.iter() {
         if let Some(cn) = &tr.class_name {
-            session.sync_odoo.js_component_by_template.insert(tr.xml_id.clone(), cn.clone());
+            session.sync_odoo.js_component_by_template.insert(tr.t_name.clone(), cn.clone());
         }
     }
 

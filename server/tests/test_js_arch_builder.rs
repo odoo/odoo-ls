@@ -21,7 +21,7 @@ fn test_static_template_is_detected() {
     let source = "export class Counter extends Component {\n    static template = \"module_owl.Counter\";\n}\n";
     let (refs, _) = visit(source);
     assert_eq!(refs.len(), 1, "expected exactly one template ref, got {:?}", refs);
-    assert_eq!(refs[0].xml_id, "module_owl.Counter");
+    assert_eq!(refs[0].t_name, "module_owl.Counter");
     assert_eq!(refs[0].class_name, Some("Counter".to_string()));
     // range should exclude the surrounding quotes
     let start: usize = refs[0].range.start().to_usize();
@@ -35,7 +35,7 @@ fn test_static_template_single_quotes() {
     let source = "export class Counter extends Component {\n    static template = 'module_owl.Counter';\n}\n";
     let (refs, _) = visit(source);
     assert_eq!(refs.len(), 1);
-    assert_eq!(refs[0].xml_id, "module_owl.Counter");
+    assert_eq!(refs[0].t_name, "module_owl.Counter");
 }
 
 /// A `template` property that isn't `static`, or isn't a plain string literal, must not be
@@ -61,9 +61,9 @@ fn test_multiple_components_in_one_file() {
     );
     let (refs, descriptors) = visit(source);
     assert_eq!(refs.len(), 2);
-    assert_eq!(refs[0].xml_id, "module_owl.Counter");
+    assert_eq!(refs[0].t_name, "module_owl.Counter");
     assert_eq!(refs[0].class_name, Some("Counter".to_string()));
-    assert_eq!(refs[1].xml_id, "module_owl.Display");
+    assert_eq!(refs[1].t_name, "module_owl.Display");
     assert_eq!(refs[1].class_name, Some("Display".to_string()));
     let names: Vec<_> = descriptors.iter().map(|d| d.class_name.clone()).collect();
     assert!(names.contains(&"Counter".to_string()));
