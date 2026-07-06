@@ -22,7 +22,7 @@ use crate::features::declaration::DeclarationFeature;
 use crate::features::completion::CompletionFeature;
 use crate::features::definition::DefinitionFeature;
 use crate::features::hover::HoverFeature;
-use crate::threads::{TsServerDiagnostics, SessionInfo};
+use crate::threads::{SessionInfo, ThreadMessage, TsServerDiagnostics};
 use crate::weak_collections::{WeakMap, WeakSet};
 use crate::utils::{HashMap, is_dir_cs, is_file_cs};
 use std::cell::RefCell;
@@ -299,7 +299,6 @@ impl SyncOdoo {
             };
             info!("stub {:?} - {}", stub, found)
         }
-        SyncOdoo::setup_and_start_tsserver(session);
         'python_check: {
             EntryPointMgr::add_entry_to_builtins(session, session.sync_odoo.stdlib_dir.clone());
             for stub_dir in session.sync_odoo.stubs_dirs.clone().iter() {
@@ -361,76 +360,91 @@ impl SyncOdoo {
                 }
             }
         }
+        let tsserver_handle = session.clone_sender_to_main().map(|sender| {
+            let tsserver_cmd = session.sync_odoo.config.tsserver_command.clone();
+            let odoo_path = session.sync_odoo.config.odoo_path.clone();
+            let addons_paths = session.sync_odoo.config.addons_paths.iter().cloned().collect::<Vec<_>>();
+            std::thread::spawn(move || {
+                SyncOdoo::setup_and_start_tsserver(tsserver_cmd, sender, odoo_path, addons_paths)
+            })
+        });
         if SyncOdoo::load_builtins(session) {
             session.sync_odoo.state_init = InitState::PYTHON_READY;
             SyncOdoo::build_database(session);
+        }
+        if let Some(handle) = tsserver_handle {
+            match handle.join() {
+                Ok(Some(bridge)) => session.sync_odoo.tsserver_bridge = Some(bridge),
+                Ok(None) => {},
+                Err(_) => warn!("tsserver setup thread panicked"),
+            }
         }
         session.send_notification("$Odoo/loadingStatusUpdate", "stop");
         session.log_message(MessageType::INFO, format!("End of initialization. Time taken: {} ms", start_time.elapsed().as_millis()));
     }
 
-    fn setup_and_start_tsserver(session: &mut SessionInfo) {
-        let tsserver_cmd = session.sync_odoo.config.tsserver_command.as_str();
-        if let Some(sender_to_main) = session.clone_sender_to_main() {
-            info!("Starting tsserver with command \"{}\"", tsserver_cmd);
-            match TsServerBridge::new(tsserver_cmd, sender_to_main) {
-                Ok(bridge) => session.sync_odoo.tsserver_bridge = Some(bridge),
-                Err(err) => {
-                    warn!("Unable to start tsserver for JS completions: {}", err);
-                }
+    fn setup_and_start_tsserver(
+        tsserver_cmd: String,
+        sender_to_main: crossbeam_channel::Sender<ThreadMessage>,
+        odoo_path: Option<String>,
+        addons_paths: Vec<String>,
+    ) -> Option<TsServerBridge> {
+        info!("Starting tsserver with command \"{}\"", tsserver_cmd);
+        let mut bridge = match TsServerBridge::new(&tsserver_cmd, sender_to_main) {
+            Ok(bridge) => bridge,
+            Err(err) => {
+                warn!("Unable to start tsserver for JS completions: {}", err);
+                return None;
             }
-        } else {
-            info!("tssserver not starting as no channel to main thread has been provided");
+        };
+        let mut paths: HashMap<String, Vec<String>> = HashMap::default();
+        let mut addon_dirs: Vec<PathBuf> = vec![];
+        if let Some(ref odoo_path) = odoo_path {
+            addon_dirs.push(PathBuf::from(odoo_path).join("addons"));
         }
-        if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
-            let mut paths: HashMap<String, Vec<String>> = HashMap::default();
-            let mut addon_dirs: Vec<PathBuf> = vec![];
-            if let Some(odoo_path) = &session.sync_odoo.config.odoo_path {
-                addon_dirs.push(PathBuf::from(odoo_path).join("addons"));
-            }
-            for extra in session.sync_odoo.config.addons_paths.iter() {
-                addon_dirs.push(PathBuf::from(extra));
-            }
-            for addon_dir in addon_dirs {
-                if let Ok(entries) = std::fs::read_dir(&addon_dir) {
-                    for entry in entries.flatten() {
-                        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                            let name = entry.file_name().to_string_lossy().to_string();
-                            let src = entry.path().join("static").join("src").join("*");
-                            paths.entry(format!("@{}/*", name))
+        for extra in addons_paths.iter() {
+            addon_dirs.push(PathBuf::from(extra));
+        }
+        for addon_dir in addon_dirs {
+            if let Ok(entries) = std::fs::read_dir(&addon_dir) {
+                for entry in entries.flatten() {
+                    if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        let src = entry.path().join("static").join("src").join("*");
+                        paths.entry(format!("@{}/*", name))
+                            .or_default()
+                            .push(src.sanitize());
+                        if name == "spreadsheet" {
+                            let src = entry.path().join("static").join("src").join("index.js");
+                            paths.entry(S!("@spreadsheet"))
                                 .or_default()
                                 .push(src.sanitize());
-                            if name == "spreadsheet" {
-                                let src = entry.path().join("static").join("src").join("index.js");
-                                paths.entry(S!("@spreadsheet"))
-                                    .or_default()
-                                    .push(src.sanitize());
-                                let src = entry.path().join("static").join("src").join("o_spreadsheet").join("o_spreadsheet.js");
-                                paths.entry(S!("@odoo/o-spreadsheet"))
-                                    .or_default()
-                                    .push(src.sanitize());
-                            } else if name == "web" {
-                                let path_entry = paths.entry(S!("@odoo/owl")).or_default();
-                                path_entry.push(entry.path().join("static").join("src").join("@types").join("owl.d.ts").sanitize());
-                                path_entry.push(entry.path().join("static").join("lib").join("owl").join("odoo_module.js").sanitize());
-                                let path_entry = paths.entry(S!("@odoo/hoot")).or_default();
-                                path_entry.push(entry.path().join("static").join("src").join("@types").join("hoot.d.ts").sanitize());
-                                let path_entry = paths.entry(S!("@odoo/hoot-dom")).or_default();
-                                path_entry.push(entry.path().join("static").join("lib").join("hoot-dom").join("hoot-dom.ts").sanitize());
-                            }
+                            let src = entry.path().join("static").join("src").join("o_spreadsheet").join("o_spreadsheet.js");
+                            paths.entry(S!("@odoo/o-spreadsheet"))
+                                .or_default()
+                                .push(src.sanitize());
+                        } else if name == "web" {
+                            let path_entry = paths.entry(S!("@odoo/owl")).or_default();
+                            path_entry.push(entry.path().join("static").join("src").join("@types").join("owl.d.ts").sanitize());
+                            path_entry.push(entry.path().join("static").join("lib").join("owl").join("odoo_module.js").sanitize());
+                            let path_entry = paths.entry(S!("@odoo/hoot")).or_default();
+                            path_entry.push(entry.path().join("static").join("src").join("@types").join("hoot.d.ts").sanitize());
+                            let path_entry = paths.entry(S!("@odoo/hoot-dom")).or_default();
+                            path_entry.push(entry.path().join("static").join("lib").join("hoot-dom").join("hoot-dom.ts").sanitize());
                         }
                     }
                 }
             }
-            // Extract the @types directory before paths is consumed.
-            let owl_types_dir = paths.get("@odoo/owl")
-                .and_then(|v| v.first())
-                .and_then(|p| PathBuf::from(p).parent().map(|d| d.to_path_buf()));
-            bridge.open_external_project(paths);
-            if let Some(types_dir) = owl_types_dir {
-                SyncOdoo::inject_tsserver_custom_code(bridge, &types_dir);
-            }
         }
+        // Extract the @types directory before paths is consumed.
+        let owl_types_dir = paths.get("@odoo/owl")
+            .and_then(|v| v.first())
+            .and_then(|p| PathBuf::from(p).parent().map(|d| d.to_path_buf()));
+        bridge.open_external_project(paths);
+        if let Some(types_dir) = owl_types_dir {
+            SyncOdoo::inject_tsserver_custom_code(&mut bridge, &types_dir);
+        }
+        Some(bridge)
     }
 
     /**
