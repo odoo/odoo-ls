@@ -87,7 +87,7 @@ impl PythonArchBuilder {
                 let maybe_file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).clone();
                 match maybe_file_info {
                     Some(file_info) => {
-                        if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                        if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
                             file_info.borrow_mut().prepare_ast(session);
                         }
                         file_info
@@ -115,14 +115,14 @@ impl PythonArchBuilder {
         };
         drop(file_info);
         let file_info_ast= file_info_ast_rc.borrow();
-        if file_info_ast.indexed_module.is_some() {
+        if file_info_ast.ast.as_py_ast().indexed_module.is_some() {
             let ast = if self.file_mode {
                 file_info_ast.get_stmts().unwrap()
             } else {
                 let f = self.sym_stack[0].unwrap_function_key();
                 let ast_index = session.st()[f].node_index.load();
                 if ast_index.as_u32().is_some() {
-                    let func = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(ast_index);
+                    let func = file_info_ast.ast.as_py_ast().indexed_module.as_ref().unwrap().get_by_index(ast_index);
                     match func {
                         AnyRootNodeRef::Stmt(Stmt::FunctionDef(func_stmt)) => {
                             &func_stmt.body

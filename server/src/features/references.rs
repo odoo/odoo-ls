@@ -1,6 +1,6 @@
 use crate::constants::{BuildSteps, PackageType};
 use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr};
-use crate::core::file_mgr::AstType;
+use crate::core::file_mgr::Ast;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::Dependencies;
 use crate::core::symbols::ModuleSymbol;
@@ -57,22 +57,22 @@ impl ReferenceFeature {
      */
     /// TODO: Odoo specific (XML field refs, string-based model refs)
     pub fn get_references(session: &mut SessionInfo, file_symbol: SourceFileKey, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Vec<Location>> {
-        if matches!(file_info.borrow().file_info_ast.borrow().ast_type, AstType::Js) {
+        if matches!(file_info.borrow().file_info_ast.borrow().ast, Ast::JsAst(_)) {
             return ReferenceFeature::get_reference_js(session, file_info, line, character);
         }
         //We want to search for references of the definition, and not the current symbol. Let's use definition feature for that
         SyncOdoo::process_rebuilds(session, false);
-        let def_sources = match file_info.borrow().file_info_ast.borrow().ast_type {
-            AstType::Python => {
+        let def_sources = match file_info.borrow().file_info_ast.borrow().ast {
+            Ast::PythonAst(_) => {
                 GotoUtils::get_symbols(session, GotoRequest::Definition, file_symbol, file_info, line, character)
             },
-            AstType::Xml => {
+            Ast::XmlAst => {
                 GotoUtils::get_symbols_xml(session, file_symbol, file_info, line, character)
             },
-            AstType::Csv => {
+            Ast::CsvAst => {
                 GotoUtils::get_symbols_csv(session, file_symbol, file_info, line, character)
             },
-            AstType::Js => unreachable!(),
+            Ast::JsAst(_) => unreachable!(),
         };
 
 

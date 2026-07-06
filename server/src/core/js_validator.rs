@@ -47,9 +47,9 @@ impl JsValidator {
             return;
         };
         let mut file_info = file_info.borrow_mut();
-        let ast = file_info.file_info_ast.borrow();
-        let template_refs = ast.js_template_refs.clone();
-        drop(ast);
+        let file_info_ast = file_info.file_info_ast.borrow();
+        let template_refs = file_info_ast.ast.as_js_ast().js_template_refs.clone();
+        drop(file_info_ast);
 
         for template_ref in template_refs.iter() {
             if !XmlAstUtils::ensure_js_template_validity(session, &template_ref.xml_id) {

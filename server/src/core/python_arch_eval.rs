@@ -76,7 +76,7 @@ impl PythonArchEval {
             warn!("File info not found for {}", path);
             return;
         };
-        if file_info_rc.borrow().file_info_ast.borrow().indexed_module.is_none() {
+        if !file_info_rc.borrow().file_info_ast.borrow().ast.is_built() {
             file_info_rc.borrow_mut().prepare_ast(session);
         }
         let file_info = (*file_info_rc).borrow();
@@ -86,7 +86,7 @@ impl PythonArchEval {
             ModuleSymbol::load_data(m, session);
             ModuleSymbol::load_assets(m, session);
         }
-        if file_info_ast.borrow().indexed_module.is_some() {
+        if file_info_ast.borrow().ast.as_py_ast().indexed_module.is_some() {
             let old_noqa = session.current_noqa.clone();
             session.current_noqa = session.st().get_noqas(symbol);
             let file_info_ast_bw  = file_info_ast.borrow();
@@ -105,7 +105,7 @@ impl PythonArchEval {
                         // Function has no body or is dynamically created from a hook
                         (&vec![], None) // essentially skip evaluation
                     } else {
-                        let func_stmt = file_info_ast_bw.indexed_module.as_ref().unwrap().get_by_index(fun_index);
+                        let func_stmt = file_info_ast_bw.ast.as_py_ast().indexed_module.as_ref().unwrap().get_by_index(fun_index);
                         match func_stmt {
                             AnyRootNodeRef::Stmt(Stmt::FunctionDef(func_stmt)) => {
                                 (&func_stmt.body, Some(func_stmt))

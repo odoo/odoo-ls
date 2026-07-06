@@ -2,7 +2,7 @@ use crate::constants::OYarn;
 use crate::core::csv_validation::CsvValidator;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
-use crate::core::file_mgr::AstType;
+use crate::core::file_mgr::Ast;
 use crate::core::js_arch_builder::ComponentDescriptor;
 use crate::core::js_validator::JsValidator;
 use crate::core::module_load_order::sort_by_load_order;
@@ -1803,23 +1803,23 @@ impl Odoo {
             }
             let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
             if let Some(file_info) = file_info {
-                if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
                     file_info.borrow_mut().prepare_ast(session);
                 }
-                let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
+                let ast_type = file_info.borrow().file_info_ast.borrow().ast.clone();
                 match ast_type {
-                    AstType::Python => {
-                        if file_info.borrow_mut().file_info_ast.borrow().indexed_module.is_some() {
+                    Ast::PythonAst(_) => {
+                        if file_info.borrow_mut().file_info_ast.borrow().ast.as_py_ast().indexed_module.is_some() {
                             return Ok(HoverFeature::hover_python(session, file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                         }
                     },
-                    AstType::Xml => {
+                    Ast::XmlAst => {
                         return Ok(HoverFeature::hover_xml(session, file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                     },
-                    AstType::Csv => {
+                    Ast::CsvAst => {
                         return Ok(HoverFeature::hover_csv(session, file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                     },
-                    AstType::Js => {
+                    Ast::JsAst(_) => {
                         return Ok(HoverFeature::hover_js(session, &file_info.borrow().uri, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                     }
                 }
@@ -1876,11 +1876,10 @@ impl Odoo {
             }
             let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
             if let Some(file_info) = file_info {
-                if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
                     file_info.borrow_mut().prepare_ast(session);
                 }
-                let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
-                if matches!(ast_type, AstType::Python) && file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
                     return Ok(None);
                 }
                 return match is_declaration {
@@ -1919,7 +1918,7 @@ impl Odoo {
                 }
                 let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
                 if let Some(file_info) = file_info {
-                    if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                    if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
                         file_info.borrow_mut().prepare_ast(session);
                     }
                     return Ok(ReferenceFeature::get_references(session, file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
@@ -1966,15 +1965,12 @@ impl Odoo {
             }
             let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
             if let Some(file_info) = file_info {
-                if schema != "untitled" && file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                if schema != "untitled" && !file_info.borrow().file_info_ast.borrow().ast.is_built() {
                     file_info.borrow_mut().prepare_ast(session);
                 }
-                let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
+                let ast_type = file_info.borrow().file_info_ast.borrow().ast.clone();
                 match ast_type {
-                    AstType::Js => {
-                        if session.sync_odoo.tsserver_bridge.is_none() {
-                            
-                        }
+                    Ast::JsAst(_) => {
                         if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
                             let items = bridge.completion_items_for_content(
                                 &path,
@@ -1985,14 +1981,14 @@ impl Odoo {
                         }
                         return Ok(None);
                     },
-                    AstType::Xml => {
+                    Ast::XmlAst => {
                         if let Some(items) = owl_completion(session, &file_info, params.text_document_position.position.line, params.text_document_position.position.character) {
                             return Ok(Some(CompletionResponse::Array(items)));
                         }
                     },
                     _ => {}
                 }
-                if file_info.borrow_mut().file_info_ast.borrow().indexed_module.is_some() {
+                if matches!(file_info.borrow_mut().file_info_ast.borrow().ast, Ast::PythonAst(_)) && file_info.borrow_mut().file_info_ast.borrow().ast.as_py_ast().indexed_module.is_some() {
                     return Ok(CompletionFeature::autocomplete(session, file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
                 }
             }
@@ -2436,7 +2432,7 @@ impl Odoo {
         };
         let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
         if let Some(file_info) = file_info {
-            if schema != "untitled" && file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+            if schema != "untitled" && !file_info.borrow().file_info_ast.borrow().ast.is_built() {
                 file_info.borrow_mut().prepare_ast(session);
             }
             return Ok(DocumentSymbolFeature::get_symbols(session, &file_info));

@@ -57,12 +57,77 @@ pub fn combine_noqa_info(noqas: &[NoqaInfo]) -> NoqaInfo {
     NoqaInfo::Codes(codes.iter().cloned().collect())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AstType {
-    Python,
-    Xml,
-    Csv,
-    Js
+#[derive(Debug, Clone)]
+pub struct PythonAst {
+    pub indexed_module: Option<Arc<IndexedModule>>,
+}
+
+impl PythonAst {
+    pub fn new() -> Self {
+        Self {
+            indexed_module: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct JsAst {
+    /// Positions of OWL `static template = "some.xml_id"` string literals found in this JS file.
+    /// Each entry is (LSP Range of the string content, xml_id value, enclosing class name).
+    pub js_template_refs: Vec<JsTemplateRef>,
+    /// Component descriptors extracted from OXC analysis of this JS file.
+    pub js_component_descriptors: Vec<ComponentDescriptor>,
+}
+
+impl JsAst {
+    pub fn new() -> Self {
+        Self {
+            js_template_refs: Vec::new(),
+            js_component_descriptors: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Ast {
+    PythonAst(PythonAst),
+    XmlAst,
+    CsvAst,
+    JsAst(JsAst),
+}
+
+impl Ast {
+    pub fn as_py_ast(&self) -> &PythonAst {
+        match self {
+            Ast::PythonAst(py_ast) => py_ast,
+            _ => panic!("Expected PythonAst, found {:?}", self),
+        }
+    }
+    pub fn as_py_ast_mut(&mut self) -> &mut PythonAst {
+        match self {
+            Ast::PythonAst(py_ast) => py_ast,
+            _ => panic!("Expected PythonAst, found {:?}", self),
+        }
+    }
+    pub fn as_js_ast(&self) -> &JsAst {
+        match self {
+            Ast::JsAst(js_ast) => js_ast,
+            _ => panic!("Expected JsAst, found {:?}", self),
+        }
+    }
+    pub fn as_js_ast_mut(&mut self) -> &mut JsAst {
+        match self {
+            Ast::JsAst(js_ast) => js_ast,
+            _ => panic!("Expected JsAst, found {:?}", self),
+        }
+    }
+    pub fn is_built(&self) -> bool {
+        match self {
+            Ast::PythonAst(py_ast) => py_ast.indexed_module.is_some(),
+            Ast::JsAst(js_ast) => !js_ast.js_template_refs.is_empty() || !js_ast.js_component_descriptors.is_empty(),
+            Ast::XmlAst | Ast::CsvAst => true,
+        }
+    }
 }
 
 /* Structure that hold ast and text_document for FileInfo. It allows Fileinfo to hold it with a Rc<RefCell<>> to allow mutability and build on-the-fly
@@ -71,18 +136,17 @@ pub enum AstType {
 pub struct FileInfoAst {
     pub text_hash: u64,
     pub text_document: Option<TextDocument>,
-    pub indexed_module: Option<Arc<IndexedModule>>,
-    pub ast_type: AstType,
-    /// Positions of OWL `static template = "some.xml_id"` string literals found in this JS file.
-    /// Each entry is (LSP Range of the string content, xml_id value, enclosing class name).
-    pub js_template_refs: Vec<JsTemplateRef>,
-    /// Component descriptors extracted from OXC analysis of this JS file.
-    pub js_component_descriptors: Vec<ComponentDescriptor>,
+    pub ast: Ast,
 }
 
 impl FileInfoAst {
     pub fn get_stmts(&self) -> Option<&Vec<Stmt>> {
-        self.indexed_module.as_ref().map(|module| &module.parsed.syntax().body)
+        match &self.ast {
+            Ast::PythonAst(python_ast) => {
+                python_ast.indexed_module.as_ref().map(|module| &module.parsed.syntax().body)
+            },
+            _ => None
+        }
     }
 }
 
@@ -113,10 +177,7 @@ impl FileInfo {
             file_info_ast: Rc::new(RefCell::new(FileInfoAst {
                 text_hash: 0,
                 text_document: None,
-                indexed_module: None,
-                ast_type: AstType::Python,
-                js_template_refs: vec![],
-                js_component_descriptors: vec![],
+                ast: Ast::PythonAst(PythonAst::new()),
             })),
             diagnostics: HashMap::default(),
             noqas_blocs: HashMap::default(),
@@ -190,16 +251,16 @@ impl FileInfo {
 
     pub fn _build_ast(&mut self, session: &mut SessionInfo, is_external: bool) {
         if self.uri.ends_with(".xml") {
-            self.file_info_ast.borrow_mut().ast_type = AstType::Xml;
+            self.file_info_ast.borrow_mut().ast = Ast::XmlAst;
             return;
         }
         else if self.uri.ends_with(".csv") {
-            self.file_info_ast.borrow_mut().ast_type = AstType::Csv;
+            self.file_info_ast.borrow_mut().ast = Ast::CsvAst;
             return;
         }
         else if self.uri.ends_with(".js") || self.uri.ends_with(".ts") {
+            self.file_info_ast.borrow_mut().ast = Ast::JsAst(JsAst::new());
             self.build_js_ast(session, is_external);
-            self.file_info_ast.borrow_mut().ast_type = AstType::Js;
             return;
         }
         self.build_python_ast(session, is_external);
@@ -237,7 +298,7 @@ impl FileInfo {
                 });
             }
         }
-        self.file_info_ast.borrow_mut().indexed_module = Some(IndexedModule::new(parsed_module));
+        self.file_info_ast.borrow_mut().ast.as_py_ast_mut().indexed_module = Some(IndexedModule::new(parsed_module));
         self.replace_diagnostics(DiagnosticSource::PY_SYNTAX, diagnostics);
     }
 
@@ -293,8 +354,8 @@ impl FileInfo {
             .join()
             .unwrap_or_default();
         js_arch_builder::build(session, &template_refs, &component_descriptors);
-        self.file_info_ast.borrow_mut().js_template_refs = template_refs;
-        self.file_info_ast.borrow_mut().js_component_descriptors = component_descriptors;
+        self.file_info_ast.borrow_mut().ast.as_js_ast_mut().js_template_refs = template_refs;
+        self.file_info_ast.borrow_mut().ast.as_js_ast_mut().js_component_descriptors = component_descriptors;
         let is_lib = self.uri.contains("/static/lib/");
         let lsp_diags = match is_lib {
             true => Vec::new(),
@@ -439,7 +500,7 @@ impl FileInfo {
         if self.need_push {
             let mut all_diagnostics = Vec::new();
 
-            let is_js = self.file_info_ast.borrow().ast_type == AstType::Js;
+            let is_js = matches!(self.file_info_ast.borrow().ast, Ast::JsAst(_));
             //We are checking ARCH as it contains Syntax diagnostics for tsserver
             let syntax_diags = self.diagnostics.get(&DiagnosticSource::JS_OXC);
             let has_syntax_diags = is_js && syntax_diags.map(|v| !v.is_empty()).unwrap_or(false);

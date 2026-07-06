@@ -4,7 +4,7 @@ use lsp_types::{DocumentSymbol, DocumentSymbolResponse, Range, SymbolKind};
 use ruff_python_ast::{Expr, Stmt, StmtAnnAssign, StmtAssign, StmtAugAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtGlobal, StmtIf, StmtImport, StmtImportFrom, StmtMatch, StmtNonlocal, StmtTry, StmtTypeAlias, StmtWhile, StmtWith};
 use ruff_text_size::Ranged;
 
-use crate::{core::{file_mgr::{AstType, FileInfo}, python_utils::{unpack_assign, Assign, AssignTargetType}}, threads::SessionInfo, S};
+use crate::{core::{file_mgr::{Ast, FileInfo}, python_utils::{unpack_assign, Assign, AssignTargetType}}, threads::SessionInfo, S};
 
 
 pub struct DocumentSymbolFeature;
@@ -16,8 +16,8 @@ impl DocumentSymbolFeature {
 
         // JS/TS: delegate to tsserver navtree.
         let is_js = matches!(
-            file_info.borrow().file_info_ast.borrow().ast_type,
-            AstType::Js
+            file_info.borrow().file_info_ast.borrow().ast,
+            Ast::JsAst(_)
         );
         if is_js {
             let uri = file_info.borrow().uri.clone();

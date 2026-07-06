@@ -18,7 +18,7 @@ impl ModuleSymbol {
         }
         let (_, manifest_file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &manifest_path.sanitize_cow(), None, None, false);
         let mut manifest_file_info = (*manifest_file_info).borrow_mut();
-        if manifest_file_info.file_info_ast.borrow().indexed_module.is_none() {
+        if manifest_file_info.file_info_ast.borrow().ast.as_py_ast().indexed_module.is_none() {
             return;
         }
         let diags = ModuleSymbol::load_manifest(session, module_key, &manifest_file_info);

@@ -1,7 +1,7 @@
 use lsp_types::{GotoDefinitionResponse, Location, LocationLink, Position, Range};
 use std::{cell::RefCell, rc::Rc};
 
-use crate::core::file_mgr::{AstType, FileInfo, FileMgr};
+use crate::core::file_mgr::{Ast, FileInfo, FileMgr};
 use crate::core::symbols::symbol_keys::SourceFileKey;
 use crate::features::goto_utils::{GotoRequest, GotoSource, GotoSourceType, GotoUtils};
 use crate::threads::SessionInfo;
@@ -16,12 +16,12 @@ impl DefinitionFeature {
         line: u32,
         character: u32
     ) -> Option<GotoDefinitionResponse> {
-        let ast_type = file_info.borrow().file_info_ast.borrow().ast_type.clone();
+        let ast_type = file_info.borrow().file_info_ast.borrow().ast.clone();
         let definitions_sources = match ast_type {
-            AstType::Python => GotoUtils::get_symbols(session, GotoRequest::Definition, file_symbol, file_info, line, character),
-            AstType::Xml => GotoUtils::get_symbols_xml(session, file_symbol, file_info, line, character),
-            AstType::Csv => GotoUtils::get_symbols_csv(session, file_symbol, file_info, line, character),
-            AstType::Js => {return DefinitionFeature::get_js_definition(session, file_info, line, character);},
+            Ast::PythonAst(_) => GotoUtils::get_symbols(session, GotoRequest::Definition, file_symbol, file_info, line, character),
+            Ast::XmlAst => GotoUtils::get_symbols_xml(session, file_symbol, file_info, line, character),
+            Ast::CsvAst => GotoUtils::get_symbols_csv(session, file_symbol, file_info, line, character),
+            Ast::JsAst(_) => {return DefinitionFeature::get_js_definition(session, file_info, line, character);},
         };
         let links: Vec<LocationLink> = definitions_sources
             .iter()
@@ -32,7 +32,7 @@ impl DefinitionFeature {
 
     fn get_js_definition(session: &mut SessionInfo, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<GotoDefinitionResponse> {
         // Check if cursor is over a template reference (e.g. `static template = "module.xml_id"`)
-        let template_refs = file_info.borrow().file_info_ast.borrow().js_template_refs.clone();
+        let template_refs = file_info.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
         for template_ref in &template_refs {
             let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &file_info.borrow().uri, &template_ref.range);
             if Self::position_in_range(line, character, &range) {
