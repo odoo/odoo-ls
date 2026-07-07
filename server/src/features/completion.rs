@@ -1011,9 +1011,6 @@ pub fn _complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, l
                 }
                 let mut access_op = false;
                 for (index, expr) in list_or_tuple_elts.iter().enumerate() {
-                    if index == 1 && session.sync_odoo.version >= (19, 3){
-                        // Check if we have an index operator
-                    }
                     access_op |= index == 1
                         && session.sync_odoo.version >= (19, 3)
                         && expr
