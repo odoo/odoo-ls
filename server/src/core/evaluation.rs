@@ -1862,14 +1862,42 @@ impl Evaluation {
     }
 
     fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: Wk<SymbolKey>, from_module: Option<ModuleKey>, elt1: &Expr, elt2: &Expr, elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
+        //parameter 2
+        let mut access_op = false;
+        if let Expr::StringLiteral(s) = elt2 {
+            match s.value.to_str() {
+                "=" | "!=" | ">" | ">=" | "<" | "<=" | "=?" | "=like" | "like" | "not like" | "ilike" |
+                "not ilike" | "=ilike" | "in" | "not in" | "child_of" | "parent_of" | "any" | "not any" => {},
+                "access" => {
+                    if session.sync_odoo.version < (19, 3) {
+                        if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03025, &[]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
+                                ..diagnostic_base
+                            });
+                        }
+                    } else {
+                        access_op = true;
+                    }
+                }
+                _ => {
+                    if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03009, &[]) {
+                        diagnostics.push(Diagnostic {
+                            range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
+                            ..diagnostic_base
+                        });
+                    }
+                }
+            }
+        }
         //parameter 1
-        let Some(on_object) = on_object.upgrade(session.st()) else { return }; //if weak is not set, we didn't manage to evalue base object. Do not validate in this case
-        if let Expr::StringLiteral(s) = elt1 {
+        if let Some(on_object) = on_object.upgrade(session.st()) //if weak is not set, we didn't manage to evalue base object. Do not validate in this case
+            && let Expr::StringLiteral(s) = elt1 {
             let value = s.value.to_str();
-            let split_expr = value.split(".");
             let mut date_mode = false;
             let mut deep_field_walker = DeepFieldEvalWalker::new(on_object, from_module);
-            'split_name: for field_name in split_expr {
+            let split_expr = value.split(".").collect::<Vec<_>>();
+            'split_name: for (index, field_name) in split_expr.iter().enumerate() {
                 if date_mode {
                     if !["year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"].contains(&field_name) {
                         if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03012, &[]) {
@@ -1909,6 +1937,7 @@ impl Evaluation {
                     }
                     break;
                 }
+                let mut access_field_valid = false;
                 for symbol in field_symbols {
                     match symbol {
                         SymbolKey::Variable(_) => {
@@ -1919,6 +1948,11 @@ impl Evaluation {
                             }
                             if SymbolTable::is_specific_field(session, symbol, &["Date", "Datetime"]) {
                                 date_mode = true;
+                            } else if index == split_expr.len() - 1
+                                && access_op
+                                && SymbolTable::is_specific_field(session, symbol, &["Many2one", "Id"])
+                            {
+                                access_field_valid = true;
                             }
                         }
                         SymbolKey::XmlRecord(key) => {
@@ -1929,40 +1963,29 @@ impl Evaluation {
                             };
                             if ["date", "datetime"].contains(&ttype.as_str()) {
                                 date_mode = true;
+                            } else if index == split_expr.len() - 1
+                                && access_op
+                                && matches!(ttype.as_str(), "many2one") // ID has type integer, so we cannot get a strict check easily
+                            {
+                                access_field_valid = true;
                             }
                         }
                         _ => {}
                     }
                 }
-
-            }
-        }
-        //parameter 2
-        let mut access_op = false;
-        if let Expr::StringLiteral(s) = elt2 {
-            match s.value.to_str() {
-                "=" | "!=" | ">" | ">=" | "<" | "<=" | "=?" | "=like" | "like" | "not like" | "ilike" |
-                "not ilike" | "=ilike" | "in" | "not in" | "child_of" | "parent_of" | "any" | "not any" => {},
-                "access" => {
-                    if session.sync_odoo.version < (19, 3) {
-                        if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03025, &[]) {
-                            diagnostics.push(Diagnostic {
-                                range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
-                                ..diagnostic_base
-                            });
-                        }
-                    } else {
-                        access_op = true;
-                    }
-                }
-                _ => {
-                    if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03009, &[]) {
+                if index == split_expr.len() - 1 && access_op && !date_mode && !access_field_valid {
+                    if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03027, &[])
+                    {
                         diagnostics.push(Diagnostic {
-                            range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
+                            range: Range::new(
+                                Position::new(s.range().start().to_u32(), 0),
+                                Position::new(s.range().end().to_u32(), 0),
+                            ),
                             ..diagnostic_base
                         });
                     }
                 }
+
             }
         }
         if access_op
