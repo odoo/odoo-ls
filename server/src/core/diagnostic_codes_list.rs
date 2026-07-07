@@ -189,6 +189,10 @@ OLS03025, DiagnosticSetting::Error, "Invalid comparison operator: 'access' is on
 */
 OLS03026, DiagnosticSetting::Error, "Invalid value for operator: 'access'; The value should be one of 'read', 'write', 'create', or 'unlink'",
 /**
+* Invalid field for operator: 'access'; The field should be a model id or a Many2One field to a model
+*/
+OLS03027, DiagnosticSetting::Error, "Invalid field for operator: 'access'; The field should be a model id or a Many2One field to a model",
+/**
 * Form is no longer available on odoo.tests.common, thus it should not be imported from there.
 */
 OLS03301, DiagnosticSetting::Warning, "Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form",
