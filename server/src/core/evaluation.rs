@@ -1937,7 +1937,7 @@ impl Evaluation {
                     }
                     break;
                 }
-                let mut access_field_valid = false;
+                let mut access_field_valid = *field_name == "id";
                 for symbol in field_symbols {
                     match symbol {
                         SymbolKey::Variable(_) => {
@@ -1948,9 +1948,10 @@ impl Evaluation {
                             }
                             if SymbolTable::is_specific_field(session, symbol, &["Date", "Datetime"]) {
                                 date_mode = true;
-                            } else if index == split_expr.len() - 1
+                            } else if !access_field_valid
+                                && index == split_expr.len() - 1
                                 && access_op
-                                && SymbolTable::is_specific_field(session, symbol, &["Many2one", "Id"])
+                                && SymbolTable::is_specific_field(session, symbol, &["Many2one"])
                             {
                                 access_field_valid = true;
                             }
@@ -1963,9 +1964,10 @@ impl Evaluation {
                             };
                             if ["date", "datetime"].contains(&ttype.as_str()) {
                                 date_mode = true;
-                            } else if index == split_expr.len() - 1
+                            } else if !access_field_valid
+                                && index == split_expr.len() - 1
                                 && access_op
-                                && matches!(ttype.as_str(), "many2one") // ID has type integer, so we cannot get a strict check easily
+                                && matches!(ttype.as_str(), "many2one")
                             {
                                 access_field_valid = true;
                             }
