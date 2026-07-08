@@ -1,6 +1,6 @@
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, MissingDataSource, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{Buildable, storage::dependency_mgr::{DependenciesTable, DependentsTable}, symbol_keys::SymbolKey}}, oyarn, utils::HashMap};
+use crate::{constants::{BuildStatus, BuildSteps, MissingDataSource, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{Buildable, storage::dependency_mgr::{DependenciesTable, DependentsTable}, symbol_keys::{JsFileParent, SymbolKey}}}, oyarn, utils::HashMap};
 use std::{cell::RefCell, rc::Weak};
 
 #[derive(Debug)]
@@ -8,7 +8,7 @@ pub struct JsFileSymbol {
     pub name: OYarn,
     pub path: String,
     pub is_external: bool,
-    parent: SymbolKey, //Should be either a module or a disk dir
+    parent: JsFileParent,
     pub arch_status: BuildStatus,
     pub validation_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
@@ -24,8 +24,7 @@ pub struct JsFileSymbol {
 
 impl JsFileSymbol {
 
-    pub fn new(name: &str, path: &str, parent: SymbolKey, is_external: bool) -> Self {
-        debug_assert!(matches!(parent, SymbolKey::Module(_) | SymbolKey::DiskDir(_)));
+    pub fn new(name: &str, path: &str, parent: JsFileParent, is_external: bool) -> Self {
         let res = Self {
             name: oyarn!("{}", name),
             path: path.to_string(),
@@ -46,7 +45,7 @@ impl JsFileSymbol {
         res
     }
 
-    pub fn parent(&self) -> SymbolKey {
+    pub fn parent(&self) -> JsFileParent {
         self.parent
     }
 

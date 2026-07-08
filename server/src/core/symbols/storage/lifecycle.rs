@@ -181,8 +181,8 @@ impl SymbolTable {
     }
 
     pub fn add_new_js_file(&mut self, parent_key: JsFileParent, name: &str, path: &str) -> JsFileKey {
-        let symbol_key: SymbolKey = parent_key.clone().into();
-        let mut js_file_symbol = JsFileSymbol::new(name, path, symbol_key, self.is_external(symbol_key));
+        let symbol_key: SymbolKey = parent_key.into();
+        let mut js_file_symbol = JsFileSymbol::new(name, path, parent_key, self.is_external(symbol_key));
         js_file_symbol.set_in_workspace(self.in_workspace(symbol_key));
         let js_file_key = self.js_files.insert(js_file_symbol);
         let rc_entry = self.get_entry(symbol_key);

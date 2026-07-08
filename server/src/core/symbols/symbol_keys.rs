@@ -314,6 +314,7 @@ impl_weak_symbol_key_from! {
     CsvFileKey,
     JsFileKey,
     SourceFileKey,
+    JsFileParent,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -568,7 +569,7 @@ pub enum JsFileParent {
 }
 
 impl From<ModuleKey> for JsFileParent {
-    fn from(k: ModuleKey)  -> Self { Self::Module(k) } 
+    fn from(k: ModuleKey)  -> Self { Self::Module(k) }
 }
 impl From<DiskDirKey> for JsFileParent {
     fn from(k: DiskDirKey) -> Self { Self::DiskDir(k) }
