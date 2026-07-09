@@ -737,6 +737,15 @@ impl SyncOdoo {
         });
     }
 
+    fn end_reporting(session: &mut SessionInfo) {
+        session.send_notification(Progress::METHOD, ProgressParams {
+            token: ProgressToken::Number(session.sync_odoo.progress_token),
+            value: ProgressParamsValue::WorkDone(WorkDoneProgress::End(WorkDoneProgressEnd {
+                message: None,
+            }))
+        });
+    }
+
     pub fn process_rebuilds(session: &mut SessionInfo, no_validation: bool) -> bool {
         session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
         if session.sync_odoo.watched_file_updates > MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART {
@@ -773,6 +782,9 @@ impl SyncOdoo {
             }
             if session.sync_odoo.terminate_rebuild.load(Ordering::SeqCst){
                 info!("Terminating rebuilds due to server shutdown");
+                if is_reporting_progress {
+                    SyncOdoo::end_reporting(session);
+                }
                 return false;
             }
             let sym = session.sync_odoo.pop_item(BuildSteps::ARCH);
@@ -822,12 +834,7 @@ impl SyncOdoo {
                         session.request_delayed_rebuild();
                         session.sync_odoo.add_to_validations(sym_rc.clone());
                         if is_reporting_progress {
-                            session.send_notification(Progress::METHOD, ProgressParams {
-                                token: ProgressToken::Number(session.sync_odoo.progress_token),
-                                value: ProgressParamsValue::WorkDone(WorkDoneProgress::End(WorkDoneProgressEnd {
-                                    message: None,
-                                }))
-                            });
+                            SyncOdoo::end_reporting(session);
                         }
                         return true;
                     }
@@ -858,12 +865,7 @@ impl SyncOdoo {
         session.sync_odoo.import_cache = None;
         session.sync_odoo.watched_file_updates = 0;
         if is_reporting_progress {
-            session.send_notification(Progress::METHOD, ProgressParams {
-                token: ProgressToken::Number(session.sync_odoo.progress_token),
-                value: ProgressParamsValue::WorkDone(WorkDoneProgress::End(WorkDoneProgressEnd {
-                    message: None,
-                }))
-            });
+            SyncOdoo::end_reporting(session);
         }
         trace!("Leaving rebuild with remaining tasks: {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_validation.len());
         true
