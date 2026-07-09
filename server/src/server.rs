@@ -270,6 +270,25 @@ impl Server {
         info!(message);
     }
 
+    /// Drain pending respones and notifications from worker threads to the client.
+    fn flush_pending_messages(receivers_w_to_s: &[Receiver<Message>], connection: &Connection) {
+        for receiver in receivers_w_to_s.iter() {
+            while let Ok(msg) = receiver.try_recv() {
+                match msg {
+                    Message::Response(r) => {
+                        let _ = connection.sender.send(Message::Response(r));
+                    },
+                    Message::Notification(n) if n.method != Shutdown::METHOD => {
+                        if n.method != Shutdown::METHOD {
+                            let _ = connection.sender.send(Message::Notification(n));
+                        }
+                    },
+                    _ => {}, // Skip shutdown (not possible) and requests (should not happen / not useful at this stage)
+                }
+            }
+        }
+    }
+
     pub fn run(mut self, client_pid: Option<u32>) -> bool {
         let mut select = Select::new();
         let receiver_clone = self.connection.as_ref().unwrap().receiver.clone();
@@ -355,7 +374,7 @@ impl Server {
                         self.connection.as_ref().unwrap().sender.send(Message::Request(r)).unwrap();
                     },
                     Message::Notification(n) => {
-                        if n.method == Shutdown::METHOD{
+                        if n.method == Shutdown::METHOD {
                             self.shutdown_threads("Server-initiated shutdown request. Exiting");
                             break;
                         }
@@ -372,13 +391,14 @@ impl Server {
         let hook = panic::take_hook(); //drop sender stored in panic
         drop(hook);
         let _ = stop_sender.send(());
-        self.connection = None; //drop connection before joining threads
         if let Some(pid_join_handle) = pid_thread {
             pid_join_handle.join().unwrap();
         }
         self.main_thread.join().unwrap();
         let _ = self.sender_to_delayed_process.send(DelayedProcessingMessage::EXIT);
         self.delayed_process_thread.join().unwrap();
+        Server::flush_pending_messages(&self.receivers_w_to_s, self.connection.as_ref().unwrap());
+        self.connection = None; //drop connection after flushing pending worker notifications
         exit_no_error_code
     }
 
