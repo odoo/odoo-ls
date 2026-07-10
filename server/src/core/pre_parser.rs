@@ -140,8 +140,10 @@ impl PreParser {
             let job_queue = job_queue.clone();
             let ctx = ctx.clone();
             let last_built_module_idx = last_built_module_idx.clone();
+            let terminate = session.sync_odoo.terminate_rebuild.clone();
             workers.push(std::thread::spawn(move || {
                 loop {
+                    if terminate.load(Ordering::Relaxed) { return; }
                     // Hold the lock only long enough to pull one job, then release
                     // it so a sibling worker can pull while this one parses.
                     let Some(job) = job_queue.lock().unwrap().pop_front() else {
