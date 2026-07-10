@@ -66,7 +66,7 @@ pub fn setup_server(with_odoo: bool) -> (SyncOdoo, ConfigEntry) {
 
 pub fn create_init_session<'a>(odoo: &'a mut SyncOdoo, config: ConfigEntry) -> SessionInfo<'a> {
     let (s, r) = crossbeam_channel::unbounded();
-    let mut session = SessionInfo::new_from_custom_channel(s.clone(), r.clone(), odoo);
+    let mut session = SessionInfo::new_from_custom_channel(s.clone(), r.clone(), None, odoo);
     session.sync_odoo.test_mode = true;
     SyncOdoo::init(&mut session, config);
     session

@@ -1,4 +1,3 @@
-
 pub mod symbol_keys;
 pub mod storage;
 pub mod symbol_table_impl;
@@ -15,6 +14,7 @@ pub use storage::{
     disk_dir_symbol::DiskDirSymbol,
     file_symbol::FileSymbol,
     function_symbol::{self, FunctionSymbol},
+    js_file_symbol::JsFileSymbol,
     module_symbol::ModuleSymbol,
     namespace_symbol::NamespaceSymbol,
     package_symbol::PythonPackageSymbol,

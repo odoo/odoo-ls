@@ -1,0 +1,5 @@
+<templates>
+    <t t-name="module_templates_b.CallFrontend">
+        <t t-call="module_templates_a.FrontendTemplate"/>
+    </t>
+</templates>

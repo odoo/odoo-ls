@@ -41,6 +41,8 @@ roxmltree = "0.20.0"
 dirs = "5.0"
 toml = "0.9.12"
 schemars = "1.2.1"
+oxc = { git = "https://github.com/oxc-project/oxc", tag = "crates_v0.127.0", features = ["semantic", "ast_visit"] }
+oxc_linter = { git = "https://github.com/oxc-project/oxc", tag = "crates_v0.127.0" }
 csv = "1.4.0"
 slotmap = "1.1.1"
 rustc-hash = "2.1"

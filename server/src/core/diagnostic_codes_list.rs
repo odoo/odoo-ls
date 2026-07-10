@@ -12,6 +12,7 @@ Sections:
     - 033XX: Deprecations
 - Manifest 04
 - XML/CSV 05
+- JavaScript/TypeScript 06
  */
 
 diagnostic_codes! {
@@ -557,4 +558,28 @@ OLS05069, DiagnosticSetting::Warning, "CSV record has {0} fields but expected {1
 * CSV parsing error, typically caused by unclosed quotes or malformed field data.
 */
 OLS05070, DiagnosticSetting::Error, "CSV parsing error: {0}",
+/**
+* Good practice is to have a template name that is under the format module_name.template_name
+*/
+OLS05071, DiagnosticSetting::Info, "It is good practice to have template names with the format module_name.template_name",
+/**
+* Duplicate Template ID. This t-name is already used somewhere else.
+*/
+OLS05072, DiagnosticSetting::Error, "Duplicate template ID",
+/**
+* A t-call references a template that does not exist in the loaded modules
+*/
+OLS05073, DiagnosticSetting::Error, "Template '{0}' not found or not in module dependencies",
+/**
+* A t-call references a template whose module is not declared as a dependency
+*/
+OLS05074, DiagnosticSetting::Error, "Template '{0}' is not declared in any dependency of module '{1}'",
+/**
+* A t-call references a template whose module is not declared as a dependency
+*/
+OLS05075, DiagnosticSetting::Warning, "It is discouraged to declare a template at the root of the file. Consider adding an 'odoo' or 'template' node as root of the file",
+/**
+* Template not found
+*/
+OLS06000, DiagnosticSetting::Error, "Template not found",
 }

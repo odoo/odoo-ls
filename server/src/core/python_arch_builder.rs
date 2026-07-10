@@ -12,7 +12,7 @@ use std::vec;
 use tracing::{trace, warn};
 
 use crate::constants::{
-    BuildStatus, BuildSteps, OYarn, SymType, DEBUG_STEPS, DEBUG_STEPS_ONLY_INTERNAL,
+    BuildStatus, BuildSteps, DEBUG_STEPS, DEBUG_STEPS_ONLY_INTERNAL, DiagnosticSource, OYarn, SymType
 };
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::import_resolver::resolve_import_stmt;
@@ -90,7 +90,7 @@ impl PythonArchBuilder {
                 let maybe_file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).clone();
                 match maybe_file_info {
                     Some(file_info) => {
-                        if file_info.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                        if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
                             file_info.borrow_mut().prepare_ast(session);
                         }
                         file_info
@@ -107,7 +107,7 @@ impl PythonArchBuilder {
         if self.file_mode {
             //diagnostics for functions are stored directly on funcs
             let mut file_info = file_info_rc.borrow_mut();
-            file_info.replace_diagnostics(BuildSteps::ARCH, self.diagnostics.clone());
+            file_info.replace_diagnostics(DiagnosticSource::PY_ARCH, self.diagnostics.clone());
         }
         let file_info = file_info_rc.borrow();
         let file_info_ast_rc = file_info.file_info_ast.clone();
@@ -118,14 +118,14 @@ impl PythonArchBuilder {
         };
         drop(file_info);
         let file_info_ast= file_info_ast_rc.borrow();
-        if file_info_ast.indexed_module.is_some() {
+        if file_info_ast.ast.as_py_ast().indexed_module.is_some() {
             let ast = if self.file_mode {
                 file_info_ast.get_stmts().unwrap()
             } else {
                 let f = self.sym_stack[0].unwrap_function_key();
                 let ast_index = session.st()[f].node_index.load();
                 if ast_index.as_u32().is_some() {
-                    let func = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(ast_index);
+                    let func = file_info_ast.ast.as_py_ast().indexed_module.as_ref().unwrap().get_by_index(ast_index);
                     match func {
                         AnyRootNodeRef::Stmt(Stmt::FunctionDef(func_stmt)) => {
                             &func_stmt.body
@@ -254,7 +254,7 @@ impl PythonArchBuilder {
                                     session.st_mut().add_dependency(self.file, evaluated_type_file, self.current_step, BuildSteps::ARCH);
                                 }
                             }
-                            let variable_key = session.st_mut().add_new_variable(*self.sym_stack.last().unwrap(), &name, &import_result.range);
+                            let variable_key = session.st_mut().add_new_variable(*self.sym_stack.last().unwrap(), &name, import_result.range);
                             let variable = &mut session.st_mut()[variable_key];
                             variable.is_import_variable = true;
                             variable.evaluations = evaluations;
@@ -267,7 +267,7 @@ impl PythonArchBuilder {
                 } else {
                     import_name.name.split(".").next().unwrap()
                 };
-                let variable_key = session.st_mut().add_new_variable(*self.sym_stack.last().unwrap(), var_name, &import_name.range);
+                let variable_key = session.st_mut().add_new_variable(*self.sym_stack.last().unwrap(), var_name, import_name.range);
                 session.st_mut()[variable_key].is_import_variable = true;
             }
         }
@@ -468,7 +468,7 @@ impl PythonArchBuilder {
             // Expressions that cannot contained a named expressions are not traversed
             Expr::Lambda(lambda_expr) => {
                 let function_key = session.st_mut().add_new_function(
-                    *self.sym_stack.last().unwrap(), &S!("<lambda>"), &lambda_expr.range, &lambda_expr.body.range().start()
+                    *self.sym_stack.last().unwrap(), &S!("<lambda>"), lambda_expr.range, &lambda_expr.body.range().start()
                 );
                 if let Some(parameters) = &lambda_expr.parameters {
                     PythonArchBuilder::handle_func_args(function_key, session, &parameters);
@@ -558,7 +558,7 @@ impl PythonArchBuilder {
             }
             match assign.target {
                 AssignTargetType::Name(ref name_expr) => {
-                    session.sync_odoo.symbol_table.add_new_variable(*self.sym_stack.last().unwrap(), &name_expr.id, &name_expr.range);
+                    session.sync_odoo.symbol_table.add_new_variable(*self.sym_stack.last().unwrap(), &name_expr.id, name_expr.range);
                 },
                 AssignTargetType::Attribute(ref _attr_expr) => {
                 }
@@ -574,7 +574,7 @@ impl PythonArchBuilder {
             }
             match assign.target {
                 AssignTargetType::Name(ref name_expr) => {
-                    let variable_key = session.st_mut().add_new_variable(*self.sym_stack.last().unwrap(), &name_expr.id, &name_expr.range);
+                    let variable_key = session.st_mut().add_new_variable(*self.sym_stack.last().unwrap(), &name_expr.id, name_expr.range);
                     let variable = &session.st()[variable_key];
                     if self.file_mode && variable.name == "__all__" && assign.value.is_some() {
                         let mut deps = vec![vec![]]; //only arch level
@@ -660,13 +660,13 @@ impl PythonArchBuilder {
     fn visit_named_expr(&mut self, session: &mut SessionInfo, named_expr: &ExprNamed) {
         self.visit_expr(session, &named_expr.value);
         if let Some(name_expr) = named_expr.target.as_name_expr() { // Only handle valid named expressions
-            session.sync_odoo.symbol_table.add_new_variable(*self.sym_stack.last().unwrap(), &name_expr.id, &named_expr.target.range());
+            session.sync_odoo.symbol_table.add_new_variable(*self.sym_stack.last().unwrap(), &name_expr.id, named_expr.target.range());
         }
     }
 
     fn handle_func_args(function_key: FunctionKey, session: &mut SessionInfo, parameters: &Parameters) {
         for arg in parameters.posonlyargs.iter() {
-            let param = session.st_mut().add_new_variable(function_key, &arg.parameter.name.id, &arg.range);
+            let param = session.st_mut().add_new_variable(function_key, &arg.parameter.name.id, arg.range);
             session.st_mut()[param].is_parameter = true;
             let mut default = None;
             if arg.default.is_some() {
@@ -680,7 +680,7 @@ impl PythonArchBuilder {
             });
         }
         for arg in parameters.args.iter() {
-            let param = session.st_mut().add_new_variable(function_key, &arg.parameter.name.id, &arg.range);
+            let param = session.st_mut().add_new_variable(function_key, &arg.parameter.name.id, arg.range);
             session.st_mut()[param].is_parameter = true;
             let mut default = None;
             if arg.default.is_some() {
@@ -694,7 +694,7 @@ impl PythonArchBuilder {
             });
         }
         if let Some(arg) = &parameters.vararg {
-            let param = session.st_mut().add_new_variable(function_key, &arg.name.id, &arg.range);
+            let param = session.st_mut().add_new_variable(function_key, &arg.name.id, arg.range);
             session.st_mut()[param].is_parameter = true;
             session.st_mut()[function_key].args.push(Argument {
                 symbol: param.into(),
@@ -704,7 +704,7 @@ impl PythonArchBuilder {
             });
         }
         for arg in parameters.kwonlyargs.iter() {
-            let param = session.st_mut().add_new_variable(function_key, &arg.parameter.name.id, &arg.range);
+            let param = session.st_mut().add_new_variable(function_key, &arg.parameter.name.id, arg.range);
             session.st_mut()[param].is_parameter = true;
             session.st_mut()[function_key].args.push(Argument {
                 symbol: param.into(),
@@ -714,7 +714,7 @@ impl PythonArchBuilder {
             });
         }
         if let Some(arg) = &parameters.kwarg {
-            let param = session.st_mut().add_new_variable(function_key, &arg.name.id, &arg.range);
+            let param = session.st_mut().add_new_variable(function_key, &arg.name.id, arg.range);
             session.st_mut()[param].is_parameter = true;
             session.st_mut()[function_key].args.push(Argument {
                 symbol: param.into(),
@@ -730,7 +730,7 @@ impl PythonArchBuilder {
             return Ok(()) //if body is empty, it usually means that the ast of the class is invalid. Skip it
         }
         let function_key = session.st_mut().add_new_function(*self.sym_stack.last().unwrap(),
-            &func_def.name.id, &func_def.range, &func_def.body.get(0).unwrap().range().start());
+            &func_def.name.id, func_def.range, &func_def.body.get(0).unwrap().range().start());
         let func_sym = &mut session.st_mut()[function_key];
         func_sym.node_index.set(func_def.node_index.load());
         for decorator in func_def.decorator_list.iter() {
@@ -795,7 +795,7 @@ impl PythonArchBuilder {
         }
         let parent = *self.sym_stack.last().unwrap();
         let class_key = session.st_mut().add_new_class(
-            parent, class_def.name.id.as_str(), &class_def.range, &class_def.body.get(0).unwrap().range().start());
+            parent, class_def.name.id.as_str(), class_def.range, &class_def.body.get(0).unwrap().range().start());
         let class_sym = &mut session.sync_odoo.symbol_table[class_key];
 
         if class_def.body.len() > 0 && class_def.body[0].is_expr_stmt() {
@@ -829,7 +829,7 @@ impl PythonArchBuilder {
         let parent = *self.sym_stack.last().unwrap();
         for (symbol_name, range) in self.__all_symbols_to_add.drain(..) {
             if session.st().get_content_symbol(parent, &symbol_name, u32::MAX).symbols.is_empty() {
-                session.st_mut().add_new_variable(parent, &symbol_name, &range);
+                session.st_mut().add_new_variable(parent, &symbol_name, range);
             }
         }
     }
@@ -1026,7 +1026,7 @@ impl PythonArchBuilder {
             }
             match assign.target {
                 AssignTargetType::Name(ref name_expr) => {
-                    session.st_mut().add_new_variable(scope, &name_expr.id, &name_expr.range);
+                    session.st_mut().add_new_variable(scope, &name_expr.id, name_expr.range);
                 },
                 AssignTargetType::Attribute(_) => {
                 }
@@ -1120,7 +1120,7 @@ impl PythonArchBuilder {
                 match &**var {
                     Expr::Name(expr_name) => {
                         let parent = *self.sym_stack.last().unwrap();
-                        session.sync_odoo.symbol_table.add_new_variable(parent, &expr_name.id, &var.range());
+                        session.sync_odoo.symbol_table.add_new_variable(parent, &expr_name.id, var.range());
                     },
                     Expr::Tuple(_) => {continue;},
                     Expr::List(_) => {continue;},
@@ -1149,13 +1149,13 @@ impl PythonArchBuilder {
                 Pattern::MatchStar(pattern_match_star) => {
                     if let Some(name) = &pattern_match_star.name { //if name is None, this is a wildcard pattern (*_)
                         symbol_table.add_new_variable(
-                            scope, name, &pattern_match_star.range());
+                            scope, name, pattern_match_star.range());
                     }
                 },
                 Pattern::MatchAs(pattern_match_as) => {
                     if let Some(name) = &pattern_match_as.name { //if name is None, this is a wildcard pattern (_)
                         symbol_table.add_new_variable(
-                            scope, name, &pattern_match_as.range());
+                            scope, name, pattern_match_as.range());
                     }
                 },
                 Pattern::MatchOr(match_or) => {

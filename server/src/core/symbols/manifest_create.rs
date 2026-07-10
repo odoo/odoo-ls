@@ -5,7 +5,7 @@ use ruff_python_ast::{Expr, ExprStringLiteral, Stmt};
 use ruff_text_size::Ranged;
 use tracing::info;
 
-use crate::{constants::{BuildSteps, DEBUG_STEPS}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileInfo, symbols::{ModuleSymbol, symbol_keys::ModuleKey}}, oyarn, threads::SessionInfo, utils::{HashSet, PathSanitizer}};
+use crate::{constants::{DEBUG_STEPS, DiagnosticSource}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileInfo, symbols::{ModuleSymbol, symbol_keys::ModuleKey}}, oyarn, threads::SessionInfo, utils::{HashSet, PathSanitizer}};
 
 
 
@@ -18,14 +18,14 @@ impl ModuleSymbol {
         }
         let (_, manifest_file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &manifest_path.sanitize_cow(), None, None, false);
         let mut manifest_file_info = (*manifest_file_info).borrow_mut();
-        if manifest_file_info.file_info_ast.borrow().indexed_module.is_none() {
+        if manifest_file_info.file_info_ast.borrow().ast.as_py_ast().indexed_module.is_none() {
             return;
         }
         let diags = ModuleSymbol::load_manifest(session, module_key, &manifest_file_info);
         if session.sync_odoo.modules.contains_key(&session.st()[module_key].dir_name) {
             //TODO: handle multiple modules with the same name
         }
-        manifest_file_info.replace_diagnostics(BuildSteps::SYNTAX, diags);
+        manifest_file_info.replace_diagnostics(DiagnosticSource::PY_SYNTAX, diags);
         manifest_file_info.publish_diagnostics(session);
         info!("Detected module: {:?}", session.st()[module_key].path);
     }

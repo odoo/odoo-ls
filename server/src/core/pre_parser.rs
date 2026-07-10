@@ -26,7 +26,7 @@ use std::thread::JoinHandle;
 use ruff_source_file::PositionEncoding;
 
 use crate::constants::DEBUG_PRE_PARSER;
-use crate::core::file_mgr::{AstType, PreloadedFile, hash_text_document, parse_python, python_source_type};
+use crate::core::file_mgr::{Ast, PreloadedFile, hash_text_document, parse_python, python_source_type};
 use crate::core::symbols::SymbolTable;
 use crate::core::symbols::symbol_keys::ModuleKey;
 use crate::core::text_document::TextDocument;
@@ -246,15 +246,15 @@ fn pre_parse_python(ctx: &WorkerCtx, module_idx: usize, path: &Path) {
 }
 
 fn pre_load_csv(ctx: &WorkerCtx, module_idx: usize, path: &Path) {
-    pre_load_data_file(ctx, module_idx, path, AstType::Csv);
+    pre_load_data_file(ctx, module_idx, path, Ast::CsvAst);
 }
 
 fn pre_load_xml(ctx: &WorkerCtx, module_idx: usize, path: &Path) {
-    pre_load_data_file(ctx, module_idx, path, AstType::Xml);
+    pre_load_data_file(ctx, module_idx, path, Ast::XmlAst);
 }
 
 /// Read a data file (CSV or XML) and store its text and hash in the cache.
-fn pre_load_data_file(ctx: &WorkerCtx, module_idx: usize, path: &Path, file_type: AstType) {
+fn pre_load_data_file(ctx: &WorkerCtx, module_idx: usize, path: &Path, file_type: Ast) {
     let path_str = path.sanitize();
     // read file from disk
     let Ok(contents) = fs::read_to_string(path) else { return };
@@ -265,7 +265,7 @@ fn pre_load_data_file(ctx: &WorkerCtx, module_idx: usize, path: &Path, file_type
     ctx.cache.insert(module_idx, path_str, PreloadedFile::DataFile {
         text_document,
         text_hash,
-        ast_type: file_type,
+        ast: file_type,
     });
 }
 
