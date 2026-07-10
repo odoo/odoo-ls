@@ -1,0 +1,10 @@
+<templates>
+    <t t-name="module_owl.Counter">
+        <div class="o_counter">
+            <button t-on-click="increment">Increment</button>
+            <span t-esc="state.value"/>
+            <span t-esc="doubled"/>
+            <span t-esc="this.state.value"/>
+        </div>
+    </t>
+</templates>

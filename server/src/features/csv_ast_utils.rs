@@ -5,7 +5,7 @@ use ruff_text_size::{TextRange, TextSize};
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::symbol_keys::CsvFileKey;
-use crate::features::goto_utils::GotoSource;
+use crate::features::goto_utils::{GotoSource, GotoSourceType};
 use crate::{
     constants::OYarn,
     core::{
@@ -149,7 +149,7 @@ impl CsvAstUtils {
                             end as u32
                         };
                         results.push(GotoSource {
-                            source: sym,
+                            source: GotoSourceType::SymbolKey(sym),
                             origin_selection_range: Some(Range {
                                 start: file_info
                                     .borrow()
@@ -176,7 +176,7 @@ impl CsvAstUtils {
                         let substring_start =
                             (h_start + header_elts[0].len() + has_quotes as usize + 1) as u32;
                         results.push(GotoSource {
-                            source: sym,
+                            source: GotoSourceType::SymbolKey(sym),
                             origin_selection_range: Some(Range {
                                 start: file_info.borrow().offset_to_position(
                                     substring_start,
@@ -233,7 +233,7 @@ impl CsvAstUtils {
                         if record.range.contains_range(field_range) && field_data == *record_xml_id {
                             if let Some(xml_id) = record.fields().get(XmlFieldName::Id.as_str()) {
                                 results.push(GotoSource {
-                                    source: (*xml_id).into(),
+                                    source: GotoSourceType::SymbolKey((*xml_id).into()),
                                     origin_selection_range: None,
                                 });
                                 break;
@@ -262,7 +262,7 @@ impl CsvAstUtils {
                     )
                     .iter_valid(session.st())
                     .map(|xml_id| GotoSource {
-                        source: xml_id.into(),
+                        source: GotoSourceType::SymbolKey(xml_id.into()),
                         origin_selection_range: None,
                     }),
                 );

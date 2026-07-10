@@ -146,7 +146,7 @@ pub fn unpack_assign(targets: &[Expr], annotation: Option<&Expr>, value: Option<
                 // if we have a tuple, we want to untuple the value if possible. If not or because we don't know
                 // the type of the value, we return the value with an index
                 if value.is_none() {
-                    debug!("Invalid stmt: can't annotate a tuple");
+                    //debug!("Invalid stmt: can't annotate a tuple");
                     continue;
                 }
                 let value = value.unwrap();

@@ -30,6 +30,9 @@ impl XmlAstUtils {
     }
 
     fn visit_node(session: &mut SessionInfo<'_>, node: &Node, offset: usize, from_module: Option<ModuleKey>, ctxt: &mut HashMap<String, ContextValue>, results: &mut (Vec<SymbolKey>, Option<Range<usize>>), on_dep_only: bool) {
+        if node.range().start > offset {
+            return;
+        }
         if node.is_element() {
             match node.tag_name().name()  {
                 "record" => {
@@ -219,6 +222,21 @@ impl XmlAstUtils {
                 results.0.push(record_key.into());
             }
         }
+    }
+
+    /**
+     * Clear invalid weak values from js_templates for this template name.
+     * Return true if there is still valid values after the cleanup
+     */
+    pub fn ensure_js_template_validity(session: &mut SessionInfo, t_name: &str) -> bool {
+        let Some(templates) = session.sync_odoo.js_templates.get(t_name) else {
+            return false;
+        };
+        if templates.is_empty(&session.sync_odoo.symbol_table) {
+            session.sync_odoo.js_templates.remove(t_name);
+            return false;
+        }
+        true
     }
 
 }
