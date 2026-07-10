@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use lsp_types::{CompletionResponse, Diagnostic, TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier};
+use lsp_types::{CompletionContext, CompletionResponse, Diagnostic, TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier};
 use odoo_ls_server::core::{file_mgr::FileMgr, odoo::{Odoo, SyncOdoo}};
 use odoo_ls_server::features::completion::CompletionFeature;
 use odoo_ls_server::threads::SessionInfo;
@@ -292,6 +292,10 @@ fn test_xml_fields_def_hover_completion() {
         &mut session,
         py_file_symbol,
         &py_file_info,
+        Some(CompletionContext {
+            trigger_kind: lsp_types::CompletionTriggerKind::TRIGGER_CHARACTER,
+            trigger_character: Some(".".to_string()),
+        }),
         6,
         19,
     ));
@@ -316,6 +320,10 @@ fn test_xml_fields_def_hover_completion() {
         &mut session,
         py_file_symbol,
         &py_file_info,
+        Some(CompletionContext {
+            trigger_kind: lsp_types::CompletionTriggerKind::TRIGGER_CHARACTER,
+            trigger_character: Some(".".to_string()),
+        }),
         6,
         48,
     ));
@@ -340,6 +348,10 @@ fn test_xml_fields_def_hover_completion() {
         &mut session,
         py_file_symbol,
         &py_file_info,
+        Some(CompletionContext {
+            trigger_kind: lsp_types::CompletionTriggerKind::TRIGGER_CHARACTER,
+            trigger_character: Some(".".to_string()),
+        }),
         6,
         61,
     ));
@@ -367,6 +379,10 @@ fn test_xml_fields_def_hover_completion() {
         &mut session,
         py_file_symbol,
         &py_file_info,
+        Some(CompletionContext {
+            trigger_kind: lsp_types::CompletionTriggerKind::TRIGGER_CHARACTER,
+            trigger_character: Some(".".to_string()),
+        }),
         6,
         53,
     ));
