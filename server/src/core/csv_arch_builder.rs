@@ -112,7 +112,7 @@ impl CsvArchBuilder {
                 end: 1 as usize
             }),
             None, //dummy
-            &TextRange::new(TextSize::new(0), TextSize::new(0 as u32)) //dummy
+            TextRange::new(TextSize::new(0), TextSize::new(0 as u32)) //dummy
         );
         let headers = &session.st()[file_symbol].headers.clone();
         for (idx, (start, end, field)) in field_iter.enumerate() {
@@ -122,7 +122,7 @@ impl CsvArchBuilder {
             }
             session.st_mut().add_new_xml_field(record_key.into(),
                 field_name,
-                &TextRange::new(TextSize::new(start as u32), TextSize::new(end as u32)),
+                TextRange::new(TextSize::new(start as u32), TextSize::new(end as u32)),
                 Some(field.to_string()),
                 Some(TextRange::new(TextSize::new(start as u32), TextSize::new(end as u32))),
                 None);

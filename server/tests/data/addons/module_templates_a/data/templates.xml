@@ -1,0 +1,5 @@
+<odoo>
+    <template id="backend_template_a">
+        <div>Template A content</div>
+    </template>
+</odoo>

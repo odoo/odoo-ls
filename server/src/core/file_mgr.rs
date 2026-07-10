@@ -1,3 +1,5 @@
+use oxc::{allocator::Allocator, diagnostics::OxcDiagnostic, parser::Parser, semantic::SemanticBuilder, span::SourceType};
+use oxc_linter::{ConfigStore, ConfigStoreBuilder, ContextSubHost, ExternalPluginStore, LintOptions, ModuleRecord};
 use ruff_python_ast::{ModModule, PySourceType, Stmt, token::{Token, TokenKind}};
 use ruff_python_parser::Parsed;
 use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent, Uri};
@@ -7,12 +9,13 @@ use rustc_hash::FxHasher;
 use tracing::{error, warn};
 use std::path::Path;
 use crate::utils::HashSet;
+use crate::{core::js_arch_builder::{ComponentDescriptor, JsTemplateRef}};
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, OnceLock};
 use std::{fs};
 use crate::utils::HashMap;
-use crate::core::config::{DiagnosticFilter, DiagnosticFilterPathType};
+use crate::core::{config::{DiagnosticFilter, DiagnosticFilterPathType}, js_arch_builder, js_utils};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode, DiagnosticSetting};
 use crate::core::text_document::TextDocument;
 use crate::features::node_index_ast::IndexedModule;
@@ -114,10 +117,76 @@ pub fn parse_python(
 }
 
 #[derive(Debug, Clone)]
-pub enum AstType {
-    Python,
-    Xml,
-    Csv
+pub struct PythonAst {
+    pub indexed_module: Option<Arc<IndexedModule>>,
+}
+
+impl PythonAst {
+    pub fn new() -> Self {
+        Self {
+            indexed_module: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct JsAst {
+    /// Positions of OWL `static template = "some.xml_id"` string literals found in this JS file.
+    /// Each entry is (LSP Range of the string content, xml_id value, enclosing class name).
+    pub js_template_refs: Vec<JsTemplateRef>,
+    /// Component descriptors extracted from OXC analysis of this JS file.
+    pub js_component_descriptors: Vec<ComponentDescriptor>,
+}
+
+impl JsAst {
+    pub fn new() -> Self {
+        Self {
+            js_template_refs: Vec::new(),
+            js_component_descriptors: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Ast {
+    PythonAst(PythonAst),
+    XmlAst,
+    CsvAst,
+    JsAst(JsAst),
+}
+
+impl Ast {
+    pub fn as_py_ast(&self) -> &PythonAst {
+        match self {
+            Ast::PythonAst(py_ast) => py_ast,
+            _ => panic!("Expected PythonAst, found {:?}", self),
+        }
+    }
+    pub fn as_py_ast_mut(&mut self) -> &mut PythonAst {
+        match self {
+            Ast::PythonAst(py_ast) => py_ast,
+            _ => panic!("Expected PythonAst, found {:?}", self),
+        }
+    }
+    pub fn as_js_ast(&self) -> &JsAst {
+        match self {
+            Ast::JsAst(js_ast) => js_ast,
+            _ => panic!("Expected JsAst, found {:?}", self),
+        }
+    }
+    pub fn as_js_ast_mut(&mut self) -> &mut JsAst {
+        match self {
+            Ast::JsAst(js_ast) => js_ast,
+            _ => panic!("Expected JsAst, found {:?}", self),
+        }
+    }
+    pub fn is_built(&self) -> bool {
+        match self {
+            Ast::PythonAst(py_ast) => py_ast.indexed_module.is_some(),
+            Ast::JsAst(js_ast) => !js_ast.js_template_refs.is_empty() || !js_ast.js_component_descriptors.is_empty(),
+            Ast::XmlAst | Ast::CsvAst => true,
+        }
+    }
 }
 
 /* Structure that hold ast and text_document for FileInfo. It allows Fileinfo to hold it with a Rc<RefCell<>> to allow mutability and build on-the-fly
@@ -126,13 +195,17 @@ pub enum AstType {
 pub struct FileInfoAst {
     pub text_hash: u64,
     pub text_document: Option<TextDocument>,
-    pub indexed_module: Option<Arc<IndexedModule>>,
-    pub ast_type: AstType,
+    pub ast: Ast,
 }
 
 impl FileInfoAst {
     pub fn get_stmts(&self) -> Option<&Vec<Stmt>> {
-        self.indexed_module.as_ref().map(|module| &module.parsed.syntax().body)
+        match &self.ast {
+            Ast::PythonAst(python_ast) => {
+                python_ast.indexed_module.as_ref().map(|module| &module.parsed.syntax().body)
+            },
+            _ => None
+        }
     }
 }
 
@@ -144,7 +217,7 @@ pub struct FileInfo {
     pub opened: bool,
     need_push: bool,
     pub file_info_ast: Rc<RefCell<FileInfoAst>>,
-    diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>,
+    diagnostics: HashMap<DiagnosticSource, Vec<Diagnostic>>,
     pub noqas_blocs: HashMap<u32, NoqaInfo>,
     noqas_lines: HashMap<u32, NoqaInfo>,
     diagnostic_filters: Vec<DiagnosticFilter>,
@@ -163,8 +236,7 @@ impl FileInfo {
             file_info_ast: Rc::new(RefCell::new(FileInfoAst {
                 text_hash: 0,
                 text_document: None,
-                indexed_module: None,
-                ast_type: AstType::Python,
+                ast: Ast::PythonAst(PythonAst::new()),
             })),
             diagnostics: HashMap::default(),
             noqas_blocs: HashMap::default(),
@@ -201,7 +273,6 @@ impl FileInfo {
             None if self.version.is_some() && !force => return false,
             _ => {},
         }
-        self.diagnostics.clear();
         if let Some(content) = content {
             // If we are in did open, we create a new text_document
             // I.E. we have one content change event with no range
@@ -243,19 +314,30 @@ impl FileInfo {
             return false;
         }
         self.file_info_ast.borrow_mut().text_hash = new_hash;
+        self.diagnostics.clear();
         self._build_ast(session, is_external);
         true
     }
 
     pub fn _build_ast(&mut self, session: &mut SessionInfo, is_external: bool) {
-        if self.uri.ends_with(".xml") {
-            self.file_info_ast.borrow_mut().ast_type = AstType::Xml;
-            return;
+        match Path::new(&self.uri).extension().and_then(|s| s.to_str()) {
+            Some("xml") => {
+                self.file_info_ast.borrow_mut().ast = Ast::XmlAst;
+            }
+            Some("csv") => {
+                self.file_info_ast.borrow_mut().ast = Ast::CsvAst;
+            }
+            Some("js") | Some("ts") => {
+                self.file_info_ast.borrow_mut().ast = Ast::JsAst(JsAst::new());
+                self.build_js_ast(session, is_external);
+            }
+            _ => {
+                self.build_python_ast(session, is_external);
+            }
         }
-        if self.uri.ends_with(".csv") {
-            self.file_info_ast.borrow_mut().ast_type = AstType::Csv;
-            return;
-        }
+    }
+
+    fn build_python_ast(&mut self, session: &mut SessionInfo, is_external: bool) {
         let source_type = python_source_type(&self.uri);
         let parsed = {
             let fia = self.file_info_ast.borrow();
@@ -268,8 +350,8 @@ impl FileInfo {
         }
         let (valid, diagnostics) = Self::syntax_diagnostics(session, &parsed.indexed_module.parsed);
         self.valid = valid;
-        self.file_info_ast.borrow_mut().indexed_module = Some(parsed.indexed_module);
-        self.replace_diagnostics(BuildSteps::SYNTAX, diagnostics);
+        self.file_info_ast.borrow_mut().ast.as_py_ast_mut().indexed_module = Some(parsed.indexed_module);
+        self.replace_diagnostics(DiagnosticSource::PY_SYNTAX, diagnostics);
     }
 
     /// Build the SYNTAX-step diagnostics (OLS01000) for a parsed Python module.
@@ -310,18 +392,83 @@ impl FileInfo {
                     let mut fia = self.file_info_ast.borrow_mut();
                     fia.text_hash = text_hash;
                     fia.text_document = Some(text_document);
-                    fia.indexed_module = Some(parsed.indexed_module);
-                    fia.ast_type = AstType::Python;
+                    fia.ast = Ast::PythonAst(PythonAst { indexed_module: Some(parsed.indexed_module) });
                 }
-                self.replace_diagnostics(BuildSteps::SYNTAX, diagnostics);
+                self.replace_diagnostics(DiagnosticSource::PY_SYNTAX, diagnostics);
             }
-            PreloadedFile::DataFile { text_hash, text_document, ast_type } => {
+            PreloadedFile::DataFile { text_hash, text_document, ast } => {
                 let mut fia = self.file_info_ast.borrow_mut();
                 fia.text_hash = text_hash;
                 fia.text_document = Some(text_document);
-                fia.ast_type = ast_type;
+                fia.ast = ast;
             }
         }
+    }
+
+    fn build_js_ast(&mut self, session: &mut SessionInfo, _is_external: bool) {
+        let data = self.file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
+        let path_str = self.uri.clone();
+        // SemanticBuilder uses oxc_ast_visit internally (recursive descent), which can
+        // overflow the default stack on deeply-nested ASTs (e.g. minified JS).
+        // Run parse + semantic analysis in a dedicated thread with 8 MiB stack.
+        let (diagnostics, template_refs, component_descriptors): (Vec<OxcDiagnostic>, Vec<JsTemplateRef>, Vec<ComponentDescriptor>) =
+            std::thread::Builder::new()
+            .stack_size(8 * 1024 * 1024)
+            .spawn(move || {
+                let path = std::path::Path::new(&path_str);
+                let source_type = SourceType::from_path(path).unwrap_or_default();
+                let allocator = Allocator::default();
+                let ret = Parser::new(&allocator, data.as_str(), source_type).parse();
+                let mut diags: Vec<OxcDiagnostic> = ret.errors;
+                let parser_module_record = ret.module_record;
+                let program = allocator.alloc(ret.program);
+
+                // Collect template references and component descriptors before semantic analysis
+                let (refs, descriptors) = js_arch_builder::visit_file(program, &path_str);
+
+                let semantic_ret = SemanticBuilder::new()
+                    .with_cfg(true)
+                    .with_check_syntax_error(true)
+                    .build(program);
+                diags.extend(semantic_ret.errors);
+                let semantic = semantic_ret.semantic;
+
+                // Build the linter module record and context
+                let module_record = Arc::new(ModuleRecord::new(path, &parser_module_record, &semantic));
+                let context_sub_host = ContextSubHost::new(semantic, module_record, 0);
+
+                // Create a linter with default (correctness) rules and run it
+                let mut external_plugin_store = ExternalPluginStore::default();
+                let config = ConfigStoreBuilder::default()
+                    .build(&mut external_plugin_store)
+                    .expect("failed to build linter config");
+                let config_store = ConfigStore::new(
+                    config,
+                    HashMap::default(),
+                    external_plugin_store,
+                );
+                let linter = oxc_linter::Linter::new(LintOptions::default(), config_store, None);
+                let messages = linter.run(path, vec![context_sub_host], &allocator);
+                diags.extend(messages.into_iter().map(|m| m.error));
+
+                (diags, refs, descriptors)
+            })
+            .expect("failed to spawn JS parsing thread")
+            .join()
+            .unwrap_or_default();
+        js_arch_builder::build(session, &template_refs, &component_descriptors);
+        self.file_info_ast.borrow_mut().ast.as_js_ast_mut().js_template_refs = template_refs;
+        self.file_info_ast.borrow_mut().ast.as_js_ast_mut().js_component_descriptors = component_descriptors;
+        let is_lib = self.uri.contains("/static/lib/");
+        let lsp_diags = match is_lib {
+            true => Vec::new(),
+            false => diagnostics.iter().map(
+                |d| js_utils::oxc_diagnostic_to_lsp_diagnostic(
+                    d, &FileMgr::pathname2uri(&self.uri)
+                )
+            ).flatten().collect(),
+        };
+        self.replace_diagnostics(DiagnosticSource::JS_OXC, lsp_diags); //OXC will use SYNTAX. others are reserved to tsserver
     }
 
     /* if ast has been set to none to lower memory usage, try to reload it */
@@ -423,12 +570,12 @@ impl FileInfo {
         NoqaScan { blocs, lines, test_comments }
     }
 
-    pub fn replace_diagnostics(&mut self, step: BuildSteps, diagnostics: Vec<Diagnostic>) {
+    pub fn replace_diagnostics(&mut self, step: DiagnosticSource, diagnostics: Vec<Diagnostic>) {
         self.need_push = true;
         self.diagnostics.insert(step, diagnostics);
     }
 
-    pub fn update_validation_diagnostics(&mut self, diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>) {
+    pub fn update_validation_diagnostics(&mut self, diagnostics: HashMap<DiagnosticSource, Vec<Diagnostic>>) {
         self.need_push = true;
         for (key, value) in diagnostics {
             self.diagnostics.entry(key).or_default().extend(value);
@@ -438,6 +585,12 @@ impl FileInfo {
     fn update_range(&self, mut diagnostic: Diagnostic, encoding: PositionEncoding) -> Diagnostic {
         diagnostic.range.start = self.offset_to_position(diagnostic.range.start.line, encoding);
         diagnostic.range.end = self.offset_to_position(diagnostic.range.end.line, encoding);
+        if let Some(ref mut related_information) = diagnostic.related_information {
+            for related in related_information.iter_mut() {
+                related.location.range.start = self.offset_to_position(related.location.range.start.line, encoding);
+                related.location.range.end = self.offset_to_position(related.location.range.end.line, encoding);
+            }
+        }
         diagnostic
     }
     pub fn update_diagnostic_filters(&mut self, session: &SessionInfo) {
@@ -457,7 +610,18 @@ impl FileInfo {
         if self.need_push {
             let mut all_diagnostics = Vec::new();
 
-            'diagnostics: for d in self.diagnostics.values().flatten() {
+            let is_js = matches!(self.file_info_ast.borrow().ast, Ast::JsAst(_));
+            //We are checking ARCH as it contains Syntax diagnostics for tsserver
+            let syntax_diags = self.diagnostics.get(&DiagnosticSource::JS_OXC);
+            let has_syntax_diags = is_js && syntax_diags.map(|v| !v.is_empty()).unwrap_or(false);
+            let diag_iter: Box<dyn Iterator<Item = &Diagnostic>> = if has_syntax_diags {
+                // If there is syntax diagnostics, we only send the ones from OXC, to be less noisy
+                Box::new(self.diagnostics.get(&DiagnosticSource::JS_OXC).unwrap().iter())
+            } else {
+                Box::new(self.diagnostics.values().flatten())
+            };
+
+            'diagnostics: for d in diag_iter {
                 //check noqa lines
                 let updated = self.update_range(d.clone(), session.sync_odoo.encoding);
                 let updated_line = updated.range.start.line;
@@ -735,10 +899,7 @@ impl FileMgr {
         if let Some(to_del) = to_del {
             if SyncOdoo::is_in_workspace_or_entry(session, uri) {
                 let mut to_del = (*to_del).borrow_mut();
-                to_del.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
-                to_del.replace_diagnostics(BuildSteps::ARCH, vec![]);
-                to_del.replace_diagnostics(BuildSteps::ARCH_EVAL, vec![]);
-                to_del.replace_diagnostics(BuildSteps::VALIDATION, vec![]);
+                to_del.diagnostics.clear();
                 to_del.publish_diagnostics(session)
             }
         }
@@ -763,10 +924,7 @@ impl FileMgr {
                 continue;
             }
             let mut to_del = file.borrow_mut();
-            to_del.replace_diagnostics(BuildSteps::SYNTAX, vec![]);
-            to_del.replace_diagnostics(BuildSteps::ARCH, vec![]);
-            to_del.replace_diagnostics(BuildSteps::ARCH_EVAL, vec![]);
-            to_del.replace_diagnostics(BuildSteps::VALIDATION, vec![]);
+            to_del.diagnostics.clear();
             to_del.publish_diagnostics(session)
         }
         drop(file_mgr);
@@ -896,7 +1054,7 @@ pub enum PreloadedFile {
     DataFile {
         text_hash: u64,
         text_document: TextDocument,
-        ast_type: AstType,
+        ast: Ast,
     },
 }
 

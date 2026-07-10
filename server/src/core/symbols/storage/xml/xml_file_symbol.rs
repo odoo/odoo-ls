@@ -2,6 +2,7 @@ use lsp_types::Diagnostic;
 use roxmltree::Error;
 use weak_table::PtrWeakHashSet;
 
+use crate::constants::MissingDataSource;
 use crate::core::symbols::storage::dependency_mgr::{DependenciesTable, DependentsTable};
 use crate::core::symbols::symbol_keys::{ModuleKey, SymbolKey, XmlDataKey};
 use crate::core::symbols::Buildable;
@@ -20,6 +21,7 @@ pub struct XmlFileSymbol {
     pub validation_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     pub not_found_models: HashMap<OYarn, BuildSteps>,
+    pub not_found_data_ids: HashMap<MissingDataSource, BuildSteps>,
     pub (in crate::core::symbols::storage) symbols: HashSet<XmlDataKey>,
     pub (in crate::core::symbols) in_workspace: bool,
     pub self_import: bool,
@@ -29,7 +31,6 @@ pub struct XmlFileSymbol {
     pub processed_text_hash: u64,
     pub noqas: NoqaInfo,
 
-    // parent symbol (no children)
     parent: ModuleKey,
 }
 
@@ -45,6 +46,7 @@ impl XmlFileSymbol {
             validation_status: BuildStatus::PENDING,
             not_found_paths: vec![],
             not_found_models: HashMap::default(),
+            not_found_data_ids: HashMap::default(),
             symbols: HashSet::default(),
             in_workspace: false,
             self_import: false,

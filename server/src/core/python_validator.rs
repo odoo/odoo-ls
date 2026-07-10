@@ -76,8 +76,8 @@ impl PythonValidator {
                     trace!("VALIDATION - PYTHON FILE {}", session.st().paths(symbol).first().unwrap_or(&S!("No path found")));
                 }
                 session.st_mut().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
-                file_info_rc.borrow_mut().replace_diagnostics(BuildSteps::VALIDATION, vec![]);
-                if file_info_rc.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                file_info_rc.borrow_mut().replace_diagnostics(DiagnosticSource::PY_VALIDATION, vec![]);
+                if !file_info_rc.borrow().file_info_ast.borrow().ast.is_built() {
                     file_info_rc.borrow_mut().prepare_ast(session);
                 }
                 let file_info = file_info_rc.borrow();
@@ -88,7 +88,7 @@ impl PythonValidator {
                 let file_info_ast_rc = file_info.file_info_ast.clone();
                 let file_info_ast = file_info_ast_rc.borrow();
                 drop(file_info);
-                if file_info_ast.indexed_module.is_some() {
+                if file_info_ast.ast.as_py_ast().indexed_module.is_some() {
                     let old_noqa = session.current_noqa.clone();
                     session.current_noqa = session.st().get_noqas(symbol);
                     self.validate_body(session, file_info_ast.get_stmts().as_ref().unwrap());
@@ -100,7 +100,7 @@ impl PythonValidator {
                     ModuleSymbol::validate_manifest(m, session);
                 }
                 let mut file_info = file_info_rc.borrow_mut();
-                file_info.replace_diagnostics(BuildSteps::VALIDATION, self.diagnostics.clone());
+                file_info.replace_diagnostics(DiagnosticSource::PY_VALIDATION, self.diagnostics.clone());
             },
             SymbolKey::Function(f) => {
                 if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !session.st().is_external(symbol)) {
@@ -129,17 +129,17 @@ impl PythonValidator {
                 }
                 self.diagnostics = vec![];
                 session.st_mut().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
-                if file_info_rc.borrow().file_info_ast.borrow().indexed_module.is_none() {
+                if !file_info_rc.borrow().file_info_ast.borrow().ast.is_built() {
                     file_info_rc.borrow_mut().prepare_ast(session);
                 }
                 let file_info = file_info_rc.borrow();
                 let file_info_ast_rc = file_info.file_info_ast.clone();
                 let file_info_ast = file_info_ast_rc.borrow();
                 drop(file_info);
-                if file_info_ast.indexed_module.is_some() {
+                if file_info_ast.ast.as_py_ast().indexed_module.is_some() {
                     let func_index = session.st()[f].node_index.load();
                     if func_index != NodeIndex::NONE {
-                        let stmt = file_info_ast.indexed_module.as_ref().unwrap().get_by_index(func_index);
+                        let stmt = file_info_ast.ast.as_py_ast().indexed_module.as_ref().unwrap().get_by_index(func_index);
                         let body = match stmt {
                             AnyRootNodeRef::Stmt(Stmt::FunctionDef(s)) => {
                                 &s.body
@@ -182,7 +182,7 @@ impl PythonValidator {
                     if let Some(manifest_file) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize_cow()) {
                         if !manifest_file.borrow().opened {
                             let manifest_file = manifest_file.borrow();
-                            manifest_file.file_info_ast.borrow_mut().indexed_module = None;
+                            manifest_file.file_info_ast.borrow_mut().ast.as_py_ast_mut().indexed_module = None;
                             manifest_file.file_info_ast.borrow_mut().text_document = None;
                             manifest_file.file_info_ast.borrow_mut().text_hash = 0;
                         }
@@ -191,7 +191,7 @@ impl PythonValidator {
                 if let Some(file) = self.file_info.as_ref() {
                     if ! file.borrow().opened {
                         let f = file.borrow();
-                        f.file_info_ast.borrow_mut().indexed_module = None;
+                        f.file_info_ast.borrow_mut().ast.as_py_ast_mut().indexed_module = None;
                         f.file_info_ast.borrow_mut().text_document = None;
                         f.file_info_ast.borrow_mut().text_hash = 0;
                     }

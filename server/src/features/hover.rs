@@ -76,4 +76,19 @@ impl HoverFeature {
     pub fn hover_csv(_session: &mut SessionInfo, _file_symbol: SourceFileKey, _file_info: &Rc<RefCell<FileInfo>>, _line: u32, _character: u32) -> Option<Hover> {
         None
     }
+
+    pub fn hover_js(session: &mut SessionInfo, file_path: &str, line: u32, character: u32) -> Option<Hover> {
+        if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
+            if let Some(hover) = bridge.get_hover(&file_path, line, character) {
+                return Some(Hover { contents:
+                    HoverContents::Markup(MarkupContent {
+                        kind: lsp_types::MarkupKind::Markdown,
+                        value: hover
+                    }),
+                    range: None
+                })
+            }
+        }
+        None
+    }
 }

@@ -23,6 +23,8 @@ new_key_type! {
     pub struct CsvFileKey;
 }
 
+new_key_type! { pub struct JsFileKey; }
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SymbolKey {
     Root(RootKey),
@@ -43,6 +45,7 @@ pub enum SymbolKey {
     XmlAsset(XmlAssetKey),
     XmlDelete(XmlDeleteKey),
     CsvFile(CsvFileKey),
+    JsFile(JsFileKey),
 }
 
 impl SymbolKey {
@@ -66,6 +69,7 @@ impl SymbolKey {
             Self::XmlAsset(_) => SymType::XML_ASSET,
             Self::XmlDelete(_) => SymType::XML_DELETE,
             Self::CsvFile(_) => SymType::CSV_FILE,
+            Self::JsFile(_) => SymType::JS_FILE,
         }
     }
 
@@ -181,6 +185,13 @@ impl SymbolKey {
         }
     }
 
+    pub fn unwrap_js_file_key(&self) -> JsFileKey {
+        match self {
+            SymbolKey::JsFile(k) => *k,
+            _ => panic!("Not a JsFileKey"),
+        }
+    }
+
 }
 
 pub trait KeyValidator<K> {
@@ -260,6 +271,7 @@ impl_from_key! {
     XmlAsset(XmlAssetKey),
     XmlDelete(XmlDeleteKey),
     CsvFile(CsvFileKey),
+    JsFile(JsFileKey),
 }
 
 // Converts to a Weak of the same key type, e.g. FileKey to Weak<FileKey>
@@ -302,6 +314,7 @@ impl_weak_symbol_key_from! {
     XmlAssetKey,
     XmlDeleteKey,
     CsvFileKey,
+    JsFileKey,
     SourceFileKey,
     ModelSymbolKey,
 }
@@ -329,6 +342,13 @@ impl XmlDataKey {
     pub fn as_xml_record_key(&self) -> Option<XmlRecordKey> {
         match self {
             XmlDataKey::RECORD(k) => Some(*k),
+            _ => None,
+        }
+    }
+
+    pub fn as_xml_template_key(&self) -> Option<XmlTemplateKey> {
+        match self {
+            XmlDataKey::TEMPLATE(k) => Some(*k),
             _ => None,
         }
     }
@@ -386,6 +406,7 @@ pub enum SourceFileKey {
     Module(ModuleKey),
     XmlFile(XmlFileKey),
     CsvFile(CsvFileKey),
+    JsFile(JsFileKey),
 }
 
 impl From<SourceFileKey> for SymbolKey {
@@ -396,6 +417,7 @@ impl From<SourceFileKey> for SymbolKey {
             SourceFileKey::Module(k) => k.into(),
             SourceFileKey::XmlFile(k) => k.into(),
             SourceFileKey::CsvFile(k) => k.into(),
+            SourceFileKey::JsFile(k) => k.into(),
         }
     }
 }
@@ -419,6 +441,10 @@ impl From<XmlFileKey> for SourceFileKey {
 
 impl From<CsvFileKey> for SourceFileKey {
     fn from(key: CsvFileKey) -> Self { SourceFileKey::CsvFile(key) }
+}
+
+impl From<JsFileKey> for SourceFileKey {
+    fn from(key: JsFileKey) -> Self { SourceFileKey::JsFile(key) }
 }
 
 impl SourceFileKey {
@@ -452,6 +478,7 @@ impl SymbolKey {
             SymbolKey::Module(k) => Some(k.into()),
             SymbolKey::XmlFile(k) => Some(k.into()),
             SymbolKey::CsvFile(k) => Some(k.into()),
+            SymbolKey::JsFile(k) => Some(k.into()),
             _ => None,
         }
     }
@@ -577,3 +604,20 @@ impl From<ModelSymbolKey> for SymbolKey {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum JsFileParent {
+    Module(ModuleKey),
+    DiskDir(DiskDirKey),
+}
+
+impl From<ModuleKey> for JsFileParent {
+    fn from(k: ModuleKey)  -> Self { Self::Module(k) } 
+}
+impl From<DiskDirKey> for JsFileParent {
+    fn from(k: DiskDirKey) -> Self { Self::DiskDir(k) }
+}
+impl From<JsFileParent> for SymbolKey {
+    fn from(p: JsFileParent) -> Self {
+        match p { JsFileParent::Module(k) => k.into(), JsFileParent::DiskDir(k) => k.into() }
+    }
+}

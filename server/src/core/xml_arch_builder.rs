@@ -1,6 +1,6 @@
 use super::file_mgr::FileInfo;
 use crate::{
-    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, OYarn}, core::{entry_point::EntryPointType, symbols::{ModuleSymbol, symbol_keys::{XmlDataKey, XmlId}}}, threads::SessionInfo
+    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, MissingDataSource, DiagnosticSource, OYarn}, core::{entry_point::EntryPointType, symbols::{ModuleSymbol, symbol_keys::{XmlDataKey, XmlId}}}, features::xml_ast_utils::XmlAstUtils, threads::SessionInfo, weak_collections::WeakSet
 };
 use crate::{
     core::{
@@ -12,21 +12,23 @@ use crate::{
 };
 use lsp_types::Diagnostic;
 use roxmltree::{Attribute, Node};
-use tracing::{info, warn};
+use tracing::{info, error, warn};
 
 /*
 Struct made to load RelaxNG Odoo schemas and add hooks and specific OdooLS behavior on particular nodes.
 */
 pub struct XmlArchBuilder {
     pub is_in_main_ep: bool,
+    pub web_asset: bool,
     pub xml_symbol: XmlFileKey,
 }
 
 impl XmlArchBuilder {
 
-    pub fn new(xml_symbol: XmlFileKey) -> Self {
+    pub fn new(xml_symbol: XmlFileKey, web_asset: bool) -> Self {
         Self {
             is_in_main_ep: false,
+            web_asset,
             xml_symbol
         }
     }
@@ -39,9 +41,13 @@ impl XmlArchBuilder {
         }
         let ep = session.st().get_entry(self.xml_symbol);
         self.is_in_main_ep = ep.borrow().typ == EntryPointType::MAIN || ep.borrow().typ == EntryPointType::ADDON;
-        self.load_odoo_openerp_data(session, node, &mut diagnostics);
+        if self.web_asset {
+            self.load_frontend_data(session, node, &mut diagnostics);
+        } else {
+            self.load_odoo_openerp_data(session, node, &mut diagnostics);
+        }
         session.st_mut()[self.xml_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
-        file_info.replace_diagnostics(BuildSteps::ARCH, diagnostics);
+        file_info.replace_diagnostics(DiagnosticSource::XML_ARCH, diagnostics);
         session.sync_odoo.add_to_validations(self.xml_symbol);
     }
 
@@ -49,6 +55,7 @@ impl XmlArchBuilder {
         &self,
         session: &mut SessionInfo,
         id: Option<String>,
+        t_name: Option<String>,
         node: &Node,
         xml_data: XmlDataKey,
         diagnostics: &mut Vec<Diagnostic>
@@ -86,7 +93,28 @@ impl XmlArchBuilder {
             if let XmlDataKey::RECORD(record) = xml_data {
                 data_hooks::on_record_creation(session, self.xml_symbol.into(), record);
             }
+            session.sync_odoo.get_main_entry().borrow_mut().search_rebuild_for_data_id(session, MissingDataSource::XML_ID(Sy!(id.clone())));
             ModuleSymbol::insert_xml_id(session.st_mut(), xml_module, Sy!(id), XmlId::from(xml_data));
+        }
+        if let Some(t_name) = t_name {
+            if XmlAstUtils::ensure_js_template_validity(session, &t_name) {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05072, &[]) {
+                    diagnostics.push(lsp_types::Diagnostic {
+                        range: lsp_types::Range {
+                            start: lsp_types::Position::new(node.range().start as u32, 0),
+                            end: lsp_types::Position::new(node.range().end as u32, 0),
+                        },
+                        ..diagnostic.clone()
+                    });
+                }
+            } else {
+                let Some(template) = xml_data.as_xml_template_key() else {
+                    error!("Template data is not a XmlTemplateKey for t-name: {}", t_name);
+                    return;
+                };
+                session.sync_odoo.get_main_entry().borrow_mut().search_rebuild_for_data_id(session, MissingDataSource::TEMPLATE(Sy!(t_name.clone())));
+                session.sync_odoo.js_templates.entry(t_name).or_insert_with(|| WeakSet::default()).insert(template);
+            }
         }
     }
 
