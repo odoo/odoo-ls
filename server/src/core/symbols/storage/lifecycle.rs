@@ -13,8 +13,8 @@ use crate::{
     constants::{OYarn, PackageType, SymType},
     core::{
         entry_point::{EntryPoint, EntryPointCleanupToken}, odoo::SyncOdoo, symbols::{
-            ClassSymbol, CompiledSymbol, CsvFileSymbol, Dependencies, DiskDirSymbol, FileSymbol, FunctionSymbol, ModuleSymbol, NamespaceSymbol, PythonPackageSymbol, RootSymbol, SymbolTable, VariableSymbol, XmlFileSymbol, storage::xml::{xml_asset_symbol::XmlAssetSymbol, xml_delete_symbol::XmlDeleteSymbol, xml_field_symbol::XmlFieldSymbol, xml_menuitem_symbol::XmlMenuItemSymbol, xml_record_symbol::XmlRecordSymbol, xml_template_symbol::XmlTemplateSymbol}, symbol_keys::{
-                ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey, VariableKey, XmlAssetKey, XmlDataKey, XmlDeleteKey, XmlFieldKey, XmlFileKey, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey
+            ClassSymbol, CompiledSymbol, CsvFileSymbol, Dependencies, DiskDirSymbol, FileSymbol, FunctionSymbol, JsFileSymbol, ModuleSymbol, NamespaceSymbol, PythonPackageSymbol, RootSymbol, SymbolTable, VariableSymbol, XmlFileSymbol, storage::xml::{xml_asset_symbol::XmlAssetSymbol, xml_delete_symbol::XmlDeleteSymbol, xml_field_symbol::XmlFieldSymbol, xml_menuitem_symbol::XmlMenuItemSymbol, xml_record_symbol::XmlRecordSymbol, xml_template_symbol::XmlTemplateSymbol}, symbol_keys::{
+                ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, JsFileKey, JsFileParent, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey, VariableKey, Wk, XmlAssetKey, XmlDataKey, XmlDeleteKey, XmlFieldKey, XmlFileKey, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey
             }, symbol_mgr::SymbolMgr
         }
     },
@@ -84,25 +84,25 @@ impl SymbolTable {
         module_key
     }
 
-    pub fn add_new_variable(&mut self, parent: impl Into<SymbolKey>, name: &str, range: &TextRange) -> VariableKey {
+    pub fn add_new_variable(&mut self, parent: impl Into<SymbolKey>, name: &str, range: TextRange) -> VariableKey {
         let parent = parent.into();
         let is_external = self.is_external(parent);
-        let variable_symbol = VariableSymbol::new(name, parent, *range, is_external);
+        let variable_symbol = VariableSymbol::new(name, parent, range, is_external);
         let variable_key = self.variables.insert(variable_symbol);
         self.add_to_parent_symbols(parent, variable_key.into(), name, range.start().to_u32());
         variable_key
     }
-    pub fn add_new_function(&mut self, parent: SymbolKey, name: &str, range: &TextRange, body_start: &TextSize) -> FunctionKey {
+    pub fn add_new_function(&mut self, parent: SymbolKey, name: &str, range: TextRange, body_start: &TextSize) -> FunctionKey {
         let is_external = self.is_external(parent);
-        let function_symbol = FunctionSymbol::new(name, parent, *range, body_start.clone(), is_external);
+        let function_symbol = FunctionSymbol::new(name, parent, range, body_start.clone(), is_external);
         let function_key = self.functions.insert(function_symbol);
         self.add_to_parent_symbols(parent, function_key.into(), name, range.start().to_u32());
         function_key
     }
 
-    pub fn add_new_class(&mut self, parent: SymbolKey, name: &str, range: &TextRange, body_start: &TextSize) -> ClassKey {
+    pub fn add_new_class(&mut self, parent: SymbolKey, name: &str, range: TextRange, body_start: &TextSize) -> ClassKey {
         let is_external = self.is_external(parent);
-        let class_symbol = ClassSymbol::new(name, parent, *range, *body_start, is_external);
+        let class_symbol = ClassSymbol::new(name, parent, range, *body_start, is_external);
         let class_key = self.classes.insert(class_symbol);
         self.add_to_parent_symbols(parent, class_key.into(), name, range.start().to_u32());
         class_key
@@ -117,12 +117,12 @@ impl SymbolTable {
         xml_file_key
     }
 
-    pub fn add_new_xml_record(&mut self, parent: SymbolKey, model: (OYarn, Range<usize>) , xml_id: Option<OYarn>, range: &TextRange) -> XmlRecordKey {
+    pub fn add_new_xml_record(&mut self, parent: SymbolKey, model: (OYarn, Range<usize>) , xml_id: Option<OYarn>, range: TextRange) -> XmlRecordKey {
         let is_external = self.is_external(parent);
         let xml_record_sym = XmlRecordSymbol::new(
             model,
             xml_id,
-            range.clone(),
+            range,
             parent,
             is_external);
         let xml_record_key = self.xml_records.insert(xml_record_sym);
@@ -130,42 +130,42 @@ impl SymbolTable {
         xml_record_key
     }
 
-    pub fn add_new_xml_menuitem(&mut self, parent: XmlFileKey, xml_id: Option<OYarn>, range: &TextRange) -> XmlMenuItemKey {
+    pub fn add_new_xml_menuitem(&mut self, parent: XmlFileKey, xml_id: Option<OYarn>, range: TextRange) -> XmlMenuItemKey {
         let is_external = self.is_external(parent.into());
-        let xml_menuitem_sym = XmlMenuItemSymbol::new(xml_id, range.clone(), parent.into(), is_external);
+        let xml_menuitem_sym = XmlMenuItemSymbol::new(xml_id, range, parent.into(), is_external);
         let xml_menuitem_key = self.xml_menuitems.insert(xml_menuitem_sym);
         self.add_xml_data_to_file(parent.into(), xml_menuitem_key.into());
         xml_menuitem_key
     }
 
-    pub fn add_new_xml_asset(&mut self, parent: XmlFileKey, xml_id: Option<OYarn>, range: &TextRange) -> XmlAssetKey {
+    pub fn add_new_xml_asset(&mut self, parent: XmlFileKey, xml_id: Option<OYarn>, range: TextRange) -> XmlAssetKey {
         let is_external = self.is_external(parent.into());
-        let xml_asset_sym = XmlAssetSymbol::new(xml_id, range.clone(), parent.into(), is_external);
+        let xml_asset_sym = XmlAssetSymbol::new(xml_id, range, parent.into(), is_external);
         let xml_asset_key = self.xml_assets.insert(xml_asset_sym);
         self.add_xml_data_to_file(parent.into(), xml_asset_key.into());
         xml_asset_key
     }
 
-    pub fn add_new_xml_delete(&mut self, parent: XmlFileKey, xml_id: Option<OYarn>, range: &TextRange, model: OYarn) -> XmlDeleteKey {
+    pub fn add_new_xml_delete(&mut self, parent: XmlFileKey, xml_id: Option<OYarn>, range: TextRange, model: OYarn) -> XmlDeleteKey {
         let is_external = self.is_external(parent.into());
-        let xml_delete_sym = XmlDeleteSymbol::new(xml_id, range.clone(), model, parent.into(), is_external);
+        let xml_delete_sym = XmlDeleteSymbol::new(xml_id, range, model, parent.into(), is_external);
         let xml_delete_key = self.xml_deletes.insert(xml_delete_sym);
         self.add_xml_data_to_file(parent.into(), xml_delete_key.into());
         xml_delete_key
     }
 
     //parent should be either XmlRecord or XmlAsset
-    pub fn add_new_xml_field(&mut self, parent: SymbolKey, field_name: OYarn, range: &TextRange, text: Option<String>, text_range: Option<TextRange>, ref_key: Option<(String, TextRange)>) -> XmlFieldKey {
+    pub fn add_new_xml_field(&mut self, parent: SymbolKey, field_name: OYarn, range: TextRange, text: Option<String>, text_range: Option<TextRange>, ref_key: Option<(String, TextRange)>) -> XmlFieldKey {
         let is_external = self.is_external(parent);
-        let xml_field_sym = XmlFieldSymbol::new(field_name.clone(), range.clone(), text, text_range, ref_key, parent, is_external);
+        let xml_field_sym = XmlFieldSymbol::new(field_name.clone(), range, text, text_range, ref_key, parent, is_external);
         let xml_field_key = self.xml_fields.insert(xml_field_sym);
         self.add_field_to_xml_record(parent, xml_field_key, field_name.as_str());
         xml_field_key
     }
 
-    pub fn add_new_xml_template(&mut self, parent: XmlFileKey, name: Option<OYarn>, range: &TextRange) -> XmlTemplateKey {
+    pub fn add_new_xml_template(&mut self, parent: XmlFileKey, name: Option<OYarn>, t_name: Option<OYarn>, range: TextRange, is_web: bool) -> XmlTemplateKey {
         let is_external = self.is_external(parent.into());
-        let xml_template_sym = XmlTemplateSymbol::new(name, range.clone(), parent.into(), is_external);
+        let xml_template_sym = XmlTemplateSymbol::new(name, t_name, range, parent.into(), is_web, is_external);
         let xml_template_key = self.xml_templates.insert(xml_template_sym);
         self.add_xml_data_to_file(parent.into(), xml_template_key.into());
         xml_template_key
@@ -180,11 +180,23 @@ impl SymbolTable {
         csv_file_key
     }
 
+    pub fn add_new_js_file(&mut self, parent_key: JsFileParent, name: &str, path: &str) -> JsFileKey {
+        let symbol_key: SymbolKey = parent_key.into();
+        let mut js_file_symbol = JsFileSymbol::new(name, path, parent_key, self.is_external(symbol_key));
+        js_file_symbol.set_in_workspace(self.in_workspace(symbol_key));
+        let js_file_key = self.js_files.insert(js_file_symbol);
+        let rc_entry = self.get_entry(symbol_key);
+        let mut entry_bw = rc_entry.borrow_mut();
+        self.add_to_parent_js_symbols(parent_key, path, js_file_key);
+        self.add_to_js_entry_symbols(&mut entry_bw, path, js_file_key.into());
+        js_file_key
+    }
+
     pub fn add_new_ext_symbol(
         &mut self,
         target: SymbolKey,
         name: &str,
-        range: &TextRange,
+        range: TextRange,
         owner: SymbolKey,
     ) -> VariableKey {
         // validate target can host an external symbol
@@ -198,7 +210,7 @@ impl SymbolTable {
         let variable_symbol = VariableSymbol::new(
             name,
             target,
-            *range,
+            range,
             self.is_external(target),
         );
         let variable_key = self.variables.insert(variable_symbol);
@@ -341,6 +353,29 @@ impl SymbolTable {
         }
     }
 
+    fn add_to_parent_js_symbols(&mut self, parent: JsFileParent, path: &str, js_key: JsFileKey) {
+        match parent {
+            JsFileParent::Module(m) => {
+                let module = &mut self.modules[m];
+                let replaced_key = module.js_symbols.insert(path.to_string(), js_key);
+                if let Some(replaced_key) = replaced_key {
+                    self.remove(replaced_key.into());
+                }
+            },
+            JsFileParent::DiskDir(d) => {
+                let disk_dir = &mut self.disk_dirs[d];
+                let replaced_key = disk_dir.js_symbols.insert(path.to_string(), js_key);
+                if let Some(replaced_key) = replaced_key {
+                    self.remove(replaced_key.into());
+                }
+            }
+        }
+    }
+
+    fn add_to_js_entry_symbols(&mut self, entry: &mut EntryPoint, path: &str, js_file: JsFileKey) {
+        entry.js_symbols.insert(path.to_string(), Wk::from(js_file));
+    }
+
     /* used by add_new_ext_symbol. Do not call directly */
     fn get_section_for_key(&self, owner: SymbolKey, position: u32) -> u32 {
         match owner {
@@ -405,6 +440,7 @@ impl SymbolTable {
             SymbolKey::XmlTemplate(k) => { self.xml_templates.remove(k); }
             SymbolKey::XmlDelete(k) => { self.xml_deletes.remove(k); }
             SymbolKey::CsvFile(k) => { self.csv_files.remove(k); }
+            SymbolKey::JsFile(k) => { self.js_files.remove(k); }
         }
     }
 
@@ -428,6 +464,7 @@ impl SymbolTable {
             SymbolKey::XmlTemplate(x) => self[x].children(),
             SymbolKey::XmlDelete(x) => self[x].children(),
             SymbolKey::CsvFile(c) => self[c].children(),
+            SymbolKey::JsFile(j) => self[j].children(),
         }
     }
 
@@ -436,7 +473,12 @@ impl SymbolTable {
         let parent = self.parent(child).expect("symbol should have a parent");
         match parent {
             SymbolKey::Root(r) => { self.roots[r].module_symbols.remove(&child_name); },
-            SymbolKey::DiskDir(d) => { self.disk_dirs[d].module_symbols.remove(&child_name); },
+            SymbolKey::DiskDir(d) => { 
+                match child {
+                    SymbolKey::JsFile(j) => { self.disk_dirs[d].js_symbols.remove(&self.js_files[j].path); },
+                    _ => { self.disk_dirs[d].module_symbols.remove(&child_name); }
+                }
+            },
             SymbolKey::Namespace(n) => {
                 for directory in self.namespaces[n].directories.iter_mut() {
                     directory.module_symbols.remove(&child_name);
@@ -449,6 +491,9 @@ impl SymbolTable {
                 SymbolKey::CsvFile(c) => {
                     self.modules[m].data_symbols.remove(&self.csv_files[c].path);
                 },
+                SymbolKey::JsFile(f) => {
+                    self.modules[m].js_symbols.remove(&self.js_files[f].path);
+                }
                 _ => {
                     if self.is_file_content(child) {
                         self.modules[m].symbols.remove(&child_name);
@@ -477,6 +522,7 @@ impl SymbolTable {
             SymbolKey::XmlTemplate(_) => { panic!("An XML template cannot be a parent") },
             SymbolKey::XmlDelete(_) => { panic!("An XML delete cannot be a parent") },
             SymbolKey::CsvFile(_) => { panic!("A CSV file symbol cannot be a parent") },
+            SymbolKey::JsFile(_) => { panic!("A JS file symbol cannot be a parent") },
         }
     }
 

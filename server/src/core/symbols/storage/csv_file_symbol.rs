@@ -1,10 +1,11 @@
 use weak_table::PtrWeakHashSet;
 
+use crate::constants::MissingDataSource;
 use crate::core::symbols::Buildable;
 use crate::core::symbols::storage::dependency_mgr::{DependenciesTable, DependentsTable};
 use crate::core::symbols::symbol_keys::{ModuleKey, XmlDataKey};
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::symbol_keys::SymbolKey}, oyarn};
-use crate::utils::HashSet;
+use crate::utils::{HashMap, HashSet};
 use std::{cell::RefCell, rc::Weak};
 
 #[derive(Debug)]
@@ -15,6 +16,7 @@ pub struct CsvFileSymbol {
     pub arch_status: BuildStatus,
     pub validation_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
+    pub not_found_data_ids: HashMap<MissingDataSource, BuildSteps>,
     pub (super) in_workspace: bool,
     pub (super) symbols: HashSet<XmlDataKey>,
     pub model_name: OYarn,
@@ -41,6 +43,7 @@ impl CsvFileSymbol {
             arch_status: BuildStatus::PENDING,
             validation_status: BuildStatus::PENDING,
             not_found_paths: vec![],
+            not_found_data_ids: HashMap::default(),
             in_workspace: false,
             model_name: OYarn::default(),
             headers: Vec::new(),

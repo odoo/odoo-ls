@@ -1,0 +1,8 @@
+<odoo>
+    <template id="caller_ols05073">
+        <t t-call="module_templates_b.nonexistent_template"/>
+    </template>
+    <template id="caller_ols05074">
+        <t t-call="module_templates_a.backend_template_a"/>
+    </template>
+</odoo>

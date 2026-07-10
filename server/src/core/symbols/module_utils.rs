@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use lsp_types::Diagnostic;
 
-use crate::{Sy, constants::{BuildSteps, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileMgr, import_resolver::create_module_from_name, odoo::SyncOdoo, symbols::{ModuleSymbol, SymbolTable, symbol_keys::{ModuleKey, NamespaceKey, SymbolKey}}}, threads::SessionInfo, utils::PathSanitizer};
+use crate::{Sy, constants::{BuildSteps, DiagnosticSource, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileMgr, import_resolver::create_module_from_name, odoo::SyncOdoo, symbols::{ModuleSymbol, SymbolTable, symbol_keys::{ModuleKey, NamespaceKey, SymbolKey}}}, threads::SessionInfo, utils::PathSanitizer};
 
 
 
@@ -19,7 +19,7 @@ impl ModuleSymbol {
         let manifest_path = PathBuf::from(&module.root_path).join("__manifest__.py");
         let manifest_file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize_cow()).expect("file not found in cache").clone();
         let mut manifest_file_info = (*manifest_file_info).borrow_mut();
-        manifest_file_info.replace_diagnostics(crate::constants::BuildSteps::ARCH, diagnostics);
+        manifest_file_info.replace_diagnostics(DiagnosticSource::PY_ARCH, diagnostics);
     }
 
     /* ensure that all modules indicates in the module dependencies are well loaded.

@@ -1,11 +1,12 @@
 use std::path::Path;
 use std::{cell::RefCell, cmp, path::PathBuf, rc::Rc, u32};
+use crate::constants::MissingDataSource;
 use crate::utils::HashMap;
 
 use slotmap::Key;
 use tracing::{error, info, warn};
 
-use crate::core::symbols::symbol_keys::{FileKey, RootKey, SourceFileKey, SymbolKey, Wk};
+use crate::core::symbols::symbol_keys::{FileKey, JsFileKey, RootKey, SourceFileKey, SymbolKey, Wk};
 use crate::{
     tree::Tree,
     constants::{BuildSteps, OYarn},
@@ -218,6 +219,12 @@ impl EntryPointMgr {
                     }
                     return false;
                 }
+                SymbolKey::JsFile(f) => {
+                    session.st_mut()[f].self_import = true;
+                    //arch of js files is done in build_ast of file_info, so we have to directly reload validations instead
+                    SyncOdoo::add_to_validations(session.sync_odoo, new_sym);
+                    return true;
+                }
                 _ => {panic!("Unexpected symbol type: {:?}", new_sym);}
             }
             SyncOdoo::add_to_rebuild_arch(session.sync_odoo, new_sym);
@@ -383,10 +390,12 @@ pub struct EntryPoint {
     pub addon_to_odoo_tree: Option<Vec<OYarn>>, //contains the odoo tree if this is an addon entry point
     pub root: RootKey,
     pub not_found_symbols: WeakSet<SourceFileKey>,
+    pub not_found_data_ids: WeakSet<SourceFileKey>,
     /// files with pending model lookups
     pub not_found_symbols_for_models: WeakSet<SourceFileKey>,
     pub to_delete: bool,
-    pub data_symbols: HashMap<String, Wk<SourceFileKey>>, //key is path, weak to Rc that is hold by the module symbol
+    pub data_symbols: HashMap<String, Wk<SourceFileKey>>, //key is path, value is weak key. Strong key is hold by the module symbol
+    pub js_symbols: HashMap<String, Wk<JsFileKey>>, //key is path, value is weak key. Strong key is hold by the module symbol
 }
 impl EntryPoint {
     pub fn new(symbol_table: &mut SymbolTable, path: String, tree: Vec<OYarn>, typ: EntryPointType, addon_to_odoo_path: Option<String>, addon_to_odoo_tree: Option<Vec<OYarn>>) -> Rc<RefCell<Self>> {
@@ -397,9 +406,11 @@ impl EntryPoint {
             addon_to_odoo_tree,
             not_found_symbols: WeakSet::new(),
             not_found_symbols_for_models: WeakSet::new(),
+            not_found_data_ids: WeakSet::new(),
             root: RootKey::null(), // set below
             to_delete: false,
             data_symbols: HashMap::default(),
+            js_symbols: HashMap::default(),
         }));
         let root = symbol_table.new_root(entry.clone());
         entry.borrow_mut().root = root;
@@ -421,10 +432,12 @@ impl EntryPoint {
             addon_to_odoo_path,
             addon_to_odoo_tree,
             not_found_symbols: WeakSet::new(),
+            not_found_data_ids: WeakSet::new(),
             not_found_symbols_for_models: WeakSet::new(),
             root,
             to_delete: false,
             data_symbols: HashMap::default(),
+            js_symbols: HashMap::default(),
         }))
     }
 
@@ -464,6 +477,51 @@ impl EntryPoint {
         path.to_tree()
     }
 
+    /// Move symbols whose pending build step is `ARCH`/`ARCH_EVAL`/`VALIDATION` into the
+    /// corresponding rebuild queue (validation additionally invalidates sub functions).
+    fn dispatch_rebuild(session: &mut SessionInfo, to_add: [Vec<SourceFileKey>; 3]) {
+        let [arch, arch_eval, validation] = to_add;
+        for s in arch {
+            session.sync_odoo.add_to_rebuild_arch(s);
+        }
+        for s in arch_eval {
+            session.sync_odoo.add_to_rebuild_arch_eval(s);
+        }
+        for s in validation {
+            SymbolTable::invalidate_sub_functions(session, s);
+            session.sync_odoo.add_to_validations(s);
+        }
+    }
+
+    /// Shared implementation of [`Self::search_rebuild_for_models`] and
+    /// [`Self::search_rebuild_for_data_id`]: for every symbol in `symbols` that was waiting
+    /// on `key`, move it to the appropriate rebuild queue and drop the pending entry.
+    fn search_rebuild_for_key<K: Eq + std::hash::Hash>(
+        session: &mut SessionInfo,
+        symbols: &mut WeakSet<SourceFileKey>,
+        key: &K,
+        not_found_mut: fn(&mut SymbolTable, SourceFileKey) -> Option<&mut HashMap<K, BuildSteps>>,
+        not_found: fn(&SymbolTable, SourceFileKey) -> Option<&HashMap<K, BuildSteps>>,
+    ) {
+        let mut to_add: [Vec<SourceFileKey>; 3] = [vec![], vec![], vec![]];
+        for sym_key in symbols.iter_valid(session.st()) {
+            let Some(not_found_map) = not_found_mut(session.st_mut(), sym_key) else {
+                continue;
+            };
+            let Some(step) = not_found_map.get(key) else {
+                continue;
+            };
+            if let BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION = step {
+                to_add[*step as usize].push(sym_key);
+            }
+            not_found_map.remove(key);
+        }
+        Self::dispatch_rebuild(session, to_add);
+        symbols.retain_valid(session.st(), |&sym| {
+            !not_found(session.st(), sym).map(|map| map.is_empty()).unwrap_or(true)
+        });
+    }
+
     /* Consider the given 'tree' path as updated (or new) and move all symbols that were searching for it
     from the not_found_symbols list to the rebuild list. Return True is something should be rebuilt */
     pub fn search_symbols_to_rebuild(&mut self, session: &mut SessionInfo, path: &String, tree: Tree) {
@@ -495,16 +553,7 @@ impl EntryPoint {
                 false // drop
             });
         }
-        for &s in to_add[BuildSteps::ARCH as usize].iter() {
-            session.sync_odoo.add_to_rebuild_arch(s);
-        }
-        for &s in to_add[BuildSteps::ARCH_EVAL as usize].iter() {
-            session.sync_odoo.add_to_rebuild_arch_eval(s);
-        }
-        for &s in to_add[BuildSteps::VALIDATION as usize].iter() {
-            SymbolTable::invalidate_sub_functions(session, s);
-            session.sync_odoo.add_to_validations(s);
-        }
+        Self::dispatch_rebuild(session, to_add);
         self.not_found_symbols.retain_valid(session.st(), |&sym| {
             if !session.st().not_found_paths(sym).is_empty() {
                 return true;
@@ -517,34 +566,23 @@ impl EntryPoint {
     }
 
     pub fn search_rebuild_for_models(&mut self, session: &mut SessionInfo, model_name: OYarn) {
-        let mut to_add: [Vec<SourceFileKey>; 3] = [vec![], vec![], vec![]];
-        for sym_key in self.not_found_symbols_for_models.iter_valid(session.st()) {
-            let Some(not_found_models) = session.st_mut().not_found_models_mut(sym_key) else {
-                continue;
-            };
-            let Some(step) = not_found_models.get(&model_name) else {
-                continue;
-            };
-            if let BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION = step {
-                to_add[*step as usize].push(sym_key);
-            }
-            not_found_models.remove(&model_name);
+        Self::search_rebuild_for_key(
+            session,
+            &mut self.not_found_symbols_for_models,
+            &model_name,
+            SymbolTable::not_found_models_mut,
+            SymbolTable::not_found_models,
+        );
+    }
 
-        }
-        for &s in to_add[BuildSteps::ARCH as usize].iter() {
-            session.sync_odoo.add_to_rebuild_arch(s);
-        }
-        for &s in to_add[BuildSteps::ARCH_EVAL as usize].iter() {
-            session.sync_odoo.add_to_rebuild_arch_eval(s);
-        }
-        for &s in to_add[BuildSteps::VALIDATION as usize].iter() {
-            SymbolTable::invalidate_sub_functions(session, s);
-            session.sync_odoo.add_to_validations(s);
-        }
-        self.not_found_symbols_for_models.retain_valid(session.st(), |&sym| {
-            !session.st().not_found_models(sym).map(|models| models.is_empty()).unwrap_or(true)
-        });
-
+    pub fn search_rebuild_for_data_id(&mut self, session: &mut SessionInfo, data: MissingDataSource) {
+        Self::search_rebuild_for_key(
+            session,
+            &mut self.not_found_data_ids,
+            &data,
+            SymbolTable::not_found_data_ids_mut,
+            SymbolTable::not_found_data_ids,
+        );
     }
 }
 

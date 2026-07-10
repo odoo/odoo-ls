@@ -3,7 +3,7 @@ use crate::core::file_mgr::NoqaInfo;
 use crate::core::model::Model;
 use crate::core::symbols::SymbolTable;
 use crate::core::symbols::storage::dependency_mgr::{DependenciesTable, DependentsTable};
-use crate::core::symbols::symbol_keys::{ModuleKey, NamespaceKey, SourceFileKey, SymbolKey, XmlId};
+use crate::core::symbols::symbol_keys::{ModuleKey, JsFileKey, NamespaceKey, SourceFileKey, SymbolKey, XmlId};
 use super::symbol_mgr::SymbolMgr;
 use crate::utils::{PathSanitizer};
 use crate::weak_collections::WeakSet;
@@ -36,6 +36,7 @@ pub struct ModuleSymbol {
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     pub not_found_data: HashMap<String, BuildSteps>,
     pub not_found_models: HashMap<OYarn, BuildSteps>,
+    pub not_found_data_ids: HashMap<MissingDataSource, BuildSteps>,
     pub(super) in_workspace: bool,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
     pub dependencies: DependenciesTable,
@@ -51,6 +52,7 @@ pub struct ModuleSymbol {
     pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
     pub(super) module_symbols: HashMap<OYarn, SymbolKey>,
     pub(super) data_symbols: HashMap<String, SourceFileKey>,
+    pub(super) js_symbols: HashMap<String, JsFileKey>,
 }
 
 impl ModuleSymbol {
@@ -71,6 +73,7 @@ impl ModuleSymbol {
             not_found_paths: vec![],
             not_found_data: HashMap::default(),
             not_found_models: HashMap::default(),
+            not_found_data_ids: HashMap::default(),
             in_workspace: false,
             root_path: path,
             loaded: false,
@@ -94,6 +97,7 @@ impl ModuleSymbol {
             processed_text_hash: 0,
             noqas: NoqaInfo::None,
             data_symbols: HashMap::default(),
+            js_symbols: HashMap::default(),
         };
         module._init_symbol_mgr();
         module
@@ -111,15 +115,19 @@ impl ModuleSymbol {
         &self.data_symbols
     }
 
+    pub fn js_symbols(&self) -> &HashMap<String, JsFileKey> {
+        &self.js_symbols
+    }
+
     pub fn parent(&self) -> NamespaceKey {
         self.parent
     }
 
-    /// symbols + module_symbols + data_symbols
     pub fn children(&self) -> Vec<SymbolKey> {
         self.symbols.values().flat_map(|section| section.values()).flatten()
             .chain(self.module_symbols.values()).copied()
             .chain(self.data_symbols.values().map(|&key| key.into()))
+            .chain(self.js_symbols.values().map(|&key| key.into()))
             .collect()
     }
 

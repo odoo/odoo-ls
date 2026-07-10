@@ -1,5 +1,6 @@
 
 use std::path::Path;
+use crate::core::symbols::symbol_keys::JsFileKey;
 use crate::utils::HashMap;
 
 use crate::{constants::OYarn, core::symbols::symbol_keys::SymbolKey, oyarn, utils::PathSanitizer};
@@ -18,6 +19,7 @@ pub struct DiskDirSymbol {
     // parent / child symbols
     parent: SymbolKey,
     pub(super) module_symbols: HashMap<OYarn, SymbolKey>,
+    pub(super) js_symbols: HashMap<String, JsFileKey>,
 }
 
 impl DiskDirSymbol {
@@ -29,7 +31,8 @@ impl DiskDirSymbol {
             is_external,
             parent,
             in_workspace: false,
-            module_symbols: HashMap::default()
+            module_symbols: HashMap::default(),
+            js_symbols: HashMap::default(),
         }
     }
 
@@ -42,7 +45,9 @@ impl DiskDirSymbol {
     }
 
     pub fn children(&self) -> Vec<SymbolKey> {
-        self.module_symbols.values().copied().collect()
+        self.module_symbols.values().copied()
+            .chain(self.js_symbols.values().map(|&key| key.into()))
+            .collect()
     }
 
     /*pub fn load(sesion: &mut SessionInfo, dir: &Rc<RefCell<Symbol>>) -> Rc<RefCell<Symbol>> {

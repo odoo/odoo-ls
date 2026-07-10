@@ -5,7 +5,7 @@ use std::{
     rc::Rc,
 };
 use crate::{
-    Sy, core::{
+    Sy, constants::MissingDataSource, core::{
         evaluation_context::ContextKey, python_arch_eval_hooks::get_base_model_symbol, symbols::{storage::xml::xml_field_symbol::XmlFieldName, symbol_keys::XmlRecordKey},
     }, oyarn, utils::{HashMap, HashSet},
 };
@@ -84,6 +84,7 @@ impl SymbolTable {
             SymbolKey::Variable(k) => Some(&self[k].name),
             SymbolKey::XmlFile(k) => Some(&self[k].name),
             SymbolKey::CsvFile(k) => Some(&self[k].name),
+            SymbolKey::JsFile(k) => Some(&self[k].name),
             SymbolKey::XmlRecord(_) => None,
             SymbolKey::XmlField(_) => None,
             SymbolKey::XmlMenuItem(_) => None,
@@ -187,6 +188,7 @@ impl SymbolTable {
             SymbolKey::XmlAsset(x) => self[x].is_external,
             SymbolKey::XmlDelete(x) => self[x].is_external,
             SymbolKey::CsvFile(c) => self[c].is_external,
+            SymbolKey::JsFile(j) => self[j].is_external,
         }
     }
 
@@ -210,6 +212,7 @@ impl SymbolTable {
             SymbolKey::XmlAsset(x) => self[x].is_external = external,
             SymbolKey::XmlDelete(x) => self[x].is_external = external,
             SymbolKey::CsvFile(c) => self[c].is_external = external,
+            SymbolKey::JsFile(j) => self[j].is_external = external,
         }
     }
 
@@ -233,6 +236,7 @@ impl SymbolTable {
             SymbolKey::XmlAsset(_) => true,
             SymbolKey::XmlDelete(_) => true,
             SymbolKey::CsvFile(_) => false,
+            SymbolKey::JsFile(_) => false,
         }
     }
 
@@ -256,6 +260,7 @@ impl SymbolTable {
             SymbolKey::XmlAsset(x) => &self[x].range,
             SymbolKey::XmlDelete(x) => &self[x].range,
             SymbolKey::CsvFile(_) => panic!(),
+            SymbolKey::JsFile(_) => panic!(),
         }
     }
 
@@ -279,6 +284,7 @@ impl SymbolTable {
             SymbolKey::XmlAsset(x) => Some(self[x].parent()),
             SymbolKey::XmlDelete(x) => Some(self[x].parent()),
             SymbolKey::CsvFile(c) => Some(self[c].parent().into()),
+            SymbolKey::JsFile(j) => Some(self[j].parent().into()),
         }
     }
 
@@ -302,6 +308,7 @@ impl SymbolTable {
             SymbolKey::XmlAsset(_) => vec![],
             SymbolKey::XmlDelete(_) => vec![],
             SymbolKey::CsvFile(c) => vec![self[c].path.clone()],
+            SymbolKey::JsFile(j) => vec![self[j].path.clone()],
         }
     }
 
@@ -312,6 +319,7 @@ impl SymbolTable {
             SourceFileKey::File(f) => &self[f].path,
             SourceFileKey::XmlFile(x) => &self[x].path,
             SourceFileKey::CsvFile(c) => &self[c].path,
+            SourceFileKey::JsFile(j) => &self[j].path,
         }
     }
 
@@ -323,6 +331,7 @@ impl SymbolTable {
             SourceFileKey::File(f) => &self[f].path,
             SourceFileKey::XmlFile(x) => &self[x].path,
             SourceFileKey::CsvFile(c) => &self[c].path,
+            SourceFileKey::JsFile(j) => &self[j].path,
         }
     }
 
@@ -333,6 +342,7 @@ impl SymbolTable {
             SourceFileKey::CsvFile(k) => &mut self[k].dependencies,
             SourceFileKey::PythonPackage(p) => &mut self[p].dependencies,
             SourceFileKey::Module(k) => &mut self[k].dependencies,
+            SourceFileKey::JsFile(j) => &mut self[j].dependencies,
         }
     }
 
@@ -343,6 +353,7 @@ impl SymbolTable {
             SourceFileKey::File(f) => self[f].dependents(),
             SourceFileKey::XmlFile(x) => self[x].dependents(),
             SourceFileKey::CsvFile(c) => self[c].dependents(),
+            SourceFileKey::JsFile(j) => self[j].dependents(),
         }
     }
 
@@ -353,6 +364,7 @@ impl SymbolTable {
             SourceFileKey::CsvFile(c) => &mut self[c].dependents,
             SourceFileKey::PythonPackage(p) => &mut self[p].dependents,
             SourceFileKey::Module(k) => &mut self[k].dependents,
+            SourceFileKey::JsFile(j) => &mut self[j].dependents,
         }
     }
 
@@ -389,6 +401,7 @@ impl SymbolTable {
             SymbolKey::XmlAsset(_) => panic!("No module symbol on XmlAssetSymbol"),
             SymbolKey::XmlDelete(_) => panic!("No module symbol on XmlDeleteSymbol"),
             SymbolKey::CsvFile(_) => panic!("No module symbol on CsvFileSymbol"),
+            SymbolKey::JsFile(_) => panic!("No module symbol on JsFileSymbol"),
         }
     }
 
@@ -413,6 +426,7 @@ impl SymbolTable {
             SymbolKey::XmlAsset(_) => panic!(),
             SymbolKey::XmlDelete(_) => panic!(),
             SymbolKey::CsvFile(c) => self[c].is_in_workspace(),
+            SymbolKey::JsFile(j) => self[j].is_in_workspace(),
         }
     }
 
@@ -436,6 +450,7 @@ impl SymbolTable {
             SymbolKey::XmlAsset(_) => panic!(),
             SymbolKey::XmlDelete(_) => panic!(),
             SymbolKey::CsvFile(c) => self[c].set_in_workspace(in_workspace),
+            SymbolKey::JsFile(j) => self[j].set_in_workspace(in_workspace),
         }
     }
 
@@ -461,6 +476,7 @@ impl SymbolTable {
             SymbolKey::XmlAsset(_) => panic!(),
             SymbolKey::XmlDelete(_) => panic!(),
             SymbolKey::CsvFile(k) => self[k].build_status(step),
+            SymbolKey::JsFile(j) => self[j].build_status(step),
         }
     }
 
@@ -485,6 +501,7 @@ impl SymbolTable {
             SymbolKey::XmlAsset(_) => panic!(),
             SymbolKey::XmlDelete(_) => panic!(),
             SymbolKey::CsvFile(k) => self[k].set_build_status(step, status),
+            SymbolKey::JsFile(j) => self[j].set_build_status(step, status),
         }
     }
 
@@ -514,6 +531,7 @@ impl SymbolTable {
             SymbolKey::XmlAsset(_) => panic!(),
             SymbolKey::XmlDelete(_) => panic!(),
             SymbolKey::CsvFile(_) => panic!(),
+            SymbolKey::JsFile(_) => panic!(),
         }
     }
 
@@ -537,6 +555,7 @@ impl SymbolTable {
             SymbolKey::XmlAsset(_) => None,
             SymbolKey::XmlDelete(_) => None,
             SymbolKey::CsvFile(_) => None,
+            SymbolKey::JsFile(_) => None,
         }
     }
 
@@ -560,6 +579,7 @@ impl SymbolTable {
             SymbolKey::XmlAsset(_) => { panic!() },
             SymbolKey::XmlDelete(_) => { panic!() },
             SymbolKey::CsvFile(_) => { panic!() },
+            SymbolKey::JsFile(_) => { panic!() },
         }
     }
 
@@ -570,6 +590,7 @@ impl SymbolTable {
             SourceFileKey::PythonPackage(p) => &self[p].not_found_paths,
             SourceFileKey::XmlFile(x) => &self[x].not_found_paths,
             SourceFileKey::CsvFile(c) => &self[c].not_found_paths,
+            SourceFileKey::JsFile(j) => &self[j].not_found_paths,
         }
     }
 
@@ -580,6 +601,7 @@ impl SymbolTable {
             SourceFileKey::PythonPackage(p) => &mut self[p].not_found_paths,
             SourceFileKey::XmlFile(x) => &mut self[x].not_found_paths,
             SourceFileKey::CsvFile(x) => &mut self[x].not_found_paths,
+            SourceFileKey::JsFile(j) => &mut self[j].not_found_paths,
         }
     }
 
@@ -590,6 +612,7 @@ impl SymbolTable {
             SourceFileKey::Module(m) => Some(&self[m].not_found_models),
             SourceFileKey::PythonPackage(_) => None,
             SourceFileKey::CsvFile(_) => None,
+            SourceFileKey::JsFile(_) => None,
         }
     }
 
@@ -600,6 +623,29 @@ impl SymbolTable {
             SourceFileKey::Module(m) => Some(&mut self[m].not_found_models),
             SourceFileKey::PythonPackage(_) => None,
             SourceFileKey::CsvFile(_) => None,
+            SourceFileKey::JsFile(_) => None,
+        }
+    }
+
+    pub fn not_found_data_ids(&self, target: SourceFileKey) -> Option<&HashMap<MissingDataSource, BuildSteps>> {
+        match target {
+            SourceFileKey::File(f) => Some(&self[f].not_found_data_ids),
+            SourceFileKey::XmlFile(f) => Some(&self[f].not_found_data_ids),
+            SourceFileKey::Module(m) => Some(&self[m].not_found_data_ids),
+            SourceFileKey::PythonPackage(_) => None,
+            SourceFileKey::CsvFile(c) => Some(&self[c].not_found_data_ids),
+            SourceFileKey::JsFile(j) => Some(&self[j].not_found_data_ids),
+        }
+    }
+
+    pub fn not_found_data_ids_mut(&mut self, target: SourceFileKey) -> Option<&mut HashMap<MissingDataSource, BuildSteps>> {
+        match target {
+            SourceFileKey::File(f) => Some(&mut self[f].not_found_data_ids),
+            SourceFileKey::XmlFile(f) => Some(&mut self[f].not_found_data_ids),
+            SourceFileKey::Module(m) => Some(&mut self[m].not_found_data_ids),
+            SourceFileKey::PythonPackage(_) => None,
+            SourceFileKey::CsvFile(c) => Some(&mut self[c].not_found_data_ids),
+            SourceFileKey::JsFile(j) => Some(&mut self[j].not_found_data_ids),
         }
     }
 
@@ -631,6 +677,17 @@ impl SymbolTable {
         let path_str = path.sanitize_cow();
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") || FileMgr::is_untitled(&path_str) {
             return Some(session.st_mut().add_new_file(parent, &name, &path_str).into());
+        }
+        if path_str.ends_with(".js") {
+            match parent {
+                //js file created here is because of js in a custom entrypoint, and that should be created under a diskdir.
+                //JS files under a Module should be created by the module loading, through load_assets
+                SymbolKey::DiskDir(d) => {
+                    return Some(session.st_mut().add_new_js_file(d.into(), &name, &path_str).into());
+                },
+                //
+                _ => {}
+            }
         }
         let main_entry_tree = session.sync_odoo.get_main_entry_tree(parent);
         if main_entry_tree == (&["odoo", "addons"], &[]) && path.join("__manifest__.py").exists() {
@@ -910,6 +967,7 @@ impl SymbolTable {
             SourceFileKey::File(f) => self[f].get_all_dependencies(step as usize),
             SourceFileKey::XmlFile(x) => self[x].get_all_dependencies(step as usize),
             SourceFileKey::CsvFile(c) => self[c].get_all_dependencies(step as usize),
+            SourceFileKey::JsFile(j) => self[j].get_all_dependencies(step as usize),
         }
     }
 
@@ -945,6 +1003,7 @@ impl SymbolTable {
             SourceFileKey::File(f) => &mut self[f].model_dependencies,
             SourceFileKey::XmlFile(x) => &mut self[x].model_dependencies,
             SourceFileKey::CsvFile(c) => &mut self[c].model_dependencies,
+            SourceFileKey::JsFile(j) => &mut self[j].model_dependencies,
         };
         model_dependencies.insert(model.clone());
         model.borrow_mut().add_dependent(target);
@@ -1057,7 +1116,8 @@ impl SymbolTable {
             | SymbolKey::File(_)
             | SymbolKey::Compiled(_)
             | SymbolKey::XmlFile(_)
-            | SymbolKey::CsvFile(_) => false,
+            | SymbolKey::CsvFile(_)
+            | SymbolKey::JsFile(_) => false,
             SymbolKey::Class(_)
             | SymbolKey::Function(_)
             | SymbolKey::Variable(_)
@@ -1083,6 +1143,7 @@ impl SymbolTable {
             SourceFileKey::PythonPackage(p) => self[p].processed_text_hash = hash,
             SourceFileKey::XmlFile(x) => self[x].processed_text_hash = hash,
             SourceFileKey::CsvFile(c) => self[c].processed_text_hash = hash,
+            SourceFileKey::JsFile(j) => self[j].processed_text_hash = hash,
         }
     }
 
@@ -1093,6 +1154,7 @@ impl SymbolTable {
             SourceFileKey::PythonPackage(p) => self[p].processed_text_hash,
             SourceFileKey::XmlFile(x) => self[x].processed_text_hash,
             SourceFileKey::CsvFile(c) => self[c].processed_text_hash,
+            SourceFileKey::JsFile(j) => self[j].processed_text_hash,
         }
     }
 
@@ -1117,6 +1179,7 @@ impl SymbolTable {
             SymbolKey::XmlAsset(_) => panic!("set_noqas called on XmlAsset"),
             SymbolKey::XmlDelete(_) => panic!("set_noqas called on XmlDelete"),
             SymbolKey::CsvFile(c) => self[c].noqas = noqa,
+            SymbolKey::JsFile(j) => self[j].noqas = noqa,
         }
     }
 
@@ -1140,6 +1203,7 @@ impl SymbolTable {
             SymbolKey::XmlAsset(_) => panic!("get_noqas called on XmlAsset"),
             SymbolKey::XmlDelete(_) => panic!("get_noqas called on XmlDelete"),
             SymbolKey::CsvFile(c) => self[c].noqas.clone(),
+            SymbolKey::JsFile(j) => self[j].noqas.clone(),
         }
     }
 
@@ -1216,6 +1280,7 @@ impl SymbolTable {
                 SymbolKey::PythonPackage(p) => return Some(p.into()),
                 SymbolKey::XmlFile(x) => return Some(x.into()),
                 SymbolKey::CsvFile(c) => return Some(c.into()),
+                SymbolKey::JsFile(js) => return Some(js.into()),
                 _ => {}
             }
             key = self.parent(key)?;
@@ -1227,6 +1292,9 @@ impl SymbolTable {
             target,
             &[
                 SymType::FILE,
+                SymType::JS_FILE,
+                SymType::XML_FILE,
+                SymType::CSV_FILE,
                 SymType::PACKAGE(PackageType::PYTHON_PACKAGE),
                 SymType::PACKAGE(PackageType::MODULE),
                 SymType::FUNCTION,
@@ -2167,7 +2235,8 @@ impl SymbolTable {
                 | SymbolKey::XmlTemplate(_)
                 | SymbolKey::XmlAsset(_)
                 | SymbolKey::XmlDelete(_)
-                | SymbolKey::CsvFile(_) => {},
+                | SymbolKey::CsvFile(_)
+                | SymbolKey::JsFile(_) => {},
             }
         }
 
@@ -2213,7 +2282,8 @@ impl SymbolTable {
                 | SymbolKey::XmlTemplate(_)
                 | SymbolKey::XmlAsset(_)
                 | SymbolKey::XmlDelete(_)
-                | SymbolKey::CsvFile(_) => {},
+                | SymbolKey::CsvFile(_)
+                | SymbolKey::JsFile(_) => {},
             }
         }
 
@@ -2290,7 +2360,8 @@ impl SymbolTable {
                 | SymbolKey::XmlTemplate(_)
                 | SymbolKey::XmlAsset(_)
                 | SymbolKey::XmlDelete(_)
-                | SymbolKey::CsvFile(_) => {}
+                | SymbolKey::CsvFile(_)
+                | SymbolKey::JsFile(_) => {}
             }
         }
 
@@ -2315,7 +2386,7 @@ impl SymbolTable {
             SymType::XML_DELETE => SymbolKind::CONSTANT,
             SymType::PACKAGE(_) => SymbolKind::PACKAGE,
             SymType::NAMESPACE => SymbolKind::NAMESPACE,
-            SymType::DISK_DIR | SymType::COMPILED => SymbolKind::FILE,
+            SymType::DISK_DIR | SymType::COMPILED | SymType::JS_FILE => SymbolKind::FILE,
             SymType::ROOT => SymbolKind::NAMESPACE,
         }
     }
@@ -2424,7 +2495,7 @@ mod get_symbol_tests {
     fn file_plus_one_content() {
         let (mut st, root) = empty_table_with_root();
         let file = st.add_new_file(root, "my_file", "/test/my_file.py");
-        let class = st.add_new_class(file.into(), "MyClass", &range_at(0), &TextSize::new(0));
+        let class = st.add_new_class(file.into(), "MyClass", range_at(0), &TextSize::new(0));
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["MyClass"];
@@ -2438,8 +2509,8 @@ mod get_symbol_tests {
     fn file_plus_nested_content() {
         let (mut st, root) = empty_table_with_root();
         let file = st.add_new_file(root, "my_file", "/test/my_file.py");
-        let class = st.add_new_class(file.into(), "MyClass", &range_at(0), &TextSize::new(0));
-        let method = st.add_new_function(class.into(), "method", &range_at(1), &TextSize::new(1));
+        let class = st.add_new_class(file.into(), "MyClass", range_at(0), &TextSize::new(0));
+        let method = st.add_new_function(class.into(), "method", range_at(1), &TextSize::new(1));
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["MyClass", "method"];
@@ -2454,9 +2525,9 @@ mod get_symbol_tests {
         // Content path longer than 2: file -> Outer -> Inner -> v
         let (mut st, root) = empty_table_with_root();
         let file = st.add_new_file(root, "my_file", "/test/my_file.py");
-        let outer = st.add_new_class(file.into(), "Outer", &range_at(0), &TextSize::new(0));
-        let inner = st.add_new_class(outer.into(), "Inner", &range_at(1), &TextSize::new(1));
-        let var = st.add_new_variable(SymbolKey::Class(inner), "v", &range_at(2));
+        let outer = st.add_new_class(file.into(), "Outer", range_at(0), &TextSize::new(0));
+        let inner = st.add_new_class(outer.into(), "Inner", range_at(1), &TextSize::new(1));
+        let var = st.add_new_variable(SymbolKey::Class(inner), "v", range_at(2));
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["Outer", "Inner", "v"];
@@ -2472,7 +2543,7 @@ mod get_symbol_tests {
         let (mut st, root) = empty_table_with_root();
         let package = st.add_new_python_package(root, "pkg", "/test/pkg", "");
         let file = st.add_new_file(package.into(), "mod", "/test/pkg/mod.py");
-        let class = st.add_new_class(file.into(), "Cls", &range_at(0), &TextSize::new(0));
+        let class = st.add_new_class(file.into(), "Cls", range_at(0), &TextSize::new(0));
 
         let files: &[&str] = &["pkg", "mod"];
         let content: &[&str] = &["Cls"];
@@ -2496,7 +2567,7 @@ mod get_symbol_tests {
     fn missing_content_returns_empty() {
         let (mut st, root) = empty_table_with_root();
         let file = st.add_new_file(root, "my_file", "/test/my_file.py");
-        st.add_new_class(file.into(), "MyClass", &range_at(0), &TextSize::new(0));
+        st.add_new_class(file.into(), "MyClass", range_at(0), &TextSize::new(0));
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["Missing"];
@@ -2509,8 +2580,8 @@ mod get_symbol_tests {
         // declaration visible before the position is returned.
         let (mut st, root) = empty_table_with_root();
         let file = st.add_new_file(root, "my_file", "/test/my_file.py");
-        let _first = st.add_new_variable(SymbolKey::File(file), "x", &range_at(5));
-        let second = st.add_new_variable(SymbolKey::File(file), "x", &range_at(15));
+        let _first = st.add_new_variable(SymbolKey::File(file), "x", range_at(5));
+        let second = st.add_new_variable(SymbolKey::File(file), "x", range_at(15));
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["x"];
@@ -2525,8 +2596,8 @@ mod get_symbol_tests {
         // Querying before the second declaration returns the first one.
         let (mut st, root) = empty_table_with_root();
         let file = st.add_new_file(root, "my_file", "/test/my_file.py");
-        let first = st.add_new_variable(SymbolKey::File(file), "x", &range_at(5));
-        let _second = st.add_new_variable(SymbolKey::File(file), "x", &range_at(15));
+        let first = st.add_new_variable(SymbolKey::File(file), "x", range_at(5));
+        let _second = st.add_new_variable(SymbolKey::File(file), "x", range_at(15));
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["x"];
@@ -2559,8 +2630,8 @@ mod get_symbol_tests {
                 ])),
             );
         }
-        let x_if = st.add_new_variable(file_key, "x", &range_at(21)); // if body
-        let x_else = st.add_new_variable(file_key, "x", &range_at(31)); // else body
+        let x_if = st.add_new_variable(file_key, "x", range_at(21)); // if body
+        let x_else = st.add_new_variable(file_key, "x", range_at(31)); // else body
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["x"];
@@ -2591,10 +2662,10 @@ mod get_symbol_tests {
                 ])),
             );
         }
-        let class_if = st.add_new_class(file_key, "A", &range_at(21), &TextSize::new(21));
-        let m_if = st.add_new_function(class_if.into(), "m", &range_at(22), &TextSize::new(22));
-        let class_else = st.add_new_class(file_key, "A", &range_at(31), &TextSize::new(31));
-        let m_else = st.add_new_function(class_else.into(), "m", &range_at(32), &TextSize::new(32));
+        let class_if = st.add_new_class(file_key, "A", range_at(21), &TextSize::new(21));
+        let m_if = st.add_new_function(class_if.into(), "m", range_at(22), &TextSize::new(22));
+        let class_else = st.add_new_class(file_key, "A", range_at(31), &TextSize::new(31));
+        let m_else = st.add_new_function(class_else.into(), "m", range_at(32), &TextSize::new(32));
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["A", "m"];

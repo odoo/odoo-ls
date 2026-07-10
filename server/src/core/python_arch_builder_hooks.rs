@@ -38,7 +38,7 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
                 if slots.len() == 1 {
                     range = symbol_table.range(slots[0]).clone();
                 }
-                symbol_table.add_new_variable(symbol_key, "env", &range);
+                symbol_table.add_new_variable(symbol_key, "env", range);
             }
         }
     },
@@ -55,7 +55,7 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
                 return;
             }
             let range = symbol_table[class].range.clone();
-            symbol_table.add_new_variable(class, "env", &range);
+            symbol_table.add_new_variable(class, "env", range);
         }
     },
     PythonArchClassHook {
@@ -71,18 +71,18 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
                 range = symbol_table.range(new_sym[0]).clone();
             }
             // ----------- env.cr ------------
-            symbol_table.add_new_variable(class, "cr", &range);
+            symbol_table.add_new_variable(class, "cr", range);
             // ----------- env.uid ------------
-            let uid_sym = symbol_table.add_new_variable(class, "uid", &range);
+            let uid_sym = symbol_table.add_new_variable(class, "uid", range);
             symbol_table[uid_sym].doc_string = Some(S!("The current user id (for access rights checks)"));
             // ----------- env.context ------------
-            let context_sym = symbol_table.add_new_variable(class, "context", &range);
+            let context_sym = symbol_table.add_new_variable(class, "context", range);
             symbol_table[context_sym].doc_string = Some(S!("The current context"));
             // ----------- env.su ------------
-            let su_sym = symbol_table.add_new_variable(class, "su", &range);
+            let su_sym = symbol_table.add_new_variable(class, "su", range);
             symbol_table[su_sym].doc_string = Some(S!("whether in superuser mode"));
             // ----------- env.registry -----------
-            let _ = symbol_table.add_new_variable(class, "registry", &range);
+            let _ = symbol_table.add_new_variable(class, "registry", range);
         }
     },
     PythonArchClassHook {
@@ -93,7 +93,7 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
         func: |symbol_table: &mut SymbolTable, class: ClassKey| {
             let range = symbol_table[class].range.clone();
             // ----------- global ------------
-            symbol_table.add_new_variable(class, "global", &range);
+            symbol_table.add_new_variable(class, "global", range);
         }
     },
     PythonArchClassHook {
@@ -148,7 +148,7 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
             // ----------- __get__ ------------
             let get_sym = symbol_table.get_symbol(symbol_key, (&[], &["__get__"]), u32::MAX);
             if get_sym.is_empty() {
-                symbol_table.add_new_function(symbol_key, &S!("__get__"), &range, &range.end());
+                symbol_table.add_new_function(symbol_key, &S!("__get__"), range, &range.end());
             } else {
                 let name = &symbol_table[class].name;
                 if !["Id", "One2many"].contains(&name.as_str()) {
@@ -158,7 +158,7 @@ static arch_class_hooks: Lazy<Vec<PythonArchClassHook>> = Lazy::new(|| {vec![
             // ----------- __init__ ------------
             let get_sym = symbol_table.get_symbol(symbol_key, (&[], &["__init__"]), u32::MAX);
             if get_sym.is_empty() {
-                symbol_table.add_new_function(symbol_key, &S!("__init__"), &range, &range.end());
+                symbol_table.add_new_function(symbol_key, &S!("__init__"), range, &range.end());
             }
         }
     },
@@ -214,10 +214,10 @@ impl PythonArchBuilderHooks {
                     if let Some(&odoo_namespace) = odoo_namespace.get(0) {
                         // create _ and Command as ext_symbols
                         let owner = symbol.into();
-                        session.st_mut().add_new_ext_symbol(odoo_namespace, "SUPERUSER_ID", &TextRange::default(), owner);
-                        session.st_mut().add_new_ext_symbol(odoo_namespace, "_", &TextRange::default(), owner);
-                        session.st_mut().add_new_ext_symbol(odoo_namespace, "_lt", &TextRange::default(), owner);
-                        session.st_mut().add_new_ext_symbol(odoo_namespace, "Command", &TextRange::default(), owner);
+                        session.st_mut().add_new_ext_symbol(odoo_namespace, "SUPERUSER_ID", TextRange::default(), owner);
+                        session.st_mut().add_new_ext_symbol(odoo_namespace, "_", TextRange::default(), owner);
+                        session.st_mut().add_new_ext_symbol(odoo_namespace, "_lt", TextRange::default(), owner);
+                        session.st_mut().add_new_ext_symbol(odoo_namespace, "Command", TextRange::default(), owner);
                     }
                 }
             }
@@ -230,16 +230,16 @@ impl PythonArchBuilderHooks {
                     let url_join = session.st().get_symbol(werkzeug_url, (&[], &["url_join"]), u32::MAX);
                     if url_join.is_empty() { //else, installed version is already patched
                         //fake variable, as ext_symbols are not seen through get_symbol, etc...
-                        session.st_mut().add_new_variable(werkzeug_url, "url_decode", &TextRange::default());
-                        session.st_mut().add_new_variable(werkzeug_url, "url_encode", &TextRange::default());
-                        session.st_mut().add_new_variable(werkzeug_url, "url_join", &TextRange::default());
-                        session.st_mut().add_new_variable(werkzeug_url, "url_parse", &TextRange::default());
-                        session.st_mut().add_new_variable(werkzeug_url, "url_quote", &TextRange::default());
-                        session.st_mut().add_new_variable(werkzeug_url, "url_unquote", &TextRange::default());
-                        session.st_mut().add_new_variable(werkzeug_url, "url_quote_plus", &TextRange::default());
-                        session.st_mut().add_new_variable(werkzeug_url, "url_unquote_plus", &TextRange::default());
-                        session.st_mut().add_new_variable(werkzeug_url, "url_unparse", &TextRange::default());
-                        session.st_mut().add_new_variable(werkzeug_url, "URL", &TextRange::default());
+                        session.st_mut().add_new_variable(werkzeug_url, "url_decode", TextRange::default());
+                        session.st_mut().add_new_variable(werkzeug_url, "url_encode", TextRange::default());
+                        session.st_mut().add_new_variable(werkzeug_url, "url_join", TextRange::default());
+                        session.st_mut().add_new_variable(werkzeug_url, "url_parse", TextRange::default());
+                        session.st_mut().add_new_variable(werkzeug_url, "url_quote", TextRange::default());
+                        session.st_mut().add_new_variable(werkzeug_url, "url_unquote", TextRange::default());
+                        session.st_mut().add_new_variable(werkzeug_url, "url_quote_plus", TextRange::default());
+                        session.st_mut().add_new_variable(werkzeug_url, "url_unquote_plus", TextRange::default());
+                        session.st_mut().add_new_variable(werkzeug_url, "url_unparse", TextRange::default());
+                        session.st_mut().add_new_variable(werkzeug_url, "URL", TextRange::default());
                     }
                 } else {
                     warn!("Unable to find werkzeug.urls to monkeypatch it");

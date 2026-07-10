@@ -68,6 +68,13 @@ pub enum SymType{
     XML_ASSET,
     XML_DELETE,
     CSV_FILE,
+    JS_FILE,
+}
+
+#[derive(Debug, Eq, Hash, PartialEq, Clone)]
+pub enum MissingDataSource {
+    XML_ID(OYarn),
+    TEMPLATE(OYarn)
 }
 
 impl fmt::Display for SymType {
@@ -92,6 +99,35 @@ impl From<i32> for BuildSteps {
             1 => BuildSteps::ARCH_EVAL,
             2 => BuildSteps::VALIDATION,
             _ => panic!("Invalid value for BuildSteps: {}", value),
+        }
+    }
+}
+
+#[derive(Debug, Eq, Hash, PartialEq, Copy, Clone)]
+pub enum DiagnosticSource {
+    PY_SYNTAX              = 0,
+    PY_ARCH                = 1,
+    PY_ARCH_EVAL           = 2,
+    PY_VALIDATION          = 3,
+    XML_SYNTAX             = 4,
+    XML_ARCH               = 5,
+    XML_VALIDATION         = 6,
+    CSV_SYNTAX             = 7,
+    CSV_VALIDATION         = 8,
+    JS_OXC                 = 9,
+    JS_TSSERVER_SYNTAX     = 10,
+    JS_TSSERVER_SEMANTIC   = 11,
+    JS_TSSERVER_SUGGESTION = 12,
+    JS_VALIDATION          = 13,
+}
+
+impl From<BuildSteps> for DiagnosticSource {
+    fn from(value: BuildSteps) -> Self {
+        match value {
+            BuildSteps::SYNTAX => DiagnosticSource::PY_SYNTAX,
+            BuildSteps::ARCH => DiagnosticSource::PY_ARCH,
+            BuildSteps::ARCH_EVAL => DiagnosticSource::PY_ARCH_EVAL,
+            BuildSteps::VALIDATION => DiagnosticSource::PY_VALIDATION,
         }
     }
 }
