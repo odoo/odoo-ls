@@ -587,7 +587,9 @@ impl SyncOdoo {
                 builder.load_arch(session);
             }
             // Drain build queues, skip validation
-            while Self::build_one(session, &main_entry, false) {}
+            while Self::build_one(session, &main_entry, false) {
+                if session.sync_odoo.terminate_rebuild.load(Ordering::Relaxed) { return; }
+            }
 
             // Update pre_parser on module build progress
             pre_parser.on_module_built(i);
@@ -605,6 +607,7 @@ impl SyncOdoo {
         // Drain validation queue
         let total_items = session.sync_odoo.rebuild_validation.len() as u32;
         while Self::build_one(session, &main_entry, true) {
+            if session.sync_odoo.terminate_rebuild.load(Ordering::Relaxed) { return; }
             let items_left = session.sync_odoo.rebuild_validation.len() as u32;
             // report progress (total_items > 0, otherwise loop wouldn't run)
             reporter.report_progress(BUILD_PHASE_WEIGHT + (total_items - items_left) * (VALIDATION_PHASE_WEIGHT) / total_items);
