@@ -212,6 +212,9 @@ impl ConfigEntry {
             .map(|v| v.iter().map(|f| f.value().clone()).collect())
             .unwrap_or_default()
     }
+    pub fn tsserver_command(&self) -> String {
+        self.as_str(ConfigKey::TsServerCommand).to_string()
+    }
 }
 
 /// Whether the change between two resolved configs requires a server restart:

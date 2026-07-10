@@ -575,7 +575,7 @@ fn valid_names_for_a_symbol(symbol_table: &SymbolTable, symbol: SymbolKey, start
             }
             res.extend(valid_name_from_symbol(symbol_table, symbol, start_filter));
         }
-        SymbolKey::Class(_) | SymbolKey::Compiled(_) | SymbolKey::CsvFile(_) | SymbolKey::XmlFile(_) |
+        SymbolKey::Class(_) | SymbolKey::Compiled(_) | SymbolKey::CsvFile(_) | SymbolKey::XmlFile(_) | SymbolKey::JsFile(_) |
         SymbolKey::Function(_) | SymbolKey::Root(_) | SymbolKey::Variable(_) | SymbolKey::XmlRecord(_) |
         SymbolKey::XmlMenuItem(_) | SymbolKey::XmlTemplate(_) | SymbolKey::XmlAsset(_) | SymbolKey::XmlDelete(_) |
         SymbolKey::XmlField(_) => {

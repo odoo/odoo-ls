@@ -6,6 +6,7 @@ pub mod document_symbols;
 pub mod features_utils;
 pub mod goto_utils;
 pub mod hover;
+pub mod js_completion;
 pub mod node_index_ast;
 pub mod references;
 pub mod references_csv;

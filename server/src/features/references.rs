@@ -1,12 +1,12 @@
 use crate::constants::{BuildSteps, PackageType};
 use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr};
-use crate::core::file_mgr::AstType;
+use crate::core::file_mgr::Ast;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::Dependencies;
 use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::symbol_keys::{ModuleKey, SourceFileKey, SymbolKey};
 use crate::core::symbols::storage::SymbolTable;
-use crate::features::goto_utils::{GotoRequest, GotoUtils};
+use crate::features::goto_utils::{GotoRequest, GotoSourceType, GotoUtils};
 use crate::features::references_csv::CsvAstReferenceVisitor;
 use crate::features::references_xml::XmlAstReferenceVisitor;
 use crate::{
@@ -57,26 +57,33 @@ impl ReferenceFeature {
      */
     /// TODO: Odoo specific (XML field refs, string-based model refs)
     pub fn get_references(session: &mut SessionInfo, file_symbol: SourceFileKey, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Vec<Location>> {
+        if matches!(file_info.borrow().file_info_ast.borrow().ast, Ast::JsAst(_)) {
+            return ReferenceFeature::get_reference_js(session, file_info, line, character);
+        }
         //We want to search for references of the definition, and not the current symbol. Let's use definition feature for that
         SyncOdoo::process_rebuilds(session, false);
-        let def_sources = match file_info.borrow().file_info_ast.borrow().ast_type {
-            AstType::Python => {
+        let def_sources = match file_info.borrow().file_info_ast.borrow().ast {
+            Ast::PythonAst(_) => {
                 GotoUtils::get_symbols(session, GotoRequest::Definition, file_symbol, file_info, line, character)
             },
-            AstType::Xml => {
+            Ast::XmlAst => {
                 GotoUtils::get_symbols_xml(session, file_symbol, file_info, line, character)
             },
-            AstType::Csv => {
+            Ast::CsvAst => {
                 GotoUtils::get_symbols_csv(session, file_symbol, file_info, line, character)
-            }
+            },
+            Ast::JsAst(_) => unreachable!(),
         };
 
 
         let mut locations = Vec::new();
         for definition in def_sources.iter() {
-            match &definition.source.typ() {
+            let GotoSourceType::SymbolKey(definition_source) = definition.source else {
+                continue;
+            };
+            match &definition_source.typ() {
                 SymType::PACKAGE(PackageType::MODULE) => {
-                    let module_key = definition.source.unwrap_module_key();
+                    let module_key = definition_source.unwrap_module_key();
                     let module_name = session.st()[module_key].name.clone();
                     let modules: Vec<_> = session.sync_odoo.modules.values().copied().collect();
                     for module in modules {
@@ -95,7 +102,7 @@ impl ReferenceFeature {
 
                     files_to_check.insert(file_symbol);
 
-                    if let Some(target_file) = session.st().get_file(definition.source) {
+                    if let Some(target_file) = session.st().get_file(definition_source) {
                         let dependents = session.st().dependents(target_file);
                         //take arch and arch_eval dependents
                         for dep_level in [BuildSteps::ARCH, BuildSteps::ARCH_EVAL] {
@@ -107,10 +114,10 @@ impl ReferenceFeature {
                         }
                     }
                     //If the symbol is a model or a field, browse model dependents too
-                    let class_model_to_check = if definition.source.typ() == SymType::CLASS {
-                        Some(definition.source)
-                    } else if SymbolTable::is_field(session, definition.source) {
-                        session.st().get_in_parents(definition.source, &[SymType::CLASS], true)
+                    let class_model_to_check = if definition_source.typ() == SymType::CLASS {
+                        Some(definition_source)
+                    } else if SymbolTable::is_field(session, definition_source) {
+                        session.st().get_in_parents(definition_source, &[SymType::CLASS], true)
                     } else {
                         None
                     };
@@ -135,39 +142,40 @@ impl ReferenceFeature {
                         };
                         match file {
                             SourceFileKey::File(_) | SourceFileKey::PythonPackage(_) | SourceFileKey::Module(_) => {
-                                locations.extend(ReferenceFeature::references_in_file(session, file, &dep_file_info, &ReferenceTarget::Symbol(definition.source)));
+                                locations.extend(ReferenceFeature::references_in_file(session, file, &dep_file_info, &ReferenceTarget::Symbol(definition_source)));
                             },
                             SourceFileKey::XmlFile(xml_file) => {
                                 let data = dep_file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
                                 let document = roxmltree::Document::parse(&data);
                                 if let Ok(document) = document {
                                     let root = document.root_element();
-                                    locations.extend(XmlAstReferenceVisitor::search_target(session, xml_file, root, &ReferenceTarget::Symbol(definition.source)));
+                                    locations.extend(XmlAstReferenceVisitor::search_target(session, xml_file, root, &ReferenceTarget::Symbol(definition_source)));
                                 }
                             },
                             SourceFileKey::CsvFile(csv_file) => {
-                                if SymbolTable::is_field(session, definition.source) {
+                                if SymbolTable::is_field(session, definition_source) {
                                     let data = dep_file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
                                     let mut csv_reader = csv::ReaderBuilder::new().from_reader(data.as_bytes());
-                                    let model_class = session.st().get_in_parents(definition.source, &[SymType::CLASS], true);
+                                    let model_class = session.st().get_in_parents(definition_source, &[SymType::CLASS], true);
                                     if let Some(SymbolKey::Class(model_class)) = model_class {
                                         if let Some(model) = &session.st()[model_class]._model {
                                             let model_name = model.name.clone();
-                                            locations.extend(CsvAstReferenceVisitor::search_target(session, csv_file, &mut csv_reader, Some(&model_name), &ReferenceTarget::Symbol(definition.source), &data));
+                                            locations.extend(CsvAstReferenceVisitor::search_target(session, csv_file, &mut csv_reader, Some(&model_name), &ReferenceTarget::Symbol(definition_source), &data));
                                         }
                                     }
                                 }
-                            }
+                            },
+                            SourceFileKey::JsFile(_) => { unreachable!("tsserverbridge should have handled js references")}
                         }
                     }
                     //add definition
-                    let sym_typ = definition.source.typ();
+                    let sym_typ = definition_source.typ();
                     if matches!(sym_typ, SymType::CLASS | SymType::FUNCTION | SymType::VARIABLE) {
-                        let file = session.st().get_file(definition.source).unwrap();
+                        let file = session.st().get_file(definition_source).unwrap();
                         let path = session.st().path(file);
                         let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(path);
                         if let Some(file_info) = file_info {
-                            let transformed_range = file_info.borrow().text_range_to_range(session.st().range(definition.source), session.sync_odoo.encoding);
+                            let transformed_range = file_info.borrow().text_range_to_range(session.st().range(definition_source), session.sync_odoo.encoding);
                             let uri = FileMgr::pathname2uri(path);
                             locations.push(Location {
                                 uri: uri,
@@ -177,11 +185,11 @@ impl ReferenceFeature {
                     }
                 },
                 SymType::XML_ASSET | SymType::XML_DELETE | SymType::XML_RECORD | SymType::XML_MENUITEM | SymType::XML_TEMPLATE => {
-                    let xml_data_key = definition.source.as_xml_data_key().unwrap();
+                    let xml_data_key = definition_source.as_xml_data_key().unwrap();
                     let xml_id = session.st().get_xml_id(xml_data_key);
                     let Some(xml_id) = xml_id else {continue;};
                     //we do not have any dependency for xml-id usage. So let's search in the current module and all modules that depend on it.
-                    let xml_id_file = session.st().get_file(definition.source).unwrap();
+                    let xml_id_file = session.st().get_file(definition_source).unwrap();
                     let current_module = session.st().find_module(xml_id_file).unwrap();
                     let data_module_name = session.st()[current_module].dir_name.clone();
                     let mut files_to_process = HashSet::default();
@@ -226,12 +234,13 @@ impl ReferenceFeature {
                                     let mut csv_reader = csv::ReaderBuilder::new().from_reader(data.as_bytes());
                                     locations.extend(CsvAstReferenceVisitor::search_target(session, csv_file, &mut csv_reader, None, &ReferenceTarget::String(full_xml_id), &data));
                                 },
+                                SourceFileKey::JsFile(_) => {unreachable!("tsserverbridge should have handled js references")}
                             }
                         }
                     }
                 },
                 _ => {
-                    error!("Unsupported definition source type for reference: {}", definition.source.typ());
+                    error!("Unsupported definition source type for reference: {}", definition_source.typ());
                 }
             }
         }
@@ -241,6 +250,25 @@ impl ReferenceFeature {
         } else {
             Some(locations)
         }
+    }
+
+    fn get_reference_js(session: &mut SessionInfo, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Vec<Location>> {
+        let file_path = &file_info.borrow().uri;
+        let locs: Vec<Location> = if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
+            bridge.get_references(&file_path, line, character)
+                .into_iter()
+                .map(|(target_file, sl, sc, el, ec)| Location {
+                    uri: FileMgr::pathname2uri(&target_file),
+                    range: lsp_types::Range {
+                        start: lsp_types::Position { line: sl, character: sc },
+                        end:   lsp_types::Position { line: el, character: ec },
+                    },
+                })
+                .collect()
+        } else {
+            vec![]
+        };
+        return if locs.is_empty() { None } else { Some(locs) };
     }
 
     fn references_in_file(session: &mut SessionInfo, file_symbol: SourceFileKey, file_info: &Rc<RefCell<FileInfo>>, reference_target: &ReferenceTarget) -> Vec<Location> {

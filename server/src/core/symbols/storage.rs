@@ -4,6 +4,7 @@ pub mod csv_file_symbol;
 pub mod disk_dir_symbol;
 pub mod file_symbol;
 pub mod function_symbol;
+pub mod js_file_symbol;
 pub mod module_symbol;
 pub mod namespace_symbol;
 pub mod package_symbol;
@@ -17,8 +18,8 @@ pub mod metrics;
 mod ext_symbol_store;
 
 use crate::{constants::OYarn, core::symbols::{
-    ClassSymbol, CompiledSymbol, CsvFileSymbol, DiskDirSymbol, FileSymbol, FunctionSymbol, ModuleSymbol, NamespaceSymbol, PythonPackageSymbol, RootSymbol, VariableSymbol, XmlFileSymbol, storage::xml::{xml_asset_symbol::XmlAssetSymbol, xml_delete_symbol::XmlDeleteSymbol, xml_field_symbol::XmlFieldSymbol, xml_menuitem_symbol::XmlMenuItemSymbol, xml_record_symbol::XmlRecordSymbol, xml_template_symbol::XmlTemplateSymbol}, symbol_keys::{
-        ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, KeyValidator, ModelSymbolKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey, VariableKey, XmlAssetKey, XmlDataKey, XmlDeleteKey, XmlFieldKey, XmlFileKey, XmlId, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey
+    ClassSymbol, CompiledSymbol, CsvFileSymbol, DiskDirSymbol, FileSymbol, FunctionSymbol, JsFileSymbol, ModuleSymbol, NamespaceSymbol, PythonPackageSymbol, RootSymbol, VariableSymbol, XmlFileSymbol, storage::xml::{xml_asset_symbol::XmlAssetSymbol, xml_delete_symbol::XmlDeleteSymbol, xml_field_symbol::XmlFieldSymbol, xml_menuitem_symbol::XmlMenuItemSymbol, xml_record_symbol::XmlRecordSymbol, xml_template_symbol::XmlTemplateSymbol}, symbol_keys::{
+        ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, JsFileKey, KeyValidator, ModelSymbolKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey, VariableKey, XmlAssetKey, XmlDataKey, XmlDeleteKey, XmlFieldKey, XmlFileKey, XmlId, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey
     }
 }};
 use ext_symbol_store::ExtSymbolStore;
@@ -46,6 +47,7 @@ pub struct SymbolTable {
     xml_templates: SlotMap<XmlTemplateKey, XmlTemplateSymbol>,
     xml_assets: SlotMap<XmlAssetKey, XmlAssetSymbol>,
     xml_deletes: SlotMap<XmlDeleteKey, XmlDeleteSymbol>,
+    js_files: SlotMap<JsFileKey, JsFileSymbol>,
     // external symbols
     ext_symbols: ExtSymbolStore,
     // secondary slotmaps
@@ -73,6 +75,7 @@ impl SymbolTable {
             xml_templates: SlotMap::with_key(),
             xml_assets: SlotMap::with_key(),
             xml_deletes: SlotMap::with_key(),
+            js_files: SlotMap::with_key(),
             ext_symbols: ExtSymbolStore::new(),
             xml_declared_models: SparseSecondaryMap::new(),
         }
@@ -142,6 +145,7 @@ impl_index!(XmlTemplateKey, XmlTemplateSymbol, xml_templates);
 impl_index!(XmlAssetKey, XmlAssetSymbol, xml_assets);
 impl_index!(XmlDeleteKey, XmlDeleteSymbol, xml_deletes);
 impl_index!(CsvFileKey, CsvFileSymbol, csv_files);
+impl_index!(JsFileKey, JsFileSymbol, js_files);
 
 
 /*
@@ -187,6 +191,7 @@ impl_key_validator!(XmlTemplateKey, xml_templates);
 impl_key_validator!(XmlAssetKey, xml_assets);
 impl_key_validator!(XmlDeleteKey, xml_deletes);
 impl_key_validator!(CsvFileKey, csv_files);
+impl_key_validator!(JsFileKey, js_files);
 
 impl KeyValidator<SymbolKey> for SymbolTable {
     fn is_key_valid(&self, key: SymbolKey) -> bool {
@@ -209,6 +214,7 @@ impl KeyValidator<SymbolKey> for SymbolTable {
             SymbolKey::XmlAsset(k) => self.xml_assets.contains_key(k),
             SymbolKey::XmlDelete(k) => self.xml_deletes.contains_key(k),
             SymbolKey::CsvFile(k) => self.csv_files.contains_key(k),
+            SymbolKey::JsFile(k) => self.js_files.contains_key(k),
         }
     }
 }
@@ -221,6 +227,7 @@ impl KeyValidator<SourceFileKey> for SymbolTable {
             SourceFileKey::Module(k) => self.modules.contains_key(k),
             SourceFileKey::XmlFile(k) => self.xml_files.contains_key(k),
             SourceFileKey::CsvFile(k) => self.csv_files.contains_key(k),
+            SourceFileKey::JsFile(k) => self.js_files.contains_key(k),
         }
     }
 }

@@ -19,4 +19,5 @@ pub mod ols03301;
 pub mod ols03302;
 pub mod ols04000_1_to_20;
 pub mod ols05000s;
+pub mod ols05073_74;
 pub mod implicit_class_method_no_ols_01007;

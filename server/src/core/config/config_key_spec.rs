@@ -31,6 +31,7 @@ pub enum ConfigKey {
     DiagnosticSettings,
     DiagnosticFilters,
     NoTypeshedStubs,
+    TsServerCommand,
 }
 
 pub(super) fn specs() -> Vec<FieldSpec> {
@@ -92,5 +93,8 @@ pub(super) fn specs() -> Vec<FieldSpec> {
         FieldSpec::new(NoTypeshedStubs, "no_typeshed_stubs", Bool)
             .default(ConfigValue::bool(false))
             .triggers_restart(),
+        FieldSpec::new(TsServerCommand, "tsserver_command", Str) //it could maybe be nice to resolve config variables like {workspaceFolder}
+            .triggers_restart()
+            .default(ConfigValue::str("tsserver"))
     ]
 }
