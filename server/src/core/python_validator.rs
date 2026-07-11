@@ -575,13 +575,24 @@ impl PythonValidator {
                                     comodel_eval_weaks.extend(followed);
                                 }
                             }
+                            // The inverse field may be declared several times, e.g. when a
+                            // model overrides the field of an inherited abstract model to
+                            // point to the concrete model instead. As the last declaration
+                            // overrides the comodel of the previous ones at runtime, the
+                            // inverse field is valid as soon as one declaration points to
+                            // the current model.
+                            let mut mismatched_model_name = None;
                             for comodel_eval_weak in comodel_eval_weaks {
                                 let Some(model_name) = comodel_eval_weak.get_weak().context.get(&S!("comodel_name")).map(|ctx_val| ctx_val.as_string()) else {
                                     continue;
                                 };
                                 if model_name == model_data.name.to_string() { // valid
-                                    continue;
+                                    mismatched_model_name = None;
+                                    break;
                                 }
+                                mismatched_model_name.get_or_insert(model_name);
+                            }
+                            if let Some(model_name) = mismatched_model_name {
                                 let Some(arg_range) = eval_weak.get_weak().context.get(&format!("inverse_name_arg_range")).map(|ctx_val| ctx_val.as_text_range()) else {
                                     continue;
                                 };
@@ -590,7 +601,6 @@ impl PythonValidator {
                                         range: Range::new(Position::new(arg_range.start().to_u32(), 0), Position::new(arg_range.end().to_u32(), 0)),
                                         ..diagnostic_base.clone()
                                     });
-                                    break;
                                 }
                             }
                         }
