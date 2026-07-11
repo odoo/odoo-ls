@@ -146,3 +146,31 @@ class ModelWithDiagnostics2(models.Model):
         False or self.env["non.existent.model"]  # OLS03002
         () + self.env["non.existent.model"]  # OLS03002
         not self.env["non.existent.model"]  # OLS03002
+
+class AbstractO2mParent(models.AbstractModel):
+    _name = "module_1.abstract_o2m_parent"
+    _description = "Abstract model with a One2many to an abstract comodel"
+
+    line_ids = fields.One2many("module_1.abstract_o2m_line", "record_id")
+
+class AbstractO2mLine(models.AbstractModel):
+    _name = "module_1.abstract_o2m_line"
+    _description = "Abstract line model pointing to the abstract parent"
+
+    record_id = fields.Many2one("module_1.abstract_o2m_parent")
+
+class ConcreteO2mParent(models.Model):
+    _name = "module_1.concrete_o2m_parent"
+    _inherit = ["module_1.abstract_o2m_parent"]
+    _description = "Concrete model with a One2many to a concrete comodel"
+
+    # record_id is declared on both line models: the override on the concrete
+    # line points to this model, so no OLS03023 is expected here
+    line_ids = fields.One2many("module_1.concrete_o2m_line", "record_id")
+
+class ConcreteO2mLine(models.Model):
+    _name = "module_1.concrete_o2m_line"
+    _inherit = ["module_1.abstract_o2m_line"]
+    _description = "Concrete line model pointing to the concrete parent"
+
+    record_id = fields.Many2one("module_1.concrete_o2m_parent")
