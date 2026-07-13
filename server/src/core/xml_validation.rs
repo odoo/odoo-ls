@@ -330,7 +330,7 @@ impl XmlValidator {
                     let module = session.st().find_module(template);
                     if let Some(module) = module {
                         let dir_name = &session.st()[module].dir_name;
-                        if ModuleSymbol::is_in_deps(session.st(), self.module, &dir_name) {
+                        if ModuleSymbol::is_in_direct_deps(session.st(), self.module, &dir_name) {
                             found_one_valid = true;
                             break;
                         }
@@ -392,7 +392,7 @@ impl XmlValidator {
                     let module = session.st().find_module(template);
                     if let Some(module) = module {
                         let dir_name = &session.st()[module].dir_name;
-                        if ModuleSymbol::is_in_deps(session.st(), self.module, &dir_name) {
+                        if ModuleSymbol::is_in_direct_deps(session.st(), self.module, &dir_name) {
                             found_one_valid = true;
                             break;
                         }

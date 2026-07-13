@@ -136,6 +136,11 @@ impl ModuleSymbol {
         module.dir_name == *dir_name || module.all_depends.contains(dir_name)
     }
 
+    pub fn is_in_direct_deps(symbol_table: &SymbolTable, module_key: ModuleKey, dir_name: &OYarn) -> bool {
+        let module = &symbol_table[module_key];
+        module.dir_name == *dir_name || module.depends.iter().any(|x| x.0 == dir_name)
+    }
+
     pub fn get_all_depends(&self) -> &HashSet<OYarn> {
         &self.all_depends
     }

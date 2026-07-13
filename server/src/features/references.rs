@@ -198,7 +198,7 @@ impl ReferenceFeature {
                     for module in modules {
                         let Some(module) = module.upgrade(session.st()) else {continue;};
                         let name = &session.st()[current_module].name;
-                        if ModuleSymbol::is_in_deps(session.st(), module, name) {
+                        if ModuleSymbol::is_in_direct_deps(session.st(), module, name) {
                             for &data in session.st()[module].data_symbols().values() {
                                 files_to_process.insert(data);
                             }

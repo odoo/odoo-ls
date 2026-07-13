@@ -207,7 +207,7 @@ impl XmlAstUtils {
         for xml_id in xml_ids.iter_valid(session.st()) {
             if on_dep_only {
                 if let Some(module) = session.st().find_module(xml_id) {
-                    if !ModuleSymbol::is_in_deps(
+                    if !ModuleSymbol::is_in_direct_deps(
                         session.st(),
                         session.st().find_module(file_symbol).unwrap(),
                         &session.st()[module].name,

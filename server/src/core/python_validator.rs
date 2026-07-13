@@ -331,7 +331,7 @@ impl PythonValidator {
                                     let module = session.st().find_module(symbol);
                                     if let Some(module) = module {
                                         let dir_name = &session.st()[module].dir_name;
-                                        if !ModuleSymbol::is_in_deps(session.st(), self.current_module.unwrap(), dir_name) && !self.safe_imports.last().unwrap() {
+                                        if !ModuleSymbol::is_in_direct_deps(session.st(), self.current_module.unwrap(), dir_name) && !self.safe_imports.last().unwrap() {
                                             if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03003, &[dir_name]) {
                                                 self.diagnostics.push(Diagnostic {
                                                     range: Range::new(Position::new(alias.range.start().to_u32(), 0), Position::new(alias.range.end().to_u32(), 0)),
@@ -754,7 +754,7 @@ impl PythonValidator {
                 if let Some(main_sym_module) = main_sym_module {
                     let module_name = &session.st()[main_sym_module].dir_name;
                     main_modules.push(module_name.clone());
-                    if ModuleSymbol::is_in_deps(session.st(), from, module_name) {
+                    if ModuleSymbol::is_in_direct_deps(session.st(), from, module_name) {
                         found_one = true;
                         break;
                     }

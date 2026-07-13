@@ -777,7 +777,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
                             let modules = model_class_definitions.flat_map(|model_key|
                                 session.st().find_module(model_key));
                             let required_modules = modules.filter(|&module|
-                                !ModuleSymbol::is_in_deps(session.st(), current_module, &session.st()[module].dir_name));
+                                !ModuleSymbol::is_in_direct_deps(session.st(), current_module, &session.st()[module].dir_name));
                             let dep_names: Vec<OYarn> = required_modules.map(|module| session.st()[module].dir_name.clone()).collect();
                             if !dep_names.is_empty() {
                                 if !session.sync_odoo.config.ac_filter_model_names(){

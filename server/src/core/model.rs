@@ -167,7 +167,7 @@ impl Model {
                 let module = symbol_table
                     .find_module((*sym).into())
                     .expect("Unreachable: Model should be declared in a module");
-                ModuleSymbol::is_in_deps(symbol_table, module_key, &symbol_table[module].dir_name)
+                ModuleSymbol::is_in_direct_deps(symbol_table, module_key, &symbol_table[module].dir_name)
             }
         })
     }
@@ -285,7 +285,7 @@ impl Model {
             let dep = match from_module {
                 None => None,
                 Some(module_key) => {
-                    if ModuleSymbol::is_in_deps(symbol_table, module_key, &module_sym.dir_name) {
+                    if ModuleSymbol::is_in_direct_deps(symbol_table, module_key, &module_sym.dir_name) {
                         None
                     } else {
                         Some(module_sym.dir_name.clone())
@@ -338,7 +338,7 @@ impl Model {
                 let module = st.find_module(class_key);
                 if let Some(module) = module {
                     let dir_name = &st[module].dir_name;
-                    if ModuleSymbol::is_in_deps(st, from_module, dir_name) {
+                    if ModuleSymbol::is_in_direct_deps(st, from_module, dir_name) {
                         symbols.push((class_key, None));
                     } else {
                         symbols.push((class_key, Some(dir_name.clone())));
@@ -382,7 +382,7 @@ impl Model {
             SymbolTable::invalidate_sub_functions(session, dep);
             let st = session.st_mut();
             let module = st.find_module(dep);
-            if module_change.is_none() || module.is_none() || ModuleSymbol::is_in_deps(st, module.unwrap(), &st[module_change.unwrap()].dir_name) {
+            if module_change.is_none() || module.is_none() || ModuleSymbol::is_in_direct_deps(st, module.unwrap(), &st[module_change.unwrap()].dir_name) {
                 session.sync_odoo.add_to_validations(dep);
             }
         }
