@@ -13,9 +13,9 @@ fn test_ols03001_23() {
     let diagnostics = get_diagnostics_for_path(&mut session, &path);
     let doc_diags = get_diagnostics_test_comments(&mut session, &path);
 
-    // Verify that there are no OLS03022 diagnostics on line 120 (index 119) for a O2M field with inverse name to a Many2oneReference field
+    // Verify that there are no OLS03022 diagnostics on line 126 (index 125) for a O2M field with inverse name to a Many2oneReference field
     let line_diagnostics = diag_on_line(&diagnostics, 125);
-    assert_eq!(line_diagnostics.len(), 0, "Expected no diagnostics on line 120, but found some: {:?}", line_diagnostics);
+    assert_eq!(line_diagnostics.len(), 0, "Expected no diagnostics on line 126, but found some: {:?}", line_diagnostics);
     // Verify all diagnostics against those specified in the document
     verify_diagnostics_against_doc(&diagnostics, doc_diags);
 }

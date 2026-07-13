@@ -614,20 +614,20 @@ impl PythonValidator {
                             // the current model.
                             let mut mismatched_model_name = None;
                             for comodel_eval_weak in comodel_eval_weaks {
-                                let Some(_comodel_name) = comodel_eval_weak.get_weak().context.get(ContextKey::ComodelName).map(ContextValue::as_str) else {
+                                let Some(comodel_name) = comodel_eval_weak.get_weak().context.get(ContextKey::ComodelName).map(ContextValue::as_str) else {
                                     continue;
                                 };
-                                if model_name == model_name { // valid
+                                if model_name == comodel_name { // valid
                                     mismatched_model_name = None;
                                     break;
                                 }
-                                mismatched_model_name.get_or_insert(model_name.clone());
+                                mismatched_model_name.get_or_insert(comodel_name.to_string());
                             }
-                            if let Some(model_name) = mismatched_model_name {
+                            if let Some(comodel_name) = mismatched_model_name {
                                 let Some(arg_range) = eval_weak.get_weak().context.get(ContextKey::InverseNameArgRange).map(|ctx_val| ctx_val.as_text_range()) else {
                                     continue;
                                 };
-                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03023, &[inverse_name, &model_name, comodel_name]) {
+                                if let Some(diagnostic_base) = create_diagnostic(&session, DiagnosticCode::OLS03023, &[inverse_name, &model_name, &comodel_name]) {
                                     self.diagnostics.push(Diagnostic {
                                         range: Range::new(Position::new(arg_range.start().to_u32(), 0), Position::new(arg_range.end().to_u32(), 0)),
                                         ..diagnostic_base.clone()
