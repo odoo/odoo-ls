@@ -132,6 +132,7 @@ pub struct ParsedJs {
 
 /// Parse `contents` as JS: OXC parse + semantic analysis + linter, plus the OWL
 /// template refs and component descriptors [`js_arch_builder::visit_file`] extracts.
+/// Vendored libs (`/static/lib/`) stop after the parse — see below.
 /// Shared by the build thread ([`FileInfo::build_js_ast`]) and the pre-parse workers
 /// ([`crate::core::pre_parser`]).
 ///
@@ -163,6 +164,13 @@ pub fn parse_js(contents: &str, path: &str) -> ParsedJs {
                 let is_lib = path.contains("/static/lib/");
                 let decls = if is_lib { vec![] } else { decls };
 
+                // Semantic analysis and the linter exist only to produce diagnostics, and
+                // a vendored lib's are dropped. They are also the biggest sources we parse,
+                // so stop here for them.
+                if is_lib {
+                    return ParsedJs { template_refs, component_descriptors, decls, imports, reexports, diagnostics: vec![] };
+                }
+
                 let semantic_ret = SemanticBuilder::new()
                     .with_cfg(true)
                     .with_check_syntax_error(true)
@@ -188,12 +196,10 @@ pub fn parse_js(contents: &str, path: &str) -> ParsedJs {
                 let messages = linter.run(os_path, vec![context_sub_host], &allocator);
                 diags.extend(messages.into_iter().map(|m| m.error));
 
-                let diagnostics = match is_lib {
-                    true => Vec::new(),
-                    false => diags.iter().flat_map(
-                        |d| js_utils::oxc_diagnostic_to_lsp_diagnostic(d, &FileMgr::pathname2uri(path))
-                    ).collect(),
-                };
+                let uri = FileMgr::pathname2uri(path);
+                let diagnostics = diags.iter().flat_map(
+                    |d| js_utils::oxc_diagnostic_to_lsp_diagnostic(d, &uri)
+                ).collect();
                 ParsedJs { template_refs, component_descriptors, decls, imports, reexports, diagnostics }
             })
             .expect("failed to spawn JS parsing thread")
