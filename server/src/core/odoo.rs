@@ -1656,6 +1656,10 @@ impl SyncOdoo {
     pub fn take_preloaded(session: &SessionInfo, sanitized_path: &str) -> Option<PreloadedFile> {
         session.sync_odoo.pre_parse_cache.as_ref()?.take(sanitized_path)
     }
+
+    pub fn pre_parse_cache(&self) -> Option<&Arc<PreParseCache>> {
+        self.pre_parse_cache.as_ref()
+    }
 }
 
 #[derive(Debug)]
