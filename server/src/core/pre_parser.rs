@@ -8,9 +8,9 @@
 //! * walks the module dir and pre-parses every `.py`/`.pyi` into an
 //!   [`IndexedModule`] (read + ruff parse + noqa scan),
 //! * reads each file listed in the manifest's `data` list, and
-//! * expands the manifest's `assets` globs and reads the XML files they match
-//!   (the expansion itself is memoized for the build thread — see
-//!   [`PreParseCache::resolve_assets`])
+//! * expands the manifest's `assets` globs, reading the XML files they match and
+//!   parsing the JS ones (read + OXC parse + semantic + lint). The expansion itself
+//!   is memoized for the build thread — see [`PreParseCache::resolve_assets`].
 //!
 //! Both results land in a shared [`PreParseCache`] as a [`PreloadedFile`] payload;
 //! when the build thread reaches a file it slots the payload in instead of
@@ -29,12 +29,12 @@ use std::thread::JoinHandle;
 use ruff_source_file::PositionEncoding;
 
 use crate::constants::DEBUG_PRE_PARSER;
-use crate::core::file_mgr::{Ast, PreloadedFile, hash_text_document, parse_python, python_source_type};
+use crate::core::file_mgr::{Ast, PreloadedFile, hash_text_document, parse_js, parse_python, python_source_type};
 use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::symbol_keys::ModuleKey;
 use crate::core::text_document::TextDocument;
 use crate::threads::SessionInfo;
-use crate::utils::{HashMap, PathSanitizer};
+use crate::utils::{HashMap, HashSet, PathSanitizer};
 
 /// Number of worker threads parsing files ahead of the build.
 const PRE_PARSE_WORKERS: usize = 2;
@@ -264,14 +264,30 @@ fn pre_parse_module(ctx: &WorkerCtx, job: Job) {
         }
     }
 
-    // Pass 3: manifest assets. Expanding them here keeps the glob walk off the build
+    // Pass 3: expand manifest assets. Expanding them here keeps the glob walk off the build
     // thread, which finds the result memoized when it reaches this module.
+    // Bundles overlap (the same glob is routinely listed in several of them), so the
+    // files are collected before being loaded, never twice.
+    let mut xml_assets = HashSet::default();
+    let mut js_assets = HashSet::default();
     for (owner_path, local_url) in &asset_entries {
         for path in ctx.cache.resolve_assets(owner_path, local_url).iter() {
-            if path.extension().and_then(|e| e.to_str()) == Some("xml") {
-                pre_load_xml(ctx, module_idx, path);
+            match path.extension().and_then(|e| e.to_str()) {
+                Some("xml") => { xml_assets.insert(path.clone()); },
+                Some("js") => { js_assets.insert(path.clone()); },
+                _ => {}
             }
         }
+    }
+
+    // Pass 4: read xml assets
+    for path in &xml_assets {
+        pre_load_xml(ctx, module_idx, path);
+    }
+
+    // Pass 5: read and parse js assets
+    for path in &js_assets {
+        pre_parse_js(ctx, module_idx, path);
     }
 }
 
@@ -285,6 +301,22 @@ fn pre_parse_python(ctx: &WorkerCtx, module_idx: usize, path: &Path) {
     let text_hash = hash_text_document(&text_document);
     let parsed = parse_python(&text_document, python_source_type(&path_str), ctx.encoding, ctx.test_mode, false);
     ctx.cache.insert(module_idx, path_str, PreloadedFile::Python {
+        text_hash,
+        text_document,
+        parsed,
+    });
+}
+
+/// Read and parse a single JS file, depositing the result in the cache.
+/// Errors are silently ignored — the build thread will parse the file inline.
+fn pre_parse_js(ctx: &WorkerCtx, module_idx: usize, path: &Path) {
+    let path_str = path.sanitize();
+    let Ok(contents) = fs::read_to_string(path) else { return };
+    // Matches `FileMgr::update`: build-time files carry version -1.
+    let text_document = TextDocument::new(contents, -1);
+    let text_hash = hash_text_document(&text_document);
+    let parsed = parse_js(text_document.contents(), &path_str);
+    ctx.cache.insert(module_idx, path_str, PreloadedFile::Js {
         text_hash,
         text_document,
         parsed,
