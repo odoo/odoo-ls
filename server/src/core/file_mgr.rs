@@ -396,9 +396,7 @@ impl FileInfo {
             // `crate::core::pre_parser`.
             let sanitized_path = Path::new(path).sanitize_cow();
             if let Some(preloaded) = SyncOdoo::take_preloaded(session, &sanitized_path) {
-                if self.file_info_ast.borrow().text_hash == preloaded.text_hash() {
-                    return false;
-                }
+                // no need to gate on hash change: pre-parser only runs on first build
                 self.apply_preloaded(session, preloaded);
                 return true;
             }
@@ -1164,16 +1162,6 @@ pub enum PreloadedFile {
         text_document: TextDocument,
         parsed: ParsedJs,
     },
-}
-
-impl PreloadedFile {
-    pub fn text_hash(&self) -> u64 {
-        match self {
-            PreloadedFile::Python { text_hash, .. }
-            | PreloadedFile::DataFile { text_hash, .. }
-            | PreloadedFile::Js { text_hash, .. } => *text_hash,
-        }
-    }
 }
 
 pub fn hash_text_document(text: &TextDocument) -> u64 {
