@@ -36,8 +36,27 @@ use crate::core::text_document::TextDocument;
 use crate::threads::SessionInfo;
 use crate::utils::{HashMap, HashSet, PathSanitizer};
 
-/// Number of worker threads parsing files ahead of the build.
-const PRE_PARSE_WORKERS: usize = 2;
+/// Max number of worker threads parsing files ahead of the build. Workers only have to
+/// stay *ahead* of the build thread; past that they merely compete with it for cores,
+/// and the build thread is the critical path.
+const MAX_PRE_PARSE_WORKERS: usize = 4;
+
+/// Number of worker threads parsing files ahead of the build, sized to the machine.
+///
+/// We take half of what we are allowed to run on, leaving the rest to the build thread
+/// and to the user's own tooling (editor, tsserver, an Odoo server, ...). On an SMT
+/// machine this also keeps workers off the build thread's sibling threads, which would
+/// slow down the one thread everything else waits on.
+///
+/// `available_parallelism` is the parallelism available to *this process*: it honours
+/// cgroup quotas and CPU affinity, so this stays sane in containers and CI. It is not a
+/// count of the machine's cores, and half of it is not a count of its physical ones.
+fn n_workers() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get() / 2)
+        .unwrap_or(1)
+        .clamp(1, MAX_PRE_PARSE_WORKERS)
+}
 
 /// Directory names skipped when walking a module for Python sources.
 const SKIPPED_DIRS: &[&str] = &[
@@ -182,9 +201,10 @@ impl PreParser {
             test_mode: session.sync_odoo.test_mode,
         };
         let job_queue = Arc::new(Mutex::new(Self::create_job_queue(session, sorted_modules)));
-        let mut workers = Vec::with_capacity(PRE_PARSE_WORKERS);
+        let n_workers = n_workers();
+        let mut workers = Vec::with_capacity(n_workers);
         // Spawn the worker pool.
-        for _ in 0..PRE_PARSE_WORKERS {
+        for _ in 0..n_workers {
             let job_queue = job_queue.clone();
             let ctx = ctx.clone();
             let last_built_module_idx = last_built_module_idx.clone();
