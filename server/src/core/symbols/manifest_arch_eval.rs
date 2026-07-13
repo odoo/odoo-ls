@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
@@ -95,10 +96,18 @@ impl ModuleSymbol {
         entry.borrow_mut().js_symbols.remove(path);
     }
 
-    pub(crate) fn load_assets(module: ModuleKey, session: &mut SessionInfo) {
-        let asset_paths = session.st()[module].assets.clone();
-        for (data_url, _data_range) in asset_paths.iter() {
-            //An asset can be from another module. Extract its name
+    /// The asset entries declared by this module's manifest, one per `assets` url,
+    /// as `(owner module, owner module path, local url)`.
+    ///
+    /// An asset url is `<module_name>/<local_url>` and is resolved against the module
+    /// it names, which is not necessarily the one declaring it. Entries naming an
+    /// unknown module are dropped.
+    ///
+    /// Shared by [`Self::load_assets`] and the pre-parse workers so that both feed
+    /// [`crate::core::pre_parser::PreParseCache::resolve_assets`] the exact same keys.
+    pub fn asset_entries(session: &SessionInfo, module: ModuleKey) -> Vec<(ModuleKey, String, String)> {
+        let mut entries = Vec::new();
+        for (data_url, _data_range) in session.st()[module].assets.iter() {
             let mut data_url_splitted = data_url.splitn(2, '/');
             let data_module_name = data_url_splitted.next().unwrap();
             let Some(data_local_url) = data_url_splitted.next() else {
@@ -107,13 +116,26 @@ impl ModuleSymbol {
             let Some(data_module) = session.sync_odoo.modules.get(data_module_name) else {
                 continue;
             };
-            let Some(module) = data_module.upgrade(session.st()) else {
+            let Some(data_module) = data_module.upgrade(session.st()) else {
                 continue;
             };
-            let files_to_imports = ModuleSymbol::assets_path_resolver(session.st().path(module.into()), data_local_url);
+            entries.push((data_module, session.st()[data_module].path.clone(), data_local_url.to_string()));
+        }
+        entries
+    }
+
+    pub fn load_assets(module: ModuleKey, session: &mut SessionInfo) {
+        // Set for the duration of `build_modules` only: outside of it there are no
+        // workers to share the walk with, and nothing to invalidate the memo.
+        let cache = session.sync_odoo.pre_parse_cache().cloned();
+        for (data_module, module_path, data_local_url) in Self::asset_entries(session, module) {
+            let files_to_imports = match &cache {
+                Some(cache) => cache.resolve_assets(&module_path, &data_local_url),
+                None => Arc::new(ModuleSymbol::assets_path_resolver(&module_path, &data_local_url)),
+            };
             //xml have to be loaded first
-            Self::load_xml_assets(session, module, &files_to_imports);
-            Self::load_js_assets(session, module, &files_to_imports);
+            Self::load_xml_assets(session, data_module, &files_to_imports);
+            Self::load_js_assets(session, data_module, &files_to_imports);
         }
     }
 
@@ -186,7 +208,11 @@ impl ModuleSymbol {
         }
     }
 
-    fn assets_path_resolver(module_path: &str, data_local_url: &str) -> Vec<PathBuf> {
+    /// Expand one asset entry (see [`Self::asset_entries`]) to the files it matches.
+    /// Pure but disk-bound: memoized by
+    /// [`crate::core::pre_parser::PreParseCache::resolve_assets`] for the duration of
+    /// the module build, and called by the pre-parse workers.
+    pub(crate) fn assets_path_resolver(module_path: &str, data_local_url: &str) -> Vec<PathBuf> {
         let mut results = vec![PathBuf::from(module_path)];
 
         for component in PathBuf::from(data_local_url).components() {

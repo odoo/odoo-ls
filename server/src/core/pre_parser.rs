@@ -6,8 +6,11 @@
 //! threads gets ahead of it: for the modules just past N each worker
 //!
 //! * walks the module dir and pre-parses every `.py`/`.pyi` into an
-//!   [`IndexedModule`] (read + ruff parse + noqa scan), and
-//! * reads each file listed in the manifest's `data` list
+//!   [`IndexedModule`] (read + ruff parse + noqa scan),
+//! * reads each file listed in the manifest's `data` list, and
+//! * expands the manifest's `assets` globs and reads the XML files they match
+//!   (the expansion itself is memoized for the build thread — see
+//!   [`PreParseCache::resolve_assets`])
 //!
 //! Both results land in a shared [`PreParseCache`] as a [`PreloadedFile`] payload;
 //! when the build thread reaches a file it slots the payload in instead of
@@ -27,7 +30,7 @@ use ruff_source_file::PositionEncoding;
 
 use crate::constants::DEBUG_PRE_PARSER;
 use crate::core::file_mgr::{Ast, PreloadedFile, hash_text_document, parse_python, python_source_type};
-use crate::core::symbols::SymbolTable;
+use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::symbol_keys::ModuleKey;
 use crate::core::text_document::TextDocument;
 use crate::threads::SessionInfo;
@@ -43,12 +46,16 @@ const SKIPPED_DIRS: &[&str] = &[
 ];
 
 /// One unit of work submitted for the worker pool: a module at position
-/// `module_idx` in build order, its on-disk root, and the explicit list of
-/// data files
+/// `module_idx` in build order, its on-disk root, the explicit list of
+/// data files, and the manifest asset entries it declares
 struct Job {
     module_idx: usize,
     module_path: PathBuf,
     data_files: Vec<PathBuf>,
+    /// `(owner module path, local url)` per manifest asset entry, as produced by
+    /// [`ModuleSymbol::asset_entries`]. Still unexpanded: the glob walk happens in
+    /// the worker, off the build thread ([`PreParseCache::resolve_assets`]).
+    asset_entries: Vec<(String, String)>,
 }
 
 #[derive(Debug, Default)]
@@ -64,6 +71,9 @@ struct IndexedStore {
 #[derive(Debug, Default)]
 pub struct PreParseCache {
     index: Mutex<IndexedStore>,
+    /// Memoized [`ModuleSymbol::assets_path_resolver`] results, keyed by its arguments.
+    /// See [`Self::resolve_assets`].
+    resolved_assets: Mutex<HashMap<(String, String), Arc<Vec<PathBuf>>>>,
     /// Counters for end-of-build instrumentation. Inert unless
     /// [`DEBUG_PRE_PARSER`] is set; see [`PreParseStats`].
     stats: PreParseStats,
@@ -75,6 +85,26 @@ impl PreParseCache {
         let pre_loaded = self.index.lock().unwrap().files_by_path.remove(path);
         self.stats.record_lookup(pre_loaded.is_some());
         pre_loaded
+    }
+
+    /// Expand one manifest asset entry to the files it matches, memoizing the result.
+    ///
+    /// Called by the workers (ahead of the build) and by the build thread itself
+    /// (`ModuleSymbol::load_assets`). Both go through
+    /// [`ModuleSymbol::asset_entries`], so they always ask for the same keys and the
+    /// build thread's own resolve is a map lookup. Whichever thread misses first pays
+    /// for the walk; a module the workers skipped is resolved by the build thread and
+    /// memoized all the same.
+    pub fn resolve_assets(&self, module_path: &str, data_local_url: &str) -> Arc<Vec<PathBuf>> {
+        let key = (module_path.to_string(), data_local_url.to_string());
+        if let Some(resolved) = self.resolved_assets.lock().unwrap().get(&key) {
+            return resolved.clone();
+        }
+        // Walk the disk outside the lock: two threads racing on the same key just
+        // resolve it twice, which is harmless.
+        let resolved = Arc::new(ModuleSymbol::assets_path_resolver(module_path, data_local_url));
+        self.resolved_assets.lock().unwrap().insert(key, resolved.clone());
+        resolved
     }
 
     /// Drop cached entries whose owning module is `module_idx`.
@@ -133,7 +163,7 @@ impl PreParser {
             encoding: session.sync_odoo.encoding,
             test_mode: session.sync_odoo.test_mode,
         };
-        let job_queue = Arc::new(Mutex::new(Self::create_job_queue(session.st(), sorted_modules)));
+        let job_queue = Arc::new(Mutex::new(Self::create_job_queue(session, sorted_modules)));
         let mut workers = Vec::with_capacity(PRE_PARSE_WORKERS);
         // Spawn the worker pool.
         for _ in 0..PRE_PARSE_WORKERS {
@@ -169,16 +199,21 @@ impl PreParser {
         self.cache.evict_entries(module_idx);
     }
 
-    fn create_job_queue(symbol_table: &SymbolTable, sorted_modules: &[ModuleKey]) -> VecDeque<Job> {
+    fn create_job_queue(session: &SessionInfo, sorted_modules: &[ModuleKey]) -> VecDeque<Job> {
         sorted_modules.iter().enumerate()
             .skip(1) // skip first module as it can't really parse ahead of builder thread
             .map(|(module_idx, &module_key)| {
-                let module = &symbol_table[module_key];
+                let module = &session.st()[module_key];
                 let module_path = PathBuf::from(&module.path);
                 let data_files: Vec<PathBuf> = module.data().iter()
                     .map(|(url, _)| module_path.join(url))
                     .collect();
-                Job { module_idx, module_path, data_files }
+                // The owning module of an asset is looked up here, on the build thread:
+                // workers never touch the symbol table.
+                let asset_entries = ModuleSymbol::asset_entries(session, module_key).into_iter()
+                    .map(|(_, owner_path, local_url)| (owner_path, local_url))
+                    .collect();
+                Job { module_idx, module_path, data_files, asset_entries }
             })
             .collect()
     }
@@ -195,9 +230,10 @@ impl Drop for PreParser {
 }
 
 /// Process one module job: first read every file in its declared `data` list,
-/// then walk the module dir pre-parsing Python sources.
+/// then walk the module dir pre-parsing Python sources, then expand and read the
+/// manifest assets.
 fn pre_parse_module(ctx: &WorkerCtx, job: Job) {
-    let Job { module_idx, module_path, data_files } = job;
+    let Job { module_idx, module_path, data_files, asset_entries } = job;
 
     // Pass 1: declared data files
     for path in &data_files {
@@ -224,6 +260,16 @@ fn pre_parse_module(ctx: &WorkerCtx, job: Job) {
                 if matches!(path.extension().and_then(|e| e.to_str()), Some("py") | Some("pyi")) {
                     pre_parse_python(ctx, module_idx, &path);
                 }
+            }
+        }
+    }
+
+    // Pass 3: manifest assets. Expanding them here keeps the glob walk off the build
+    // thread, which finds the result memoized when it reaches this module.
+    for (owner_path, local_url) in &asset_entries {
+        for path in ctx.cache.resolve_assets(owner_path, local_url).iter() {
+            if path.extension().and_then(|e| e.to_str()) == Some("xml") {
+                pre_load_xml(ctx, module_idx, path);
             }
         }
     }
