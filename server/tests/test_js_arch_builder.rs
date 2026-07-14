@@ -15,7 +15,8 @@ fn visit(source: &str) -> (Vec<JsTemplateRef>, Vec<ComponentDescriptor>) {
     assert!(ret.errors.is_empty(), "unexpected parse errors: {:?}", ret.errors);
     let program = allocator.alloc(ret.program);
     // No exported-symbol map needed here: these tests only assert template/class detection.
-    visit_file(program, path, &HashMap::default())
+    let (refs, descriptors, _decls) = visit_file(program, path, &HashMap::default());
+    (refs, descriptors)
 }
 
 
