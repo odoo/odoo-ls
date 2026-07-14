@@ -371,14 +371,18 @@ impl SyncOdoo {
                 }
             }
         }
-        let tsserver_handle = session.clone_sender_to_main().map(|sender| {
-            let tsserver_cmd = session.sync_odoo.config.tsserver_command();
-            let odoo_path = session.sync_odoo.config.odoo_path().clone();
-            let addons_paths = session.sync_odoo.config.addons_paths().iter().cloned().collect::<Vec<_>>();
-            std::thread::spawn(move || {
-                SyncOdoo::setup_and_start_tsserver(tsserver_cmd, sender, odoo_path, addons_paths)
+        let tsserver_handle = if session.sync_odoo.config.is_javascript_disabled() {
+            None
+        } else {
+            session.clone_sender_to_main().map(|sender| {
+                let tsserver_cmd = session.sync_odoo.config.tsserver_command();
+                let odoo_path = session.sync_odoo.config.odoo_path().clone();
+                let addons_paths = session.sync_odoo.config.addons_paths().iter().cloned().collect::<Vec<_>>();
+                std::thread::spawn(move || {
+                    SyncOdoo::setup_and_start_tsserver(tsserver_cmd, sender, odoo_path, addons_paths)
+                })
             })
-        });
+        };
         if SyncOdoo::load_builtins(session) {
             session.sync_odoo.state_init = InitState::PYTHON_READY;
             SyncOdoo::build_database(session);
@@ -2559,10 +2563,20 @@ impl Odoo {
         //Odoo::update_file_index(session, path,true, false, false);
     }
 
+    /// Whether `extension` (no leading dot) is a source kind the server processes.
+    /// JS/TS are excluded when `disable_javascript` is set.
+    fn is_recognized_extension(session: &SessionInfo, extension: &str) -> bool {
+        match extension {
+            "py" | "xml" | "csv" => true,
+            "js" | "ts" => !session.sync_odoo.config.is_javascript_disabled(),
+            _ => false,
+        }
+    }
+
     // return (valid, updated) booleans
     // if the file has been updated, is valid for an index reload, and contents have been changed
     fn update_file_cache(session: &mut SessionInfo, path: &String, extension: &str, content: Option<&[TextDocumentContentChangeEvent]>, version: i32) -> (bool, bool) {
-        if ["py", "xml", "csv", "js", "ts"].contains(&extension) || Odoo::is_config_workspace_file(session, &PathBuf::from(path)){
+        if Odoo::is_recognized_extension(session, extension) || Odoo::is_config_workspace_file(session, &PathBuf::from(path)){
             session.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path, version));
             let (file_updated, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path, content, Some(version), false);
             file_info.borrow_mut().publish_diagnostics(session); //To push potential syntax errors or refresh previous one
@@ -2572,7 +2586,7 @@ impl Odoo {
     }
 
     pub fn update_file_index(session: &mut SessionInfo, path: PathBuf, extension: &str, _is_open: bool, force_delay: bool) {
-        if ["py", "xml", "csv", "js", "ts"].contains(&extension) || Odoo::is_config_workspace_file(session, &path){
+        if Odoo::is_recognized_extension(session, extension) || Odoo::is_config_workspace_file(session, &path){
             SessionInfo::request_update_file_index(session, &path, force_delay);
         }
     }

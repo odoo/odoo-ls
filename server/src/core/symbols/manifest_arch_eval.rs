@@ -106,6 +106,9 @@ impl ModuleSymbol {
     /// Shared by [`Self::load_assets`] and the pre-parse workers so that both feed
     /// [`crate::core::pre_parser::PreParseCache::resolve_assets`] the exact same keys.
     pub fn asset_entries(session: &SessionInfo, module: ModuleKey) -> Vec<(ModuleKey, String, String)> {
+        if session.sync_odoo.config.is_javascript_disabled() {
+            return Vec::new();
+        }
         let mut entries = Vec::new();
         for (data_url, _data_range) in session.st()[module].assets.iter() {
             let mut data_url_splitted = data_url.splitn(2, '/');
