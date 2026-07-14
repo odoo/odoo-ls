@@ -678,7 +678,7 @@ impl SymbolTable {
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") || FileMgr::is_untitled(&path_str) {
             return Some(session.st_mut().add_new_file(parent, &name, &path_str).into());
         }
-        if path_str.ends_with(".js") {
+        if path_str.ends_with(".js") && !session.sync_odoo.config.is_javascript_disabled() {
             match parent {
                 //js file created here is because of js in a custom entrypoint, and that should be created under a diskdir.
                 //JS files under a Module should be created by the module loading, through load_assets
