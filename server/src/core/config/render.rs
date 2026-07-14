@@ -56,6 +56,46 @@ impl ProfileView {
         }
     }
 
+    /// `(level, message, profile)` for this profile's rejected values, for the
+    /// client's status-bar diagnostic. Level 1 if a fallback value survived,
+    /// 2 if none did. Profile is separate from the message so the client can
+    /// scope display to whichever profile is selected.
+    fn diagnostic_messages(&self) -> impl Iterator<Item = (u8, String, &str)> + '_ {
+        self.rejected.iter().flat_map(move |(key, rejected)| {
+            let effective = self.values.get(key);
+            let (level, outcome) = match effective {
+                // A list can survive the rejection with zero valid entries left —
+                // as bad as the key being absent, so treat it the same way.
+                Some(ConfigValue::List(items)) if items.is_empty() => {
+                    (2, "no valid entries remain for it".to_string())
+                }
+                Some(v) => (1, format!("using {} instead", describe_value(v))),
+                None => match key.default_value() {
+                    Some(d) => (
+                        1,
+                        format!("falling back to the default ({})", describe_value(&d)),
+                    ),
+                    None => (2, "no value is set for it".to_string()),
+                },
+            };
+            rejected.iter().map(move |r| {
+                (
+                    level,
+                    format!(
+                        "Config profile '{}': {} = '{}' in {} was rejected ({}); {}.",
+                        self.name,
+                        key.as_str(),
+                        r.value(),
+                        sources_note(r.sources()),
+                        r.info,
+                        outcome,
+                    ),
+                    self.name.as_str(),
+                )
+            })
+        })
+    }
+
     /// JSON shape consumed by the renderer and by serialization:
     /// scalars → `{value, sources, info}`, lists → `[{value, sources, info}]`.
     fn to_json(&self) -> Value {
@@ -107,10 +147,45 @@ impl ProfileView {
     }
 }
 
-fn sources_json(sources: &HashSet<String>) -> Value {
+fn sorted_sources(sources: &HashSet<String>) -> Vec<&String> {
     let mut v: Vec<&String> = sources.iter().collect();
     v.sort();
-    json!(v)
+    v
+}
+
+fn sources_json(sources: &HashSet<String>) -> Value {
+    json!(sorted_sources(sources))
+}
+
+/// Comma-joined, sorted source list for a plain-text diagnostic message.
+fn sources_note(sources: &HashSet<String>) -> String {
+    sorted_sources(sources)
+        .iter()
+        .map(|s| s.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Short human description of a config value, for "using X instead" notes.
+fn describe_value(value: &ConfigValue) -> String {
+    match value {
+        ConfigValue::Scalar(s) => format!("'{}'", scalar_display(s.value())),
+        ConfigValue::List(items) => match items.len() {
+            0 => "an empty list".to_string(),
+            1 => "the 1 remaining valid entry".to_string(),
+            n => format!("the {n} remaining valid entries"),
+        },
+        _ => "the existing value".to_string(),
+    }
+}
+
+/// Plain (unquoted) display form of a scalar, for prose notes — unlike
+/// `scalar_json`, a `Str` renders without surrounding JSON quotes.
+fn scalar_display(value: &Scalar) -> String {
+    match value {
+        Scalar::Str(s) => s.clone(),
+        other => scalar_json(other).to_string(),
+    }
 }
 
 fn scalar_json(value: &Scalar) -> Value {
@@ -176,6 +251,20 @@ impl ConfigView {
     /// The profiles held by this view, in resolution order.
     pub fn entries(&self) -> &[ProfileView] {
         &self.configs
+    }
+
+    /// `{level, message, profile}` entries for every rejected value across all
+    /// profiles, sent as the `diagnostics` field of `$Odoo/setConfiguration` so
+    /// the client can color the status bar (1 = warning, 2 = error) and scope
+    /// the tooltip to whichever profile is actually selected.
+    pub fn diagnostic_messages(&self) -> Vec<Value> {
+        self.configs
+            .iter()
+            .flat_map(ProfileView::diagnostic_messages)
+            .map(|(level, message, profile)| {
+                json!({"level": level, "message": message, "profile": profile})
+            })
+            .collect()
     }
 
     pub(super) fn from_profiles(profiles: &ProfileSet) -> Self {
@@ -409,7 +498,7 @@ impl ConfigRenderer {
             .get("info")
             .and_then(|info| info.as_str())
             .filter(|s| !s.is_empty())
-            .map(|s| format!("<span class=\"toml-info\">{}</span>", esc(s)))
+            .map(|s| format!("<span class=\"toml-info\">⚠ {}</span>", esc(s)))
             .unwrap_or_default()
     }
 }
@@ -460,11 +549,14 @@ const CSS: &str = r#"<style>
     white-space: pre;
     color: #888;
     font-size: 0.9em;
+    text-align: right;
   }
     .toml-info {
+        display: block;
+        text-align: left;
         color: #c00;
         font-size: 0.9em;
-        margin-left: 10px;
+        margin-top: 2px;
         font-style: italic;
     }
   .config-wiki-link {
