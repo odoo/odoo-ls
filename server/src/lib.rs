@@ -6,6 +6,7 @@ pub mod core;
 pub mod threads;
 pub mod features;
 pub mod fifo_ptr_weak_hash_set;
+pub mod lsp_types_custom;
 pub mod server;
 pub mod tasks;
 pub mod utils;

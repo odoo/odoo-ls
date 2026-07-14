@@ -15,6 +15,7 @@ use crate::core::tsserver_bridge::TsServerBridge;
 use crate::core::xml_validation::XmlValidator;
 use crate::features::js_completion::owl_completion;
 use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
+use crate::lsp_types_custom::{ConfigDiagnosticAction, ConfigDiagnosticMessage, ConfigDiagnosticMessageLevel};
 use crate::odoo_version::OdooVersion;
 use crate::features::document_symbols::DocumentSymbolFeature;
 use crate::features::references::{ReferenceFeature, ReferenceTarget};
@@ -380,8 +381,33 @@ impl SyncOdoo {
         if let Some(handle) = tsserver_handle {
             match handle.join() {
                 Ok(Some(bridge)) => session.sync_odoo.tsserver_bridge = Some(bridge),
-                Ok(None) => {},
-                Err(_) => warn!("tsserver setup thread panicked"),
+                Ok(None) => {
+                    let tsserver_command = session.sync_odoo.config.tsserver_command();
+                    if !tsserver_command.is_empty() { //if command is empty, do not show diagnostic, as the user probably wanted to disable tsserver
+                        if tsserver_command == "tsserver" { //if default value
+                            session.send_config_diagnostic(ConfigDiagnosticAction::EXTEND, &[
+                                ConfigDiagnosticMessage {
+                                    level: ConfigDiagnosticMessageLevel::WARNING,
+                                    message: format!("tsserver unable to start. Make sure that tsserver is installed and available in your PATH. You can install it with 'npm install -g typescript'. If you want to disable tsserver, set the tsserver_command configuration to an empty string."),
+                                }
+                            ]);
+                        } else {
+                            session.send_config_diagnostic(ConfigDiagnosticAction::EXTEND, &[
+                                ConfigDiagnosticMessage {
+                                    level: ConfigDiagnosticMessageLevel::ERROR,
+                                    message: format!("Unable to start tsserver with the command: {}. ", session.sync_odoo.config.tsserver_command()),
+                                }
+                            ]);
+                        }
+                    }
+                },
+                Err(error) => {
+                    session.send_config_diagnostic(ConfigDiagnosticAction::EXTEND, &[
+                    ConfigDiagnosticMessage {
+                        level: ConfigDiagnosticMessageLevel::ERROR,
+                        message: format!("tsserver ended unexpectedly: {:?}. Most javascript features will not work. See logs for more information", error),
+                    }
+                ]);},
             }
         }
         session.send_notification("$Odoo/loadingStatusUpdate", "stop");
