@@ -1924,7 +1924,7 @@ impl Odoo {
                     Err(_) => return Err(
                         ResponseError {
                             code: ErrorCode::InvalidParams as i32,
-                            message: format!("Invalid file URI: {}", params.text_document.uri.to_string()),
+                            message: format!("Invalid file URI: {}", uri),
                             data: None,
                         }
                     ),

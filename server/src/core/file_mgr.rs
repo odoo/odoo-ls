@@ -9,13 +9,13 @@ use ruff_source_file::{LineIndex, OneIndexed, PositionEncoding, SourceLocation};
 use rustc_hash::FxHasher;
 use tracing::{error, warn};
 use std::path::Path;
-use crate::{core::js_arch_builder::JsExportKind, utils::HashSet};
+use crate::core::js_arch_builder::{JsDeclaration, JsExportKind};
 use crate::core::js_arch_builder::{ComponentDescriptor, JsTemplateRef};
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, OnceLock};
 use std::{fs};
-use crate::utils::HashMap;
+use crate::utils::{HashMap, HashSet};
 use crate::core::{config::{DiagnosticFilter, DiagnosticFilterPathType}, js_arch_builder, js_utils};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode, DiagnosticSetting};
 use crate::core::text_document::TextDocument;
@@ -138,6 +138,8 @@ pub struct JsAst {
     pub js_template_refs: Vec<JsTemplateRef>,
     /// Component descriptors extracted from OXC analysis of this JS file.
     pub js_component_descriptors: Vec<ComponentDescriptor>,
+    /// Named declarations of this JS file, for workspace symbols.
+    pub js_decls: Vec<JsDeclaration>,
     /// Every module specifier this JS file imports from, verbatim as written (incl.
     /// bare `import "x"` and `export … from`). Sorted and deduplicated.
     pub js_imports: Vec<String>,
@@ -151,6 +153,7 @@ impl JsAst {
         Self {
             js_template_refs: Vec::new(),
             js_component_descriptors: Vec::new(),
+            js_decls: Vec::new(),
             js_imports: Vec::new(),
             js_reexports: Vec::new(),
         }
@@ -418,10 +421,13 @@ impl FileInfo {
     fn build_js_ast(&mut self, session: &mut SessionInfo, _is_external: bool) {
         let data = self.file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
         let path_str = self.uri.clone();
+        // Vendored libraries are kept out of workspace symbols for the same reason they are kept
+        // out of OXC diagnostics: they are not the user's code, and many are minified.
+        let is_lib = self.uri.contains("/static/lib/");
         // SemanticBuilder uses oxc_ast_visit internally (recursive descent), which can
         // overflow the default stack on deeply-nested ASTs (e.g. minified JS).
         // Run parse + semantic analysis in a dedicated thread with 8 MiB stack.
-        let (diagnostics, template_refs, component_descriptors, imports, reexports): (Vec<OxcDiagnostic>, Vec<JsTemplateRef>, Vec<ComponentDescriptor>, Vec<String>, Vec<String>) =
+        let (diagnostics, template_refs, component_descriptors, decls, imports, reexports): (Vec<OxcDiagnostic>, Vec<JsTemplateRef>, Vec<ComponentDescriptor>, Vec<JsDeclaration>, Vec<String>, Vec<String>) =
             std::thread::Builder::new()
             .stack_size(8 * 1024 * 1024)
             .spawn(move || {
@@ -436,8 +442,10 @@ impl FileInfo {
 
                 let program = allocator.alloc(ret.program);
 
-                // Collect template references and component descriptors before semantic analysis
-                let (refs, descriptors) = js_arch_builder::visit_file(program, &path_str, &exports);
+                // Collect template references, component descriptors and declarations before
+                // semantic analysis
+                let (refs, descriptors, decls) = js_arch_builder::visit_file(program, &path_str, &exports);
+                let decls = if is_lib { vec![] } else { decls };
 
                 let semantic_ret = SemanticBuilder::new()
                     .with_cfg(true)
@@ -464,7 +472,7 @@ impl FileInfo {
                 let messages = linter.run(path, vec![context_sub_host], &allocator);
                 diags.extend(messages.into_iter().map(|m| m.error));
 
-                (diags, refs, descriptors, imports, reexports)
+                (diags, refs, descriptors, decls, imports, reexports)
             })
             .expect("failed to spawn JS parsing thread")
             .join()
@@ -472,9 +480,9 @@ impl FileInfo {
         js_arch_builder::build(session, &template_refs, &component_descriptors);
         self.file_info_ast.borrow_mut().ast.as_js_ast_mut().js_template_refs = template_refs;
         self.file_info_ast.borrow_mut().ast.as_js_ast_mut().js_component_descriptors = component_descriptors;
+        self.file_info_ast.borrow_mut().ast.as_js_ast_mut().js_decls = decls;
         self.file_info_ast.borrow_mut().ast.as_js_ast_mut().js_imports = imports;
         self.file_info_ast.borrow_mut().ast.as_js_ast_mut().js_reexports = reexports;
-        let is_lib = self.uri.contains("/static/lib/");
         let lsp_diags = match is_lib {
             true => Vec::new(),
             false => diagnostics.iter().map(

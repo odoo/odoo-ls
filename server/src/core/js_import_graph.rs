@@ -36,6 +36,7 @@ impl ImportGraph {
                 let file_info = file_info.borrow();
                 let ast = file_info.file_info_ast.borrow();
                 matches!(ast.ast, Ast::JsAst(_)).then(|| {
+                    // TODO: review these expensive clones
                     (file_info.uri.clone(), ast.ast.as_js_ast().js_imports.clone(), ast.ast.as_js_ast().js_reexports.clone())
                 })
             })
