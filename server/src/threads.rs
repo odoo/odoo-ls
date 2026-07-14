@@ -8,9 +8,10 @@ use lsp_types::{CompletionResponse, DocumentSymbolResponse, GotoDefinitionRespon
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tracing::{error, info, warn};
-use crate::{constants::{DiagnosticSource, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::symbols::storage::SymbolTable, create_session};
+use crate::{constants::{DiagnosticSource, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::symbols::storage::SymbolTable, create_session, lsp_types_custom::{ConfigDiagnosticAction, ConfigDiagnosticMessage}};
 
 use crate::{core::{file_mgr::NoqaInfo, odoo::{Odoo, SyncOdoo}}, server::ServerError, utils::PathSanitizer, S};
+
 
 pub struct SessionInfo<'a> {
     sender: Sender<Message>,
@@ -123,6 +124,13 @@ impl <'a> SessionInfo<'a> {
             Ok(_) => return Err(ServerError::ServerError("Not a Response.".to_string())),
             Err(_) => return Err(ServerError::ServerError("Server disconnected".to_string())),
         }
+    }
+
+    pub fn send_config_diagnostic(&self, action: ConfigDiagnosticAction, messages: &[ConfigDiagnosticMessage]) {
+        self.send_notification("$Odoo/diagnostic_config", serde_json::json!({
+            "action": action.as_str(),
+            "messages": messages
+        }));
     }
 
     /*

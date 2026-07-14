@@ -13,6 +13,12 @@ use crate::threads::{TsServerDiagnostics, ThreadMessage};
 
 const VIRTUAL_PROJECT_NAME: &str = "odoo-ls-virtual-project";
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
+/// tsserver can take a while to boot on a cold start (Windows especially, where
+/// antivirus scanning of node/tsserver.js is common), so the initial handshake
+/// gets a much longer budget than a regular request/response round-trip.
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
+/// Number of trailing stderr lines kept around to enrich a startup failure message.
+const STDERR_HISTORY_LEN: usize = 20;
 
 /**
  * TsserverBridge is a bridge between the LSP server and the tsserver process. It manages the tsserver process, sends requests to it, and receives responses from it.
@@ -48,11 +54,13 @@ impl TsServerBridge {
 
     #[cfg(target_os = "windows")]
     pub fn cmd_spawn_tsserver(tsserver_path: &str) -> std::io::Result<Child> {
+        // tsserver is usually installed as a `.cmd`/`.bat` shim on Windows, which
+        // isn't directly executable; route it through cmd.exe like a shell would.
         Command::new("cmd")
             .args(["/c", tsserver_path])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
     }
 
@@ -61,19 +69,48 @@ impl TsServerBridge {
         Command::new(tsserver_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
+    }
+
+    /// Drain the child's stderr in the background so its pipe buffer never fills
+    /// up and blocks the process. Everything is logged as it arrives, and the
+    /// last few lines are kept around so a startup failure can be reported with
+    /// the actual error text instead of a guess.
+    fn spawn_stderr_drain(child: &mut Child) -> Arc<Mutex<Vec<String>>> {
+        let history = Arc::new(Mutex::new(Vec::new()));
+        let Some(stderr) = child.stderr.take() else {
+            return history;
+        };
+        let history_thread = Arc::clone(&history);
+        thread::spawn(move || {
+            let mut reader = BufReader::new(stderr);
+            let mut line = String::new();
+            while reader.read_line(&mut line).unwrap_or(0) > 0 {
+                let trimmed = line.trim_end().to_string();
+                warn!("tsserver stderr: {}", trimmed);
+                let mut history = history_thread.lock().unwrap();
+                history.push(trimmed);
+                if history.len() > STDERR_HISTORY_LEN {
+                    history.remove(0);
+                }
+                line.clear();
+            }
+        });
+        history
     }
 
     pub fn new(tsserver_path: &str, sender_to_main: crossbeam_channel::Sender<ThreadMessage>) -> std::io::Result<Self> {
         let mut child = TsServerBridge::cmd_spawn_tsserver(tsserver_path)?;
         info!("tsserver process started (pid {:?})", child.id());
 
+        let stderr_history = TsServerBridge::spawn_stderr_drain(&mut child);
+
         let responses = Arc::new(Mutex::new(HashMap::default()));
         let response_notify = Arc::new(Condvar::new());
         let stdin = TsServerBridge::start_reader_thread(&mut child, sender_to_main, Arc::clone(&responses), Arc::clone(&response_notify))?;
 
-        Ok(Self {
+        let mut bridge = Self {
             child,
             stdin,
             responses,
@@ -82,7 +119,62 @@ impl TsServerBridge {
             root_files: HashSet::default(),
             project_paths: HashMap::default(),
             project_open: false,
-        })
+        };
+
+        bridge.wait_for_startup(tsserver_path, &stderr_history)?;
+
+        Ok(bridge)
+    }
+
+    /// Confirm tsserver actually came up by performing a real protocol
+    /// round-trip (the lightweight `status` command) instead of guessing from
+    /// timing or stderr output. This correctly handles a slow-starting server
+    /// (we just keep waiting, up to `STARTUP_TIMEOUT`) as well as a command
+    /// that fails immediately (e.g. `cmd.exe` reporting "not recognized") or
+    /// one that runs but never speaks the tsserver protocol (the request is
+    /// never answered and we time out instead of hanging forever).
+    fn wait_for_startup(&mut self, tsserver_path: &str, stderr_history: &Mutex<Vec<String>>) -> std::io::Result<()> {
+        let request_seq = self.send_request("status", json!({}))?;
+        let deadline = Instant::now() + STARTUP_TIMEOUT;
+
+        loop {
+            if let Some(status) = self.child.try_wait()? {
+                let message = stderr_history.lock().unwrap().join("\n");
+                return Err(std::io::Error::other(format!(
+                    "process exited immediately ({status}) while trying to run \"{tsserver_path}\"{}",
+                    if message.is_empty() { String::new() } else { format!(": {message}") }
+                )));
+            }
+
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(std::io::Error::other(format!(
+                    "tsserver did not respond to the initial handshake within {:?}; check that \"{tsserver_path}\" is a valid tsserver executable",
+                    STARTUP_TIMEOUT
+                )));
+            }
+
+            let guard = self.responses.lock().unwrap();
+            if guard.contains_key(&request_seq) {
+                break;
+            }
+            // Wait in short increments rather than for the full remaining
+            // duration so we keep polling for an early process exit above.
+            let poll_timeout = remaining.min(Duration::from_millis(100));
+            drop(self.response_notify.wait_timeout(guard, poll_timeout).unwrap());
+        }
+
+        match self.responses.lock().unwrap().remove(&request_seq) {
+            Some(response) if response.get("success").and_then(Value::as_bool).unwrap_or(false) => {
+                let version = response.get("body").and_then(|b| b.get("version")).and_then(Value::as_str).unwrap_or("unknown");
+                info!("tsserver handshake succeeded (version {})", version);
+                Ok(())
+            }
+            Some(response) => Err(std::io::Error::other(format!(
+                "tsserver rejected the initial handshake: {response}"
+            ))),
+            None => Err(std::io::Error::other("tsserver handshake response vanished unexpectedly")),
+        }
     }
 
     fn start_reader_thread(
