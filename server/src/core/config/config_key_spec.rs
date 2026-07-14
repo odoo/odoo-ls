@@ -32,6 +32,7 @@ pub enum ConfigKey {
     DiagnosticFilters,
     NoTypeshedStubs,
     TsServerCommand,
+    DisableJavascript,
 }
 
 pub(super) fn specs() -> Vec<FieldSpec> {
@@ -95,6 +96,12 @@ pub(super) fn specs() -> Vec<FieldSpec> {
             .triggers_restart(),
         FieldSpec::new(TsServerCommand, "tsserver_command", Str) //it could maybe be nice to resolve config variables like {workspaceFolder}
             .triggers_restart()
-            .default(ConfigValue::str("tsserver"))
+            .default(ConfigValue::str("tsserver")),
+        // Turns off all frontend-asset processing: no tsserver process, no JS/TS
+        // files or Owl XML templates from manifest asset bundles are parsed or
+        // added to the symbol table, no JS diagnostics/features.
+        FieldSpec::new(DisableJavascript, "disable_javascript", Bool)
+            .default(ConfigValue::bool(false))
+            .triggers_restart(),
     ]
 }

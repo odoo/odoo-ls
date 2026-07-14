@@ -2347,6 +2347,7 @@ name = "default"
     assert_eq!(config.ac_filter_model_names(), true);
     assert_eq!(config.auto_refresh_delay(), 1000);
     assert_eq!(config.no_typeshed_stubs(), false);
+    assert_eq!(config.is_javascript_disabled(), false);
 }
 
 #[test]
@@ -2377,6 +2378,7 @@ diag_missing_imports = "only_odoo"
 ac_filter_model_names = false
 auto_refresh_delay = 5000
 no_typeshed_stubs = true
+disable_javascript = true
 "#,
         odoo = canonicalized(community.path()),
         addons = canonicalized(addons.path()),
@@ -2398,6 +2400,7 @@ no_typeshed_stubs = true
     assert_eq!(config.ac_filter_model_names(), false);
     assert_eq!(config.auto_refresh_delay(), 5000);
     assert_eq!(config.no_typeshed_stubs(), true);
+    assert_eq!(config.is_javascript_disabled(), true);
 }
 
 #[test]
@@ -2730,6 +2733,7 @@ fn needs_restart_true_for_restart_fields() {
     assert!(restart_change(&|c| c.set_str(ConfigKey::OdooPath, S!("/some/odoo"))), "odoo_path");
     assert!(restart_change(&|c| c.set_str(ConfigKey::PythonPath, S!("python-other"))), "python_path");
     assert!(restart_change(&|c| c.set_bool(ConfigKey::NoTypeshedStubs, true)), "no_typeshed_stubs");
+    assert!(restart_change(&|c| c.set_bool(ConfigKey::DisableJavascript, true)), "disable_javascript");
     assert!(restart_change(&|c| c.set_str(ConfigKey::Stdlib, S!("/some/stdlib"))), "stdlib");
     assert!(
         restart_change(&|c| c.extend_string_list(ConfigKey::AddonsPaths, [S!("/some/addons")])),
@@ -2777,6 +2781,7 @@ fn config_schema_generates_and_exposes_all_keys() {
         "ac_filter_model_names",
         "auto_refresh_delay",
         "no_typeshed_stubs",
+        "disable_javascript",
         "stdlib",
         "diagnostic_settings",
         "diagnostic_filters",

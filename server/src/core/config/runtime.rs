@@ -215,6 +215,9 @@ impl ConfigEntry {
     pub fn tsserver_command(&self) -> String {
         self.as_str(ConfigKey::TsServerCommand).to_string()
     }
+    pub fn is_javascript_disabled(&self) -> bool {
+        self.as_bool(ConfigKey::DisableJavascript)
+    }
 }
 
 /// Whether the change between two resolved configs requires a server restart:
