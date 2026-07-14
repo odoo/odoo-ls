@@ -1691,10 +1691,11 @@ impl Odoo {
                 "__all__".to_string(),
                 serde_json::Value::String(config_file.to_html_string())
             );
-            // Send both the HTML map and the config file as JSON
+            // Send the HTML map, the config file as JSON, and the rejected values (diagnostics).
             let payload = serde_json::json!({
                 "html": serde_json::Value::Object(configs_map),
                 "configFile": config_file,
+                "diagnostics": config_file.diagnostic_messages(),
             });
             session.send_notification(
                 "$Odoo/setConfiguration",
