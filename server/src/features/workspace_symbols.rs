@@ -1,8 +1,21 @@
 use lsp_server::{ErrorCode, ResponseError};
-use lsp_types::{Location, WorkspaceLocation, WorkspaceSymbol, WorkspaceSymbolResponse};
+use lsp_types::{Location, SymbolKind, WorkspaceLocation, WorkspaceSymbol, WorkspaceSymbolResponse};
 use ruff_text_size::{TextRange, TextSize};
 
-use crate::{S, constants::SymType, core::{entry_point::EntryPointType, file_mgr::FileMgr, symbols::{storage::SymbolTable, symbol_keys::{SourceFileKey, SymbolKey}}}, threads::SessionInfo, utils::string_fuzzy_contains};
+use crate::{S, constants::SymType, core::{entry_point::EntryPointType, file_mgr::{Ast, FileMgr}, symbols::{storage::SymbolTable, symbol_keys::{SourceFileKey, SymbolKey, XmlTemplateKey}}}, threads::SessionInfo, utils::string_fuzzy_contains};
+
+/// The prefix OWL template names are offered under, mirroring the `xmlid.` one already used for
+/// XML ids. It keeps a template distinguishable from the component class of the same name, and
+/// lets `template.` alone narrow the picker to templates.
+const TEMPLATE_PREFIX: &str = "template.";
+
+fn cancelled() -> ResponseError {
+    ResponseError {
+        code: ErrorCode::RequestCanceled as i32,
+        message: S!("Workspace Symbol request cancelled"),
+        data: None,
+    }
+}
 
 pub struct WorkspaceSymbolFeature;
 
@@ -29,14 +42,77 @@ impl WorkspaceSymbolFeature {
                 continue;
             }
             if WorkspaceSymbolFeature::browse_symbol(session, entry.borrow().root.into(), &query, None, None, can_resolve_location_range, &mut symbols) {
-                return Err(ResponseError {
-                    code: ErrorCode::RequestCanceled as i32,
-                    message: S!("Workspace Symbol request cancelled"),
-                    data: None,
-                });
+                return Err(cancelled());
             }
         }
+        if WorkspaceSymbolFeature::browse_js_decls(session, &query, can_resolve_location_range, &mut symbols) {
+            return Err(cancelled());
+        }
+        WorkspaceSymbolFeature::browse_owl_templates(session, &query, can_resolve_location_range, &mut symbols);
         Ok(Some(WorkspaceSymbolResponse::Nested(symbols)))
+    }
+
+    /**
+     * JS declarations, collected by the OXC walk in `js_arch_builder` and held per file on its
+     * `JsAst`. Unlike the Python symbols above these are not arena symbols, so they are matched
+     * by a flat scan — the same shape as `browse_symbol`, which also has no index.
+     *
+     * Return true if the request has been cancelled and the cancellation should be propagated
+     */
+    fn browse_js_decls(session: &mut SessionInfo, query: &String, can_resolve_location_range: bool, results: &mut Vec<WorkspaceSymbol>) -> bool {
+        let file_mgr = session.sync_odoo.get_file_mgr();
+        // Matches are collected first: `add_symbol_to_results` needs the session back.
+        let mut matches = vec![];
+        {
+            let file_mgr = file_mgr.borrow();
+            for file_info in file_mgr.files.values() {
+                let file_info = file_info.borrow();
+                let file_info_ast = file_info.file_info_ast.borrow();
+                let Ast::JsAst(js_ast) = &file_info_ast.ast else {
+                    continue;
+                };
+                if js_ast.js_decls.is_empty() {
+                    continue;
+                }
+                if session.sync_odoo.is_request_cancelled() {
+                    return true;
+                }
+                for decl in js_ast.js_decls.iter().filter(|decl| string_fuzzy_contains(&decl.name, query)) {
+                    matches.push((file_info.uri.clone(), decl.clone()));
+                }
+            }
+        }
+        for (path, decl) in matches {
+            let container = decl.container.as_ref().map(|container| container.to_string());
+            WorkspaceSymbolFeature::add_symbol_to_results(session, decl.kind, &decl.name.to_string(), &path, container, Some(&decl.range), can_resolve_location_range, results);
+        }
+        false
+    }
+
+    /**
+     * OWL template names (`<t t-name="web.ListRenderer">`). `js_templates` is already the
+     * registry of them, keyed by name. `browse_symbol` cannot reach them: it browses XML data
+     * through `Module.xml_ids`, and a `t-name` registers no xml id.
+     */
+    fn browse_owl_templates(session: &mut SessionInfo, query: &String, can_resolve_location_range: bool, results: &mut Vec<WorkspaceSymbol>) {
+        let mut matches: Vec<(String, XmlTemplateKey)> = vec![];
+        for (t_name, templates) in session.sync_odoo.js_templates.iter() {
+            let name = S!(TEMPLATE_PREFIX) + t_name;
+            if !string_fuzzy_contains(&name, query) {
+                continue;
+            }
+            matches.extend(templates.iter_valid(session.st()).map(|template| (name.clone(), template)));
+        }
+        for (name, template) in matches {
+            let SymbolKey::XmlFile(xml_file) = session.st()[template].parent() else {
+                continue;
+            };
+            let path = session.st()[xml_file].path.clone();
+            let container = session.st()[xml_file].name.to_string();
+            let range = session.st()[template].range.clone();
+            let kind = SymbolTable::get_lsp_symbol_kind(SymbolKey::XmlTemplate(template));
+            WorkspaceSymbolFeature::add_symbol_to_results(session, kind, &name, &path, Some(container), Some(&range), can_resolve_location_range, results);
+        }
     }
 
     /**
@@ -68,14 +144,16 @@ impl WorkspaceSymbolFeature {
             if string_fuzzy_contains(&session.st().name(symbol), &query) {
                 let name = session.st().name(symbol).to_string();
                 let range = session.st().range(symbol).clone();
-                WorkspaceSymbolFeature::add_symbol_to_results(session, symbol, &name, path.unwrap(), container_name.clone(), Some(&range), can_resolve_location_range, results);
+                let kind = SymbolTable::get_lsp_symbol_kind(symbol);
+                WorkspaceSymbolFeature::add_symbol_to_results(session, kind, &name, path.unwrap(), container_name.clone(), Some(&range), can_resolve_location_range, results);
             }
             //Test if symbol is a model
             if let SymbolKey::Class(class_key) = symbol && let Some(model_data) = session.st()[class_key]._model.as_ref() {
                 let model_name = S!("\"") + &model_data.name + "\"";
                 let range = session.st().range(symbol).clone();
                 if string_fuzzy_contains(&model_name, &query) {
-                    WorkspaceSymbolFeature::add_symbol_to_results(session, symbol, &model_name, path.unwrap(), container_name.clone(), Some(&range), can_resolve_location_range, results);
+                    let kind = SymbolTable::get_lsp_symbol_kind(symbol);
+                    WorkspaceSymbolFeature::add_symbol_to_results(session, kind, &model_name, path.unwrap(), container_name.clone(), Some(&range), can_resolve_location_range, results);
                 }
             }
         }
@@ -97,7 +175,8 @@ impl WorkspaceSymbolFeature {
                 }
             }
             for (xml_file_key, xml_name, path, name, text_range) in res_to_add {
-                WorkspaceSymbolFeature::add_symbol_to_results(session, xml_file_key.into(), &xml_name, &path, Some(name), Some(&text_range), can_resolve_location_range, results);
+                let kind = SymbolTable::get_lsp_symbol_kind(xml_file_key.into());
+                WorkspaceSymbolFeature::add_symbol_to_results(session, kind, &xml_name, &path, Some(name), Some(&text_range), can_resolve_location_range, results);
             }
         }
         for sym in session.st().all_symbols(symbol) {
@@ -108,7 +187,7 @@ impl WorkspaceSymbolFeature {
         false
     }
 
-    fn add_symbol_to_results(session: &mut SessionInfo, symbol: SymbolKey, name: &String, path: &String, container_name: Option<String>, range: Option<&TextRange>, can_resolve_location_range: bool, results: &mut Vec<WorkspaceSymbol>) {
+    fn add_symbol_to_results(session: &mut SessionInfo, kind: SymbolKind, name: &String, path: &String, container_name: Option<String>, range: Option<&TextRange>, can_resolve_location_range: bool, results: &mut Vec<WorkspaceSymbol>) {
         let location = if can_resolve_location_range {
             lsp_types::OneOf::Right(WorkspaceLocation {
                 uri: FileMgr::pathname2uri(path)
@@ -137,7 +216,7 @@ impl WorkspaceSymbolFeature {
         };
         results.push(WorkspaceSymbol {
             name: name.clone(),
-            kind: SymbolTable::get_lsp_symbol_kind(symbol),
+            kind,
             tags: None,
             container_name,
             location: location,
