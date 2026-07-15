@@ -3,6 +3,8 @@ pub mod args;
 pub mod cli_backend;
 pub mod constants;
 pub mod core;
+#[cfg(feature = "gui")]
+pub mod gui;
 pub mod threads;
 pub mod features;
 pub mod fifo_ptr_weak_hash_set;

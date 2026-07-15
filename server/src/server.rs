@@ -128,6 +128,11 @@ impl Server {
         }
     }
 
+    /// Returns a clone of the shared server state, for read-only introspection (e.g. the `--gui` inspector).
+    pub fn sync_odoo_handle(&self) -> Arc<Mutex<SyncOdoo>> {
+        self.sync_odoo.clone()
+    }
+
     pub fn initialize(&mut self) -> Result<(), ServerError> {
         info!("Waiting for a connection...");
         let (id, params) = self.connection.as_ref().unwrap().initialize_start()?;
