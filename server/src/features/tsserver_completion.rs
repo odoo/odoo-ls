@@ -5,10 +5,11 @@ use tracing::debug;
 
 use crate::core::tsserver_bridge::ts_kind_to_lsp_kind;
 
-/// Round-trip payload stashed in `CompletionItem.data` for auto-import entries, whose
-/// import statement only comes back from a `completionEntryDetails` call. tsserver
-/// re-locates the entry from the original position + `name`/`source`/`data`, so all of it
-/// must survive the trip through the client (`data` is opaque — hand it back untouched).
+/// Round-trip payload stashed in `CompletionItem.data` of every entry, whose signature, docs
+/// and (for auto-imports) import statement only come back from a `completionEntryDetails`
+/// call. tsserver re-locates the entry from the original position + `name`/`source`/`data`,
+/// so all of it must survive the trip through the client (`data` is opaque — hand it back
+/// untouched).
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TsCompletionResolveData {
     pub file: String,
@@ -54,21 +55,16 @@ pub fn entry_to_completion_item(entry: &Value, file_path: &str, line: u32, chara
             new_text: insert_text.unwrap_or(&name).to_string(),
         }));
 
-    // Only `hasAction` entries owe a `completionEntryDetails` round trip; asking for the rest
-    // would be one blocking tsserver request per item the user scrolls past.
-    let data = entry
-        .get("hasAction")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-        .then(|| serde_json::to_value(TsCompletionResolveData {
-            file: file_path.to_string(),
-            line,
-            character,
-            name: name.clone(),
-            source: source.map(str::to_string),
-            data: entry.get("data").cloned(),
-        }).ok())
-        .flatten();
+    // Every item carries resolve data: the signature/docs (and any auto-import edit) come
+    // back only from a lazy `completionEntryDetails` on the highlighted item.
+    let data = serde_json::to_value(TsCompletionResolveData {
+        file: file_path.to_string(),
+        line,
+        character,
+        name: name.clone(),
+        source: source.map(str::to_string),
+        data: entry.get("data").cloned(),
+    }).ok();
 
     // Where an auto-import would pull the symbol from, shown next to the label.
     let label_details = join_ts_parts(entry.get("sourceDisplay"))
@@ -265,8 +261,9 @@ mod tests {
         // the statement fragment; a text edit supersedes it.
         assert_eq!(item.insert_text, None);
         assert_eq!(item.filter_text.as_deref(), Some("import { Domain } from \"@web/core/domain\";"));
-        // The whole statement is in the edit, so there is nothing left to resolve.
-        assert!(item.data.is_none());
+        // Data rides along like every item; resolving just re-fetches the signature (the
+        // statement is already in the edit).
+        assert!(item.data.is_some());
         assert_eq!(
             item.label_details.and_then(|d| d.description).as_deref(),
             Some("@web/core/domain")
@@ -298,15 +295,23 @@ mod tests {
     }
 
     #[test]
-    fn plain_member_entry_needs_neither_edit_nor_resolve() {
+    fn plain_member_entry_carries_resolve_data_without_an_edit() {
         let entry = json!({ "name": "rowCount", "kind": "getter", "sortText": "11" });
         let item = entry_to_completion_item(&entry, "/a/b.js", 3, 9);
 
         assert_eq!(item.kind, Some(CompletionItemKind::PROPERTY));
         assert!(item.text_edit.is_none());
-        assert!(item.data.is_none(), "resolve is one blocking round trip; only auto-imports earn it");
         assert!(item.filter_text.is_none());
         assert!(item.label_details.is_none());
+
+        // Every item resolves — that is the only way to fetch its signature/docs.
+        let resolve: TsCompletionResolveData =
+            serde_json::from_value(item.data.expect("plain members must resolve")).unwrap();
+        assert_eq!(resolve.file, "/a/b.js");
+        assert_eq!((resolve.line, resolve.character), (3, 9));
+        assert_eq!(resolve.name, "rowCount");
+        assert!(resolve.source.is_none());
+        assert!(resolve.data.is_none());
     }
 
     #[test]
