@@ -152,10 +152,8 @@ fn complete_function_def_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey
 }
 
 fn complete_class_def_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_class_def: &ruff_python_ast::StmtClassDef, offset: usize) -> Option<CompletionResponse> {
-    for base in stmt_class_def.bases().iter() {
-        if offset > base.range().start().to_usize() && offset <= base.range().end().to_usize() {
-            return complete_expr( base, session, file, offset, false, &[]); //TODO only classes?
-        }
+    if let Some(base) = stmt_class_def.bases().iter().find(|base| offset > base.range().start().to_usize() && offset <= base.range().end().to_usize()) {
+        return complete_expr( base, session, file, offset, false, &[]); //TODO only classes?
     }
     if !stmt_class_def.body.is_empty()
         && offset > stmt_class_def.body.first().unwrap().range().start().to_usize() && stmt_class_def.body.last().unwrap().range().end().to_usize() >= offset {
@@ -172,12 +170,8 @@ fn complete_return_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt
 }
 
 fn complete_delete_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_delete: &ruff_python_ast::StmtDelete, offset: usize) -> Option<CompletionResponse> {
-    for target in stmt_delete.targets.iter() {
-        if offset > target.range().start().to_usize() && offset <= target.range().end().to_usize() {
-            return complete_expr( target, session, file, offset, false, &[]);
-        }
-    }
-    None
+    let target = stmt_delete.targets.iter().find(|target| offset > target.range().start().to_usize() && offset <= target.range().end().to_usize())?;
+    complete_expr( target, session, file, offset, false, &[])
 }
 
 fn complete_assign_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_assign: &ruff_python_ast::StmtAssign, offset: usize) -> Option<CompletionResponse> {
@@ -265,13 +259,11 @@ fn complete_with_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_w
 }
 
 fn complete_match_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_match: &ruff_python_ast::StmtMatch, offset: usize) -> Option<CompletionResponse> {
-    for case in stmt_match.cases.iter() {
-        if !case.body.is_empty()
-            && offset > case.body.first().as_ref().unwrap().range().start().to_usize() && offset <= case.body.last().as_ref().unwrap().range().end().to_usize() {
-                return complete_vec_stmt(&case.body, session, file, offset);
-            }
-    }
-    None
+    let case = stmt_match.cases.iter().find(|case| {
+        !case.body.is_empty()
+            && offset > case.body.first().as_ref().unwrap().range().start().to_usize() && offset <= case.body.last().as_ref().unwrap().range().end().to_usize()
+    })?;
+    complete_vec_stmt(&case.body, session, file, offset)
 }
 
 fn complete_raise_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_raise: &ruff_python_ast::StmtRaise, offset: usize) -> Option<CompletionResponse> {
@@ -289,14 +281,16 @@ fn complete_try_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_tr
     {
         return complete_vec_stmt(&stmt_try.body, session, file, offset);
     }
-    for handler in  stmt_try.handlers.iter() {
+    let handler_hit = stmt_try.handlers.iter().find_map(|handler| {
         match handler {
             ExceptHandler::ExceptHandler(except_handler_except_handler) => {
-                if offset > except_handler_except_handler.range().start().to_usize() && except_handler_except_handler.range().end().to_usize() >= offset {
-                    return complete_vec_stmt(&except_handler_except_handler.body, session, file, offset);
-                }
+                (offset > except_handler_except_handler.range().start().to_usize() && except_handler_except_handler.range().end().to_usize() >= offset)
+                    .then(|| complete_vec_stmt(&except_handler_except_handler.body, session, file, offset))
             },
         }
+    });
+    if let Some(result) = handler_hit {
+        return result;
     }
     if !stmt_try.orelse.is_empty()
         && offset > stmt_try.orelse.first().unwrap().range().start().to_usize() && stmt_try.orelse.last().unwrap().range().end().to_usize() >= offset {
@@ -322,17 +316,15 @@ fn complete_assert_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt
 
 fn complete_import_stmt(session: &mut SessionInfo, file: SourceFileKey, stmt_import: &StmtImport, offset: usize) -> Option<CompletionResponse> {
     let mut items = vec![];
-    for alias in stmt_import.names.iter() {
-        if alias.name.range().start().to_usize() < offset && alias.name.range.end().to_usize() >= offset {
-            let to_complete = alias.name.id.to_string().get(0 .. offset - alias.name.range.start().to_usize()).unwrap_or("").to_string();
-            let names = import_resolver::get_all_valid_names(session, file, None, to_complete, 0, false);
-            for (name, sym_typ) in names {
-                items.push(CompletionItem {
-                    label: name.to_string(),
-                    kind: Some(get_completion_item_kind(&sym_typ)),
-                    ..Default::default()
-                });
-            }
+    if let Some(alias) = stmt_import.names.iter().find(|alias| alias.name.range().start().to_usize() < offset && alias.name.range.end().to_usize() >= offset) {
+        let to_complete = alias.name.id.to_string().get(0 .. offset - alias.name.range.start().to_usize()).unwrap_or("").to_string();
+        let names = import_resolver::get_all_valid_names(session, file, None, to_complete, 0, false);
+        for (name, sym_typ) in names {
+            items.push(CompletionItem {
+                label: name.to_string(),
+                kind: Some(get_completion_item_kind(&sym_typ)),
+                ..Default::default()
+            });
         }
     }
     Some(CompletionResponse::List(CompletionList {
@@ -355,17 +347,15 @@ fn complete_import_from_stmt(session: &mut SessionInfo, file: SourceFileKey, stm
                 });
             }
         }
-    for alias in stmt_import.names.iter() {
-        if alias.name.range().start().to_usize() < offset && alias.name.range.end().to_usize() >= offset {
-            let to_complete = alias.name.id.to_string().get(0 .. offset - alias.name.range.start().to_usize()).unwrap_or("").to_string();
-            let names = import_resolver::get_all_valid_names(session, file, stmt_import.module.as_ref().map(|m| m.id.to_string()), to_complete, stmt_import.level, false);
-            for (name, sym_type) in names {
-                items.push(CompletionItem {
-                    label: name.to_string(),
-                    kind: Some(get_completion_item_kind(&sym_type)),
-                    ..Default::default()
-                });
-            }
+    if let Some(alias) = stmt_import.names.iter().find(|alias| alias.name.range().start().to_usize() < offset && alias.name.range.end().to_usize() >= offset) {
+        let to_complete = alias.name.id.to_string().get(0 .. offset - alias.name.range.start().to_usize()).unwrap_or("").to_string();
+        let names = import_resolver::get_all_valid_names(session, file, stmt_import.module.as_ref().map(|m| m.id.to_string()), to_complete, stmt_import.level, false);
+        for (name, sym_type) in names {
+            items.push(CompletionItem {
+                label: name.to_string(),
+                kind: Some(get_completion_item_kind(&sym_type)),
+                ..Default::default()
+            });
         }
     }
     Some(CompletionResponse::List(CompletionList {
@@ -425,12 +415,8 @@ fn complete_expr(expr: &Expr, session: &mut SessionInfo, file: SourceFileKey, of
 }
 
 fn compare_bool_op(session: &mut SessionInfo, file: SourceFileKey, expr_bool_op: &ruff_python_ast::ExprBoolOp, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
-    for value in expr_bool_op.values.iter() {
-        if offset > value.range().start().to_usize() && offset <= value.range().end().to_usize() {
-            return complete_expr( value, session, file, offset, is_param, expected_type);
-        }
-    }
-    None
+    let value = expr_bool_op.values.iter().find(|value| offset > value.range().start().to_usize() && offset <= value.range().end().to_usize())?;
+    complete_expr( value, session, file, offset, is_param, expected_type)
 }
 
 fn compare_named(session: &mut SessionInfo, file: SourceFileKey, expr_named: &ruff_python_ast::ExprNamed, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
@@ -479,43 +465,38 @@ fn complete_if_expr(session: &mut SessionInfo, file: SourceFileKey, expr_if: &Ex
 }
 
 fn complete_dict(session: &mut SessionInfo, file: SourceFileKey, expr_dict: &ruff_python_ast::ExprDict, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
-    for dict_item in expr_dict.items.iter() {
-        if let Some(dict_item_key) = &dict_item.key {
-            // For expected type INHERITS, we want to complete the model name for the key
-            // and a simple field of type Many2one for the value
-            if offset > dict_item_key.range().start().to_usize() && offset <= dict_item_key.range().end().to_usize() {
-                let expected_type= expected_type.iter().map(|e| match e {
-                    ExpectedType::INHERITS => ExpectedType::MODEL_NAME,
-                    _ => e.clone(),
-                }).collect::<Vec<_>>();
-                return complete_expr( dict_item_key, session, file, offset, is_param, &expected_type);
-            }
-            if offset > dict_item.value.range().start().to_usize() && offset <= dict_item.value.range().end().to_usize() {
-                // if expected type has model name, replace it with simple field
-                // for _inherits completion
-                let expected_type = expected_type.iter().map(|e| match e {
-                    ExpectedType::INHERITS => ExpectedType::SIMPLE_FIELD(Some(Sy!("Many2one"))),
-                    _ => e.clone(),
-                }).collect::<Vec<_>>();
-                return complete_expr( &dict_item.value, session, file, offset, is_param, &expected_type);
-            }
-        }
-    }
-    None
-}
-
-fn complete_set(session: &mut SessionInfo, file: SourceFileKey, expr_set: &ruff_python_ast::ExprSet, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
-    for set_item in expr_set.elts.iter() {
-        if offset > set_item.range().start().to_usize() && offset <= set_item.range().end().to_usize() {
-            // A set expression here is just starting to write the inherits dict
+    expr_dict.items.iter().find_map(|dict_item| {
+        let dict_item_key = dict_item.key.as_ref()?;
+        // For expected type INHERITS, we want to complete the model name for the key
+        // and a simple field of type Many2one for the value
+        if offset > dict_item_key.range().start().to_usize() && offset <= dict_item_key.range().end().to_usize() {
             let expected_type= expected_type.iter().map(|e| match e {
                 ExpectedType::INHERITS => ExpectedType::MODEL_NAME,
                 _ => e.clone(),
             }).collect::<Vec<_>>();
-            return complete_expr(set_item, session, file, offset, is_param, &expected_type);
+            return Some(complete_expr( dict_item_key, session, file, offset, is_param, &expected_type));
         }
-    }
-    None
+        if offset > dict_item.value.range().start().to_usize() && offset <= dict_item.value.range().end().to_usize() {
+            // if expected type has model name, replace it with simple field
+            // for _inherits completion
+            let expected_type = expected_type.iter().map(|e| match e {
+                ExpectedType::INHERITS => ExpectedType::SIMPLE_FIELD(Some(Sy!("Many2one"))),
+                _ => e.clone(),
+            }).collect::<Vec<_>>();
+            return Some(complete_expr( &dict_item.value, session, file, offset, is_param, &expected_type));
+        }
+        None
+    }).flatten()
+}
+
+fn complete_set(session: &mut SessionInfo, file: SourceFileKey, expr_set: &ruff_python_ast::ExprSet, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
+    let set_item = expr_set.elts.iter().find(|set_item| offset > set_item.range().start().to_usize() && offset <= set_item.range().end().to_usize())?;
+    // A set expression here is just starting to write the inherits dict
+    let expected_type= expected_type.iter().map(|e| match e {
+        ExpectedType::INHERITS => ExpectedType::MODEL_NAME,
+        _ => e.clone(),
+    }).collect::<Vec<_>>();
+    complete_expr(set_item, session, file, offset, is_param, &expected_type)
 }
 
 fn complete_yield(session: &mut SessionInfo, file: SourceFileKey, expr_yield: &ExprYield, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
@@ -531,12 +512,8 @@ fn complete_compare(session: &mut SessionInfo, file: SourceFileKey, expr_compare
     if offset > expr_compare.left.range().start().to_usize() && offset <= expr_compare.left.range().end().to_usize() {
         return complete_expr( &expr_compare.left, session, file, offset, is_param, expected_type);
     }
-    for expr in expr_compare.comparators.iter() {
-        if offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize() {
-            return complete_expr( expr, session, file, offset, is_param, expected_type);
-        }
-    }
-    None
+    let expr = expr_compare.comparators.iter().find(|expr| offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize())?;
+    complete_expr( expr, session, file, offset, is_param, expected_type)
 }
 
 fn complete_decorator_call(
@@ -974,20 +951,18 @@ fn complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, list_o
     for expected_type in expected_type.iter() {
         match expected_type {
             &ExpectedType::DOMAIN(parent) => {
-                for expr in list_or_tuple_elts.iter() {
-                    if offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize() {
-                        match expr {
-                            Expr::StringLiteral(expr_string_literal) => {
-                                return complete_string_literal(session, file, expr_string_literal, offset, is_param, &[ExpectedType::DOMAIN_OPERATOR]);
-                            },
-                            Expr::Tuple(_) => {
-                                return complete_expr(expr, session, file, offset, is_param, &[ExpectedType::DOMAIN_LIST(parent)]);
-                            },
-                            Expr::List(_) => {
-                                return complete_expr(expr, session, file, offset, is_param, &[ExpectedType::DOMAIN_LIST(parent)]);
-                            }
-                            _ => {}
+                if let Some(expr) = list_or_tuple_elts.iter().find(|expr| offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize()) {
+                    match expr {
+                        Expr::StringLiteral(expr_string_literal) => {
+                            return complete_string_literal(session, file, expr_string_literal, offset, is_param, &[ExpectedType::DOMAIN_OPERATOR]);
+                        },
+                        Expr::Tuple(_) => {
+                            return complete_expr(expr, session, file, offset, is_param, &[ExpectedType::DOMAIN_LIST(parent)]);
+                        },
+                        Expr::List(_) => {
+                            return complete_expr(expr, session, file, offset, is_param, &[ExpectedType::DOMAIN_LIST(parent)]);
                         }
+                        _ => {}
                     }
                 }
             },
@@ -1030,21 +1005,17 @@ fn complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, list_o
                 }
             }
             ExpectedType::MODEL_NAME => { //In case of Model_name, transfer this expected type to items. It is used in _inherit = [""] for example, but can maybe be wrong elsewhere?
-                for expr in list_or_tuple_elts.iter() {
-                    if offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize() {
-                        return complete_expr(expr, session, file, offset, is_param, &[ExpectedType::MODEL_NAME]);
-                    }
+                if let Some(expr) = list_or_tuple_elts.iter().find(|expr| offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize()) {
+                    return complete_expr(expr, session, file, offset, is_param, &[ExpectedType::MODEL_NAME]);
                 }
             }
             _ => {}
         }
     }
-    if expected_type.is_empty() {
-        for expr in list_or_tuple_elts.iter() {
-            if offset > expr.range().start().to_usize() && offset < expr.range().end().to_usize() {
-                return complete_expr( expr, session, file, offset, is_param, expected_type);
-            }
-        }
+    if expected_type.is_empty()
+        && let Some(expr) = list_or_tuple_elts.iter().find(|expr| offset > expr.range().start().to_usize() && offset < expr.range().end().to_usize())
+    {
+        return complete_expr( expr, session, file, offset, is_param, expected_type);
     }
     None
 }

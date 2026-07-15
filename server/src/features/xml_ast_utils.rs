@@ -77,11 +77,11 @@ impl XmlAstUtils {
         // Implicit `type` is `object` in views; only `type="action"` puts us in
         // the xml-id case (handled by scan_format_xml_id_under_cursor).
         let is_action_type = node.attribute("type") == Some("action");
-        for attr in node.attributes() {
-            let in_range = attr.range_value().start <= offset && attr.range_value().end >= offset;
-            if !in_range { continue; }
-            if attr.name() == "name" && !is_action_type {
-                let Some(model_name) = scope.record_model.filter(|m| !m.is_empty()) else { continue };
+        let attr_at_offset = node.attributes().find(|attr| attr.range_value().start <= offset && attr.range_value().end >= offset);
+        if let Some(attr) = attr_at_offset {
+            if attr.name() == "name" && !is_action_type
+                && let Some(model_name) = scope.record_model.filter(|m| !m.is_empty())
+            {
                 let found = XmlAstUtils::resolve_member_on_model(session, model_name, attr.value(), from_module, on_dep_only);
                 if !found.is_empty() {
                     results.0.extend(found);
@@ -138,10 +138,11 @@ impl XmlAstUtils {
                     results.1 = Some(attr.range_value());
                 }
             } else if attr.name() == "id"
-                && attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
-                    results.1 = Some(attr.range_value());
-                }
+                && attr.range_value().start <= offset && attr.range_value().end >= offset
+            {
+                XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
+                results.1 = Some(attr.range_value());
+            }
         }
         if scope.record_model == Some("ir.ui.view") {
             scope.view_target_model = XmlAstUtils::view_target_model(node);
@@ -199,17 +200,12 @@ impl XmlAstUtils {
     }
 
     fn visit_menu_item<'a>(session: &mut SessionInfo<'_>, node: &Node<'a, '_>, offset: usize, from_module: Option<ModuleKey>, scope: XmlScope<'a>, results: &mut (Vec<SymbolKey>, Option<Range<usize>>), on_dep_only: bool) {
-        for attr in node.attributes() {
-            if attr.name() == "action" {
-                if attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
-                    results.1 = Some(attr.range_value());
-                }
-            } else if attr.name() == "groups"
-                && attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
-                    results.1 = Some(attr.range_value());
-                }
+        let attr_at_offset = node.attributes().find(|attr| attr.range_value().start <= offset && attr.range_value().end >= offset);
+        if let Some(attr) = attr_at_offset
+            && matches!(attr.name(), "action" | "groups")
+        {
+            XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
+            results.1 = Some(attr.range_value());
         }
         for child in node.children() {
             XmlAstUtils::visit_node(session, &child, offset, from_module, scope, results, on_dep_only);
@@ -217,17 +213,12 @@ impl XmlAstUtils {
     }
 
     fn visit_template<'a>(session: &mut SessionInfo<'_>, node: &Node<'a, '_>, offset: usize, from_module: Option<ModuleKey>, scope: XmlScope<'a>, results: &mut (Vec<SymbolKey>, Option<Range<usize>>), on_dep_only: bool) {
-        for attr in node.attributes() {
-            if attr.name() == "inherit_id" {
-                if attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
-                    results.1 = Some(attr.range_value());
-                }
-            } else if attr.name() == "groups"
-                && attr.range_value().start <= offset && attr.range_value().end >= offset {
-                    XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
-                    results.1 = Some(attr.range_value());
-                }
+        let attr_at_offset = node.attributes().find(|attr| attr.range_value().start <= offset && attr.range_value().end >= offset);
+        if let Some(attr) = attr_at_offset
+            && matches!(attr.name(), "inherit_id" | "groups")
+        {
+            XmlAstUtils::add_xml_id_result(session, attr.value(), from_module.unwrap().into(), attr.range_value(), results, on_dep_only);
+            results.1 = Some(attr.range_value());
         }
         for child in node.children() {
             XmlAstUtils::visit_node(session, &child, offset, from_module, scope, results, on_dep_only);
