@@ -33,19 +33,21 @@ impl DefinitionFeature {
     fn get_js_definition(session: &mut SessionInfo, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<GotoDefinitionResponse> {
         // Check if cursor is over a template reference (e.g. `static template = "module.xml_id"`)
         let template_refs = file_info.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
-        for template_ref in &template_refs {
+        let template_hit = template_refs.iter().find_map(|template_ref| {
             let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &file_info.borrow().uri, &template_ref.range);
-            if Self::position_in_range(line, character, &range) {
-                let Some(templates) = session.sync_odoo.js_templates.get(&template_ref.t_name) else { continue; };
-                let mut locations = vec![];
-                for template in templates.iter_valid(&session.sync_odoo.symbol_table) {
-                    locations.extend(GotoUtils::goto_source_to_location(session, &GotoSource {
-                        source: GotoSourceType::SymbolKey(template.into()),
-                        origin_selection_range: Some(range),
-                    }));
-                }
-                return Some(GotoDefinitionResponse::Link(locations));
+            Self::position_in_range(line, character, &range).then_some((template_ref, range))
+        });
+        if let Some((template_ref, range)) = template_hit
+            && let Some(templates) = session.sync_odoo.js_templates.get(&template_ref.t_name)
+        {
+            let mut locations = vec![];
+            for template in templates.iter_valid(&session.sync_odoo.symbol_table) {
+                locations.extend(GotoUtils::goto_source_to_location(session, &GotoSource {
+                    source: GotoSourceType::SymbolKey(template.into()),
+                    origin_selection_range: Some(range),
+                }));
             }
+            return Some(GotoDefinitionResponse::Link(locations));
         }
 
         let file_path = &file_info.borrow().uri;

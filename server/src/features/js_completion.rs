@@ -88,15 +88,15 @@ fn find_owl_attr_at_offset<'a, 'input>(
     offset: usize,
 ) -> Option<(String, usize, String)> {
     if node.is_element() {
-        for attr in node.attributes() {
-            if is_owl_directive(attr.name())
+        let owl_attr = node.attributes().find(|attr| {
+            is_owl_directive(attr.name())
                 && attr.range_value().start <= offset
                 && attr.range_value().end >= offset
-            {
-                let cursor_rel = offset.saturating_sub(attr.range_value().start);
-                if let Some(t_name) = find_template_name(node) {
-                    return Some((attr.value().to_string(), cursor_rel, t_name));
-                }
+        });
+        if let Some(attr) = owl_attr {
+            let cursor_rel = offset.saturating_sub(attr.range_value().start);
+            if let Some(t_name) = find_template_name(node) {
+                return Some((attr.value().to_string(), cursor_rel, t_name));
             }
         }
         for child in node.children() {
