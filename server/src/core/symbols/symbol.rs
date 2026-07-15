@@ -901,7 +901,8 @@ impl Symbol {
         let name = file_symbol.name().clone();
         let original_path = &file_symbol.paths()[0];
         drop(file_symbol);
-        match session.sync_odoo.get_file_mgr().borrow().get_file_info(&path) {
+        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
+        match file_info {
             Some(file_info) => Some(file_info),
             None => {
                 let (updated, result) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, original_path, None, Some(-100), true);
