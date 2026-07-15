@@ -4,9 +4,11 @@ use crate::core::file_mgr::Ast;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::Dependencies;
 use crate::core::symbols::ModuleSymbol;
-use crate::core::symbols::symbol_keys::{ModuleKey, SourceFileKey, SymbolKey};
+use crate::core::symbols::symbol_keys::{ModuleKey, SourceFileKey, SymbolKey, XmlFileKey};
 use crate::core::symbols::storage::SymbolTable;
+use crate::features::definition::DefinitionFeature;
 use crate::features::goto_utils::{GotoRequest, GotoSourceType, GotoUtils};
+use crate::features::js_references;
 use crate::features::references_csv::CsvAstReferenceVisitor;
 use crate::features::references_xml::XmlAstReferenceVisitor;
 use crate::{
@@ -246,6 +248,20 @@ impl ReferenceFeature {
             }
         }
 
+        // OWL fallbacks — neither surface is an arena symbol, so the generic path above
+        // finds nothing there: a template-name value → template-name references; a
+        // `this.member` expression → component-member references (disjoint attribute sets).
+        if locations.is_empty()
+            && matches!(file_info.borrow().file_info_ast.borrow().ast, Ast::XmlAst)
+        {
+            if let Some(owl_refs) = Self::references_xml_owl(session, file_info, line, character) {
+                return Some(owl_refs);
+            }
+            if let Some(owl_refs) = js_references::references_xml_owl_member(session, file_info, line, character) {
+                return Some(owl_refs);
+            }
+        }
+
         if locations.is_empty() {
             None
         } else {
@@ -254,22 +270,107 @@ impl ReferenceFeature {
     }
 
     fn get_reference_js(session: &mut SessionInfo, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Vec<Location>> {
-        let file_path = &file_info.borrow().uri;
-        let locs: Vec<Location> = if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
-            bridge.get_references(&file_path, line, character)
-                .into_iter()
-                .map(|(target_file, sl, sc, el, ec)| Location {
-                    uri: FileMgr::pathname2uri(&target_file),
-                    range: lsp_types::Range {
-                        start: lsp_types::Position { line: sl, character: sc },
-                        end:   lsp_types::Position { line: el, character: ec },
-                    },
-                })
-                .collect()
-        } else {
-            vec![]
-        };
-        return if locs.is_empty() { None } else { Some(locs) };
+        // A cursor on a `static template = "name"` string is a reference to that
+        // *template name*: resolved in-house (complete over t-call/t-inherit/component
+        // sites, and no tsserver string-literal noise).
+        let encoding = session.sync_odoo.encoding;
+        let template_refs = file_info.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
+        for template_ref in &template_refs {
+            let range = file_info.borrow().text_range_to_range(&template_ref.range, encoding);
+            if Self::position_in_lsp_range(line, character, &range) {
+                let refs = Self::collect_template_name_references(session, &template_ref.t_name);
+                return if refs.is_empty() { None } else { Some(refs) };
+            }
+        }
+
+        // Everything else: JS references unioned with OWL-template uses, all handled by
+        // `js_references` (returns `None` without a tsserver bridge).
+        return js_references::references_js_owl(session, file_info, line, character);
+    }
+
+    // @todo-ref: move these 3 methods to a dedicated js_references file ??
+    /// Find-references for an OWL/QWeb *template name* under the cursor (a `t-name` /
+    /// `t-call` / `t-inherit` value); defers to [`collect_template_name_references`].
+    fn references_xml_owl(session: &mut SessionInfo, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Vec<Location>> {
+        let encoding = session.sync_odoo.encoding;
+        let data = file_info.borrow().file_info_ast.borrow()
+            .text_document.as_ref()?.contents().to_string();
+        let offset = file_info.borrow().position_to_offset(line, character, encoding);
+
+        let document = roxmltree::Document::parse(&data).ok()?;
+        let (_attr_name, template_name, _range) =
+            DefinitionFeature::find_template_name_attr(document.root_element(), offset)?;
+
+        let locations = Self::collect_template_name_references(session, &template_name);
+        if locations.is_empty() { None } else { Some(locations) }
+    }
+
+    /// Whether an LSP position falls within `range` (end-inclusive, matching the cursor
+    /// hit-test used for the `static template` string).
+    fn position_in_lsp_range(line: u32, character: u32, range: &lsp_types::Range) -> bool {
+        let after_start = line > range.start.line
+            || (line == range.start.line && character >= range.start.character);
+        let before_end = line < range.end.line
+            || (line == range.end.line && character <= range.end.character);
+        after_start && before_end
+    }
+
+    /// Collect every reference to an OWL/QWeb template *name*: JS `static template` sites,
+    /// XML `t-call` / `t-inherit` sites. Dynamic `t-call="{{…}}"` values never string-equal
+    /// a literal name; the `<t t-name>` declaration itself is the target, not a reference.
+    fn collect_template_name_references(session: &mut SessionInfo, template_name: &str) -> Vec<Location> {
+        let encoding = session.sync_odoo.encoding;
+        let mut locations = Vec::new();
+
+        // XML sites: no reverse index exists, so scan every template symbol. Collect the
+        // hits first to release the `&SymbolTable` borrow before the `&mut` conversions.
+        let mut xml_hits: Vec<(XmlFileKey, TextRange)> = Vec::new();
+        // @todo: consider building a reverse index for template-name →
+        // template-symbol, to avoid scanning every template symbol in the
+        // workspace for every reference request. Then drop the
+        // `iter_xml_templates` method and use the index here.
+        for (_key, tmpl) in session.st().iter_xml_templates() {
+            let SymbolKey::XmlFile(xml_file) = tmpl.parent() else { continue; };
+            for (name, range) in tmpl.t_calls.iter() {
+                if name.as_str() == template_name {
+                    // `t_calls` stores the whole-attribute range, `t_inherit` the value-only
+                    // range; both are acceptable highlights.
+                    xml_hits.push((xml_file, *range));
+                }
+            }
+            if let Some((name, range)) = tmpl.t_inherit.as_ref() {
+                if name.as_str() == template_name {
+                    xml_hits.push((xml_file, *range));
+                }
+            }
+        }
+        for (xml_file, range) in xml_hits {
+            let path = session.st()[xml_file].path.clone();
+            let Some(dep_fi) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path) else { continue; };
+            let lsp_range = dep_fi.borrow().text_range_to_range(&range, encoding);
+            locations.push(Location { uri: FileMgr::pathname2uri(&path), range: lsp_range });
+        }
+
+        // JS sites
+        let js_paths: HashSet<String> = session.sync_odoo.js_component_by_template
+            .get(template_name)
+            .into_iter()
+            .flatten()
+            .filter_map(|class| session.sync_odoo.component_descriptors.get(class))
+            .map(|desc| desc.file_path.clone())
+            .collect();
+        for path in js_paths {
+            let Some(fi) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path) else { continue };
+            let refs = fi.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
+            for template_ref in refs {
+                if template_ref.t_name == template_name {
+                    let range = fi.borrow().text_range_to_range(&template_ref.range, encoding);
+                    locations.push(Location { uri: FileMgr::pathname2uri(&path), range });
+                }
+            }
+        }
+
+        locations
     }
 
     fn references_in_file(session: &mut SessionInfo, file_symbol: SourceFileKey, file_info: &Rc<RefCell<FileInfo>>, reference_target: &ReferenceTarget) -> Vec<Location> {

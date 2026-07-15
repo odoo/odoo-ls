@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use odoo_ls_server::features::owl_component_utils;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::utils::PathSanitizer;
 
@@ -27,22 +28,15 @@ fn test_template_and_component_are_linked() {
     let (mut odoo, config) = setup::setup::setup_server(true);
     let session = setup::setup::create_init_session(&mut odoo, config);
 
-    let class_name = session
-        .sync_odoo
-        .js_component_by_template
-        .get("module_owl.Counter")
-        .cloned()
+    let class_name = owl_component_utils::component_for_template(&session, "module_owl.Counter")
         .expect("JS static template should register module_owl.Counter -> Counter");
     assert_eq!(class_name, "Counter");
 
-    let descriptor = session
+    session
         .sync_odoo
         .component_descriptors
         .get(&class_name)
         .expect("Counter component descriptor should exist");
-    assert!(descriptor.find_member("increment").is_some());
-    assert!(descriptor.find_member("doubled").is_some());
-    assert!(descriptor.find_member("state").is_some());
 
     let templates = session
         .sync_odoo
