@@ -1,9 +1,12 @@
 use oxc::{allocator::Allocator, parser::Parser, span::SourceType};
 
-use odoo_ls_server::core::js_arch_builder::{visit_file, ComponentDescriptor, JsTemplateRef, MemberKind};
+use odoo_ls_server::{core::js_arch_builder::{ComponentDescriptor, JsTemplateRef, visit_file}, utils::HashMap};
 
 /// Parse `source` as a `.js` file and run the OWL arch-builder visitor on it,
 /// mirroring what `FileInfo::build_js_ast` does before semantic analysis.
+///
+/// Each template ref carries a byte `range` covering only the string content
+/// (surrounding quotes excluded), the xml_id, and the enclosing class name.
 fn visit(source: &str) -> (Vec<JsTemplateRef>, Vec<ComponentDescriptor>) {
     let path = "owl_component.js";
     let source_type = SourceType::from_path(path).unwrap_or_default();
@@ -11,8 +14,10 @@ fn visit(source: &str) -> (Vec<JsTemplateRef>, Vec<ComponentDescriptor>) {
     let ret = Parser::new(&allocator, source, source_type).parse();
     assert!(ret.errors.is_empty(), "unexpected parse errors: {:?}", ret.errors);
     let program = allocator.alloc(ret.program);
-    visit_file(program, path)
+    // No exported-symbol map needed here: these tests only assert template/class detection.
+    visit_file(program, path, &HashMap::default())
 }
+
 
 /// `static template = "..."` inside a class body should be picked up as a `JsTemplateRef`,
 /// with the range covering only the string content (quotes excluded).
@@ -68,47 +73,4 @@ fn test_multiple_components_in_one_file() {
     let names: Vec<_> = descriptors.iter().map(|d| d.class_name.clone()).collect();
     assert!(names.contains(&"Counter".to_string()));
     assert!(names.contains(&"Display".to_string()));
-}
-
-/// The component descriptor should capture props, reactive state (from `useState`), plain
-/// instance fields, methods and getters, with the right `MemberKind`.
-#[test]
-fn test_component_descriptor_members() {
-    let source = concat!(
-        "export class Counter extends Component {\n",
-        "    static template = \"module_owl.Counter\";\n",
-        "    static props = [\"initialValue\"];\n",
-        "\n",
-        "    setup() {\n",
-        "        this.state = useState({ value: 0 });\n",
-        "    }\n",
-        "\n",
-        "    increment() {\n",
-        "        this.state.value++;\n",
-        "    }\n",
-        "\n",
-        "    get doubled() {\n",
-        "        return this.state.value * 2;\n",
-        "    }\n",
-        "}\n",
-    );
-    let (_, descriptors) = visit(source);
-    assert_eq!(descriptors.len(), 1);
-    let descriptor = &descriptors[0];
-    assert_eq!(descriptor.class_name, "Counter");
-
-    let prop = descriptor.find_member("initialValue").expect("initialValue prop should be captured");
-    assert_eq!(prop.kind, MemberKind::Prop);
-
-    let state = descriptor.find_member("state").expect("state should be captured as reactive state");
-    assert_eq!(state.kind, MemberKind::ReactiveState);
-
-    let method = descriptor.find_member("increment").expect("increment method should be captured");
-    assert_eq!(method.kind, MemberKind::Method);
-
-    let getter = descriptor.find_member("doubled").expect("doubled getter should be captured");
-    assert_eq!(getter.kind, MemberKind::Getter);
-
-    // `setup` itself is a lifecycle hook, not a regular member.
-    assert!(descriptor.find_member("setup").is_none());
 }

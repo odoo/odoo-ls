@@ -1,15 +1,16 @@
 use oxc::{allocator::Allocator, diagnostics::OxcDiagnostic, parser::Parser, semantic::SemanticBuilder, span::SourceType};
 use oxc_linter::{ConfigStore, ConfigStoreBuilder, ContextSubHost, ExternalPluginStore, LintOptions, ModuleRecord};
+use oxc::syntax::module_record::ExportExportName;
 use ruff_python_ast::{ModModule, PySourceType, Stmt, token::{Token, TokenKind}};
 use ruff_python_parser::Parsed;
 use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent, Uri};
 use lsp_types::notification::{Notification, PublishDiagnostics};
-use ruff_source_file::{OneIndexed, PositionEncoding, SourceLocation};
+use ruff_source_file::{LineIndex, OneIndexed, PositionEncoding, SourceLocation};
 use rustc_hash::FxHasher;
 use tracing::{error, warn};
 use std::path::Path;
-use crate::utils::HashSet;
-use crate::{core::js_arch_builder::{ComponentDescriptor, JsTemplateRef}};
+use crate::{core::js_arch_builder::JsExportKind, utils::HashSet};
+use crate::core::js_arch_builder::{ComponentDescriptor, JsTemplateRef};
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, OnceLock};
@@ -132,10 +133,17 @@ impl PythonAst {
 #[derive(Debug, Clone)]
 pub struct JsAst {
     /// Positions of OWL `static template = "some.xml_id"` string literals found in this JS file.
-    /// Each entry is (LSP Range of the string content, xml_id value, enclosing class name).
+    /// Each entry is (byte range of the string content, xml_id value, enclosing class name).
+    /// The range is converted to LSP coordinates by consumers.
     pub js_template_refs: Vec<JsTemplateRef>,
     /// Component descriptors extracted from OXC analysis of this JS file.
     pub js_component_descriptors: Vec<ComponentDescriptor>,
+    /// Every module specifier this JS file imports from, verbatim as written (incl.
+    /// bare `import "x"` and `export … from`). Sorted and deduplicated.
+    pub js_imports: Vec<String>,
+    /// The subset of [`Self::js_imports`] reached through a re-export — tracked apart as
+    /// one of the two type-propagating edges of `core::js_import_graph`.
+    pub js_reexports: Vec<String>,
 }
 
 impl JsAst {
@@ -143,6 +151,8 @@ impl JsAst {
         Self {
             js_template_refs: Vec::new(),
             js_component_descriptors: Vec::new(),
+            js_imports: Vec::new(),
+            js_reexports: Vec::new(),
         }
     }
 }
@@ -411,7 +421,7 @@ impl FileInfo {
         // SemanticBuilder uses oxc_ast_visit internally (recursive descent), which can
         // overflow the default stack on deeply-nested ASTs (e.g. minified JS).
         // Run parse + semantic analysis in a dedicated thread with 8 MiB stack.
-        let (diagnostics, template_refs, component_descriptors): (Vec<OxcDiagnostic>, Vec<JsTemplateRef>, Vec<ComponentDescriptor>) =
+        let (diagnostics, template_refs, component_descriptors, imports, reexports): (Vec<OxcDiagnostic>, Vec<JsTemplateRef>, Vec<ComponentDescriptor>, Vec<String>, Vec<String>) =
             std::thread::Builder::new()
             .stack_size(8 * 1024 * 1024)
             .spawn(move || {
@@ -421,10 +431,13 @@ impl FileInfo {
                 let ret = Parser::new(&allocator, data.as_str(), source_type).parse();
                 let mut diags: Vec<OxcDiagnostic> = ret.errors;
                 let parser_module_record = ret.module_record;
+
+                let (imports, reexports, exports) = Self::collect_js_imports(&parser_module_record);
+
                 let program = allocator.alloc(ret.program);
 
                 // Collect template references and component descriptors before semantic analysis
-                let (refs, descriptors) = js_arch_builder::visit_file(program, &path_str);
+                let (refs, descriptors) = js_arch_builder::visit_file(program, &path_str, &exports);
 
                 let semantic_ret = SemanticBuilder::new()
                     .with_cfg(true)
@@ -451,7 +464,7 @@ impl FileInfo {
                 let messages = linter.run(path, vec![context_sub_host], &allocator);
                 diags.extend(messages.into_iter().map(|m| m.error));
 
-                (diags, refs, descriptors)
+                (diags, refs, descriptors, imports, reexports)
             })
             .expect("failed to spawn JS parsing thread")
             .join()
@@ -459,6 +472,8 @@ impl FileInfo {
         js_arch_builder::build(session, &template_refs, &component_descriptors);
         self.file_info_ast.borrow_mut().ast.as_js_ast_mut().js_template_refs = template_refs;
         self.file_info_ast.borrow_mut().ast.as_js_ast_mut().js_component_descriptors = component_descriptors;
+        self.file_info_ast.borrow_mut().ast.as_js_ast_mut().js_imports = imports;
+        self.file_info_ast.borrow_mut().ast.as_js_ast_mut().js_reexports = reexports;
         let is_lib = self.uri.contains("/static/lib/");
         let lsp_diags = match is_lib {
             true => Vec::new(),
@@ -469,6 +484,38 @@ impl FileInfo {
             ).flatten().collect(),
         };
         self.replace_diagnostics(DiagnosticSource::JS_OXC, lsp_diags); //OXC will use SYNTAX. others are reserved to tsserver
+    }
+
+    fn collect_js_imports(parser_module_record: &oxc::syntax::module_record::ModuleRecord) -> (Vec<String>, Vec<String>, HashMap<String, JsExportKind>) {
+        let mut imports: Vec<String> = parser_module_record.requested_modules
+            .keys()
+            .map(|spec| spec.as_str().to_string())
+            .collect();
+        imports.sort();
+        let mut reexports: Vec<String> = parser_module_record.indirect_export_entries
+            .iter()
+            .chain(parser_module_record.star_export_entries.iter())
+            .filter_map(|entry| entry.module_request.as_ref())
+            .map(|request| request.name.as_str().to_string())
+            .collect();
+        reexports.sort();
+        reexports.dedup();
+
+        // Local class name → how the module exports it. A renamed export
+        // (`export { Foo as Bar }`) stays `None` so it falls back to a shim.
+        let mut exports: HashMap<String, JsExportKind> = HashMap::default();
+        for entry in parser_module_record.local_export_entries.iter() {
+            let Some(local) = entry.local_name.name() else { continue };
+            let kind = match &entry.export_name {
+                ExportExportName::Default(_) => JsExportKind::Default,
+                ExportExportName::Name(n) if n.name.as_str() == local.as_str() => {
+                    JsExportKind::Named
+                }
+                _ => continue,
+            };
+            exports.insert(local.as_str().to_string(), kind);
+        }
+        (imports, reexports, exports)
     }
 
     /* if ast has been set to none to lower memory usage, try to reload it */
@@ -691,11 +738,7 @@ impl FileInfo {
     }
 
     fn offset_to_position_with_text_document(text_document: &TextDocument, offset: u32, encoding: PositionEncoding) -> Position {
-        let location = text_document.index().source_location(offset.into(), text_document.contents(), encoding);
-        let line = u32::try_from(location.line.to_zero_indexed()).expect("row usize fits in u32");
-        let character = u32::try_from(location.character_offset.to_zero_indexed())
-            .expect("character usize fits in u32");
-        Position::new(line, character)
+        offset_to_position_with_line_index(text_document.index(), text_document.contents(), offset as usize, encoding)
     }
 
     fn try_offset_to_position_with_text_document(text_document: &TextDocument, offset: u32, encoding: PositionEncoding) -> Option<Position> {
@@ -735,11 +778,7 @@ impl FileInfo {
     }
 
     fn position_to_offset_with_text_document(text_document: &TextDocument, line: u32, char: u32, encoding: PositionEncoding) -> usize {
-        let position = SourceLocation {
-            line: OneIndexed::from_zero_indexed(line as usize),
-            character_offset: OneIndexed::from_zero_indexed(char as usize),
-        };
-        text_document.index().offset(position, text_document.contents(), encoding).into()
+        position_to_offset_with_line_index(text_document.index(), text_document.contents(), line, char, encoding)
     }
 
     pub fn position_to_offset(&self, line: u32, char: u32, encoding: PositionEncoding) -> usize {
@@ -1071,4 +1110,33 @@ pub fn hash_text_document(text: &TextDocument) -> u64 {
     let mut hasher = FxHasher::default();
     text.hash(&mut hasher);
     hasher.finish()
+}
+
+pub fn offset_to_position_with_line_index(
+    index: &LineIndex,
+    text: &str,
+    offset: usize,
+    encoding: PositionEncoding
+) -> Position {
+    // clamp offset to text length
+    let offset = u32::try_from(offset.min(text.len())).expect("offset fits in u32");
+    let location = index.source_location(offset.into(), text, encoding);
+    let line = u32::try_from(location.line.to_zero_indexed()).expect("row usize fits in u32");
+    let character = u32::try_from(location.character_offset.to_zero_indexed())
+        .expect("character usize fits in u32");
+    Position::new(line, character)
+}
+
+pub fn position_to_offset_with_line_index(
+    index: &LineIndex,
+    text: &str,
+    line: u32,
+    character: u32,
+    encoding: PositionEncoding,
+) -> usize {
+    let position = SourceLocation {
+        line: OneIndexed::from_zero_indexed(line as usize),
+        character_offset: OneIndexed::from_zero_indexed(character as usize),
+    };
+    index.offset(position, text, encoding).into()
 }

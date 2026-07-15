@@ -90,6 +90,12 @@ impl SymbolTable {
         // self.variables.reserve(450000);
         // self.xml_files.reserve(3200);
     }
+
+    /// Iterate every XML template symbol — the only whole-set read access (the slotmap is
+    /// private). Used by reverse lookups without a dedicated index (template-name refs).
+    pub fn iter_xml_templates(&self) -> impl Iterator<Item = (XmlTemplateKey, &XmlTemplateSymbol)> {
+        self.xml_templates.iter()
+    }
 }
 
 /*

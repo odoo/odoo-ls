@@ -1,16 +1,31 @@
-use oxc::ast::ast::{
-    Argument, ArrayExpressionElement, AssignmentExpression, AssignmentTarget, Class, Expression, MethodDefinition, MethodDefinitionKind, ObjectPropertyKind, Program, PropertyDefinition, PropertyKey
-};
-use oxc::ast_visit::{Visit, walk};
-use oxc::span::Span;
-use ruff_text_size::{TextRange, TextSize};
+use crate::utils::HashMap;
 
 use crate::threads::SessionInfo;
+use oxc::ast::ast::{Class, Expression, Program, PropertyDefinition, PropertyKey};
+use oxc::ast_visit::{Visit, walk};
+use ruff_text_size::{TextRange, TextSize};
 
-/// A span (byte offsets) plus the template name string value found in a template assignment.
+/// How an OWL component class is exported from its module — decides how the OWL virtual
+/// doc can name it. Computed from the module's export entries (not the class-declaration
+/// prefix, which misses `class Foo {}` … `export { Foo };`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JsExportKind {
+    /// Exported under its own name ⇒ `import { Foo } from "./stem"`.
+    Named,
+    /// The module's default export ⇒ `import Foo from "./stem"`.
+    Default,
+    /// Not exported, or exported under a different name ⇒ the doc needs a shim. The safe
+    /// default: a needless shim only costs a copy, a wrong import silently makes `@this` `any`.
+    None,
+}
+
+/// A byte span (surrounding quotes excluded) plus the template name string value found in a
+/// `static template = "..."` assignment. `range` is in **byte offsets** over the JS source;
+/// consumers turn it into an LSP range with the encoding-aware
+/// [`FileInfo::text_range_to_range`](crate::core::file_mgr::FileInfo::text_range_to_range).
 #[derive(Debug, Clone)]
 pub struct JsTemplateRef {
-    /// range of the closing quote of the string literal in the JS source.
+    /// Byte range of the xml_id string content (surrounding quotes excluded).
     pub range: TextRange,
     /// The template name string value (e.g. `"sale.form_view"`).
     pub t_name: String,
@@ -18,57 +33,19 @@ pub struct JsTemplateRef {
     pub class_name: Option<String>,
 }
 
-fn span_to_textrange(span: Span) -> TextRange {
-    TextRange::new(
-        TextSize::new(span.start),
-        TextSize::new(span.end),
-    )
-}
-
-fn key_span(key: &PropertyKey<'_>) -> Option<Span> {
-    match key {
-        PropertyKey::StaticIdentifier(ident) => Some(ident.span),
-        PropertyKey::StringLiteral(lit) => Some(lit.span),
-        _ => None,
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum InferredType {
-    Unknown,
-    Object(Vec<(String, InferredType)>),
-    Primitive,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum MemberKind {
-    ReactiveState,
-    Field,
-    Getter,
-    Method,
-    Prop,
-    Env,
-}
-
-#[derive(Debug, Clone)]
-pub struct ComponentMember {
-    pub name: String,
-    pub kind: MemberKind,
-    pub typ: InferredType,
-    pub range: TextRange,
-}
-
 #[derive(Debug, Clone)]
 pub struct ComponentDescriptor {
     pub class_name: String,
-    pub members: Vec<ComponentMember>,
     pub file_path: String,
-}
-
-impl ComponentDescriptor {
-    pub fn find_member(&self, name: &str) -> Option<&ComponentMember> {
-        self.members.iter().find(|m| m.name == name)
-    }
+    /// Byte offset of the class-name identifier — the go-to-definition target when
+    /// navigating from a template back to its component.
+    pub class_name_byte: u32,
+    /// Name of the class this one `extends`, when it is a plain identifier. Matched by
+    /// name against other descriptors to build the subclass graph for inheritance-aware
+    /// find-references; aliased imports are not resolved.
+    pub super_class_name: Option<String>,
+    /// How this class is exported — direct import vs shim for the OWL virtual doc.
+    pub export_kind: JsExportKind,
 }
 
 fn get_key_name(key: &PropertyKey<'_>) -> Option<String> {
@@ -79,83 +56,53 @@ fn get_key_name(key: &PropertyKey<'_>) -> Option<String> {
     }
 }
 
-fn extract_shape_from_object(obj: &oxc::ast::ast::ObjectExpression<'_>) -> InferredType {
-    let mut fields = vec![];
-    for prop_kind in &obj.properties {
-        let ObjectPropertyKind::ObjectProperty(prop) = prop_kind else { continue };
-        let Some(key) = get_key_name(&prop.key) else { continue };
-        let typ = match &prop.value {
-            Expression::ObjectExpression(nested) => extract_shape_from_object(nested),
-            Expression::StringLiteral(_)
-            | Expression::NumericLiteral(_)
-            | Expression::BooleanLiteral(_)
-            | Expression::NullLiteral(_) => InferredType::Primitive,
-            Expression::ArrayExpression(_) => InferredType::Unknown,
-            _ => InferredType::Unknown,
-        };
-        fields.push((key, typ));
-    }
-    InferredType::Object(fields)
-}
-
-/// Walks an OXC AST and collects every OWL `template` string assignment.
+/// Walks an OXC AST and collects every OWL `template` string assignment plus a
+/// [`ComponentDescriptor`] per named class.
 ///
 /// Detected patterns:
 /// - `static template = "module.name"` (class property definition)
-struct JSArchBuilderVisitor {
+struct JSArchBuilderVisitor<'e> {
     file_path: String,
-    refs: Vec<JsTemplateRef>,
+    pub refs: Vec<JsTemplateRef>,
     class_stack: Vec<String>,
-    in_setup: bool,
-    descriptor_stack: Vec<ComponentDescriptor>,
-    descriptors: Vec<ComponentDescriptor>,
+    pub descriptors: Vec<ComponentDescriptor>,
+    /// Local class name → how the module exports it. Missing ⇒ [`JsExportKind::None`].
+    exports: &'e HashMap<String, JsExportKind>,
 }
 
-impl JSArchBuilderVisitor {
-    fn new(file_path: String) -> Self {
+impl<'e> JSArchBuilderVisitor<'e> {
+    fn new(file_path: String, exports: &'e HashMap<String, JsExportKind>) -> Self {
         Self {
             file_path,
             refs: vec![],
             class_stack: vec![],
-            in_setup: false,
-            descriptor_stack: vec![],
             descriptors: vec![],
+            exports,
         }
     }
 }
 
-impl<'a> Visit<'a> for JSArchBuilderVisitor {
+impl<'a, 'e> Visit<'a> for JSArchBuilderVisitor<'e> {
     fn visit_class(&mut self, it: &Class<'a>) {
-        let class_name = it.id.as_ref().map(|id| id.name.to_string());
-        if let Some(ref name) = class_name {
+        // Anonymous classes carry no usable identity (nothing can reference them by name).
+        if let Some(id) = it.id.as_ref() {
+            let name = id.name.to_string();
+            let export_kind = self.exports.get(name.as_str()).copied().unwrap_or(JsExportKind::None);
             self.class_stack.push(name.clone());
-            let mut desc = ComponentDescriptor {
-                class_name: name.clone(),
-                members: vec![ComponentMember {
-                    name: "env".to_string(),
-                    kind: MemberKind::Env,
-                    typ: InferredType::Unknown,
-                    range: TextRange::default(),
-                }],
+            self.descriptors.push(ComponentDescriptor {
+                class_name: name,
                 file_path: self.file_path.clone(),
-            };
-            // Add `props` as a member (always present)
-            desc.members.push(ComponentMember {
-                name: "props".to_string(),
-                kind: MemberKind::Prop,
-                typ: InferredType::Unknown,
-                range: TextRange::default(),
+                class_name_byte: id.span.start,
+                super_class_name: match it.super_class.as_ref() {
+                    Some(Expression::Identifier(sid)) => Some(sid.name.to_string()),
+                    _ => None,
+                },
+                export_kind,
             });
-            self.descriptor_stack.push(desc);
         }
         walk::walk_class(self, it);
-        if class_name.is_some() {
+        if it.id.is_some() {
             self.class_stack.pop();
-        }
-        if let Some(desc) = self.descriptor_stack.pop() {
-            if !desc.class_name.is_empty() {
-                self.descriptors.push(desc);
-            }
         }
     }
 
@@ -177,180 +124,71 @@ impl<'a> Visit<'a> for JSArchBuilderVisitor {
                     });
                     return; // no need to recurse into value
                 }
-            } else if key_name.as_deref() == Some("props") {
-                if let Some(desc) = self.descriptor_stack.last_mut() {
-                    match &it.value {
-                        Some(Expression::ObjectExpression(obj)) => {
-                            for prop_kind in &obj.properties {
-                                let ObjectPropertyKind::ObjectProperty(p) = prop_kind else {
-                                    continue //TODO implement SpreadProperty
-                                };
-                                if let Some(prop_name) = get_key_name(&p.key) {
-                                    let range = key_span(&p.key)
-                                        .map(|s| span_to_textrange(s))
-                                        .unwrap_or_default();
-                                    desc.members.push(ComponentMember {
-                                        name: prop_name,
-                                        kind: MemberKind::Prop,
-                                        typ: InferredType::Unknown,
-                                        range,
-                                    });
-                                }
-                            }
-                        }
-                        Some(Expression::ArrayExpression(arr)) => {
-                            for elem in &arr.elements {
-                                if let ArrayExpressionElement::StringLiteral(s) = elem {
-                                    let range = span_to_textrange(s.span);
-                                    desc.members.push(ComponentMember {
-                                        name: s.value.to_string(),
-                                        kind: MemberKind::Prop,
-                                        typ: InferredType::Unknown,
-                                        range,
-                                    });
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                return;
-            }
-        } else if let Some(desc) = self.descriptor_stack.last_mut() {
-            // Instance field: `myField = something`
-            if let Some(name) = get_key_name(&it.key) {
-                if !name.starts_with('#') {
-                    let range = key_span(&it.key)
-                        .map(|s| span_to_textrange(s))
-                        .unwrap_or_default();
-                    desc.members.push(ComponentMember {
-                        name,
-                        kind: MemberKind::Field,
-                        typ: InferredType::Unknown,
-                        range,
-                    });
-                }
             }
         }
         walk::walk_property_definition(self, it);
     }
-
-    fn visit_method_definition(&mut self, it: &MethodDefinition<'a>) {
-        let name = get_key_name(&it.key);
-        let was_in_setup = self.in_setup;
-
-        if name.as_deref() == Some("setup") && !it.r#static {
-            self.in_setup = true;
-        }
-
-        if let Some(ref name) = name {
-            if let Some(desc) = self.descriptor_stack.last_mut() {
-                let range = key_span(&it.key)
-                    .map(|s| span_to_textrange(s))
-                    .unwrap_or_default();
-                match it.kind {
-                    MethodDefinitionKind::Get if !it.r#static => {
-                        desc.members.push(ComponentMember {
-                            name: name.clone(),
-                            kind: MemberKind::Getter,
-                            typ: InferredType::Unknown,
-                            range,
-                        });
-                    }
-                    MethodDefinitionKind::Method
-                        if !it.r#static && name != "setup" && name != "constructor" =>
-                    {
-                        desc.members.push(ComponentMember {
-                            name: name.clone(),
-                            kind: MemberKind::Method,
-                            typ: InferredType::Unknown,
-                            range,
-                        });
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        walk::walk_method_definition(self, it);
-        self.in_setup = was_in_setup;
-    }
-
-    fn visit_assignment_expression(&mut self, it: &AssignmentExpression<'a>) {
-        if self.in_setup {
-            if let AssignmentTarget::StaticMemberExpression(member) = &it.left {
-                if matches!(member.object, Expression::ThisExpression(_)) {
-                    let field_name = member.property.name.to_string();
-                    let field_range = span_to_textrange(member.property.span);
-                    let typ = match &it.right {
-                        Expression::CallExpression(call) => {
-                            let callee_name = match &call.callee {
-                                Expression::Identifier(id) => Some(id.name.as_str()),
-                                _ => None,
-                            };
-                            if callee_name == Some("useState") {
-                                if let Some(first_arg) = call.arguments.first() {
-                                    match first_arg {
-                                        Argument::ObjectExpression(obj) => {
-                                            extract_shape_from_object(obj)
-                                        }
-                                        _ => InferredType::Unknown,
-                                    }
-                                } else {
-                                    InferredType::Unknown
-                                }
-                            } else {
-                                InferredType::Unknown
-                            }
-                        }
-                        _ => InferredType::Unknown,
-                    };
-                    if let Some(desc) = self.descriptor_stack.last_mut() {
-                        // Replace existing field with more specific ReactiveState info
-                        if let Some(existing) = desc.members.iter_mut().find(|m| m.name == field_name) {
-                            existing.kind = MemberKind::ReactiveState;
-                            existing.typ = typ;
-                            existing.range = field_range;
-                        } else {
-                            desc.members.push(ComponentMember {
-                                name: field_name,
-                                kind: MemberKind::ReactiveState,
-                                typ,
-                                range: field_range,
-                            });
-                        }
-                    }
-                    return;
-                }
-            }
-        }
-        walk::walk_assignment_expression(self, it);
-    }
 }
 
-pub fn visit_file(program: &Program<'_>, file_path: &str) -> (Vec<JsTemplateRef>, Vec<ComponentDescriptor>) {
-    let mut visitor = JSArchBuilderVisitor::new(file_path.to_string());
+pub fn visit_file(
+    program: &Program<'_>,
+    file_path: &str,
+    exports: &HashMap<String, JsExportKind>,
+) -> (Vec<JsTemplateRef>, Vec<ComponentDescriptor>) {
+    let mut visitor = JSArchBuilderVisitor::new(file_path.to_string(), exports);
     visitor.visit_program(program);
-    (
-        visitor
-        .refs
-        .into_iter()
-        .collect(),
-
-        visitor.descriptors,
-    )
+    (visitor.refs, visitor.descriptors)
 }
 
-pub fn build(session: &mut SessionInfo, templates_ref: &Vec<JsTemplateRef>, components: &Vec<ComponentDescriptor>) {
-    // Populate template→class_name mapping
-    for tr in templates_ref.iter() {
-        if let Some(cn) = &tr.class_name {
-            session.sync_odoo.js_component_by_template.insert(tr.t_name.clone(), cn.clone());
-        }
-    }
-
-    // Populate component descriptors from this file
-    for descriptor in components.iter() {
+pub fn build(
+    session: &mut SessionInfo,
+    template_refs: &[JsTemplateRef],
+    component_descriptors: &[ComponentDescriptor],
+) {
+    for descriptor in component_descriptors {
         session.sync_odoo.component_descriptors.insert(descriptor.class_name.clone(), descriptor.clone());
     }
+
+    // Template→declaring classes. Which one wins is decided at query time, by
+    // `component_for_template`: a super-chain can cross files not built yet.
+    for template_ref in template_refs {
+        let Some(class_name) = &template_ref.class_name else { continue };
+        let classes = session.sync_odoo.js_component_by_template
+            .entry(template_ref.t_name.clone())
+            .or_default();
+        if !classes.contains(class_name) {
+            classes.push(class_name.clone());
+        }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use oxc::allocator::Allocator;
+    use oxc::parser::Parser;
+    use oxc::span::SourceType;
+
+    fn descriptors_of(src: &str, exports: &[(&str, JsExportKind)]) -> Vec<ComponentDescriptor> {
+        let allocator = Allocator::default();
+        let source_type = SourceType::from_path(std::path::Path::new("/mod/foo.js")).unwrap_or_default();
+        let ret = Parser::new(&allocator, src, source_type).parse();
+        let program = allocator.alloc(ret.program);
+        let map: HashMap<String, JsExportKind> = exports.iter().map(|(n, k)| (n.to_string(), *k)).collect();
+        visit_file(program, "/mod/foo.js", &map).1
+    }
+
+    #[test]
+    fn visit_file_stamps_each_descriptor_with_its_export_kind() {
+        // Only the names present in the exports map are exported; the rest default to `None`
+        // (the shim path). This is the capture the doc's `import` line depends on.
+        let descs = descriptors_of(
+            "class Foo {}\nclass Bar {}\nclass Baz {}",
+            &[("Foo", JsExportKind::Named), ("Baz", JsExportKind::Default)],
+        );
+        let kind = |name: &str| descs.iter().find(|d| d.class_name == name).unwrap().export_kind;
+        assert_eq!(kind("Foo"), JsExportKind::Named);
+        assert_eq!(kind("Bar"), JsExportKind::None);
+        assert_eq!(kind("Baz"), JsExportKind::Default);
+    }
+
 }

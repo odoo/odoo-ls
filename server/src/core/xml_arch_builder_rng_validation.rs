@@ -530,6 +530,17 @@ impl XmlArchBuilder {
         result
     }
 
+    fn collect_t_inherit(node: &Node) -> Option<(OYarn, TextRange)> {
+        let Some(inherit_attr) = node.attribute_node("t-inherit") else {
+            return None;
+        };
+        let r = inherit_attr.range_value();
+        Some((
+            oyarn!("{}", inherit_attr.value()),
+            TextRange::new(TextSize::new(r.start as u32), TextSize::new(r.end as u32)),
+        ))
+    }
+
     fn load_qweb_template(&mut self, session: &mut SessionInfo, node: &Node, found_id: Option<String>, for_web: bool, diagnostics: &mut Vec<Diagnostic>) -> bool {
         let found_t_name_node = node.attribute_node("t-name");
         let found_t_name = found_t_name_node.map(|n| n.value().to_string());
@@ -547,6 +558,10 @@ impl XmlArchBuilder {
         let t_calls = Self::collect_t_calls(node);
         if !t_calls.is_empty() {
             session.st_mut()[data].t_calls = t_calls;
+        }
+        // Record the `t-inherit` target — powers find-references of a template name.
+        if let Some(t_inherit) = Self::collect_t_inherit(node) {
+            session.st_mut()[data].t_inherit = Some(t_inherit);
         }
         if let Some(found_t_name_node) = found_t_name_node && let Some(found_t_name) = &found_t_name {
             if !found_t_name.contains(".") {

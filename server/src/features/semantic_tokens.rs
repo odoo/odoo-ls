@@ -1,6 +1,6 @@
-//! Python LSP semantic tokens
+//! LSP semantic tokens
 
-use lsp_types::{Position, Range, SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokens, SemanticTokensLegend};
+use lsp_types::{Range, SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokens, SemanticTokensLegend};
 use ruff_python_ast::visitor::{walk_expr, walk_parameter, Visitor};
 use ruff_python_ast::{Decorator, Expr, ExprCall, Parameter};
 use ruff_text_size::{Ranged, TextRange};
@@ -11,6 +11,7 @@ use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::symbol_keys::{SourceFileKey, SymbolKey};
 use crate::features::ast_utils::AstUtils;
 use crate::features::features_utils::{FeaturesUtils, SegmentPick, StringResolution};
+use crate::features::owl_component_utils::template_reference_resolves;
 use crate::threads::SessionInfo;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -27,7 +28,7 @@ use std::rc::Rc;
 #[repr(u32)]
 #[derive(Clone, Copy)]
 #[allow(dead_code)] // Several slots exist only for the JS (tsserver) legend, not emitted by the Python path.
-enum TokType {
+pub(crate) enum TokType {
     Class = 0,
     Enum = 1,
     Interface = 2,
@@ -54,7 +55,7 @@ enum TokType {
 #[repr(u32)]
 #[derive(Clone, Copy)]
 #[allow(dead_code)] // Several bits exist only for the JS (tsserver) legend, not emitted by the Python path.
-enum TokMod {
+pub(crate) enum TokMod {
     Declaration = 0,
     Static = 1,
     Async = 2,
@@ -66,7 +67,7 @@ enum TokMod {
 
 impl TokMod {
     /// Bit mask for this modifier inside the per-token modifier bitset.
-    fn bit(self) -> u32 {
+    pub(crate) fn bit(self) -> u32 {
         1 << (self as u32)
     }
 }
@@ -141,37 +142,67 @@ impl SemanticTokensFeature {
         Self::encode(raw)
     }
 
-    /// JavaScript/TypeScript semantic tokens, delegated wholesale to tsserver.
-    ///
-    /// Unlike the Python path (which resolves every site through our own evaluation
-    /// engine), JS semantics live in tsserver, which already ships a native semantic
-    /// classifier. Our legend is laid out to mirror tsserver's type/modifier numbering,
-    /// so the classifications come back already aligned — the only work here is turning
-    /// tsserver's UTF-16 offsets into LSP positions and reusing `encode`.
+    /// JavaScript/TypeScript semantic tokens: template-name tokens (in-house, works without
+    /// tsserver) merged with tsserver's native classifier output — the legend mirrors
+    /// tsserver's numbering, so the only work is converting its flat UTF-16 offsets into
+    /// LSP positions. Mirrors `owl_virtual::semantic_tokens_xml` for the XML side.
     pub fn tokens_javascript(session: &mut SessionInfo, file_path: &str, file_info: &Rc<RefCell<FileInfo>>) -> SemanticTokens {
+        // 1. Template-name tokens. Independent of tsserver: the ranges come from our own AST pass.
+        let mut raw: Vec<(Range, u32, u32)> = Self::template_ref_tokens(session, file_info);
+
         // Snapshot the content first: we need it to map offsets to positions, and we
         // must not hold the borrow across the `&mut session` bridge call below.
         let content = {
             let fi = file_info.borrow();
             let fia = fi.file_info_ast.borrow();
-            match fia.text_document.as_ref() {
-                Some(td) => td.contents().to_string(),
-                None => return SemanticTokens { result_id: None, data: vec![] },
+            fia.text_document.as_ref().map(|td| td.contents().to_string())
+        };
+
+        // 2. tsserver's classifier. Without a bridge (CLI / most tests) we keep only the
+        //    template-name tokens above and let the client's grammar handle the rest.
+        if let Some(content) = content {
+            let spans = match session.sync_odoo.tsserver_bridge.as_mut() {
+                Some(bridge) => bridge.get_semantic_tokens(file_path),
+                None => vec![],
+            };
+
+            // Spans arrive in ascending order, so one monotone pass converts them to bytes;
+            // the file's own line index then encodes positions in the session encoding.
+            let encoding = session.sync_odoo.encoding;
+            let mut conv = U16ToByte::new(&content);
+            for (start, length, token_type, modifiers) in spans {
+                let b_start = conv.advance_to(start) as u32;
+                let b_end = conv.advance_to(start + length) as u32;
+                let fi = file_info.borrow();
+                let range = Range {
+                    start: fi.offset_to_position(b_start, encoding),
+                    end: fi.offset_to_position(b_end, encoding),
+                };
+                raw.push((range, token_type, modifiers));
             }
-        };
+        }
 
-        // tsserver is the only source of JS semantics. Without it (CLI / most tests)
-        // we emit nothing and let the client's grammar handle highlighting.
-        let spans = match session.sync_odoo.tsserver_bridge.as_mut() {
-            Some(bridge) => bridge.get_semantic_tokens(file_path),
-            None => return SemanticTokens { result_id: None, data: vec![] },
-        };
+        Self::encode(raw)
+    }
 
-        Self::encode(utf16_spans_to_raw_tokens(&content, spans))
+    /// `type` tokens for `static template = "module.name"` strings. A template *reference*
+    /// like `t-call` / `t-inherit`: no `declaration` modifier, and gated on resolving —
+    /// highlighted exactly when Definition would navigate from it.
+    fn template_ref_tokens(session: &SessionInfo, file_info: &Rc<RefCell<FileInfo>>) -> Vec<(Range, u32, u32)> {
+        let encoding = session.sync_odoo.encoding;
+        let template_refs = file_info.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
+        template_refs
+            .into_iter()
+            .filter(|template_ref| template_reference_resolves(session, &template_ref.t_name))
+            .map(|template_ref| {
+                let range = file_info.borrow().text_range_to_range(&template_ref.range, encoding);
+                (range, TokType::Type as u32, 0)
+            })
+            .collect()
     }
 
     /// Sort raw tokens by (line, char) and delta-encode into the flat LSP form.
-    fn encode(mut raw: Vec<(Range, u32, u32)>) -> SemanticTokens {
+    pub fn encode(mut raw: Vec<(Range, u32, u32)>) -> SemanticTokens {
         raw.sort_by_key(|(range, _, _)| (range.start.line, range.start.character));
         let mut data: Vec<SemanticToken> = Vec::with_capacity(raw.len());
         let mut prev_line: u32 = 0;
@@ -201,33 +232,31 @@ impl SemanticTokensFeature {
     }
 }
 
-/// Convert tsserver's UTF-16-offset spans into `Range`-tagged raw tokens ready for
-/// `encode`. tsserver reports each token as `(start, length, token_type, modifiers)`
-/// where `start`/`length` are UTF-16 code-unit offsets from the file start; LSP wants
-/// line/character positions (also UTF-16 by default, which is what the rest of the
-/// tsserver bridge assumes). Pure: depends only on `content` and `spans`.
-fn utf16_spans_to_raw_tokens(content: &str, spans: Vec<(u32, u32, u32, u32)>) -> Vec<(Range, u32, u32)> {
-    // Line-start offsets in UTF-16 code units — tsserver's offset space.
-    let mut line_starts: Vec<u32> = vec![0];
-    let mut u16_offset: u32 = 0;
-    for ch in content.chars() {
-        u16_offset += ch.len_utf16() as u32;
-        if ch == '\n' {
-            line_starts.push(u16_offset);
-        }
-    }
-    let to_pos = |offset: u32| -> Position {
-        let line = line_starts.partition_point(|&s| s <= offset).saturating_sub(1);
-        Position { line: line as u32, character: offset - line_starts[line] }
-    };
+/// Monotone UTF-16 code-unit offset → byte offset converter. tsserver reports semantic
+/// classification spans as flat UTF-16 offsets from the file start, in ascending order;
+/// converting them through one forward pass avoids re-scanning the content per span.
+/// Offsets must be queried in ascending order; a target past the end of the content clamps
+/// to `content.len()`, and a target inside a surrogate pair resolves past the character.
+pub(crate) struct U16ToByte<'a> {
+    chars: std::str::CharIndices<'a>,
+    u16_pos: u32,
+    byte_pos: usize,
+}
 
-    spans
-        .into_iter()
-        .map(|(start, length, token_type, modifiers)| {
-            let range = Range { start: to_pos(start), end: to_pos(start + length) };
-            (range, token_type, modifiers)
-        })
-        .collect()
+impl<'a> U16ToByte<'a> {
+    pub(crate) fn new(content: &'a str) -> Self {
+        Self { chars: content.char_indices(), u16_pos: 0, byte_pos: 0 }
+    }
+
+    /// Byte offset of the (ascending) UTF-16 offset `target`.
+    pub(crate) fn advance_to(&mut self, target: u32) -> usize {
+        while self.u16_pos < target {
+            let Some((i, c)) = self.chars.next() else { break };
+            self.u16_pos += c.len_utf16() as u32;
+            self.byte_pos = i + c.len_utf8();
+        }
+        self.byte_pos
+    }
 }
 
 /// `self`/`cls` are left entirely to the client grammar's special-self/cls rule —
