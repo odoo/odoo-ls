@@ -183,7 +183,9 @@ impl Server {
                     }
                 })),
                 completion_provider: Some(CompletionOptions {
-                    resolve_provider: Some(false),
+                    // tsserver auto-import items only carry their `import … from "…";` edit
+                    // after a `completionEntryDetails` round trip, issued on resolve.
+                    resolve_provider: Some(true),
                     trigger_characters: Some(vec![S!("."), S!(","), S!("'"), S!("\""), S!("(")]),
                     ..CompletionOptions::default()
                 }),
@@ -430,16 +432,14 @@ impl Server {
                 self.running_request_ids.lock().unwrap().push(r.id.clone());
                 match r.method.as_str() {
                     HoverRequest::METHOD | GotoDefinition::METHOD | GotoDeclaration::METHOD | References::METHOD | DocumentSymbolRequest::METHOD |
-                    WorkspaceSymbolRequest::METHOD | WorkspaceSymbolResolve::METHOD | Completion::METHOD | SemanticTokensFullRequest::METHOD => {
+                    WorkspaceSymbolRequest::METHOD | WorkspaceSymbolResolve::METHOD | Completion::METHOD | ResolveCompletionItem::METHOD |
+                    SemanticTokensFullRequest::METHOD => {
                         self.interrupt_rebuild_boolean.store(true, std::sync::atomic::Ordering::SeqCst);
                         if DEBUG_THREADS {
                             info!("Sending request to main thread : {} - {}", r.method, r.id);
                         }
                         self.generic_sender_to_main.send(ThreadMessage::LSPMessage(Message::Request(r))).unwrap();
                     },
-                    ResolveCompletionItem::METHOD => {
-                        info!("Got ignored CompletionItem/resolve")
-                    }
                     _ => {panic!("Not handled Request Id: {}", r.method)}
                 }
             },

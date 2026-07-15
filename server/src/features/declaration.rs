@@ -1,9 +1,10 @@
-use lsp_types::{Location, Position, Range};
+use lsp_types::Location;
 use lsp_types::request::GotoDeclarationResponse;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::core::file_mgr::{Ast, FileInfo, FileMgr};
+use crate::core::file_mgr::{Ast, FileInfo};
 use crate::core::symbols::symbol_keys::SourceFileKey;
+use crate::core::tsserver_bridge;
 use crate::features::goto_utils::{GotoRequest, GotoUtils};
 use crate::threads::SessionInfo;
 
@@ -37,17 +38,8 @@ impl DeclarationFeature {
         let locs: Vec<Location> = if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
             //declaration is not available in javascript, so let's call definition if this route is called for js files.
             bridge.get_definition(&file_path, line, character)
-                .into_iter()
-                .map(|(target_file, sl, sc, el, ec)| {
-                    let uri = FileMgr::pathname2uri(&target_file);
-                    Location {
-                        uri,
-                        range: Range {
-                            start: Position { line: sl, character: sc },
-                            end:   Position { line: el, character: ec },
-                        },
-                    }
-                })
+                .iter()
+                .map(tsserver_bridge::ts_to_lsp_location)
                 .collect()
         } else {
             vec![]

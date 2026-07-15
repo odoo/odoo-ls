@@ -11,9 +11,10 @@ use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::storage::metrics::{log_slotmap_capacities, log_symbol_counts, log_memory_usage};
 use crate::core::symbols::symbol_keys::{FunctionKey, ModuleKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlTemplateKey};
-use crate::core::tsserver_bridge::TsServerBridge;
+use crate::core::tsserver_bridge::{TsServerBridge};
+use crate::features::tsserver_completion::TsCompletionResolveData;
 use crate::core::xml_validation::XmlValidator;
-use crate::features::js_completion::owl_completion;
+use crate::features::owl_virtual;
 use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
 use crate::lsp_types_custom::{ConfigDiagnosticAction, ConfigDiagnosticMessage, ConfigDiagnosticMessageLevel};
 use crate::odoo_version::OdooVersion;
@@ -165,7 +166,9 @@ pub struct SyncOdoo {
     pub tsserver_bridge: Option<TsServerBridge>,
     pub js_templates: HashMap<String, WeakSet<XmlTemplateKey>>,
     pub component_descriptors: HashMap<String, ComponentDescriptor>,
-    pub js_component_by_template: HashMap<String, String>,
+    /// Template name → every class declaring it. Resolve with
+    /// [`js_component_index::component_for_template`].
+    pub js_component_by_template: HashMap<String, Vec<String>>,
 }
 
 unsafe impl Send for SyncOdoo {}
@@ -415,6 +418,9 @@ impl SyncOdoo {
         session.log_message(MessageType::INFO, format!("End of initialization. Time taken: {} ms", start_time.elapsed().as_millis()));
     }
 
+    /// Start tsserver and configure the external project (`paths` + `typeRoots`) for Odoo's
+    /// `@addons/*` layout. Runs on a worker thread (see the call site) so it overlaps the
+    /// Python build; takes owned config values because it cannot touch `session`.
     fn setup_and_start_tsserver(
         tsserver_cmd: String,
         sender_to_main: crossbeam_channel::Sender<ThreadMessage>,
@@ -430,6 +436,7 @@ impl SyncOdoo {
             }
         };
         let mut paths: HashMap<String, Vec<String>> = HashMap::default();
+        let mut type_roots: Vec<String> = vec![];
         let mut addon_dirs: Vec<PathBuf> = vec![];
         if let Some(ref odoo_path) = odoo_path {
             addon_dirs.push(PathBuf::from(odoo_path).join("addons"));
@@ -446,15 +453,20 @@ impl SyncOdoo {
                         paths.entry(format!("@{}/*", name))
                             .or_default()
                             .push(src.sanitize());
+                        // Odoo ships ambient declarations in each module's
+                        // `static/src/@types` (mirrors _jsconfig's `*/static/src/@types`).
+                        let types_dir = entry.path().join("static").join("src").join("@types");
+                        if types_dir.is_dir() {
+                            type_roots.push(types_dir.sanitize());
+                        }
                         if name == "spreadsheet" {
                             let src = entry.path().join("static").join("src").join("index.js");
                             paths.entry(S!("@spreadsheet"))
                                 .or_default()
                                 .push(src.sanitize());
-                            let src = entry.path().join("static").join("src").join("o_spreadsheet").join("o_spreadsheet.js");
-                            paths.entry(S!("@odoo/o-spreadsheet"))
-                                .or_default()
-                                .push(src.sanitize());
+                            // `@odoo/o-spreadsheet` is deliberately NOT aliased: mirrors
+                            // jsconfig.json's exclude of o_spreadsheet.js (a 2.9 MB
+                            // minified bundle with no .d.ts that only bloats the program).
                         } else if name == "web" {
                             let path_entry = paths.entry(S!("@odoo/owl")).or_default();
                             path_entry.push(entry.path().join("static").join("src").join("@types").join("owl.d.ts").sanitize());
@@ -463,32 +475,22 @@ impl SyncOdoo {
                             path_entry.push(entry.path().join("static").join("src").join("@types").join("hoot.d.ts").sanitize());
                             let path_entry = paths.entry(S!("@odoo/hoot-dom")).or_default();
                             path_entry.push(entry.path().join("static").join("lib").join("hoot-dom").join("hoot-dom.ts").sanitize());
+                            let tooling_types = entry.path().join("tooling").join("types");
+                            if tooling_types.is_dir() {
+                                type_roots.push(tooling_types.sanitize());
+                            }
+                        } else if name == "mail" {
+                            let mail_tooling = entry.path().join("static").join("src").join("js").join("tooling").join("types");
+                            if mail_tooling.is_dir() {
+                                type_roots.push(mail_tooling.sanitize());
+                            }
                         }
                     }
                 }
             }
         }
-        // Extract the @types directory before paths is consumed.
-        let owl_types_dir = paths.get("@odoo/owl")
-            .and_then(|v| v.first())
-            .and_then(|p| PathBuf::from(p).parent().map(|d| d.to_path_buf()));
-        bridge.open_external_project(paths);
-        if let Some(types_dir) = owl_types_dir {
-            SyncOdoo::inject_tsserver_custom_code(&mut bridge, &types_dir);
-        }
+        bridge.open_external_project(paths, type_roots);
         Some(bridge)
-    }
-
-    /**
-     * Add custom files that will help tsserver to undestand some odoo architecture
-     */
-    fn inject_tsserver_custom_code(bridge: &mut TsServerBridge, types_dir: &PathBuf) {
-        let augment_path = types_dir.join("odoo-ls-owl-augment.d.ts").sanitize();
-        //add props to component interface
-        bridge.inject_virtual_declarations(
-            &augment_path,
-            "export {};\ndeclare module \"@odoo/owl\" {\n    interface Component {\n        props: Record<string, any>;\n    }\n}\n",
-        );
     }
 
     pub fn find_stdlib_entry_point(&self) -> Rc<RefCell<EntryPoint>> {
@@ -1887,7 +1889,13 @@ impl Odoo {
                         }
                     },
                     Ast::XmlAst => {
-                        return Ok(HoverFeature::hover_xml(session, file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                        let Position { line, character } = params.text_document_position_params.position;
+                        // OWL-template JS expressions first; everything else → XML hover.
+                        // @todo: check if not breaking python-related hover
+                        if let Some(hover) = owl_virtual::hover_xml_owl(session, &file_info, line, character) {
+                            return Ok(Some(hover));
+                        }
+                        return Ok(HoverFeature::hover_xml(session, file_symbol, &file_info, line, character));
                     },
                     Ast::CsvAst => {
                         return Ok(HoverFeature::hover_csv(session, file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
@@ -1908,7 +1916,7 @@ impl Odoo {
         let path = match params.text_document.uri.scheme().map(|scheme| scheme.to_lowercase()) {
             Some(schema) if schema == "file" => {
                 let uri = params.text_document.uri.as_str();
-                if [".py", ".js", ".ts"].iter().all(|&ext| !uri.ends_with(ext) ) {
+                if [".py", ".js", ".ts", ".xml"].iter().all(|&ext| !uri.ends_with(ext) ) {
                     return Ok(None);
                 }
                 match params.text_document.uri.to_file_path() {
@@ -1943,6 +1951,11 @@ impl Odoo {
                         let uri = file_info.borrow().uri.clone();
                         let tokens = SemanticTokensFeature::tokens_javascript(session, &uri, &file_info);
                         return Ok(Some(SemanticTokensResult::Tokens(tokens)));
+                    },
+                    Ast::XmlAst => {
+                        if let Some(tokens) = owl_virtual::semantic_tokens_xml(session, &file_info) {
+                            return Ok(Some(SemanticTokensResult::Tokens(tokens)));
+                        }
                     },
                     _ => {},
                 }
@@ -2105,7 +2118,7 @@ impl Odoo {
                         return Ok(None);
                     },
                     Ast::XmlAst => {
-                        if let Some(items) = owl_completion(session, &file_info, params.text_document_position.position.line, params.text_document_position.position.character) {
+                        if let Some(items) = owl_virtual::completion_xml_owl(session, &file_info, params.text_document_position.position.line, params.text_document_position.position.character) {
                             return Ok(Some(CompletionResponse::Array(items)));
                         }
                     },
@@ -2123,6 +2136,43 @@ impl Odoo {
             }
         }
         Ok(None)
+    }
+
+    /// Fill in the deferred half of a JS completion item. Only tsserver auto-import entries
+    /// carry resolve data (their `import …;` edit lives in a `completionEntryDetails` code
+    /// action); everything else resolves to itself.
+    pub fn handle_completion_resolve(session: &mut SessionInfo, mut item: CompletionItem) -> Result<CompletionItem, ResponseError> {
+        // Consume the data: it identified the entry for this round trip only.
+        let Some(data) = item.data.take() else {
+            return Ok(item);
+        };
+        let resolve: TsCompletionResolveData = match serde_json::from_value(data) {
+            Ok(resolve) => resolve,
+            Err(err) => {
+                warn!("Unrecognized completion item data, resolving as-is: {}", err);
+                return Ok(item);
+            }
+        };
+        let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() else {
+            return Ok(item);
+        };
+        let Some(details) = bridge.completion_entry_details(
+            &resolve.file,
+            resolve.line,
+            resolve.character,
+            &resolve.name,
+            resolve.source.as_deref(),
+            resolve.data.as_ref(),
+        ) else {
+            return Ok(item);
+        };
+
+        item.detail = details.detail;
+        item.documentation = details.documentation.map(Documentation::String);
+        if !details.additional_text_edits.is_empty() {
+            item.additional_text_edits = Some(details.additional_text_edits);
+        }
+        Ok(item)
     }
 
     pub fn handle_did_change_configuration(_session: &mut SessionInfo, _params: DidChangeConfigurationParams) {

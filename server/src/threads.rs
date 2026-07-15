@@ -2,9 +2,9 @@ use std::{collections::VecDeque, path::PathBuf, sync::{Arc, Mutex}, time::Instan
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use lsp_server::{Message, RequestId, Response, ResponseError};
-use lsp_types::{CompletionResponse, DocumentSymbolResponse, GotoDefinitionResponse, Hover, Location, LogMessageParams, MessageType, SemanticTokensResult, ShowMessageParams, WorkspaceSymbol, WorkspaceSymbolResponse, notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders,
+use lsp_types::{CompletionItem, CompletionResponse, DocumentSymbolResponse, GotoDefinitionResponse, Hover, Location, LogMessageParams, MessageType, SemanticTokensResult, ShowMessageParams, WorkspaceSymbol, WorkspaceSymbolResponse, notification::{DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders,
     DidCloseTextDocument, DidCreateFiles, DidDeleteFiles, DidOpenTextDocument, DidRenameFiles, DidSaveTextDocument, LogMessage,
-    Notification, ShowMessage}, request::{Completion, DocumentSymbolRequest, GotoDeclaration, GotoDeclarationResponse, GotoDefinition, HoverRequest, References, Request, SemanticTokensFullRequest, Shutdown, WorkspaceSymbolRequest, WorkspaceSymbolResolve}};
+    Notification, ShowMessage}, request::{Completion, DocumentSymbolRequest, GotoDeclaration, GotoDeclarationResponse, GotoDefinition, HoverRequest, References, Request, ResolveCompletionItem, SemanticTokensFullRequest, Shutdown, WorkspaceSymbolRequest, WorkspaceSymbolResolve}};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tracing::{error, info, warn};
@@ -466,6 +466,12 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>,
                             let mut session = create_session!(sender_to_s, receiver_to_s, Some(generic_sender_to_main.clone()), sync_odoo, delayed_process_sender);
                             SyncOdoo::process_rebuilds(&mut session, true);
                             to_value::<CompletionResponse>(Odoo::handle_autocomplete(&mut session, serde_json::from_value(r.params).unwrap()))
+                        },
+                        ResolveCompletionItem::METHOD => {
+                            // No rebuild: resolving only re-queries tsserver about an item it
+                            // already handed us, and the client is blocked on the answer.
+                            let mut session = create_session!(sender_to_s, receiver_to_s, Some(generic_sender_to_main.clone()), sync_odoo, delayed_process_sender);
+                            to_value_not_null::<CompletionItem>(Odoo::handle_completion_resolve(&mut session, serde_json::from_value(r.params).unwrap()))
                         },
                         SemanticTokensFullRequest::METHOD => {
                             let mut session = create_session!(sender_to_s, receiver_to_s, Some(generic_sender_to_main.clone()), sync_odoo, delayed_process_sender);

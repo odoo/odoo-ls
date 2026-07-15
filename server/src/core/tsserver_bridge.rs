@@ -1,5 +1,6 @@
-use lsp_types::{CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity, DocumentSymbol, NumberOrString, Position, Range, SymbolKind};
+use lsp_types::{CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity, DocumentSymbol, Location, NumberOrString, Position, Range, SymbolKind};
 use serde_json::{Value, json};
+use crate::features::tsserver_completion::{TsCompletionDetails, entry_to_completion_item, response_to_completion_details};
 use crate::utils::{HashMap, HashSet};
 use tracing::{debug, info, warn};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -9,6 +10,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::constants::DiagnosticSource;
+use crate::core::file_mgr::FileMgr;
 use crate::threads::{TsServerDiagnostics, ThreadMessage};
 
 const VIRTUAL_PROJECT_NAME: &str = "odoo-ls-virtual-project";
@@ -36,10 +38,45 @@ pub struct TsServerBridge {
     /// Notified by the reader thread every time a new response is inserted.
     response_notify: Arc<Condvar>,
     seq: u64,
-    root_files: HashSet<String>, //contains all files that have been opened in the tsserver project
+    /// Files the client has open. Dropped on close (see [`Self::close_file`]); a later
+    /// references query re-stages one as a transient root if it still needs it.
+    /// Disjoint from [`Self::transient_roots`] — a path is pinned here or evictable there,
+    /// never both (the project payload is the union of the two).
+    root_files: HashSet<String>,
+    /// Evictable roots: reference-expansion files (never `open`ed — read from disk) and the
+    /// OWL virtual docs. Dropped as a block once they outgrow the retention budget.
+    transient_roots: HashSet<String>,
+    /// The subset of [`Self::transient_roots`] we sent an `open` for, and must therefore `close`
+    /// on eviction (see [`Self::evict_transient_roots`]).
+    open_virtual_docs: HashSet<String>,
+    /// Whether `transient_roots` changed since the last `openExternalProject`.
+    transient_dirty: bool,
     //contains all tsconfig paths registered for the project, such as "@odoo/owl" as key and resolved paths matching it
     project_paths: HashMap<String, Vec<String>>,
+    project_type_roots: Vec<String>,
     project_open: bool,
+}
+
+
+/// A tsserver goto/references result: `(file_path, start_line, start_char, end_line,
+/// end_char)`, 0-based (LSP convention). The raw form of an LSP [`Location`];
+/// [`ts_to_lsp_location`] converts one into a `Location`.
+pub type TsLocation = (String, u32, u32, u32, u32);
+
+/// The two tsserver goto commands taking a position and answering with file spans.
+#[derive(Debug, Clone, Copy)]
+enum GotoCommand {
+    Definition,
+    TypeDefinition,
+}
+
+impl GotoCommand {
+    fn as_str(self) -> &'static str {
+        match self {
+            GotoCommand::Definition => "definition",
+            GotoCommand::TypeDefinition => "typeDefinition",
+        }
+    }
 }
 
 impl std::fmt::Debug for TsServerBridge {
@@ -117,11 +154,16 @@ impl TsServerBridge {
             response_notify,
             seq: 1,
             root_files: HashSet::default(),
+            transient_roots: HashSet::default(),
+            open_virtual_docs: HashSet::default(),
+            transient_dirty: false,
             project_paths: HashMap::default(),
+            project_type_roots: vec![],
             project_open: false,
         };
 
         bridge.wait_for_startup(tsserver_path, &stderr_history)?;
+        bridge.configure();
 
         Ok(bridge)
     }
@@ -175,6 +217,28 @@ impl TsServerBridge {
             ))),
             None => Err(std::io::Error::other("tsserver handshake response vanished unexpectedly")),
         }
+    }
+
+    /// Set the session-wide user preferences, once, before any `completions` request.
+    /// `includeCompletionsForImportStatements` is the *only* switch enabling import-statement
+    /// completions (tsserver reads it from the session config, never per-request); without it
+    /// a cursor inside an import clause gets an empty list. The insert-text flag gates the
+    /// same code path (matches what VS Code's own TS client sends).
+    fn configure(&mut self) {
+        let Ok(seq) = self.send_request(
+            "configure",
+            json!({
+                "preferences": {
+                    "includeCompletionsForImportStatements": true,
+                    "includeCompletionsWithInsertText": true,
+                }
+            }),
+        ) else {
+            return;
+        };
+        // Block on the ack: tsserver serves requests FIFO, but leaving the response unclaimed
+        // would strand it in `responses` forever.
+        let _ = self.read_response_for_request(seq);
     }
 
     fn start_reader_thread(
@@ -233,8 +297,10 @@ impl TsServerBridge {
 
     pub fn open_file(&mut self, file_path: &str, file_content: &str) {
         // "open" is a fire-and-forget notification: tsserver never sends a response.
-        if !self.root_files.contains(file_path) {
-            self.root_files.insert(file_path.to_string());
+        if self.root_files.insert(file_path.to_string()) {
+            // A reference expansion may already have staged this path; it is pinned now, so
+            // drop it there rather than list it twice in the project payload.
+            self.transient_roots.remove(file_path);
             if self.project_open {
                 // As tsserver is not able to add a file to a current project, we have to open a new one with
                 // the updated root_files list, so the current file is included in it.
@@ -257,36 +323,88 @@ impl TsServerBridge {
         );
     }
 
-    /// Inject a virtual TypeScript declaration file into the project.
-    /// Unlike `open_file`, this does not request diagnostics for the file.
-    pub fn inject_virtual_declarations(&mut self, file_path: &str, content: &str) {
-        if !self.root_files.contains(file_path) {
-            self.root_files.insert(file_path.to_string());
-            if self.project_open {
-                self.send_project_command();
-            }
-        }
+    /// Send a virtual doc's content and register it as a transient root, **without**
+    /// rebuilding the project — call [`Self::commit_transient_roots`] once the batch is
+    /// staged. No `geterr` (a virtual doc must never publish diagnostics); script kind JS
+    /// (checkJs expando inference is JS-only); re-staging an open path refreshes its content.
+    ///
+    /// Content is sent *before* the doc becomes a root on purpose: the commit's synchronous
+    /// `updateGraph` then already sees it, so the first request against a new path returns
+    /// real results (see `server/docs/owl-virtual-docs.md` §7).
+    pub fn stage_virtual_doc(&mut self, file_path: &str, content: &str) {
         let _ = self.send_request(
             "open",
             json!({
                 "file": file_path,
                 "fileContent": content,
-                "scriptKindName": "TS",
+                "scriptKindName": "JS",
             }),
         );
+        if self.open_virtual_docs.insert(file_path.to_string()) {
+            self.transient_roots.insert(file_path.to_string());
+            self.transient_dirty = true;
+        }
+    }
+
+    /// How many transient roots are currently registered — expansion roots plus open virtual docs.
+    /// The caller uses this to decide when the accumulated set has outgrown its budget.
+    pub fn transient_root_count(&self) -> usize {
+        self.transient_roots.len()
+    }
+
+    /// Register files as project roots **without opening them** (tsserver reads them from
+    /// disk — no diagnostics for files the user never opened), so a subsequent `references`
+    /// request finds the callers living in them. Staged only, see
+    /// [`Self::commit_transient_roots`].
+    pub fn stage_transient_roots(&mut self, paths: &[String]) {
+        for path in paths {
+            if !self.root_files.contains(path) {
+                self.transient_dirty |= self.transient_roots.insert(path.clone());
+            }
+        }
+    }
+
+    /// Drop every transient root, closing the open virtual docs among them (an *open* file
+    /// keeps its `ScriptInfo` alive, so dropping it from `rootFiles` alone frees nothing).
+    /// Staged only: evict-then-restage still pays a single project rebuild.
+    pub fn evict_transient_roots(&mut self) {
+        for path in std::mem::take(&mut self.open_virtual_docs) {
+            self.close_file(&path);
+        }
+        self.transient_dirty |= !self.transient_roots.is_empty();
+        self.transient_roots.clear();
+    }
+
+    /// One `openExternalProject` covering everything staged since the last commit; a no-op
+    /// when nothing changed (every re-send runs a synchronous whole-program rebuild — the
+    /// reason staging exists). Before the project exists the staged roots stay pending; the
+    /// first `open_external_project` sends the union anyway.
+    pub fn commit_transient_roots(&mut self) {
+        if self.transient_dirty && self.project_open {
+            self.send_project_command();
+        }
     }
 
     /// Send `openExternalProject` so tsserver resolves Odoo module aliases.
-    /// `paths` maps import patterns like `"@web/*"` to filesystem globs.
-    pub fn open_external_project(&mut self, paths: HashMap<String, Vec<String>>) {
+    /// `paths` maps import patterns like `"@web/*"` to filesystem globs. `type_roots` are
+    /// Odoo's `@types` dirs; setting them explicitly overrides tsserver's default of pulling
+    /// every `node_modules/@types` package (jQuery, luxon, …) into every file's global scope.
+    pub fn open_external_project(&mut self, paths: HashMap<String, Vec<String>>, type_roots: Vec<String>) {
         self.project_paths = paths;
+        self.project_type_roots = type_roots;
         self.send_project_command();
         self.project_open = true;
     }
 
+    /// Re-registers the external project with the current root set. The only place staged transient
+    /// roots reach tsserver, hence the only place the dirty flag clears.
     fn send_project_command(&mut self) {
-        let root_files: Vec<Value> = self.root_files
-            .iter()
+        self.transient_dirty = false;
+        // Sorted so the payload — and hence tsserver's program construction — is reproducible.
+        let mut names: Vec<&String> = self.root_files.iter().chain(self.transient_roots.iter()).collect();
+        names.sort();
+        let root_files: Vec<Value> = names
+            .into_iter()
             .map(|f| json!({ "fileName": f }))
             .collect();
         let paths_value: serde_json::Map<String, Value> = self.project_paths
@@ -294,6 +412,10 @@ impl TsServerBridge {
             .map(|(k, v)| {
                 (k.clone(), json!(v))
             })
+            .collect();
+        let type_roots_value: Vec<Value> = self.project_type_roots
+            .iter()
+            .map(|r| json!(r))
             .collect();
         let Ok(seq) = self.send_request(
             "openExternalProject",
@@ -307,6 +429,16 @@ impl TsServerBridge {
                     "moduleResolution": "node",
                     "baseUrl": "",
                     "paths": paths_value,
+                    // Explicit typeRoots (Odoo's own `@types` dirs, mirroring
+                    // `web/tooling/_jsconfig.json`) override the `node_modules/@types`
+                    // default, stopping the ambient luxon/jquery leak.
+                    "typeRoots": type_roots_value,
+                },
+                // No Automatic Type Acquisition: tsserver would otherwise pull `@types/*`
+                // from its global cache into every file — huge type graphs checkJs fully
+                // instantiates (the dominant RAM cost), and not part of Odoo's type env.
+                "typeAcquisition": {
+                    "enable": false,
                 }
             }),
         ) else {
@@ -326,9 +458,30 @@ impl TsServerBridge {
         file_path: &str,
         line: u32,
         character: u32,
-    ) -> Vec<(String, u32, u32, u32, u32)> {
+    ) -> Vec<TsLocation> {
+        self.goto_targets(GotoCommand::Definition, file_path, line, character)
+    }
+
+    /// Same, but for the declaration of the *type* of the symbol at the given position.
+    pub fn get_type_definition(
+        &mut self,
+        file_path: &str,
+        line: u32,
+        character: u32,
+    ) -> Vec<TsLocation> {
+        self.goto_targets(GotoCommand::TypeDefinition, file_path, line, character)
+    }
+
+    /// `definition` and `typeDefinition` share a request and a response shape.
+    fn goto_targets(
+        &mut self,
+        command: GotoCommand,
+        file_path: &str,
+        line: u32,
+        character: u32,
+    ) -> Vec<TsLocation> {
         let request_seq = match self.send_request(
-            "definition",
+            command.as_str(),
             json!({
                 "file": file_path,
                 "line": line + 1,
@@ -363,7 +516,7 @@ impl TsServerBridge {
         file_path: &str,
         line: u32,
         character: u32,
-    ) -> Vec<(String, u32, u32, u32, u32)> {
+    ) -> Vec<TsLocation> {
         let request_seq = match self.send_request(
             "references",
             json!({
@@ -398,7 +551,7 @@ impl TsServerBridge {
         }).collect()
     }
 
-    fn value_to_location_tuple(entry: &Value) -> Option<(String, u32, u32, u32, u32)> {
+    fn value_to_location_tuple(entry: &Value) -> Option<TsLocation> {
         let file = entry.get("file").and_then(Value::as_str)?.to_string();
         let start = entry.get("start")?;
         let end = entry.get("end")?;
@@ -443,6 +596,13 @@ impl TsServerBridge {
         );
     }
 
+    /// Un-pin a file the client closed. Bounds `root_files`, which would otherwise grow for the
+    /// whole session, and costs no references: every query re-derives its roots and re-stages
+    /// what is missing (see [`Self::stage_transient_roots`]).
+    ///
+    /// No `openExternalProject` — a whole-program rebuild on every closed tab is not worth it.
+    /// Until the next one, tsserver keeps the file as a root but reads it from disk (that is what
+    /// `close` means), so its root set is a stale *superset*: nothing is ever missing from it.
     pub fn close_file(&mut self, file_path: &str) {
         let _ = self.send_request("close", json!({ "file": file_path }));
         self.root_files.remove(file_path);
@@ -482,6 +642,10 @@ impl TsServerBridge {
         Some(result)
     }
 
+    /// Completions at a position, mapped onto LSP items. `replacementSpan` entries
+    /// (import-statement completions) become a `text_edit`; `hasAction` entries
+    /// (auto-imports) get [`TsCompletionResolveData`] so `completionItem/resolve` can fetch
+    /// the import edit later.
     pub fn completion_items_for_content(
         &mut self,
         file_path: &str,
@@ -530,30 +694,43 @@ impl TsServerBridge {
 
         entries
             .iter()
-            .map(|entry| {
-                let label = entry
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_string();
-                let insert_text = entry
-                    .get("insertText")
-                    .and_then(Value::as_str)
-                    .map(|s| s.to_string());
-                let kind = entry
-                    .get("kind")
-                    .and_then(Value::as_str)
-                    .map(ts_kind_to_lsp_kind)
-                    .unwrap_or(CompletionItemKind::TEXT);
-
-                CompletionItem {
-                    label,
-                    insert_text,
-                    kind: Some(kind),
-                    ..CompletionItem::default()
-                }
-            })
+            .map(|entry| entry_to_completion_item(entry, file_path, line, character))
             .collect()
+    }
+
+    /// Second half of an auto-import completion: the entry's signature, docs and the
+    /// `codeActions` holding the `import … from "…";` edit. Arguments must be the values of
+    /// the original `completions` request ([`TsCompletionResolveData`]); edits touching
+    /// other files are dropped (LSP's `additionalTextEdits` cannot express them).
+    pub fn completion_entry_details(
+        &mut self,
+        file_path: &str,
+        line: u32,
+        character: u32,
+        name: &str,
+        source: Option<&str>,
+        data: Option<&Value>,
+    ) -> Option<TsCompletionDetails> {
+        let mut entry = json!({ "name": name });
+        if let Some(source) = source {
+            entry["source"] = json!(source);
+        }
+        if let Some(data) = data {
+            entry["data"] = data.clone();
+        }
+
+        let request_seq = self.send_request(
+            "completionEntryDetails",
+            json!({
+                "file": file_path,
+                "line": line + 1,
+                "offset": character + 1,
+                "entryNames": [entry],
+            }),
+        ).ok()?;
+
+        let response = self.read_response_for_request(request_seq)?;
+        return response_to_completion_details(response, file_path);
     }
 
     /// Returns the document symbol tree for a JS/TS file using tsserver's `navtree` command.
@@ -886,37 +1063,70 @@ fn nav_node_to_document_symbol(node: &Value) -> Option<DocumentSymbol> {
     })
 }
 
+/// Maps a tsserver `ScriptElementKind` string to an LSP `SymbolKind`.
+///
+/// The accepted strings are the values of tsserver's `ScriptElementKind` enum — note that
+/// several plausible-looking names are *not* among them (`"variable"` is spelled `"var"`,
+/// namespaces are reported as `"module"`).
 fn ts_kind_to_symbol_kind(kind: &str) -> SymbolKind {
     match kind {
-        "class" | "type" => SymbolKind::CLASS,
+        "class" | "local class" | "type" => SymbolKind::CLASS,
         "interface" => SymbolKind::INTERFACE,
         "enum" => SymbolKind::ENUM,
         "enum member" => SymbolKind::ENUM_MEMBER,
         "function" | "local function" => SymbolKind::FUNCTION,
-        "method" | "getter" | "setter" => SymbolKind::METHOD,
-        "constructor" => SymbolKind::CONSTRUCTOR,
-        "property" => SymbolKind::PROPERTY,
-        "var" | "const" | "let" | "variable" | "local var" | "parameter" | "alias" => SymbolKind::VARIABLE,
-        "module" | "namespace" => SymbolKind::MODULE,
+        "method" | "call" | "index" => SymbolKind::METHOD,
+        "constructor" | "construct" => SymbolKind::CONSTRUCTOR,
+        "property" | "getter" | "setter" | "accessor" => SymbolKind::PROPERTY,
+        "var" | "const" | "let" | "local var" | "parameter" | "alias"
+            | "using" | "await using" => SymbolKind::VARIABLE,
+        "type parameter" => SymbolKind::TYPE_PARAMETER,
+        "string" => SymbolKind::STRING,
+        "module" | "external module name" => SymbolKind::MODULE,
         "script" => SymbolKind::FILE,
         _ => SymbolKind::VARIABLE,
     }
 }
 
-fn ts_kind_to_lsp_kind(kind: &str) -> CompletionItemKind {
+
+/// Maps a tsserver `ScriptElementKind` string to an LSP `CompletionItemKind`.
+///
+/// Accepts the values of tsserver's `ScriptElementKind` enum; see the note on
+/// [`ts_kind_to_symbol_kind`] about names that look plausible but are never emitted.
+pub fn ts_kind_to_lsp_kind(kind: &str) -> CompletionItemKind {
     match kind {
         "script" => CompletionItemKind::FILE,
+        "directory" => CompletionItemKind::FOLDER,
         "warning" => CompletionItemKind::TEXT, // warning means that the type in unknown, so use TEXT instead
-        "method" => CompletionItemKind::METHOD,
-        "function" => CompletionItemKind::FUNCTION,
+        "method" | "call" | "construct" | "index" => CompletionItemKind::METHOD,
+        "function" | "local function" => CompletionItemKind::FUNCTION,
         "constructor" => CompletionItemKind::CONSTRUCTOR,
-        "property" => CompletionItemKind::PROPERTY,
-        "class" => CompletionItemKind::CLASS,
+        "property" | "getter" | "setter" | "accessor" | "JSX attribute" => CompletionItemKind::PROPERTY,
+        "class" | "local class" | "type" => CompletionItemKind::CLASS,
         "interface" => CompletionItemKind::INTERFACE,
         "enum" => CompletionItemKind::ENUM,
-        "module" => CompletionItemKind::MODULE,
-        "keyword" => CompletionItemKind::KEYWORD,
-        "variable" | "const" | "let" | "parameter" | "local var" => CompletionItemKind::VARIABLE,
-        _ => CompletionItemKind::TEXT,
+        "enum member" => CompletionItemKind::ENUM_MEMBER,
+        "module" | "external module name" => CompletionItemKind::MODULE,
+        "keyword" | "primitive type" => CompletionItemKind::KEYWORD,
+        "type parameter" => CompletionItemKind::TYPE_PARAMETER,
+        "string" => CompletionItemKind::CONSTANT,
+        "var" | "const" | "let" | "parameter" | "local var" | "alias"
+            | "using" | "await using" => CompletionItemKind::VARIABLE,
+        // Never fall back to TEXT: clients render it as a word suggestion, so an unmapped
+        // kind silently looks like editor noise instead of a real symbol.
+        _ => CompletionItemKind::VARIABLE,
+    }
+}
+
+/// A raw tsserver [`TsLocation`] as an LSP `Location`, positions passed through verbatim
+/// (tsserver reports UTF-16 — the same assumption the whole JS result path makes).
+pub fn ts_to_lsp_location(loc: &TsLocation) -> Location {
+    let (file, sl, sc, el, ec) = loc;
+    Location {
+        uri: FileMgr::pathname2uri(file),
+        range: Range {
+            start: Position { line: *sl, character: *sc },
+            end: Position { line: *el, character: *ec },
+        },
     }
 }
