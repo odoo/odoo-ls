@@ -2411,12 +2411,12 @@ impl SymbolTable {
         symbol: SourceFileKey,
     ) -> Option<Rc<RefCell<FileInfo>>> {
         let tree_path = session.sync_odoo.symbol_table.path(symbol).to_owned();
-        match session
+        let file_info = session
             .sync_odoo
             .get_file_mgr()
             .borrow()
-            .get_file_info(session.sync_odoo.symbol_table.file_path(symbol))
-        {
+            .get_file_info(session.sync_odoo.symbol_table.file_path(symbol));
+        match file_info {
             Some(file_info) => Some(file_info),
             None => {
                 let (updated, result) = session
