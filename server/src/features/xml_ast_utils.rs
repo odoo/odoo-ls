@@ -241,11 +241,12 @@ impl XmlAstUtils {
 
     fn scan_format_xml_id_under_cursor(session: &mut SessionInfo, node: &Node, offset: usize, from_module: Option<ModuleKey>, results: &mut (Vec<SymbolKey>, Option<Range<usize>>), on_dep_only: bool) {
         let Some(file_module) = from_module else { return };
+        let doc_text = node.document().input_text();
         for attr in node.attributes() {
             let attr_range = attr.range_value();
             if offset < attr_range.start || offset > attr_range.end { continue; }
             let mut hit: Option<(String, Range<usize>)> = None;
-            XmlAstUtils::for_each_format_xml_id_ref(&attr, |inner, range| {
+            XmlAstUtils::for_each_format_xml_id_ref(&attr, doc_text, |inner, range| {
                 if hit.is_some() { return; }
                 if range.start <= offset && offset <= range.end {
                     hit = Some((inner.to_string(), range));
@@ -262,10 +263,15 @@ impl XmlAstUtils {
     /// For each `%(xml_id)d|s|i` format-string reference in `attr`'s value, invoke
     /// `f` with the inner xml-id and its absolute byte range (excluding the
     /// `%(` and `)X` wrapper). Used for `<button name="%(...)d">` style action refs.
-    pub fn for_each_format_xml_id_ref(attr: &Attribute, mut f: impl FnMut(&str, Range<usize>)) {
-        let value = attr.value();
+    ///
+    /// Scans `doc_text` (the raw source) rather than the entity-decoded
+    /// `attr.value()`, so offsets stay aligned with `range_value()` even when
+    /// the attribute contains an entity like `&amp;`.
+    pub fn for_each_format_xml_id_ref(attr: &Attribute, doc_text: &str, mut f: impl FnMut(&str, Range<usize>)) {
+        let attr_range = attr.range_value();
+        let attr_start = attr_range.start;
+        let value = &doc_text[attr_range];
         let bytes = value.as_bytes();
-        let attr_start = attr.range_value().start;
         let mut i = 0;
         while i + 3 < bytes.len() {
             if bytes[i] == b'%' && bytes[i + 1] == b'(' {
@@ -355,4 +361,30 @@ impl XmlAstUtils {
         true
     }
 
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Entity + multi-byte char before a `%(...)d` ref used to land mid-character.
+    #[test]
+    fn for_each_format_xml_id_ref_handles_entities_and_multibyte_chars() {
+        let xml = "<button name=\"&lt;\u{1F600}%(module.action_x)d\" type=\"action\"/>";
+        let doc = roxmltree::Document::parse(xml).unwrap();
+        let node = doc.root_element();
+        let attr = node.attributes().next().unwrap();
+
+        let mut hits = vec![];
+        XmlAstUtils::for_each_format_xml_id_ref(&attr, xml, |inner, range| {
+            hits.push((inner.to_string(), range));
+        });
+
+        assert_eq!(hits.len(), 1);
+        let (inner, range) = &hits[0];
+        assert_eq!(inner, "module.action_x");
+        assert!(xml.is_char_boundary(range.start), "range start {} is not a char boundary", range.start);
+        assert!(xml.is_char_boundary(range.end), "range end {} is not a char boundary", range.end);
+        assert_eq!(&xml[range.clone()], "module.action_x");
+    }
 }
