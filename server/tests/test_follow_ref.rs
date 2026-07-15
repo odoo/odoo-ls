@@ -7,7 +7,7 @@ use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 use std::cell::RefCell;
 use std::env;
-use std::path::PathBuf;
+use std::path::Path;
 use std::rc::Rc;
 use test_utils::get_resolved_symbols_at_position;
 
@@ -23,7 +23,7 @@ fn test_follow_ref() {
     assert!(session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.len() == 1);
     let file_mgr = session.sync_odoo.get_file_mgr();
     let file_info = file_mgr.borrow().get_file_info(&path).unwrap();
-    let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, &PathBuf::from(&path))
+    let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&path))
         .expect("Failed to get file symbol");
 
     test_variable_type_resolution(&mut session, &file_info, file_symbol);

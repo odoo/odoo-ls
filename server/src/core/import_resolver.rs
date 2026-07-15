@@ -234,7 +234,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
 
 pub fn create_module_from_name(session: &mut SessionInfo, odoo_addons: NamespaceKey, name: &str) -> Option<ModuleKey> {
     for path in session.st()[odoo_addons].paths() {
-        let full_path = PathBuf::from(path).join(name);
+        let full_path = Path::new(&path).join(name);
         if !session.sync_odoo.is_dir_cs(&full_path.sanitize_cow()) {
             continue;
         }
@@ -334,9 +334,9 @@ fn get_or_create_symbol(
                 let entry_point_mgr = session.sync_odoo.entry_point_mgr.clone();
                 let entry_point_mgr = entry_point_mgr.borrow();
                 let from_path = session.sync_odoo.entry_point_mgr.borrow().transform_addon_path(Path::new(from_path));
-                let from_path = PathBuf::from(from_path);
+                let from_path = Path::new(&from_path);
                 for entry in entry_point_mgr.iter_for_import(for_entry) {
-                    if ((entry.borrow().is_public() && level == 0) || entry.borrow().is_valid_for(&from_path)) && entry.borrow().addon_to_odoo_path.is_none() {
+                    if ((entry.borrow().is_public() && level == 0) || entry.borrow().is_valid_for(from_path)) && entry.borrow().addon_to_odoo_path.is_none() {
                         let entry_point = entry.borrow().get_symbol(session.st());
                         if let Some(entry_point) = entry_point {
                             let mut next_symbol = session.st().get_module_symbol(entry_point, branch);
@@ -483,9 +483,9 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: Source
             let entry_point_mgr = session.sync_odoo.entry_point_mgr.clone();
             let entry_point_mgr = entry_point_mgr.borrow();
             let from_path = session.sync_odoo.entry_point_mgr.borrow().transform_addon_path(Path::new(&source_path));
-            let from_path = PathBuf::from(from_path);
+            let from_path = Path::new(&from_path);
             for entry in entry_point_mgr.iter_for_import(&entry) {
-                if (entry.borrow().is_public() && (level == 0)) || entry.borrow().is_valid_for(&from_path) {
+                if (entry.borrow().is_public() && (level == 0)) || entry.borrow().is_valid_for(from_path) {
                     let entry_point = entry.borrow().get_symbol(session.st());
                     if let Some(entry_point) = entry_point {
                         symbols_to_browse.push(entry_point);

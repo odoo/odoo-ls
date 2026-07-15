@@ -13,7 +13,7 @@ use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::FunctionSymbol;
 use crate::tree::OYarnExt;
 use crate::utils::HashMap;
-use std::path::PathBuf;
+use std::path::Path;
 
 use crate::constants::{SymType};
 use crate::constants::OYarn;
@@ -911,7 +911,7 @@ impl FeaturesUtils {
         let file_name = st.get_file(xml_record_key.into())
             .map(|f| {
                 let path = st.file_path(f);
-                PathBuf::from(path).file_name().unwrap_or_default().to_str().unwrap_or_default().to_string()
+                Path::new(path).file_name().unwrap_or_default().to_str().unwrap_or_default().to_string()
             })
             .unwrap_or_default();
         Some(format!("```\n(XML record) {}\nmodel: {}\nfile: {}\n```", full_xml_id, record.model.0, file_name))

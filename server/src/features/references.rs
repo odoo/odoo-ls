@@ -23,7 +23,7 @@ use ruff_python_ast::{
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::error;
 use crate::utils::HashSet;
-use std::{cell::RefCell, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, path::Path, rc::Rc};
 
 #[derive(Debug, Clone)]
 pub enum ReferenceTarget {
@@ -297,7 +297,7 @@ impl ReferenceFeature {
     //the name inside the manifest will be different, so we only search for the key in this module and return the location with the range
     fn find_name_in_manifest(session: &mut SessionInfo, module: ModuleKey) -> Vec<Location> {
         let mut locations = Vec::new();
-        let manifest = PathBuf::from(&session.st()[module].path).join("__manifest__.py").sanitize();
+        let manifest = Path::new(&session.st()[module].path).join("__manifest__.py").sanitize();
         let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest).clone();
         if let Some(file_info) = file_info {
             let file_info_ast = file_info.borrow().file_info_ast.clone();
@@ -328,7 +328,7 @@ impl ReferenceFeature {
 
     fn find_depend_in_manifest(session: &mut SessionInfo, module: ModuleKey, module_name: &str) -> Vec<Location> {
         let mut locations = Vec::new();
-        let manifest = PathBuf::from(&session.st()[module].path).join("__manifest__.py").sanitize();
+        let manifest = Path::new(&session.st()[module].path).join("__manifest__.py").sanitize();
         let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest).clone();
         if let Some(file_info) = file_info {
             let file_info_ast = file_info.borrow().file_info_ast.clone();

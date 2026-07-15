@@ -22,7 +22,7 @@ use crate::{
     threads::SessionInfo,
 };
 use ruff_text_size::{TextRange, TextSize};
-use std::{cell::RefCell, ops::Range, path::{Path, PathBuf}, rc::Rc};
+use std::{cell::RefCell, ops::Range, path::Path, rc::Rc};
 
 impl SymbolTable {
 
@@ -188,7 +188,7 @@ impl SymbolTable {
         let rc_entry = self.get_entry(symbol_key);
         let mut entry_bw = rc_entry.borrow_mut();
         self.add_to_parent_js_symbols(parent_key, path, js_file_key);
-        self.add_to_js_entry_symbols(&mut entry_bw, path, js_file_key.into());
+        self.add_to_js_entry_symbols(&mut entry_bw, path, js_file_key);
         js_file_key
     }
 
@@ -258,7 +258,7 @@ impl SymbolTable {
         let ns = &mut self.namespaces[parent];
         let best = ns.directories.iter()
             .enumerate()
-            .filter(|(_, dir)| PathBuf::from(path).starts_with(&dir.path))
+            .filter(|(_, dir)| Path::new(path).starts_with(&dir.path))
             .max_by_key(|(_, dir)| dir.path.len())
             .unwrap_or_else(|| panic!("Not valid path found to add the file ({}) to namespace {} with directories {:?}", path, ns.name, ns.directories))
             .0;

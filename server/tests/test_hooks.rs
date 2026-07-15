@@ -1,5 +1,5 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::Path;
 
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::utils::PathSanitizer;
@@ -12,12 +12,12 @@ fn test_search_eval_hook() {
     let (mut odoo, config) = setup::setup::setup_server(true);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
-    let test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let test_file = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/data/addons/module_1/models/base_test_models.py")
         .sanitize();
 
     let Some(file_symbol) =
-        SyncOdoo::get_symbol_of_opened_file(&mut session, &PathBuf::from(&test_file))
+        SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file))
     else {
         panic!("Failed to get file symbol for {}", test_file);
     };

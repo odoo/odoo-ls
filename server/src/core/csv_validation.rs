@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use csv::StringRecord;
 use lsp_types::{Diagnostic, Position, Range};
@@ -42,7 +42,7 @@ impl CsvValidator {
             return;
         };
         let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
-        let model_name_pb = PathBuf::from(path);
+        let model_name_pb = Path::new(&path);
         let model_name = model_name_pb.file_stem().unwrap().to_str().unwrap();
         let csv_module = session.st().find_module(csv_symbol);
         let mut rdr = csv::ReaderBuilder::new().from_reader(data.as_bytes());

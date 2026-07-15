@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::{Path, PathBuf}};
 
 use lsp_types::{CompletionContext, CompletionResponse, Diagnostic, TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier};
 use odoo_ls_server::core::{file_mgr::FileMgr, odoo::{Odoo, SyncOdoo}};
@@ -102,11 +102,16 @@ fn test_xml_fields_def_hover_completion() {
     let mut session = setup::setup::create_init_session(&mut odoo, config);
     let file_paths = get_test_data_file_paths();
 
-    let x_test_model_xml = PathBuf::from(&file_paths[&TestDataFiles::XTestModelXml]).sanitize();
-    let x_test_model_csv = PathBuf::from(&file_paths[&TestDataFiles::XTestModelCsv]).sanitize();
-    let x_test_model_m2o_xml = PathBuf::from(&file_paths[&TestDataFiles::XTestModelM2oXml]).sanitize();
-    let x_test_model_m2o_csv = PathBuf::from(&file_paths[&TestDataFiles::XTestModelM2oCsv]).sanitize();
-    let py_file_path = PathBuf::from(&file_paths[&TestDataFiles::PyTestModel]).sanitize();
+    let x_test_model_xml_path = Path::new(&file_paths[&TestDataFiles::XTestModelXml]);
+    let x_test_model_xml = x_test_model_xml_path.sanitize_cow();
+    let x_test_model_csv_path = Path::new(&file_paths[&TestDataFiles::XTestModelCsv]);
+    let x_test_model_csv = x_test_model_csv_path.sanitize_cow();
+    let x_test_model_m2o_xml_path = Path::new(&file_paths[&TestDataFiles::XTestModelM2oXml]);
+    let x_test_model_m2o_xml = x_test_model_m2o_xml_path.sanitize_cow();
+    let x_test_model_m2o_csv_path = Path::new(&file_paths[&TestDataFiles::XTestModelM2oCsv]);
+    let x_test_model_m2o_csv = x_test_model_m2o_csv_path.sanitize_cow();
+    let py_file_path = Path::new(&file_paths[&TestDataFiles::PyTestModel]);
+    let py_file_str = py_file_path.sanitize_cow();
 
     // ---------- CSV definition checks ----------
     let file_mgr = session.sync_odoo.get_file_mgr();
@@ -114,7 +119,7 @@ fn test_xml_fields_def_hover_completion() {
     let x_test_model_csv_info = file_mgr.borrow().get_file_info(&x_test_model_csv).unwrap();
     let Some(x_test_model_csv_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
-        &PathBuf::from(&x_test_model_csv),
+        x_test_model_csv_path,
     ) else {
         panic!("Failed to get symbol for {}", x_test_model_csv);
     };
@@ -160,7 +165,7 @@ fn test_xml_fields_def_hover_completion() {
     let x_test_model_m2o_csv_info = file_mgr.borrow().get_file_info(&x_test_model_m2o_csv).unwrap();
     let Some(x_test_model_m2o_csv_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
-        &PathBuf::from(&x_test_model_m2o_csv),
+        x_test_model_m2o_csv_path,
     ) else {
         panic!("Failed to get symbol for {}", x_test_model_m2o_csv);
     };
@@ -208,12 +213,12 @@ fn test_xml_fields_def_hover_completion() {
     assert_eq!(test_m2o_record_defs[0].target_range.end.character, 24);
 
     // ---------- Python hover + definition checks ----------
-    let py_file_info = file_mgr.borrow().get_file_info(&py_file_path).unwrap();
+    let py_file_info = file_mgr.borrow().get_file_info(&py_file_str).unwrap();
     let Some(py_file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
-        &PathBuf::from(&py_file_path),
+        py_file_path,
     ) else {
-        panic!("Failed to get symbol for {}", py_file_path);
+        panic!("Failed to get symbol for {}", py_file_str);
     };
 
     // Hover model name in self.env["x_test_model_m2o"]
@@ -279,14 +284,14 @@ fn test_xml_fields_def_hover_completion() {
     // ---------- Completion checks ----------
     // 1) Completion for model names when prefix is x_
     let py_source_model_prefix = py_test_source("x_", "x_other_model.x_name");
-    simulate_file_change(&mut session, &py_file_path, &py_source_model_prefix, 2);
+    simulate_file_change(&mut session, &py_file_str, &py_source_model_prefix, 2);
 
-    let py_file_info = file_mgr.borrow().get_file_info(&py_file_path).unwrap();
+    let py_file_info = file_mgr.borrow().get_file_info(&py_file_str).unwrap();
     let Some(py_file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
-        &PathBuf::from(&py_file_path),
+        py_file_path,
     ) else {
-        panic!("Failed to get symbol for {} after didChange", py_file_path);
+        panic!("Failed to get symbol for {} after didChange", py_file_str);
     };
     let model_completion_labels = completion_labels(CompletionFeature::autocomplete(
         &mut session,
@@ -307,14 +312,14 @@ fn test_xml_fields_def_hover_completion() {
 
     // 2) Completion for domain field prefix at search([("x_
     let py_source_domain_prefix = py_test_source("x_test_model_m2o", "x_");
-    simulate_file_change(&mut session, &py_file_path, &py_source_domain_prefix, 3);
+    simulate_file_change(&mut session, &py_file_str, &py_source_domain_prefix, 3);
 
-    let py_file_info = file_mgr.borrow().get_file_info(&py_file_path).unwrap();
+    let py_file_info = file_mgr.borrow().get_file_info(&py_file_str).unwrap();
     let Some(py_file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
-        &PathBuf::from(&py_file_path),
+        py_file_path,
     ) else {
-        panic!("Failed to get symbol for {} after didChange", py_file_path);
+        panic!("Failed to get symbol for {} after didChange", py_file_str);
     };
     let domain_field_labels = completion_labels(CompletionFeature::autocomplete(
         &mut session,
@@ -335,14 +340,14 @@ fn test_xml_fields_def_hover_completion() {
 
     // 3) Completion for nested field prefix at search([("x_other_model.x
     let py_source_nested_prefix = py_test_source("x_test_model_m2o", "x_other_model.x");
-    simulate_file_change(&mut session, &py_file_path, &py_source_nested_prefix, 4);
+    simulate_file_change(&mut session, &py_file_str, &py_source_nested_prefix, 4);
 
-    let py_file_info = file_mgr.borrow().get_file_info(&py_file_path).unwrap();
+    let py_file_info = file_mgr.borrow().get_file_info(&py_file_str).unwrap();
     let Some(py_file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
-        &PathBuf::from(&py_file_path),
+        py_file_path,
     ) else {
-        panic!("Failed to get symbol for {} after didChange", py_file_path);
+        panic!("Failed to get symbol for {} after didChange", py_file_str);
     };
     let nested_field_labels = completion_labels(CompletionFeature::autocomplete(
         &mut session,
@@ -366,14 +371,14 @@ fn test_xml_fields_def_hover_completion() {
     //    so a search domain on the delegating model must surface the delegated field
     //    `parent_only_field` next to its own fields (`parent_id`, `own_field`).
     let py_source_inherits = py_test_source("x_delegating_model", "parent_");
-    simulate_file_change(&mut session, &py_file_path, &py_source_inherits, 5);
+    simulate_file_change(&mut session, &py_file_str, &py_source_inherits, 5);
 
-    let py_file_info = file_mgr.borrow().get_file_info(&py_file_path).unwrap();
+    let py_file_info = file_mgr.borrow().get_file_info(&py_file_str).unwrap();
     let Some(py_file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
-        &PathBuf::from(&py_file_path),
+        py_file_path,
     ) else {
-        panic!("Failed to get symbol for {} after didChange", py_file_path);
+        panic!("Failed to get symbol for {} after didChange", py_file_str);
     };
     let inherits_field_labels = completion_labels(CompletionFeature::autocomplete(
         &mut session,

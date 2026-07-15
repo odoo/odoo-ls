@@ -274,6 +274,7 @@ impl XmlValidator {
                                     ..diagnostic
                                 });
                             }
+                        }
                     },
                     _ => {}
                 }

@@ -67,7 +67,7 @@ impl ModuleSymbol {
                 file_info.publish_diagnostics(session);
             }
         }
-        let manifest_path = PathBuf::from(&module_path).join("__manifest__.py");
+        let manifest_path = Path::new(&module_path).join("__manifest__.py");
         let Some(manifest_file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize_cow()) else {
             return;
         };
@@ -147,7 +147,7 @@ impl ModuleSymbol {
             let root = document.root_element();
             let mut xml_builder = XmlArchBuilder::new(xml_sym, web_asset);
             xml_builder.load_arch(session, file_info, &root);
-        } else if data.len() > 0 {
+        } else if !data.is_empty() {
             let mut diagnostics = vec![];
             XmlFileSymbol::build_syntax_diagnostics(session, &mut diagnostics, file_info, &document.unwrap_err());
             file_info.replace_diagnostics(DiagnosticSource::XML_SYNTAX, diagnostics);
@@ -156,7 +156,7 @@ impl ModuleSymbol {
     }
 
     fn load_js_assets(session: &mut SessionInfo, module: ModuleKey, files_to_imports: &[PathBuf]) {
-        for file_path in files_to_imports.iter().filter(|p| p.extension().map_or(false, |ext| ext == "js")) {
+        for file_path in files_to_imports.iter().filter(|p| p.extension().is_some_and(|ext| ext == "js")) {
             let file_path_str = file_path.sanitize_cow();
             if session.st()[module].js_symbols().contains_key(file_path_str.as_ref()) {
                 continue;
@@ -172,13 +172,13 @@ impl ModuleSymbol {
 
     /// Recursively collects all descendants of a directory (files and subdirs).
     /// The directory itself is included (** matches zero levels too).
-    fn collect_recursive(path: &PathBuf, results: &mut Vec<PathBuf>) {
-        results.push(path.clone()); // ** can match zero segments
+    fn collect_recursive(path: &Path, results: &mut Vec<PathBuf>) {
+        results.push(path.to_path_buf()); // ** can match zero segments
         if let Ok(entries) = std::fs::read_dir(path) {
             for entry in entries.flatten() {
                 let child = entry.path();
                 if child.is_dir() {
-                    ModuleSymbol::collect_recursive(&child, results); // recurse into subdirs
+                    Self::collect_recursive(&child, results); // recurse into subdirs
                 } else {
                     results.push(child); // include files too
                 }
@@ -189,7 +189,7 @@ impl ModuleSymbol {
     fn assets_path_resolver(module_path: &str, data_local_url: &str) -> Vec<PathBuf> {
         let mut results = vec![PathBuf::from(module_path)];
 
-        for component in PathBuf::from(data_local_url).components() {
+        for component in Path::new(data_local_url).components() {
             let std::path::Component::Normal(os_str) = component else { continue };
             let segment = os_str.to_str().unwrap();
             let mut new_results = vec![];

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::utils::PathSanitizer;
@@ -63,7 +63,7 @@ fn test_goto_definition_from_js_template_to_xml() {
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
     let js_path = module_owl_path(&["static", "src", "counter", "counter.js"]);
-    let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, &PathBuf::from(&js_path))
+    let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&js_path))
         .expect("JS asset file should have a symbol after init");
     let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&js_path).unwrap();
 

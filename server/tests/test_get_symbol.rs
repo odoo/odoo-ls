@@ -6,7 +6,7 @@ use odoo_ls_server::Sy;
 use odoo_ls_server::constants::OYarn;
 use odoo_ls_server::threads::SessionInfo;
 use std::env;
-use std::path::PathBuf;
+use std::path::Path;
 
 mod setup;
 mod test_utils;
@@ -15,10 +15,10 @@ mod test_utils;
 fn test_hover_on_model_field_and_method() {
     // Setup server and session with test addons
     let (mut odoo, config) = setup::setup::setup_server(true);
-    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
     // Ensure the test file exists
-    assert!(PathBuf::from(&test_file).exists(), "Test file does not exist: {}", test_file);
+    assert!(Path::new(&test_file).exists(), "Test file does not exist: {}", test_file);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
     // Use Lazy value for partner and country class names
@@ -30,7 +30,7 @@ fn test_hover_on_model_field_and_method() {
     // Use get_file_info().symbol instead of get_file_symbol
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
-        &PathBuf::from(&test_file)
+        Path::new(&test_file)
     ) else {
         panic!("Failed to get file symbol");
     };
@@ -164,10 +164,10 @@ fn test_hover_on_model_field_and_method() {
 fn test_hover_inverse_name_o2m(){
     // Setup server and session with test addons
     let (mut odoo, config) = setup::setup::setup_server(true);
-    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("diagnostics.py").sanitize();
     // Ensure the test file exists
-    assert!(PathBuf::from(&test_file).exists(), "Test file does not exist: {}", test_file);
+    assert!(Path::new(&test_file).exists(), "Test file does not exist: {}", test_file);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
     // Get file symbol and file info
     let file_mgr = session.sync_odoo.get_file_mgr();
@@ -175,7 +175,7 @@ fn test_hover_inverse_name_o2m(){
     // Use get_file_info().symbol instead of get_file_symbol
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
-        &PathBuf::from(&test_file)
+        Path::new(&test_file)
     ) else {
         panic!("Failed to get file symbol");
     };
@@ -191,17 +191,17 @@ fn test_hover_inverse_name_o2m(){
 fn test_hover_on_namespace_and_module() {
     // Setup server and session with test addons
     let (mut odoo, config) = setup::setup::setup_server(true);
-    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
     // Ensure the test file exists
-    assert!(PathBuf::from(&test_file).exists(), "Test file does not exist: {}", test_file);
+    assert!(Path::new(&test_file).exists(), "Test file does not exist: {}", test_file);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
     // Get file symbol and file info
     let file_mgr = session.sync_odoo.get_file_mgr();
     let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
-        &PathBuf::from(&test_file)
+        Path::new(&test_file)
     ) else {
         panic!("Failed to get file symbol");
     };
@@ -255,17 +255,17 @@ fn test_hover_on_namespace_and_module() {
 fn test_definition() {
     // Setup server and session with test addons
     let odoo_path = env::var("COMMUNITY_PATH").unwrap();
-    let odoo_path = PathBuf::from(odoo_path).sanitize();
+    let odoo_path = Path::new(&odoo_path).sanitize();
     let odoo_path = odoo_path.as_str();
 
     let (mut odoo, config) = setup::setup::setup_server(true);
-    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let module1_test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
     let module2_test_file = test_addons_path.join("module_2").join("models").join("base_test_models.py").sanitize();
 
     // Ensure the test file exists
-    assert!(PathBuf::from(&module1_test_file).exists(), "Test file does not exist: {}", module1_test_file);
-    assert!(PathBuf::from(&module2_test_file).exists(), "Test file does not exist: {}", module1_test_file);
+    assert!(Path::new(&module1_test_file).exists(), "Test file does not exist: {}", module1_test_file);
+    assert!(Path::new(&module2_test_file).exists(), "Test file does not exist: {}", module1_test_file);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
     // Use Lazy value for partner and Country class names
@@ -278,7 +278,7 @@ fn test_definition() {
     // Use get_file_info().symbol instead of get_file_symbol
     let Some(m1_tf_file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
-        &PathBuf::from(&module1_test_file)
+        Path::new(&module1_test_file)
     ) else {
         panic!("Failed to get file symbol");
     };
@@ -287,7 +287,7 @@ fn test_definition() {
     // Use get_file_info().symbol instead of get_file_symbol
     let Some(m2_tf_file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
-        &PathBuf::from(&module2_test_file)
+        Path::new(&module2_test_file)
     ) else {
         panic!("Failed to get file symbol");
     };
@@ -357,15 +357,15 @@ fn test_definition() {
 fn test_definition_csv() {
     // Setup server and session with test addons
     let odoo_path = env::var("COMMUNITY_PATH").unwrap();
-    let odoo_path = PathBuf::from(odoo_path).sanitize();
+    let odoo_path = Path::new(&odoo_path).sanitize();
     let odoo_path = odoo_path.as_str();
 
     let (mut odoo, config) = setup::setup::setup_server(true);
-    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let module_csv_test_file = test_addons_path.join("module_csv").join("data").join("res.country.state.csv").sanitize();
 
     // Ensure the test file exists
-    assert!(PathBuf::from(&module_csv_test_file).exists(), "Test file does not exist: {}", module_csv_test_file);
+    assert!(Path::new(&module_csv_test_file).exists(), "Test file does not exist: {}", module_csv_test_file);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
     // Get file symbol and file info
@@ -374,7 +374,7 @@ fn test_definition_csv() {
     // Use get_file_info().symbol instead of get_file_symbol
     let Some(mcsv_tf_file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
-        &PathBuf::from(&module_csv_test_file)
+        Path::new(&module_csv_test_file)
     ) else {
         panic!("Failed to get file symbol");
     };
@@ -422,7 +422,7 @@ fn test_definition_csv() {
     assert!(base.len() == 1);
     let base_module = base[0].unwrap_module_key();
     let base_path = session.st()[base_module].path.clone();
-    let res_country_data_path = PathBuf::from(base_path).join("data").join("res_country_data.xml").sanitize();
+    let res_country_data_path = Path::new(&base_path).join("data").join("res_country_data.xml").sanitize();
     let res_country_file = session.st()[base_module].data_symbols().get(&res_country_data_path).cloned();
     assert!(res_country_file.is_some());
     let res_country_file = res_country_file.unwrap();
@@ -454,11 +454,11 @@ fn test_model_subscription() {
     // Setup: Get the symbol for BaseTestModel and verify its existence
     let (mut odoo, config) = setup::setup::setup_server(true);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
-    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
-        &PathBuf::from(&test_file)
+        Path::new(&test_file)
     ) else {
         panic!("Failed to get file symbol");
     };
@@ -481,16 +481,16 @@ fn test_model_subscription() {
 /// which has type `int`. This directly validates the lambda scoping added in the last commit.
 fn test_lambda_parameter_scoping() {
     let (mut odoo, config) = setup::setup::setup_server(true);
-    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
-    assert!(PathBuf::from(&test_file).exists(), "Test file does not exist: {}", test_file);
+    assert!(Path::new(&test_file).exists(), "Test file does not exist: {}", test_file);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
     let file_mgr = session.sync_odoo.get_file_mgr();
     let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
-        &PathBuf::from(&test_file)
+        Path::new(&test_file)
     ) else {
         panic!("Failed to get file symbol");
     };
@@ -567,14 +567,14 @@ fn test_csv_ranges_unquoted_lf(session: &mut SessionInfo) {
     // File content:
     // Line 0: id,country_id:id,name,code
     // Line 1: state_unquoted_1,base.au,Test State 1,TS1
-    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let csv_file = test_addons_path.join("module_csv").join("data").join("country_unquoted_lf").join("res.country.state.csv").sanitize();
 
-    assert!(PathBuf::from(&csv_file).exists(), "Test file does not exist: {}", csv_file);
+    assert!(Path::new(&csv_file).exists(), "Test file does not exist: {}", csv_file);
 
     let file_mgr = session.sync_odoo.get_file_mgr();
     let file_info = file_mgr.borrow().get_file_info(&csv_file).unwrap();
-    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(&csv_file)) else {
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&csv_file)) else {
         panic!("Failed to get file symbol");
     };
 
@@ -633,14 +633,14 @@ fn test_csv_ranges_quoted_lf(session: &mut SessionInfo) {
     // File content:
     // Line 0: "id","country_id:id","name","code"
     // Line 1: "state_quoted_1","base.au","Test State 1","TS1"
-    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let csv_file = test_addons_path.join("module_csv").join("data").join("country_quoted_lf").join("res.country.state.csv").sanitize();
 
-    assert!(PathBuf::from(&csv_file).exists(), "Test file does not exist: {}", csv_file);
+    assert!(Path::new(&csv_file).exists(), "Test file does not exist: {}", csv_file);
 
     let file_mgr = session.sync_odoo.get_file_mgr();
     let file_info = file_mgr.borrow().get_file_info(&csv_file).unwrap();
-    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(&csv_file)) else {
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&csv_file)) else {
         panic!("Failed to get file symbol");
     };
 
@@ -700,14 +700,14 @@ fn test_csv_ranges_unquoted_crlf(session: &mut SessionInfo) {
     // File content:
     // Line 0: id,country_id:id,name,code\r\n
     // Line 1: state_unquoted_crlf_1,base.au,Test State 1,TS1\r\n
-    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let csv_file = test_addons_path.join("module_csv").join("data").join("country_unquoted_crlf").join("res.country.state.csv").sanitize();
 
-    assert!(PathBuf::from(&csv_file).exists(), "Test file does not exist: {}", csv_file);
+    assert!(Path::new(&csv_file).exists(), "Test file does not exist: {}", csv_file);
 
     let file_mgr = session.sync_odoo.get_file_mgr();
     let file_info = file_mgr.borrow().get_file_info(&csv_file).unwrap();
-    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(&csv_file)) else {
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&csv_file)) else {
         panic!("Failed to get file symbol");
     };
 
@@ -763,14 +763,14 @@ fn test_csv_ranges_quoted_crlf(session: &mut SessionInfo) {
     // File content:
     // Line 0: "id","country_id:id","name","code"\r\n
     // Line 1: "state_quoted_crlf_1","base.au","Test State 1","TS1"\r\n
-    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let csv_file = test_addons_path.join("module_csv").join("data").join("country_quoted_crlf").join("res.country.state.csv").sanitize();
 
-    assert!(PathBuf::from(&csv_file).exists(), "Test file does not exist: {}", csv_file);
+    assert!(Path::new(&csv_file).exists(), "Test file does not exist: {}", csv_file);
 
     let file_mgr = session.sync_odoo.get_file_mgr();
     let file_info = file_mgr.borrow().get_file_info(&csv_file).unwrap();
-    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &PathBuf::from(&csv_file)) else {
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&csv_file)) else {
         panic!("Failed to get file symbol");
     };
 
@@ -830,18 +830,18 @@ fn test_xml_hover() {
     let (mut odoo, config) = setup::setup::setup_server(true);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
-    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let xml_file_path = test_addons_path.join("module_1").join("records").join("test_records.xml").sanitize();
     let py_file_path = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
 
-    assert!(PathBuf::from(&xml_file_path).exists(), "XML test file does not exist: {}", xml_file_path);
-    assert!(PathBuf::from(&py_file_path).exists(),  "Python test file does not exist: {}", py_file_path);
+    assert!(Path::new(&xml_file_path).exists(), "XML test file does not exist: {}", xml_file_path);
+    assert!(Path::new(&py_file_path).exists(),  "Python test file does not exist: {}", py_file_path);
 
     // --- Obtain XML file symbol and file info ---
     // data_symbols are populated by load_data during create_init_session.
     let Some(xml_file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
-        &PathBuf::from(&xml_file_path),
+        Path::new(&xml_file_path),
     ) else {
         panic!("Failed to get XML file symbol for {}", xml_file_path);
     };
@@ -853,7 +853,7 @@ fn test_xml_hover() {
     let py_file_info = file_mgr.borrow().get_file_info(&py_file_path).unwrap();
     let Some(py_file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
-        &PathBuf::from(&py_file_path),
+        Path::new(&py_file_path),
     ) else {
         panic!("Failed to get Python file symbol");
     };
@@ -976,15 +976,15 @@ fn test_xml_definition() {
     let (mut odoo, config) = setup::setup::setup_server(true);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
-    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let xml_file_path = test_addons_path.join("module_1").join("records").join("test_records.xml").sanitize();
     let py_file_path  = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
 
-    assert!(PathBuf::from(&xml_file_path).exists(), "XML file missing: {}", xml_file_path);
-    assert!(PathBuf::from(&py_file_path).exists(),  "Python file missing: {}", py_file_path);
+    assert!(Path::new(&xml_file_path).exists(), "XML file missing: {}", xml_file_path);
+    assert!(Path::new(&py_file_path).exists(),  "Python file missing: {}", py_file_path);
 
     let Some(xml_file_symbol) = SyncOdoo::get_symbol_of_opened_file(
-        &mut session, &PathBuf::from(&xml_file_path),
+        &mut session, Path::new(&xml_file_path),
     ) else {
         panic!("Failed to get XML file symbol for {}", xml_file_path);
     };
@@ -994,7 +994,7 @@ fn test_xml_definition() {
 
     let py_file_info = file_mgr.borrow().get_file_info(&py_file_path).unwrap();
     let Some(py_file_symbol) = SyncOdoo::get_symbol_of_opened_file(
-        &mut session, &PathBuf::from(&py_file_path),
+        &mut session, Path::new(&py_file_path),
     ) else {
         panic!("Failed to get Python file symbol");
     };

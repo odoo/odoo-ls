@@ -1,4 +1,4 @@
-use std::{cell::RefCell, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, path::Path, rc::Rc};
 
 use lsp_types::{LocationLink, Range};
 use ruff_python_ast::{Expr, ExprCall};
@@ -342,12 +342,12 @@ impl GotoUtils {
         line: u32,
         character: u32
     ) -> Vec<GotoSource> {
-        let model_name_pb = PathBuf::from(session.st().path(file_symbol));
+        let model_name_pb = Path::new(session.st().path(file_symbol));
         let model_name = Sy!(model_name_pb.file_stem().unwrap().to_str().unwrap().to_string());
         let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
         let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
         let mut csv_reader = csv::ReaderBuilder::new().quoting(true).from_reader(data.as_bytes());
-        
+
         CsvAstUtils::get_symbols(session, file_symbol.unwrap_csv_file_key(), &mut csv_reader, &model_name, offset, &data)
     }
 
@@ -358,7 +358,7 @@ impl GotoUtils {
                 let (path, range) = match symbol_key.typ() {
                     SymType::PACKAGE(PackageType::MODULE) => {
                         (
-                            Some(PathBuf::from(&session.st().path(symbol_key.as_source_file_key().unwrap())).join("__manifest__.py").sanitize()),
+                            Some(Path::new(&session.st().path(symbol_key.as_source_file_key().unwrap())).join("__manifest__.py").sanitize()),
                             Range::default()
                         )
                     },

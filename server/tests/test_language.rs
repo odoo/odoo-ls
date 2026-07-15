@@ -1,5 +1,5 @@
 use odoo_ls_server::utils::HashMap;
-use std::path::PathBuf;
+use std::path::Path;
 
 use lsp_types::{NumberOrString, TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier};
 use odoo_ls_server::core::config::{ConfigView, ConfigKey};
@@ -67,11 +67,11 @@ fn test_language_validation() {
     let (mut odoo, config) = setup_server(true);
     let mut session = create_init_session(&mut odoo, config);
 
-    let lang_xml_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let lang_xml_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/data/addons/module_lang_test/data/res_lang.xml");
-    let items_xml_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let items_xml_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/data/addons/module_lang_test/data/lang_test_items.xml");
-    let extra_lang_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let extra_lang_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/data/addons/module_lang_test/data/extra_languages.xml");
 
     // ========================================
@@ -240,7 +240,7 @@ fn test_no_false_positives_from_res_lang_csv() {
     let (mut odoo, config) = setup_server(true);
     let mut session = create_init_session(&mut odoo, config);
 
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/data/addons/module_lang_test/data/all_langs_test.xml")
         .sanitize();
 
@@ -273,7 +273,7 @@ fn test_config_additional_languages_updates_diagnostics() {
     let (mut odoo, config) = setup_server(true);
     let mut session = create_init_session(&mut odoo, config);
 
-    let items_xml_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let items_xml_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/data/addons/module_lang_test/data/lang_test_items.xml")
         .sanitize();
 
