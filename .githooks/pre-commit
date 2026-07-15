@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+#
+# Pre-commit hook: run clippy on the Rust server crate and fail on any warning.
+#
+# Keeps the whole crate (lib, bins and tests) warning-free, enforcing the bulk
+# clippy cleanup recorded in .git-blame-ignore-revs.
+#
+# This hook is version-controlled under .githooks/. Activate it locally with:
+#
+#   git config core.hooksPath .githooks
+#
+# To bypass for a single commit (e.g. a WIP), use: git commit --no-verify
+#
+set -euo pipefail
+
+# Only run when Rust sources / cargo / clippy config are staged, so non-code
+# commits (docs, assets, ...) are not slowed down.
+if git diff --cached --name-only --diff-filter=ACMR \
+    | grep -qE '\.rs$|(^|/)Cargo\.(toml|lock)$|(^|/)clippy\.toml$'; then
+    repo_root="$(git rev-parse --show-toplevel)"
+    echo "pre-commit: cargo clippy --no-default-features --all-targets -D warnings (server/) ..."
+    (
+        cd "$repo_root/server"
+        cargo clippy --no-default-features --all-targets -- -D warnings
+    )
+fi
