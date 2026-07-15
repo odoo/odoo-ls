@@ -211,62 +211,61 @@ impl CsvAstUtils {
         content: &str,
     ) {
         let Some(field_iter) = CsvFieldIter::new(record, content) else { return; };
-        for (idx, (start, end, field)) in field_iter.enumerate() {
-            //Search for selected field
-            if start > offset || end < offset {
-                continue;
-            }
-            let field_data = oyarn!("{}", field);
-            if headers.len() <= idx {
-                break;
-            }
-            let field_elts = headers.get(idx).unwrap().splitn(2, [':', '/']).collect::<Vec<_>>();
-            let field_name = field_elts[0];
-            let field_range = TextRange::new(TextSize::new(start as u32), TextSize::new(end as u32));
-            let relational_field = field_elts.get(1);
-            //if the selected field is "id", return the xml_id record with the same id from the same csv file
-            if field_name == "id" {
-                for data in session.st()[csv_symbol].symbols().iter() {
-                    if let Some(record_key) = data.as_xml_record_key() {
-                        let record = &session.st()[record_key];
-                        let Some(record_xml_id) = &record.xml_id else {continue;};
-                        if record.range.contains_range(field_range) && field_data == *record_xml_id
-                            && let Some(xml_id) = record.fields().get(XmlFieldName::Id.as_str())
-                        {
-                            results.push(GotoSource {
-                                source: GotoSourceType::SymbolKey((*xml_id).into()),
-                                origin_selection_range: None,
-                            });
-                            break;
-                        }
+        //Search for selected field
+        let Some((idx, (start, end, field))) = field_iter
+            .enumerate()
+            .find(|(_, (start, end, _))| *start <= offset && *end >= offset)
+        else { return; };
+        let field_data = oyarn!("{}", field);
+        if headers.len() <= idx {
+            return;
+        }
+        let field_elts = headers.get(idx).unwrap().splitn(2, [':', '/']).collect::<Vec<_>>();
+        let field_name = field_elts[0];
+        let field_range = TextRange::new(TextSize::new(start as u32), TextSize::new(end as u32));
+        let relational_field = field_elts.get(1);
+        //if the selected field is "id", return the xml_id record with the same id from the same csv file
+        if field_name == "id" {
+            for data in session.st()[csv_symbol].symbols().iter() {
+                if let Some(record_key) = data.as_xml_record_key() {
+                    let record = &session.st()[record_key];
+                    let Some(record_xml_id) = &record.xml_id else {continue;};
+                    if record.range.contains_range(field_range) && field_data == *record_xml_id
+                        && let Some(xml_id) = record.fields().get(XmlFieldName::Id.as_str())
+                    {
+                        results.push(GotoSource {
+                            source: GotoSourceType::SymbolKey((*xml_id).into()),
+                            origin_selection_range: None,
+                        });
+                        break;
                     }
                 }
-            //in case of relational field, return the field in the related model
-            } else if let Some(&relational_field) = relational_field
-            && relational_field == XmlFieldName::Id.as_str()  // Only id because we will only look for xml_ids
-            {
-                // 1. find relational field in current model
-                let mut deep_field_walker = DeepFieldEvalWalker::new(main_symbol, module);
-                let _ = deep_field_walker.get_model_fields(session, main_symbol, field_name);
-                let Some(_) = deep_field_walker.get_model_symbol(session) else {
-                    return;
-                };
-                // We found the relational model referred to, we can lookup the xml_id now
-                results.extend(
-                    SyncOdoo::get_xml_ids(
-                        session,
-                        csv_symbol.into(),
-                        field_data.as_str(),
-                        &std::ops::Range::default(), //we don't care about range as it's used only for diagnostic
-                        &mut vec![],
-                    )
-                    .iter_valid(session.st())
-                    .map(|xml_id| GotoSource {
-                        source: GotoSourceType::SymbolKey(xml_id.into()),
-                        origin_selection_range: None,
-                    }),
-                );
             }
+        //in case of relational field, return the field in the related model
+        } else if let Some(&relational_field) = relational_field
+        && relational_field == XmlFieldName::Id.as_str()  // Only id because we will only look for xml_ids
+        {
+            // 1. find relational field in current model
+            let mut deep_field_walker = DeepFieldEvalWalker::new(main_symbol, module);
+            let _ = deep_field_walker.get_model_fields(session, main_symbol, field_name);
+            let Some(_) = deep_field_walker.get_model_symbol(session) else {
+                return;
+            };
+            // We found the relational model referred to, we can lookup the xml_id now
+            results.extend(
+                SyncOdoo::get_xml_ids(
+                    session,
+                    csv_symbol.into(),
+                    field_data.as_str(),
+                    &std::ops::Range::default(), //we don't care about range as it's used only for diagnostic
+                    &mut vec![],
+                )
+                .iter_valid(session.st())
+                .map(|xml_id| GotoSource {
+                    source: GotoSourceType::SymbolKey(xml_id.into()),
+                    origin_selection_range: None,
+                }),
+            );
         }
     }
 }
