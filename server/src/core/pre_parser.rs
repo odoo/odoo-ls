@@ -29,7 +29,7 @@ use std::thread::JoinHandle;
 use ruff_source_file::PositionEncoding;
 
 use crate::constants::DEBUG_PRE_PARSER;
-use crate::core::file_mgr::{Ast, PreloadedFile, hash_text_document, parse_js, parse_python, python_source_type};
+use crate::core::file_mgr::{Ast, JS_PARSE_STACK_SIZE, PreloadedFile, hash_text_document, parse_js_inner, parse_python, python_source_type};
 use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::symbol_keys::ModuleKey;
 use crate::core::text_document::TextDocument;
@@ -209,22 +209,27 @@ impl PreParser {
             let ctx = ctx.clone();
             let last_built_module_idx = last_built_module_idx.clone();
             let terminate = session.sync_odoo.terminate_rebuild.clone();
-            workers.push(std::thread::spawn(move || {
-                loop {
-                    if terminate.load(Ordering::Relaxed) { return; }
-                    // Hold the lock only long enough to pull one job, then release
-                    // it so a sibling worker can pull while this one parses.
-                    let Some(job) = job_queue.lock().unwrap().pop_front() else {
-                        return; // no more jobs, end thread
-                    };
-                    if job.module_idx <= last_built_module_idx.load(Ordering::Relaxed) {
-                        // The build has already passed this module, skip it.
-                        ctx.cache.stats.record_skipped();
-                        continue;
+            // 8 MiB stack so workers can run parse_js_inner without a nested spawn.
+            let worker = std::thread::Builder::new()
+                .stack_size(JS_PARSE_STACK_SIZE)
+                .spawn(move || {
+                    loop {
+                        if terminate.load(Ordering::Relaxed) { return; }
+                        // Hold the lock only long enough to pull one job, then release
+                        // it so a sibling worker can pull while this one parses.
+                        let Some(job) = job_queue.lock().unwrap().pop_front() else {
+                            return; // no more jobs, end thread
+                        };
+                        if job.module_idx <= last_built_module_idx.load(Ordering::Relaxed) {
+                            // The build has already passed this module, skip it.
+                            ctx.cache.stats.record_skipped();
+                            continue;
+                        }
+                        pre_parse_module(&ctx, job);
                     }
-                    pre_parse_module(&ctx, job);
-                }
-            }));
+                })
+            .expect("failed to spawn pre-parse worker");
+            workers.push(worker);
         }
         PreParser { cache, last_built_module_idx, job_queue, workers }
     }
@@ -356,7 +361,7 @@ fn pre_parse_js(ctx: &WorkerCtx, module_idx: usize, path: &Path) {
     // Matches `FileMgr::update`: build-time files carry version -1.
     let text_document = TextDocument::new(contents, -1);
     let text_hash = hash_text_document(&text_document);
-    let parsed = parse_js(text_document.contents(), &path_str);
+    let parsed = parse_js_inner(text_document.contents(), &path_str);
     ctx.cache.insert(module_idx, path_str, PreloadedFile::Js {
         text_hash,
         text_document,
