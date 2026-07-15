@@ -24,7 +24,7 @@ fn open_untitled(session: &mut SessionInfo, uri: &str, text: &str) -> (SourceFil
         }
     };
     Odoo::handle_did_open(session, did_open_params);
-    let file_symbol = SyncOdoo::get_symbol_of_opened_file(session, &std::path::PathBuf::from(uri))
+    let file_symbol = SyncOdoo::get_symbol_of_opened_file(session, std::path::Path::new(uri))
         .expect("Untitled file symbol");
     let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(uri).unwrap();
     (file_symbol, file_info)

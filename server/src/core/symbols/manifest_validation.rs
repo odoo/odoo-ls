@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, path::PathBuf};
+use std::{ffi::OsStr, path::Path};
 
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
@@ -20,7 +20,7 @@ impl ModuleSymbol {
         let mut diagnostics = vec![];
         for (data_url, data_range) in data_paths.iter() {
             // validate csv file names, check that their models exist
-            let path = PathBuf::from(module_path.clone()).join(data_url);
+            let path = Path::new(&module_path).join(data_url);
             if path.extension().unwrap_or_default() != "csv" || !path.exists(){
                 continue;
             }
@@ -40,7 +40,7 @@ impl ModuleSymbol {
                 session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(module_key.into());
             }
         }
-        let manifest_path = PathBuf::from(root_path).join("__manifest__.py");
+        let manifest_path = Path::new(&root_path).join("__manifest__.py");
         let manifest_file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize_cow()).expect("file not found in cache").clone();
         let mut manifest_file_info = (*manifest_file_info).borrow_mut();
         manifest_file_info.replace_diagnostics(DiagnosticSource::PY_VALIDATION, diagnostics);

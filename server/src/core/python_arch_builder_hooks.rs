@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::LazyLock;
 use ruff_text_size::TextRange;
 use tracing::{info, warn};
@@ -200,8 +200,8 @@ impl PythonArchBuilderHooks {
         let name = session.st().name(symbol).clone();
         if name == "release" {
             if session.sync_odoo.get_main_entry_tree(symbol) == (&["odoo", "release"], &[]) {
-                let file_path = session.st().path(symbol);
-                let new_version = SyncOdoo::read_version(session, &PathBuf::from(file_path));
+                let file_path = session.st().path(symbol).to_string(); // cloned to avoid borrow issues with session
+                let new_version = SyncOdoo::read_version(session, Path::new(&file_path));
                 if new_version != session.sync_odoo.version {
                     session.sync_odoo.need_rebuild = true;
                 }

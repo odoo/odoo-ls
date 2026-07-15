@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use lsp_types::{Location, PartialResultParams, Position, WorkDoneProgressParams};
 use odoo_ls_server::{core::file_mgr::FileMgr, threads::SessionInfo, utils::PathSanitizer};
@@ -13,7 +13,7 @@ fn test_references() {
     // Setup server and session
     let (mut odoo, config) = setup_server(true);
     let mut session = create_init_session(&mut odoo, config);
-    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
 
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
     //1. reference of a model

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use lsp_types::NumberOrString;
 use odoo_ls_server::core::odoo::SyncOdoo;
@@ -31,7 +31,7 @@ fn test_ols03025_to_27_access_operator() {
         .join("tests/data/addons/module_for_diagnostics/models/access_operator.py")
         .sanitize();
 
-    let file_sym = SyncOdoo::get_symbol_of_opened_file(&mut session, &PathBuf::from(&path))
+    let file_sym = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&path))
         .expect("file symbol for access_operator.py");
 
     // drain initial diagnostics so the next process_rebuilds publishes a clean set

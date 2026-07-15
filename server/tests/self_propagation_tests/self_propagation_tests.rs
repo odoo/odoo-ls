@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use odoo_ls_server::{core::{odoo::SyncOdoo, symbols::{symbol_keys::SymbolKey, storage::SymbolTable}}, utils::PathSanitizer};
 
@@ -9,11 +9,11 @@ fn test_model_subscription() {
     // Setup: Get the symbol for BaseTestModel and verify its existence
     let (mut odoo, config) = setup::setup_server(true);
     let mut session = setup::create_init_session(&mut odoo, config);
-    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("self_propagation_module").join("models").join("all_models.py").sanitize();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
-        &PathBuf::from(&test_file)
+        Path::new(&test_file)
     ) else {
         panic!("Failed to get file symbol");
     };

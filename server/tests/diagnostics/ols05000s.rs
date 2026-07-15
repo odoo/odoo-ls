@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString};
 use odoo_ls_server::{S, utils::PathSanitizer};
@@ -9,9 +9,9 @@ use crate::{setup::setup::*, test_utils::{diag_on_line, verify_diagnostics_again
 fn test_ols05000_2_3_py_file() {
     let (mut odoo, config) = setup_server(true);
     let mut session = create_init_session(&mut odoo, config);
-    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let bikes_py_path = test_addons_path.join("module_for_diagnostics").join("models").join("bike_parts_wheel.py");
-    assert!(PathBuf::from(&bikes_py_path).exists(), "Test file does not exist: {}", bikes_py_path.display());
+    assert!(Path::new(&bikes_py_path).exists(), "Test file does not exist: {}", bikes_py_path.display());
     let bikes_py_diagnostics = get_diagnostics_for_path(&mut session, &bikes_py_path.sanitize());
     let doc_diags = get_diagnostics_test_comments(&mut session, &bikes_py_path.sanitize());
     verify_diagnostics_against_doc(&bikes_py_diagnostics, &doc_diags); // OLS05002 & OLS05003 & OLS05051
@@ -35,9 +35,9 @@ fn check_xml_diagnostic(diagnostics: &[Diagnostic], ols_code: &str, line: u32, s
 fn test_ols05000s_xml_file() {
     let (mut odoo, config) = setup_server(true);
     let mut session = create_init_session(&mut odoo, config);
-    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let bikes_xml_path = test_addons_path.join("module_for_diagnostics").join("data").join("bikes.xml");
-    assert!(PathBuf::from(&bikes_xml_path).exists(), "Test file does not exist: {}", bikes_xml_path.display());
+    assert!(Path::new(&bikes_xml_path).exists(), "Test file does not exist: {}", bikes_xml_path.display());
     let bikes_xml_diagnostics = get_diagnostics_for_path(&mut session, &bikes_xml_path.sanitize());
     let check_xml_diag = |ols_code: &str, line: u32| {
         check_xml_diagnostic(&bikes_xml_diagnostics, ols_code, line, DiagnosticSeverity::ERROR);
@@ -115,9 +115,9 @@ fn test_ols05000s_xml_file() {
 fn test_ols05000s_manifest() {
     let (mut odoo, config) = setup_server(true);
     let mut session = create_init_session(&mut odoo, config);
-    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let bikes_py_path = test_addons_path.join("module_for_diagnostics").join("__manifest__.py");
-    assert!(PathBuf::from(&bikes_py_path).exists(), "Test file does not exist: {}", bikes_py_path.display());
+    assert!(Path::new(&bikes_py_path).exists(), "Test file does not exist: {}", bikes_py_path.display());
     let bikes_py_diagnostics = get_diagnostics_for_path(&mut session, &bikes_py_path.sanitize());
     let doc_diags = get_diagnostics_test_comments(&mut session, &bikes_py_path.sanitize());
     verify_diagnostics_against_doc(&bikes_py_diagnostics, &doc_diags); // OLS05049 & OLS05050

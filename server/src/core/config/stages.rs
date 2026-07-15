@@ -3,7 +3,7 @@
 //!
 //! Each hook operates on one field of one profile during a pipeline stage.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::{
     core::config::ConfigKey,
@@ -99,7 +99,7 @@ fn canonicalize_value<F: Fn(&str) -> bool>(
     } else {
         sourced.value().clone()
     };
-    let canon = resolve_path(&filled, &dir, policy).map_err(|e| e.to_string())?;
+    let canon = resolve_path(&filled, dir, policy).map_err(|e| e.to_string())?;
     if !predicate(&canon) {
         return Err(format!(
             "path '{canon}' does not satisfy the required conditions"
@@ -355,12 +355,12 @@ pub(super) fn infer_addons(
     let Some((ws_name, ws_path)) = ctx.current_ws else {
         return Ok(());
     };
-    let ws_path = PathBuf::from(ws_path).sanitize();
+    let ws_path = Path::new(ws_path).sanitize_cow();
 
     let mut additions: Vec<Sourced<String>> = Vec::new();
     if is_addon_path(&ws_path) {
         additions.push(Sourced::new(
-            ws_path.clone(),
+            ws_path.to_string(),
             format!("$workspaceFolder:{ws_name}"),
         ));
     }

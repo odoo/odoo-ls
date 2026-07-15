@@ -7,7 +7,7 @@
 //! structure. The field-declaration machinery (`FieldSpec`, the registry) lives
 //! in `spec.rs`.
 use std::hash::Hash;
-use std::path::PathBuf;
+use std::path::Path;
 
 use glob::Pattern;
 use itertools::Itertools;
@@ -122,7 +122,7 @@ impl<'de> serde::Deserialize<'de> for DiagnosticFilter {
         let helper = Helper::deserialize(deserializer)?;
         let mut paths = vec![];
         for path in helper.paths.iter() {
-            let sanitized_path = PathBuf::from(path).sanitize();
+            let sanitized_path = Path::new(path).sanitize_cow();
             let path_pattern = Pattern::new(&sanitized_path).map_err(serde::de::Error::custom)?;
             paths.push(path_pattern);
         }
@@ -288,15 +288,15 @@ pub(super) fn is_fs_path(s: &str) -> bool {
 /// like `$default` or `$workspaceFolder:…`). Relative resolution only makes sense
 /// against a real config-file path, so prefer those; `$`-tokens sort before `/`
 /// and would otherwise win a naive `min()`.
-pub(super) fn config_dir(sources: &HashSet<String>) -> PathBuf {
+pub(super) fn config_dir(sources: &HashSet<String>) -> &Path {
     sources
         .iter()
         .filter(|s| is_fs_path(s))
         .min()
         .or_else(|| sources.iter().min())
-        .map(PathBuf::from)
-        .and_then(|p| p.parent().map(PathBuf::from))
-        .unwrap_or_else(|| PathBuf::from("."))
+        .map(Path::new)
+        .and_then(|p| p.parent())
+        .unwrap_or_else(|| Path::new("."))
 }
 
 // ---------------------------------------------------------------------------
