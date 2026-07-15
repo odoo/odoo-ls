@@ -5,13 +5,13 @@ use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 use odoo_ls_server::utils::HashMap;
 use std::env;
-use std::path::PathBuf;
+use std::path::Path;
 
 mod setup;
 mod test_utils;
 
 fn csv_test_paths() -> (String, String, String) {
-    let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("data")
         .join("addons");
@@ -27,7 +27,7 @@ fn csv_test_paths() -> (String, String, String) {
         .sanitize();
 
     for path in [&field_mismatch, &invalid_xml_id, &valid_csv] {
-        assert!(PathBuf::from(path).exists(), "Test file does not exist: {}", path);
+        assert!(Path::new(path).exists(), "Test file does not exist: {}", path);
     }
 
     (field_mismatch, invalid_xml_id, valid_csv)

@@ -3,7 +3,7 @@ use core::str;
 use odoo_ls_server::utils::HashMap;
 use std::{env, fs};
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 
 use lsp_server::Message;
@@ -46,14 +46,13 @@ pub fn setup_server(with_odoo: bool) -> (SyncOdoo, ConfigEntry) {
     let mut server = SyncOdoo::new();
     server.load_odoo_addons = false;
 
-    let mut test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    test_addons_path = test_addons_path.join("tests").join("data").join("addons");
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     info!("Test addons path: {:?}", test_addons_path);
 
     let mut config = ConfigEntry::new();
     config.set_string_list(ConfigKey::AddonsPaths, [test_addons_path.sanitize()]);
     server.get_file_mgr().borrow_mut().add_workspace_folder(S!("test_addons_path"), FileMgr::pathname2uri(&test_addons_path.sanitize()));
-    if let Some(odoo_path) = community_path.map(|x| PathBuf::from(x).sanitize()) {
+    if let Some(odoo_path) = community_path.map(|x| Path::new(&x).sanitize()) {
         config.set_str(ConfigKey::OdooPath, odoo_path);
     }
     let Some(python_cmd) = get_python_command() else {

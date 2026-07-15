@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use lsp_types::Diagnostic;
 
@@ -16,7 +16,7 @@ impl ModuleSymbol {
         }
         let module = &mut session.st_mut()[module_key];
         module.loaded = true;
-        let manifest_path = PathBuf::from(&module.root_path).join("__manifest__.py");
+        let manifest_path = Path::new(&module.root_path).join("__manifest__.py");
         let manifest_file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize_cow()).expect("file not found in cache").clone();
         let mut manifest_file_info = (*manifest_file_info).borrow_mut();
         manifest_file_info.replace_diagnostics(DiagnosticSource::PY_ARCH, diagnostics);
@@ -78,7 +78,7 @@ impl ModuleSymbol {
         let symbol_table = &session.sync_odoo.symbol_table;
         let module_symbol = &symbol_table[module_key];
         let root_path = module_symbol.root_path.clone();
-        let tests_path = PathBuf::from(root_path).join("tests");
+        let tests_path = Path::new(&root_path).join("tests");
         if tests_path.exists() && !session.st()[module_key].module_symbols().contains_key("tests") {
             let symbol = SymbolTable::create_from_path(session, &tests_path, module_key.into(), false);
             if let Some(sym) = symbol && !matches!(sym, SymbolKey::Namespace(_)) {

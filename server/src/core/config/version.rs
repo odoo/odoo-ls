@@ -85,19 +85,19 @@ fn process_version(
     // (resolvable, existing) path is treated as a plain version string.
     let resolved = match fill_template_path(ctx.unique_ws_folders, ctx.current_ws, value, HashMap::default())
         .ok()
-        .and_then(|filled| resolve_path(&filled, &dir, SymlinkPolicy::Resolve).ok())
+        .and_then(|filled| resolve_path(&filled, dir, SymlinkPolicy::Resolve).ok())
     {
         Some(resolved) => resolved,
         None => return Ok(value.to_string()),
     };
 
-    let path = PathBuf::from(&resolved);
+    let path = Path::new(&resolved);
     if path.is_file()
         && path
             .file_name()
             .is_some_and(|f| f.to_string_lossy() == "__manifest__.py")
     {
-        let contents = fs::read_to_string(&path).map_err(|err| {
+        let contents = fs::read_to_string(path).map_err(|err| {
             format!("Failed to read manifest {path:?} for version inference: {err}")
         })?;
         // `parse_manifest_version` returns the already-unquoted string content.
@@ -143,7 +143,7 @@ pub(super) fn resolve_version_value(
 // ---------------------------------------------------------------------------
 
 fn path_ends_with(value: &str, token: &str) -> bool {
-    PathBuf::from(value)
+    Path::new(value)
         .components()
         .next_back()
         .map(|c| c.as_os_str().to_string_lossy() == token)
@@ -160,18 +160,17 @@ fn resolve_detect_version(profile: &mut Profile, ws_path: &Path) -> Result<(), S
     if !path_ends_with(&base_value, DETECT_VERSION) {
         return Ok(());
     }
-    let base_path = PathBuf::from(&base_value);
-    let Some(prefix) = base_path.parent().map(PathBuf::from) else {
+    let base_path = Path::new(&base_value);
+    let Some(prefix) = base_path.parent() else {
         return Err(S!("\"$base\" must be a valid path with a parent directory"));
     };
-    let abs = prefix.canonicalize().map_err(|e| {
+    let prefix = prefix.canonicalize().map_err(|e| {
         format!(
             "Failed to canonicalize base path: {} ({})",
             prefix.display(),
             e
         )
     })?;
-    let prefix = PathBuf::from(abs.sanitize());
     let prefix_components: Vec<_> = prefix.components().collect();
     let ws_components: Vec<_> = ws_path.components().collect();
 
@@ -210,12 +209,12 @@ fn resolve_split_version(profile: &mut Profile, ctx: &PipelineCtx) -> Result<Vec
     }
     profile.abstract_ = true;
 
-    let Some(parent) = PathBuf::from(&version_value).parent().map(PathBuf::from) else {
+    let Some(parent) = Path::new(&version_value).parent() else {
         return Ok(Vec::new());
     };
     let dir = config_dir(&version_sources);
     let parent_resolved = match fill_template_path(ctx.unique_ws_folders, ctx.current_ws, &parent.sanitize(), HashMap::default())
-        .and_then(|filled| resolve_path(&filled, &dir, SymlinkPolicy::Resolve).map_err(|e| e.to_string()))
+        .and_then(|filled| resolve_path(&filled, dir, SymlinkPolicy::Resolve).map_err(|e| e.to_string()))
     {
         Ok(p) => PathBuf::from(p),
         Err(err) => {

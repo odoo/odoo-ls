@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
 use ruff_python_ast::{Expr, ExprStringLiteral, Stmt};
@@ -12,9 +12,9 @@ use crate::{constants::{DEBUG_STEPS, DiagnosticSource}, core::{diagnostics::{Dia
 impl ModuleSymbol {
 
     pub fn load_manifest_content(session: &mut SessionInfo, module_key: ModuleKey) {
-        let manifest_path = PathBuf::from(&session.st()[module_key].path).join("__manifest__.py");
+        let manifest_path = Path::new(&session.st()[module_key].path).join("__manifest__.py");
         if DEBUG_STEPS {
-            info!("ARCH       - MANIFEST: {}", manifest_path.sanitize());
+            info!("ARCH       - MANIFEST: {}", manifest_path.sanitize_cow());
         }
         let (_, manifest_file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &manifest_path.sanitize_cow(), None, None, false);
         let mut manifest_file_info = (*manifest_file_info).borrow_mut();

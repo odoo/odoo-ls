@@ -63,9 +63,10 @@ impl EntryPointMgr {
         );
         session.sync_odoo.entry_point_mgr.borrow_mut().untitled_entry_points.push(entry.clone());
         // Create one file symbol under the root for the untitled file
-        let name: String = PathBuf::from(&path).with_extension("").components().next_back().unwrap().as_os_str().to_str().unwrap().to_string();
+        let path_stem = Path::new(&path).with_extension("");
+        let name = path_stem.components().next_back().unwrap().as_os_str().to_str().unwrap();
 
-        session.st_mut().add_new_file(entry.borrow().root.into(), &name, &path)
+        session.st_mut().add_new_file(entry.borrow().root.into(), name, &path)
     }
 
     /**
@@ -98,7 +99,7 @@ impl EntryPointMgr {
      */
     pub fn set_main_entry(session: &mut SessionInfo, path: String) -> Option<SymbolKey> {
         info!("Setting Main entry point: {}", path);
-        let entry_point_tree = PathBuf::from(&path).to_tree();
+        let entry_point_tree = Path::new(&path).to_tree();
         let entry = EntryPoint::new(
             &mut session.sync_odoo.symbol_table,
             path.clone(),
@@ -107,7 +108,7 @@ impl EntryPointMgr {
             None,
             None);
         session.sync_odoo.entry_point_mgr.borrow_mut().main_entry_point = Some(entry.clone());
-        
+
         EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry)
     }
 
@@ -116,7 +117,7 @@ impl EntryPointMgr {
      */
     pub fn add_entry_to_builtins(session: &mut SessionInfo, path: String) -> Option<SymbolKey> {
         info!("Adding new builtins entry point: {}", path);
-        let entry_point_tree = PathBuf::from(&path).to_tree();
+        let entry_point_tree = Path::new(&path).to_tree();
         let entry = EntryPoint::new(
             &mut session.sync_odoo.symbol_table,
             path.clone(),
@@ -125,7 +126,7 @@ impl EntryPointMgr {
             None,
             None);
         session.sync_odoo.entry_point_mgr.borrow_mut().builtins_entry_points.push(entry.clone());
-        
+
         EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry)
     }
 
@@ -147,7 +148,7 @@ impl EntryPointMgr {
                 return None;
             }
         }
-        let entry_point_tree = PathBuf::from(&path).to_tree();
+        let entry_point_tree = Path::new(&path).to_tree();
         let entry = EntryPoint::new(
             &mut session.sync_odoo.symbol_table,
             path.clone(),
@@ -156,7 +157,7 @@ impl EntryPointMgr {
             None,
             None);
         session.sync_odoo.entry_point_mgr.borrow_mut().public_entry_points.push(entry.clone());
-        
+
         EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry)
     }
 
@@ -165,7 +166,7 @@ impl EntryPointMgr {
      */
     pub fn add_entry_to_addons(session: &mut SessionInfo, path: String, main_entry: Rc<RefCell<EntryPoint>>, added_tree: Vec<OYarn>) {
         info!("Adding new addon entry point: {}", path);
-        let entry_point_tree = PathBuf::from(&path).to_tree();
+        let entry_point_tree = Path::new(&path).to_tree();
         let addon_to_odoo_path = Some(main_entry.borrow().path.clone() + "/" + added_tree.join("/").as_str());
         let addon_to_odoo_tree = Some(main_entry.borrow().tree.iter().chain(&added_tree).cloned().collect());
         let shared_root = main_entry.borrow().root;
@@ -185,7 +186,7 @@ impl EntryPointMgr {
      */
     pub fn add_entry_to_customs(session: &mut SessionInfo, path: &str) -> Option<SymbolKey> {
         info!("Adding new custom entry point: {}", path);
-        let entry_point_tree = PathBuf::from(path).to_tree();
+        let entry_point_tree = Path::new(path).to_tree();
         let entry = EntryPoint::new(
             &mut session.sync_odoo.symbol_table,
             path.to_string(),
@@ -314,7 +315,7 @@ impl EntryPointMgr {
         for entry in self.iter_all() {
             if (entry.borrow().typ == EntryPointType::UNTITLED && entry.borrow().path == *path)
             || (entry.borrow().typ != EntryPointType::UNTITLED
-            && PathBuf::from(entry.borrow().path.clone()).starts_with(path)){  //delete any entrypoint that would be in a subdirectory too
+            && Path::new(&entry.borrow().path).starts_with(path)){  //delete any entrypoint that would be in a subdirectory too
                 entry.borrow_mut().to_delete = true;
             }
         }
@@ -475,7 +476,7 @@ impl EntryPoint {
     pub fn get_tree_for_entry(&self, path: &Path) -> Tree {
         if let Some(addon_to_odoo_path) = self.addon_to_odoo_path.as_ref() {
             let path = path.strip_prefix(&self.path).unwrap();
-            let path = PathBuf::from(addon_to_odoo_path.clone()).join(path.to_str().unwrap());
+            let path = Path::new(addon_to_odoo_path).join(path.to_str().unwrap());
             return path.to_tree();
         }
         //no transformation needed, let's return the tree

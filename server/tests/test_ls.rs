@@ -1,6 +1,6 @@
 
 
-use std::path::PathBuf;
+use std::path::Path;
 use std::env;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::utils::PathSanitizer;
@@ -15,7 +15,7 @@ fn test_structure() {
     let st = &odoo.symbol_table;
 
     let odoo_path = env::var("COMMUNITY_PATH").unwrap();
-    let odoo_path = PathBuf::from(odoo_path).sanitize();
+    let odoo_path = Path::new(&odoo_path).sanitize();
     let odoo_path = odoo_path.as_str();
     assert!(!odoo.get_symbol(odoo_path, (&["odoo"], &[]), u32::MAX).is_empty());
     assert!(!odoo.get_symbol(odoo_path, (&["odoo", "addons"], &[]), u32::MAX).is_empty());
@@ -44,7 +44,7 @@ fn test_imports(odoo: &SyncOdoo) {
     //test direct imports
     let st = &odoo.symbol_table;
     let odoo_path = env::var("COMMUNITY_PATH").unwrap();
-    let odoo_path = PathBuf::from(odoo_path).sanitize();
+    let odoo_path = Path::new(&odoo_path).sanitize();
     let odoo_path = odoo_path.as_str();
     let model_var = odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1"], &["models"]), u32::MAX);
     let model_dir = odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "models"], &[]), u32::MAX);

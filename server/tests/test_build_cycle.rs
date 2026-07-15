@@ -1,5 +1,5 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::Path;
 
 use odoo_ls_server::constants::{BuildStatus, BuildSteps};
 use odoo_ls_server::core::entry_point::EntryPointMgr;
@@ -23,7 +23,7 @@ fn test_build_now_arch_eval_cycle_does_not_overflow() {
         .unwrap()
         .join("tests/data/addons/build_cycle_module")
         .sanitize();
-    let init_path = PathBuf::from(&module_dir).join("__init__.py").sanitize();
+    let init_path = Path::new(&module_dir).join("__init__.py").sanitize();
 
     EntryPointMgr::create_new_custom_entry_for_path(&mut session, &module_dir, &init_path);
     SyncOdoo::process_rebuilds(&mut session, false);

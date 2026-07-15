@@ -3,7 +3,7 @@ use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::{trace, warn};
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::path::PathBuf;
+use std::path::Path;
 use lsp_types::{Diagnostic, Position, Range};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation_context::{ContextKey, ContextValue};
@@ -179,7 +179,7 @@ impl PythonValidator {
             }
             if !session.sync_odoo.config.file_cache() {
                 if let SymbolKey::Module(m) = symbol {
-                    let manifest_path = PathBuf::from(&session.st()[m].path).join("__manifest__.py");
+                    let manifest_path = Path::new(&session.st()[m].path).join("__manifest__.py");
                     if let Some(manifest_file) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize_cow())
                         && !manifest_file.borrow().opened {
                             let manifest_file = manifest_file.borrow();

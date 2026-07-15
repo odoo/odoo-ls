@@ -47,7 +47,7 @@ fn test_untitled_file_lifecycle() {
     odoo_ls_server::core::odoo::Odoo::handle_did_change(&mut session, did_change_params);
 
     // Get file symbol
-    let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, &std::path::PathBuf::from(&untitled_uri)).expect("Untitled file symbol");
+    let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, std::path::Path::new(&untitled_uri)).expect("Untitled file symbol");
     // Hover on foo()
     let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&untitled_uri).unwrap();
     let hover = HoverFeature::hover_python(&mut session, file_symbol, &file_info, 2, 0);

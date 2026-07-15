@@ -155,7 +155,7 @@ impl PythonArchBuilder {
                 session.current_noqa = noqas;
                 old
             };
-            let _ = self.visit_node(session, ast);
+            self.visit_node(session, ast);
             session.current_noqa = old_noqa;
             session.noqas_stack = old_stack_noqa;
             self._resolve_all_symbols(session);

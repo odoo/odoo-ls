@@ -1,5 +1,5 @@
 use std::env;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use odoo_ls_server::utils::PathSanitizer;
 
@@ -21,7 +21,7 @@ fn test_start_odoo_server() {
     let (mut odoo, config) = setup::setup::setup_server(true);
     let _ = setup::setup::create_init_session(&mut odoo, config);
 
-    let odoo_path = PathBuf::from(env::var("COMMUNITY_PATH").unwrap()).sanitize();
+    let odoo_path = Path::new(&env::var("COMMUNITY_PATH").unwrap()).sanitize();
 
     /* Let's ensure that the architecture is loaded */
     assert!(!odoo.get_symbol(odoo_path.as_str(), (&["odoo"], &[]), u32::MAX).is_empty());

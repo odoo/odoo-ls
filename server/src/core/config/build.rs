@@ -4,7 +4,7 @@
 //! profile `extends`, cross-folder agree-or-error), fill defaults, and produce
 //! the runtime `ConfigEntry` map plus the `ConfigView` render view.
 
-use std::path::PathBuf;
+use std::path::Path;
 
 use crate::core::config::{ConfigKey, ConfigMap};
 use crate::threads::SessionInfo;
@@ -73,11 +73,11 @@ fn build_profiles(session: &mut SessionInfo) -> Result<ProfileSet, String> {
     // Resolve each source (config file, then each workspace folder)
     let mut profile_sets: Vec<ProfileSet> = Vec::new();
     if let Some(path) = session.sync_odoo.config_path.as_ref() {
-        let path = PathBuf::from(path);
+        let path = Path::new(path);
         if !path.is_file() {
             return Err(format!("Config file not found: {}", path.display()));
         }
-        profile_sets.push(resolve_file(&path, &unique_ws)?);
+        profile_sets.push(resolve_file(path, &unique_ws)?);
     }
     for ws in &ws_folders {
         profile_sets.push(resolve_workspace(ws, &unique_ws)?);
@@ -142,10 +142,10 @@ fn resolve_workspace(
     );
 
     let (_, ws_path) = ws;
-    let mut dir = PathBuf::from(ws_path);
-    let mut visited: HashSet<PathBuf> = HashSet::default();
+    let mut dir = Path::new(ws_path);
+    let mut visited: HashSet<&Path> = HashSet::default();
     loop {
-        if !visited.insert(dir.clone()) {
+        if !visited.insert(dir) {
             break;
         }
         let cfg = dir.join(CONFIG_FILE);
@@ -155,7 +155,7 @@ fn resolve_workspace(
             acc = merge_sets_child_wins(&acc, &file_set);
         }
         match dir.parent() {
-            Some(parent) => dir = parent.to_path_buf(),
+            Some(parent) => dir = parent,
             None => break,
         }
     }
