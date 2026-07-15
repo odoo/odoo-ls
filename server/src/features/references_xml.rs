@@ -182,8 +182,9 @@ impl XmlAstReferenceVisitor {
     fn scan_format_xml_id_refs(symbol_table: &SymbolTable, node: &Node, from_module: Option<ModuleKey>, target: &ReferenceTarget, results: &mut Vec<Range<usize>>) {
         let ReferenceTarget::String(target_str) = target else { return };
         let module_dir = from_module.map(|m| symbol_table[m].name.as_str());
+        let doc_text = node.document().input_text();
         for attr in node.attributes() {
-            XmlAstUtils::for_each_format_xml_id_ref(&attr, |inner, range| {
+            XmlAstUtils::for_each_format_xml_id_ref(&attr, doc_text, |inner, range| {
                 let matches = if inner.contains('.') {
                     inner == target_str.as_str()
                 } else if let Some(dir) = module_dir {
