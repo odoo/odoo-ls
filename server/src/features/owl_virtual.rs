@@ -408,13 +408,10 @@ pub fn completion_xml_owl(
         .as_mut()?
         .completion_items_for_content(&doc.virtual_path, v_line, v_char);
 
-    // Item positions address the virtual `.js`, which the client has never seen: drop the
-    // entries carrying an edit and strip the resolve data (its `file` is the virtual path).
-    // Only labels and cursor-relative `insert_text` survive.
+    // Drop edit-bearing entries (their positions address the virtual `.js` the client never
+    // saw). Resolve data survives: it points at the still-open virtual doc, and
+    // `handle_completion_resolve` keeps only the signature/docs for such paths.
     items.retain(|item| item.text_edit.is_none());
-    for item in items.iter_mut() {
-        item.data = None;
-    }
 
     if items.is_empty() {
         return None;

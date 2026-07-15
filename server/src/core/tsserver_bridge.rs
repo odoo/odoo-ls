@@ -643,9 +643,9 @@ impl TsServerBridge {
     }
 
     /// Completions at a position, mapped onto LSP items. `replacementSpan` entries
-    /// (import-statement completions) become a `text_edit`; `hasAction` entries
-    /// (auto-imports) get [`TsCompletionResolveData`] so `completionItem/resolve` can fetch
-    /// the import edit later.
+    /// (import-statement completions) become a `text_edit`; every entry gets
+    /// [`TsCompletionResolveData`] so `completionItem/resolve` can fetch its signature and
+    /// docs — and, for auto-imports, the import edit.
     pub fn completion_items_for_content(
         &mut self,
         file_path: &str,
@@ -698,9 +698,9 @@ impl TsServerBridge {
             .collect()
     }
 
-    /// Second half of an auto-import completion: the entry's signature, docs and the
-    /// `codeActions` holding the `import … from "…";` edit. Arguments must be the values of
-    /// the original `completions` request ([`TsCompletionResolveData`]); edits touching
+    /// Second half of any completion: the entry's signature and docs, plus — for auto-imports
+    /// — the `codeActions` holding the `import … from "…";` edit. Arguments must be the values
+    /// of the original `completions` request ([`TsCompletionResolveData`]); edits touching
     /// other files are dropped (LSP's `additionalTextEdits` cannot express them).
     pub fn completion_entry_details(
         &mut self,
