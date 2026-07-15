@@ -130,6 +130,9 @@ pub struct ParsedJs {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+/// Stack size for JS parsing threads, sized for OXC recursive descent on minified libs.
+pub const JS_PARSE_STACK_SIZE: usize = 8 * 1024 * 1024;
+
 /// Parse `contents` as JS: OXC parse + semantic analysis + linter, plus the OWL
 /// template refs and component descriptors [`js_arch_builder::visit_file`] extracts.
 /// Vendored libs (`/static/lib/`) stop after the parse — see below.
@@ -138,74 +141,78 @@ pub struct ParsedJs {
 ///
 /// Everything session-dependent is left to the caller — see [`FileInfo::apply_parsed_js`].
 pub fn parse_js(contents: &str, path: &str) -> ParsedJs {
-    // SemanticBuilder uses oxc_ast_visit internally (recursive descent), which can
-    // overflow the default stack on deeply-nested ASTs (e.g. minified JS).
-    // Run parse + semantic analysis in a dedicated thread with 8 MiB stack.
+    // Recursive-descent parse/semantic can overflow the default stack on deeply-nested
+    // ASTs (e.g. minified JS). Run on a dedicated thread with a known-large stack.
+    // Callers already on such a stack (pre-parse workers) skip this and call parse_js_inner.
     std::thread::scope(|scope| {
         std::thread::Builder::new()
-            .stack_size(8 * 1024 * 1024)
-            .spawn_scoped(scope, || {
-                let os_path = std::path::Path::new(path);
-                let source_type = SourceType::from_path(os_path).unwrap_or_default();
-                let allocator = Allocator::default();
-                let ret = Parser::new(&allocator, contents, source_type).parse();
-                let mut diags: Vec<OxcDiagnostic> = ret.errors;
-                let parser_module_record = ret.module_record;
-
-                let (imports, reexports, exports) = FileInfo::collect_js_imports(&parser_module_record);
-
-                let program = allocator.alloc(ret.program);
-
-                // Collect template references, component descriptors and declarations before
-                // semantic analysis
-                let (template_refs, component_descriptors, decls) = js_arch_builder::visit_file(program, path, &exports);
-                // Vendored libraries are kept out of workspace symbols for the same reason they
-                // are kept out of OXC diagnostics: they are not the user's code, and many are minified.
-                let is_lib = path.contains("/static/lib/");
-                let decls = if is_lib { vec![] } else { decls };
-
-                // Semantic analysis and the linter exist only to produce diagnostics, and
-                // a vendored lib's are dropped. They are also the biggest sources we parse,
-                // so stop here for them.
-                if is_lib {
-                    return ParsedJs { template_refs, component_descriptors, decls, imports, reexports, diagnostics: vec![] };
-                }
-
-                let semantic_ret = SemanticBuilder::new()
-                    .with_cfg(true)
-                    .with_check_syntax_error(true)
-                    .build(program);
-                diags.extend(semantic_ret.errors);
-                let semantic = semantic_ret.semantic;
-
-                // Build the linter module record and context
-                let module_record = Arc::new(ModuleRecord::new(os_path, &parser_module_record, &semantic));
-                let context_sub_host = ContextSubHost::new(semantic, module_record, 0);
-
-                // Create a linter with default (correctness) rules and run it
-                let mut external_plugin_store = ExternalPluginStore::default();
-                let config = ConfigStoreBuilder::default()
-                    .build(&mut external_plugin_store)
-                    .expect("failed to build linter config");
-                let config_store = ConfigStore::new(
-                    config,
-                    HashMap::default(),
-                    external_plugin_store,
-                );
-                let linter = oxc_linter::Linter::new(LintOptions::default(), config_store, None);
-                let messages = linter.run(os_path, vec![context_sub_host], &allocator);
-                diags.extend(messages.into_iter().map(|m| m.error));
-
-                let uri = FileMgr::pathname2uri(path);
-                let diagnostics = diags.iter().flat_map(
-                    |d| js_utils::oxc_diagnostic_to_lsp_diagnostic(d, &uri)
-                ).collect();
-                ParsedJs { template_refs, component_descriptors, decls, imports, reexports, diagnostics }
-            })
+            .stack_size(JS_PARSE_STACK_SIZE)
+            .spawn_scoped(scope, || parse_js_inner(contents, path))
             .expect("failed to spawn JS parsing thread")
             .join()
             .unwrap_or_default()
     })
+}
+
+/// The body of [`parse_js`], without the stack-headroom thread. Only call from a
+/// thread that already has at least [`JS_PARSE_STACK_SIZE`] of stack.
+pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
+    let os_path = std::path::Path::new(path);
+    let source_type = SourceType::from_path(os_path).unwrap_or_default();
+    let allocator = Allocator::default();
+    let ret = Parser::new(&allocator, contents, source_type).parse();
+    let mut diags: Vec<OxcDiagnostic> = ret.errors;
+    let parser_module_record = ret.module_record;
+
+    let (imports, reexports, exports) = FileInfo::collect_js_imports(&parser_module_record);
+
+    let program = allocator.alloc(ret.program);
+
+    // Collect template references, component descriptors and declarations before
+    // semantic analysis
+    let (template_refs, component_descriptors, decls) = js_arch_builder::visit_file(program, path, &exports);
+    // Vendored libraries are kept out of workspace symbols for the same reason they
+    // are kept out of OXC diagnostics: they are not the user's code, and many are minified.
+    let is_lib = path.contains("/static/lib/");
+    let decls = if is_lib { vec![] } else { decls };
+
+    // Semantic analysis and the linter exist only to produce diagnostics, and
+    // a vendored lib's are dropped. They are also the biggest sources we parse,
+    // so stop here for them.
+    if is_lib {
+        return ParsedJs { template_refs, component_descriptors, decls, imports, reexports, diagnostics: vec![] };
+    }
+
+    let semantic_ret = SemanticBuilder::new()
+        .with_cfg(true)
+        .with_check_syntax_error(true)
+        .build(program);
+    diags.extend(semantic_ret.errors);
+    let semantic = semantic_ret.semantic;
+
+    // Build the linter module record and context
+    let module_record = Arc::new(ModuleRecord::new(os_path, &parser_module_record, &semantic));
+    let context_sub_host = ContextSubHost::new(semantic, module_record, 0);
+
+    // Create a linter with default (correctness) rules and run it
+    let mut external_plugin_store = ExternalPluginStore::default();
+    let config = ConfigStoreBuilder::default()
+        .build(&mut external_plugin_store)
+        .expect("failed to build linter config");
+    let config_store = ConfigStore::new(
+        config,
+        HashMap::default(),
+        external_plugin_store,
+    );
+    let linter = oxc_linter::Linter::new(LintOptions::default(), config_store, None);
+    let messages = linter.run(os_path, vec![context_sub_host], &allocator);
+    diags.extend(messages.into_iter().map(|m| m.error));
+
+    let uri = FileMgr::pathname2uri(path);
+    let diagnostics = diags.iter().flat_map(
+        |d| js_utils::oxc_diagnostic_to_lsp_diagnostic(d, &uri)
+    ).collect();
+    ParsedJs { template_refs, component_descriptors, decls, imports, reexports, diagnostics }
 }
 
 #[derive(Debug, Clone)]
