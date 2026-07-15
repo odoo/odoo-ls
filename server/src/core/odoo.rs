@@ -2138,9 +2138,9 @@ impl Odoo {
         Ok(None)
     }
 
-    /// Fill in the deferred half of a JS completion item. Only tsserver auto-import entries
-    /// carry resolve data (their `import …;` edit lives in a `completionEntryDetails` code
-    /// action); everything else resolves to itself.
+    /// Fill in the deferred half of a JS/OWL completion item: its signature and docs — and,
+    /// for auto-imports, the `import …;` edit — come back only from `completionEntryDetails`.
+    /// Items carrying no resolve data (Python's) resolve to themselves.
     pub fn handle_completion_resolve(session: &mut SessionInfo, mut item: CompletionItem) -> Result<CompletionItem, ResponseError> {
         // Consume the data: it identified the entry for this round trip only.
         let Some(data) = item.data.take() else {
@@ -2169,7 +2169,9 @@ impl Odoo {
 
         item.detail = details.detail;
         item.documentation = details.documentation.map(Documentation::String);
-        if !details.additional_text_edits.is_empty() {
+        // A virtual-doc item's edits are in coordinates the client never saw — never apply them.
+        if !details.additional_text_edits.is_empty()
+            && !owl_virtual::is_owl_artifact_path(&resolve.file) {
             item.additional_text_edits = Some(details.additional_text_edits);
         }
         Ok(item)
