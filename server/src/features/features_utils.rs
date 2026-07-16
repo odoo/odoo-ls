@@ -44,6 +44,25 @@ struct InferredType {
     eval_ptr: EvaluationSymbolPtr,
     eval_info: TypeInfo,
 }
+
+/// What a model-related string literal resolves to. Shared by go-to-definition and
+/// semantic tokens.
+pub enum StringResolution {
+    /// Field/method symbols with the sub-range each covers (dotted paths → one per segment)
+    Members(Vec<(SymbolKey, TextRange)>),
+    Model(Vec<ModelSymbolKey>),
+    Module(ModuleKey),
+    XmlId(Vec<XmlId>),
+}
+
+/// Which dotted segments of a field path to return: the one under a byte offset
+/// (definition/hover) or every segment (semantic tokens).
+#[derive(Clone, Copy)]
+pub enum SegmentPick {
+    Cursor(usize),
+    All,
+}
+
 pub struct FeaturesUtils {}
 
 impl FeaturesUtils {
@@ -145,51 +164,44 @@ impl FeaturesUtils {
         from_module: Option<ModuleKey>,
         field_range: &TextRange,
         field_name: &str,
-        offset: &usize,
+        pick: SegmentPick,
     ) -> Vec<(SymbolKey, TextRange)> {
         if let SymbolKey::Class(class) = base_symbol.into()
         && session.st()[class]._model.is_none() {
             return vec![];
         }
-        // Search in each str subsection where the cursor is and find the corresponding index + range
-        let cursor_index = field_name
-            .split(".")
-            .enumerate()
-            .try_fold(
-                field_range.start() + TextSize::new(1),
-                |range_start, (idx, name)| {
-                    let range_end = range_start + TextSize::new((name.len() + 1) as u32);
-                    if TextRange::new(range_start, range_end)
-                        .contains(TextSize::new(*offset as u32))
-                    {
-                        // Err is the result we want, it breaks the iteration
-                        Err((
-                            idx,
-                            TextRange::new(range_start, range_end - TextSize::new(1)),
-                        ))
-                    } else {
-                        Ok(range_end)
-                    }
-                },
-            )
-            .err();
-        let Some((cursor_index, cursor_range)) = cursor_index else {
-            return vec![];
+        // Per-segment ranges: `.0` is the segment we return, `.1` includes the trailing
+        // separator and is what we test the cursor against. Offsets start past the quote.
+        let mut segments = vec![];
+        let mut range_start = field_range.start() + TextSize::new(1);
+        for name in field_name.split(".") {
+            let range_end = range_start + TextSize::new((name.len() + 1) as u32);
+            segments.push((TextRange::new(range_start, range_end - TextSize::new(1)), TextRange::new(range_start, range_end)));
+            range_start = range_end;
+        }
+        let cursor_index = match pick {
+            SegmentPick::All => None,
+            SegmentPick::Cursor(offset) => {
+                let Some(idx) = segments.iter().position(|(_, full)| full.contains(TextSize::new(offset as u32))) else {
+                    return vec![];
+                };
+                Some(idx)
+            }
         };
+        let mut results = vec![];
         let mut deep_field_walker = DeepFieldEvalWalker::new(base_symbol.into(), from_module);
         for (idx, field_sub_name) in field_name.split(".").map(|x| x.to_string()).enumerate() {
             let Some(base_symbol) = deep_field_walker.get_model_symbol(session) else {
                 break;
             };
             let field_symbols = deep_field_walker.get_model_fields(session, base_symbol, &field_sub_name);
-            if cursor_index == idx {
-                return field_symbols
-                    .into_iter()
-                    .map(|f| (f, cursor_range))
-                    .collect();
+            if matches!(pick, SegmentPick::All) {
+                results.extend(field_symbols.into_iter().map(|f| (f, segments[idx].0)));
+            } else if cursor_index == Some(idx) {
+                return field_symbols.into_iter().map(|f| (f, segments[idx].0)).collect();
             }
         }
-        vec![]
+        results
     }
 
     fn find_nested_fields_in_class(
@@ -198,12 +210,12 @@ impl FeaturesUtils {
         from_module: Option<ModuleKey>,
         field_range: &TextRange,
         field_name: &str,
-        offset: &usize,
+        pick: SegmentPick,
     ) ->  Vec<(SymbolKey, TextRange)>{
         let Some(SymbolKey::Class(parent_class)) = session.st().get_in_parents(scope, &[SymType::CLASS], true) else {
             return vec![];
         };
-        FeaturesUtils::find_nested_fields(session, parent_class.into(), from_module, field_range, field_name, offset)
+        FeaturesUtils::find_nested_fields(session, parent_class.into(), from_module, field_range, field_name, pick)
     }
 
     fn find_domain_param_symbols(
@@ -211,8 +223,8 @@ impl FeaturesUtils {
         callable: &EvaluationSymbolWeak,
         field_range: &TextRange,
         field_name: &str,
-        offset: &usize,
         from_module: Option<ModuleKey>,
+        pick: SegmentPick,
     ) -> Vec<(SymbolKey, TextRange)> {
         let Some(base_sym) = callable.context.get(ContextKey::BaseAttr).and_then(|parent_object| parent_object.as_symbol().upgrade(session.st())) else {
             return vec![];
@@ -222,7 +234,7 @@ impl FeaturesUtils {
             SymbolKey::XmlRecord(xml_rec_key) => xml_rec_key.into(),
             _ => return vec![],
         };
-        FeaturesUtils::find_nested_fields(session, model_sym, from_module, field_range, field_name, offset)
+        FeaturesUtils::find_nested_fields(session, model_sym, from_module, field_range, field_name, pick)
     }
 
     fn find_positional_argument_symbols(
@@ -231,10 +243,10 @@ impl FeaturesUtils {
         from_module: Option<ModuleKey>,
         field_name: &str,
         call_expr: &ExprCall,
-        offset: usize,
         field_range: TextRange,
         arg_index: usize,
         arg_expr: &Expr,
+        pick: SegmentPick,
     ) -> Vec<(SymbolKey, TextRange)> {
         let mut arg_symbols: Vec<(SymbolKey, TextRange)> = vec![];
         let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope, &call_expr.func.range().start(), false, &mut vec![]).0;
@@ -280,7 +292,7 @@ impl FeaturesUtils {
                         continue;
                     } else if func_sym_tree.1 == &["depends"] && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0){
                         arg_symbols.extend(
-                            FeaturesUtils::find_nested_fields_in_class(session, scope, from_module, &field_range, field_name, &offset)
+                            FeaturesUtils::find_nested_fields_in_class(session, scope, from_module, &field_range, field_name, pick)
                         );
                         continue;
                     }
@@ -329,7 +341,7 @@ impl FeaturesUtils {
             for evaluation in session.st()[func_arg_sym].evaluations.clone() {
                 if matches!(evaluation.symbol.get_symbol_ptr(), EvaluationSymbolPtr::DOMAIN) {
                     arg_symbols.extend(
-                        FeaturesUtils::find_domain_param_symbols(session, &callable, &field_range, field_name, &offset, from_module)
+                        FeaturesUtils::find_domain_param_symbols(session, &callable, &field_range, field_name, from_module, pick)
                     );
                 }
             }
@@ -345,9 +357,9 @@ impl FeaturesUtils {
         from_module: Option<ModuleKey>,
         field_name: &str,
         call_expr: &ExprCall,
-        offset: usize,
         field_range: TextRange,
         keyword: &Keyword,
+        pick: SegmentPick,
     ) -> Vec<(SymbolKey, TextRange)> {
         // We only process the `related` keyword argument
         if keyword.arg.as_ref().filter(|kw_arg| kw_arg.id == "related").is_none(){
@@ -380,7 +392,7 @@ impl FeaturesUtils {
                 continue;
             }
             arg_symbols.extend(
-                FeaturesUtils::find_nested_fields_in_class(session, scope, from_module, &field_range, field_name, &offset)
+                FeaturesUtils::find_nested_fields_in_class(session, scope, from_module, &field_range, field_name, pick)
             );
         }
         arg_symbols
@@ -393,17 +405,19 @@ impl FeaturesUtils {
         from_module: Option<ModuleKey>,
         field_name: &str,
         call_expr: &ExprCall,
-        offset: usize,
         field_range: TextRange,
+        pick: SegmentPick,
     ) -> Vec<(SymbolKey, TextRange)>{
+        // Any byte inside the string picks the same call arg, so locate it from the range.
+        let offset = field_range.start().to_usize() + 1;
         if let Some((arg_index, arg_expr)) = call_expr.arguments.args.iter().enumerate().find(|(_, arg)|
             offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize()
         ){
-            FeaturesUtils::find_positional_argument_symbols(session, scope, from_module, field_name, call_expr, offset, field_range, arg_index, arg_expr)
+            FeaturesUtils::find_positional_argument_symbols(session, scope, from_module, field_name, call_expr, field_range, arg_index, arg_expr, pick)
         } else if let Some((_, keyword)) = call_expr.arguments.keywords.iter().enumerate().find(|(_, arg)|
             offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize()
         ){
-            FeaturesUtils::find_keyword_argument_symbols(session, scope, from_module, field_name, call_expr, offset, field_range, keyword)
+            FeaturesUtils::find_keyword_argument_symbols(session, scope, from_module, field_name, call_expr, field_range, keyword, pick)
         } else {
             vec![]
         }
@@ -413,7 +427,7 @@ impl FeaturesUtils {
     fn check_for_string_special_syms(session: &mut SessionInfo, string_val: &str, call_expr: &ExprCall, offset: usize, field_range: TextRange, file_symbol: SourceFileKey) -> Vec<SymbolKey> {
         let from_module = session.st().find_module(file_symbol);
         let scope = session.st().get_scope_symbol(file_symbol, offset as u32, false);
-        let string_domain_fields_syms = FeaturesUtils::find_argument_symbols(session, scope, from_module,  string_val, call_expr, offset, field_range);
+        let string_domain_fields_syms = FeaturesUtils::find_argument_symbols(session, scope, from_module,  string_val, call_expr, field_range, SegmentPick::Cursor(offset));
         if string_domain_fields_syms.len() >= 1 {
             return string_domain_fields_syms.into_iter().map(|(sym, _)| sym).collect();
         }
@@ -422,6 +436,57 @@ impl FeaturesUtils {
             return kwarg_syms;
         }
         vec![]
+    }
+
+    /// Resolve a model-related string to its symbols/category, in this order:
+    /// field/method → module → model → xml id.
+    /// `SegmentPick::All` returns every dotted segment (tokens) instead of just
+    /// the one under the cursor.
+    pub fn resolve_string_symbols(
+        session: &mut SessionInfo,
+        file_symbol: SourceFileKey,
+        file_path: &str,
+        string_val: &str,
+        string_range: TextRange,
+        call_expr: Option<&ExprCall>,
+        pick: SegmentPick,
+    ) -> Option<StringResolution> {
+        let from_module = session.st().find_module(file_symbol);
+        if let Some(call_expr) = call_expr {
+            // Any byte inside the string works for scope/kwarg location.
+            let offset = string_range.start().to_usize() + 1;
+            let scope = session.st().get_scope_symbol(file_symbol, offset as u32, false);
+            let members = FeaturesUtils::find_argument_symbols(session, scope, from_module, string_val, call_expr, string_range, pick);
+            if !members.is_empty() {
+                return Some(StringResolution::Members(members));
+            }
+            let methods = FeaturesUtils::find_kwarg_methods_symbols(session, scope, from_module, string_val, call_expr, &offset);
+            if !methods.is_empty() {
+                return Some(StringResolution::Members(methods.into_iter().map(|s| (s, string_range)).collect()));
+            }
+        }
+        if let SourceFileKey::Module(module_key) = file_symbol && file_path.ends_with("__manifest__.py") {
+            let dir_alias = {
+                let module_symbol = &session.st()[module_key];
+                (module_symbol.module_name.as_str() == string_val).then(|| module_symbol.dir_name.clone())
+            };
+            let lookup = dir_alias.as_ref().map(|d| d.as_str()).unwrap_or(string_val);
+            if let Some(module) = session.sync_odoo.modules.get(lookup).copied().and_then(|m| m.upgrade(session.st())) {
+                return Some(StringResolution::Module(module));
+            }
+        }
+        if let Some(model) = session.sync_odoo.models.get(string_val).cloned() {
+            let model_syms: Vec<_> = model.borrow().get_model_symbols(session.st(), from_module).collect();
+            if !model_syms.is_empty() {
+                return Some(StringResolution::Model(model_syms));
+            }
+        }
+        let xml_ids = SyncOdoo::get_xml_ids(session, file_symbol, string_val, &std::ops::Range{start: 0, end: 0}, &mut vec![]);
+        let xml_syms: Vec<_> = xml_ids.iter_valid(session.st()).collect();
+        if !xml_syms.is_empty() {
+            return Some(StringResolution::XmlId(xml_syms));
+        }
+        None
     }
 
     pub fn build_markdown_description(

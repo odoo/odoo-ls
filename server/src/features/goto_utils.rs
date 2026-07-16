@@ -1,18 +1,17 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
 use lsp_types::{LocationLink, Range};
-use ruff_python_ast::{Expr, ExprCall};
+use ruff_python_ast::Expr;
 use ruff_text_size::TextRange;
 
 use crate::constants::PackageType;
 use crate::core::symbols::symbol_keys::SourceFileKey;
-use crate::features::features_utils::FeaturesUtils;
+use crate::features::features_utils::{FeaturesUtils, SegmentPick, StringResolution};
 use crate::{
     constants::{OYarn, SymType},
     core::{
-        evaluation::{Evaluation, EvaluationValue, ExprOrIdent},
+        evaluation::{EvaluationValue, ExprOrIdent},
         file_mgr::{FileInfo, FileMgr},
-        odoo::SyncOdoo,
         python_odoo_builder::MAGIC_FIELDS,
         symbols::{
             symbol_keys::SymbolKey,
@@ -24,7 +23,6 @@ use crate::{
         csv_ast_utils::CsvAstUtils,
         xml_ast_utils::XmlAstUtils,
     },
-    oyarn,
     threads::SessionInfo,
     utils::PathSanitizer,
     Sy,
@@ -48,157 +46,53 @@ pub struct GotoSource {
 pub struct GotoUtils {}
 
 impl GotoUtils {
-    fn check_for_domain_field(session: &mut SessionInfo, eval: &Evaluation, file_symbol: SourceFileKey, call_expr: &Option<ExprCall>, offset: usize, sources: &mut Vec<GotoSource>) -> bool {
-        let (field_name, field_range) = if let Some(eval_value) = eval.value.as_ref() {
-            if let Some(expr) = eval_value.as_string_literal() {
-                (expr.value.to_str(), expr.range)
-            } else {
-                return false;
-            }
-        } else {
-            return false;
-        };
-        let Some(call_expr) = call_expr else { return false };
-        let module = session.st().find_module(file_symbol);
-        let scope = session.st().get_scope_symbol(file_symbol, offset as u32, false);
-        let string_domain_fields = FeaturesUtils::find_argument_symbols(
-            session, scope, module, field_name, call_expr, offset, field_range
-        );
-        let mut domain_found = false;
-        string_domain_fields.iter().for_each(|(field, field_range)| {
-            if let Some(_) = session.st().get_file(*field) {
-                domain_found = true;
-                let path = session.st().path(file_symbol).to_string();
-                sources.push(GotoSource {
-                    source: GotoSourceType::SymbolKey(field.clone()),
-                    origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &field_range))
-                });
-            }
-        });
-        domain_found
-    }
-
-    fn check_for_model_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: SourceFileKey, sources: &mut Vec<GotoSource>) -> bool {
-        let value = if let Some(eval_value) = eval.value.as_ref() {
-            if let Some(expr) = eval_value.as_string_literal() {
-                oyarn!("{}", expr.value.to_str())
-            } else {
-                return false;
-            }
-        } else {
-            return  false;
-        };
-        let model = session.sync_odoo.models.get(&value).cloned();
-        let Some(model) = model else {
-            return false;
-        };
-        let mut model_found = false;
-        let from_module = session.st().find_module(file_symbol);
-        let model_syms = model.borrow().get_model_symbols(session.st(), from_module).collect::<Vec<_>>();
-        let len_syms = model_syms.len();
-        for sym_key in model_syms.into_iter() {
-            if let (Some(eval_range), Some(class_file)) = (eval.range, session.st().get_file(sym_key.into())) {
-                if (file_symbol == class_file) && session.st().range(sym_key.into()).contains(eval_range.start()) && len_syms > 1 {
-                    continue; // if we are already on the class, skip, unless it is the only result
+    fn push_string_sources(session: &mut SessionInfo, resolution: StringResolution, file_symbol: SourceFileKey, string_range: TextRange, sources: &mut Vec<GotoSource>) {
+        let path = session.st().path(file_symbol).to_string();
+        match resolution {
+            StringResolution::Members(members) => {
+                for (field, field_range) in members {
+                    if session.st().get_file(field).is_some() {
+                        sources.push(GotoSource {
+                            source: GotoSourceType::SymbolKey(field),
+                            origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &field_range)),
+                        });
+                    }
                 }
             }
-            model_found = true;
-            let path = session.st().path(file_symbol).to_string();
-            sources.push(GotoSource {
-                source: GotoSourceType::SymbolKey(sym_key.into()),
-                origin_selection_range: eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &r))
-            });
-        }
-        model_found
-    }
-
-    fn check_for_module_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: SourceFileKey, file_path: &String, sources: &mut Vec<GotoSource>) -> bool {
-        let SourceFileKey::Module(module_key) = file_symbol else {
-            return false;
-        };
-        if !file_path.ends_with("__manifest__.py") {
-            // If not on manifest, we don't check for modules
-            return false;
-        }
-        let mut value = if let Some(eval_value) = eval.value.as_ref() {
-            if let Some(expr) = eval_value.as_string_literal() {
-                oyarn!("{}", expr.value.to_str())
-            } else {
-                return false;
+            StringResolution::Model(model_syms) => {
+                let len_syms = model_syms.len();
+                for sym_key in model_syms.into_iter().map(SymbolKey::from) {
+                    if let Some(class_file) = session.st().get_file(sym_key) {
+                        if file_symbol == class_file && session.st().range(sym_key).contains(string_range.start()) && len_syms > 1 {
+                            continue; // already on the class, skip unless it is the only result
+                        }
+                    }
+                    sources.push(GotoSource {
+                        source: GotoSourceType::SymbolKey(sym_key),
+                        origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &string_range)),
+                    });
+                }
             }
-        } else {
-            return false;
-        };
-        let module_symbol = &session.st()[module_key];
-        if value == module_symbol.module_name {
-            value = module_symbol.dir_name.clone();
-        }
-        let Some(module) = session.sync_odoo.modules.get(&value).copied().and_then(|m| m.upgrade(session.st())) else {
-            return false;
-        };
-        sources.push(GotoSource{
-            source: GotoSourceType::SymbolKey(module.into()),
-            origin_selection_range: None,
-        });
-        true
-    }
-
-    fn check_for_xml_id_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: SourceFileKey, sources: &mut Vec<GotoSource>) -> bool {
-        let value = if let Some(eval_value) = eval.value.as_ref() {
-            if let Some(expr) = eval_value.as_string_literal() {
-                oyarn!("{}", expr.value.to_str())
-            } else {
-                return false;
-            }
-        } else {
-            return  false;
-        };
-        let mut xml_found = false;
-        let xml_ids = SyncOdoo::get_xml_ids(session, file_symbol, value.as_str(), &std::ops::Range{start: 0, end: 0}, &mut vec![]);
-        for xml_id in xml_ids.iter_valid(session.st()) {
-            let file = session.st().get_file(xml_id.into());
-            if file.is_none() {
-                continue;
-            }
-            xml_found = true;
-            let path = session.st().path(file_symbol).to_string();
-            sources.push(GotoSource{
-                source: GotoSourceType::SymbolKey(xml_id.into()),
-                origin_selection_range: eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &r))
-            });
-        }
-        xml_found
-    }
-
-    fn check_for_compute_string(session: &mut SessionInfo, eval: &Evaluation, file_symbol: SourceFileKey, call_expr: &Option<ExprCall>, offset: usize, sources: &mut Vec<GotoSource>) -> bool {
-        let value = if let Some(eval_value) = eval.value.as_ref() {
-            if let Some(expr) = eval_value.as_string_literal() {
-                expr.value.to_str()
-            } else {
-                return false;
-            }
-        } else {
-            return  false;
-        };
-        let Some(call_expr) = call_expr else { return false };
-        let scope = session.st().get_scope_symbol(file_symbol, offset as u32, false);
-        let module = session.st().find_module(file_symbol);
-        let method_symbols = FeaturesUtils::find_kwarg_methods_symbols(
-            session, scope, module, value, call_expr, &offset
-        );
-        let mut method_found = false;
-        method_symbols.iter().for_each(|&field|{
-            if let Some(file_sym) = session.st().get_file(field) {
-                method_found = true;
-                let path = session.st().path(file_sym).to_string();
+            StringResolution::Module(module_sym) => {
                 sources.push(GotoSource {
-                    source: GotoSourceType::SymbolKey(field),
-                    origin_selection_range: eval.range.map(|r| session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &r))
+                    source: GotoSourceType::SymbolKey(module_sym.into()),
+                    origin_selection_range: None,
                 });
             }
-        });
-        method_found
+            StringResolution::XmlId(xml_syms) => {
+                for xml_id in xml_syms.into_iter().map(SymbolKey::from) {
+                    if session.st().get_file(xml_id).is_none() {
+                        continue;
+                    }
+                    sources.push(GotoSource {
+                        source: GotoSourceType::SymbolKey(xml_id),
+                        origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &string_range)),
+                    });
+                }
+            }
+        }
     }
+
 
     pub fn add_display_name_compute_methods(session: &mut SessionInfo, sources: &mut Vec<GotoSource>, expr: &ExprOrIdent, file_symbol: SourceFileKey, offset: usize) {
         // now we want `_compute_display_name` definition(s)
@@ -271,11 +165,10 @@ impl GotoUtils {
         let mut index = 0;
         while index < evaluations.len() {
             let eval = &evaluations[index];
-            if GotoUtils::check_for_domain_field(session, eval, file_symbol, &call_expr, offset, &mut definition_sources) ||
-              GotoUtils::check_for_compute_string(session, eval, file_symbol,&call_expr, offset, &mut definition_sources) ||
-              GotoUtils::check_for_module_string(session, eval, file_symbol, &file_info.borrow().uri, &mut definition_sources) ||
-              GotoUtils::check_for_model_string(session, eval, file_symbol, &mut definition_sources) ||
-              GotoUtils::check_for_xml_id_string(session, eval, file_symbol, &mut definition_sources) {
+            if let Some((string_val, string_range)) = eval.value.as_ref().and_then(EvaluationValue::as_string_literal).map(|expr| (expr.value.to_str(), expr.range)) {
+                if let Some(resolution) = FeaturesUtils::resolve_string_symbols(session, file_symbol, &file_info.borrow().uri, string_val, string_range, call_expr.as_ref(), SegmentPick::Cursor(offset)) {
+                    GotoUtils::push_string_sources(session, resolution, file_symbol, string_range, &mut definition_sources);
+                }
                 index += 1;
                 continue;
             }
