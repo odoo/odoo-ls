@@ -1,9 +1,10 @@
 use lsp_types::{CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity, DocumentSymbol, Location, NumberOrString, Position, Range, SymbolKind};
 use serde_json::{Value, json};
 use crate::features::tsserver_completion::{TsCompletionDetails, entry_to_completion_item, response_to_completion_details};
-use crate::utils::{HashMap, HashSet};
+use crate::utils::{HashMap, HashSet, PathSanitizer};
 use tracing::{debug, info, warn};
 use std::io::{BufRead, BufReader, Read, Write};
+use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
@@ -295,6 +296,34 @@ impl TsServerBridge {
         Ok(stdin)
     }
 
+    /// The directory holding `file_path`, sent as `projectRootPath` on every `open`.
+    ///
+    /// It fences tsserver's hunt for a `ts/jsconfig.json`: the search walks up from the file
+    /// and stops here, preventing it from finding the jsconfig.json that web/tooling adds to
+    /// community and enterprise roots.
+    /// 
+    /// Therefore:
+    /// - It must contain the file being opened.
+    /// - It cannot stop the walk's first step — a config in the file's own directory is found regardless.
+    fn project_root_path(file_path: &str) -> Option<String> {
+        Path::new(file_path).parent().map(|dir| dir.sanitize())
+    }
+
+    /// The `open` payload
+    fn open_args(file_path: &str, file_content: &str, script_kind: Option<&str>) -> Value {
+        let mut args = json!({
+            "file": file_path,
+            "fileContent": file_content,
+        });
+        if let Some(script_kind) = script_kind {
+            args["scriptKindName"] = json!(script_kind);
+        }
+        if let Some(project_root) = Self::project_root_path(file_path) {
+            args["projectRootPath"] = json!(project_root);
+        }
+        args
+    }
+
     pub fn open_file(&mut self, file_path: &str, file_content: &str) {
         // "open" is a fire-and-forget notification: tsserver never sends a response.
         if self.root_files.insert(file_path.to_string()) {
@@ -307,13 +336,7 @@ impl TsServerBridge {
                 self.send_project_command();
             }
         }
-        let _ = self.send_request(
-            "open",
-            json!({
-                "file": file_path,
-                "fileContent": file_content,
-            }),
-        );
+        let _ = self.send_request("open", Self::open_args(file_path, file_content, None));
         let _ = self.send_request(
             "geterr",
             json!({
@@ -332,14 +355,7 @@ impl TsServerBridge {
     /// `updateGraph` then already sees it, so the first request against a new path returns
     /// real results (see `server/docs/owl-virtual-docs.md` §7).
     pub fn stage_virtual_doc(&mut self, file_path: &str, content: &str) {
-        let _ = self.send_request(
-            "open",
-            json!({
-                "file": file_path,
-                "fileContent": content,
-                "scriptKindName": "JS",
-            }),
-        );
+        let _ = self.send_request("open", Self::open_args(file_path, content, Some("JS")));
         if self.open_virtual_docs.insert(file_path.to_string()) {
             self.transient_roots.insert(file_path.to_string());
             self.transient_dirty = true;
