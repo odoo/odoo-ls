@@ -11,6 +11,7 @@ pub mod file_mgr;
 pub mod import_resolver;
 pub mod js_arch_builder;
 pub mod js_import_graph;
+pub mod js_type_files;
 pub mod js_utils;
 pub mod js_validator;
 pub mod model;
