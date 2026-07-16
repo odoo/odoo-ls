@@ -42,7 +42,7 @@ pub struct TsServerBridge {
     /// Files the client has open. Dropped on close (see [`Self::close_file`]); a later
     /// references query re-stages one as a transient root if it still needs it.
     /// Disjoint from [`Self::transient_roots`] — a path is pinned here or evictable there,
-    /// never both (the project payload is the union of the two).
+    /// never both. May overlap [`Self::project_type_files`]; the payload dedups.
     root_files: HashSet<String>,
     /// Evictable roots: reference-expansion files (never `open`ed — read from disk) and the
     /// OWL virtual docs. Dropped as a block once they outgrow the retention budget.
@@ -50,11 +50,13 @@ pub struct TsServerBridge {
     /// The subset of [`Self::transient_roots`] we sent an `open` for, and must therefore `close`
     /// on eviction (see [`Self::evict_transient_roots`]).
     open_virtual_docs: HashSet<String>,
-    /// Whether `transient_roots` changed since the last `openExternalProject`.
+    /// Whether the project payload changed since the last `openExternalProject`.
     transient_dirty: bool,
     //contains all tsconfig paths registered for the project, such as "@odoo/owl" as key and resolved paths matching it
     project_paths: HashMap<String, Vec<String>>,
-    project_type_roots: Vec<String>,
+    /// Odoo's ambient-declaration `.d.ts` roots, accumulated per opened module by
+    /// [`Self::stage_type_files`]. Permanent: never `open`ed, never evicted.
+    project_type_files: HashSet<String>,
     project_open: bool,
 }
 
@@ -159,7 +161,7 @@ impl TsServerBridge {
             open_virtual_docs: HashSet::default(),
             transient_dirty: false,
             project_paths: HashMap::default(),
-            project_type_roots: vec![],
+            project_type_files: HashSet::default(),
             project_open: false,
         };
 
@@ -309,7 +311,7 @@ impl TsServerBridge {
         Path::new(file_path).parent().map(|dir| dir.sanitize())
     }
 
-    /// The `open` payload
+    /// The `open` payload.
     fn open_args(file_path: &str, file_content: &str, script_kind: Option<&str>) -> Value {
         let mut args = json!({
             "file": file_path,
@@ -402,14 +404,20 @@ impl TsServerBridge {
     }
 
     /// Send `openExternalProject` so tsserver resolves Odoo module aliases.
-    /// `paths` maps import patterns like `"@web/*"` to filesystem globs. `type_roots` are
-    /// Odoo's `@types` dirs; setting them explicitly overrides tsserver's default of pulling
-    /// every `node_modules/@types` package (jQuery, luxon, …) into every file's global scope.
-    pub fn open_external_project(&mut self, paths: HashMap<String, Vec<String>>, type_roots: Vec<String>) {
+    /// `paths` maps import patterns like `"@web/*"` to filesystem globs.
+    pub fn open_external_project(&mut self, paths: HashMap<String, Vec<String>>) {
         self.project_paths = paths;
-        self.project_type_roots = type_roots;
         self.send_project_command();
         self.project_open = true;
+    }
+
+    /// Register the ambient-declaration `.d.ts` roots an opened file needs; staged only, flushed by
+    /// [`Self::commit_transient_roots`]. Additive over every module opened so far, never subtracted
+    /// from — [`crate::core::js_type_files`] explains why they are roots and why the union only grows.
+    pub fn stage_type_files(&mut self, paths: &[String]) {
+        for path in paths {
+            self.transient_dirty |= self.project_type_files.insert(path.clone());
+        }
     }
 
     /// Re-registers the external project with the current root set. The only place staged transient
@@ -417,8 +425,14 @@ impl TsServerBridge {
     fn send_project_command(&mut self) {
         self.transient_dirty = false;
         // Sorted so the payload — and hence tsserver's program construction — is reproducible.
-        let mut names: Vec<&String> = self.root_files.iter().chain(self.transient_roots.iter()).collect();
+        // Deduped because `project_type_files` may name a path the client also has open.
+        let mut names: Vec<&String> = self.root_files
+            .iter()
+            .chain(self.transient_roots.iter())
+            .chain(self.project_type_files.iter())
+            .collect();
         names.sort();
+        names.dedup();
         let root_files: Vec<Value> = names
             .into_iter()
             .map(|f| json!({ "fileName": f }))
@@ -428,10 +442,6 @@ impl TsServerBridge {
             .map(|(k, v)| {
                 (k.clone(), json!(v))
             })
-            .collect();
-        let type_roots_value: Vec<Value> = self.project_type_roots
-            .iter()
-            .map(|r| json!(r))
             .collect();
         let Ok(seq) = self.send_request(
             "openExternalProject",
@@ -445,10 +455,9 @@ impl TsServerBridge {
                     "moduleResolution": "node",
                     "baseUrl": "",
                     "paths": paths_value,
-                    // Explicit typeRoots (Odoo's own `@types` dirs, mirroring
-                    // `web/tooling/_jsconfig.json`) override the `node_modules/@types`
-                    // default, stopping the ambient luxon/jquery leak.
-                    "typeRoots": type_roots_value,
+                    // Empty and present are both load-bearing: do not fill it, do not drop it.
+                    // Why: `core::js_type_files`.
+                    "typeRoots": [],
                 },
                 // No Automatic Type Acquisition: tsserver would otherwise pull `@types/*`
                 // from its global cache into every file — huge type graphs checkJs fully

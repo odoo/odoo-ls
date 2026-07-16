@@ -4,6 +4,7 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::{Ast, PreloadedFile};
 use crate::core::js_arch_builder::ComponentDescriptor;
+use crate::core::js_type_files;
 use crate::core::js_validator::JsValidator;
 use crate::core::module_load_order::sort_by_load_order;
 use crate::core::pre_parser::{PreParseCache, PreParser};
@@ -418,9 +419,9 @@ impl SyncOdoo {
         session.log_message(MessageType::INFO, format!("End of initialization. Time taken: {} ms", start_time.elapsed().as_millis()));
     }
 
-    /// Start tsserver and configure the external project (`paths` + `typeRoots`) for Odoo's
-    /// `@addons/*` layout. Runs on a worker thread (see the call site) so it overlaps the
-    /// Python build; takes owned config values because it cannot touch `session`.
+    /// Start tsserver and configure the external project's `paths` for Odoo's `@addons/*` layout.
+    /// Runs on a worker thread (see the call site) so it overlaps the Python build; takes owned
+    /// config values because it cannot touch `session`. Ambient `@types`: `core::js_type_files`.
     fn setup_and_start_tsserver(
         tsserver_cmd: String,
         sender_to_main: crossbeam_channel::Sender<ThreadMessage>,
@@ -436,7 +437,6 @@ impl SyncOdoo {
             }
         };
         let mut paths: HashMap<String, Vec<String>> = HashMap::default();
-        let mut type_roots: Vec<String> = vec![];
         let mut addon_dirs: Vec<PathBuf> = vec![];
         if let Some(ref odoo_path) = odoo_path {
             addon_dirs.push(PathBuf::from(odoo_path).join("addons"));
@@ -453,12 +453,6 @@ impl SyncOdoo {
                         paths.entry(format!("@{}/*", name))
                             .or_default()
                             .push(src.sanitize());
-                        // Odoo ships ambient declarations in each module's
-                        // `static/src/@types` (mirrors _jsconfig's `*/static/src/@types`).
-                        let types_dir = entry.path().join("static").join("src").join("@types");
-                        if types_dir.is_dir() {
-                            type_roots.push(types_dir.sanitize());
-                        }
                         if name == "spreadsheet" {
                             let src = entry.path().join("static").join("src").join("index.js");
                             paths.entry(S!("@spreadsheet"))
@@ -475,21 +469,12 @@ impl SyncOdoo {
                             path_entry.push(entry.path().join("static").join("src").join("@types").join("hoot.d.ts").sanitize());
                             let path_entry = paths.entry(S!("@odoo/hoot-dom")).or_default();
                             path_entry.push(entry.path().join("static").join("lib").join("hoot-dom").join("hoot-dom.ts").sanitize());
-                            let tooling_types = entry.path().join("tooling").join("types");
-                            if tooling_types.is_dir() {
-                                type_roots.push(tooling_types.sanitize());
-                            }
-                        } else if name == "mail" {
-                            let mail_tooling = entry.path().join("static").join("src").join("js").join("tooling").join("types");
-                            if mail_tooling.is_dir() {
-                                type_roots.push(mail_tooling.sanitize());
-                            }
                         }
                     }
                 }
             }
         }
-        bridge.open_external_project(paths, type_roots);
+        bridge.open_external_project(paths);
         Some(bridge)
     }
 
@@ -2257,9 +2242,14 @@ impl Odoo {
                         let sanitized_path = path.sanitize();
                         session.log_message(MessageType::INFO, format!("File opened: {}", sanitized_path));
                         let file_extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                        if ["js", "ts"].contains(&file_extension) {
+                        if ["js", "ts"].contains(&file_extension) && session.sync_odoo.tsserver_bridge.is_some() {
+                            // Staged first, so the send below already carries the declarations.
+                            let type_files = js_type_files::type_files_for(session, &sanitized_path);
                             if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
+                                bridge.stage_type_files(&type_files);
                                 bridge.open_file(&sanitized_path, &params.text_document.text);
+                                // `open_file` only sends when the file is a new root; covers re-opens.
+                                bridge.commit_transient_roots();
                             }
                         }
                         let (valid, updated) = Odoo::update_file_cache(session, &sanitized_path, file_extension, Some(&[TextDocumentContentChangeEvent{
