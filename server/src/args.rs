@@ -66,6 +66,11 @@ pub struct Cli {
     #[arg(long)]
     pub selected_config: Option<String>,
 
+    /// Open a graphical inspector window to explore the server's live state (entry points, symbols, file infos).
+    /// Requires the binary to be built with the `gui` feature.
+    #[arg(long)]
+    pub gui: bool,
+
 }
 
 #[derive(ValueEnum, Clone, Debug)]

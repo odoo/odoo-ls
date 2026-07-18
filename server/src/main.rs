@@ -35,6 +35,7 @@ fn main() {
     let cli = Cli::parse();
 
     let use_debug = cli.use_tcp;
+    let want_gui = cli.gui;
     let log_level = &cli.log_level;
     let log_level = match log_level {
         LogLevel::TRACE => Level::TRACE,
@@ -123,10 +124,34 @@ fn main() {
                 })
             }));
         }));
-        if !serv.run(cli.clientProcessId) {
+        if want_gui {
+            run_with_gui(serv, cli.clientProcessId);
+        } else if !serv.run(cli.clientProcessId) {
             info!(">>>>>>>>>>>>>>>>>> End Session <<<<<<<<<<<<<<<<<<");
             process::exit(1);
         }
     }
     info!(">>>>>>>>>>>>>>>>>> End Session <<<<<<<<<<<<<<<<<<");
+}
+
+/// Runs the LSP message loop on a background thread and opens the live inspector window
+/// on the main thread (iced/winit expects to own it). Closing the window ends the process.
+#[cfg(feature = "gui")]
+fn run_with_gui(serv: Server, client_pid: Option<u32>) {
+    let odoo_handle = serv.sync_odoo_handle();
+    std::thread::spawn(move || {
+        serv.run(client_pid);
+    });
+    if let Err(e) = odoo_ls_server::gui::run(odoo_handle) {
+        tracing::error!("GUI exited with error: {e}");
+    }
+}
+
+#[cfg(not(feature = "gui"))]
+fn run_with_gui(serv: Server, client_pid: Option<u32>) {
+    tracing::warn!("--gui was passed, but this binary wasn't built with the `gui` feature. Continuing without a GUI.");
+    if !serv.run(client_pid) {
+        info!(">>>>>>>>>>>>>>>>>> End Session <<<<<<<<<<<<<<<<<<");
+        process::exit(1);
+    }
 }

@@ -297,6 +297,7 @@ mod tests {
             logs_directory: None,
             config_path: None,
             selected_config: None,
+            gui: false,
         }
     }
 
