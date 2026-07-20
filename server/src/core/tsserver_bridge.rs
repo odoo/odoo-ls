@@ -1,5 +1,6 @@
 use lsp_types::{CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity, DocumentSymbol, Location, NumberOrString, Position, Range, SymbolKind};
 use serde_json::{Value, json};
+use crate::S;
 use crate::features::tsserver_completion::{TsCompletionDetails, entry_to_completion_item, response_to_completion_details};
 use crate::utils::{HashMap, HashSet, PathSanitizer};
 use tracing::{debug, info, warn};
@@ -10,7 +11,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::constants::DiagnosticSource;
+use crate::constants::{DiagnosticSource, EXTENSION_NAME};
 use crate::core::file_mgr::FileMgr;
 use crate::threads::{TsServerDiagnostics, ThreadMessage};
 
@@ -951,7 +952,7 @@ fn ts_diag_event_to_diagnostics(body: &Value) -> Option<(String, Vec<Diagnostic>
         let end_offset   = end.get("offset").and_then(Value::as_u64)? as u32;
         let code = d.get("code")
             .and_then(Value::as_u64)
-            .map(|c| NumberOrString::Number(c as i32));
+            .map(|c| NumberOrString::String(format!("tsserver_{}", c)));
         let severity = match d.get("category").and_then(Value::as_str) {
             Some("error")      => DiagnosticSeverity::ERROR,
             Some("warning")    => DiagnosticSeverity::WARNING,
@@ -965,7 +966,7 @@ fn ts_diag_event_to_diagnostics(body: &Value) -> Option<(String, Vec<Diagnostic>
             },
             severity: Some(severity),
             code,
-            source: Some("OdooLS-TsServer".to_string()),
+            source: Some(S!(EXTENSION_NAME)),
             message: text.to_string(),
             ..Diagnostic::default()
         })

@@ -37,7 +37,7 @@ pub fn oxc_diagnostic_to_lsp_diagnostic(diag: &OxcDiagnostic, uri: &lsp_types::U
             oxc::diagnostics::Severity::Warning => lsp_types::DiagnosticSeverity::WARNING,
             oxc::diagnostics::Severity::Advice => lsp_types::DiagnosticSeverity::INFORMATION,
         }),
-        code: Some(lsp_types::NumberOrString::String(format!("OLSoxc{}", diag.code))),
+        code: Some(lsp_types::NumberOrString::String(format!("oxc_{}", diag.code))),
         code_description: None,
         source: Some(S!(EXTENSION_NAME)),
         message: message,
