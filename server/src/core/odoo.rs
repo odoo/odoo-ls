@@ -378,8 +378,9 @@ impl SyncOdoo {
                 let tsserver_cmd = session.sync_odoo.config.tsserver_command();
                 let odoo_path = session.sync_odoo.config.odoo_path().clone();
                 let addons_paths = session.sync_odoo.config.addons_paths().iter().cloned().collect::<Vec<_>>();
+                let ts_check = session.sync_odoo.config.ts_check();
                 std::thread::spawn(move || {
-                    SyncOdoo::setup_and_start_tsserver(tsserver_cmd, sender, odoo_path, addons_paths)
+                    SyncOdoo::setup_and_start_tsserver(tsserver_cmd, sender, odoo_path, addons_paths, ts_check)
                 })
             })
         };
@@ -431,9 +432,10 @@ impl SyncOdoo {
         sender_to_main: crossbeam_channel::Sender<ThreadMessage>,
         odoo_path: Option<String>,
         addons_paths: Vec<String>,
+        ts_check: bool,
     ) -> Option<TsServerBridge> {
         info!("Starting tsserver with command \"{}\"", tsserver_cmd);
-        let mut bridge = match TsServerBridge::new(&tsserver_cmd, sender_to_main) {
+        let mut bridge = match TsServerBridge::new(&tsserver_cmd, sender_to_main, ts_check) {
             Ok(bridge) => bridge,
             Err(err) => {
                 warn!("Unable to start tsserver for JS completions: {}", err);

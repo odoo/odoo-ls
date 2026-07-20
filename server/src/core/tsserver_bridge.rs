@@ -58,6 +58,7 @@ pub struct TsServerBridge {
     /// [`Self::stage_type_files`]. Permanent: never `open`ed, never evicted.
     project_type_files: HashSet<String>,
     project_open: bool,
+    ts_check: bool,
 }
 
 
@@ -140,7 +141,7 @@ impl TsServerBridge {
         history
     }
 
-    pub fn new(tsserver_path: &str, sender_to_main: crossbeam_channel::Sender<ThreadMessage>) -> std::io::Result<Self> {
+    pub fn new(tsserver_path: &str, sender_to_main: crossbeam_channel::Sender<ThreadMessage>, ts_check: bool) -> std::io::Result<Self> {
         let mut child = TsServerBridge::cmd_spawn_tsserver(tsserver_path)?;
         info!("tsserver process started (pid {:?})", child.id());
 
@@ -163,6 +164,7 @@ impl TsServerBridge {
             project_paths: HashMap::default(),
             project_type_files: HashSet::default(),
             project_open: false,
+            ts_check,
         };
 
         bridge.wait_for_startup(tsserver_path, &stderr_history)?;
@@ -450,7 +452,7 @@ impl TsServerBridge {
                 "rootFiles": root_files,
                 "options": {
                     "allowJs": true,
-                    "checkJs": true,
+                    "checkJs": self.ts_check,
                     "noEmit": true,
                     "moduleResolution": "node",
                     "baseUrl": "",
