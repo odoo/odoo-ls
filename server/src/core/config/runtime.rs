@@ -218,6 +218,9 @@ impl ConfigEntry {
     pub fn is_javascript_disabled(&self) -> bool {
         self.as_bool(ConfigKey::DisableJavascript)
     }
+    pub fn ts_check(&self) -> bool {
+        self.as_bool(ConfigKey::TsCheck)
+    }
 }
 
 /// Whether the change between two resolved configs requires a server restart:

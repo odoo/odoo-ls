@@ -33,6 +33,7 @@ pub enum ConfigKey {
     NoTypeshedStubs,
     TsServerCommand,
     DisableJavascript,
+    TsCheck,
 }
 
 pub(super) fn specs() -> Vec<FieldSpec> {
@@ -103,5 +104,8 @@ pub(super) fn specs() -> Vec<FieldSpec> {
         FieldSpec::new(DisableJavascript, "disable_javascript", Bool)
             .default(ConfigValue::bool(false))
             .triggers_restart(),
+        FieldSpec::new(TsCheck, "ts_check", Bool)
+            .triggers_restart()
+            .default(ConfigValue::bool(false))
     ]
 }
