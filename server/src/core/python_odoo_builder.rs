@@ -143,7 +143,7 @@ impl PythonOdooBuilder {
             symbol._model = None;
             return;
         }
-        if symbol._model.as_ref().unwrap().name != Sy!("base") {
+        if symbol._model.as_ref().unwrap().name != "base" {
             symbol._model.as_mut().unwrap().inherit.push(Sy!("base"));
         }
     }

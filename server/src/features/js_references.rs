@@ -12,11 +12,11 @@ use ruff_source_file::PositionEncoding;
 use crate::core::file_mgr::FileInfo;
 use crate::core::js_import_graph;
 use crate::core::symbols::symbol_keys::{SymbolKey, XmlTemplateKey};
-use crate::core::tsserver_bridge::{ts_to_lsp_location, TsLocation};
+use crate::core::tsserver_bridge::{TsLocation, ts_to_lsp_location};
 use crate::features::owl_virtual::{
-    build_virtual_docs, commit_staged_roots, is_owl_artifact_path, is_owl_doc_path,
-    is_owl_shim_path, locate_doc_at_cursor, map_virtual_ref, shim_to_real, stage_doc_and_shim,
-    MappedRef, OwlVirtualDoc,
+    MappedRef, OwlVirtualDoc, build_virtual_docs, commit_staged_roots, is_owl_artifact_path,
+    is_owl_doc_path, is_owl_shim_path, locate_doc_at_cursor, map_virtual_ref, shim_to_real,
+    stage_doc_and_shim,
 };
 use crate::threads::SessionInfo;
 use crate::utils::{HashMap, HashSet};
@@ -24,7 +24,7 @@ use crate::utils::{HashMap, HashSet};
 /// Append `loc` unless an equal `Location` is already present (the two query halves can
 /// overlap on same-file uses; reference sets are small, linear de-dup is enough).
 fn push_unique(locations: &mut Vec<Location>, loc: Location) {
-    if !locations.iter().any(|l| *l == loc) {
+    if !locations.contains(&loc) {
         locations.push(loc);
     }
 }
@@ -43,7 +43,11 @@ fn build_super_of(session: &SessionInfo) -> HashMap<String, String> {
         .sync_odoo
         .component_descriptors
         .values()
-        .filter_map(|d| d.super_class_name.clone().map(|s| (d.class_name.clone(), s)))
+        .filter_map(|d| {
+            d.super_class_name
+                .clone()
+                .map(|s| (d.class_name.clone(), s))
+        })
         .collect()
 }
 
@@ -80,10 +84,10 @@ const TRANSIENT_ROOT_BUDGET: usize = 1500;
 /// run **before** anything is staged: eviction closes every open virtual doc, including
 /// ones the current query is about to use.
 fn evict_transient_roots_if_over_budget(session: &mut SessionInfo) {
-    if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
-        if bridge.transient_root_count() > TRANSIENT_ROOT_BUDGET {
-            bridge.evict_transient_roots();
-        }
+    if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut()
+        && bridge.transient_root_count() > TRANSIENT_ROOT_BUDGET
+    {
+        bridge.evict_transient_roots();
     }
 }
 
@@ -119,7 +123,11 @@ fn anchor_files_for(origin: &str, declaring: &[String]) -> Vec<String> {
 fn declaring_js_files(files: impl IntoIterator<Item = String>) -> Vec<String> {
     let mut out: Vec<String> = vec![];
     for f in files {
-        let f = if is_owl_shim_path(&f) { shim_to_real(&f) } else { f };
+        let f = if is_owl_shim_path(&f) {
+            shim_to_real(&f)
+        } else {
+            f
+        };
         if f.ends_with(".js") && !is_owl_doc_path(&f) && !out.contains(&f) {
             out.push(f);
         }
@@ -136,7 +144,7 @@ fn stage_subclass_docs(session: &mut SessionInfo, anchor_files: &[String]) -> Ve
         .sync_odoo
         .component_descriptors
         .values()
-        .filter(|d| anchor_files.iter().any(|f| *f == d.file_path))
+        .filter(|d| anchor_files.contains(&d.file_path))
         .map(|d| d.class_name.clone())
         .collect();
     if anchor_classes.is_empty() {
@@ -148,20 +156,28 @@ fn stage_subclass_docs(session: &mut SessionInfo, anchor_files: &[String]) -> Ve
     // Distinct `.js` files defining those subclasses (one file may define several).
     let mut sub_paths: Vec<String> = vec![];
     for class in &subclasses {
-        if let Some(desc) = session.sync_odoo.component_descriptors.get(class) {
-            if !sub_paths.contains(&desc.file_path) {
-                sub_paths.push(desc.file_path.clone());
-            }
+        if let Some(desc) = session.sync_odoo.component_descriptors.get(class)
+            && !sub_paths.contains(&desc.file_path)
+        {
+            sub_paths.push(desc.file_path.clone());
         }
     }
 
     let mut docs: Vec<InheritedDoc> = vec![];
     for sub_path in sub_paths {
-        let Some(sub_fi) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&sub_path) else {
+        let Some(sub_fi) = session
+            .sync_odoo
+            .get_file_mgr()
+            .borrow()
+            .get_file_info(&sub_path)
+        else {
             continue;
         };
         for inherited in virtual_docs_for_js(session, &sub_fi) {
-            if docs.iter().any(|d| d.doc.virtual_path == inherited.doc.virtual_path) {
+            if docs
+                .iter()
+                .any(|d| d.doc.virtual_path == inherited.doc.virtual_path)
+            {
                 continue;
             }
             if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
@@ -175,16 +191,27 @@ fn stage_subclass_docs(session: &mut SessionInfo, anchor_files: &[String]) -> Ve
 
 /// The virtual docs whose real file is `js_fi`, each paired with the XML `FileInfo` needed
 /// to remap hits back onto its template.
-fn virtual_docs_for_js(session: &mut SessionInfo, js_fi: &Rc<RefCell<FileInfo>>) -> Vec<InheritedDoc> {
+fn virtual_docs_for_js(
+    session: &mut SessionInfo,
+    js_fi: &Rc<RefCell<FileInfo>>,
+) -> Vec<InheritedDoc> {
     let js_path = js_fi.borrow().uri.clone();
     let mut out = vec![];
     for xml_path in xml_files_backing_js(session, js_fi) {
-        let Some(xml_fi) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&xml_path) else {
+        let Some(xml_fi) = session
+            .sync_odoo
+            .get_file_mgr()
+            .borrow()
+            .get_file_info(&xml_path)
+        else {
             continue;
         };
         for doc in build_virtual_docs(session, &xml_fi) {
             if doc.real_path == js_path {
-                out.push(InheritedDoc { doc, xml_fi: xml_fi.clone() });
+                out.push(InheritedDoc {
+                    doc,
+                    xml_fi: xml_fi.clone(),
+                });
             }
         }
     }
@@ -224,17 +251,21 @@ pub fn references_js_owl(
     line: u32,
     character: u32,
 ) -> Option<Vec<Location>> {
-    if session.sync_odoo.tsserver_bridge.is_none() {
-        return None;
-    }
     let encoding = session.sync_odoo.encoding;
     let js_path = file_info.borrow().uri.clone();
 
     // Anchor expansion at the *declaring* file (the real file is already open — one cheap
     // round trip); anchoring at the cursor's file would miss an imported symbol's callers.
     let declaring = {
-        let bridge = session.sync_odoo.tsserver_bridge.as_mut()?;
-        declaring_js_files(bridge.get_definition(&js_path, line, character).into_iter().map(|(f, ..)| f))
+        declaring_js_files(
+            session
+                .sync_odoo
+                .tsserver_bridge
+                .as_mut()?
+                .get_definition(&js_path, line, character)
+                .into_iter()
+                .map(|(f, ..)| f),
+        )
     };
     let anchor_files = anchor_files_for(&js_path, &declaring);
 
@@ -243,9 +274,7 @@ pub fn references_js_owl(
     let inherited = stage_subclass_docs(session, &anchor_files);
     let own_docs = virtual_docs_for_js(session, file_info);
     for InheritedDoc { doc, .. } in own_docs.iter() {
-        if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
-            stage_doc_and_shim(bridge, doc);
-        }
+        stage_doc_and_shim(session.sync_odoo.tsserver_bridge.as_mut()?, doc);
     }
     stage_reference_roots(session, &anchor_files);
     commit_staged_roots(session);
@@ -256,8 +285,11 @@ pub fn references_js_owl(
 
     let mut locations: Vec<Location> = vec![];
     let raw_a = {
-        let bridge = session.sync_odoo.tsserver_bridge.as_mut()?;
-        bridge.get_references(&js_path, line, character)
+        session
+            .sync_odoo
+            .tsserver_bridge
+            .as_mut()?
+            .get_references(&js_path, line, character)
     };
     for hit in &raw_a {
         if let Some(loc) = remap_query_a_hit(&remap_docs, encoding, hit) {
@@ -274,8 +306,11 @@ pub fn references_js_owl(
         .find_map(|d| d.doc.shim.as_ref().map(|s| s.path.clone()));
     if let Some(shim_path) = own_shim {
         let raw_b = {
-            let bridge = session.sync_odoo.tsserver_bridge.as_mut()?;
-            bridge.get_references(&shim_path, line, character)
+            session
+                .sync_odoo
+                .tsserver_bridge
+                .as_mut()?
+                .get_references(&shim_path, line, character)
         };
         for hit in &raw_b {
             for d in remap_docs.iter().filter(|d| d.doc.real_path == js_path) {
@@ -335,7 +370,11 @@ pub fn references_xml_owl_member(
         if file == doc.virtual_path {
             continue;
         }
-        let file = if is_owl_shim_path(&file) { shim_to_real(&file) } else { file };
+        let file = if is_owl_shim_path(&file) {
+            shim_to_real(&file)
+        } else {
+            file
+        };
         anchors.push((file, sl, sc));
     }
 
@@ -350,7 +389,10 @@ pub fn references_xml_owl_member(
 
     // Query A's remap set: subclass docs + the cursor's own doc.
     let mut remap_docs = inherited;
-    remap_docs.push(InheritedDoc { doc, xml_fi: file_info.clone() });
+    remap_docs.push(InheritedDoc {
+        doc,
+        xml_fi: file_info.clone(),
+    });
 
     // Query A — cross-file JS callers + own/subclass-template references, over each anchor.
     for (path, al, ac) in &anchors {
@@ -375,7 +417,9 @@ pub fn references_xml_owl_member(
         };
         for hit in &raw_b {
             match map_virtual_ref(&own.doc, &own.xml_fi, encoding, hit) {
-                Some(MappedRef::Xml(loc)) | Some(MappedRef::RealJs(loc)) => push_unique(&mut collected, loc),
+                Some(MappedRef::Xml(loc)) | Some(MappedRef::RealJs(loc)) => {
+                    push_unique(&mut collected, loc)
+                }
                 None => {}
             }
         }
@@ -390,12 +434,16 @@ pub fn references_xml_owl_member(
 
 /// Distinct paths of XML files declaring (via `<t t-name>`) a template used by a component
 /// of this `.js` file: `static template` refs → `js_templates` → each symbol's parent file.
-fn xml_files_backing_js(session: &mut SessionInfo, file_info: &Rc<RefCell<FileInfo>>) -> Vec<String> {
+fn xml_files_backing_js(
+    session: &mut SessionInfo,
+    file_info: &Rc<RefCell<FileInfo>>,
+) -> Vec<String> {
     let template_names: Vec<String> = file_info
         .borrow()
         .file_info_ast
         .borrow()
-        .ast.as_js_ast()
+        .ast
+        .as_js_ast()
         .js_template_refs
         .iter()
         .map(|template_ref| template_ref.t_name.clone())
@@ -404,12 +452,11 @@ fn xml_files_backing_js(session: &mut SessionInfo, file_info: &Rc<RefCell<FileIn
     let mut paths: Vec<String> = vec![];
     for name in template_names {
         // Collect the valid keys first, releasing the table borrows before indexing again.
-        let Some(keys) = session
-            .sync_odoo
-            .js_templates
-            .get(&name)
-            .map(|templates| templates.iter_valid(&session.sync_odoo.symbol_table).collect::<Vec<XmlTemplateKey>>())
-        else {
+        let Some(keys) = session.sync_odoo.js_templates.get(&name).map(|templates| {
+            templates
+                .iter_valid(&session.sync_odoo.symbol_table)
+                .collect::<Vec<XmlTemplateKey>>()
+        }) else {
             continue;
         };
         for key in keys {
@@ -428,27 +475,33 @@ fn xml_files_backing_js(session: &mut SessionInfo, file_info: &Rc<RefCell<FileIn
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lsp_types::{Position, Range};
     use crate::core::file_mgr::FileMgr;
+    use lsp_types::{Position, Range};
 
     #[test]
     fn declaring_js_files_keeps_only_real_js_declarations() {
         let files = declaring_js_files([
-            "/a/base.js".to_string(),               // real .js — kept
-            "/a/base.js".to_string(),               // duplicate — dropped
-            "/lib/owl/owl.d.ts".to_string(),        // .d.ts (e.g. Owl Component) — outside the graph
-            "/a/types.ts".to_string(),              // .ts — origin floor covers it
+            "/a/base.js".to_string(),                // real .js — kept
+            "/a/base.js".to_string(),                // duplicate — dropped
+            "/lib/owl/owl.d.ts".to_string(), // .d.ts (e.g. Owl Component) — outside the graph
+            "/a/types.ts".to_string(),       // .ts — origin floor covers it
             "/a/foo.Foo.__ols_owl__.js".to_string(), // a virtual doc — never a declaring file
             "/a/child.__ols_shim__.js".to_string(), // a shim → its real file is the declaring one
         ]);
-        assert_eq!(files, vec!["/a/base.js".to_string(), "/a/child.js".to_string()]);
+        assert_eq!(
+            files,
+            vec!["/a/base.js".to_string(), "/a/child.js".to_string()]
+        );
     }
 
     #[test]
     fn anchor_files_for_unions_origin_first_and_dedups() {
         // Origin is always present and listed first (the floor), declaring files follow, deduped.
         assert_eq!(
-            anchor_files_for("/a/cursor.js", &["/a/base.js".to_string(), "/a/cursor.js".to_string()]),
+            anchor_files_for(
+                "/a/cursor.js",
+                &["/a/base.js".to_string(), "/a/cursor.js".to_string()]
+            ),
             vec!["/a/cursor.js".to_string(), "/a/base.js".to_string()],
         );
         // Same-file declaration (the common case) collapses to just the origin — a no-op.
@@ -457,7 +510,10 @@ mod tests {
             vec!["/a/cursor.js".to_string()],
         );
         // No declaration resolved falls back to the origin roots (current behaviour).
-        assert_eq!(anchor_files_for("/a/cursor.js", &[]), vec!["/a/cursor.js".to_string()]);
+        assert_eq!(
+            anchor_files_for("/a/cursor.js", &[]),
+            vec!["/a/cursor.js".to_string()]
+        );
     }
 
     #[test]
@@ -465,8 +521,14 @@ mod tests {
         let loc = |uri: &str, l: u32| Location {
             uri: FileMgr::pathname2uri(uri),
             range: Range {
-                start: Position { line: l, character: 0 },
-                end: Position { line: l, character: 4 },
+                start: Position {
+                    line: l,
+                    character: 0,
+                },
+                end: Position {
+                    line: l,
+                    character: 4,
+                },
             },
         };
         let mut v = vec![];
@@ -487,7 +549,10 @@ mod tests {
         super_of.insert("F".into(), "E".into());
         let mut subs = collect_subclasses(&super_of, &["A".to_string()]);
         subs.sort();
-        assert_eq!(subs, vec!["B".to_string(), "C".to_string(), "D".to_string()]);
+        assert_eq!(
+            subs,
+            vec!["B".to_string(), "C".to_string(), "D".to_string()]
+        );
         assert!(!subs.contains(&"A".to_string())); // root excluded
         assert!(!subs.contains(&"F".to_string())); // unrelated branch excluded
 
@@ -495,6 +560,9 @@ mod tests {
         let mut cyc: HashMap<String, String> = HashMap::default();
         cyc.insert("X".into(), "Y".into());
         cyc.insert("Y".into(), "X".into());
-        assert_eq!(collect_subclasses(&cyc, &["X".to_string()]), vec!["Y".to_string()]);
+        assert_eq!(
+            collect_subclasses(&cyc, &["X".to_string()]),
+            vec!["Y".to_string()]
+        );
     }
 }

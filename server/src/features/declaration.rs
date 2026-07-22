@@ -37,7 +37,7 @@ impl DeclarationFeature {
         let file_path = &file_info.borrow().uri;
         let locs: Vec<Location> = if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
             //declaration is not available in javascript, so let's call definition if this route is called for js files.
-            bridge.get_definition(&file_path, line, character)
+            bridge.get_definition(file_path, line, character)
                 .iter()
                 .map(tsserver_bridge::ts_to_lsp_location)
                 .collect()

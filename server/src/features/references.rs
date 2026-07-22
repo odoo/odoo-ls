@@ -276,7 +276,7 @@ impl ReferenceFeature {
         let encoding = session.sync_odoo.encoding;
         let template_refs = file_info.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
         for template_ref in &template_refs {
-            let range = file_info.borrow().text_range_to_range(&template_ref.range, encoding);
+            let range = file_info.borrow().text_range_to_range(template_ref.range, encoding);
             if Self::position_in_lsp_range(line, character, &range) {
                 let refs = Self::collect_template_name_references(session, &template_ref.t_name);
                 return if refs.is_empty() { None } else { Some(refs) };
@@ -285,7 +285,7 @@ impl ReferenceFeature {
 
         // Everything else: JS references unioned with OWL-template uses, all handled by
         // `js_references` (returns `None` without a tsserver bridge).
-        return js_references::references_js_owl(session, file_info, line, character);
+        js_references::references_js_owl(session, file_info, line, character)
     }
 
     // @todo-ref: move these 3 methods to a dedicated js_references file ??
@@ -338,16 +338,14 @@ impl ReferenceFeature {
                     xml_hits.push((xml_file, *range));
                 }
             }
-            if let Some((name, range)) = tmpl.t_inherit.as_ref() {
-                if name.as_str() == template_name {
-                    xml_hits.push((xml_file, *range));
-                }
+            if let Some((name, range)) = tmpl.t_inherit.as_ref() && name.as_str() == template_name {
+                xml_hits.push((xml_file, *range));
             }
         }
         for (xml_file, range) in xml_hits {
             let path = session.st()[xml_file].path.clone();
             let Some(dep_fi) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path) else { continue; };
-            let lsp_range = dep_fi.borrow().text_range_to_range(&range, encoding);
+            let lsp_range = dep_fi.borrow().text_range_to_range(range, encoding);
             locations.push(Location { uri: FileMgr::pathname2uri(&path), range: lsp_range });
         }
 
@@ -364,7 +362,7 @@ impl ReferenceFeature {
             let refs = fi.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
             for template_ref in refs {
                 if template_ref.t_name == template_name {
-                    let range = fi.borrow().text_range_to_range(&template_ref.range, encoding);
+                    let range = fi.borrow().text_range_to_range(template_ref.range, encoding);
                     locations.push(Location { uri: FileMgr::pathname2uri(&path), range });
                 }
             }
@@ -415,7 +413,7 @@ impl ReferenceFeature {
                     let Expr::StringLiteral(key_s) = key else {continue;};
                     let Expr::StringLiteral(value_s) = value else {continue;};
                     if key_s.value.to_str() == "name" {
-                        let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &manifest, &value_s.range());
+                        let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &manifest, value_s.range());
                         locations.push(Location {
                             uri: FileMgr::pathname2uri(&manifest),
                             range,
@@ -449,7 +447,7 @@ impl ReferenceFeature {
                         for value in depends_d.elts.iter() {
                             let Expr::StringLiteral(value_s) = value else {continue;};
                             if value_s.value.to_str() == module_name {
-                                let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &manifest, &value_s.range());
+                                let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &manifest, value_s.range());
                                 locations.push(Location {
                                     uri: FileMgr::pathname2uri(&manifest),
                                     range,
@@ -570,7 +568,7 @@ impl ReferenceVisitor {
                 if let Some(symbol) = w.weak.upgrade(session.st())
                     && symbol == eval_search_sym {
                         let path = session.st().path(file_symbol).to_string();
-                        let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &alias.range);
+                        let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, alias.range);
                         session.sync_odoo.evaluation_locations.push(Location {
                             uri: FileMgr::pathname2uri(&path),
                             range,

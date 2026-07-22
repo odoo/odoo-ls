@@ -85,8 +85,8 @@ impl DocumentSymbolFeature {
                 tags: None,
                 #[allow(deprecated)]
                 deprecated: None,
-                range: file_info.borrow().text_range_to_range(&arg.range, session.sync_odoo.encoding),
-                selection_range: file_info.borrow().text_range_to_range(&arg.range, session.sync_odoo.encoding),
+                range: file_info.borrow().text_range_to_range(arg.range, session.sync_odoo.encoding),
+                selection_range: file_info.borrow().text_range_to_range(arg.range, session.sync_odoo.encoding),
                 children: None
             });
         }
@@ -100,8 +100,8 @@ impl DocumentSymbolFeature {
             tags: None,
             #[allow(deprecated)]
             deprecated: None,
-            range: file_info.borrow().text_range_to_range(&stmt_function_def.range(), session.sync_odoo.encoding),
-            selection_range: file_info.borrow().text_range_to_range(&stmt_function_def.range(), session.sync_odoo.encoding),
+            range: file_info.borrow().text_range_to_range(stmt_function_def.range(), session.sync_odoo.encoding),
+            selection_range: file_info.borrow().text_range_to_range(stmt_function_def.range(), session.sync_odoo.encoding),
             children: Some(children_symbols)
         });
     }
@@ -121,8 +121,8 @@ impl DocumentSymbolFeature {
             tags: None,
             #[allow(deprecated)]
             deprecated: None,
-            range: file_info.borrow().text_range_to_range(&stmt_class_def.range(), session.sync_odoo.encoding),
-            selection_range: file_info.borrow().text_range_to_range(&stmt_class_def.range(), session.sync_odoo.encoding),
+            range: file_info.borrow().text_range_to_range(stmt_class_def.range(), session.sync_odoo.encoding),
+            selection_range: file_info.borrow().text_range_to_range(stmt_class_def.range(), session.sync_odoo.encoding),
             children: Some(children_symbols)
         });
     }
@@ -153,8 +153,8 @@ impl DocumentSymbolFeature {
                         tags: None,
                         #[allow(deprecated)]
                         deprecated: None,
-                        range: file_info.borrow().text_range_to_range(&target_name.range, session.sync_odoo.encoding),
-                        selection_range: file_info.borrow().text_range_to_range(&target_name.range, session.sync_odoo.encoding),
+                        range: file_info.borrow().text_range_to_range(target_name.range, session.sync_odoo.encoding),
+                        selection_range: file_info.borrow().text_range_to_range(target_name.range, session.sync_odoo.encoding),
                         children: None,
                     });
                 },
@@ -177,8 +177,8 @@ impl DocumentSymbolFeature {
             tags: None,
             #[allow(deprecated)]
             deprecated: None,
-            range: file_info.borrow().text_range_to_range(&stmt_type_alias.range(), session.sync_odoo.encoding),
-            selection_range: file_info.borrow().text_range_to_range(&stmt_type_alias.range(), session.sync_odoo.encoding),
+            range: file_info.borrow().text_range_to_range(stmt_type_alias.range(), session.sync_odoo.encoding),
+            selection_range: file_info.borrow().text_range_to_range(stmt_type_alias.range(), session.sync_odoo.encoding),
             children: None
         });
     }
@@ -233,8 +233,8 @@ impl DocumentSymbolFeature {
                     tags: None,
                     #[allow(deprecated)]
                     deprecated: None,
-                    range: file_info.borrow().text_range_to_range(&var.range(), session.sync_odoo.encoding),
-                    selection_range: file_info.borrow().text_range_to_range(&var.range(), session.sync_odoo.encoding),
+                    range: file_info.borrow().text_range_to_range(var.range(), session.sync_odoo.encoding),
+                    selection_range: file_info.borrow().text_range_to_range(var.range(), session.sync_odoo.encoding),
                     children: None
                 });
             }
@@ -267,8 +267,8 @@ impl DocumentSymbolFeature {
                         tags: None,
                         #[allow(deprecated)]
                         deprecated: None,
-                        range: file_info.borrow().text_range_to_range(&name.range(), session.sync_odoo.encoding),
-                        selection_range: file_info.borrow().text_range_to_range(&name.range(), session.sync_odoo.encoding),
+                        range: file_info.borrow().text_range_to_range(name.range(), session.sync_odoo.encoding),
+                        selection_range: file_info.borrow().text_range_to_range(name.range(), session.sync_odoo.encoding),
                         children: None
                     });
                 }
@@ -294,8 +294,8 @@ impl DocumentSymbolFeature {
                 tags: None,
                 #[allow(deprecated)]
                 deprecated: None,
-                range: file_info.borrow().text_range_to_range(&name.range, session.sync_odoo.encoding),
-                selection_range: file_info.borrow().text_range_to_range(&name.range, session.sync_odoo.encoding),
+                range: file_info.borrow().text_range_to_range(name.range, session.sync_odoo.encoding),
+                selection_range: file_info.borrow().text_range_to_range(name.range, session.sync_odoo.encoding),
                 children: None
             });
         }
@@ -310,8 +310,8 @@ impl DocumentSymbolFeature {
                 tags: None,
                 #[allow(deprecated)]
                 deprecated: None,
-                range: file_info.borrow().text_range_to_range(&name.range, session.sync_odoo.encoding),
-                selection_range: file_info.borrow().text_range_to_range(&name.range, session.sync_odoo.encoding),
+                range: file_info.borrow().text_range_to_range(name.range, session.sync_odoo.encoding),
+                selection_range: file_info.borrow().text_range_to_range(name.range, session.sync_odoo.encoding),
                 children: None
             });
         }
@@ -326,8 +326,8 @@ impl DocumentSymbolFeature {
                 tags: None,
                 #[allow(deprecated)]
                 deprecated: None,
-                range: file_info.borrow().text_range_to_range(&name.range, session.sync_odoo.encoding),
-                selection_range: file_info.borrow().text_range_to_range(&name.range, session.sync_odoo.encoding),
+                range: file_info.borrow().text_range_to_range(name.range, session.sync_odoo.encoding),
+                selection_range: file_info.borrow().text_range_to_range(name.range, session.sync_odoo.encoding),
                 children: None
             });
         }
@@ -342,8 +342,8 @@ impl DocumentSymbolFeature {
                 tags: None,
                 #[allow(deprecated)]
                 deprecated: None,
-                range: file_info.borrow().text_range_to_range(&name.range, session.sync_odoo.encoding),
-                selection_range: file_info.borrow().text_range_to_range(&name.range, session.sync_odoo.encoding),
+                range: file_info.borrow().text_range_to_range(name.range, session.sync_odoo.encoding),
+                selection_range: file_info.borrow().text_range_to_range(name.range, session.sync_odoo.encoding),
                 children: None
             });
         }

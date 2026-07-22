@@ -36,7 +36,7 @@ static arch_class_hooks: LazyLock<Vec<PythonArchClassHook>> = LazyLock::new(|| {
                 let mut range = symbol_table[class].range;
                 let slots = symbol_table.get_symbol(symbol_key, (&[], &["__slots__"]), u32::MAX);
                 if slots.len() == 1 {
-                    range = *symbol_table.range(slots[0]);
+                    range = symbol_table.range(slots[0]);
                 }
                 symbol_table.add_new_variable(symbol_key, "env", range);
             }
@@ -68,7 +68,7 @@ static arch_class_hooks: LazyLock<Vec<PythonArchClassHook>> = LazyLock::new(|| {
             let new_sym = symbol_table.get_symbol(class.into(), (&[], &["__new__"]), u32::MAX);
             let mut range = symbol_table[class].range;
             if new_sym.len() == 1 {
-                range = *symbol_table.range(new_sym[0]);
+                range = symbol_table.range(new_sym[0]);
             }
             // ----------- env.cr ------------
             symbol_table.add_new_variable(class, "cr", range);

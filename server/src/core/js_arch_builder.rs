@@ -214,20 +214,19 @@ impl<'a, 'e> Visit<'a> for JSArchBuilderVisitor<'e> {
     fn visit_property_definition(&mut self, it: &PropertyDefinition<'a>) {
         if it.r#static {
             let key_name = get_key_name(&it.key);
-            if key_name.as_deref() == Some("template") {
-                if let Some(Expression::StringLiteral(lit)) = &it.value {
-                    let content_start = lit.span.start + 1;
-                    let content_end = lit.span.end.saturating_sub(1);
-                    self.refs.push(JsTemplateRef {
-                        range: TextRange::new(
-                            TextSize::new(content_start),
-                            TextSize::new(content_end),
-                        ),
-                        t_name: lit.value.to_string(),
-                        class_name: self.class_stack.last().cloned(),
-                    });
-                    return; // no need to recurse into value
-                }
+            if key_name.as_deref() == Some("template") 
+            && let Some(Expression::StringLiteral(lit)) = &it.value {
+                let content_start = lit.span.start + 1;
+                let content_end = lit.span.end.saturating_sub(1);
+                self.refs.push(JsTemplateRef {
+                    range: TextRange::new(
+                        TextSize::new(content_start),
+                        TextSize::new(content_end),
+                    ),
+                    t_name: lit.value.to_string(),
+                    class_name: self.class_stack.last().cloned(),
+                });
+                return; // no need to recurse into value
             }
         }
         walk::walk_property_definition(self, it);

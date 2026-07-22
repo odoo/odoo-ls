@@ -103,7 +103,7 @@ fn decode_entities(expr: &str) -> String {
             }
         }
         let padding = (i - source_start) - (out.len() - decoded_start);
-        out.extend(std::iter::repeat(' ').take(padding));
+        out.extend(std::iter::repeat_n(' ', padding));
     }
     out
 }
@@ -236,7 +236,7 @@ pub(super) fn this_token_at(expr: &str, offset: usize) -> bool {
     // A single preceding `.` is a member access (`foo.this`, `foo?.this`); a `...` is a
     // spread, which leaves the keyword intact.
     let before = expr[..start].trim_end();
-    !(before.ends_with('.') && !before.ends_with(".."))
+    !before.ends_with('.') || before.ends_with("...")
 }
 
 /// Compile one OWL expression, as sliced from the XML, to JS: decode the XML entities
@@ -257,7 +257,7 @@ pub(super) fn compile_owl_expr(expr: &str) -> String {
             Some((_, op)) => {
                 out.push_str(op);
                 // Pad with spaces so the replacement keeps the word's byte length.
-                out.extend(std::iter::repeat(' ').take(word.len() - op.len()));
+                out.extend(std::iter::repeat_n(' ', word.len() - op.len()));
             }
             None => out.push_str(word),
         }

@@ -835,14 +835,14 @@ impl FileInfo {
         FileInfo::try_offset_to_position_with_text_document(self.file_info_ast.borrow().text_document.as_ref()?, offset, encoding)
     }
 
-    pub fn text_range_to_range(&self, range: &TextRange, encoding: PositionEncoding) -> Range {
+    pub fn text_range_to_range(&self, range: TextRange, encoding: PositionEncoding) -> Range {
         Range {
             start: self.offset_to_position(range.start().to_usize() as u32, encoding),
             end: self.offset_to_position(range.end().to_usize() as u32, encoding)
         }
     }
 
-    pub fn try_text_range_to_range(&self, range: &TextRange, encoding: PositionEncoding) -> Option<Range> {
+    pub fn try_text_range_to_range(&self, range: TextRange, encoding: PositionEncoding) -> Option<Range> {
         Some(Range {
             start: self.try_offset_to_position(range.start().to_usize() as u32, encoding)?,
             end: self.try_offset_to_position(range.end().to_usize() as u32, encoding)?
@@ -903,7 +903,7 @@ impl FileMgr {
         }
     }
 
-    pub fn text_range_to_range(&self, session: &mut SessionInfo, path: &str, range: &TextRange) -> Range {
+    pub fn text_range_to_range(&self, session: &mut SessionInfo, path: &str, range: TextRange) -> Range {
         let file = if Self::is_untitled(path) {
             self.untitled_files.get(path)
         } else {
