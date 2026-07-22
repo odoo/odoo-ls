@@ -195,7 +195,7 @@ impl SemanticTokensFeature {
             .into_iter()
             .filter(|template_ref| template_reference_resolves(session, &template_ref.t_name))
             .map(|template_ref| {
-                let range = file_info.borrow().text_range_to_range(&template_ref.range, encoding);
+                let range = file_info.borrow().text_range_to_range(template_ref.range, encoding);
                 (range, TokType::Type as u32, 0)
             })
             .collect()
@@ -291,13 +291,13 @@ impl<'a, 'b, 's> SemanticTokenVisitor<'a, 'b, 's> {
         let Some((token_type, modifiers)) = classify(self.session, key, origin) else {
             return;
         };
-        let range = self.file_info.borrow().text_range_to_range(&segment_range, self.session.sync_odoo.encoding);
+        let range = self.file_info.borrow().text_range_to_range(segment_range, self.session.sync_odoo.encoding);
         self.raw.push((range, token_type, modifiers));
     }
 
     /// Convert `range` to LSP and push one raw token.
     fn push_raw(&mut self, range: TextRange, token_type: u32, modifiers: u32) {
-        let lsp_range = self.file_info.borrow().text_range_to_range(&range, self.session.sync_odoo.encoding);
+        let lsp_range = self.file_info.borrow().text_range_to_range(range, self.session.sync_odoo.encoding);
         self.raw.push((lsp_range, token_type, modifiers));
     }
 
@@ -318,16 +318,14 @@ impl<'a, 'b, 's> SemanticTokenVisitor<'a, 'b, 's> {
                 if matches!(followed, EvaluationSymbolPtr::UNBOUND(_)) {
                     continue;
                 }
-                match followed.upgrade_weak(session.st()) {
-                    Some(key) => {
-                        if found.is_some() {
-                            // More than one real evaluation → ambiguous.
-                            return None;
-                        }
-                        found = Some(key);
-                    }
+                {
                     // ARG / DOMAIN / NONE / ANY, or an expired weak → ambiguous/unresolvable.
-                    None => return None,
+                    let key = followed.upgrade_weak(session.st())?;
+                    if found.is_some() {
+                        // More than one real evaluation → ambiguous.
+                        return None;
+                    }
+                    found = Some(key);
                 }
             }
         }
@@ -369,6 +367,7 @@ impl<'a, 'b, 's> Visitor<'a> for SemanticTokenVisitor<'a, 'b, 's> {
                     }
                     Some(StringResolution::Model(_)) => self.push_raw(range, TokType::Class as u32, 0),
                     Some(StringResolution::Module(_)) => self.push_raw(range, TokType::Namespace as u32, 0),
+                    #[allow(clippy::collapsible_match)]
                     Some(StringResolution::XmlId(records)) => {
                         // Color as class only where definition can also jump (record has a file).
                         if records.iter().any(|&record| self.session.st().get_file(record.into()).is_some()) {
@@ -395,7 +394,7 @@ impl<'a, 'b, 's> Visitor<'a> for SemanticTokenVisitor<'a, 'b, 's> {
         let name = &parameter.name;
         // Tokenize parameter (name only), skip if `self` or `cls`.
         if !is_grammar_owned_self(name.as_str()) {
-            let range = self.file_info.borrow().text_range_to_range(&name.range(), self.session.sync_odoo.encoding);
+            let range = self.file_info.borrow().text_range_to_range(name.range(), self.session.sync_odoo.encoding);
             self.raw.push((range, TokType::Parameter as u32, TokMod::Declaration.bit()));
         }
         // Keep descending so the annotation expr still gets its own token.

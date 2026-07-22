@@ -237,7 +237,7 @@ impl SymbolTable {
         }
     }
 
-    pub fn range(&self, target: SymbolKey) -> &TextRange {
+    pub fn range(&self, target: SymbolKey) -> TextRange {
         match target {
             SymbolKey::Root(_) => panic!(),
             SymbolKey::DiskDir(_) => panic!(),
@@ -246,16 +246,16 @@ impl SymbolTable {
             SymbolKey::Module(_) => panic!(),
             SymbolKey::File(_) => panic!(),
             SymbolKey::Compiled(_) => panic!(),
-            SymbolKey::Class(c) => &self[c].range,
-            SymbolKey::Function(f) => &self[f].range,
-            SymbolKey::Variable(v) => &self[v].range,
+            SymbolKey::Class(c) => self[c].range,
+            SymbolKey::Function(f) => self[f].range,
+            SymbolKey::Variable(v) => self[v].range,
             SymbolKey::XmlFile(_) => panic!(),
-            SymbolKey::XmlRecord(x) => &self[x].range,
-            SymbolKey::XmlField(x) => &self[x].range,
-            SymbolKey::XmlMenuItem(x) => &self[x].range,
-            SymbolKey::XmlTemplate(x) => &self[x].range,
-            SymbolKey::XmlAsset(x) => &self[x].range,
-            SymbolKey::XmlDelete(x) => &self[x].range,
+            SymbolKey::XmlRecord(x) => self[x].range,
+            SymbolKey::XmlField(x) => self[x].range,
+            SymbolKey::XmlMenuItem(x) => self[x].range,
+            SymbolKey::XmlTemplate(x) => self[x].range,
+            SymbolKey::XmlAsset(x) => self[x].range,
+            SymbolKey::XmlDelete(x) => self[x].range,
             SymbolKey::CsvFile(_) => panic!(),
             SymbolKey::JsFile(_) => panic!(),
         }

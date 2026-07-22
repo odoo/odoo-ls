@@ -32,10 +32,9 @@ impl DefinitionFeature {
             .iter()
             .flat_map(|def| GotoUtils::goto_source_to_location(session, def))
             .collect();
-        if matches!(ast_type, Ast::XmlAst) && links.is_empty() {
-            if let Some(response) = Self::get_owl_js_definition(session, file_info, line, character) {
-                return Some(response);
-            }
+        if matches!(ast_type, Ast::XmlAst) && links.is_empty()
+        && let Some(response) = Self::get_owl_js_definition(session, file_info, line, character) {
+            return Some(response);
         }
         Some(GotoDefinitionResponse::Link(links))
     }
@@ -46,7 +45,7 @@ impl DefinitionFeature {
         let template_refs = file_info.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
         for template_ref in &template_refs {
             // @todo: this is a change from the previous (fda's) call. Check if equivalent, and why it changed.
-            let range = file_info.borrow().text_range_to_range(&template_ref.range, encoding);
+            let range = file_info.borrow().text_range_to_range(template_ref.range, encoding);
             if Self::position_in_range(line, character, &range) {
                 let Some(templates) = session.sync_odoo.js_templates.get(&template_ref.t_name) else { continue; };
                 let mut locations = vec![];
@@ -62,7 +61,7 @@ impl DefinitionFeature {
 
         let file_path = &file_info.borrow().uri;
         let locs: Vec<Location> = if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
-            bridge.get_definition(&file_path, line, character)
+            bridge.get_definition(file_path, line, character)
                 .iter()
                 .map(tsserver_bridge::ts_to_lsp_location)
                 .collect()

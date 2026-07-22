@@ -30,7 +30,7 @@ impl HoverFeature {
         if value.is_empty() {
             return None;
         }
-        let range = Some(file_info.borrow().text_range_to_range(&range.unwrap(), session.sync_odoo.encoding));
+        let range = Some(file_info.borrow().text_range_to_range(range.unwrap(), session.sync_odoo.encoding));
         Some(Hover { contents:
             HoverContents::Markup(MarkupContent {
                 kind: lsp_types::MarkupKind::Markdown,

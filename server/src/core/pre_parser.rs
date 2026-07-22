@@ -92,6 +92,7 @@ pub struct PreParseCache {
     index: Mutex<IndexedStore>,
     /// Memoized [`ModuleSymbol::assets_path_resolver`] results, keyed by its arguments.
     /// See [`Self::resolve_assets`].
+    #[allow(clippy::type_complexity)]
     resolved_assets: Mutex<HashMap<(String, String), Arc<Vec<PathBuf>>>>,
     /// Asset files already taken by a worker. See [`Self::claim`].
     claimed_assets: Mutex<HashSet<PathBuf>>,

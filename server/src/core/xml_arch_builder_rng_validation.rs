@@ -507,9 +507,7 @@ impl XmlArchBuilder {
     }
 
     fn collect_t_inherit(node: &Node) -> Option<(OYarn, TextRange)> {
-        let Some(inherit_attr) = node.attribute_node("t-inherit") else {
-            return None;
-        };
+        let inherit_attr = node.attribute_node("t-inherit")?;
         let r = inherit_attr.range_value();
         Some((
             oyarn!("{}", inherit_attr.value()),
@@ -539,15 +537,14 @@ impl XmlArchBuilder {
         if let Some(t_inherit) = Self::collect_t_inherit(node) {
             session.st_mut()[data].t_inherit = Some(t_inherit);
         }
-        if let Some(found_t_name_node) = found_t_name_node && let Some(found_t_name) = &found_t_name {
-            if !found_t_name.contains(".") {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05071, &[]) {
-                    diagnostics.push(Diagnostic {
-                        range: Range { start: Position::new(found_t_name_node.range().start as u32, 0), end: Position::new(found_t_name_node.range().end as u32, 0) },
-                        ..diagnostic.clone()
-                    });
-                }
-            }
+        if let Some(found_t_name_node) = found_t_name_node && let Some(found_t_name) = &found_t_name
+            && found_t_name.contains(".")
+            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05071, &[])
+        {
+            diagnostics.push(Diagnostic {
+                range: Range { start: Position::new(found_t_name_node.range().start as u32, 0), end: Position::new(found_t_name_node.range().end as u32, 0) },
+                ..diagnostic.clone()
+            });
         }
         self.on_operation_creation(session, found_id, found_t_name, node, data.into(), diagnostics);
         true

@@ -249,20 +249,19 @@ pub fn semantic_tokens_xml(session: &mut SessionInfo, file_info: &Rc<RefCell<Fil
         let fia = fi.file_info_ast.borrow();
         fia.text_document.as_ref().map(|td| td.contents().to_string())
     };
-    if let Some(xml) = xml.as_deref() {
-        if let Ok(document) = roxmltree::Document::parse(xml) {
-            let mut names = vec![];
-            collect_template_names(document.root_element(), &mut names);
-            for (range, is_declaration) in names {
-                // References are highlighted only when they resolve — exactly when Definition
-                // would navigate from them; a broken reference stays grammar-coloured.
-                if !is_declaration && !template_reference_resolves(session, &xml[range.clone()]) {
-                    continue;
-                }
-                let lsp_range = file_info.borrow().std_range_to_range(&range, encoding);
-                let modifiers = if is_declaration { TokMod::Declaration.bit() } else { 0 };
-                raw_tokens.push((lsp_range, TokType::Type as u32, modifiers));
+    if let Some(xml) = xml.as_deref() && let Ok(document) = roxmltree::Document::parse(xml)
+    {
+        let mut names = vec![];
+        collect_template_names(document.root_element(), &mut names);
+        for (range, is_declaration) in names {
+            // References are highlighted only when they resolve — exactly when Definition
+            // would navigate from them; a broken reference stays grammar-coloured.
+            if !is_declaration && !template_reference_resolves(session, &xml[range.clone()]) {
+                continue;
             }
+            let lsp_range = file_info.borrow().std_range_to_range(&range, encoding);
+            let modifiers = if is_declaration { TokMod::Declaration.bit() } else { 0 };
+            raw_tokens.push((lsp_range, TokType::Type as u32, modifiers));
         }
     }
 
@@ -484,19 +483,17 @@ pub(crate) fn map_virtual_ref(
     if file != doc.virtual_path {
         // Shim = real file verbatim + `export` suffix: a byte in the prefix maps to the
         // real file by identity; a hit in the suffix is a re-export, dropped.
-        if let Some(shim) = &doc.shim {
-            if file == shim.path {
-                let start = position_to_offset_with_line_index(&doc.real_index, &doc.real_content, sl, sc, PositionEncoding::Utf16);
-                if start >= doc.real_content.len() {
-                    return None;
-                }
-                let end = position_to_offset_with_line_index(&doc.real_index, &doc.real_content, el, ec, PositionEncoding::Utf16);
-                let range = Range {
-                    start: doc.real_byte_to_position(start, encoding),
-                    end: doc.real_byte_to_position(end.min(doc.real_content.len()), encoding),
-                };
-                return Some(MappedRef::RealJs(Location { uri: FileMgr::pathname2uri(&doc.real_path), range }));
+        if let Some(shim) = &doc.shim && file == shim.path {
+            let start = position_to_offset_with_line_index(&doc.real_index, &doc.real_content, sl, sc, PositionEncoding::Utf16);
+            if start >= doc.real_content.len() {
+                return None;
             }
+            let end = position_to_offset_with_line_index(&doc.real_index, &doc.real_content, el, ec, PositionEncoding::Utf16);
+            let range = Range {
+                start: doc.real_byte_to_position(start, encoding),
+                end: doc.real_byte_to_position(end.min(doc.real_content.len()), encoding),
+            };
+            return Some(MappedRef::RealJs(Location { uri: FileMgr::pathname2uri(&doc.real_path), range }));
         }
         if is_owl_artifact_path(file) {
             return None;
@@ -724,10 +721,9 @@ fn collect_exprs<'a>(
     let mut sibling_scope = inner_scope;
     for child in node.children() {
         collect_exprs(child, xml, current_template, &sibling_scope, out);
-        if child.is_element() {
-            if let Some(local) = extract_tset_local(child) {
-                sibling_scope.push(local);
-            }
+        if child.is_element() && let Some(local) = extract_tset_local(child) 
+        {
+            sibling_scope.push(local);
         }
     }
 }

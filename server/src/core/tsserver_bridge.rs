@@ -758,7 +758,7 @@ impl TsServerBridge {
         ).ok()?;
 
         let response = self.read_response_for_request(request_seq)?;
-        return response_to_completion_details(response, file_path);
+        response_to_completion_details(response, file_path)
     }
 
     /// Returns the document symbol tree for a JS/TS file using tsserver's `navtree` command.

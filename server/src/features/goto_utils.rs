@@ -54,7 +54,7 @@ impl GotoUtils {
                     if session.st().get_file(field).is_some() {
                         sources.push(GotoSource {
                             source: GotoSourceType::SymbolKey(field),
-                            origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &field_range)),
+                            origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, field_range)),
                         });
                     }
                 }
@@ -62,14 +62,13 @@ impl GotoUtils {
             StringResolution::Model(model_syms) => {
                 let len_syms = model_syms.len();
                 for sym_key in model_syms.into_iter().map(SymbolKey::from) {
-                    if let Some(class_file) = session.st().get_file(sym_key) {
-                        if file_symbol == class_file && session.st().range(sym_key).contains(string_range.start()) && len_syms > 1 {
-                            continue; // already on the class, skip unless it is the only result
-                        }
+                    if let Some(class_file) = session.st().get_file(sym_key) &&
+                    file_symbol == class_file && session.st().range(sym_key).contains(string_range.start()) && len_syms > 1 {
+                        continue; // already on the class, skip unless it is the only result
                     }
                     sources.push(GotoSource {
                         source: GotoSourceType::SymbolKey(sym_key),
-                        origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &string_range)),
+                        origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, string_range)),
                     });
                 }
             }
@@ -86,7 +85,7 @@ impl GotoUtils {
                     }
                     sources.push(GotoSource {
                         source: GotoSourceType::SymbolKey(xml_id),
-                        origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &string_range)),
+                        origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, string_range)),
                     });
                 }
             }
@@ -259,8 +258,8 @@ impl GotoUtils {
                         if let Some(file) = session.st().get_file(*symbol_key) {
                             let path = session.st().path(file).to_string();
                             let range = if session.st().has_range(*symbol_key) {
-                                let range = *session.st().range(*symbol_key);
-                                session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, &range)
+                                let range = session.st().range(*symbol_key);
+                                session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, range)
                             } else {
                                 Range::default()
                             };
@@ -287,8 +286,8 @@ impl GotoUtils {
                 vec![LocationLink{
                     origin_selection_range: def.origin_selection_range,
                     target_uri: FileMgr::pathname2uri(uri),
-                    target_selection_range: session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, uri, range),
-                    target_range: session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, uri, range),
+                    target_selection_range: session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, uri, *range),
+                    target_range: session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, uri, *range),
                 }]
             }
         }
