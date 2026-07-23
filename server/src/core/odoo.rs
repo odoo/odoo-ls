@@ -1516,7 +1516,6 @@ impl SyncOdoo {
             return WeakSet::new();
         }
         let Some(module_key) = module else {
-            warn!("Module not found for id: {}", xml_id);
             return WeakSet::new();
         };
         ModuleSymbol::get_xml_id(session.st(), module_key, id_split.last().unwrap()).unwrap_or_default()
