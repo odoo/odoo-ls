@@ -66,6 +66,16 @@ debug_yarn = []  # use a readable structure instead of Yarn for debug purpose
 inherits = "release"
 debug = true
 
+[profile.release-debug]
+inherits = "dev-release"
+lto = "thin"
+debug = true
+
 [profile.release]
 codegen-units = 1
 lto = "thin"
+
+[profile.dev-release]
+inherits = "release"
+codegen-units = 16
+lto = false
