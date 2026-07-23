@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use regex::Regex;
 use ruff_python_ast::{Expr, ExprCall, Keyword};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use crate::core::file_mgr::FileMgr;
@@ -780,6 +781,266 @@ impl FeaturesUtils {
         }
     }
 
+    /// Dedent and convert Sphinx-style docstring directives to Markdown
+	pub fn postprocess_docstring(raw: &str) -> String {
+        use std::fmt::Write;
+
+        // Dedent lines
+        let lines: Vec<&str> = raw.lines().collect();
+        let nonempty: Vec<&str> = lines.iter().filter(|l| !l.trim().is_empty()).copied().collect();
+        let min_indent = nonempty
+            .into_iter()
+            .skip(1)
+            .filter_map(|l| {
+                let trimmed = l.trim_start();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(l.len() - trimmed.len())
+                }
+            })
+            .min()
+            .unwrap_or(0);
+        let dedented: Vec<String> = lines
+            .into_iter()
+            .enumerate()
+            .map(|(i, l)| {
+                if i == 0 {
+                    l.trim().to_string()
+                } else if l.len() >= min_indent {
+                    l[min_indent..].to_string()
+                } else {
+                    l.trim_start().to_string()
+                }
+            })
+            .collect();
+        let dedented_str = dedented.join("\n");
+
+        // Convert Sphinx cross-reference roles (matches python-lsp-server/docstring-to-markdown/rst.py)
+        let dedented_str = {
+            let s = dedented_str;
+            // C domain: :c:role:`name`
+            let s = Regex::new(r":c:(member|data|func|macro|struct|union|enum|enumerator|type):`\.?([^`]+?)`").unwrap().replace_all(&s, "`$2`").to_string();
+            // C++ domain: :cpp:role:`name`
+            let s = Regex::new(r":cpp:(any|class|struct|func|member|var|type|concept|enum|enumerator):`\.?([^`]+?)`").unwrap().replace_all(&s, "`$2`").to_string();
+            // JS domain: :js:role:`name`
+            let s = Regex::new(r":js:(mod|func|meth|class|data|attr):`\.?([^`]+?)`").unwrap().replace_all(&s, "`$2`").to_string();
+            // Python domain (optional :py prefix): :py:class:`name` or :class:`name`
+            let s = Regex::new(r"(:py)?:(mod|func|data|const|class|meth|attr|exc|obj):`\.?([^`]+?)`").unwrap().replace_all(&s, "`$3`").to_string();
+            // RST domain (optional :rst prefix): :rst:dir:`name` or :dir:`name`
+            let s = Regex::new(r"(:rst)?:(dir|role):`\.?([^`]+?)`").unwrap().replace_all(&s, "`$3`").to_string();
+            // Other cross-references: :any:, :envvar:, :token:, :keyword:, :option:, :term:
+            let s = Regex::new(r":(any|envvar|token|keyword|option|term):`\.?([^`]+?)`").unwrap().replace_all(&s, "`$2`").to_string();
+            s
+        };
+
+        // Sphinx directive aliases (matches python-lsp-server/docstring-to-markdown)
+        const PARAM_DIRECTIVES: &[&str] = &[":param", ":parameter", ":arg", ":argument", ":key", ":keyword"];
+        const RAISE_DIRECTIVES: &[&str] = &[":raises", ":raise", ":except", ":exception"];
+
+        // First pass: collect :type <name>: <type>
+        let mut type_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        // Collect params as (name, optional_type, description_lines)
+        let mut params: Vec<(String, Option<String>, Vec<String>)> = Vec::new();
+        let mut returns: Vec<Vec<String>> = Vec::new();
+        let mut raises: Vec<(String, Vec<String>)> = Vec::new();
+        let mut body: Vec<String> = Vec::new();
+
+        // Track active directive for continuation lines (indented lines following a directive)
+        enum Active {
+            None,
+            Param(usize),
+            Return(usize),
+            Raise(usize),
+        }
+        let mut active = Active::None;
+
+        let lines_vec: Vec<&str> = dedented_str.lines().collect();
+        let mut i = 0;
+        while i < lines_vec.len() {
+            let line = lines_vec[i];
+            let trimmed = line.trim_start();
+            let is_indented = !line.is_empty() && line.len() != trimmed.len();
+
+            // Blank line resets continuation
+            if trimmed.is_empty() {
+                body.push(line.to_string());
+                active = Active::None;
+                i += 1;
+                continue;
+            }
+
+            // Continuation of previous directive
+            if is_indented {
+                match &active {
+                    Active::Param(idx) => {
+                        params[*idx].2.push(trimmed.to_string());
+                        i += 1;
+                        continue;
+                    }
+                    Active::Return(idx) => {
+                        returns[*idx].push(trimmed.to_string());
+                        i += 1;
+                        continue;
+                    }
+                    Active::Raise(idx) => {
+                        raises[*idx].1.push(trimmed.to_string());
+                        i += 1;
+                        continue;
+                    }
+                    Active::None => {}
+                }
+            }
+
+            // :type <name>: <type>
+            if let Some(rest) = trimmed.strip_prefix(":type")
+                && let Some(colon_idx) = rest.find(':')
+            {
+                let name = rest[..colon_idx].trim();
+                let ty = rest[colon_idx + 1..].trim();
+                if !name.is_empty() && !ty.is_empty() {
+                    type_map.insert(name.to_string(), ty.to_string());
+                }
+                active = Active::None;
+                i += 1;
+                continue;
+            }
+
+            // :param [type] <name>: <description>
+            let mut matched = false;
+            for prefix in PARAM_DIRECTIVES {
+                if let Some(rest) = trimmed.strip_prefix(prefix) {
+                    let rest = rest.trim_start();
+                    if let Some(colon_idx) = rest.find(':') {
+                        let (name_part, desc) = rest.split_at(colon_idx);
+                        let name_part = name_part.trim();
+                        let desc = desc[1..].trim();
+                        if !name_part.is_empty() {
+                            let (name, ty) = if let Some(space_idx) = name_part.find(' ') {
+                                let ty = name_part[..space_idx].trim();
+                                let name = name_part[space_idx + 1..].trim();
+                                if !name.is_empty() {
+                                    (Some(name.to_string()), Some(ty.to_string()))
+                                } else {
+                                    (Some(name_part.to_string()), None)
+                                }
+                            } else {
+                                (Some(name_part.to_string()), None)
+                            };
+                            if let Some(name) = name {
+                                let idx = params.len();
+                                params.push((name, ty, vec![desc.to_string()]));
+                                active = Active::Param(idx);
+                                matched = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if matched {
+                i += 1;
+                continue;
+            }
+
+            // :return <text> / :returns <text>
+            if let Some(rest) = trimmed.strip_prefix(":return").or_else(|| trimmed.strip_prefix(":returns")) {
+                let desc = rest.trim_start().strip_prefix(':').map(|s| s.trim()).unwrap_or("");
+                let idx = returns.len();
+                returns.push(vec![desc.to_string()]);
+                active = Active::Return(idx);
+                i += 1;
+                continue;
+            }
+
+            // :rtype: <type>
+            if let Some(desc) = trimmed.strip_prefix(":rtype:").map(|s| s.trim()) {
+                if !desc.is_empty() {
+                    let idx = returns.len();
+                    returns.push(vec![format!("type: {}", desc)]);
+                    active = Active::Return(idx);
+                } else {
+                    active = Active::None;
+                }
+                i += 1;
+                continue;
+            }
+
+            // :raises <Exc>: <text> / :raise / :except / :exception
+            for prefix in RAISE_DIRECTIVES {
+                if let Some(rest) = trimmed.strip_prefix(prefix) {
+                    let rest = rest.trim_start();
+                    if let Some(colon_idx) = rest.find(':') {
+                        let exc = rest[..colon_idx].trim();
+                        let desc = rest[colon_idx + 1..].trim();
+                        if !exc.is_empty() {
+                            let idx = raises.len();
+                            raises.push((exc.to_string(), vec![desc.to_string()]));
+                            active = Active::Raise(idx);
+                            matched = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if matched {
+                i += 1;
+                continue;
+            }
+
+            body.push(line.to_string());
+            active = Active::None;
+            i += 1;
+        }
+
+        // Merge :type directives into params
+        for (name, ty) in &type_map {
+            if let Some(param) = params.iter_mut().find(|p| p.0 == *name) {
+                if param.1.is_none() {
+                    param.1 = Some(ty.clone());
+                }
+            }
+        }
+
+        let line_break = "  \n";
+        let mut result = body.join("\n").trim().to_string();
+
+        if !params.is_empty() {
+            result.push_str("\n\n");
+            for (name, ty, desc_lines) in &params {
+                let desc = desc_lines.join(line_break);
+                match ty {
+                    Some(ty) => _ = writeln!(&mut result, "- `{}` (`{}`): {}", name, ty, desc),
+                    None => _ = writeln!(&mut result, "- `{}`: {}", name, desc),
+                }
+            }
+        }
+
+        if !returns.is_empty() {
+            result.push('\n');
+            result.push('\n');
+            for desc_lines in &returns {
+                let desc = desc_lines.join(line_break);
+                if let Some(ty) = desc.strip_prefix("type: ") {
+                    _ = writeln!(&mut result, "- return type: `{}`", ty);
+                } else {
+                    _ = writeln!(&mut result, "- returns: {}", desc);
+                }
+            }
+        }
+
+        if !raises.is_empty() {
+            result.push('\n');
+            result.push('\n');
+            for (exc, desc_lines) in &raises {
+                let desc = desc_lines.join(line_break);
+                _ = writeln!(&mut result, "- raises `{}`: {}", exc, desc);
+            }
+        }
+
+        result
+    }
+
     /// Documentation block that includes the source module(s) and docstrings if found
     fn get_documentation_block(session: &mut SessionInfo, from_modules: &Vec<OYarn>, type_refs: &Vec<InferredType>) -> Option<String> {
         let mut documentation_block = None;
@@ -793,9 +1054,12 @@ impl FeaturesUtils {
         }
         for typ in type_refs.iter() {
             if let Some(typ) = typ.eval_ptr.upgrade_weak() {
-                if typ.borrow().doc_string().is_some() {
+                let doc_string = typ.borrow().doc_string().clone();
+                if let Some(raw) = doc_string {
+                    // Postprocess the docstring: dedent + convert Sphinx directives to Markdown
+                    let processed = FeaturesUtils::postprocess_docstring(&raw);
                     // Replace leading spaces with nbsps to avoid it being parsed as a Markdown Codeblock
-                    let ds = typ.borrow().doc_string().as_ref().unwrap()
+                    let ds = processed
                     .lines()
                     .map(|line| {
                         let leading_spaces = line.chars().take_while(|&ch| ch == ' ').count();
