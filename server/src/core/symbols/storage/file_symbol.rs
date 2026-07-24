@@ -1,6 +1,6 @@
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, MissingDataSource, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{storage::dependency_mgr::{DependenciesTable, DependentsTable}, symbol_keys::SymbolKey}}, oyarn};
+use crate::{constants::{BuildStatus, BuildSteps, MissingDataSource, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{storage::{dependency_mgr::{DependenciesTable, DependentsTable}, FileSystemSymbolParent}, symbol_keys::SymbolKey}}, oyarn};
 use std::{cell::RefCell, rc::Weak};
 use crate::utils::HashMap;
 
@@ -28,13 +28,13 @@ pub struct FileSymbol {
     pub sections: Vec<SectionRange>,
 
     // parent / child symbols
-    parent: SymbolKey,
+    parent: FileSystemSymbolParent,
     pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
 }
 
 impl FileSymbol {
 
-    pub fn new(name: &str, path: &str, parent: SymbolKey, is_external: bool) -> Self {
+    pub fn new(name: &str, path: &str, parent: FileSystemSymbolParent, is_external: bool) -> Self {
         let mut res = Self {
             name: oyarn!("{}", name),
             path: path.to_string(),
@@ -59,15 +59,7 @@ impl FileSymbol {
         res
     }
 
-    pub fn parent(&self) -> SymbolKey {
+    pub fn parent(&self) -> FileSystemSymbolParent {
         self.parent
     }
-
-    pub fn children(&self) -> Vec<SymbolKey> {
-        self.symbols.values()
-            .flat_map(|section| section.values())
-            .flatten()
-            .copied().collect()
-    }
-
 }

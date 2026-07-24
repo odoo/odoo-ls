@@ -540,7 +540,8 @@ impl Evaluation {
     * should be equal to vec![vec![], vec![]] to be able to get arch and arch_eval deps at index 0 and 1. It means that if validation is
     * not build but required during the eval_from_ast, it will NOT be built
     */
-    pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: SymbolKey, max_infer: &TextSize, for_annotation: bool, required_dependencies: &mut Vec<Vec<SourceFileKey>>) -> (Vec<Evaluation>, Vec<Diagnostic>) {
+    pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: impl Into<SymbolKey>, max_infer: &TextSize, for_annotation: bool, required_dependencies: &mut Vec<Vec<SourceFileKey>>) -> (Vec<Evaluation>, Vec<Diagnostic>) {
+        let parent = parent.into();
         let from_module;
         if let Some(module) = session.sync_odoo.symbol_table.find_module(parent) {
             from_module = ContextValue::MODULE(module.into());

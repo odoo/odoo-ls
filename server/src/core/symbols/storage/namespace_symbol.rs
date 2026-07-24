@@ -1,5 +1,8 @@
+use std::path::Path;
+use crate::core::symbols::storage::{FileSystemSymbolParent};
+use crate::core::symbols::symbol_keys::SymbolKey;
 use crate::utils::HashMap;
-use crate::{constants::OYarn, core::symbols::symbol_keys::SymbolKey, oyarn};
+use crate::{constants::OYarn, oyarn};
 
 #[derive(Debug)]
 pub struct NamespaceDirectory {
@@ -20,13 +23,13 @@ pub struct NamespaceSymbol {
     pub in_workspace: bool,
 
     // parent / child symbols
-    parent: SymbolKey,
-    pub(super) directories: Vec<NamespaceDirectory>,
+    parent: FileSystemSymbolParent,
+    directories: Vec<NamespaceDirectory>,
 }
 
 impl NamespaceSymbol {
 
-    pub fn new(name: &str, paths: Vec<String>, parent: SymbolKey, is_external: bool) -> Self {
+    pub fn new(name: &str, paths: Vec<String>, parent: FileSystemSymbolParent, is_external: bool) -> Self {
         let directories = paths.into_iter().map(|p| NamespaceDirectory {
             path: p,
             module_symbols: HashMap::default(),
@@ -52,14 +55,29 @@ impl NamespaceSymbol {
         &self.directories
     }
 
-    pub fn parent(&self) -> SymbolKey {
+    pub fn parent(&self) -> FileSystemSymbolParent {
         self.parent
     }
-
-    pub fn children(&self) -> Vec<SymbolKey> {
+    
+    pub(super) fn add_child(&mut self, name: &str, child: SymbolKey, path: &str) -> Option<SymbolKey> {
+        let best = self.directories.iter()
+            .enumerate()
+            .filter(|(_, dir)| Path::new(path).starts_with(&dir.path))
+            .max_by_key(|(_, dir)| dir.path.len())
+            .unwrap_or_else(|| panic!("Not valid path found to add the file ({}) to namespace {} with directories {:?}", path, self.name, self.directories))
+            .0;
+        self.directories[best].module_symbols.insert(oyarn!("{}", name), child)
+    }
+    
+    pub (super) fn remove_child(&mut self, child_name: &str) {
+        for directory in self.directories.iter_mut() {
+            directory.module_symbols.remove(child_name);
+        }
+    }
+    
+    pub fn children(&self) -> impl Iterator<Item = SymbolKey> {
         self.directories.iter()
             .flat_map(|d| d.module_symbols.values())
-            .copied().collect()
+            .copied()
     }
-
 }

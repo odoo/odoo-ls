@@ -4,7 +4,7 @@ use lsp_types::{Diagnostic, Position, Range};
 use roxmltree::Node;
 use ruff_text_size::{TextRange, TextSize};
 
-use crate::{Sy, constants::OYarn, core::{diagnostics::{DiagnosticCode, create_diagnostic}, model::Model, odoo::SyncOdoo, symbols::{storage::xml::xml_field_symbol::XmlFieldName, symbol_keys::{SymbolKey, XmlFieldKey, XmlId, XmlRecordKey}}}, oyarn, threads::SessionInfo, utils};
+use crate::{Sy, constants::OYarn, core::{diagnostics::{DiagnosticCode, create_diagnostic}, model::Model, odoo::SyncOdoo, symbols::{storage::{XmlFieldParent, xml::xml_field_symbol::XmlFieldName}, symbol_keys::{XmlFieldKey, XmlId, XmlRecordKey}}}, oyarn, threads::SessionInfo, utils};
 
 use super::xml_arch_builder::XmlArchBuilder;
 
@@ -255,7 +255,7 @@ impl XmlArchBuilder {
     }
 
     // load a field and add it to the parent symbol. Parent could be either XmlRecordKey or XmlAssetKey
-    fn load_field(&mut self, session: &mut SessionInfo, node: &Node, parent: SymbolKey, diagnostics: &mut Vec<Diagnostic>) -> Option<XmlFieldKey> {
+    fn load_field(&mut self, session: &mut SessionInfo, node: &Node, parent: XmlFieldParent, diagnostics: &mut Vec<Diagnostic>) -> Option<XmlFieldKey> {
         if node.tag_name().name() != "field" { return None; }
         let Some(node_name_node) = node.attribute_node("name") else {
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05016, &[]) {

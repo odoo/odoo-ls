@@ -4,6 +4,7 @@ use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr};
 use crate::core::file_mgr::Ast;
 use crate::core::symbols::Dependencies;
 use crate::core::symbols::ModuleSymbol;
+use crate::core::symbols::storage::XmlDataParent;
 use crate::core::symbols::symbol_keys::{ModuleKey, SourceFileKey, SymbolKey, XmlFileKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::features::definition::DefinitionFeature;
@@ -202,7 +203,7 @@ impl ReferenceFeature {
                         let Some(module) = module.upgrade(session.st()) else {continue;};
                         let name = &session.st()[current_module].name;
                         if ModuleSymbol::is_in_deps(session.st(), module, name) {
-                            for &data in session.st()[module].data_symbols().values() {
+                            for &data in session.st()[module].data_file_symbols().values() {
                                 files_to_process.insert(data);
                             }
                         }
@@ -330,7 +331,7 @@ impl ReferenceFeature {
         // workspace for every reference request. Then drop the
         // `iter_xml_templates` method and use the index here.
         for (_key, tmpl) in session.st().iter_xml_templates() {
-            let SymbolKey::XmlFile(xml_file) = tmpl.parent() else { continue; };
+            let XmlDataParent::XmlFile(xml_file) = tmpl.parent() else { continue; };
             for (name, range) in tmpl.t_calls.iter() {
                 if name.as_str() == template_name {
                     // `t_calls` stores the whole-attribute range, `t_inherit` the value-only

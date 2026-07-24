@@ -1,5 +1,6 @@
 
 use std::path::Path;
+use crate::core::symbols::storage::FileSystemSymbolParent;
 use crate::core::symbols::symbol_keys::JsFileKey;
 use crate::utils::HashMap;
 
@@ -17,40 +18,31 @@ pub struct DiskDirSymbol {
     pub in_workspace: bool,
 
     // parent / child symbols
-    parent: SymbolKey,
-    pub(super) module_symbols: HashMap<OYarn, SymbolKey>,
+    parent: FileSystemSymbolParent,
+    pub(super) fs_symbols: HashMap<OYarn, SymbolKey>,
     pub(super) js_symbols: HashMap<String, JsFileKey>,
 }
 
+
 impl DiskDirSymbol {
 
-    pub fn new(name: &str, path: &str, parent: SymbolKey, is_external: bool) -> Self {
+    pub fn new(name: &str, path: &str, parent: FileSystemSymbolParent, is_external: bool) -> Self {
         Self {
             name: oyarn!("{}", name),
             path: Path::new(path).sanitize(),
             is_external,
             parent,
             in_workspace: false,
-            module_symbols: HashMap::default(),
+            fs_symbols: HashMap::default(),
             js_symbols: HashMap::default(),
         }
     }
 
     pub fn module_symbols(&self) -> &HashMap<OYarn, SymbolKey> {
-        &self.module_symbols
+        &self.fs_symbols
     }
 
-    pub fn parent(&self) -> SymbolKey {
+    pub fn parent(&self) -> FileSystemSymbolParent {
         self.parent
     }
-
-    pub fn children(&self) -> Vec<SymbolKey> {
-        self.module_symbols.values().copied()
-            .chain(self.js_symbols.values().map(|&key| key.into()))
-            .collect()
-    }
-
-    /*pub fn load(sesion: &mut SessionInfo, dir: &Rc<RefCell<Symbol>>) -> Rc<RefCell<Symbol>> {
-        let path = dir.borrow().as_disk_dir_sym().path.clone();
-    }*/
 }

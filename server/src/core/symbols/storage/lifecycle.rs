@@ -10,16 +10,24 @@
 //! checks, unlike keys stored elsewhere (as Weak).
 
 use crate::{
-    constants::{OYarn, PackageType, SymType},
-    core::{
-        entry_point::{EntryPoint, EntryPointCleanupToken}, odoo::SyncOdoo, symbols::{
-            ClassSymbol, CompiledSymbol, CsvFileSymbol, Dependencies, DiskDirSymbol, FileSymbol, FunctionSymbol, JsFileSymbol, ModuleSymbol, NamespaceSymbol, PythonPackageSymbol, RootSymbol, SymbolTable, VariableSymbol, XmlFileSymbol, storage::xml::{xml_asset_symbol::XmlAssetSymbol, xml_delete_symbol::XmlDeleteSymbol, xml_field_symbol::XmlFieldSymbol, xml_menuitem_symbol::XmlMenuItemSymbol, xml_record_symbol::XmlRecordSymbol, xml_template_symbol::XmlTemplateSymbol}, symbol_keys::{
-                ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, JsFileKey, JsFileParent, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey, VariableKey, Wk, XmlAssetKey, XmlDataKey, XmlDeleteKey, XmlFieldKey, XmlFileKey, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey
-            }, symbol_mgr::SymbolMgr
-        }
-    },
-    oyarn,
-    threads::SessionInfo,
+    constants::{OYarn, PackageType, SymType}, core::{
+        entry_point::{EntryPoint, EntryPointCleanupToken},
+        odoo::SyncOdoo,
+        symbols::{
+            ClassSymbol, CompiledSymbol, CsvFileSymbol, Dependencies, DiskDirSymbol, FileSymbol, FunctionSymbol, JsFileSymbol, ModuleSymbol, NamespaceSymbol, PythonPackageSymbol, RootSymbol, SymbolTable, VariableSymbol, XmlFileSymbol, storage::{
+                FileContentParent, FileSystemSymbolParent, JsFileParent, XmlDataParent, XmlFieldParent, xml::{
+                    xml_asset_symbol::XmlAssetSymbol, xml_delete_symbol::XmlDeleteSymbol,
+                    xml_field_symbol::XmlFieldSymbol, xml_menuitem_symbol::XmlMenuItemSymbol,
+                    xml_record_symbol::XmlRecordSymbol, xml_template_symbol::XmlTemplateSymbol,
+                }
+            }, symbol_keys::{
+                ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, JsFileKey,
+                ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey,
+                VariableKey, Wk, XmlAssetKey, XmlDeleteKey, XmlFieldKey, XmlFileKey,
+                XmlMenuItemKey, XmlRecordKey, XmlTemplateKey,
+            }
+        },
+    }, oyarn, threads::SessionInfo
 };
 use ruff_text_size::{TextRange, TextSize};
 use std::{cell::RefCell, ops::Range, path::Path, rc::Rc};
@@ -35,6 +43,7 @@ impl SymbolTable {
     // Create a sub-symbol that is representing a file
     pub fn add_new_file(&mut self, parent: SymbolKey, name: &str, path: &str) -> FileKey {
         let is_external = self.is_external(parent);
+        let parent = FileSystemSymbolParent::try_from(parent).expect("parent should be FileSystemItemParent");
         let file_symbol = FileSymbol::new(name, path, parent, is_external);
         let file_key = self.files.insert(file_symbol);
         self.add_to_parent_module_symbols(parent, file_key.into(), name, path);
@@ -44,6 +53,7 @@ impl SymbolTable {
     //Create a sub-symbol that is representing a package
     pub fn add_new_python_package(&mut self, parent: SymbolKey, name: &str, path: &str, i_ext: &'static str) -> PythonPackageKey {
         let is_external = self.is_external(parent);
+        let parent = FileSystemSymbolParent::try_from(parent).expect("parent should be FileSystemItemParent");
         let package_symbol = PythonPackageSymbol::new(name, path, parent, is_external, i_ext);
         let package_key = self.python_packages.insert(package_symbol);
         self.add_to_parent_module_symbols(parent, package_key.into(), name, path);
@@ -52,6 +62,7 @@ impl SymbolTable {
 
     pub fn add_new_namespace(&mut self, parent: SymbolKey, name: &str, path: &str) -> NamespaceKey {
         let is_external = self.is_external(parent);
+        let parent = FileSystemSymbolParent::try_from(parent).expect("parent should be FileSystemItemParent");
         let namespace_symbol = NamespaceSymbol::new(name, vec![path.to_string()], parent, is_external);
         let namespace_key = self.namespaces.insert(namespace_symbol);
         self.add_to_parent_module_symbols(parent, namespace_key.into(), name, path);
@@ -60,6 +71,7 @@ impl SymbolTable {
 
     pub fn add_new_disk_dir(&mut self, parent: SymbolKey, name: &str, path: &str) -> DiskDirKey {
         let is_external = self.is_external(parent);
+        let parent = FileSystemSymbolParent::try_from(parent).expect("parent should be FileSystemItemParent");
         let disk_dir_symbol = DiskDirSymbol::new(name, path, parent, is_external);
         let disk_dir_key = self.disk_dirs.insert(disk_dir_symbol);
         self.add_to_parent_module_symbols(parent, disk_dir_key.into(), name, path);
@@ -68,6 +80,7 @@ impl SymbolTable {
 
     pub fn add_new_compiled(&mut self, parent: SymbolKey, name: &str, path: &str) -> CompiledKey {
         let is_external = self.is_external(parent);
+        let parent = FileSystemSymbolParent::try_from(parent).expect("parent should be FileSystemItemParent");
         let compiled_symbol = CompiledSymbol::new(name, path, parent, is_external);
         let compiled_key = self.compiled.insert(compiled_symbol);
         self.add_to_parent_module_symbols(parent, compiled_key.into(), name, path);
@@ -87,24 +100,27 @@ impl SymbolTable {
     pub fn add_new_variable(&mut self, parent: impl Into<SymbolKey>, name: &str, range: TextRange) -> VariableKey {
         let parent = parent.into();
         let is_external = self.is_external(parent);
+        let parent = FileContentParent::try_from(parent).expect("parent should be FileContentParent");
         let variable_symbol = VariableSymbol::new(name, parent, range, is_external);
         let variable_key = self.variables.insert(variable_symbol);
-        self.add_to_parent_symbols(parent, variable_key.into(), name, range.start().to_u32());
+        parent.add_child(self, name, variable_key.into(), range.start().to_u32());
         variable_key
     }
     pub fn add_new_function(&mut self, parent: SymbolKey, name: &str, range: TextRange, body_start: TextSize) -> FunctionKey {
         let is_external = self.is_external(parent);
+        let parent = FileContentParent::try_from(parent).expect("parent should be FileContentParent");
         let function_symbol = FunctionSymbol::new(name, parent, range, body_start, is_external);
         let function_key = self.functions.insert(function_symbol);
-        self.add_to_parent_symbols(parent, function_key.into(), name, range.start().to_u32());
+        parent.add_child(self, name, function_key.into(), range.start().to_u32());
         function_key
     }
 
     pub fn add_new_class(&mut self, parent: SymbolKey, name: &str, range: TextRange, body_start: TextSize) -> ClassKey {
         let is_external = self.is_external(parent);
+        let parent = FileContentParent::try_from(parent).expect("parent should be FileContentParent");
         let class_symbol = ClassSymbol::new(name, parent, range, body_start, is_external);
         let class_key = self.classes.insert(class_symbol);
-        self.add_to_parent_symbols(parent, class_key.into(), name, range.start().to_u32());
+        parent.add_child(self, name, class_key.into(), range.start().to_u32());
         class_key
     }
 
@@ -117,8 +133,8 @@ impl SymbolTable {
         xml_file_key
     }
 
-    pub fn add_new_xml_record(&mut self, parent: SymbolKey, model: (OYarn, Range<usize>) , xml_id: Option<OYarn>, range: TextRange) -> XmlRecordKey {
-        let is_external = self.is_external(parent);
+    pub fn add_new_xml_record(&mut self, parent: XmlDataParent, model: (OYarn, Range<usize>) , xml_id: Option<OYarn>, range: TextRange) -> XmlRecordKey {
+        let is_external = self.is_external(parent.into());
         let xml_record_sym = XmlRecordSymbol::new(
             model,
             xml_id,
@@ -126,7 +142,7 @@ impl SymbolTable {
             parent,
             is_external);
         let xml_record_key = self.xml_records.insert(xml_record_sym);
-        self.add_xml_data_to_file(parent, xml_record_key.into());
+        parent.data_symbols_mut(self).insert(xml_record_key.into());
         xml_record_key
     }
 
@@ -134,7 +150,7 @@ impl SymbolTable {
         let is_external = self.is_external(parent.into());
         let xml_menuitem_sym = XmlMenuItemSymbol::new(xml_id, range, parent.into(), is_external);
         let xml_menuitem_key = self.xml_menuitems.insert(xml_menuitem_sym);
-        self.add_xml_data_to_file(parent.into(), xml_menuitem_key.into());
+        self[parent].data_symbols.insert(xml_menuitem_key.into());
         xml_menuitem_key
     }
 
@@ -142,7 +158,7 @@ impl SymbolTable {
         let is_external = self.is_external(parent.into());
         let xml_asset_sym = XmlAssetSymbol::new(xml_id, range, parent.into(), is_external);
         let xml_asset_key = self.xml_assets.insert(xml_asset_sym);
-        self.add_xml_data_to_file(parent.into(), xml_asset_key.into());
+        self[parent].data_symbols.insert(xml_asset_key.into());
         xml_asset_key
     }
 
@@ -150,13 +166,12 @@ impl SymbolTable {
         let is_external = self.is_external(parent.into());
         let xml_delete_sym = XmlDeleteSymbol::new(xml_id, range, model, parent.into(), is_external);
         let xml_delete_key = self.xml_deletes.insert(xml_delete_sym);
-        self.add_xml_data_to_file(parent.into(), xml_delete_key.into());
+        self[parent].data_symbols.insert(xml_delete_key.into());
         xml_delete_key
     }
 
-    //parent should be either XmlRecord or XmlAsset
-    pub fn add_new_xml_field(&mut self, parent: SymbolKey, field_name: OYarn, range: TextRange, text: Option<String>, text_range: Option<TextRange>, ref_key: Option<(String, TextRange)>) -> XmlFieldKey {
-        let is_external = self.is_external(parent);
+    pub fn add_new_xml_field(&mut self, parent: XmlFieldParent, field_name: OYarn, range: TextRange, text: Option<String>, text_range: Option<TextRange>, ref_key: Option<(String, TextRange)>) -> XmlFieldKey {
+        let is_external = self.is_external(parent.into());
         let xml_field_sym = XmlFieldSymbol::new(field_name.clone(), range, text, text_range, ref_key, parent, is_external);
         let xml_field_key = self.xml_fields.insert(xml_field_sym);
         self.add_field_to_xml_record(parent, xml_field_key, field_name.as_str());
@@ -167,7 +182,7 @@ impl SymbolTable {
         let is_external = self.is_external(parent.into());
         let xml_template_sym = XmlTemplateSymbol::new(name, t_name, range, parent.into(), is_web, is_external);
         let xml_template_key = self.xml_templates.insert(xml_template_sym);
-        self.add_xml_data_to_file(parent.into(), xml_template_key.into());
+        self[parent].data_symbols.insert(xml_template_key.into());
         xml_template_key
     }
 
@@ -207,201 +222,85 @@ impl SymbolTable {
         ) {
             panic!("Impossible to add an external symbol to a {}", target.typ());
         }
+        let parent = FileContentParent::try_from(owner).expect("ext symbol owner should be file-content parent");
         let variable_symbol = VariableSymbol::new(
             name,
-            target,
+            parent,
             range,
             self.is_external(target),
         );
         let variable_key = self.variables.insert(variable_symbol);
-        let section = self.get_section_for_key(owner, range.start().to_u32());
+        let section = parent.as_symbol_mgr(self).get_section_for(range.start().to_u32()).index;
 
         self.ext_symbols.add(target, owner, name, section, variable_key);
         variable_key
     }
 
     // ====== Helpers for symbol creation ======
-
-    // If replacing an existing entry, the old one gets removed from the symbol table to prevent leaks,
-    // but `unload` side effects are not run. Callers should properly unload the symbol first.
-    fn add_to_parent_module_symbols(&mut self, parent: SymbolKey, child: SymbolKey, name: &str, path: &str) {
-        let replaced_key = match parent {
-            SymbolKey::Namespace(n) => {
-                self.add_file_to_namespace(n, child, name, path)
-            },
-            SymbolKey::PythonPackage(p) => {
-                self.python_packages[p].module_symbols.insert(oyarn!("{}", name), child)
-            },
-            SymbolKey::Module(m) => {
-                self.modules[m].module_symbols.insert(oyarn!("{}", name), child)
-            },
-            SymbolKey::Root(r) => {
-                self.roots[r].module_symbols.insert(oyarn!("{}", name), child)
-            },
-            SymbolKey::DiskDir(d) => {
-                self.disk_dirs[d].module_symbols.insert(oyarn!("{}", name), child)
-            },
-            SymbolKey::Compiled(c) if child.typ() == SymType::COMPILED => {
-                // A compiled can only be a parent to another compiled
-                self.compiled[c].module_symbols.insert(oyarn!("{}", name), child)
-            }
-            _ => {
-                panic!("Impossible to add a {} to a {}", child.typ(), parent.typ());
-            }
-        };
-        if let Some(replaced_key) = replaced_key {
-            self.remove(replaced_key);
+    // 
+    /// Evict a child displaced by a map insert with a colliding name/path. This
+    /// prevents a leak, but `unload` side effects are NOT run. Callers should
+    /// properly unload the symbol first.
+    fn remove_replaced(&mut self, replaced: Option<impl Into<SymbolKey>>) {
+        if let Some(replaced) = replaced {
+            self.remove(replaced.into());
         }
     }
-
-    fn add_file_to_namespace(&mut self, parent: NamespaceKey, file: SymbolKey, name: &str, path: &str) -> Option<SymbolKey> {
-        let ns = &mut self.namespaces[parent];
-        let best = ns.directories.iter()
-            .enumerate()
-            .filter(|(_, dir)| Path::new(path).starts_with(&dir.path))
-            .max_by_key(|(_, dir)| dir.path.len())
-            .unwrap_or_else(|| panic!("Not valid path found to add the file ({}) to namespace {} with directories {:?}", path, ns.name, ns.directories))
-            .0;
-        ns.directories[best].module_symbols.insert(oyarn!("{}", name), file)
-    }
-
-    fn add_field_to_xml_record(&mut self, parent: SymbolKey, field: XmlFieldKey, name: &str) {
-        match parent {
-            SymbolKey::XmlRecord(r) => {
-                let xml_record = &mut self.xml_records[r];
-                if let Some(replaced_key) = xml_record.fields.insert(oyarn!("{}", name), field) {
-                    self.remove(replaced_key.into());
-                }
-            },
-            SymbolKey::XmlAsset(k) => {
-                let xml_asset = &mut self.xml_assets[k];
-                if let Some(replaced_key) = xml_asset.fields.insert(oyarn!("{}", name), field) {
-                    self.remove(replaced_key.into());
-                }
-            }
-            _ => {
-                panic!("Impossible to add an XmlFieldKey to a {}", parent.typ());
-            }
+    
+    fn add_to_parent_module_symbols(&mut self, parent: FileSystemSymbolParent, child: SymbolKey, name: &str, path: &str) {
+        // A compiled can only be a parent to another compiled
+        if let FileSystemSymbolParent::Compiled(_) = parent && !matches!(child, SymbolKey::Compiled(_)) {
+            panic!("Impossible to add a {} to a CompiledSymbol parent", child.typ());
         }
+        let replaced_key = parent.add_fs_symbol(self, name, child, path);
+        self.remove_replaced(replaced_key);
     }
 
-    fn add_xml_data_to_file(&mut self, parent: SymbolKey, content: XmlDataKey) {
-        match parent {
-            SymbolKey::XmlFile(f) => {
-                let xml_file = &mut self.xml_files[f];
-                xml_file.symbols.insert(content);
-            },
-            SymbolKey::CsvFile(f) => {
-                let csv_file = &mut self.csv_files[f];
-                csv_file.symbols.insert(content);
-            },
-            _ => {
-                panic!("Impossible to add an xml data key to a {}", parent.typ());
-            }
-        }
+    fn remove_from_parent_module_symbols(&mut self, parent: FileSystemSymbolParent, name: &str) {
+        parent.remove_fs_symbol(self, name);
     }
 
-    fn add_to_parent_symbols(&mut self, parent: SymbolKey, content: SymbolKey, name: &str, position: u32) {
-         match parent {
-            SymbolKey::File(f) => {
-                let file = &mut self.files[f];
-                let section = file.get_section_for(position).index;
-                file.symbols.entry(oyarn!("{}",name)).or_default()
-                    .entry(section).or_default()
-                    .push(content);
-            },
-            SymbolKey::Module(m) => {
-                let module = &mut self.modules[m];
-                let section = module.get_section_for(position).index;
-                module.symbols.entry(oyarn!("{}",name)).or_default()
-                    .entry(section).or_default()
-                    .push(content);
-            },
-            SymbolKey::PythonPackage(p) => {
-                let package = &mut self.python_packages[p];
-                let section = package.get_section_for(position).index;
-                package.symbols.entry(oyarn!("{}",name)).or_default()
-                    .entry(section).or_default()
-                    .push(content);
-            },
-            SymbolKey::Class(c) => {
-                let class = &mut self.classes[c];
-                let section = class.get_section_for(position).index;
-                class.symbols.entry(oyarn!("{}",name)).or_default()
-                    .entry(section).or_default()
-                    .push(content);
-            },
-            SymbolKey::Function(f) => {
-                let function = &mut self.functions[f];
-                let section = function.get_section_for(position).index;
-                function.symbols.entry(oyarn!("{}",name)).or_default()
-                    .entry(section).or_default()
-                    .push(content);
-            },
-            _ => {
-                panic!("Impossible to add a {} to a {}", content.typ(), parent.typ());
-            }
-        }
+    fn add_field_to_xml_record(&mut self, parent: XmlFieldParent, field: XmlFieldKey, name: &str) {
+        let replaced_key = parent.fields_mut(self).insert(oyarn!("{}", name), field);
+        self.remove_replaced(replaced_key);
     }
 
-    // If replacing an exisiting entry, the old one gets removed from the symbol table to prevent leaks,
-    // but `unload` side effects are not run. Callers should properly unload the symbol first.
     fn add_to_module_data_symbols(&mut self, parent: ModuleKey, path: &str, data_file: SourceFileKey) {
-        let replaced_key = self.modules[parent].data_symbols.insert(path.to_string(), data_file);
-        if let Some(replaced_key) = replaced_key {
-            self.remove(replaced_key.into());
-        }
+        let replaced_key = self.modules[parent].data_file_symbols.insert(path.to_string(), data_file);
+        self.remove_replaced(replaced_key);
+    }
+    
+    fn remove_from_module_data_symbols(&mut self, parent: ModuleKey, path: &str) {
+        self[parent].data_file_symbols.remove(path);
     }
 
     fn add_to_parent_js_symbols(&mut self, parent: JsFileParent, path: &str, js_key: JsFileKey) {
-        match parent {
-            JsFileParent::Module(m) => {
-                let module = &mut self.modules[m];
-                let replaced_key = module.js_symbols.insert(path.to_string(), js_key);
-                if let Some(replaced_key) = replaced_key {
-                    self.remove(replaced_key.into());
-                }
-            },
-            JsFileParent::DiskDir(d) => {
-                let disk_dir = &mut self.disk_dirs[d];
-                let replaced_key = disk_dir.js_symbols.insert(path.to_string(), js_key);
-                if let Some(replaced_key) = replaced_key {
-                    self.remove(replaced_key.into());
-                }
-            }
-        }
+        let replaced_key = parent.js_symbols_mut(self).insert(path.to_string(), js_key);
+        self.remove_replaced(replaced_key);
+    }
+
+    fn remove_from_parent_js_symbols(&mut self, parent: JsFileParent, path: &str) {
+        parent.js_symbols_mut(self).remove(path);
     }
 
     fn add_to_js_entry_symbols(&mut self, entry: &mut EntryPoint, path: &str, js_file: JsFileKey) {
         entry.js_symbols.insert(path.to_string(), Wk::from(js_file));
     }
 
-    /* used by add_new_ext_symbol. Do not call directly */
-    fn get_section_for_key(&self, owner: SymbolKey, position: u32) -> u32 {
-        match owner {
-            SymbolKey::File(f) => self[f].get_section_for(position).index,
-            SymbolKey::Module(m) => self[m].get_section_for(position).index,
-            SymbolKey::PythonPackage(p) => self[p].get_section_for(position).index,
-            SymbolKey::Class(c) => self[c].get_section_for(position).index,
-            SymbolKey::Function(f) => self[f].get_section_for(position).index,
-            _ => panic!("Impossible to add a declaration of external symbol to a {}", owner.typ()),
-        }
-    }
-
     // ====== Symbol removal ======
 
     /// Remove `symbol` and its descendants, and clean up.
     /// WARNING: After this call, `symbol` and its descendants are no longer valid keys.
-    pub fn unload(session: &mut SessionInfo, symbol: SymbolKey) {
+    pub fn unload(session: &mut SessionInfo, symbol: SourceFileKey) {
         fn unload_recursively(session: &mut SessionInfo, symbol: SymbolKey) {
             for child in session.st().children(symbol) {
                 unload_recursively(session, child);
             }
             SyncOdoo::on_unload(session, symbol);
         }
-        unload_recursively(session, symbol);
+        unload_recursively(session, symbol.into());
         session.st_mut().unlink_from_parent(symbol);
-        session.st_mut().remove(symbol);
+        session.st_mut().remove(symbol.into());
     }
 
     /// Only accessible from entry point module
@@ -444,86 +343,68 @@ impl SymbolTable {
         }
     }
 
-    fn children(&self, key: SymbolKey) -> Vec<SymbolKey> {
-        match key {
-            SymbolKey::Root(r) => self[r].children(),
-            SymbolKey::DiskDir(d) => self[d].children(),
-            SymbolKey::Namespace(n) => self[n].children(),
-            SymbolKey::Module(m) => self[m].children(),
-            SymbolKey::PythonPackage(p) => self[p].children(),
-            SymbolKey::File(f) => self[f].children(),
-            SymbolKey::Compiled(c) => self[c].children(),
-            SymbolKey::Class(c) => self[c].children(),
-            SymbolKey::Function(f) => self[f].children(),
-            SymbolKey::Variable(v) => self[v].children(),
-            SymbolKey::XmlFile(x) => self[x].children(),
-            SymbolKey::XmlRecord(x) => self[x].children(),
-            SymbolKey::XmlField(x) => self[x].children(),
-            SymbolKey::XmlAsset(x) => self[x].children(),
-            SymbolKey::XmlMenuItem(x) => self[x].children(),
-            SymbolKey::XmlTemplate(x) => self[x].children(),
-            SymbolKey::XmlDelete(x) => self[x].children(),
-            SymbolKey::CsvFile(c) => self[c].children(),
-            SymbolKey::JsFile(j) => self[j].children(),
+    fn children(&self, key:SymbolKey) -> Vec<SymbolKey> {
+        let mut result = vec![];
+        if let Ok(parent) =  <FileContentParent>::try_from(key){
+            result.extend(parent.children(self));
         }
+        if let Ok(parent) = <FileSystemSymbolParent>::try_from(key){
+            result.extend(parent.children(self));
+        }
+        // Data file parent: Module only
+        if let SymbolKey::Module(module_key) = key {
+            result.extend(self[module_key].data_file_symbols().values().copied().map(SymbolKey::from));
+        }
+        if let Ok(parent) = <JsFileParent>::try_from(key){
+            result.extend(parent.js_symbols(self).values().copied().map(SymbolKey::from));
+        }
+        if let Ok(parent) = <XmlDataParent>::try_from(key){
+            result.extend(parent.data_symbols(self).iter().copied().map(SymbolKey::from));
+        }
+        if let Ok(parent) = <XmlFieldParent>::try_from(key) {
+            result.extend(parent.fields(self).values().copied().map(SymbolKey::from));
+        }
+        result
     }
 
-    fn unlink_from_parent(&mut self, child: SymbolKey) {
-        let child_name = self.name(child).clone();
-        let parent = self.parent(child).expect("symbol should have a parent");
-        match parent {
-            SymbolKey::Root(r) => { self.roots[r].module_symbols.remove(&child_name); },
-            SymbolKey::DiskDir(d) => { 
-                match child {
-                    SymbolKey::JsFile(j) => { self.disk_dirs[d].js_symbols.remove(&self.js_files[j].path); },
-                    _ => { self.disk_dirs[d].module_symbols.remove(&child_name); }
-                }
+    fn unlink_from_parent(&mut self, child: SourceFileKey) {
+        match child {
+            SourceFileKey::File(f) => {
+                let file_symbol = &self[f];
+                let name = file_symbol.name.to_string();
+                let parent = file_symbol.parent();
+                self.remove_from_parent_module_symbols(parent, &name);
             },
-            SymbolKey::Namespace(n) => {
-                for directory in self.namespaces[n].directories.iter_mut() {
-                    directory.module_symbols.remove(&child_name);
-                }
+            SourceFileKey::Module(m) => {
+                let module_symbol = &self[m];
+                let name = module_symbol.name.to_string();
+                let parent = module_symbol.parent();
+                self.remove_from_parent_module_symbols(parent.into(), &name);
             },
-            SymbolKey::Module(m) => match child {
-                SymbolKey::XmlFile(x) => {
-                    self.modules[m].data_symbols.remove(&self.xml_files[x].path);
-                },
-                SymbolKey::CsvFile(c) => {
-                    self.modules[m].data_symbols.remove(&self.csv_files[c].path);
-                },
-                SymbolKey::JsFile(f) => {
-                    self.modules[m].js_symbols.remove(&self.js_files[f].path);
-                }
-                _ => {
-                    if self.is_file_content(child) {
-                        self.modules[m].symbols.remove(&child_name);
-                    } else {
-                        self.modules[m].module_symbols.remove(&child_name);
-                    }
-                },
+            SourceFileKey::PythonPackage(p) => {
+                let package_symbol = &self[p];
+                let name = package_symbol.name.to_string();
+                let parent = package_symbol.parent();
+                self.remove_from_parent_module_symbols(parent, &name);
             },
-            SymbolKey::PythonPackage(p) => {
-                if self.is_file_content(child) {
-                     self.python_packages[p].symbols.remove(&child_name);
-                } else {
-                    self.python_packages[p].module_symbols.remove(&child_name);
-                }
+            SourceFileKey::XmlFile(x) => {
+                let xml_symbol = &self[x];
+                let parent = xml_symbol.parent();
+                let path = xml_symbol.path.clone();
+                self.remove_from_module_data_symbols(parent, &path);
             },
-            SymbolKey::File(f) => { self.files[f].symbols.remove(&child_name); },
-            SymbolKey::Compiled(c) => { self.compiled[c].module_symbols.remove(&child_name); },
-            SymbolKey::Class(c) => { self.classes[c].symbols.remove(&child_name); },
-            SymbolKey::Function(f) => { self.functions[f].symbols.remove(&child_name); },
-            SymbolKey::Variable(_) => { panic!("A variable cannot be a parent") },
-            SymbolKey::XmlFile(f) => { self.xml_files[f].symbols.remove(&child.as_xml_data_key().expect("Content of xmlfile should be an xml_data_key")); },
-            SymbolKey::XmlRecord(r) => { self.xml_records[r].fields.remove(&child_name); },
-            SymbolKey::XmlField(_) => { panic!("An XML field cannot be a parent") },
-            SymbolKey::XmlAsset(a) => { self.xml_assets[a].fields.remove(&child_name); },
-            SymbolKey::XmlMenuItem(_) => { panic!("An XML menu item cannot be a parent") },
-            SymbolKey::XmlTemplate(_) => { panic!("An XML template cannot be a parent") },
-            SymbolKey::XmlDelete(_) => { panic!("An XML delete cannot be a parent") },
-            SymbolKey::CsvFile(_) => { panic!("A CSV file symbol cannot be a parent") },
-            SymbolKey::JsFile(_) => { panic!("A JS file symbol cannot be a parent") },
+            SourceFileKey::CsvFile(c) => {
+                let csv_symbol = &self[c];
+                let parent = csv_symbol.parent();
+                let path = csv_symbol.path.clone();
+                self.remove_from_module_data_symbols(parent, &path);
+            },
+            SourceFileKey::JsFile(j) => {
+                let js_symbol = &self[j];
+                let parent = js_symbol.parent();
+                let path = js_symbol.path.clone();
+                self.remove_from_parent_js_symbols(parent, &path);
+            },
         }
     }
-
 }
