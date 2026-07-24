@@ -19,7 +19,7 @@ mod ext_symbol_store;
 
 use crate::{constants::OYarn, core::symbols::{
     ClassSymbol, CompiledSymbol, CsvFileSymbol, DiskDirSymbol, FileSymbol, FunctionSymbol, JsFileSymbol, ModuleSymbol, NamespaceSymbol, PythonPackageSymbol, RootSymbol, VariableSymbol, XmlFileSymbol, storage::xml::{xml_asset_symbol::XmlAssetSymbol, xml_delete_symbol::XmlDeleteSymbol, xml_field_symbol::XmlFieldSymbol, xml_menuitem_symbol::XmlMenuItemSymbol, xml_record_symbol::XmlRecordSymbol, xml_template_symbol::XmlTemplateSymbol}, symbol_keys::{
-        ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, JsFileKey, KeyValidator, ModelSymbolKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey, VariableKey, XmlAssetKey, XmlDataKey, XmlDeleteKey, XmlFieldKey, XmlFileKey, XmlId, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey
+        ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, JsFileKey, KeyValidator, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, VariableKey, XmlAssetKey, XmlDeleteKey, XmlFieldKey, XmlFileKey, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey
     }
 }};
 use ext_symbol_store::ExtSymbolStore;
@@ -204,76 +204,3 @@ impl_key_validator!(XmlAssetKey, xml_assets);
 impl_key_validator!(XmlDeleteKey, xml_deletes);
 impl_key_validator!(CsvFileKey, csv_files);
 impl_key_validator!(JsFileKey, js_files);
-
-impl KeyValidator<SymbolKey> for SymbolTable {
-    fn is_key_valid(&self, key: SymbolKey) -> bool {
-        match key {
-            SymbolKey::Root(k) => self.roots.contains_key(k),
-            SymbolKey::DiskDir(k) => self.disk_dirs.contains_key(k),
-            SymbolKey::Namespace(k) => self.namespaces.contains_key(k),
-            SymbolKey::PythonPackage(k) => self.python_packages.contains_key(k),
-            SymbolKey::Module(k) => self.modules.contains_key(k),
-            SymbolKey::File(k) => self.files.contains_key(k),
-            SymbolKey::Compiled(k) => self.compiled.contains_key(k),
-            SymbolKey::Class(k) => self.classes.contains_key(k),
-            SymbolKey::Function(k) => self.functions.contains_key(k),
-            SymbolKey::Variable(k) => self.variables.contains_key(k),
-            SymbolKey::XmlFile(k) => self.xml_files.contains_key(k),
-            SymbolKey::XmlRecord(k) => self.xml_records.contains_key(k),
-            SymbolKey::XmlField(k) => self.xml_fields.contains_key(k),
-            SymbolKey::XmlMenuItem(k) => self.xml_menuitems.contains_key(k),
-            SymbolKey::XmlTemplate(k) => self.xml_templates.contains_key(k),
-            SymbolKey::XmlAsset(k) => self.xml_assets.contains_key(k),
-            SymbolKey::XmlDelete(k) => self.xml_deletes.contains_key(k),
-            SymbolKey::CsvFile(k) => self.csv_files.contains_key(k),
-            SymbolKey::JsFile(k) => self.js_files.contains_key(k),
-        }
-    }
-}
-
-impl KeyValidator<SourceFileKey> for SymbolTable {
-    fn is_key_valid(&self, key: SourceFileKey) -> bool {
-        match key {
-            SourceFileKey::File(k) => self.files.contains_key(k),
-            SourceFileKey::PythonPackage(k) => self.python_packages.contains_key(k),
-            SourceFileKey::Module(k) => self.modules.contains_key(k),
-            SourceFileKey::XmlFile(k) => self.xml_files.contains_key(k),
-            SourceFileKey::CsvFile(k) => self.csv_files.contains_key(k),
-            SourceFileKey::JsFile(k) => self.js_files.contains_key(k),
-        }
-    }
-}
-
-impl KeyValidator<XmlDataKey> for SymbolTable {
-    fn is_key_valid(&self, key: XmlDataKey) -> bool {
-        match key {
-            XmlDataKey::XmlRecord(k) => self.xml_records.contains_key(k),
-            XmlDataKey::XmlMenuItem(k) => self.xml_menuitems.contains_key(k),
-            XmlDataKey::XmlTemplate(k) => self.xml_templates.contains_key(k),
-            XmlDataKey::XmlAsset(k) => self.xml_assets.contains_key(k),
-            XmlDataKey::XmlDelete(k) => self.xml_deletes.contains_key(k),
-        }
-    }
-}
-
-impl KeyValidator<XmlId> for SymbolTable {
-    fn is_key_valid(&self, key: XmlId) -> bool {
-        match key {
-            XmlId::PythonClass(k) => self.classes.contains_key(k),
-            XmlId::XmlRecord(k) => self.xml_records.contains_key(k),
-            XmlId::XmlMenuItem(k) => self.xml_menuitems.contains_key(k),
-            XmlId::XmlTemplate(k) => self.xml_templates.contains_key(k),
-            XmlId::XmlAsset(k) => self.xml_assets.contains_key(k),
-            XmlId::XmlDelete(k) => self.xml_deletes.contains_key(k),
-        }
-    }
-}
-
-impl KeyValidator<ModelSymbolKey> for SymbolTable {
-    fn is_key_valid(&self, key: ModelSymbolKey) -> bool {
-        match key {
-            ModelSymbolKey::Class(k) => self.classes.contains_key(k),
-            ModelSymbolKey::XmlRecord(k) => self.xml_records.contains_key(k),
-        }
-    }
-}
