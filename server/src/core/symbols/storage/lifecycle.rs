@@ -394,3 +394,158 @@ impl SymbolTable {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::entry_point::EntryPointType;
+    use crate::core::symbols::symbol_keys::KeyValidator;
+    use crate::oyarn;
+
+    fn range_at(start: u32) -> TextRange {
+        TextRange::new(TextSize::new(start), TextSize::new(start + 1))
+    }
+
+    /// Parent-linking half of `add_new_module_package`. The other half,
+    /// `load_manifest_content`, needs a `SessionInfo` and reads the manifest from disk.
+    fn add_module(st: &mut SymbolTable, parent: NamespaceKey, name: &str, path: &str) -> ModuleKey {
+        let is_external = st.is_external(parent.into());
+        let module = ModuleSymbol::new(name, Path::new(path), parent, is_external);
+        let module_key = st.modules.insert(module);
+        st.add_to_parent_module_symbols(parent.into(), module_key.into(), name, path);
+        module_key
+    }
+
+    /// One symbol of every kind used as a parent below. `NamespaceSymbol` files its children by
+    /// path, so everything given `namespace` as parent must live under `/root/ns`.
+    struct Fixture {
+        st: SymbolTable,
+        root: RootKey,
+        namespace: NamespaceKey,
+        disk_dir: DiskDirKey,
+        module: ModuleKey,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            let mut st = SymbolTable::new();
+            let entry = EntryPoint::new(&mut st, "/root".to_string(), vec![], EntryPointType::MAIN, None, None);
+            let root = entry.borrow().root;
+            let namespace = st.add_new_namespace(root.into(), "ns", "/root/ns");
+            let disk_dir = st.add_new_disk_dir(root.into(), "dd", "/root/dd");
+            let module = add_module(&mut st, namespace, "mod", "/root/ns/mod");
+            Self { st, root, namespace, disk_dir, module }
+        }
+
+        fn holds(&mut self, parent: SymbolKey, child: impl Into<SymbolKey>) -> bool {
+            self.st.children(parent).contains(&child.into())
+        }
+    }
+
+    #[test]
+    fn source_files_round_trip_through_their_parent() {
+        let mut f = Fixture::new();
+        // One child per `SourceFileKey` variant. `File` and `JsFile` appear twice, to cover both
+        // of their parent kinds; the namespace is the only hand-written `FileSystemItemHolder`.
+        let in_root = f.st.add_new_file(f.root.into(), "in_root", "/root/in_root.py");
+        let in_namespace = f.st.add_new_file(f.namespace.into(), "in_namespace", "/root/ns/in_namespace.py");
+        let package = f.st.add_new_python_package(f.root.into(), "a_package", "/root/a_package", "");
+        let module = add_module(&mut f.st, f.namespace, "another_module", "/root/ns/another_module");
+        let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml");
+        let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv");
+        let js_in_module = f.st.add_new_js_file(JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js");
+        let js_in_disk_dir = f.st.add_new_js_file(JsFileParent::DiskDir(f.disk_dir), "lib.js", "/root/dd/lib.js");
+        let sibling = f.st.add_new_file(f.module.into(), "sibling", "/root/ns/mod/sibling.py");
+
+        let cases: Vec<(SymbolKey, SourceFileKey)> = vec![
+            (f.root.into(), in_root.into()),
+            (f.namespace.into(), in_namespace.into()),
+            (f.root.into(), package.into()),
+            (f.namespace.into(), module.into()),
+            (f.module.into(), xml_file.into()),
+            (f.module.into(), csv_file.into()),
+            (f.module.into(), js_in_module.into()),
+            (f.disk_dir.into(), js_in_disk_dir.into()),
+        ];
+
+        for (parent, child) in cases {
+            assert!(f.holds(parent, child), "{child:?} is not a child of {parent:?}");
+            assert_eq!(f.st.parent(child), Some(parent), "{child:?} does not point back at {parent:?}");
+
+            f.st.unlink_from_parent(child);
+            assert!(!f.holds(parent, child), "{child:?} is still a child of {parent:?} after unlink");
+        }
+
+        assert!(f.holds(f.module.into(), sibling), "an unlink evicted an unrelated sibling");
+    }
+
+    #[test]
+    fn file_content_round_trips_and_dies_with_its_file() {
+        let mut f = Fixture::new();
+        let file = f.st.add_new_file(f.module.into(), "models", "/root/ns/mod/models.py");
+        let class = f.st.add_new_class(file.into(), "AClass", range_at(0), TextSize::new(0));
+        let method = f.st.add_new_function(class.into(), "method", range_at(10), TextSize::new(10));
+        let local = f.st.add_new_variable(method, "local", range_at(20));
+
+        assert!(f.holds(file.into(), class));
+        assert!(f.holds(class.into(), method));
+        assert!(f.holds(method.into(), local));
+        assert_eq!(f.st.parent(local), Some(SymbolKey::from(method)));
+
+        // what `unload` does, minus `SyncOdoo::on_unload`
+        f.st.unlink_from_parent(file.into());
+        f.st.remove(file.into());
+
+        assert!(!f.holds(f.module.into(), file));
+        for key in [SymbolKey::from(file), class.into(), method.into(), local.into()] {
+            assert!(!f.st.is_key_valid(key), "{key:?} outlived its file");
+        }
+        assert!(f.st.is_key_valid(f.module), "removing a file took its module down");
+    }
+
+    #[test]
+    fn xml_data_round_trips_and_dies_with_its_file() {
+        let mut f = Fixture::new();
+        let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml");
+        let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv");
+
+        let record = f.st.add_new_xml_record(XmlDataParent::XmlFile(xml_file), (oyarn!("res.partner"), 0..1), Some(oyarn!("a_partner")), range_at(0));
+        let menuitem = f.st.add_new_xml_menuitem(xml_file, Some(oyarn!("a_menu")), range_at(10));
+        let field = f.st.add_new_xml_field(XmlFieldParent::XmlRecord(record), oyarn!("name"), range_at(1), None, None, None);
+        let csv_record = f.st.add_new_xml_record(XmlDataParent::CsvFile(csv_file), (oyarn!("res.partner"), 0..1), Some(oyarn!("a_csv_partner")), range_at(0));
+
+        assert!(f.holds(xml_file.into(), record));
+        assert!(f.holds(xml_file.into(), menuitem));
+        assert!(f.holds(record.into(), field));
+        assert!(f.holds(csv_file.into(), csv_record));
+        assert_eq!(f.st.parent(field), Some(SymbolKey::from(record)));
+
+        f.st.unlink_from_parent(xml_file.into());
+        f.st.remove(xml_file.into());
+
+        assert!(!f.holds(f.module.into(), xml_file));
+        for key in [SymbolKey::from(record), menuitem.into(), field.into()] {
+            assert!(!f.st.is_key_valid(key), "{key:?} outlived its xml file");
+        }
+        assert!(f.st.is_key_valid(csv_record), "removing the xml file took the csv records down");
+    }
+
+    /// `ModuleSymbol` implements four holder traits, which is why `children` is a sequence of
+    /// `if let`s over the parent enums instead of a match.
+    #[test]
+    fn module_children_join_every_family_it_holds() {
+        let mut f = Fixture::new();
+        let file = f.st.add_new_file(f.module.into(), "models", "/root/ns/mod/models.py");
+        let constant = f.st.add_new_variable(f.module, "MODULE_CONSTANT", range_at(0));
+        let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml");
+        let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv");
+        let js_file = f.st.add_new_js_file(JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js");
+
+        let children = f.st.children(f.module.into());
+        for expected in [SymbolKey::from(file), constant.into(), xml_file.into(), csv_file.into(), js_file.into()] {
+            assert!(children.contains(&expected), "{expected:?} missing from the module's children");
+            assert_eq!(f.st.parent(expected), Some(SymbolKey::from(f.module)));
+        }
+        assert_eq!(children.len(), 5, "the module reports children it was not given: {children:?}");
+    }
+}
