@@ -1291,8 +1291,7 @@ impl SyncOdoo {
                 if file.self_import {
                     session.sync_odoo.must_reload_paths.push((SymbolKey::from(file.parent()).into(), file.path.clone()));
                 }
-                let js_file = symbol.as_source_file_key().unwrap();
-                ModuleSymbol::on_js_file_unload(session, js_file);
+                ModuleSymbol::on_js_file_unload(session, file_key);
             },
             SymbolKey::Module(module_key) => {
                 let module = &session.sync_odoo.symbol_table[module_key];

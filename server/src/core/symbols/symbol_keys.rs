@@ -22,9 +22,8 @@ new_key_type! {
     pub struct XmlAssetKey;
     pub struct XmlDeleteKey;
     pub struct CsvFileKey;
+    pub struct JsFileKey;
 }
-
-new_key_type! { pub struct JsFileKey; }
 
 /// A class symbol paired with its origin module's `dir_name`, set only when the
 /// class lives outside the queried module's dependencies (`None` when in-deps).

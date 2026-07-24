@@ -4,6 +4,7 @@ use std::sync::Arc;
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
 
+use crate::core::symbols::symbol_keys::JsFileKey;
 use crate::{constants::{BuildSteps, DEBUG_STEPS, DiagnosticSource}, core::{csv_arch_builder::CsvArchBuilder, data_hooks, diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileInfo, symbols::{ModuleSymbol, SymbolTable, XmlFileSymbol, symbol_keys::{ModuleKey, SourceFileKey, XmlFileKey}}, xml_arch_builder::XmlArchBuilder}, threads::SessionInfo, utils::PathSanitizer};
 
 
@@ -89,8 +90,14 @@ impl ModuleSymbol {
         data_hooks::on_file_unload(session, data_file);
     }
 
-    pub fn on_js_file_unload(session: &mut SessionInfo, js_file: SourceFileKey) {
-        let path = session.st().path(js_file);
+    pub fn on_js_file_load(symbol_table: &SymbolTable, js_file: JsFileKey) {
+        let path = symbol_table.path(js_file.into());
+        let entry = symbol_table.get_entry(js_file);
+        entry.borrow_mut().js_symbols.insert(path.to_string(), js_file.into());
+    }
+
+    pub fn on_js_file_unload(session: &mut SessionInfo, js_file: JsFileKey) {
+        let path = session.st().path(js_file.into());
         let entry = session.st().get_entry(js_file);
         entry.borrow_mut().js_symbols.remove(path);
     }
