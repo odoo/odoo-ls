@@ -144,7 +144,7 @@ impl ExprOrIdent<'_> {
  * diagnostics: a vec the hook can fill to add diagnostics
  * file_symbol: if provided, can be used to add dependencies
  */
-type GetSymbolHookCallable = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>;
+pub type GetSymbolHookCallable = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>;
 
 #[derive(Debug, Clone)]
 pub struct GetSymbolHook {
@@ -162,6 +162,8 @@ pub enum HookName {
     EvalInitRelational,
     EvalInitRelationalOne2many,
     EvalEnvRef,
+    EvalEnvUser,
+    EvalEnvCompany,
 }
 
 
