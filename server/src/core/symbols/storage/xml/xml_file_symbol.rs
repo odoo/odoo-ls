@@ -63,7 +63,7 @@ impl XmlFileSymbol {
     }
 
     pub fn children(&self) -> Vec<SymbolKey> {
-        self.symbols.iter().map(|k| k.as_symbol_key()).collect()
+        self.symbols.iter().copied().map(SymbolKey::from).collect()
     }
 
     pub fn symbols(&self) -> &HashSet<XmlDataKey> {

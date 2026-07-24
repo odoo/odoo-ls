@@ -1,3 +1,4 @@
+use odoo_ls_macros::{From, IntoKey, IntoSymbolKey, SymbolKeySubset, Validator};
 use slotmap::{Key, new_key_type};
 
 use crate::constants::{OYarn, PackageType, SymType};
@@ -31,7 +32,7 @@ pub type ClassWithModule = (ClassKey, Option<OYarn>);
 /// A member symbol paired with its origin module's `dir_name` (see [`ClassWithModule`]).
 pub type MemberWithModule = (SymbolKey, Option<OYarn>);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, From, Validator)]
 pub enum SymbolKey {
     Root(RootKey),
     DiskDir(DiskDirKey),
@@ -234,52 +235,6 @@ impl Wk<SymbolKey> {
     }
 }
 
-/*
-    Implements the From trait for each key type to allow easy conversion from
-    specific key to generic SymbolKey
-    E.g.:
-    let f: FileKey = ...;
-
-    // The traditional way to create a SymbolKey from a FileKey:
-    let s = SymbolKey::File(f);
-
-    // What the From trait allows:
-    let s = SymbolKey::from(f);
-    let s: SymbolKey = f.into();
- */
-/// impl From<$key_type> for SymbolKey, e.g. From<FileKey> for SymbolKey
-macro_rules! impl_from_key {
-    ($($variant:ident($key_type:ty)),* $(,)?) => {
-        $(
-            impl From<$key_type> for SymbolKey {
-                fn from(key: $key_type) -> Self { SymbolKey::$variant(key) }
-            }
-        )*
-    };
-}
-
-impl_from_key! {
-    Root(RootKey),
-    DiskDir(DiskDirKey),
-    Namespace(NamespaceKey),
-    PythonPackage(PythonPackageKey),
-    Module(ModuleKey),
-    File(FileKey),
-    Compiled(CompiledKey),
-    Class(ClassKey),
-    Function(FunctionKey),
-    Variable(VariableKey),
-    XmlFile(XmlFileKey),
-    XmlRecord(XmlRecordKey),
-    XmlField(XmlFieldKey),
-    XmlMenuItem(XmlMenuItemKey),
-    XmlTemplate(XmlTemplateKey),
-    XmlAsset(XmlAssetKey),
-    XmlDelete(XmlDeleteKey),
-    CsvFile(CsvFileKey),
-    JsFile(JsFileKey),
-}
-
 // Converts to a Weak of the same key type, e.g. FileKey to Weak<FileKey>
 impl<K: Copy> From<K> for Wk<K> {
     fn from(key: K) -> Self {
@@ -325,7 +280,8 @@ impl_weak_symbol_key_from! {
     ModelSymbolKey,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, SymbolKeySubset, IntoKey)]
+#[into_key(XmlId)]
 pub enum XmlDataKey {
     XmlRecord(XmlRecordKey),
     XmlMenuItem(XmlMenuItemKey),
@@ -335,16 +291,6 @@ pub enum XmlDataKey {
 }
 
 impl XmlDataKey {
-    pub fn as_symbol_key(&self) -> SymbolKey {
-        match self {
-            XmlDataKey::XmlRecord(k) => SymbolKey::XmlRecord(*k),
-            XmlDataKey::XmlMenuItem(k) => SymbolKey::XmlMenuItem(*k),
-            XmlDataKey::XmlTemplate(k) => SymbolKey::XmlTemplate(*k),
-            XmlDataKey::XmlAsset(k) => SymbolKey::XmlAsset(*k),
-            XmlDataKey::XmlDelete(k) => SymbolKey::XmlDelete(*k),
-        }
-    }
-
     pub fn as_xml_record_key(&self) -> Option<XmlRecordKey> {
         match self {
             XmlDataKey::XmlRecord(k) => Some(*k),
@@ -360,52 +306,13 @@ impl XmlDataKey {
     }
 }
 
-impl From<XmlDataKey> for SymbolKey {
-    fn from(key: XmlDataKey) -> Self {
-        match key {
-            XmlDataKey::XmlRecord(k) => k.into(),
-            XmlDataKey::XmlMenuItem(k) => k.into(),
-            XmlDataKey::XmlTemplate(k) => k.into(),
-            XmlDataKey::XmlAsset(k) => k.into(),
-            XmlDataKey::XmlDelete(k) => k.into(),
-        }
-    }
-}
-
-impl From<XmlRecordKey> for XmlDataKey {
-    fn from(key: XmlRecordKey) -> Self { XmlDataKey::XmlRecord(key) }
-}
-
-impl From<XmlMenuItemKey> for XmlDataKey {
-    fn from(key: XmlMenuItemKey) -> Self { XmlDataKey::XmlMenuItem(key ) }
-}
-
-impl From<XmlTemplateKey> for XmlDataKey {
-    fn from(key: XmlTemplateKey) -> Self { XmlDataKey::XmlTemplate(key) }
-}
-
-impl From<XmlAssetKey> for XmlDataKey {
-    fn from(key: XmlAssetKey) -> Self { XmlDataKey::XmlAsset(key) }
-}
-
-impl From<XmlDeleteKey> for XmlDataKey {
-    fn from(key: XmlDeleteKey) -> Self { XmlDataKey::XmlDelete(key) }
-}
-
 impl SymbolKey {
     pub fn as_xml_data_key(&self) -> Option<XmlDataKey> {
-        match *self {
-            SymbolKey::XmlRecord(k) => Some(k.into()),
-            SymbolKey::XmlMenuItem(k) => Some(k.into()),
-            SymbolKey::XmlTemplate(k) => Some(k.into()),
-            SymbolKey::XmlAsset(k) => Some(k.into()),
-            SymbolKey::XmlDelete(k) => Some(k.into()),
-            _ => None,
-        }
+        XmlDataKey::try_from(*self).ok()
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, SymbolKeySubset)]
 pub enum SourceFileKey {
     File(FileKey),
     PythonPackage(PythonPackageKey),
@@ -413,44 +320,6 @@ pub enum SourceFileKey {
     XmlFile(XmlFileKey),
     CsvFile(CsvFileKey),
     JsFile(JsFileKey),
-}
-
-impl From<SourceFileKey> for SymbolKey {
-    fn from(key: SourceFileKey) -> Self {
-        match key {
-            SourceFileKey::File(k) => k.into(),
-            SourceFileKey::PythonPackage(k) => k.into(),
-            SourceFileKey::Module(k) => k.into(),
-            SourceFileKey::XmlFile(k) => k.into(),
-            SourceFileKey::CsvFile(k) => k.into(),
-            SourceFileKey::JsFile(k) => k.into(),
-        }
-    }
-}
-
-
-impl From<FileKey> for SourceFileKey {
-    fn from(key: FileKey) -> Self { SourceFileKey::File(key) }
-}
-
-impl From<PythonPackageKey> for SourceFileKey {
-    fn from(key: PythonPackageKey) -> Self { SourceFileKey::PythonPackage(key) }
-}
-
-impl From<ModuleKey> for SourceFileKey {
-    fn from(key: ModuleKey) -> Self { SourceFileKey::Module(key) }
-}
-
-impl From<XmlFileKey> for SourceFileKey {
-    fn from(key: XmlFileKey) -> Self { SourceFileKey::XmlFile(key) }
-}
-
-impl From<CsvFileKey> for SourceFileKey {
-    fn from(key: CsvFileKey) -> Self { SourceFileKey::CsvFile(key) }
-}
-
-impl From<JsFileKey> for SourceFileKey {
-    fn from(key: JsFileKey) -> Self { SourceFileKey::JsFile(key) }
 }
 
 impl SourceFileKey {
@@ -478,15 +347,7 @@ impl SourceFileKey {
 
 impl SymbolKey {
     pub fn as_source_file_key(&self) -> Option<SourceFileKey> {
-        match *self {
-            SymbolKey::File(k) => Some(k.into()),
-            SymbolKey::PythonPackage(k) => Some(k.into()),
-            SymbolKey::Module(k) => Some(k.into()),
-            SymbolKey::XmlFile(k) => Some(k.into()),
-            SymbolKey::CsvFile(k) => Some(k.into()),
-            SymbolKey::JsFile(k) => Some(k.into()),
-            _ => None,
-        }
+        SourceFileKey::try_from(*self).ok()
     }
 }
 
@@ -511,7 +372,7 @@ impl_symbol_key_partial_eq! {
     XmlFileKey, CsvFileKey, SourceFileKey,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, From, IntoSymbolKey, Validator)]
 pub enum XmlId {
     PythonClass(ClassKey),
     XmlRecord(XmlRecordKey),
@@ -521,56 +382,7 @@ pub enum XmlId {
     XmlDelete(XmlDeleteKey),
 }
 
-impl From<XmlDataKey> for XmlId {
-    fn from(key: XmlDataKey) -> Self {
-        match key {
-            XmlDataKey::XmlRecord(k) => XmlId::XmlRecord(k),
-            XmlDataKey::XmlDelete(k) => XmlId::XmlDelete(k),
-            XmlDataKey::XmlMenuItem(k) => XmlId::XmlMenuItem(k),
-            XmlDataKey::XmlTemplate(k) => XmlId::XmlTemplate(k),
-            XmlDataKey::XmlAsset(k) => XmlId::XmlAsset(k),
-        }
-    }
-}
-
-impl From<XmlId> for SymbolKey {
-    fn from(key: XmlId) -> Self {
-        match key {
-            XmlId::PythonClass(k) => k.into(),
-            XmlId::XmlRecord(k) => k.into(),
-            XmlId::XmlMenuItem(k) => k.into(),
-            XmlId::XmlTemplate(k) => k.into(),
-            XmlId::XmlAsset(k) => k.into(),
-            XmlId::XmlDelete(k) => k.into(),
-        }
-    }
-}
-
-impl From<ClassKey> for XmlId {
-    fn from(key: ClassKey) -> Self { XmlId::PythonClass(key) }
-}
-
-impl From<XmlRecordKey> for XmlId {
-    fn from(key: XmlRecordKey) -> Self { XmlId::XmlRecord(key) }
-}
-
-impl From<XmlMenuItemKey> for XmlId {
-    fn from(key: XmlMenuItemKey) -> Self { XmlId::XmlMenuItem(key) }
-}
-
-impl From<XmlTemplateKey> for XmlId {
-    fn from(key: XmlTemplateKey) -> Self { XmlId::XmlTemplate(key) }
-}
-
-impl From<XmlAssetKey> for XmlId {
-    fn from(key: XmlAssetKey) -> Self { XmlId::XmlAsset(key) }
-}
-
-impl From<XmlDeleteKey> for XmlId {
-    fn from(key: XmlDeleteKey) -> Self { XmlId::XmlDelete(key) }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, From, IntoSymbolKey, Validator)]
 pub enum ModelSymbolKey {
     // [Partial]Ord is implemented to sort ClassKeys before XmlRecordKeys
     Class(ClassKey),
@@ -593,37 +405,8 @@ impl ModelSymbolKey {
     }
 }
 
-impl From<ClassKey> for ModelSymbolKey {
-    fn from(key: ClassKey) -> Self { ModelSymbolKey::Class(key) }
-}
-
-impl From<XmlRecordKey> for ModelSymbolKey {
-    fn from(key: XmlRecordKey) -> Self { ModelSymbolKey::XmlRecord(key) }
-}
-
-impl From<ModelSymbolKey> for SymbolKey {
-    fn from(key: ModelSymbolKey) -> Self {
-        match key {
-            ModelSymbolKey::Class(k) => k.into(),
-            ModelSymbolKey::XmlRecord(k) => k.into(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, SymbolKeySubset)]
 pub enum JsFileParent {
     Module(ModuleKey),
     DiskDir(DiskDirKey),
-}
-
-impl From<ModuleKey> for JsFileParent {
-    fn from(k: ModuleKey)  -> Self { Self::Module(k) } 
-}
-impl From<DiskDirKey> for JsFileParent {
-    fn from(k: DiskDirKey) -> Self { Self::DiskDir(k) }
-}
-impl From<JsFileParent> for SymbolKey {
-    fn from(p: JsFileParent) -> Self {
-        match p { JsFileParent::Module(k) => k.into(), JsFileParent::DiskDir(k) => k.into() }
-    }
 }
