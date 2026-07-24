@@ -737,23 +737,26 @@ impl PythonArchBuilder {
         let func_sym = &mut session.st_mut()[function_key];
         func_sym.node_index.set(func_def.node_index.load());
         for decorator in func_def.decorator_list.iter() {
-            if decorator.expression.is_name_expr() {
-                if decorator.expression.as_name_expr().unwrap().id == "staticmethod" {
-                    func_sym.is_static = true;
+            if let Some(name) = decorator.expression.as_name_expr() {
+                match name.id.as_str() {
+                    "staticmethod" => func_sym.is_static = true,
+                    "property" | "cached_property" | "lazy_property" => func_sym.is_property = true,
+                    "overload" => func_sym.is_overloaded = true,
+                    "classmethod" => func_sym.is_class_method = true,
+                    "classproperty" | "lazy_classproperty" => {
+                        func_sym.is_property = true;
+                        func_sym.is_class_method = true;
+                    },
+                    _ => {}
                 }
-                else if decorator.expression.as_name_expr().unwrap().id == "property" {
-                    func_sym.is_property = true;
-                }
-                else if decorator.expression.as_name_expr().unwrap().id == "overload" {
-                    func_sym.is_overloaded = true;
-                }
-                else if decorator.expression.as_name_expr().unwrap().id == "classmethod" {
-                    func_sym.is_class_method = true;
-                }
-                else if decorator.expression.as_name_expr().unwrap().id == "classproperty" ||
-                decorator.expression.as_name_expr().unwrap().id == "lazy_classproperty" {
-                    func_sym.is_property = true;
-                    func_sym.is_class_method = true;
+            }
+            // decorators can also be reached through their module, e.g. functools.cached_property,
+            // tools.lazy_property, and typing.overload as odoo's orm uses it
+            else if let Some(attr) = decorator.expression.as_attribute_expr() {
+                match attr.attr.id.as_str() {
+                    "cached_property" | "lazy_property" => func_sym.is_property = true,
+                    "overload" => func_sym.is_overloaded = true,
+                    _ => {}
                 }
             }
         }
