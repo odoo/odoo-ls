@@ -1428,7 +1428,7 @@ impl SymbolTable {
 
     /* /!\ we want to keep instance = True if the evaluation we are following was set to True! */
     fn propagate_instance(next_refs: Vec<EvaluationSymbolPtr>, instance: Option<bool>) -> Vec<EvaluationSymbolPtr> {
-        if instance.is_none_or(|instance|!instance) {
+        if !instance.is_some_and(|instance| instance) {
             return next_refs;
         }
         next_refs.into_iter().map(|mut next_ref| {
