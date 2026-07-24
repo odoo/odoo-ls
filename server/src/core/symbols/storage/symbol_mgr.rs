@@ -117,5 +117,5 @@ impl SymbolMgr for name {
 pub fn iter_symbol_keys(symbol: &impl SymbolMgr) -> impl Iterator<Item = & SymbolKey> {
     symbol.symbols().values()
         .flat_map(|section| section.values())
-        .flat_map(|symbol_list| symbol_list.iter())
+        .flatten()
 }

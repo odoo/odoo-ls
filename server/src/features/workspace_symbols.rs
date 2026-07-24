@@ -2,7 +2,7 @@ use lsp_server::{ErrorCode, ResponseError};
 use lsp_types::{Location, SymbolKind, WorkspaceLocation, WorkspaceSymbol, WorkspaceSymbolResponse};
 use ruff_text_size::{TextRange, TextSize};
 
-use crate::{S, constants::SymType, core::{entry_point::EntryPointType, file_mgr::{Ast, FileMgr}, symbols::{storage::SymbolTable, symbol_keys::{SourceFileKey, SymbolKey, XmlTemplateKey}}}, threads::SessionInfo, utils::string_fuzzy_contains};
+use crate::{S, constants::SymType, core::{entry_point::EntryPointType, file_mgr::{Ast, FileMgr}, symbols::{storage::{SymbolTable, XmlDataParent}, symbol_keys::{SourceFileKey, SymbolKey, XmlTemplateKey}}}, threads::SessionInfo, utils::string_fuzzy_contains};
 
 /// The prefix OWL template names are offered under, mirroring the `xmlid.` one already used for
 /// XML ids. It keeps a template distinguishable from the component class of the same name, and
@@ -102,7 +102,7 @@ impl WorkspaceSymbolFeature {
             matches.extend(templates.iter_valid(session.st()).map(|template| (name.clone(), template)));
         }
         for (name, template) in matches {
-            let SymbolKey::XmlFile(xml_file) = session.st()[template].parent() else {
+            let XmlDataParent::XmlFile(xml_file) = session.st()[template].parent() else {
                 continue;
             };
             let path = session.st()[xml_file].path.clone();

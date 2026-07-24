@@ -52,7 +52,7 @@ impl XmlValidator {
         let mut model_dependencies = vec![];
         let mut missing_model_dependencies = HashSet::default();
         let mut diagnostics = vec![];
-        for data_key in session.st()[self.xml_symbol].symbols().iter().cloned().collect::<Vec<_>>() {
+        for data_key in session.st()[self.xml_symbol].data_symbols().iter().cloned().collect::<Vec<_>>() {
             self.validate_data(session, data_key, &mut diagnostics, &mut dependencies, &mut model_dependencies, &mut missing_model_dependencies);
         }
         for dep in dependencies.into_iter() {

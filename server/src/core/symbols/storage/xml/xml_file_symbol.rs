@@ -4,7 +4,7 @@ use weak_table::PtrWeakHashSet;
 
 use crate::constants::MissingDataSource;
 use crate::core::symbols::storage::dependency_mgr::{DependenciesTable, DependentsTable};
-use crate::core::symbols::symbol_keys::{ModuleKey, SymbolKey, XmlDataKey};
+use crate::core::symbols::symbol_keys::{ModuleKey, XmlDataKey};
 use crate::{core::diagnostics::DiagnosticCode, threads::SessionInfo};
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::{FileInfo, NoqaInfo}, model::Model}, oyarn};
 use crate::utils::HashSet;
@@ -21,7 +21,6 @@ pub struct XmlFileSymbol {
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     pub not_found_models: HashMap<OYarn, BuildSteps>,
     pub not_found_data_ids: HashMap<MissingDataSource, BuildSteps>,
-    pub (in crate::core::symbols::storage) symbols: HashSet<XmlDataKey>,
     pub (in crate::core::symbols) in_workspace: bool,
     pub self_import: bool,
     pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
@@ -31,6 +30,7 @@ pub struct XmlFileSymbol {
     pub noqas: NoqaInfo,
 
     parent: ModuleKey,
+    pub(in crate::core::symbols::storage) data_symbols: HashSet<XmlDataKey>,
 }
 
 impl XmlFileSymbol {
@@ -46,7 +46,7 @@ impl XmlFileSymbol {
             not_found_paths: vec![],
             not_found_models: HashMap::default(),
             not_found_data_ids: HashMap::default(),
-            symbols: HashSet::default(),
+            data_symbols: HashSet::default(),
             in_workspace: false,
             self_import: false,
             model_dependencies: PtrWeakHashSet::new(),
@@ -61,12 +61,8 @@ impl XmlFileSymbol {
         self.parent
     }
 
-    pub fn children(&self) -> Vec<SymbolKey> {
-        self.symbols.iter().copied().map(SymbolKey::from).collect()
-    }
-
-    pub fn symbols(&self) -> &HashSet<XmlDataKey> {
-        &self.symbols
+    pub fn data_symbols(&self) -> &HashSet<XmlDataKey> {
+        &self.data_symbols
     }
 
 }

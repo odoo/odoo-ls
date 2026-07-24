@@ -1,4 +1,5 @@
 use ruff_text_size::{TextRange, TextSize};
+use crate::core::symbols::storage::FileContentParent;
 use crate::utils::{HashMap, HashSet};
 use std::cell::RefCell;
 
@@ -28,14 +29,14 @@ pub struct ClassSymbol {
     pub sections: Vec<SectionRange>,
 
     // parent / child symbols
-    parent: SymbolKey,
+    parent: FileContentParent,
     //--- Body symbols
     pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
 }
 
 impl ClassSymbol {
 
-    pub fn new(name: &str, parent: SymbolKey, range: TextRange, body_start: TextSize, is_external: bool) -> Self {
+    pub fn new(name: &str, parent: FileContentParent, range: TextRange, body_start: TextSize, is_external: bool) -> Self {
         let mut res = Self {
             name: oyarn!("{}", name),
             is_external,
@@ -85,15 +86,7 @@ impl ClassSymbol {
         false
     }
 
-    pub fn parent(&self) -> SymbolKey {
+    pub fn parent(&self) -> FileContentParent {
         self.parent
     }
-
-    pub fn children(&self) -> Vec<SymbolKey> {
-        self.symbols.values()
-            .flat_map(|section| section.values())
-            .flatten()
-            .copied().collect()
-    }
-
 }

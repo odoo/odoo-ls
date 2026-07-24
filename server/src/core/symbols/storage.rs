@@ -16,6 +16,7 @@ pub mod lifecycle;
 pub mod symbol_mgr;
 pub mod dependency_mgr;
 pub mod metrics;
+pub mod parents;
 mod ext_symbol_store;
 
 use crate::{constants::OYarn, core::symbols::{
@@ -27,6 +28,7 @@ use duplicate::duplicate;
 use ext_symbol_store::ExtSymbolStore;
 use slotmap::{SlotMap, SparseSecondaryMap};
 use std::ops::{Index, IndexMut};
+pub use parents::{FileContentParent, FileSystemSymbolParent, JsFileParent, XmlDataParent, XmlFieldParent};
 
 #[derive(Debug)]
 pub struct SymbolTable {

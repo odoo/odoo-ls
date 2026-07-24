@@ -3,10 +3,10 @@ use ruff_text_size::TextRange;
 use crate::{
     constants::OYarn,
     core::{
-        evaluation::{Evaluation},
+        evaluation::Evaluation,
         evaluation_context::{Context, ContextKey, ContextValue},
         symbols::{
-            storage::SymbolTable,
+            storage::{SymbolTable, FileContentParent},
             symbol_keys::{ModelSymbolKey, ModuleKey, SymbolKey, VariableKey},
         },
     },
@@ -24,12 +24,12 @@ pub struct VariableSymbol {
     pub range: TextRange,
 
     // parent symbol (no children)
-    parent: SymbolKey,
+    parent: FileContentParent,
 }
 
 impl VariableSymbol {
 
-    pub fn new(name: &str, parent: SymbolKey, range: TextRange, is_external: bool) -> Self {
+    pub fn new(name: &str, parent: FileContentParent, range: TextRange, is_external: bool) -> Self {
         Self {
             name: name.to_string().into(),
             is_external,
@@ -70,7 +70,7 @@ impl VariableSymbol {
         let evaluations = variable_symbol.evaluations.clone();
         for eval in evaluations.iter() {
             let symbol = eval.symbol.get_symbol(session, None, &mut vec![], None);
-            let parent = session.st()[target].parent();
+            let parent: SymbolKey = session.st()[target].parent().into();
             // To be able to follow related fields, we need to have the base_attr set in order to find the __get__ hook in next_refs
             // we update the context here for the case where we are coming from a decorator for example.
             let context = Context::from_iter([(ContextKey::BaseAttr, ContextValue::SYMBOL(parent.into()))]);
@@ -100,13 +100,7 @@ impl VariableSymbol {
         !self.evaluations.iter().any(|x| x.value.is_none())
     }
 
-    pub fn parent(&self) -> SymbolKey {
+    pub fn parent(&self) -> FileContentParent {
         self.parent
     }
-
-    /// no child symbols
-    pub fn children(&self) -> Vec<SymbolKey> {
-        vec![]
-    }
-
 }

@@ -412,12 +412,6 @@ impl ModelSymbolKey {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, SymbolKeySubset)]
-pub enum JsFileParent {
-    Module(ModuleKey),
-    DiskDir(DiskDirKey),
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SymbolKeySubset)]
 pub enum BuildableSymbolKey {
     Function(FunctionKey),

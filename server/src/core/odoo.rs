@@ -839,7 +839,7 @@ impl SyncOdoo {
             let sym_in_data = entry.borrow().data_symbols.get(path_str.as_ref()).copied();
             if let Some(sym) = sym_in_data {
                 if let Some(sym) = sym.upgrade(session.st()) {
-                    SymbolTable::unload(session, sym.into());
+                    SymbolTable::unload(session, sym);
                 }
                 continue;
             }
@@ -856,7 +856,10 @@ impl SyncOdoo {
                 let Some(&path_symbol) = path_symbols.first() else {
                     continue;
                 };
-                SymbolTable::unload(session, path_symbol);
+                let Some(source_file) = path_symbol.as_source_file_key() else {
+                    continue;
+                };
+                SymbolTable::unload(session, source_file);
             }
         }
     }
@@ -875,14 +878,16 @@ impl SyncOdoo {
             //check if we should not reimport automatically
             SymbolKey::PythonPackage(package_key) => {
                 let package = &session.st()[package_key];
+                let parent: SymbolKey = package.parent().into();
                 if package.self_import {
-                    session.sync_odoo.must_reload_paths.push((package.parent().into(), package.path.clone()));
+                    session.sync_odoo.must_reload_paths.push((Wk::from(parent), package.path.clone()));
                 }
             },
             SymbolKey::File(file_key) => {
                 let file = &session.st()[file_key];
+                let parent: SymbolKey = file.parent().into();
                 if file.self_import {
-                    session.sync_odoo.must_reload_paths.push((file.parent().into(), file.path.clone()));
+                    session.sync_odoo.must_reload_paths.push((Wk::from(parent), file.path.clone()));
                 }
             },
             SymbolKey::JsFile(file_key) => {

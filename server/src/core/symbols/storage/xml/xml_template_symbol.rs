@@ -1,6 +1,6 @@
 use ruff_text_size::TextRange;
 
-use crate::{constants::OYarn, core::{symbols::symbol_keys::SymbolKey}};
+use crate::{constants::OYarn, core::symbols::storage::XmlDataParent};
 
 #[derive(Debug)]
 pub struct XmlTemplateSymbol {
@@ -15,20 +15,15 @@ pub struct XmlTemplateSymbol {
     /// A template element carries at most one `t-inherit`. The range excludes the quotes.
     pub t_inherit: Option<(OYarn, TextRange)>,
 
-    parent: SymbolKey,
+    parent: XmlDataParent,
 }
 
 impl XmlTemplateSymbol {
-    pub fn new(xml_id: Option<OYarn>, t_name: Option<OYarn>, range: TextRange, parent: SymbolKey, is_web: bool, is_external: bool) -> Self {
+    pub fn new(xml_id: Option<OYarn>, t_name: Option<OYarn>, range: TextRange, parent: XmlDataParent, is_web: bool, is_external: bool) -> Self {
         Self { xml_id, t_name, range, t_calls: vec![], t_inherit: None, parent, is_web, is_external }
     }
 
-    pub fn parent(&self) -> SymbolKey {
+    pub fn parent(&self) -> XmlDataParent {
         self.parent
-    }
-
-    /// no child symbols
-    pub fn children(&self) -> Vec<SymbolKey> {
-        vec![]
     }
 }

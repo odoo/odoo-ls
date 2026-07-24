@@ -11,7 +11,8 @@ use ruff_source_file::PositionEncoding;
 
 use crate::core::file_mgr::FileInfo;
 use crate::core::js_import_graph;
-use crate::core::symbols::symbol_keys::{SymbolKey, XmlTemplateKey};
+use crate::core::symbols::storage::XmlDataParent;
+use crate::core::symbols::symbol_keys::XmlTemplateKey;
 use crate::core::tsserver_bridge::{TsLocation, ts_to_lsp_location};
 use crate::features::owl_virtual::{
     MappedRef, OwlVirtualDoc, build_virtual_docs, commit_staged_roots, is_owl_artifact_path,
@@ -460,7 +461,7 @@ fn xml_files_backing_js(
             continue;
         };
         for key in keys {
-            let SymbolKey::XmlFile(xml_file) = session.st()[key].parent() else {
+            let XmlDataParent::XmlFile(xml_file) = session.st()[key].parent() else {
                 continue;
             };
             let path = session.st()[xml_file].path.clone();

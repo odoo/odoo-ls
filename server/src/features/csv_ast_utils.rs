@@ -226,7 +226,7 @@ impl CsvAstUtils {
         let relational_field = field_elts.get(1);
         //if the selected field is "id", return the xml_id record with the same id from the same csv file
         if field_name == "id" {
-            for data in session.st()[csv_symbol].symbols().iter() {
+            for data in session.st()[csv_symbol].data_symbols().iter() {
                 if let Some(record_key) = data.as_xml_record_key() {
                     let record = &session.st()[record_key];
                     let Some(record_xml_id) = &record.xml_id else {continue;};

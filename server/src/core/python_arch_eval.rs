@@ -477,7 +477,7 @@ impl PythonArchEval {
                         if let Some((val_eval, _diags)) = &value_evaluations {
                             if val_eval.len() == 1 {
                                 let evaluation = &val_eval[0];
-                                let sym_weak = evaluation.symbol.get_symbol_as_weak(session, None, &mut vec![], Some(parent));
+                                let sym_weak = evaluation.symbol.get_symbol_as_weak(session, None, &mut vec![], Some(parent.into()));
                                 if let Some(sym_key) = sym_weak.weak.upgrade(session.st())
                                     && SymbolTable::is_field_class(session, sym_key) {
                                         take_value = true;
@@ -508,7 +508,7 @@ impl PythonArchEval {
                             if let Some(sym) = evaluation.symbol.get_symbol_as_weak(session, None, &mut self.diagnostics, None).weak.upgrade(session.st()) {
                                 if sym == variable_key {
                                     // TODO: investigate deps, and fix cyclic evals
-                                    let file_path = session.st().get_file(parent).map(|file| session.st().path(file));
+                                    let file_path = session.st().get_file(parent.into()).map(|file| session.st().path(file));
                                     warn!("Found cyclic evaluation symbol: {}, parent: {}, file: {}", var_name, session.st().name(parent), file_path.unwrap_or("N/A"));
                                     to_remove.push(ix);
                                     continue;
