@@ -2,9 +2,18 @@ import functools
 from functools import cached_property
 
 
+class Inner:
+    def helper(self):
+        pass
+
+
 class Holder:
+    @property
+    def plain_prop(self) -> Inner:
+        pass
+
     @functools.cached_property
-    def via_functools(self):
+    def via_functools(self) -> Inner:
         pass
 
     @cached_property
@@ -25,3 +34,5 @@ class Holder:
 
 h = Holder()
 h.via_functools
+h.plain_prop.helper
+h.via_functools.helper

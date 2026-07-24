@@ -1333,9 +1333,21 @@ impl SymbolTable {
     }
 
     fn next_refs_variable(session: &mut SessionInfo, key: VariableKey, context: Option<&Context>, symbol_context: &Context) -> Vec<EvaluationSymbolPtr> {
+        let evaluations = session.sync_odoo.symbol_table[key].evaluations.clone();
+        Self::next_refs_of_evaluations(session, evaluations, context, symbol_context)
+    }
+
+    /* A property (including cached_property/lazy_property) exposes the type of its return value
+    when accessed as an attribute, so we follow the function's evaluations just like a variable's.
+    This also lets evaluation hooks placed on the property (e.g. Environment.user) contribute. */
+    fn next_refs_property_function(session: &mut SessionInfo, key: FunctionKey, context: Option<&Context>, symbol_context: &Context) -> Vec<EvaluationSymbolPtr> {
+        SyncOdoo::ensure_func_evaluations(session, key);
+        let evaluations = session.sync_odoo.symbol_table[key].evaluations.clone();
+        Self::next_refs_of_evaluations(session, evaluations, context, symbol_context)
+    }
+
+    fn next_refs_of_evaluations(session: &mut SessionInfo, evaluations: Vec<Evaluation>, context: Option<&Context>, symbol_context: &Context) -> Vec<EvaluationSymbolPtr> {
         let mut res = Vec::new();
-        let var_symbol = &session.sync_odoo.symbol_table[key];
-        let evaluations = var_symbol.evaluations.clone();
         let ctx = if let Some(context) = context {
             &Context::merge(symbol_context, context)
         } else {
@@ -1360,6 +1372,19 @@ impl SymbolTable {
         res
     }
 
+    /* /!\ we want to keep instance = True if the evaluation we are following was set to True! */
+    fn propagate_instance(next_refs: Vec<EvaluationSymbolPtr>, instance: Option<bool>) -> Vec<EvaluationSymbolPtr> {
+        if instance.is_none_or(|instance|!instance) {
+            return next_refs;
+        }
+        next_refs.into_iter().map(|mut next_ref| {
+            if let EvaluationSymbolPtr::WEAK(ref mut weak) | EvaluationSymbolPtr::SELF(ref mut weak) = next_ref {
+                weak.instance = Some(true);
+            }
+            next_ref
+        }).collect()
+    }
+
     /*given a Symbol, give all the Symbol that are evaluated as valid evaluation for it.
     example:
     ====
@@ -1376,6 +1401,7 @@ impl SymbolTable {
         match symbol_key {
             SymbolKey::Class(c) if !stop_on_type => Self::next_refs_class(session, c, context, symbol_context),
             SymbolKey::Variable(v) => Self::next_refs_variable(session, v, context, symbol_context),
+            SymbolKey::Function(f) if session.sync_odoo.symbol_table[f].is_property => Self::next_refs_property_function(session, f, context, symbol_context),
             _ => vec![],
         }
     }
@@ -1483,27 +1509,14 @@ impl SymbolTable {
                             BuildScheduler::build_now(session, file_symbol, BuildSteps::ARCH_EVAL);
                         }
                     }
-                    let mut next_sym_refs = Self::next_refs_variable(session, v, context, &next_ref_weak.context);
+                    let next_sym_refs = Self::next_refs_variable(session, v, context, &next_ref_weak.context);
                     if next_sym_refs.is_empty() {
                         // keep current evaluation
                         results.push(current_eval);
                         continue;
                     }
-                    // /!\ we want to keep instance = True if previous evaluation was set to True!
-                    if next_ref_weak_instance.is_some_and(|v| v) {
-                        next_sym_refs = next_sym_refs.into_iter().map(|mut next_results| {
-                           match next_results {
-                                EvaluationSymbolPtr::WEAK(ref mut weak)
-                                | EvaluationSymbolPtr::SELF(ref mut weak) =>  {
-                                    weak.instance = Some(true);
-                                },
-                                _ => {}
-                            }
-                            next_results
-                        }).collect();
-                    }
                     // enqueue evaluations to follow, replacing current evaluation
-                    work_queue.extend(next_sym_refs);
+                    work_queue.extend(Self::propagate_instance(next_sym_refs, next_ref_weak_instance));
                 },
                 SymbolKey::Class(c) if !stop_on_type => {
                     //On class, follow descriptor declarations
@@ -1515,6 +1528,16 @@ impl SymbolTable {
                         // enqueue evaluations to follow, replacing current evaluation
                         work_queue.extend(next_sym_refs);
                     }
+                },
+                SymbolKey::Function(f) if session.st()[f].is_property => {
+                    // A property reached mid-chain, e.g. through a variable holding it
+                    let next_sym_refs = Self::next_refs_property_function(session, f, context, &next_ref_weak.context);
+                    if next_sym_refs.is_empty() {
+                        // keep current evaluation
+                        results.push(current_eval);
+                        continue;
+                    }
+                    work_queue.extend(Self::propagate_instance(next_sym_refs, next_ref_weak_instance));
                 },
                 _ => {
                     results.push(current_eval);
