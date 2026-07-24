@@ -2371,11 +2371,11 @@ impl SymbolTable {
 
     pub fn get_xml_id(&self, xml_data_key: XmlDataKey) -> Option<OYarn> {
         match xml_data_key {
-            XmlDataKey::RECORD(r) => self[r].xml_id.clone(),
-            XmlDataKey::MENUITEM(m) => self[m].xml_id.clone(),
-            XmlDataKey::TEMPLATE(t) => self[t].xml_id.clone(),
-            XmlDataKey::ASSET(a) => self[a].xml_id.clone(),
-            XmlDataKey::DELETE(d) => self[d].xml_id.clone(),
+            XmlDataKey::XmlRecord(r) => self[r].xml_id.clone(),
+            XmlDataKey::XmlMenuItem(m) => self[m].xml_id.clone(),
+            XmlDataKey::XmlTemplate(t) => self[t].xml_id.clone(),
+            XmlDataKey::XmlAsset(a) => self[a].xml_id.clone(),
+            XmlDataKey::XmlDelete(d) => self[d].xml_id.clone(),
         }
     }
 

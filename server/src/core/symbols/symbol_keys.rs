@@ -327,34 +327,34 @@ impl_weak_symbol_key_from! {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum XmlDataKey {
-    RECORD(XmlRecordKey),
-    MENUITEM(XmlMenuItemKey),
-    TEMPLATE(XmlTemplateKey),
-    ASSET(XmlAssetKey),
-    DELETE(XmlDeleteKey),
+    XmlRecord(XmlRecordKey),
+    XmlMenuItem(XmlMenuItemKey),
+    XmlTemplate(XmlTemplateKey),
+    XmlAsset(XmlAssetKey),
+    XmlDelete(XmlDeleteKey),
 }
 
 impl XmlDataKey {
     pub fn as_symbol_key(&self) -> SymbolKey {
         match self {
-            XmlDataKey::RECORD(k) => SymbolKey::XmlRecord(*k),
-            XmlDataKey::MENUITEM(k) => SymbolKey::XmlMenuItem(*k),
-            XmlDataKey::TEMPLATE(k) => SymbolKey::XmlTemplate(*k),
-            XmlDataKey::ASSET(k) => SymbolKey::XmlAsset(*k),
-            XmlDataKey::DELETE(k) => SymbolKey::XmlDelete(*k),
+            XmlDataKey::XmlRecord(k) => SymbolKey::XmlRecord(*k),
+            XmlDataKey::XmlMenuItem(k) => SymbolKey::XmlMenuItem(*k),
+            XmlDataKey::XmlTemplate(k) => SymbolKey::XmlTemplate(*k),
+            XmlDataKey::XmlAsset(k) => SymbolKey::XmlAsset(*k),
+            XmlDataKey::XmlDelete(k) => SymbolKey::XmlDelete(*k),
         }
     }
 
     pub fn as_xml_record_key(&self) -> Option<XmlRecordKey> {
         match self {
-            XmlDataKey::RECORD(k) => Some(*k),
+            XmlDataKey::XmlRecord(k) => Some(*k),
             _ => None,
         }
     }
 
     pub fn as_xml_template_key(&self) -> Option<XmlTemplateKey> {
         match self {
-            XmlDataKey::TEMPLATE(k) => Some(*k),
+            XmlDataKey::XmlTemplate(k) => Some(*k),
             _ => None,
         }
     }
@@ -363,33 +363,33 @@ impl XmlDataKey {
 impl From<XmlDataKey> for SymbolKey {
     fn from(key: XmlDataKey) -> Self {
         match key {
-            XmlDataKey::RECORD(k) => k.into(),
-            XmlDataKey::MENUITEM(k) => k.into(),
-            XmlDataKey::TEMPLATE(k) => k.into(),
-            XmlDataKey::ASSET(k) => k.into(),
-            XmlDataKey::DELETE(k) => k.into(),
+            XmlDataKey::XmlRecord(k) => k.into(),
+            XmlDataKey::XmlMenuItem(k) => k.into(),
+            XmlDataKey::XmlTemplate(k) => k.into(),
+            XmlDataKey::XmlAsset(k) => k.into(),
+            XmlDataKey::XmlDelete(k) => k.into(),
         }
     }
 }
 
 impl From<XmlRecordKey> for XmlDataKey {
-    fn from(key: XmlRecordKey) -> Self { XmlDataKey::RECORD(key) }
+    fn from(key: XmlRecordKey) -> Self { XmlDataKey::XmlRecord(key) }
 }
 
 impl From<XmlMenuItemKey> for XmlDataKey {
-    fn from(key: XmlMenuItemKey) -> Self { XmlDataKey::MENUITEM(key ) }
+    fn from(key: XmlMenuItemKey) -> Self { XmlDataKey::XmlMenuItem(key ) }
 }
 
 impl From<XmlTemplateKey> for XmlDataKey {
-    fn from(key: XmlTemplateKey) -> Self { XmlDataKey::TEMPLATE(key) }
+    fn from(key: XmlTemplateKey) -> Self { XmlDataKey::XmlTemplate(key) }
 }
 
 impl From<XmlAssetKey> for XmlDataKey {
-    fn from(key: XmlAssetKey) -> Self { XmlDataKey::ASSET(key) }
+    fn from(key: XmlAssetKey) -> Self { XmlDataKey::XmlAsset(key) }
 }
 
 impl From<XmlDeleteKey> for XmlDataKey {
-    fn from(key: XmlDeleteKey) -> Self { XmlDataKey::DELETE(key) }
+    fn from(key: XmlDeleteKey) -> Self { XmlDataKey::XmlDelete(key) }
 }
 
 impl SymbolKey {
@@ -515,7 +515,7 @@ impl_symbol_key_partial_eq! {
 pub enum XmlId {
     PythonClass(ClassKey),
     XmlRecord(XmlRecordKey),
-    XmlMenuitem(XmlMenuItemKey),
+    XmlMenuItem(XmlMenuItemKey),
     XmlTemplate(XmlTemplateKey),
     XmlAsset(XmlAssetKey),
     XmlDelete(XmlDeleteKey),
@@ -524,11 +524,11 @@ pub enum XmlId {
 impl From<XmlDataKey> for XmlId {
     fn from(key: XmlDataKey) -> Self {
         match key {
-            XmlDataKey::RECORD(k) => XmlId::XmlRecord(k),
-            XmlDataKey::DELETE(k) => XmlId::XmlDelete(k),
-            XmlDataKey::MENUITEM(k) => XmlId::XmlMenuitem(k),
-            XmlDataKey::TEMPLATE(k) => XmlId::XmlTemplate(k),
-            XmlDataKey::ASSET(k) => XmlId::XmlAsset(k),
+            XmlDataKey::XmlRecord(k) => XmlId::XmlRecord(k),
+            XmlDataKey::XmlDelete(k) => XmlId::XmlDelete(k),
+            XmlDataKey::XmlMenuItem(k) => XmlId::XmlMenuItem(k),
+            XmlDataKey::XmlTemplate(k) => XmlId::XmlTemplate(k),
+            XmlDataKey::XmlAsset(k) => XmlId::XmlAsset(k),
         }
     }
 }
@@ -538,7 +538,7 @@ impl From<XmlId> for SymbolKey {
         match key {
             XmlId::PythonClass(k) => k.into(),
             XmlId::XmlRecord(k) => k.into(),
-            XmlId::XmlMenuitem(k) => k.into(),
+            XmlId::XmlMenuItem(k) => k.into(),
             XmlId::XmlTemplate(k) => k.into(),
             XmlId::XmlAsset(k) => k.into(),
             XmlId::XmlDelete(k) => k.into(),
@@ -555,7 +555,7 @@ impl From<XmlRecordKey> for XmlId {
 }
 
 impl From<XmlMenuItemKey> for XmlId {
-    fn from(key: XmlMenuItemKey) -> Self { XmlId::XmlMenuitem(key) }
+    fn from(key: XmlMenuItemKey) -> Self { XmlId::XmlMenuItem(key) }
 }
 
 impl From<XmlTemplateKey> for XmlId {
