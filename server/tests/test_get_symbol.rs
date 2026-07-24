@@ -423,7 +423,7 @@ fn test_definition_csv() {
     let base_module = base[0].unwrap_module_key();
     let base_path = session.st()[base_module].path.clone();
     let res_country_data_path = Path::new(&base_path).join("data").join("res_country_data.xml").sanitize();
-    let res_country_file = session.st()[base_module].data_symbols().get(&res_country_data_path).cloned();
+    let res_country_file = session.st()[base_module].data_file_symbols().get(&res_country_data_path).cloned();
     assert!(res_country_file.is_some());
     let res_country_file = res_country_file.unwrap();
     let base_au = test_utils::get_definition_locs(&mut session, mcsv_tf_file_symbol, &mcsv_tf_file_info, 1, 22);

@@ -23,7 +23,7 @@ impl ModuleSymbol {
             let file_name = path.file_name().unwrap().to_str().unwrap().to_string();
             let path_string = path.sanitize();
             //check if already exists
-            if session.st()[symbol_key].data_symbols().contains_key(&path_string) {
+            if session.st()[symbol_key].data_file_symbols().contains_key(&path_string) {
                 continue;
             }
             //load data from file
@@ -145,7 +145,7 @@ impl ModuleSymbol {
         for file_path in files_to_imports.iter().filter(|p| p.extension().map(|ext| ext == "xml").unwrap_or(false)) {
             let file_path_str = file_path.sanitize_cow();
             let file_name = file_path.file_name().unwrap().to_str().unwrap().to_string();
-            if session.st()[module].data_symbols().contains_key(file_path_str.as_ref()) { //already imported. can happen if the file is in multiple bundle or caught by multiple regex
+            if session.st()[module].data_file_symbols().contains_key(file_path_str.as_ref()) { //already imported. can happen if the file is in multiple bundle or caught by multiple regex
                 continue;
             }
             let xml_sym = session.st_mut().add_new_xml_file(module, &file_name, file_path_str.as_ref());

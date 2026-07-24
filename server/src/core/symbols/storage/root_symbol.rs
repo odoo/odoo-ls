@@ -8,7 +8,7 @@ pub struct RootSymbol {
     entry_point: Rc<RefCell<EntryPoint>>,
 
     // child symbols (no parent)
-    pub(super) module_symbols: HashMap<OYarn, SymbolKey>,
+    pub(super) fs_symbols: HashMap<OYarn, SymbolKey>,
 }
 
 impl RootSymbol {
@@ -17,18 +17,14 @@ impl RootSymbol {
         Self {
             name: oyarn!("Root"),
             entry_point,
-            module_symbols: HashMap::default(),
+            fs_symbols: HashMap::default(),
         }
     }
 
     pub fn module_symbols(&self) -> &HashMap<OYarn, SymbolKey> {
-        &self.module_symbols
+        &self.fs_symbols
     }
-
-    pub fn children(&self) -> Vec<SymbolKey> {
-        self.module_symbols.values().copied().collect()
-    }
-
+ 
     pub fn entry_point(&self) -> &Rc<RefCell<EntryPoint>> {
         &self.entry_point
     }

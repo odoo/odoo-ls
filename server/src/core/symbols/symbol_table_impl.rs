@@ -3,7 +3,7 @@ use std::{
 };
 use crate::{
     Sy, constants::MissingDataSource, core::{
-        evaluation_context::ContextKey, python_arch_eval_hooks::get_base_model_symbol, symbols::{storage::xml::xml_field_symbol::XmlFieldName, symbol_keys::XmlRecordKey},
+        evaluation_context::ContextKey, python_arch_eval_hooks::get_base_model_symbol, symbols::{storage::{FileContentParent, xml::xml_field_symbol::XmlFieldName}, symbol_keys::XmlRecordKey},
     }, oyarn, utils::{HashMap, HashSet},
 };
 
@@ -46,14 +46,7 @@ impl SymbolTable {
     }
 
     fn try_as_symbol_mgr(&self, target: SymbolKey) -> Option<&dyn SymbolMgr> {
-        match target {
-            SymbolKey::File(f) => Some(&self[f]),
-            SymbolKey::Class(c) => Some(&self[c]),
-            SymbolKey::Function(f) => Some(&self[f]),
-            SymbolKey::Module(m) => Some(&self[m]),
-            SymbolKey::PythonPackage(p) => Some(&self[p]),
-            _ => None,
-        }
+        FileContentParent::try_from(target).map(|p| p.as_symbol_mgr(self)).ok()
     }
 
     pub fn as_mut_symbol_mgr(&mut self, target: SymbolKey) -> &mut dyn SymbolMgr {
@@ -264,22 +257,22 @@ impl SymbolTable {
     pub fn parent(&self, target: impl Into<SymbolKey>) -> Option<SymbolKey> {
         match target.into() {
             SymbolKey::Root(_) => None,
-            SymbolKey::DiskDir(k) => Some(self[k].parent()),
-            SymbolKey::Namespace(k) => Some(self[k].parent()),
-            SymbolKey::PythonPackage(k) => Some(self[k].parent()),
+            SymbolKey::DiskDir(k) => Some(self[k].parent().into()),
+            SymbolKey::Namespace(k) => Some(self[k].parent().into()),
+            SymbolKey::PythonPackage(k) => Some(self[k].parent().into()),
             SymbolKey::Module(k) => Some(self[k].parent().into()),
-            SymbolKey::File(k) => Some(self[k].parent()),
-            SymbolKey::Compiled(k) => Some(self[k].parent()),
-            SymbolKey::Class(k) => Some(self[k].parent()),
-            SymbolKey::Function(k) => Some(self[k].parent()),
-            SymbolKey::Variable(k) => Some(self[k].parent()),
+            SymbolKey::File(k) => Some(self[k].parent().into()),
+            SymbolKey::Compiled(k) => Some(self[k].parent().into()),
+            SymbolKey::Class(k) => Some(self[k].parent().into()),
+            SymbolKey::Function(k) => Some(self[k].parent().into()),
+            SymbolKey::Variable(k) => Some(self[k].parent().into()),
             SymbolKey::XmlFile(x) => Some(self[x].parent().into()),
-            SymbolKey::XmlRecord(x) => Some(self[x].parent()),
-            SymbolKey::XmlField(x) => Some(self[x].parent()),
-            SymbolKey::XmlMenuItem(x) => Some(self[x].parent()),
-            SymbolKey::XmlTemplate(x) => Some(self[x].parent()),
-            SymbolKey::XmlAsset(x) => Some(self[x].parent()),
-            SymbolKey::XmlDelete(x) => Some(self[x].parent()),
+            SymbolKey::XmlRecord(x) => Some(self[x].parent().into()),
+            SymbolKey::XmlField(x) => Some(self[x].parent().into()),
+            SymbolKey::XmlMenuItem(x) => Some(self[x].parent().into()),
+            SymbolKey::XmlTemplate(x) => Some(self[x].parent().into()),
+            SymbolKey::XmlAsset(x) => Some(self[x].parent().into()),
+            SymbolKey::XmlDelete(x) => Some(self[x].parent().into()),
             SymbolKey::CsvFile(c) => Some(self[c].parent().into()),
             SymbolKey::JsFile(j) => Some(self[j].parent().into()),
         }
@@ -1666,7 +1659,7 @@ impl SymbolTable {
                             continue;
                         }
                         let model_sym = &session.st()[model_key];
-                        let all_symbols = model_sym.children();
+                        let all_symbols: Vec<_> = iter_symbol_keys(model_sym).copied().collect();
                         for s in all_symbols {
                             if (only_fields && !Self::is_field(session, s)) || (only_methods && !matches!(s, SymbolKey::Function(_))) {
                                 continue;
@@ -1681,7 +1674,7 @@ impl SymbolTable {
                         }
                         let model_sym = &session.st()[model_key];
                         // for inherits symbols, we only add fields
-                        let all_symbols = model_sym.children();
+                        let all_symbols: Vec<_> = iter_symbol_keys(model_sym).copied().collect();
                         let fields = all_symbols.into_iter().filter(|&s| Self::is_field(session, s)).collect::<Vec<_>>();
                         for s in fields {
                             let name = session.st().name(s).clone();
@@ -1801,7 +1794,7 @@ impl SymbolTable {
         if !matches!(on_symbol_type, SymType::FILE | SymType::PACKAGE(_) | SymType::ROOT) {
             let mut parent = symbol_table.parent(on_symbol).unwrap();
             while let SymbolKey::Class(c) = parent {
-                parent = symbol_table[c].parent();
+                parent = symbol_table[c].parent().into();
             }
             // A function can reference another name from the full outer scope so no position is needed
             Self::infer_name(odoo, parent, name, None)
@@ -2312,8 +2305,8 @@ impl SymbolTable {
                 }
                 SymbolKey::XmlFile(xml_file) => {
                     let xml_file_sym = &table[xml_file];
-                    for child_key in xml_file_sym.children() {
-                        iter_recursive(session, child_key, res);
+                    for &child_key in xml_file_sym.data_symbols() {
+                        iter_recursive(session, child_key.into(), res);
                     }
                 }
                 SymbolKey::XmlRecord(xml_record_key) => {
@@ -2322,8 +2315,8 @@ impl SymbolTable {
                     {
                         res.push((model, session.st().find_module(xml_record_key)));
                     }
-                    for child_key in xml_record_sym.children() {
-                        iter_recursive(session, child_key, res);
+                    for &child_key in xml_record_sym.fields().values() {
+                        iter_recursive(session, child_key.into(), res);
                     }
                 }
                 SymbolKey::DiskDir(_)

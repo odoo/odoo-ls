@@ -1,6 +1,6 @@
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{storage::dependency_mgr::{DependenciesTable, DependentsTable}, symbol_keys::SymbolKey}}, oyarn, utils::PathSanitizer};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{storage::{dependency_mgr::{DependenciesTable, DependentsTable}, FileSystemSymbolParent}, symbol_keys::SymbolKey}}, oyarn, utils::PathSanitizer};
 use std::{cell::RefCell, path::Path, rc::Weak};
 use crate::utils::HashMap;
 
@@ -29,14 +29,14 @@ pub struct PythonPackageSymbol {
     pub sections: Vec<SectionRange>,
 
     // parent / child symbols
-    parent: SymbolKey,
+    parent: FileSystemSymbolParent,
     pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
-    pub(super) module_symbols: HashMap<OYarn, SymbolKey>,
+    pub(super) fs_symbols: HashMap<OYarn, SymbolKey>,
 }
 
 impl PythonPackageSymbol {
 
-    pub fn new(name: &str, path: &str, parent: SymbolKey, is_external: bool, i_ext: &'static str) -> Self {
+    pub fn new(name: &str, path: &str, parent: FileSystemSymbolParent, is_external: bool, i_ext: &'static str) -> Self {
         let mut res = Self {
             name: oyarn!("{}", name),
             path: path.to_string(),
@@ -50,7 +50,7 @@ impl PythonPackageSymbol {
             not_found_paths: vec![],
             in_workspace: false,
             self_import: false, //indicates that if unloaded, the symbol should be added in the rebuild automatically as nothing depends on it (used for root packages)
-            module_symbols: HashMap::default(),
+            fs_symbols: HashMap::default(),
             sections: vec![],
             symbols: HashMap::default(),
             model_dependencies: PtrWeakHashSet::new(),
@@ -64,18 +64,11 @@ impl PythonPackageSymbol {
     }
 
     pub fn module_symbols(&self) -> &HashMap<OYarn, SymbolKey> {
-        &self.module_symbols
+        &self.fs_symbols
     }
 
-    pub fn parent(&self) -> SymbolKey {
+    pub fn parent(&self) -> FileSystemSymbolParent {
         self.parent
-    }
-
-    /// symbols + module_symbols
-    pub fn children(&self) -> Vec<SymbolKey> {
-        self.symbols.values().flat_map(|section| section.values()).flatten()
-            .chain(self.module_symbols.values())
-            .copied().collect()
     }
 
 }

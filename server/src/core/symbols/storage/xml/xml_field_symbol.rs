@@ -1,6 +1,6 @@
 use ruff_text_size::TextRange;
 
-use crate::{constants::OYarn, core::symbols::symbol_keys::SymbolKey};
+use crate::{constants::OYarn, core::symbols::storage::XmlFieldParent};
 use std::fmt::Display;
 
 
@@ -13,7 +13,7 @@ pub struct XmlFieldSymbol {
     pub ref_key: Option<(String, TextRange)>,
     pub is_external: bool,
 
-    parent: SymbolKey,
+    parent: XmlFieldParent,
 }
 
 impl XmlFieldSymbol {
@@ -23,7 +23,7 @@ impl XmlFieldSymbol {
         text: Option<String>,
         text_range: Option<TextRange>,
         ref_key: Option<(String, TextRange)>,
-        parent: SymbolKey,
+        parent: XmlFieldParent,
         is_external: bool,
     ) -> Self {
         Self {
@@ -37,13 +37,8 @@ impl XmlFieldSymbol {
         }
     }
 
-    pub fn parent(&self) -> SymbolKey {
+    pub fn parent(&self) -> XmlFieldParent {
         self.parent
-    }
-
-    /// no child symbols
-    pub fn children(&self) -> Vec<SymbolKey> {
-        vec![]
     }
 }
 

@@ -1,6 +1,6 @@
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, MissingDataSource, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{Buildable, storage::dependency_mgr::{DependenciesTable, DependentsTable}, symbol_keys::{JsFileParent, SymbolKey}}}, oyarn, utils::HashMap};
+use crate::{constants::{BuildStatus, BuildSteps, MissingDataSource, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{Buildable, storage::{dependency_mgr::{DependenciesTable, DependentsTable}, JsFileParent}}}, oyarn, utils::HashMap};
 use std::{cell::RefCell, rc::Weak};
 
 #[derive(Debug)]
@@ -48,11 +48,6 @@ impl JsFileSymbol {
     pub fn parent(&self) -> JsFileParent {
         self.parent
     }
-
-    pub fn children(&self) -> Vec<SymbolKey> {
-        vec![]
-    }
-
 }
 
 impl Buildable for JsFileSymbol {

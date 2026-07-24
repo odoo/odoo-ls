@@ -1,6 +1,6 @@
 use ruff_text_size::TextRange;
 
-use crate::{constants::OYarn, core::{symbols::symbol_keys::SymbolKey}};
+use crate::{constants::OYarn, core::symbols::storage::XmlDataParent};
 
 #[derive(Debug)]
 pub struct XmlMenuItemSymbol {
@@ -8,20 +8,15 @@ pub struct XmlMenuItemSymbol {
     pub is_external: bool,
     pub range: TextRange,
 
-    parent: SymbolKey,
+    parent: XmlDataParent,
 }
 
 impl XmlMenuItemSymbol {
-    pub fn new(xml_id: Option<OYarn>, range: TextRange, parent: SymbolKey, is_external: bool) -> Self {
+    pub fn new(xml_id: Option<OYarn>, range: TextRange, parent: XmlDataParent, is_external: bool) -> Self {
         Self { xml_id, range, parent, is_external }
     }
 
-    pub fn parent(&self) -> SymbolKey {
+    pub fn parent(&self) -> XmlDataParent {
         self.parent
-    }
-
-    /// no child symbols
-    pub fn children(&self) -> Vec<SymbolKey> {
-        vec![]
     }
 }

@@ -1,4 +1,4 @@
-use crate::utils::HashMap;
+use crate::{core::symbols::storage::FileContentParent, utils::HashMap};
 
 use lsp_types::Diagnostic;
 use ruff_python_ast::{AtomicNodeIndex, Expr, ExprCall};
@@ -53,14 +53,14 @@ pub struct FunctionSymbol {
     pub sections: Vec<SectionRange>,
 
     // parent / child symbols
-    parent: SymbolKey,
+    parent: FileContentParent,
     //--- Body content
     pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
 }
 
 impl FunctionSymbol {
 
-    pub fn new(name: &str, parent: SymbolKey, range: TextRange, body_start: TextSize, is_external: bool) -> Self {
+    pub fn new(name: &str, parent: FileContentParent, range: TextRange, body_start: TextSize, is_external: bool) -> Self {
         let mut res = Self {
             name: oyarn!("{}", name),
             is_external,
@@ -115,7 +115,7 @@ impl FunctionSymbol {
         if func.is_overloaded {
             return true;
         }
-        let previous_defs = symbol_table.get_content_symbol(func.parent(), &func.name, func.range.start().to_u32()).symbols;
+        let previous_defs = symbol_table.get_content_symbol(func.parent().into(), &func.name, func.range.start().to_u32()).symbols;
         if let Some(&SymbolKey::Function(k)) = previous_defs.last() {
             return symbol_table[k].is_overloaded;
         }
@@ -176,15 +176,7 @@ impl FunctionSymbol {
         None
     }
 
-    pub fn parent(&self) -> SymbolKey {
+    pub fn parent(&self) -> FileContentParent {
         self.parent
     }
-
-    pub fn children(&self) -> Vec<SymbolKey> {
-        self.symbols.values()
-            .flat_map(|section| section.values())
-            .flatten()
-            .copied().collect()
-    }
-
 }

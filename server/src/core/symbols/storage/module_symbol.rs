@@ -3,7 +3,7 @@ use crate::core::file_mgr::NoqaInfo;
 use crate::core::model::Model;
 use crate::core::symbols::SymbolTable;
 use crate::core::symbols::storage::dependency_mgr::{DependenciesTable, DependentsTable};
-use crate::core::symbols::symbol_keys::{ModuleKey, JsFileKey, NamespaceKey, SourceFileKey, SymbolKey, XmlId};
+use crate::core::symbols::symbol_keys::{JsFileKey, ModuleKey, NamespaceKey, SourceFileKey, SymbolKey, XmlId};
 use super::symbol_mgr::SymbolMgr;
 use crate::utils::{PathSanitizer};
 use crate::weak_collections::WeakSet;
@@ -50,8 +50,8 @@ pub struct ModuleSymbol {
     // parent / child symbols
     parent: NamespaceKey,
     pub(super) symbols: HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>>,
-    pub(super) module_symbols: HashMap<OYarn, SymbolKey>,
-    pub(super) data_symbols: HashMap<String, SourceFileKey>,
+    pub(super) fs_symbols: HashMap<OYarn, SymbolKey>,
+    pub(super) data_file_symbols: HashMap<String, SourceFileKey>,
     pub(super) js_symbols: HashMap<String, JsFileKey>,
 }
 
@@ -85,7 +85,7 @@ impl ModuleSymbol {
             data: Vec::new(),
             assets: Vec::new(),
             parent,
-            module_symbols: HashMap::default(),
+            fs_symbols: HashMap::default(),
             arch_status: BuildStatus::PENDING,
             arch_eval_status: BuildStatus::PENDING,
             validation_status: BuildStatus::PENDING,
@@ -96,7 +96,7 @@ impl ModuleSymbol {
             dependents: DependentsTable::default(),
             processed_text_hash: 0,
             noqas: NoqaInfo::None,
-            data_symbols: HashMap::default(),
+            data_file_symbols: HashMap::default(),
             js_symbols: HashMap::default(),
         };
         module._init_symbol_mgr();
@@ -104,15 +104,15 @@ impl ModuleSymbol {
     }
 
     pub fn module_symbols(&self) -> &HashMap<OYarn, SymbolKey> {
-        &self.module_symbols
+        &self.fs_symbols
     }
 
     pub fn data(&self) -> &[(String, TextRange)] {
         &self.data
     }
 
-    pub fn data_symbols(&self) -> &HashMap<String, SourceFileKey> {
-        &self.data_symbols
+    pub fn data_file_symbols(&self) -> &HashMap<String, SourceFileKey> {
+        &self.data_file_symbols
     }
 
     pub fn js_symbols(&self) -> &HashMap<String, JsFileKey> {
@@ -121,14 +121,6 @@ impl ModuleSymbol {
 
     pub fn parent(&self) -> NamespaceKey {
         self.parent
-    }
-
-    pub fn children(&self) -> Vec<SymbolKey> {
-        self.symbols.values().flat_map(|section| section.values()).flatten()
-            .chain(self.module_symbols.values()).copied()
-            .chain(self.data_symbols.values().map(|&key| key.into()))
-            .chain(self.js_symbols.values().map(|&key| key.into()))
-            .collect()
     }
 
     pub fn is_in_deps(symbol_table: &SymbolTable, module_key: ModuleKey, dir_name: &OYarn) -> bool {

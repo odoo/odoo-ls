@@ -1,5 +1,5 @@
+use crate::core::symbols::storage::FileSystemSymbolParent;
 use crate::utils::HashMap;
-
 
 use crate::{constants::OYarn, oyarn};
 use crate::core::symbols::symbol_keys::SymbolKey;
@@ -11,28 +11,23 @@ pub struct CompiledSymbol {
     pub path: String,
     
     // parent / child symbols
-    parent: SymbolKey,
-    pub(super) module_symbols: HashMap<OYarn, SymbolKey>,
+    parent: FileSystemSymbolParent,
+    pub(super) fs_symbols: HashMap<OYarn, SymbolKey>,
 }
 
 impl CompiledSymbol {
 
-    pub fn new(name: &str, path: &str, parent: SymbolKey, is_external: bool) -> Self {
+    pub fn new(name: &str, path: &str, parent: FileSystemSymbolParent, is_external: bool) -> Self {
         Self {
             name: oyarn!("{}", name),
             is_external,
             path: path.to_string(),
-            module_symbols: HashMap::default(),
+            fs_symbols: HashMap::default(),
             parent,
         }
     }
 
-    pub fn parent(&self) -> SymbolKey {
+    pub fn parent(&self) -> FileSystemSymbolParent {
         self.parent
     }
-    
-    pub fn children(&self) -> Vec<SymbolKey> {
-        self.module_symbols.values().copied().collect()
-    }
-
 }

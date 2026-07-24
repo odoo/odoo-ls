@@ -1,19 +1,19 @@
 use std::ops::Range;
-use crate::{core::symbols::{SymbolTable, storage::xml::xml_field_symbol::XmlFieldName, symbol_keys::XmlRecordKey}, utils::HashMap};
+use crate::{core::symbols::{SymbolTable, storage::{XmlDataParent, xml::xml_field_symbol::XmlFieldName}, symbol_keys::XmlRecordKey}, utils::HashMap};
 
 use ruff_text_size::TextRange;
 
-use crate::{constants::OYarn, core::symbols::symbol_keys::{SymbolKey, XmlFieldKey}};
+use crate::{constants::OYarn, core::symbols::symbol_keys::XmlFieldKey};
 
 #[derive(Debug)]
 pub struct XmlRecordSymbol {
     pub is_external: bool,
     pub model: (OYarn, Range<usize>),
     pub xml_id: Option<OYarn>,
-    pub (in crate::core::symbols::storage) fields: HashMap<OYarn, XmlFieldKey>,
     pub range: TextRange,
 
-    parent: SymbolKey,
+    parent: XmlDataParent,
+    pub(in crate::core::symbols::storage) fields: HashMap<OYarn, XmlFieldKey>,
 }
 
 impl XmlRecordSymbol {
@@ -21,7 +21,7 @@ impl XmlRecordSymbol {
         model: (OYarn, Range<usize>),
         xml_id: Option<OYarn>,
         range: TextRange,
-        parent: SymbolKey,
+        parent: XmlDataParent,
         is_external: bool,
     ) -> Self {
         Self {
@@ -34,12 +34,8 @@ impl XmlRecordSymbol {
         }
     }
 
-    pub fn parent(&self) -> SymbolKey {
+    pub fn parent(&self) -> XmlDataParent {
         self.parent
-    }
-
-    pub fn children(&self) -> Vec<SymbolKey> {
-        self.fields.values().map(|k| SymbolKey::XmlField(*k)).collect()
     }
 
     pub fn fields(&self) -> &HashMap<OYarn, XmlFieldKey> {
