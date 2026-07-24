@@ -23,7 +23,7 @@ use crate::{
             }, symbol_keys::{
                 ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, JsFileKey,
                 ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey,
-                VariableKey, Wk, XmlAssetKey, XmlDeleteKey, XmlFieldKey, XmlFileKey,
+                VariableKey, XmlAssetKey, XmlDeleteKey, XmlFieldKey, XmlFileKey,
                 XmlMenuItemKey, XmlRecordKey, XmlTemplateKey,
             }
         },
@@ -195,15 +195,12 @@ impl SymbolTable {
         csv_file_key
     }
 
-    pub fn add_new_js_file(&mut self, parent_key: JsFileParent, name: &str, path: &str) -> JsFileKey {
-        let symbol_key: SymbolKey = parent_key.into();
-        let mut js_file_symbol = JsFileSymbol::new(name, path, parent_key, self.is_external(symbol_key));
-        js_file_symbol.set_in_workspace(self.in_workspace(symbol_key));
+    pub fn add_new_js_file(&mut self, parent: JsFileParent, name: &str, path: &str) -> JsFileKey {
+        let mut js_file_symbol = JsFileSymbol::new(name, path, parent, self.is_external(parent.into()));
+        js_file_symbol.set_in_workspace(self.in_workspace(parent.into()));
         let js_file_key = self.js_files.insert(js_file_symbol);
-        let rc_entry = self.get_entry(symbol_key);
-        let mut entry_bw = rc_entry.borrow_mut();
-        self.add_to_parent_js_symbols(parent_key, path, js_file_key);
-        self.add_to_js_entry_symbols(&mut entry_bw, path, js_file_key);
+        self.add_to_parent_js_symbols(parent, path, js_file_key);
+        ModuleSymbol::on_js_file_load(self, js_file_key);
         js_file_key
     }
 
@@ -282,11 +279,6 @@ impl SymbolTable {
     fn remove_from_parent_js_symbols(&mut self, parent: JsFileParent, path: &str) {
         parent.js_symbols_mut(self).remove(path);
     }
-
-    fn add_to_js_entry_symbols(&mut self, entry: &mut EntryPoint, path: &str, js_file: JsFileKey) {
-        entry.js_symbols.insert(path.to_string(), Wk::from(js_file));
-    }
-
     // ====== Symbol removal ======
 
     /// Remove `symbol` and its descendants, and clean up.
