@@ -90,7 +90,7 @@ impl XmlArchBuilder {
                     xml_module = module;
                 }
             }
-            if let XmlDataKey::RECORD(record) = xml_data {
+            if let XmlDataKey::XmlRecord(record) = xml_data {
                 data_hooks::on_record_creation(session, self.xml_symbol.into(), record);
             }
             session.sync_odoo.get_main_entry().borrow_mut().search_rebuild_for_data_id(session, MissingDataSource::XML_ID(Sy!(id.clone())));

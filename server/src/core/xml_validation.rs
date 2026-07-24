@@ -79,11 +79,11 @@ impl XmlValidator {
             return;
         };
         match data {
-            XmlDataKey::RECORD(xml_data_record) => self.validate_record(session, xml_data_record, diagnostics, dependencies, model_dependencies, missing_model_dependencies),
-            XmlDataKey::MENUITEM(xml_data_menu_item) => self.validate_menu_item(session, xml_data_menu_item, diagnostics, dependencies, model_dependencies, missing_model_dependencies),
-            XmlDataKey::TEMPLATE(xml_data_template) => self.validate_template(session, xml_data_template, diagnostics, dependencies, model_dependencies, missing_model_dependencies),
-            XmlDataKey::DELETE(xml_data_delete) => self.validate_delete(session, xml_data_delete, diagnostics, dependencies, model_dependencies, missing_model_dependencies),
-            XmlDataKey::ASSET(xml_data_asset) => self.validate_asset(session, xml_data_asset, diagnostics, dependencies, model_dependencies, missing_model_dependencies),
+            XmlDataKey::XmlRecord(xml_data_record) => self.validate_record(session, xml_data_record, diagnostics, dependencies, model_dependencies, missing_model_dependencies),
+            XmlDataKey::XmlMenuItem(xml_data_menu_item) => self.validate_menu_item(session, xml_data_menu_item, diagnostics, dependencies, model_dependencies, missing_model_dependencies),
+            XmlDataKey::XmlTemplate(xml_data_template) => self.validate_template(session, xml_data_template, diagnostics, dependencies, model_dependencies, missing_model_dependencies),
+            XmlDataKey::XmlDelete(xml_data_delete) => self.validate_delete(session, xml_data_delete, diagnostics, dependencies, model_dependencies, missing_model_dependencies),
+            XmlDataKey::XmlAsset(xml_data_asset) => self.validate_asset(session, xml_data_asset, diagnostics, dependencies, model_dependencies, missing_model_dependencies),
         }
     }
     fn validate_record(&mut self, session: &mut SessionInfo, xml_data_record: XmlRecordKey, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<SourceFileKey>, model_dependencies: &mut Vec<Rc<RefCell<Model>>>, missing_model_dependencies: &mut HashSet<OYarn>) {

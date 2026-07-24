@@ -247,11 +247,11 @@ impl KeyValidator<SourceFileKey> for SymbolTable {
 impl KeyValidator<XmlDataKey> for SymbolTable {
     fn is_key_valid(&self, key: XmlDataKey) -> bool {
         match key {
-            XmlDataKey::RECORD(k) => self.xml_records.contains_key(k),
-            XmlDataKey::MENUITEM(k) => self.xml_menuitems.contains_key(k),
-            XmlDataKey::TEMPLATE(k) => self.xml_templates.contains_key(k),
-            XmlDataKey::ASSET(k) => self.xml_assets.contains_key(k),
-            XmlDataKey::DELETE(k) => self.xml_deletes.contains_key(k),
+            XmlDataKey::XmlRecord(k) => self.xml_records.contains_key(k),
+            XmlDataKey::XmlMenuItem(k) => self.xml_menuitems.contains_key(k),
+            XmlDataKey::XmlTemplate(k) => self.xml_templates.contains_key(k),
+            XmlDataKey::XmlAsset(k) => self.xml_assets.contains_key(k),
+            XmlDataKey::XmlDelete(k) => self.xml_deletes.contains_key(k),
         }
     }
 }
@@ -261,7 +261,7 @@ impl KeyValidator<XmlId> for SymbolTable {
         match key {
             XmlId::PythonClass(k) => self.classes.contains_key(k),
             XmlId::XmlRecord(k) => self.xml_records.contains_key(k),
-            XmlId::XmlMenuitem(k) => self.xml_menuitems.contains_key(k),
+            XmlId::XmlMenuItem(k) => self.xml_menuitems.contains_key(k),
             XmlId::XmlTemplate(k) => self.xml_templates.contains_key(k),
             XmlId::XmlAsset(k) => self.xml_assets.contains_key(k),
             XmlId::XmlDelete(k) => self.xml_deletes.contains_key(k),
