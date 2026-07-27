@@ -141,27 +141,6 @@ macro_rules! impl_index {
     };
 }
 
-impl_index!(RootKey, RootSymbol, roots);
-impl_index!(DiskDirKey, DiskDirSymbol, disk_dirs);
-impl_index!(NamespaceKey, NamespaceSymbol, namespaces);
-impl_index!(PythonPackageKey, PythonPackageSymbol, python_packages);
-impl_index!(ModuleKey, ModuleSymbol, modules);
-impl_index!(FileKey, FileSymbol, files);
-impl_index!(CompiledKey, CompiledSymbol, compiled);
-impl_index!(FunctionKey, FunctionSymbol, functions);
-impl_index!(ClassKey, ClassSymbol, classes);
-impl_index!(VariableKey, VariableSymbol, variables);
-impl_index!(XmlFileKey, XmlFileSymbol, xml_files);
-impl_index!(XmlRecordKey, XmlRecordSymbol, xml_records);
-impl_index!(XmlFieldKey, XmlFieldSymbol, xml_fields);
-impl_index!(XmlMenuItemKey, XmlMenuItemSymbol, xml_menuitems);
-impl_index!(XmlTemplateKey, XmlTemplateSymbol, xml_templates);
-impl_index!(XmlAssetKey, XmlAssetSymbol, xml_assets);
-impl_index!(XmlDeleteKey, XmlDeleteSymbol, xml_deletes);
-impl_index!(CsvFileKey, CsvFileSymbol, csv_files);
-impl_index!(JsFileKey, JsFileSymbol, js_files);
-
-
 /*
     Implement KeyValidator for each symbol type, to check if a key is valid.
     This allows us to pass the symbol table as argument to methods that expect a
@@ -187,22 +166,56 @@ macro_rules! impl_key_validator {
     };
 }
 
-impl_key_validator!(RootKey, roots);
-impl_key_validator!(DiskDirKey, disk_dirs);
-impl_key_validator!(NamespaceKey, namespaces);
-impl_key_validator!(PythonPackageKey, python_packages);
-impl_key_validator!(ModuleKey, modules);
-impl_key_validator!(FileKey, files);
-impl_key_validator!(CompiledKey, compiled);
-impl_key_validator!(ClassKey, classes);
-impl_key_validator!(FunctionKey, functions);
-impl_key_validator!(VariableKey, variables);
-impl_key_validator!(XmlFileKey, xml_files);
-impl_key_validator!(XmlRecordKey, xml_records);
-impl_key_validator!(XmlFieldKey, xml_fields);
-impl_key_validator!(XmlMenuItemKey, xml_menuitems);
-impl_key_validator!(XmlTemplateKey, xml_templates);
-impl_key_validator!(XmlAssetKey, xml_assets);
-impl_key_validator!(XmlDeleteKey, xml_deletes);
-impl_key_validator!(CsvFileKey, csv_files);
-impl_key_validator!(JsFileKey, js_files);
+/// One row per slotmap of [`SymbolTable`], in the same order as the fields.
+macro_rules! impl_symbol_storage {
+    ($($field:ident: $key:ident => $symbol:ident),+ $(,)?) => {
+        $(
+            impl_index!($key, $symbol, $field);
+            impl_key_validator!($key, $field);
+        )+
+
+        #[cfg(test)]
+        impl SymbolTable {
+            /// Assert that no symbol outlived its parent, i.e. that a removal took its whole
+            /// subtree with it. Generated from the rows above, so a new slotmap is swept
+            /// without being listed anywhere else.
+            ///
+            /// Reads each symbol's own parent field and never `children()`, so that a family
+            /// missing from `register_parent_families!` cannot hide from this.
+            pub(super) fn assert_no_orphans(&self) {
+                $(
+                    for (key, _) in self.$field.iter() {
+                        if let Some(parent) = self.parent(key) {
+                            assert!(
+                                self.is_key_valid(parent),
+                                "{key:?} outlived its parent {parent:?}",
+                            );
+                        }
+                    }
+                )+
+            }
+        }
+    };
+}
+
+impl_symbol_storage! {
+    roots: RootKey => RootSymbol,
+    disk_dirs: DiskDirKey => DiskDirSymbol,
+    namespaces: NamespaceKey => NamespaceSymbol,
+    python_packages: PythonPackageKey => PythonPackageSymbol,
+    modules: ModuleKey => ModuleSymbol,
+    files: FileKey => FileSymbol,
+    compiled: CompiledKey => CompiledSymbol,
+    classes: ClassKey => ClassSymbol,
+    functions: FunctionKey => FunctionSymbol,
+    variables: VariableKey => VariableSymbol,
+    xml_files: XmlFileKey => XmlFileSymbol,
+    csv_files: CsvFileKey => CsvFileSymbol,
+    xml_records: XmlRecordKey => XmlRecordSymbol,
+    xml_fields: XmlFieldKey => XmlFieldSymbol,
+    xml_menuitems: XmlMenuItemKey => XmlMenuItemSymbol,
+    xml_templates: XmlTemplateKey => XmlTemplateSymbol,
+    xml_assets: XmlAssetKey => XmlAssetSymbol,
+    xml_deletes: XmlDeleteKey => XmlDeleteSymbol,
+    js_files: JsFileKey => JsFileSymbol,
+}
