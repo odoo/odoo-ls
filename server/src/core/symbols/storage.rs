@@ -25,6 +25,8 @@ use crate::{constants::OYarn, core::symbols::{
     }
 }};
 use duplicate::duplicate;
+#[cfg(test)]
+use duplicate::duplicate_item;
 use ext_symbol_store::ExtSymbolStore;
 use slotmap::{SlotMap, SparseSecondaryMap};
 use std::ops::{Index, IndexMut};
@@ -167,5 +169,72 @@ duplicate!{
         fn is_key_valid(&self, k: key) -> bool {
             self.field.contains_key(k)
         }
+    }
+}
+
+
+#[cfg(test)]
+#[duplicate_item(
+    method_name                    field;
+    [assert_no_orphans_in_roots]            [roots];
+    [assert_no_orphans_in_disk_dirs]        [disk_dirs];
+    [assert_no_orphans_in_namespaces]       [namespaces];
+    [assert_no_orphans_in_python_packages]  [python_packages];
+    [assert_no_orphans_in_modules]          [modules];
+    [assert_no_orphans_in_files]            [files];
+    [assert_no_orphans_in_compiled]         [compiled];
+    [assert_no_orphans_in_classes]          [classes];
+    [assert_no_orphans_in_functions]        [functions];
+    [assert_no_orphans_in_variables]        [variables];
+    [assert_no_orphans_in_xml_files]        [xml_files];
+    [assert_no_orphans_in_csv_files]        [csv_files];
+    [assert_no_orphans_in_xml_records]      [xml_records];
+    [assert_no_orphans_in_xml_fields]       [xml_fields];
+    [assert_no_orphans_in_xml_menuitems]    [xml_menuitems];
+    [assert_no_orphans_in_xml_templates]    [xml_templates];
+    [assert_no_orphans_in_xml_assets]       [xml_assets];
+    [assert_no_orphans_in_xml_deletes]      [xml_deletes];
+    [assert_no_orphans_in_js_files]         [js_files];
+)]
+impl SymbolTable {
+    fn method_name(&self) {
+        for (key, _) in self.field.iter() {
+            if let Some(parent) = self.parent(key) {
+                assert!(
+                    self.is_key_valid(parent),
+                    "{key:?} outlived its parent {parent:?}",
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+impl SymbolTable {
+    /// Assert that no symbol outlived its parent, i.e. that a removal took its whole
+    /// subtree with it.
+    ///
+    /// Reads each symbol's own parent field and never `children()`, so that a family
+    /// missing from `register_parent_families!` cannot hide from this.
+    pub(super) fn assert_no_orphans(&self) {
+        self.assert_no_orphans_in_roots();
+        self.assert_no_orphans_in_disk_dirs();
+        self.assert_no_orphans_in_namespaces();
+        self.assert_no_orphans_in_python_packages();
+        self.assert_no_orphans_in_modules();
+        self.assert_no_orphans_in_files();
+        self.assert_no_orphans_in_compiled();
+        self.assert_no_orphans_in_classes();
+        self.assert_no_orphans_in_functions();
+        self.assert_no_orphans_in_variables();
+        self.assert_no_orphans_in_xml_files();
+        self.assert_no_orphans_in_csv_files();
+        self.assert_no_orphans_in_xml_records();
+        self.assert_no_orphans_in_xml_fields();
+        self.assert_no_orphans_in_xml_menuitems();
+        self.assert_no_orphans_in_xml_templates();
+        self.assert_no_orphans_in_xml_assets();
+        self.assert_no_orphans_in_xml_deletes();
+        self.assert_no_orphans_in_js_files();
     }
 }
