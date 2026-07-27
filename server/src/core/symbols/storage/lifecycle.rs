@@ -501,6 +501,7 @@ mod tests {
             assert!(!f.st.is_key_valid(key), "{key:?} outlived its file");
         }
         assert!(f.st.is_key_valid(f.module), "removing a file took its module down");
+        f.st.assert_no_orphans();
     }
 
     #[test]
@@ -528,6 +529,42 @@ mod tests {
             assert!(!f.st.is_key_valid(key), "{key:?} outlived its xml file");
         }
         assert!(f.st.is_key_valid(csv_record), "removing the xml file took the csv records down");
+        f.st.assert_no_orphans();
+    }
+
+    /// Every family at once, plus the ext symbols hanging off the module's files — the one
+    /// child-like relation `children()` does not cover. Removing the module has to leave
+    /// nothing behind.
+    #[test]
+    fn unloading_a_module_leaves_no_orphan() {
+        let mut f = Fixture::new();
+        let file = f.st.add_new_file(f.module.into(), "models", "/root/ns/mod/models.py");
+        let class = f.st.add_new_class(file.into(), "AClass", range_at(0), TextSize::new(0));
+        let method = f.st.add_new_function(class.into(), "method", range_at(10), TextSize::new(10));
+        f.st.add_new_variable(method, "local", range_at(20));
+        f.st.add_new_variable(f.module, "MODULE_CONSTANT", range_at(0));
+
+        let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml");
+        let record = f.st.add_new_xml_record(XmlDataParent::XmlFile(xml_file), (oyarn!("res.partner"), 0..1), None, range_at(0));
+        f.st.add_new_xml_field(XmlFieldParent::XmlRecord(record), oyarn!("name"), range_at(1), None, None, None);
+        let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv");
+        f.st.add_new_xml_record(XmlDataParent::CsvFile(csv_file), (oyarn!("res.partner"), 0..1), None, range_at(0));
+        f.st.add_new_js_file(JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js");
+
+        // injected into a file outside the module, but owned by one of its files: it dies with
+        // the owner, through `ext_symbols` rather than through any holder.
+        let host = f.st.add_new_file(f.root.into(), "host", "/root/host.py");
+        let injected = f.st.add_new_ext_symbol(host.into(), "injected", range_at(30), file.into());
+
+        f.st.assert_no_orphans();
+
+        f.st.unlink_from_parent(f.module.into());
+        f.st.remove(f.module.into());
+
+        assert!(!f.st.is_key_valid(f.module), "the module survived its own removal");
+        assert!(!f.st.is_key_valid(injected), "the ext symbol outlived its owner");
+        assert!(f.st.is_key_valid(host), "removing the module took the injection target down");
+        f.st.assert_no_orphans();
     }
 
     /// `ModuleSymbol` implements four holder traits, which is why `children` is a sequence of
