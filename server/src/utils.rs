@@ -81,12 +81,10 @@ pub fn is_dir_cs(path: &str) -> bool {
         while p.parent().is_some() {
             let mut found = false;
             if let Ok(entries) = fs::read_dir(p.parent().unwrap()) {
-                for entry in entries {
-                    if let Ok(entry) = entry {
-                        if entry.file_name() == p.components().next_back().unwrap().as_os_str() {
-                            found = true;
-                            break;
-                        }
+                for entry in entries.flatten() {
+                    if entry.file_name() == p.components().next_back().unwrap().as_os_str() {
+                        found = true;
+                        break;
                     }
                 }
             }
@@ -163,7 +161,7 @@ impl PathSanitizer for Path {
                 let disk_letter = disk.to_ascii_lowercase();
                 path = format!("{}{}", disk_letter, &path[1..]).into();
             }
-            return path;
+            path
         }
 
         #[cfg(not(windows))]
