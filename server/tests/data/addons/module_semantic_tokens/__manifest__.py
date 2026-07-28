@@ -9,4 +9,5 @@
     'data': [
         'data/sem_tokens_records.xml',
     ],
+    'website': 'https://www.example.com',
 }
