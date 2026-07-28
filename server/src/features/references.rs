@@ -107,7 +107,7 @@ impl ReferenceFeature {
                     if let Some(target_file) = session.st().get_file(definition_source) {
                         let dependents = session.st().dependents(target_file);
                         //take arch and arch_eval dependents
-                        for dep_level in [BuildSteps::ARCH, BuildSteps::ARCH_EVAL] {
+                        for dep_level in [BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::VALIDATION] {
                             for dep_set in dependents[dep_level as usize].iter() {
                                 for dep_symbol_key in dep_set.iter_valid(session.st()) {
                                     files_to_check.insert(dep_symbol_key);
