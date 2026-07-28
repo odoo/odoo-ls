@@ -64,6 +64,12 @@ const SKIPPED_DIRS: &[&str] = &[
     "i18n", "views", "data", "security", "description", "doc", "docs",
 ];
 
+/// (owner module path, local url)
+/// local url contains globs, not expanded yet
+type AssetEntry = (String, String);
+/// The result of expanding an AssetEntry: the list of files it matches.
+type AssetPaths = Vec<PathBuf>;
+
 /// One unit of work submitted for the worker pool: a module at position
 /// `module_idx` in build order, its on-disk root, the explicit list of
 /// data files, and the manifest asset entries it declares
@@ -74,7 +80,7 @@ struct Job {
     /// `(owner module path, local url)` per manifest asset entry, as produced by
     /// [`ModuleSymbol::asset_entries`]. Still unexpanded: the glob walk happens in
     /// the worker, off the build thread ([`PreParseCache::resolve_assets`]).
-    asset_entries: Vec<(String, String)>,
+    asset_entries: Vec<AssetEntry>,
 }
 
 #[derive(Debug, Default)]
@@ -85,6 +91,7 @@ struct IndexedStore {
     // its build index
     paths_by_module_idx: HashMap<usize, Vec<String>>,
 }
+
 /// Shared concurrent cache populated by worker threads and drained by the build
 /// thread.
 #[derive(Debug, Default)]
@@ -92,8 +99,7 @@ pub struct PreParseCache {
     index: Mutex<IndexedStore>,
     /// Memoized [`ModuleSymbol::assets_path_resolver`] results, keyed by its arguments.
     /// See [`Self::resolve_assets`].
-    #[allow(clippy::type_complexity)]
-    resolved_assets: Mutex<HashMap<(String, String), Arc<Vec<PathBuf>>>>,
+    resolved_assets: Mutex<HashMap<AssetEntry, Arc<AssetPaths>>>,
     /// Asset files already taken by a worker. See [`Self::claim`].
     claimed_assets: Mutex<HashSet<PathBuf>>,
     /// Counters for end-of-build instrumentation. Inert unless
