@@ -188,6 +188,11 @@ fn check_manifest_module_strings(manifest: &TokenFile) {
     check(manifest, 5, "'Test Module for Semantic Tokens'", None);
     check(manifest, 8, "'LGPL-3'", None);
     check(manifest, 10, "'data/sem_tokens_records.xml'", None);
+    // A manifest dict KEY that happens to be a module's name is coloured as if it were a
+    // module. `website` holds a URL and has nothing to do with the `website`
+    // addon, and we should NOT emit a token for it. Definition has the same problem.
+    check_todo(manifest, 12, "'website'", None);
+    check(manifest, 12, "'https://www.example.com'", None);
 }
 
 /// One decoded semantic token: absolute position, and the legend entries its indices name.
@@ -263,6 +268,17 @@ fn check(file: &TokenFile, line: u32, needle: &str, expected: Option<(SemanticTo
             assert_eq!(tok.typ, typ, "{}:{line}: wrong token type on `{needle}`, found {found}", file.path);
             assert_eq!(tok.mods.as_slice(), mods, "{}:{line}: wrong token modifiers on `{needle}`, found {found}", file.path);
         }
+    }
+}
+
+/// Inverts the result of `check`.
+/// Useful for a bug detected but not yet fixed: it will fail when the bug is
+/// fixed, so `check_todo` can be toggled to `check`.
+fn check_todo(file: &TokenFile, line: u32, needle: &str, expected: Option<(SemanticTokenType, &[SemanticTokenModifier])>) {
+    // Outside the catch on purpose: a fixture that drifted must fail in both cases (check and check_todo)
+    locate(file, line, needle);
+    if std::panic::catch_unwind(|| check(file, line, needle, expected)).is_ok() {
+        panic!("{}:{line}: `{needle}` gets its expected token — toggle check_todo -> check", file.path);
     }
 }
 
