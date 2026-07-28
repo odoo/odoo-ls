@@ -2,7 +2,7 @@
 
 use lsp_types::{Range, SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokens, SemanticTokensLegend};
 use ruff_python_ast::visitor::{walk_expr, walk_parameter, Visitor};
-use ruff_python_ast::{Decorator, Expr, ExprCall, Parameter};
+use ruff_python_ast::{Decorator, Expr, ExprCall, ExprStringLiteral, Parameter};
 use ruff_text_size::{Ranged, TextRange};
 
 use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr, ExprOrIdent};
@@ -331,6 +331,41 @@ impl<'a, 'b, 's> SemanticTokenVisitor<'a, 'b, 's> {
         }
         found
     }
+
+    /// Tokenize a model-meaning string by what it resolves to:
+    /// - model/module names as class/namespace over the whole string
+    /// - field/method paths as property/method per dotted segment
+    fn tokenize_string(&mut self, string_literal: &ExprStringLiteral) {
+        let range = string_literal.range;
+        let Some(resolved) = FeaturesUtils::resolve_string_symbols(
+            self.session,
+            self.file_symbol,
+            &self.file_path,
+            string_literal.value.to_str(),
+            range,
+            self.enclosing_call,
+            SegmentPick::All
+        ) else {
+            return;
+        };
+        match resolved {
+            StringResolution::Members(members) => {
+                for (sym, segment_range) in members {
+                    if let Some((token_type, modifiers)) = classify(self.session, sym, TokenOrigin::Attr) {
+                        self.push_raw(segment_range, token_type, modifiers);
+                    }
+                }
+            },
+            StringResolution::Model(_) => self.push_raw(range, TokType::Class as u32, 0),
+            StringResolution::Module(_) => self.push_raw(range, TokType::Namespace as u32, 0),
+            StringResolution::XmlId(records) => {
+                // Color as class only where definition can also jump (record has a file).
+                if records.iter().any(|&record| self.session.st().get_file(record.into()).is_some()) {
+                    self.push_raw(range, TokType::Class as u32, 0);
+                }
+            }
+        }
+    }
 }
 
 impl<'a, 'b, 's> Visitor<'a> for SemanticTokenVisitor<'a, 'b, 's> {
@@ -353,29 +388,7 @@ impl<'a, 'b, 's> Visitor<'a> for SemanticTokenVisitor<'a, 'b, 's> {
                 self.resolve_and_push(&ExprOrIdent::Expr(expr), offset, attribute.attr.range(), TokenOrigin::Attr);
             }
             Expr::StringLiteral(string_literal) => {
-                // Tokenize a model-meaning string by what it resolves to:
-                // - model/module names as class/namespace over the whole string
-                // - field/method paths as property/method per dotted segment
-                let range = string_literal.range;
-                match FeaturesUtils::resolve_string_symbols(self.session, self.file_symbol, &self.file_path, string_literal.value.to_str(), range, self.enclosing_call, SegmentPick::All) {
-                    Some(StringResolution::Members(members)) => {
-                        for (sym, segment_range) in members {
-                            if let Some((token_type, modifiers)) = classify(self.session, sym, TokenOrigin::Attr) {
-                                self.push_raw(segment_range, token_type, modifiers);
-                            }
-                        }
-                    }
-                    Some(StringResolution::Model(_)) => self.push_raw(range, TokType::Class as u32, 0),
-                    Some(StringResolution::Module(_)) => self.push_raw(range, TokType::Namespace as u32, 0),
-                    #[allow(clippy::collapsible_match)]
-                    Some(StringResolution::XmlId(records)) => {
-                        // Color as class only where definition can also jump (record has a file).
-                        if records.iter().any(|&record| self.session.st().get_file(record.into()).is_some()) {
-                            self.push_raw(range, TokType::Class as u32, 0);
-                        }
-                    }
-                    None => {}
-                }
+                self.tokenize_string(string_literal);
             }
             Expr::Call(call) => {
                 // Expose the enclosing call so string args resolve to fields/methods.
