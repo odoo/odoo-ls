@@ -38,6 +38,8 @@ fn test_assigns() {
     setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
     assert!(session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.len() == 1);
     let st = &session.sync_odoo.symbol_table;
+    let int_type = session.sync_odoo.get_symbol("", (&["builtins"], &["int"]), u32::MAX)[0];
+    let str_type = session.sync_odoo.get_symbol("", (&["builtins"], &["str"]), u32::MAX)[0];
 
     let a = session.sync_odoo.get_symbol(path.as_str(), (&[], &["a"]), u32::MAX);
     assert!(a.len() == 1);
@@ -143,6 +145,125 @@ fn test_assigns() {
     assert!(st.name(j[0]) == "j");
     assert!(st.evaluations(j[0]).as_ref().unwrap().len() == 1);
     assert!(st.evaluations(j[0]).as_ref().unwrap()[0].value.is_none());
+
+    let x = session.sync_odoo.get_symbol(path.as_str(), (&[], &["x"]), u32::MAX);
+    assert!(x.len() == 1);
+    assert!(st.name(x[0]) == "x");
+    assert!(st.evaluations(x[0]).as_ref().unwrap().len() == 1);
+    let eval = st.evaluations(x[0]).as_ref().unwrap()[0].symbol.get_symbol_ptr().upgrade_weak(&session.sync_odoo.symbol_table);
+    assert!(eval.is_some());
+    let eval = eval.unwrap();
+    assert!(eval == int_type);
+    let y = session.sync_odoo.get_symbol(path.as_str(), (&[], &["y"]), u32::MAX);
+    assert!(y.len() == 1);
+    assert!(st.name(y[0]) == "y");
+    assert!(st.evaluations(y[0]).as_ref().unwrap().len() == 1);
+    let eval = st.evaluations(y[0]).as_ref().unwrap()[0].symbol.get_symbol_ptr().upgrade_weak(&session.sync_odoo.symbol_table);
+    assert!(eval.is_some());
+    let eval = eval.unwrap();
+    assert!(eval == int_type);
+
+    let x2 = session.sync_odoo.get_symbol(path.as_str(), (&[], &["x2"]), u32::MAX);
+    assert!(x2.len() == 1);
+    assert!(st.name(x2[0]) == "x2");
+    assert!(st.evaluations(x2[0]).as_ref().unwrap().len() == 1);
+    let eval = st.evaluations(x2[0]).as_ref().unwrap()[0].symbol.get_symbol_ptr().upgrade_weak(&session.sync_odoo.symbol_table);
+    assert!(eval.is_some());
+    let eval = eval.unwrap();
+    assert!(eval == int_type);
+    let y2 = session.sync_odoo.get_symbol(path.as_str(), (&[], &["y2"]), u32::MAX);
+    assert!(y2.len() == 1);
+    assert!(st.name(y2[0]) == "y2");
+    assert!(st.evaluations(y2[0]).as_ref().unwrap().len() == 1);
+    let eval = st.evaluations(y2[0]).as_ref().unwrap()[0].symbol.get_symbol_ptr().upgrade_weak(&session.sync_odoo.symbol_table);
+    assert!(eval.is_some());
+    let eval = eval.unwrap();
+    assert!(eval == int_type);
+
+    let x3 = session.sync_odoo.get_symbol(path.as_str(), (&[], &["x3"]), u32::MAX);
+    assert!(x3.len() == 1);
+    assert!(st.name(x3[0]) == "x3");
+    assert!(st.evaluations(x3[0]).as_ref().unwrap().len() == 1);
+    let eval = st.evaluations(x3[0]).as_ref().unwrap()[0].symbol.get_symbol_ptr().upgrade_weak(&session.sync_odoo.symbol_table);
+    assert!(eval.is_some());
+    let eval = eval.unwrap();
+    assert!(eval == int_type);
+    let y3 = session.sync_odoo.get_symbol(path.as_str(), (&[], &["y3"]), u32::MAX);
+    assert!(y3.len() == 1);
+    assert!(st.name(y3[0]) == "y3");
+    assert!(st.evaluations(y3[0]).as_ref().unwrap().is_empty());
+    let z3 = session.sync_odoo.get_symbol(path.as_str(), (&[], &["z3"]), u32::MAX);
+    assert!(z3.len() == 1);
+    assert!(st.name(z3[0]) == "z3");
+    assert!(st.evaluations(z3[0]).as_ref().unwrap().is_empty());
+
+    let x4 = session.sync_odoo.get_symbol(path.as_str(), (&[], &["x4"]), u32::MAX);
+    assert!(x4.len() == 1);
+    assert!(st.name(x4[0]) == "x4");
+    assert!(st.evaluations(x4[0]).as_ref().unwrap().len() == 1);
+    let eval = st.evaluations(x4[0]).as_ref().unwrap()[0].symbol.get_symbol_ptr().upgrade_weak(&session.sync_odoo.symbol_table);
+    assert!(eval.is_some());
+    let eval = eval.unwrap();
+    assert!(eval == int_type);
+    let y4 = session.sync_odoo.get_symbol(path.as_str(), (&[], &["y4"]), u32::MAX);
+    assert!(y4.len() == 1);
+    assert!(st.name(y4[0]) == "y4");
+    assert!(st.evaluations(y4[0]).as_ref().unwrap().len() == 1);
+    let eval = st.evaluations(y4[0]).as_ref().unwrap()[0].symbol.get_symbol_ptr().upgrade_weak(&session.sync_odoo.symbol_table);
+    assert!(eval.is_some());
+    let eval = eval.unwrap();
+    assert!(eval == int_type);
+    let z4 = session.sync_odoo.get_symbol(path.as_str(), (&[], &["z4"]), u32::MAX);
+    assert!(z4.len() == 1);
+    assert!(st.name(z4[0]) == "z4");
+    assert!(st.evaluations(z4[0]).as_ref().unwrap().len() == 1);
+    let eval = st.evaluations(z4[0]).as_ref().unwrap()[0].symbol.get_symbol_ptr().upgrade_weak(&session.sync_odoo.symbol_table);
+    assert!(eval.is_some());
+    let eval = eval.unwrap();
+    assert!(eval == str_type);
+
+    let x5 = session.sync_odoo.get_symbol(path.as_str(), (&[], &["x5"]), u32::MAX);
+    assert!(x5.len() == 1);
+    assert!(st.name(x5[0]) == "x5");
+    assert!(st.evaluations(x5[0]).as_ref().unwrap().is_empty());
+    let y5 = session.sync_odoo.get_symbol(path.as_str(), (&[], &["y5"]), u32::MAX);
+    assert!(y5.len() == 1);
+    assert!(st.name(y5[0]) == "y5");
+    assert!(st.evaluations(y5[0]).as_ref().unwrap().is_empty());
+
+    let x6 = session.sync_odoo.get_symbol(path.as_str(), (&[], &["x6"]), u32::MAX);
+    assert!(x6.len() == 1);
+    assert!(st.name(x6[0]) == "x6");
+    assert!(st.evaluations(x6[0]).as_ref().unwrap().len() == 1);
+    let eval = st.evaluations(x6[0]).as_ref().unwrap()[0].symbol.get_symbol_ptr().upgrade_weak(&session.sync_odoo.symbol_table);
+    assert!(eval.is_some());
+    let eval = eval.unwrap();
+    assert!(eval == int_type);
+    let y6 = session.sync_odoo.get_symbol(path.as_str(), (&[], &["y6"]), u32::MAX);
+    assert!(y6.len() == 1);
+    assert!(st.name(y6[0]) == "y6");
+    assert!(st.evaluations(y6[0]).as_ref().unwrap().len() == 1);
+    let eval = st.evaluations(y6[0]).as_ref().unwrap()[0].symbol.get_symbol_ptr().upgrade_weak(&session.sync_odoo.symbol_table);
+    assert!(eval.is_some());
+    let eval = eval.unwrap();
+    assert!(eval == int_type);
+
+    let x7 = session.sync_odoo.get_symbol(path.as_str(), (&[], &["x7"]), u32::MAX);
+    assert!(x7.len() == 1);
+    assert!(st.name(x7[0]) == "x7");
+    assert!(st.evaluations(x7[0]).as_ref().unwrap().len() == 1);
+    let eval = st.evaluations(x7[0]).as_ref().unwrap()[0].symbol.get_symbol_ptr().upgrade_weak(&session.sync_odoo.symbol_table);
+    assert!(eval.is_some());
+    let eval = eval.unwrap();
+    assert!(eval == int_type);
+    let y7 = session.sync_odoo.get_symbol(path.as_str(), (&[], &["y7"]), u32::MAX);
+    assert!(y7.len() == 1);
+    assert!(st.name(y7[0]) == "y7");
+    assert!(st.evaluations(y7[0]).as_ref().unwrap().len() == 1);
+    let eval = st.evaluations(y7[0]).as_ref().unwrap()[0].symbol.get_symbol_ptr().upgrade_weak(&session.sync_odoo.symbol_table);
+    assert!(eval.is_some());
+    let eval = eval.unwrap();
+    assert!(eval == int_type);
 
 }
 

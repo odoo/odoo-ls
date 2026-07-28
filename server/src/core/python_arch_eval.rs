@@ -497,7 +497,9 @@ impl PythonArchEval {
                             ann_evaluations.unwrap()
                         };
                         let v_mut = &mut session.st_mut()[variable_key];
-                        v_mut.evaluations.extend(eval);
+                        if assign.index.is_none() { //if index is some, we should take indexed value in the iterable object, so this evaluation is wrong
+                            v_mut.evaluations.extend(eval);
+                        }
                         self.diagnostics.extend(diags);
                         let var_name = v_mut.name.clone();
                         let evaluations = v_mut.evaluations.clone();
@@ -804,35 +806,87 @@ impl PythonArchEval {
         if !self.file_mode {
             deps.push(vec![]);
         }
-        let (eval_iter_node, diags) = Evaluation::eval_from_ast(session,
-            &for_stmt.iter,
-            *self.sym_stack.last().unwrap(),
-            &for_stmt.target.range().start(), false, &mut deps);
-        session.st_mut().insert_dependencies(self.file, &deps, self.current_step);
-        self.diagnostics.extend(diags);
-        if eval_iter_node.len() == 1 { //Only handle values that we are sure about
-            let eval = &eval_iter_node[0];
-            let eval_symbol = eval.symbol.get_symbol(session, None, &mut vec![], None);
-            if !eval_symbol.is_expired_if_weak(session.st()) {
-                let symbol_eval = SymbolTable::follow_ref(&eval_symbol, session, None, false, false, None, None);
-                if symbol_eval.len() == 1 && let Some(symbol_type) = symbol_eval[0].upgrade_weak(session.st())
-                    && matches!(symbol_type, SymbolKey::Class(_)) {
-                        let (iters, _) = SymbolTable::get_member_symbol(session, symbol_type, "__iter__", None, true, false, false, false, false);
-                        if let Some(&SymbolKey::Function(iter)) = iters.first() && iters.len() == 1 {
-                            SyncOdoo::ensure_func_evaluations(session, iter);
-                            let evals = &session.st()[iter].evaluations;
-                            if evals.len() == 1 {
-                                let eval_iter = evals[0].clone();
-                                if for_stmt.target.is_name_expr() { //only handle simple variable for now
-                                    let variable = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &for_stmt.target.as_name_expr().unwrap().id, &for_stmt.target.range());
 
-                                    let symbol = eval_iter.symbol.get_symbol_as_weak(session, Some(&Context::from_iter([(ContextKey::ParentFor, ContextValue::SYMBOL(symbol_type.into()))])), &mut vec![], None);
-                                    let v = variable.unwrap().unwrap_variable_key();
-                                    session.st_mut()[v].evaluations = vec![Evaluation::eval_from_symbol(session.st(), symbol.weak, symbol.instance)];
-                                }
+        let unpacked = python_utils::unpack_iter_assign(&[*for_stmt.target.clone()], None, Some(&for_stmt.iter));
+        let mut variables = Vec::new();
+        if !unpacked.is_empty() {
+            let assigns = &unpacked[0];
+            for assign in assigns.iter() {
+                let AssignTargetType::Name(assign_target) = &assign.target else {
+                    variables.push(None);
+                    continue;
+                };
+                let variable = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &assign_target.id, &assign_target.range());
+                variables.push(variable);
+            }
+        }
+        //iterate through all different assignation to associate the different evaluations
+        for (index, variable) in variables.iter().enumerate() {
+            let Some(variable) = variable else {continue};
+            let variable = variable.unwrap_variable_key();
+            session.st_mut()[variable].evaluations = vec![];
+            for assign in unpacked.iter() {
+                let indexed_assign = &assign[index];
+                match &indexed_assign.value {
+                    Some(value) => {
+                        let (eval_iter_node, diags) = Evaluation::eval_from_ast(session,
+                            value,
+                            *self.sym_stack.last().unwrap(),
+                            &for_stmt.target.range().start(), false, &mut deps);
+                        session.st_mut().insert_dependencies(self.file, &deps, self.current_step);
+                        self.diagnostics.extend(diags);
+                        for eval_iter in eval_iter_node.iter() {
+                            let eval_symbol = eval_iter.symbol.get_symbol(session, None, &mut vec![], None);
+                            let symbol_eval = SymbolTable::follow_ref(&eval_symbol, session, None, false, false, None, None);
+                            let Some(symbol_type) = symbol_eval[0].upgrade_weak(session.st()) else {continue};
+                            let context = Context::from_iter([(ContextKey::ParentFor, ContextValue::SYMBOL(symbol_type.into()))]);
+                            let symbol = eval_iter.symbol.get_symbol_as_weak(session, Some(&context), &mut vec![], None);
+                            let final_eval = Evaluation::eval_from_symbol(session.st(), symbol.weak, symbol.instance);
+                            session.st_mut()[variable].evaluations.push(final_eval);
+                        }
+                    },
+                    None => {
+                        //Value is not coming from the unpack, because value on the right is not a tuple or list, or there is too many values to unpack
+                        //We can then evaluate the right side by searching for an __iter__ method and assign the return value to the variable.
+                        //We restrict that to the case where target is a simple variable, because we don't want to try to unpack the return value of the method (for now)
+                        if variables.len() != 1 {continue;}
+                        //if None but the value is a tuple or list, it means that the unpacking failed because too many values to unpack
+                        if matches!(for_stmt.iter.as_ref(), Expr::Tuple(_)) ||
+                        matches!(for_stmt.iter.as_ref(), Expr::List(_)) ||
+                        matches!(for_stmt.iter.as_ref(), Expr::Set(_)) {continue;}
+                        let (eval_iter_node, diags) = Evaluation::eval_from_ast(session,
+                            &for_stmt.iter,
+                            *self.sym_stack.last().unwrap(),
+                            &for_stmt.target.range().start(), false, &mut deps);
+                        session.st_mut().insert_dependencies(self.file, &deps, self.current_step);
+                        self.diagnostics.extend(diags);
+                        if eval_iter_node.len() == 1 { //Only handle values that we are sure about
+                            let eval = &eval_iter_node[0];
+                            let eval_symbol = eval.symbol.get_symbol(session, None, &mut vec![], None);
+                            if !eval_symbol.is_expired_if_weak(session.st()) {
+                                let symbol_eval = SymbolTable::follow_ref(&eval_symbol, session, None, false, false, None, None);
+                                if symbol_eval.len() == 1 && let Some(symbol_type) = symbol_eval[0].upgrade_weak(session.st())
+                                    && matches!(symbol_type, SymbolKey::Class(_)) {
+                                        let (iters, _) = SymbolTable::get_member_symbol(session, symbol_type, "__iter__", None, true, false, false, false, false);
+                                        if let Some(&SymbolKey::Function(iter)) = iters.first() && iters.len() == 1 {
+                                            SyncOdoo::ensure_func_evaluations(session, iter);
+                                            let evals = &session.st()[iter].evaluations;
+                                            if evals.len() == 1 {
+                                                let eval_iter = evals[0].clone();
+                                                if for_stmt.target.is_name_expr() { //only handle simple variable for now
+                                                    let variable = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &for_stmt.target.as_name_expr().unwrap().id, &for_stmt.target.range());
+
+                                                    let symbol = eval_iter.symbol.get_symbol_as_weak(session, Some(&Context::from_iter([(ContextKey::ParentFor, ContextValue::SYMBOL(symbol_type.into()))])), &mut vec![], None);
+                                                    let v = variable.unwrap().unwrap_variable_key();
+                                                    session.st_mut()[v].evaluations = vec![Evaluation::eval_from_symbol(session.st(), symbol.weak, symbol.instance)];
+                                                }
+                                            }
+                                        }
+                                    }
                             }
                         }
                     }
+                }
             }
         }
         self.visit_sub_stmts(session, &for_stmt.body);
