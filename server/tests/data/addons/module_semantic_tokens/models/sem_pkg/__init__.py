@@ -1,0 +1,1 @@
+SEM_PKG_CONSTANT = 1
