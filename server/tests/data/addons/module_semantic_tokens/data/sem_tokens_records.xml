@@ -1,0 +1,5 @@
+<odoo>
+    <record id="sem_token_record" model="sem.tokens.other">
+        <field name="other_name">Semantic Tokens Record</field>
+    </record>
+</odoo>
