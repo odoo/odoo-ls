@@ -2301,6 +2301,18 @@ fn malformed_config_missing_required_fields_defaults_to_default() {
     assert!(cfg.ok().0.contains_key("default"));
 }
 
+/// No workspace folders and no config file: still yields a usable "default"
+/// entry (odoo_path/addons_paths simply stay unset, nothing to auto-detect from).
+#[test]
+fn no_workspace_no_config_falls_back_to_default() {
+    let cfg = Cfg::new();
+    let (map, _view) = cfg.ok();
+    assert!(map.contains_key("default"));
+    let config = cfg.default();
+    assert!(config.odoo_path().is_none());
+    assert!(config.addons_paths().is_empty());
+}
+
 #[test]
 fn auto_refresh_delay_clamped_to_bounds() {
     let mut cfg = Cfg::new();
