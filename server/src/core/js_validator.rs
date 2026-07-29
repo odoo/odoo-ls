@@ -38,20 +38,22 @@ impl JsValidator {
         let template_refs = file_info_ast.ast.as_js_ast().js_template_refs.clone();
         drop(file_info_ast);
 
-        for template_ref in template_refs.iter() {
-            if !XmlAstUtils::ensure_js_template_validity(session, &template_ref.t_name) {
-                session.st_mut()[self.js_symbol].not_found_data_ids.insert(MissingDataSource::TEMPLATE(Sy!(template_ref.t_name.clone())), BuildSteps::VALIDATION);
-                session.sync_odoo.get_main_entry().borrow_mut().not_found_data_ids.insert(self.js_symbol.into());
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS06000, &[]) {
-                    diagnostics.push(Diagnostic {
-                        range: Range { start: Position::new(template_ref.range.start().to_u32(), 0), end: Position::new(template_ref.range.end().to_u32(), 0) },
-                        ..diagnostic
-                    });
-                }
-            } else if let Some(imps) = session.sync_odoo.js_templates.get_mut(&template_ref.t_name) {
-                for template_imp in imps.iter_valid(&session.sync_odoo.symbol_table) {
-                    let xml_file = session.st().get_file(template_imp.into()).expect("Template should be in a file");
-                    session.st_mut().add_dependency(self.js_symbol.into(), xml_file, BuildSteps::VALIDATION, BuildSteps::ARCH_EVAL);
+        if session.sync_odoo.symbol_table.get_entry(self.js_symbol).borrow().is_main() {
+            for template_ref in template_refs.iter() {
+                if !XmlAstUtils::ensure_js_template_validity(session, &template_ref.t_name) {
+                    session.st_mut()[self.js_symbol].not_found_data_ids.insert(MissingDataSource::TEMPLATE(Sy!(template_ref.t_name.clone())), BuildSteps::VALIDATION);
+                        session.sync_odoo.get_main_entry().borrow_mut().not_found_data_ids.insert(self.js_symbol.into());
+                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS06000, &[]) {
+                        diagnostics.push(Diagnostic {
+                            range: Range { start: Position::new(template_ref.range.start().to_u32(), 0), end: Position::new(template_ref.range.end().to_u32(), 0) },
+                            ..diagnostic
+                        });
+                    }
+                } else if let Some(imps) = session.sync_odoo.js_templates.get_mut(&template_ref.t_name) {
+                    for template_imp in imps.iter_valid(&session.sync_odoo.symbol_table) {
+                        let xml_file = session.st().get_file(template_imp.into()).expect("Template should be in a file");
+                        session.st_mut().add_dependency(self.js_symbol.into(), xml_file, BuildSteps::VALIDATION, BuildSteps::ARCH_EVAL);
+                    }
                 }
             }
         }
