@@ -1790,6 +1790,14 @@ impl Odoo {
             },
             Err(e) => {
                 session.show_message(MessageType::ERROR, format!("Unable to load config: {}  \n\nPlease select a correct profile or fix the issues in the config", e));
+                // The popup is transient; also record it as a persistent diagnostic so
+                // it stays visible in the status bar/tooltip until the config is fixed.
+                session.send_config_diagnostic(ConfigDiagnosticAction::EXTEND, &[
+                    ConfigDiagnosticMessage {
+                        level: ConfigDiagnosticMessageLevel::ERROR,
+                        message: format!("Unable to load config: {e}"),
+                    }
+                ]);
                 error!(e);
             }
         }
@@ -2684,7 +2692,15 @@ impl Odoo {
                     // Invalid config, send a notification to the user and add the error to the logs
                     let msg = format!("Invalid configuration file: {err}.");
                     error!("{msg}");
-                    session.show_message(MessageType::ERROR, msg);
+                    session.show_message(MessageType::ERROR, msg.clone());
+                    // The popup is transient; also record it as a persistent diagnostic so
+                    // it stays visible in the status bar/tooltip until the config is fixed.
+                    session.send_config_diagnostic(ConfigDiagnosticAction::EXTEND, &[
+                        ConfigDiagnosticMessage {
+                            level: ConfigDiagnosticMessageLevel::ERROR,
+                            message: msg,
+                        }
+                    ]);
                 }
             }
             true
