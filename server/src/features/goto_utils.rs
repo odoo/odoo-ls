@@ -260,6 +260,12 @@ impl GotoUtils {
                             Range::default()
                         )
                     },
+                    SymType::PACKAGE(PackageType::PYTHON_PACKAGE) => {
+                        (
+                            Some(session.st().file_path(symbol_key.as_source_file_key().unwrap()).to_string()),
+                            Range::default()
+                        )
+                    },
                     _ => {
                         if let Some(file) = session.st().get_file(*symbol_key) {
                             let path = session.st().path(file).to_string();
