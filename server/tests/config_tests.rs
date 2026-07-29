@@ -1560,6 +1560,33 @@ fn field_type_error_names_file_and_profile() {
     assert!(err.contains("python_path"), "unexpected error: {err}");
 }
 
+/// `name` must be a string — a non-string `name` (e.g. an integer) must not be
+/// silently swallowed into the "default" profile.
+#[test]
+fn non_string_name_errors() {
+    let mut c = Cfg::new();
+    let ws = c.ws("ws1");
+    write_odools(&ws, "[[config]]\nname = 123\n");
+
+    let err = c.err();
+    assert!(err.contains("odools.toml"), "error should name the config file: {err}");
+    assert!(err.contains("'name' must be a string"), "unexpected error: {err}");
+}
+
+/// `extends` must be a string — a non-string `extends` must not be silently
+/// dropped (which would leave the profile un-extended with no explanation).
+#[test]
+fn non_string_extends_errors() {
+    let mut c = Cfg::new();
+    let ws = c.ws("ws1");
+    write_odools(&ws, "[[config]]\nname = \"default\"\nextends = 123\n");
+
+    let err = c.err();
+    assert!(err.contains("odools.toml"), "error should name the config file: {err}");
+    assert!(err.contains("default"), "error should name the profile: {err}");
+    assert!(err.contains("'extends' must be a string"), "unexpected error: {err}");
+}
+
 /// A TOML syntax error names the offending file, not just the parser's
 /// line/column, so the user can find which `odools.toml` is broken.
 #[test]
