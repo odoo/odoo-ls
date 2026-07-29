@@ -41,7 +41,10 @@ impl CsvValidator {
             session.st_mut().set_build_status(csv_symbol.into(), BuildSteps::VALIDATION, BuildStatus::INVALID);
             return;
         };
-        let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
+        let Some(data) = file_info.borrow().file_info_ast.borrow().text_document.as_ref().map(|td| td.contents().to_string()) else {
+            // File can be invalid (not valid UTF-8 and so text_document is empty)
+            return;
+        };
         let model_name_pb = Path::new(&path);
         let model_name = model_name_pb.file_stem().unwrap().to_str().unwrap();
         let csv_module = session.st().find_module(csv_symbol);

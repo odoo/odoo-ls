@@ -209,7 +209,10 @@ impl GotoUtils {
         character: u32
     ) -> Vec<GotoSource> {
         let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
-        let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
+        let Some(data) = file_info.borrow().file_info_ast.borrow().text_document.as_ref().map(|td| td.contents().to_string()) else {
+            // File can be invalid (not valid UTF-8 and so text_document is empty)
+            return vec![];
+        };
         let document = roxmltree::Document::parse(&data);
         let mut sources = vec![];
         if let Ok(document) = document {
@@ -237,7 +240,10 @@ impl GotoUtils {
         let model_name_pb = Path::new(session.st().path(file_symbol));
         let model_name = Sy!(model_name_pb.file_stem().unwrap().to_str().unwrap().to_string());
         let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
-        let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
+        let Some(data) = file_info.borrow().file_info_ast.borrow().text_document.as_ref().map(|td| td.contents().to_string()) else {
+            // File can be invalid (not valid UTF-8 and so text_document is empty)
+            return vec![];
+        };
         let mut csv_reader = csv::ReaderBuilder::new().quoting(true).from_reader(data.as_bytes());
 
         CsvAstUtils::get_symbols(session, file_symbol.unwrap_csv_file_key(), &mut csv_reader, &model_name, offset, &data)
