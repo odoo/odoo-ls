@@ -1460,11 +1460,12 @@ impl SymbolTable {
                 }
             };
             let Some(sym_key) = next_ref_weak.weak.upgrade(session.st()) else {
-                // Discard evaluation to expired reference
+                results.push(current_eval);
                 continue;
             };
             // Avoid cycles
             if visited.contains(&sym_key) {
+                results.push(current_eval);
                 continue;
             }
             visited.insert(sym_key);

@@ -6,7 +6,7 @@ use std::vec;
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use ruff_python_ast::{Alias, AnyRootNodeRef, ExceptHandler, Expr, ExprNamed, FStringPart, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
 use lsp_types::{Diagnostic, Position, Range};
-use tracing::{debug, trace, warn};
+use tracing::{debug, error, trace, warn};
 
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
@@ -838,6 +838,10 @@ impl PythonArchEval {
                         for eval_iter in eval_iter_node.iter() {
                             let eval_symbol = eval_iter.symbol.get_symbol(session, None, &mut vec![], None);
                             let symbol_eval = SymbolTable::follow_ref(&eval_symbol, session, None, false, false, None, None);
+                            if symbol_eval.is_empty() {
+                                let _test = SymbolTable::follow_ref(&eval_symbol, session, None, false, false, None, None);
+                                error!("test");
+                            }
                             if symbol_eval.is_empty() { //usually we expect follow_ref to return something, but that's not the case right now. This guard prevents crashes.
                                 continue;
                             }
