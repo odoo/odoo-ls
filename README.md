@@ -9,6 +9,7 @@ Please consult the readme of each directory to learn more about each project.
 
 - [List of projects](#list-of-projects)
 - [State of the project](#state-of-the-project)
+- [Wiki](#wiki)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -38,7 +39,17 @@ A light integration of OdooLS is available for Zed. Check it out here: https://g
 
 ## State of the project
 
-All modules in these repositories are actually in development and not released in a stable and valid version. You can face crashs or inconsistent results by using it. Please consult each repository to get a better idea of the state of each project.
+We release this project in two versions: release and pre-release (also called beta).
+An even minor version number indicates a release version, while an odd minor version number indicates a pre-release version. For example, 1.4.x is a release version, while 1.5.x is the next pre-release version that will lead to the future 1.6.0 release.
+Pre-release versions are more likely to crash or include incomplete or inconsistent features, but they give you early access to upcoming features.
+You can switch between both in your IDE, as both versions are published.
+In VS Code, you can switch using the corresponding button in the Extensions tab (`Switch to Release` or `Switch to Pre-Release`).
+In PyCharm, you have to subscribe to the Beta extension channel.
+
+## Wiki
+
+If you need help to build/install/setup OdooLS, do not forget to check our wiki: https://github.com/odoo/odoo-ls/wiki
+If you can't find your answer there, feel free to open an issue or a discussion !
 
 ## Branches description
 
