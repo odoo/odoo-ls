@@ -838,6 +838,9 @@ impl PythonArchEval {
                         for eval_iter in eval_iter_node.iter() {
                             let eval_symbol = eval_iter.symbol.get_symbol(session, None, &mut vec![], None);
                             let symbol_eval = SymbolTable::follow_ref(&eval_symbol, session, None, false, false, None, None);
+                            if symbol_eval.is_empty() { //usually we expect follow_ref to return something, but that's not the case right now. This guard prevents crashes.
+                                continue;
+                            }
                             let Some(symbol_type) = symbol_eval[0].upgrade_weak(session.st()) else {continue};
                             let context = Context::from_iter([(ContextKey::ParentFor, ContextValue::SYMBOL(symbol_type.into()))]);
                             let symbol = eval_iter.symbol.get_symbol_as_weak(session, Some(&context), &mut vec![], None);
