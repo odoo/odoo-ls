@@ -57,11 +57,10 @@ impl ModuleSymbol {
                 let csv_sym = session.st_mut().add_new_csv_file(symbol_key, &file_name, &path_string);
                 Self::on_data_file_load(session.st(), csv_sym.into());
                 session.st_mut().add_dependency(symbol_key.into(), csv_sym.into(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
-                if file_info.file_info_ast.borrow().text_document.as_ref().is_none() {
-                    //TODO do we want to add a diagnostic here?
+                let Some(data) = file_info.file_info_ast.borrow().text_document.as_ref().map(|td| td.contents().to_string()) else {
+                    // File can be invalid (not valid UTF-8 and so text_document is empty)
                     continue;
-                }
-                let data = file_info.file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
+                };
                 let mut csv_builder = CsvArchBuilder::new();
                 let diagnostics = csv_builder.load_csv(session, csv_sym, &data);
                 file_info.replace_diagnostics(DiagnosticSource::CSV_SYNTAX, diagnostics);
@@ -155,8 +154,7 @@ impl ModuleSymbol {
             let (_, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, file_path_str.as_ref(), None, None, false); //create ast if not in cache
             let mut file_info = file_info.borrow_mut();
             file_info.publish_diagnostics(session);
-            if file_info.file_info_ast.borrow().text_document.as_ref().is_none() {
-                //TODO do we want to add a diagnostic here?
+            if file_info.file_info_ast.borrow().text_document.as_ref().is_none() { // File can be invalid (not valid UTF-8 and so text_document is empty)
                 continue;
             }
             ModuleSymbol::load_xml_arch(session, xml_sym, &mut file_info, true);
@@ -164,8 +162,11 @@ impl ModuleSymbol {
     }
 
     fn load_xml_arch(session: &mut SessionInfo, xml_sym: XmlFileKey, file_info: &mut FileInfo, web_asset: bool) {
+        let Some(data) = file_info.file_info_ast.borrow().text_document.as_ref().map(|td| td.contents().to_string()) else {
+            // File can be invalid (not valid UTF-8 and so text_document is empty)
+            return;
+        };
         //That's a little bit crappy, but the SYNTAX step of XML files are done here, as lifetime of roXMLTree are not flexible enough to be separated from the Arch building
-        let data = file_info.file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
         let document = roxmltree::Document::parse(&data);
         if let Ok(document) = document {
             file_info.replace_diagnostics(DiagnosticSource::XML_SYNTAX, vec![]);

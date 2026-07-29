@@ -34,7 +34,7 @@ impl DocumentSymbolFeature {
                 DocumentSymbolFeature::visit_stmt(session, stmt, &mut results, file_info);
             }
         } else if file_info_bw.uri.ends_with(".xml") {
-            let data = file_info_ast.text_document.as_ref().unwrap().contents();
+            let data = file_info_ast.text_document.as_ref()?.contents();
             let document = roxmltree::Document::parse(data);
             if let Ok(document) = document {
                 DocumentSymbolFeature::visit_xml_document(session, document, &mut results, file_info);

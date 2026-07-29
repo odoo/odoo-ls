@@ -149,7 +149,7 @@ impl ReferenceFeature {
                                 locations.extend(ReferenceFeature::references_in_file(session, file, &dep_file_info, &ReferenceTarget::Symbol(definition_source)));
                             },
                             SourceFileKey::XmlFile(xml_file) => {
-                                let data = dep_file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
+                                let data = dep_file_info.borrow().file_info_ast.borrow().text_document.as_ref()?.contents().to_string();
                                 let document = roxmltree::Document::parse(&data);
                                 if let Ok(document) = document {
                                     let root = document.root_element();
@@ -158,7 +158,7 @@ impl ReferenceFeature {
                             },
                             SourceFileKey::CsvFile(csv_file) => {
                                 if SymbolTable::is_field(session, definition_source) {
-                                    let data = dep_file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
+                                    let data = dep_file_info.borrow().file_info_ast.borrow().text_document.as_ref()?.contents().to_string();
                                     let mut csv_reader = csv::ReaderBuilder::new().from_reader(data.as_bytes());
                                     let model_class = session.st().get_in_parents(definition_source, &[SymType::CLASS], true);
                                     if let Some(SymbolKey::Class(model_class)) = model_class
@@ -225,7 +225,7 @@ impl ReferenceFeature {
                                     locations.extend(ReferenceFeature::references_in_file(session, source_file, &file_info, &ReferenceTarget::String(full_xml_id)));
                                 },
                                 SourceFileKey::XmlFile(xml_file) => {
-                                    let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
+                                    let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref()?.contents().to_string();
                                     let document = roxmltree::Document::parse(&data);
                                     if let Ok(document) = document {
                                         let root = document.root_element();
@@ -233,7 +233,7 @@ impl ReferenceFeature {
                                     }
                                 },
                                 SourceFileKey::CsvFile(csv_file) => {
-                                    let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
+                                    let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref()?.contents().to_string();
                                     let mut csv_reader = csv::ReaderBuilder::new().from_reader(data.as_bytes());
                                     locations.extend(CsvAstReferenceVisitor::search_target(session, csv_file, &mut csv_reader, None, &ReferenceTarget::String(full_xml_id), &data));
                                 },
