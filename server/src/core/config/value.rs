@@ -411,6 +411,9 @@ pub(crate) struct Profile {
     pub values: ValuesMap,
     // Retained to be shown in the config panel, but not used by the runtime
     pub rejected: HashMap<ConfigKey, Vec<Sourced<String>>>,
+    /// Non-fatal parse-time notes not tied to a single field (e.g. an unknown
+    /// `[[config]]` key) — surfaced to the user via `ConfigView::diagnostic_messages`.
+    pub warnings: Vec<String>,
 }
 
 impl Profile {

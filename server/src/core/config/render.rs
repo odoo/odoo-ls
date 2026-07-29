@@ -31,6 +31,8 @@ pub struct ProfileView {
     /// Settings the user gave explicitly but which failed resolution — shown in
     /// the panel (with their failure note) even though they are not used.
     rejected: HashMap<ConfigKey, Vec<Sourced<String>>>,
+    /// Parse-time notes not tied to a single field (e.g. an unknown key).
+    warnings: Vec<String>,
 }
 
 impl ProfileView {
@@ -61,7 +63,14 @@ impl ProfileView {
     /// 2 if none did. Profile is separate from the message so the client can
     /// scope display to whichever profile is selected.
     fn diagnostic_messages(&self) -> impl Iterator<Item = (u8, String, &str)> + '_ {
-        self.rejected.iter().flat_map(move |(key, rejected)| {
+        let warnings = self.warnings.iter().map(move |w| {
+            (
+                1,
+                format!("Config profile '{}': {w}", self.name),
+                self.name.as_str(),
+            )
+        });
+        let rejected = self.rejected.iter().flat_map(move |(key, rejected)| {
             let effective = self.values.get(key);
             let (level, outcome) = match effective {
                 // A list can survive the rejection with zero valid entries left —
@@ -93,7 +102,8 @@ impl ProfileView {
                     self.name.as_str(),
                 )
             })
-        })
+        });
+        warnings.chain(rejected)
     }
 
     /// JSON shape consumed by the renderer and by serialization:
@@ -276,6 +286,7 @@ impl ConfigView {
                 abstract_: p.abstract_,
                 values: p.values.clone(),
                 rejected: p.rejected.clone(),
+                warnings: p.warnings.clone(),
             })
             .collect();
         ConfigView { configs }

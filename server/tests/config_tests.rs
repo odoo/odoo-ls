@@ -1546,6 +1546,55 @@ fn invalid_merge_method_value_errors() {
         "unexpected error: {err}");
 }
 
+/// A field-type error names the offending file and profile, not just the field,
+/// so the user can find the mistake without guessing.
+#[test]
+fn field_type_error_names_file_and_profile() {
+    let mut c = Cfg::new();
+    let ws = c.ws("ws1");
+    write_odools(&ws, "[[config]]\nname = \"myprofile\"\npython_path = 123\n");
+
+    let err = c.err();
+    assert!(err.contains("odools.toml"), "error should name the config file: {err}");
+    assert!(err.contains("myprofile"), "error should name the profile: {err}");
+    assert!(err.contains("python_path"), "unexpected error: {err}");
+}
+
+/// A TOML syntax error names the offending file, not just the parser's
+/// line/column, so the user can find which `odools.toml` is broken.
+#[test]
+fn toml_syntax_error_names_the_file() {
+    let mut c = Cfg::new();
+    let ws = c.ws("ws1");
+    write_odools(&ws, "[[config]\nname = \"default\"\n");
+
+    let err = c.err();
+    assert!(err.contains("odools.toml"), "error should name the config file: {err}");
+}
+
+/// An unknown key does not fail resolution, but is surfaced as a status-bar
+/// warning (not just an internal log) so the user can spot the typo.
+#[test]
+fn unknown_config_key_is_reported_as_diagnostic() {
+    let mut cfg = Cfg::new();
+    let ws = cfg.ws("ws");
+    write_odools(&ws, r#"[[config]]
+name = "default"
+totally_unknown_key = "whatever"
+"#);
+
+    let messages: Vec<String> = cfg
+        .view()
+        .diagnostic_messages()
+        .iter()
+        .map(|v| v["message"].as_str().unwrap().to_string())
+        .collect();
+    assert!(
+        messages.iter().any(|m| m.contains("totally_unknown_key") && m.contains("odools.toml")),
+        "expected a diagnostic naming the unknown key and file, got: {messages:?}"
+    );
+}
+
 /// The standalone extra config file (config_path) is merged with the workspace config:
 /// its scalars apply and its addons_paths merge with the workspace's.
 #[test]
