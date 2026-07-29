@@ -83,6 +83,18 @@ fn build_profiles(session: &mut SessionInfo) -> Result<ProfileSet, String> {
         profile_sets.push(resolve_workspace(ws, &unique_ws)?);
     }
 
+    // No config file and no workspace folders: nothing to resolve from, but we
+    // still need a usable "default" profile (odoo_path/addons_paths stay unset
+    // rather than being auto-detected).
+    if profile_sets.is_empty() {
+        let mut seed: ProfileSet = HashMap::default();
+        seed.insert(
+            DEFAULT_PROFILE_NAME.to_string(),
+            Profile::new(DEFAULT_PROFILE_NAME),
+        );
+        profile_sets.push(seed);
+    }
+
     // Merge across sources: scalars must agree or error
     let mut acc: ProfileSet = HashMap::default();
     for profile_set in profile_sets {
