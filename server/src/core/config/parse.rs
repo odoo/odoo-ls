@@ -20,18 +20,19 @@ use super::value::{
 
 /// Parse one config file into its profiles, tagging every value with `path`.
 pub(super) fn parse_file(path: &Path) -> Result<Vec<Profile>, String> {
-    let contents = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let contents = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.sanitize()))?;
     let source = path.sanitize();
-    let root: toml::Value = toml::from_str(&contents).map_err(|e| e.to_string())?;
+    let root: toml::Value =
+        toml::from_str(&contents).map_err(|e| format!("{source}: {e}"))?;
 
     let mut profiles = Vec::new();
     let entries = match root.get("config") {
         // No `config` array at all: an empty file is valid (no profiles).
         None => return Ok(profiles),
         // A `config` key of the wrong shape is a mistake, not "no config".
-        Some(value) => value
-            .as_array()
-            .ok_or_else(|| "'config' must be an array of tables ([[config]])".to_string())?,
+        Some(value) => value.as_array().ok_or_else(|| {
+            format!("{source}: 'config' must be an array of tables ([[config]])")
+        })?,
     };
     for entry in entries {
         profiles.push(parse_entry(entry, &source)?);
@@ -42,18 +43,23 @@ pub(super) fn parse_file(path: &Path) -> Result<Vec<Profile>, String> {
 fn parse_entry(entry: &toml::Value, source: &str) -> Result<Profile, String> {
     let table = entry
         .as_table()
-        .ok_or_else(|| "a [[config]] entry must be a table".to_string())?;
+        .ok_or_else(|| format!("{source}: a [[config]] entry must be a table"))?;
 
-    let name = table
-        .get("name")
-        .and_then(|v| v.as_str())
-        .unwrap_or(DEFAULT_PROFILE_NAME)
-        .to_string();
+    let name = match table.get("name") {
+        Some(v) => as_str_field(v, "name")
+            .map_err(|e| format!("{source}: {e}"))?
+            .to_string(),
+        None => DEFAULT_PROFILE_NAME.to_string(),
+    };
     let mut profile = Profile::new(name);
-    profile.extends = table
-        .get("extends")
-        .and_then(|v| v.as_str())
-        .map(str::to_string);
+    profile.extends = match table.get("extends") {
+        Some(v) => Some(
+            as_str_field(v, "extends")
+                .map_err(|e| format!("{source}: profile '{}': {e}", profile.name))?
+                .to_string(),
+        ),
+        None => None,
+    };
 
     for (raw_key, value) in table {
         if raw_key == "name" || raw_key == "extends" {
@@ -62,11 +68,16 @@ fn parse_entry(entry: &toml::Value, source: &str) -> Result<Profile, String> {
         let Some(key) = ConfigKey::from_name(raw_key) else {
             // An unknown key is ignored rather than fatal: a typo, a forward- or
             // backward-compatibility key, or a panel-only field (e.g. `abstract`)
-            // must not discard the user's entire configuration.
-            warn!("ignoring unknown config key '{raw_key}' in {source}");
+            // must not discard the user's entire configuration. It is still
+            // reported (not just logged) so the user can spot the typo.
+            let msg = format!("unknown config key '{raw_key}' in {source} (ignored)");
+            warn!("{msg}");
+            profile.warnings.push(msg);
             continue;
         };
-        if let Some(parsed) = parse_value(key, value, source)? {
+        let parsed = parse_value(key, value, source)
+            .map_err(|e| format!("{source}: profile '{}': {e}", profile.name))?;
+        if let Some(parsed) = parsed {
             profile.values.insert(key, parsed);
         }
     }

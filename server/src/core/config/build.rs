@@ -223,6 +223,12 @@ fn merge_child_wins(child: &Profile, parent: &Profile) -> Profile {
     // `abstract_` is intrinsic to a profile and is NOT inherited via `extends`
     // (a concrete child of a ${splitVersion} parent stays concrete).
     result.abstract_ = child.abstract_;
+    result.warnings = child
+        .warnings
+        .iter()
+        .chain(parent.warnings.iter())
+        .cloned()
+        .collect();
     for key in keys_union(child, parent) {
         if let Some(value) = merge_value(key, child.get(key), parent.get(key), child) {
             result.values.insert(key, value);
@@ -393,6 +399,7 @@ fn merge_ws_profile(a: &Profile, b: &Profile, name: &str) -> Result<Profile, Str
         (x, y) => y.or(x),
     };
     result.abstract_ = a.abstract_ || b.abstract_;
+    result.warnings = a.warnings.iter().chain(b.warnings.iter()).cloned().collect();
     for key in keys_union(a, b) {
         let merged = match (a.get(key), b.get(key)) {
             (Some(x), Some(y)) => merge_ws_value(key, x, y, name)?,
