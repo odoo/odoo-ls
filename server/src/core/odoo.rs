@@ -1172,6 +1172,9 @@ impl SyncOdoo {
             // Run Arch eval on file, if possible, then run everything on the fn
             // until arch_eval
             SyncOdoo::build_now(session, func_file, BuildSteps::ARCH_EVAL);
+            if session.st().build_status(func_file.into(), BuildSteps::ARCH_EVAL) == BuildStatus::INVALID {
+                return;
+            }
             SyncOdoo::build_now(session, function_key, BuildSteps::ARCH);
             SyncOdoo::build_now(session, function_key, BuildSteps::ARCH_EVAL);
         }

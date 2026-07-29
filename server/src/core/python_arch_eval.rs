@@ -86,17 +86,16 @@ impl PythonArchEval {
             ModuleSymbol::load_assets(m, session);
         }
         if file_info_ast.borrow().ast.as_py_ast().indexed_module.is_some() {
+            let file_info_ast_bw  = file_info_ast.borrow();
+            //  If the file has been re-parsed since, those indexes address another tree.
+            if file_info_ast_bw.text_hash != session.st().get_processed_text_hash(self.file) {
+                session.st_mut().set_build_status(symbol, BuildSteps::ARCH_EVAL, BuildStatus::INVALID);
+                return;
+            }
             let old_noqa = session.current_noqa.clone();
             session.current_noqa = session.st().get_noqas(symbol);
-            let file_info_ast_bw  = file_info_ast.borrow();
             let (ast, maybe_func_stmt) = match self.file_mode {
-                true => {
-                    if file_info_ast_bw.text_hash != session.st().get_processed_text_hash(self.file) {
-                        session.st_mut().set_build_status(symbol, BuildSteps::ARCH_EVAL, BuildStatus::INVALID);
-                        return;
-                    }
-                    (file_info_ast_bw.get_stmts().unwrap(), None)
-                },
+                true => (file_info_ast_bw.get_stmts().unwrap(), None),
                 false => {
                     let f = self.sym_stack[0].unwrap_function_key();
                     let fun_index = session.st()[f].node_index.load();

@@ -121,6 +121,11 @@ impl PythonArchBuilder {
             let ast = if self.file_mode {
                 file_info_ast.get_stmts().unwrap()
             } else {
+                //  If the file has been re-parsed since, those indexes address another tree.
+                if file_info_ast.text_hash != session.st().get_processed_text_hash(self.file) {
+                    session.st_mut().set_build_status(symbol, BuildSteps::ARCH, BuildStatus::INVALID);
+                    return;
+                }
                 let f = self.sym_stack[0].unwrap_function_key();
                 let ast_index = session.st()[f].node_index.load();
                 if ast_index.as_u32().is_some() {
