@@ -27,6 +27,7 @@ use std::cell::RefCell;
 use crate::S;
 use crate::constants::*;
 use ruff_text_size::{Ranged, TextRange};
+use percent_encoding::{AsciiSet, CONTROLS};
 
 use super::odoo::SyncOdoo;
 
@@ -878,6 +879,24 @@ impl Default for FileMgr {
     }
 }
 
+/// Characters percent-encoded within a single path segment (in addition to the C0 controls
+/// and DEL already covered by [`CONTROLS`]) when building a `file://` URI from a raw
+/// filesystem path in [`FileMgr::try_pathname2uri`].
+///
+/// These are characters that are valid in filenames but that either:
+/// - are disallowed unescaped in an RFC 3986 path segment (`[` `]` `^` `` ` `` `|` `{` `}` `<` `>` `"` ` `),
+///   which `lsp_types::Uri` enforces strictly (unlike `url::Url`, which follows the more
+///   permissive WHATWG URL Standard and leaves them raw), or
+/// - would otherwise be misparsed as URL structure rather than literal path content: an
+///   unescaped `?` or `#` starts a query/fragment (silently truncating the path), a lone `%`
+///   not followed by two hex digits is an invalid percent-escape, and `\` is treated as a
+///   segment separator by `url::Url` even outside of Windows/UNC paths (see the `\`-to-`/`
+///   normalization in `try_pathname2uri`, which runs first for the paths where `\` really is
+///   a separator).
+const PATH_SEGMENT_ENCODE_SET: &AsciiSet = &CONTROLS
+    .add(b' ').add(b'"').add(b'#').add(b'%').add(b'<').add(b'>').add(b'?')
+    .add(b'[').add(b']').add(b'^').add(b'`').add(b'{').add(b'|').add(b'}').add(b'\\');
+
 impl FileMgr {
 
     pub fn new() -> Self {
@@ -1119,13 +1138,29 @@ impl FileMgr {
             } else {
                 (s.to_string(), false)
             };
+            // '\' is the path separator for Windows drive paths and for the remainder of a
+            // UNC path (e.g. "wsl.localhost\Ubuntu\home\..."); normalize it to '/' before
+            // percent-encoding so it's treated as a segment separator rather than literal
+            // content to escape.
+            let replaced = if cfg!(windows) || unc {
+                replaced.replace('\\', "/")
+            } else {
+                replaced
+            };
+            // Percent-encode each path segment ourselves instead of relying on url::Url's own
+            // encoding: see PATH_SEGMENT_ENCODE_SET for why that isn't sufficient on its own.
+            let encoded = replaced.split('/')
+                .map(|segment| percent_encoding::utf8_percent_encode(segment, PATH_SEGMENT_ENCODE_SET).to_string())
+                .collect::<Vec<_>>()
+                .join("/");
             // Use legacy UNC flag to determine if we need four slashes
-            match url::Url::parse(&format!("file://{}{}", slash, replaced)) {
+            match url::Url::parse(&format!("file://{}{}", slash, encoded)) {
                 Ok(pre_uri) => {
+                    let pre_uri = pre_uri.to_string();
                     if unc && legacy_unc_paths().load(Ordering::Relaxed){
-                        pre_uri.to_string().replace("file://", "file:////")
+                        pre_uri.replace("file://", "file:////")
                     } else {
-                        pre_uri.to_string()
+                        pre_uri
                     }
                 },
                 Err(err) => return Err(err.to_string())
@@ -1155,6 +1190,62 @@ impl FileMgr {
                 S!(s)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_roundtrips(folder_name: &str) {
+        let path = if cfg!(windows) {
+            format!("C:\\Users\\test\\{}\\file.py", folder_name)
+        } else {
+            format!("/home/test/{}/file.py", folder_name)
+        };
+        let uri = FileMgr::try_pathname2uri(&path)
+            .unwrap_or_else(|err| panic!("should convert path {:?} to a uri: {}", path, err));
+
+        let roundtrip = FileMgr::uri2pathname(uri.as_str());
+        let expected = if cfg!(windows) {
+            path.replace("C:", "c:").replace('\\', "/")
+        } else {
+            path
+        };
+        assert_eq!(roundtrip, expected, "roundtrip mismatch for uri {}", uri.as_str());
+    }
+
+    #[test]
+    fn test_pathname2uri_handles_special_characters_in_path() {
+        // Characters that are valid in filenames on Linux/Windows but that either aren't
+        // allowed raw in an RFC 3986 path segment (brackets, pipe, caret, braces, angle
+        // brackets, quote) or would otherwise be misparsed as URL structure by url::Url
+        // (query/fragment delimiters, a lone percent sign, a literal backslash).
+        for folder_name in [
+            "[a_folder]",
+            "a folder",
+            "a?query",
+            "a#frag",
+            "a%percent",
+            "pipe|char",
+            "caret^char",
+            "curly{brace}",
+            "backtick`char",
+            "quote\"char",
+            "lt<gt>char",
+            "café_émoji_😊",
+        ] {
+            assert_roundtrips(folder_name);
+        }
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn test_pathname2uri_handles_literal_backslash_in_path() {
+        // On Linux/macOS, unlike Windows, '\' is a valid filename character rather than a
+        // path separator, so it must be percent-encoded rather than treated as a segment
+        // boundary (url::Url on its own treats '\' as a separator even for non-Windows paths).
+        assert_roundtrips("back\\slash");
     }
 }
 
