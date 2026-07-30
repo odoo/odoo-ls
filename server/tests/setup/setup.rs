@@ -13,7 +13,7 @@ use lsp_types::notification::{Notification, PublishDiagnostics};
 use odoo_ls_server::S;
 use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::utils::get_python_command;
-use odoo_ls_server::{core::{config::{ConfigKey, ConfigEntry}, entry_point::EntryPointMgr, odoo::SyncOdoo}, threads::SessionInfo, utils::PathSanitizer as _};
+use odoo_ls_server::{core::{config::{ConfigKey, ConfigEntry}, entry_point::EntryPointMgr, odoo::SyncOdoo}, threads::{SessionInfo, ThreadMessage}, utils::PathSanitizer as _};
 
 use tracing::{info, level_filters::LevelFilter};
 use tracing_appender::rolling::RollingFileAppender;
@@ -70,6 +70,19 @@ pub fn create_init_session<'a>(odoo: &'a mut SyncOdoo, config: ConfigEntry) -> S
     session.sync_odoo.test_mode = true;
     SyncOdoo::init(&mut session, config);
     session
+}
+
+/// Same as [`create_init_session`], but with the channel to the main thread the tsserver bridge
+/// needs: `SyncOdoo::init` only starts tsserver when the session can send to it. The returned
+/// receiver carries the diagnostics tsserver pushes; keep it alive for as long as the session,
+/// since dropping it makes the bridge's reader thread fail on every send.
+pub fn create_init_session_with_tsserver<'a>(odoo: &'a mut SyncOdoo, config: ConfigEntry) -> (SessionInfo<'a>, crossbeam_channel::Receiver<ThreadMessage>) {
+    let (s, r) = crossbeam_channel::unbounded();
+    let (sender_to_main, receiver_from_threads) = crossbeam_channel::unbounded();
+    let mut session = SessionInfo::new_from_custom_channel(s.clone(), r.clone(), Some(sender_to_main), odoo);
+    session.sync_odoo.test_mode = true;
+    SyncOdoo::init(&mut session, config);
+    (session, receiver_from_threads)
 }
 
 pub fn prepare_custom_entry_point(session: &mut SessionInfo, path: &str){
