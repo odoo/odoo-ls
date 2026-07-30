@@ -2,6 +2,7 @@ use std::env;
 use std::path::Path;
 
 use odoo_ls_server::constants::{BuildStatus, BuildSteps};
+use odoo_ls_server::core::build_scheduler::BuildScheduler;
 use odoo_ls_server::core::entry_point::EntryPointMgr;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::core::symbols::symbol_keys::SymbolKey;
@@ -26,7 +27,7 @@ fn test_build_now_arch_eval_cycle_does_not_overflow() {
     let init_path = Path::new(&module_dir).join("__init__.py").sanitize();
 
     EntryPointMgr::create_new_custom_entry_for_path(&mut session, &module_dir, &init_path);
-    SyncOdoo::process_rebuilds(&mut session, false);
+    BuildScheduler::process_rebuilds(&mut session, false);
 
     // Grab the three file symbols. Tree lookup is relative to the entry point's
     // absolute-path tree prefix, so we just ask for the bare file name.
@@ -38,9 +39,9 @@ fn test_build_now_arch_eval_cycle_does_not_overflow() {
     // invalation after a common dependency was changed. The class-base
     // ARCH_EVAL deps registered during the initial pass remain in the dep graph,
     // so build_now_dependencies walks file_a → file_b → file_c → file_a.
-    session.sync_odoo.add_to_rebuild_arch_eval(file_a);
-    session.sync_odoo.add_to_rebuild_arch_eval(file_b);
-    session.sync_odoo.add_to_rebuild_arch_eval(file_c);
+    BuildScheduler::queue(&mut session, file_a, BuildSteps::ARCH_EVAL);
+    BuildScheduler::queue(&mut session, file_b, BuildSteps::ARCH_EVAL);
+    BuildScheduler::queue(&mut session, file_c, BuildSteps::ARCH_EVAL);
 
     assert_eq!(session.st().build_status(file_a, BuildSteps::ARCH_EVAL), BuildStatus::PENDING);
     assert_eq!(session.st().build_status(file_b, BuildSteps::ARCH_EVAL), BuildStatus::PENDING);

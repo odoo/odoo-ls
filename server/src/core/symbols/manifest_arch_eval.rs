@@ -4,6 +4,7 @@ use std::sync::Arc;
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
 
+use crate::core::build_scheduler::BuildScheduler;
 use crate::{constants::{BuildSteps, DEBUG_STEPS, DiagnosticSource}, core::{csv_arch_builder::CsvArchBuilder, data_hooks, diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileInfo, symbols::{ModuleSymbol, SymbolTable, XmlFileSymbol, symbol_keys::{ModuleKey, SourceFileKey, XmlFileKey}}, xml_arch_builder::XmlArchBuilder}, threads::SessionInfo, utils::PathSanitizer};
 
 
@@ -192,7 +193,7 @@ impl ModuleSymbol {
             session.st_mut().add_dependency(module.into(), js_key.into(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
             session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, file_path_str.as_ref(), None, None, false); //create ast if not in cache
             // as the update_file_info built the arch, let's add the file to the validation queue.
-            session.sync_odoo.add_to_validations(js_key);
+            BuildScheduler::queue(session, js_key, BuildSteps::VALIDATION);
         }
     }
 

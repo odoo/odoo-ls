@@ -2,7 +2,7 @@ use std::path::Path;
 
 use lsp_types::Diagnostic;
 
-use crate::{Sy, constants::{BuildSteps, DiagnosticSource, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileMgr, import_resolver::create_module_from_name, odoo::SyncOdoo, symbols::{ModuleSymbol, SymbolTable, symbol_keys::{ModuleKey, NamespaceKey, SymbolKey}}}, threads::SessionInfo, utils::PathSanitizer};
+use crate::{Sy, constants::{BuildSteps, DiagnosticSource, OYarn}, core::{build_scheduler::BuildScheduler, diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileMgr, import_resolver::create_module_from_name, odoo::SyncOdoo, symbols::{ModuleSymbol, SymbolTable, symbol_keys::{ModuleKey, NamespaceKey, SymbolKey}}}, threads::SessionInfo, utils::PathSanitizer};
 
 
 
@@ -82,7 +82,7 @@ impl ModuleSymbol {
         if tests_path.exists() && !session.st()[module_key].module_symbols().contains_key("tests") {
             let symbol = SymbolTable::create_from_path(session, &tests_path, module_key.into(), false);
             if let Some(sym) = symbol && !matches!(sym, SymbolKey::Namespace(_)) {
-                session.sync_odoo.add_to_rebuild_arch(sym);
+                BuildScheduler::queue(session, sym, BuildSteps::ARCH);
             }
         }
     }

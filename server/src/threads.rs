@@ -8,7 +8,7 @@ use lsp_types::{CompletionItem, CompletionResponse, DocumentSymbolResponse, Goto
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tracing::{error, info, warn};
-use crate::{constants::{DiagnosticSource, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::symbols::storage::SymbolTable, create_session, lsp_types_custom::{ConfigDiagnosticAction, ConfigDiagnosticMessage}};
+use crate::{constants::{DiagnosticSource, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::{build_scheduler::BuildScheduler, symbols::storage::SymbolTable}, create_session, lsp_types_custom::{ConfigDiagnosticAction, ConfigDiagnosticMessage}};
 
 use crate::{core::{file_mgr::NoqaInfo, odoo::{Odoo, SyncOdoo}}, server::ServerError, utils::PathSanitizer, S};
 
@@ -146,8 +146,8 @@ impl <'a> SessionInfo<'a> {
         SyncOdoo::unload_path(session, path);
         Odoo::search_symbols_to_rebuild(session, &path.sanitize_cow());
         if (!forced_delay || session.delayed_process_sender.is_none()) && !session.sync_odoo.need_rebuild
-            && session.sync_odoo.get_rebuild_queue_size() < 10 {
-                SyncOdoo::process_rebuilds(session, false);
+            && BuildScheduler::get_rebuild_queue_size(session) < 10 {
+                BuildScheduler::process_rebuilds(session, false);
                 return;
             }
         let _ = session.delayed_process_sender.as_ref().unwrap().send(DelayedProcessingMessage::PROCESS(std::time::Instant::now()));
@@ -363,7 +363,7 @@ pub fn delayed_changes_process_thread(sender_session: Sender<Message>, receiver_
                 current_noqa: NoqaInfo::None,
             };
             info!("Processing delayed file changes...");
-            SyncOdoo::process_rebuilds(&mut session, false);
+            BuildScheduler::process_rebuilds(&mut session, false);
         }
     }
 }
@@ -422,22 +422,22 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>,
                     let (value, error) = match r.method.as_str() {
                         HoverRequest::METHOD => {
                             let mut session = create_session!(sender_to_s, receiver_to_s, Some(generic_sender_to_main.clone()), sync_odoo, delayed_process_sender);
-                            SyncOdoo::process_rebuilds(&mut session, true);
+                            BuildScheduler::process_rebuilds(&mut session, true);
                             to_value::<Hover>(Odoo::handle_hover(&mut session, serde_json::from_value(r.params).unwrap()))
                         },
                         GotoDefinition::METHOD => {
                             let mut session = create_session!(sender_to_s, receiver_to_s, Some(generic_sender_to_main.clone()), sync_odoo, delayed_process_sender);
-                            SyncOdoo::process_rebuilds(&mut session, true);
+                            BuildScheduler::process_rebuilds(&mut session, true);
                             to_value::<GotoDefinitionResponse>(Odoo::handle_goto_definition(&mut session, serde_json::from_value(r.params).unwrap()))
                         },
                         GotoDeclaration::METHOD => {
                             let mut session = create_session!(sender_to_s, receiver_to_s, Some(generic_sender_to_main.clone()), sync_odoo, delayed_process_sender);
-                            SyncOdoo::process_rebuilds(&mut session, true);
+                            BuildScheduler::process_rebuilds(&mut session, true);
                             to_value::<GotoDeclarationResponse>(Odoo::handle_goto_declaration(&mut session, serde_json::from_value(r.params).unwrap()))
                         },
                         References::METHOD => {
                             let mut session = create_session!(sender_to_s, receiver_to_s, Some(generic_sender_to_main.clone()), sync_odoo, delayed_process_sender);
-                            SyncOdoo::process_rebuilds(&mut session, true);
+                            BuildScheduler::process_rebuilds(&mut session, true);
                             to_value::<Vec<Location>>(Odoo::handle_references(&mut session, serde_json::from_value(r.params).unwrap()))
                         },
                         DocumentSymbolRequest::METHOD => {
@@ -454,7 +454,7 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>,
                         },
                         Completion::METHOD => {
                             let mut session = create_session!(sender_to_s, receiver_to_s, Some(generic_sender_to_main.clone()), sync_odoo, delayed_process_sender);
-                            SyncOdoo::process_rebuilds(&mut session, true);
+                            BuildScheduler::process_rebuilds(&mut session, true);
                             to_value::<CompletionResponse>(Odoo::handle_autocomplete(&mut session, serde_json::from_value(r.params).unwrap()))
                         },
                         ResolveCompletionItem::METHOD => {
@@ -465,7 +465,7 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>,
                         },
                         SemanticTokensFullRequest::METHOD => {
                             let mut session = create_session!(sender_to_s, receiver_to_s, Some(generic_sender_to_main.clone()), sync_odoo, delayed_process_sender);
-                            SyncOdoo::process_rebuilds(&mut session, true);
+                            BuildScheduler::process_rebuilds(&mut session, true);
                             to_value::<SemanticTokensResult>(Odoo::handle_semantic_tokens(&mut session, serde_json::from_value(r.params).unwrap()))
                         },
                         _ => {error!("Request not handled by main thread: {}", r.method); (None, Some(ResponseError{
@@ -482,7 +482,7 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>,
                     match n.method.as_str() {
                         DidOpenTextDocument::METHOD => {
                             let mut session = create_session!(sender_to_s, receiver_to_s, Some(generic_sender_to_main.clone()), sync_odoo, delayed_process_sender);
-                            SyncOdoo::process_rebuilds(&mut session, true);
+                            BuildScheduler::process_rebuilds(&mut session, true);
                             Odoo::handle_did_open(&mut session, serde_json::from_value(n.params).unwrap());
                         }
                         DidChangeConfiguration::METHOD => {
@@ -503,27 +503,27 @@ pub fn message_processor_thread_main(sync_odoo: Arc<Mutex<SyncOdoo>>,
                         }
                         DidSaveTextDocument::METHOD => {
                             let mut session = create_session!(sender_to_s, receiver_to_s, Some(generic_sender_to_main.clone()), sync_odoo, delayed_process_sender);
-                            SyncOdoo::process_rebuilds(&mut session, false);
+                            BuildScheduler::process_rebuilds(&mut session, false);
                             Odoo::handle_did_save(&mut session, serde_json::from_value(n.params).unwrap());
                         }
                         DidRenameFiles::METHOD => {
                             let mut session = create_session!(sender_to_s, receiver_to_s, Some(generic_sender_to_main.clone()), sync_odoo, delayed_process_sender);
-                            SyncOdoo::process_rebuilds(&mut session, true);
+                            BuildScheduler::process_rebuilds(&mut session, true);
                             Odoo::handle_did_rename(&mut session, serde_json::from_value(n.params).unwrap());
                         }
                         DidCreateFiles::METHOD => {
                             let mut session = create_session!(sender_to_s, receiver_to_s, Some(generic_sender_to_main.clone()), sync_odoo, delayed_process_sender);
-                            SyncOdoo::process_rebuilds(&mut session, true);
+                            BuildScheduler::process_rebuilds(&mut session, true);
                             Odoo::handle_did_create(&mut session, serde_json::from_value(n.params).unwrap());
                         }
                         DidDeleteFiles::METHOD => {
                             let mut session = create_session!(sender_to_s, receiver_to_s, Some(generic_sender_to_main.clone()), sync_odoo, delayed_process_sender);
-                            SyncOdoo::process_rebuilds(&mut session, true);
+                            BuildScheduler::process_rebuilds(&mut session, true);
                             Odoo::handle_did_delete(&mut session, serde_json::from_value(n.params).unwrap());
                         }
                         DidChangeWatchedFiles::METHOD => {
                             let mut session = create_session!(sender_to_s, receiver_to_s, Some(generic_sender_to_main.clone()), sync_odoo, delayed_process_sender);
-                            SyncOdoo::process_rebuilds(&mut session, true);
+                            BuildScheduler::process_rebuilds(&mut session, true);
                             Odoo::handle_did_change_watched_files(&mut session, serde_json::from_value(n.params).unwrap());
                         }
                         "custom/server/register_capabilities" => {

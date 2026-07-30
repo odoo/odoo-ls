@@ -1,6 +1,6 @@
 use super::file_mgr::FileInfo;
 use crate::{
-    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, MissingDataSource, DiagnosticSource, OYarn}, core::{entry_point::EntryPointType, symbols::{ModuleSymbol, symbol_keys::{XmlDataKey, XmlId}}}, features::xml_ast_utils::XmlAstUtils, threads::SessionInfo
+    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource, MissingDataSource, OYarn}, core::{build_scheduler::BuildScheduler, entry_point::EntryPointType, symbols::{ModuleSymbol, symbol_keys::{XmlDataKey, XmlId}}}, features::xml_ast_utils::XmlAstUtils, threads::SessionInfo
 };
 use crate::{
     core::{
@@ -48,7 +48,7 @@ impl XmlArchBuilder {
         }
         session.st_mut()[self.xml_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
         file_info.replace_diagnostics(DiagnosticSource::XML_ARCH, diagnostics);
-        session.sync_odoo.add_to_validations(self.xml_symbol);
+        BuildScheduler::queue(session, self.xml_symbol, BuildSteps::VALIDATION);
     }
 
     pub fn on_operation_creation(

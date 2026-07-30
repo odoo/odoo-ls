@@ -1,11 +1,10 @@
 use crate::constants::OYarn;
-use crate::core::csv_validation::CsvValidator;
+use crate::core::build_scheduler::BuildScheduler;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::{Ast, PreloadedFile};
 use crate::core::js_arch_builder::ComponentDescriptor;
 use crate::core::js_type_files;
-use crate::core::js_validator::JsValidator;
 use crate::core::module_load_order::sort_by_load_order;
 use crate::core::pre_parser::{PreParseCache, PreParser};
 use crate::core::symbols::ModuleSymbol;
@@ -14,7 +13,6 @@ use crate::core::symbols::storage::metrics::{log_slotmap_capacities, log_symbol_
 use crate::core::symbols::symbol_keys::{FunctionKey, ModuleKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlTemplateKey};
 use crate::core::tsserver_bridge::{TsServerBridge};
 use crate::features::tsserver_completion::TsCompletionResolveData;
-use crate::core::xml_validation::XmlValidator;
 use crate::features::owl_virtual;
 use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
 use crate::lsp_types_custom::{ConfigDiagnosticAction, ConfigDiagnosticMessage, ConfigDiagnosticMessageLevel};
@@ -26,7 +24,7 @@ use crate::features::declaration::DeclarationFeature;
 use crate::features::completion::CompletionFeature;
 use crate::features::definition::DefinitionFeature;
 use crate::features::hover::HoverFeature;
-use crate::progress_reporter::{ProgressReporterPercentage, ProgressReporterRemaining};
+use crate::progress_reporter::ProgressReporterPercentage;
 use crate::threads::{SessionInfo, ThreadMessage, TsServerDiagnostics};
 use crate::features::semantic_tokens::SemanticTokensFeature;
 use crate::weak_collections::{WeakMap, WeakSet};
@@ -42,7 +40,7 @@ use lsp_types::*;
 use request::{RegisterCapability, Request, WorkspaceConfiguration};
 use ruff_source_file::PositionEncoding;
 use serde_json::Value;
-use tracing::{error, warn, info, trace};
+use tracing::{error, warn, info};
 
 use crate::utils::HashSet;
 use std::process::Command;
@@ -148,9 +146,7 @@ pub struct SyncOdoo {
     pub current_request_id: Option<RequestId>,
     pub running_request_ids: Arc<Mutex<Vec<RequestId>>>, //Arc to Server mutex for cancellation support
     pub watched_file_updates: u32,
-    rebuild_arch: FifoWeakHashSet<SymbolKey>,
-    rebuild_arch_eval: FifoWeakHashSet<SymbolKey>,
-    rebuild_validation: FifoWeakHashSet<SymbolKey>,
+    pub build_scheduler: BuildScheduler,
     pub state_init: InitState,
     pub must_reload_paths: Vec<(Wk<SymbolKey>, String)>, // formerly Weak refs
     pub load_odoo_addons: bool, //indicate if we want to load odoo addons or not
@@ -214,9 +210,7 @@ impl SyncOdoo {
             current_request_id: None,
             running_request_ids: Arc::new(Mutex::new(vec![])),
             watched_file_updates: 0,
-            rebuild_arch: FifoWeakHashSet::new(),
-            rebuild_arch_eval: FifoWeakHashSet::new(),
-            rebuild_validation: FifoWeakHashSet::new(),
+            build_scheduler: BuildScheduler::new(),
             state_init: InitState::NOT_READY,
             must_reload_paths: vec![],
             load_odoo_addons: true,
@@ -252,9 +246,7 @@ impl SyncOdoo {
         session.sync_odoo.stdlib_dir = SyncOdoo::default_stdlib();
         session.sync_odoo.modules = HashMap::default();
         session.sync_odoo.models = HashMap::default();
-        session.sync_odoo.rebuild_arch = FifoWeakHashSet::new();
-        session.sync_odoo.rebuild_arch_eval = FifoWeakHashSet::new();
-        session.sync_odoo.rebuild_validation = FifoWeakHashSet::new();
+        session.sync_odoo.build_scheduler = BuildScheduler::new();
         session.sync_odoo.state_init = InitState::NOT_READY;
         session.sync_odoo.load_odoo_addons = true;
         session.sync_odoo.need_rebuild = false;
@@ -521,8 +513,8 @@ impl SyncOdoo {
             panic!("Unable to find builtins disk dir symbol");
         }
         let _builtins_rc_symbol = SymbolTable::create_from_path(session, &builtins_path, disk_dir_builtins[0], false);
-        session.sync_odoo.add_to_rebuild_arch(_builtins_rc_symbol.unwrap());
-        SyncOdoo::process_rebuilds(session, false)
+        BuildScheduler::queue(session, _builtins_rc_symbol.unwrap(), BuildSteps::ARCH);
+        BuildScheduler::process_rebuilds(session, false)
     }
 
     pub fn build_database(session: &mut SessionInfo) {
@@ -612,7 +604,7 @@ impl SyncOdoo {
         match odoo_odoo {
             SymbolKey::PythonPackage(p) => {
                 session.st_mut()[p].self_import = true;
-                session.sync_odoo.add_to_rebuild_arch(odoo_odoo);
+                BuildScheduler::queue(session, odoo_odoo, BuildSteps::ARCH);
             },
             SymbolKey::Namespace(_) => {
                 //starting from > 18.0, odoo is now a namespace. Start import project from odoo/__main__.py
@@ -622,12 +614,12 @@ impl SyncOdoo {
                 };
                 let f = main_file.unwrap_file_key();
                 session.st_mut()[f].self_import = true;
-                session.sync_odoo.add_to_rebuild_arch(main_file);
+                BuildScheduler::queue(session, main_file, BuildSteps::ARCH);
             },
             _ => panic!("Root symbol is not a package or namespace (> 18.0)")
         }
         session.sync_odoo.has_odoo_main_entry = true; // set it now has we need it to parse base addons
-        if !SyncOdoo::process_rebuilds(session, false) {
+        if !BuildScheduler::process_rebuilds(session, false) {
             return false;
         }
         //search common odoo addons path
@@ -722,7 +714,7 @@ impl SyncOdoo {
                 builder.load_arch(session);
             }
             // Drain build queues, skip validation
-            while Self::build_one(session, &main_entry, false) {
+            while BuildScheduler::build_one(session, &main_entry, false) {
                 if session.sync_odoo.terminate_rebuild.load(Ordering::Relaxed) { return; }
             }
 
@@ -740,10 +732,10 @@ impl SyncOdoo {
             }
         }
         // Drain validation queue
-        let total_items = session.sync_odoo.rebuild_validation.len() as u32;
-        while Self::build_one(session, &main_entry, true) {
+        let total_items = BuildScheduler::validation_queue_len(session) as u32;
+        while BuildScheduler::build_one(session, &main_entry, true) {
             if session.sync_odoo.terminate_rebuild.load(Ordering::Relaxed) { return; }
-            let items_left = session.sync_odoo.rebuild_validation.len() as u32;
+            let items_left = BuildScheduler::validation_queue_len(session) as u32;
             // report progress (total_items > 0, otherwise loop wouldn't run)
             reporter.report_progress(BUILD_PHASE_WEIGHT + (total_items - items_left) * (VALIDATION_PHASE_WEIGHT) / total_items);
         }
@@ -753,28 +745,6 @@ impl SyncOdoo {
         info!("End building modules. {} modules loaded", modules_count);
         session.log_message(MessageType::INFO, format!("End building modules. {} modules loaded", modules_count));
         session.sync_odoo.state_init = InitState::ODOO_READY;
-    }
-
-    /// Builds one item from the build queues, preferably ARCH, then ARCH_EVAL, then VALIDATION if `validation` is `true`.
-    /// Returns true if an item was built, false if all queues are empty.
-    fn build_one(session: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, validation: bool) -> bool {
-        while let Some(symbol) = session.sync_odoo.rebuild_arch.pop_front_valid(&session.sync_odoo.symbol_table) {
-            if let Some(mut builder) = PythonArchBuilder::new(session.st(), entry.clone(), symbol) {
-                builder.load_arch(session);
-                return true;
-            }
-        }
-        while let Some(symbol) = session.sync_odoo.rebuild_arch_eval.pop_front_valid(&session.sync_odoo.symbol_table) {
-            if let Some(mut builder) = PythonArchEval::new(session.st(), entry.clone(), symbol) {
-                builder.eval_arch(session);
-                return true;
-            }
-        }
-        if validation && let Some(symbol) = session.sync_odoo.rebuild_validation.pop_front_valid(&session.sync_odoo.symbol_table) {
-            Self::validate(session, symbol, entry.clone());
-            return true;
-        }
-        false
     }
 
     /// Sort modules by load order
@@ -839,250 +809,6 @@ impl SyncOdoo {
         return self.entry_point_mgr.borrow().main_entry_point.as_ref().expect("Unable to find main entry point").clone()
     }
 
-    fn pop_item(&mut self, step: BuildSteps) -> Option<SymbolKey> {
-        //Part 1: Find the symbol with a unmutable set
-        let set =  match step {
-            BuildSteps::ARCH_EVAL => &self.rebuild_arch_eval,
-            BuildSteps::VALIDATION => &self.rebuild_validation,
-            _ => &self.rebuild_arch
-        };
-        let mut selected_sym: Option<SymbolKey> = None;
-        let mut selected_count: u32 = 999999999;
-        let mut current_count: u32;
-        for sym in set.iter_valid(&self.symbol_table) {
-            current_count = 0;
-            let file = self.symbol_table.get_file(sym).unwrap();
-            let all_dep = self.symbol_table.get_all_dependencies(file, step);
-            for (index, dep_set) in all_dep.iter().enumerate() {
-                let index_set =  match index {
-                    x if x == BuildSteps::ARCH as usize => &self.rebuild_arch,
-                    x if x == BuildSteps::ARCH_EVAL as usize => &self.rebuild_arch_eval,
-                    x if x == BuildSteps::VALIDATION as usize => &self.rebuild_validation,
-                    _ => continue,
-                };
-                current_count += dep_set.iter_valid(&self.symbol_table)
-                    .filter(|&dep| index_set.contains(&dep.into()))
-                    .count() as u32;
-            }
-            if current_count < selected_count {
-                selected_sym = Some(sym);
-                selected_count = current_count;
-                if current_count == 0 {
-                    break;
-                }
-            }
-        }
-        let set =  match step {
-            BuildSteps::ARCH_EVAL => &mut self.rebuild_arch_eval,
-            BuildSteps::VALIDATION => &mut self.rebuild_validation,
-            _ => &mut self.rebuild_arch
-        };
-        if selected_sym.is_none() {
-            set.clear(); //remove any potential dead weak ref
-            return None;
-        }
-        let selected_sym_unwrapped = selected_sym.unwrap();
-        if !set.remove(&selected_sym_unwrapped) {
-            panic!("Unable to remove selected symbol from rebuild set")
-        }
-        Some(selected_sym_unwrapped)
-    }
-
-    fn add_from_self_reload(session: &mut SessionInfo) {
-        for (weak_sym, path) in session.sync_odoo.must_reload_paths.clone().iter() {
-            let Some(parent) = weak_sym.upgrade(session.st()) else {
-                continue;
-            };
-            let in_addons = session.sync_odoo.get_main_entry_tree(parent) == (&["odoo", "addons"], &[]);
-            let new_symbol = SymbolTable::create_from_path(session, Path::new(path), parent, in_addons);
-            let Some(new_symbol) = new_symbol else {
-                continue;
-            };
-            session.sync_odoo.must_reload_paths.retain(|(_, p)| p != path);
-            session.st_mut().set_is_external(new_symbol, false);
-            match new_symbol {
-                SymbolKey::PythonPackage(p) => {
-                    session.st_mut()[p].self_import = true;
-                }
-                SymbolKey::File(f) => {
-                    session.st_mut()[f].self_import = true;
-                },
-                SymbolKey::JsFile(f) => {
-                    session.st_mut()[f].self_import = true;
-                    session.sync_odoo.add_to_validations(new_symbol);
-                    continue;
-                }
-                SymbolKey::Module(_) => {}
-                SymbolKey::Namespace(_) => continue, // A module became a namespace, due to __init__ deletion/renaming
-                _ => {panic!("Unexpected symbol type: {:?}", new_symbol);}
-            }
-            if let SymbolKey::Module(m) = new_symbol {
-                let name = session.st()[m].name.clone();
-                session.sync_odoo.modules.insert(name, m.into());
-            }
-            session.sync_odoo.add_to_rebuild_arch(new_symbol);
-        }
-        session.sync_odoo.must_reload_paths.retain(|x| x.0.upgrade(&session.sync_odoo.symbol_table).is_some());
-    }
-
-    pub fn process_rebuilds(session: &mut SessionInfo, no_validation: bool) -> bool {
-        session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
-        if session.sync_odoo.watched_file_updates > MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART {
-            return false;
-        }
-        SyncOdoo::add_from_self_reload(session);
-        session.sync_odoo.import_cache = Some(ImportCache::default());
-        let mut already_arch_rebuilt: HashSet<Tree> = HashSet::default();
-        let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::default();
-
-        //workdone progress
-        let mut reporter = (!session.sync_odoo.rebuild_arch.is_empty() || !session.sync_odoo.rebuild_arch_eval.is_empty() || !session.sync_odoo.rebuild_validation.is_empty())
-            .then(|| ProgressReporterRemaining::start(session, "Odoo: Indexing"));
-        trace!("Starting rebuild: {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_validation.len());
-        while !session.sync_odoo.need_rebuild && (!session.sync_odoo.rebuild_arch.is_empty() || !session.sync_odoo.rebuild_arch_eval.is_empty() || !session.sync_odoo.rebuild_validation.is_empty()) {
-            if DEBUG_THREADS {
-                trace!("remains: {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_validation.len());
-            }
-            let queue_size = session.sync_odoo.rebuild_arch.len() * 3 + session.sync_odoo.rebuild_arch_eval.len() * 2 + session.sync_odoo.rebuild_validation.len();
-            if let Some(reporter) = &mut reporter {
-                reporter.report_progress(queue_size);
-            }
-            if session.sync_odoo.terminate_rebuild.load(Ordering::SeqCst){
-                info!("Terminating rebuilds due to server shutdown");
-                if let Some(reporter) = &mut reporter {
-                    reporter.end();
-                }
-                return false;
-            }
-            let sym = session.sync_odoo.pop_item(BuildSteps::ARCH);
-            if let Some(sym_key) = sym {
-                if DEBUG_STEPS {
-                    trace!("PROCESSING FROM ARCH - {}", session.st().debug_path(sym_key));
-                }
-                let (tree, entry) = session.st().get_tree_and_entry(sym_key);
-                if already_arch_rebuilt.contains(&tree) {
-                    info!("Already arch rebuilt, skipping");
-                    continue;
-                }
-                already_arch_rebuilt.insert(tree);
-                if let Some(mut builder) = PythonArchBuilder::new(session.st(), entry, sym_key) {
-                    builder.load_arch(session);
-                };
-                continue;
-            }
-            let sym = session.sync_odoo.pop_item(BuildSteps::ARCH_EVAL);
-            if let Some(sym_key) = sym {
-                if DEBUG_STEPS {
-                    trace!("PROCESSING FROM ARCH_EVAL - {}", session.st().debug_path(sym_key));
-                }
-                let (tree, entry) = session.st().get_tree_and_entry(sym_key);
-                if already_arch_eval_rebuilt.contains(&tree) {
-                    info!("Already arch eval rebuilt, skipping");
-                    continue;
-                }
-                already_arch_eval_rebuilt.insert(tree);
-                if let Some(mut builder) = PythonArchEval::new(session.st(), entry, sym_key) {
-                    builder.eval_arch(session);
-                };
-                continue;
-            }
-            let sym = session.sync_odoo.pop_item(BuildSteps::VALIDATION);
-            if let Some(sym_key) = sym {
-                if DEBUG_STEPS {
-                    trace!("PROCESSING FROM VALIDATION - {}", session.st().debug_path(sym_key));
-                }
-                let (_, entry) = session.st().get_tree_and_entry(sym_key);
-                if session.sync_odoo.state_init == InitState::ODOO_READY {
-                    let mut no_validation = no_validation;
-                    if session.sync_odoo.interrupt_rebuild.load(Ordering::SeqCst) {
-                        session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
-                        session.log_message(MessageType::INFO, S!("Rebuild interrupted"));
-                        no_validation = true;
-                    }
-                    if no_validation {
-                        session.request_delayed_rebuild();
-                        session.sync_odoo.add_to_validations(sym_key);
-                        if let Some(reporter) = &mut reporter {
-                            reporter.end();
-                        }
-                        return true;
-                    }
-                }
-                Self::validate(session, sym_key, entry);
-                continue;
-            }
-        }
-        if session.sync_odoo.need_rebuild {
-            session.log_message(MessageType::INFO, S!("Rebuild required. Resetting database on breaktime..."));
-            info!("Odoo version change detected. OdooLS is restarting");
-            session.send_notification("$Odoo/restartNeeded", ());
-        }
-        session.sync_odoo.import_cache = None;
-        session.sync_odoo.watched_file_updates = 0;
-        if let Some(reporter) = &mut reporter {
-            reporter.end();
-        }
-        trace!("Leaving rebuild with remaining tasks: {:?} - {:?} - {:?}", session.sync_odoo.rebuild_arch.len(), session.sync_odoo.rebuild_arch_eval.len(), session.sync_odoo.rebuild_validation.len());
-        true
-    }
-
-    fn validate(session: &mut SessionInfo, sym_key: SymbolKey, entry: Rc<RefCell<EntryPoint>>) {
-        match sym_key {
-            SymbolKey::XmlFile(xml) => {
-                let mut validator = XmlValidator::new(&entry, xml, session.st());
-                validator.validate(session);
-            },
-            SymbolKey::CsvFile(csv) => {
-                let mut validator = CsvValidator::new();
-                validator.validate(session, csv);
-            },
-            SymbolKey::JsFile(js) => {
-                let mut validator = JsValidator::new(js);
-                validator.validate(session);
-            },
-            _ => {
-                let mut validator = PythonValidator::new(session.st(), entry, sym_key);
-                validator.validate(session);
-            }
-        }
-    }
-
-    pub fn add_to_rebuild_arch(&mut self, symbol: impl Into<SymbolKey>) {
-        let symbol = symbol.into();
-        if DEBUG_THREADS {
-            trace!("ADDED TO ARCH - {}", self.symbol_table.debug_path(symbol));
-        }
-        if self.symbol_table.build_status(symbol, BuildSteps::ARCH) != BuildStatus::IN_PROGRESS {
-            self.symbol_table.set_build_status(symbol, BuildSteps::ARCH, BuildStatus::PENDING);
-            self.symbol_table.set_build_status(symbol, BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
-            self.symbol_table.set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::PENDING);
-            self.rebuild_arch.insert(symbol);
-        }
-    }
-
-    pub fn add_to_rebuild_arch_eval(&mut self, symbol: impl Into<SymbolKey>) {
-        let symbol = symbol.into();
-        if DEBUG_THREADS {
-            trace!("ADDED TO EVAL - {}", self.symbol_table.debug_path(symbol));
-        }
-        if self.symbol_table.build_status(symbol, BuildSteps::ARCH_EVAL) != BuildStatus::IN_PROGRESS {
-            self.symbol_table.set_build_status(symbol, BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
-            self.symbol_table.set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::PENDING);
-            self.rebuild_arch_eval.insert(symbol);
-        }
-    }
-
-    pub fn add_to_validations(&mut self, symbol: impl Into<SymbolKey>) {
-        let symbol = symbol.into();
-        if DEBUG_THREADS {
-            trace!("ADDED TO VALIDATION - {}", self.symbol_table.debug_path(symbol));
-        }
-        if self.symbol_table.build_status(symbol, BuildSteps::VALIDATION) != BuildStatus::IN_PROGRESS {
-            self.symbol_table.set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::PENDING);
-            self.rebuild_validation.insert(symbol);
-        }
-    }
-
     /* Ask for an immediate rebuild of the given symbol if possible.
      */
     pub fn build_now(session: &mut SessionInfo, symbol: impl Into<SymbolKey>, step: BuildSteps) {
@@ -1104,14 +830,14 @@ impl SyncOdoo {
             if session.st().build_status(symbol, step) == BuildStatus::INVALID {
                 panic!("Trying to build an invalid symbol: {}", session.st().debug_path(symbol));
             }
-            if session.st().build_status(symbol, step) == BuildStatus::IN_PROGRESS && !session.sync_odoo.is_in_rebuild(symbol, step) {
+            if session.st().build_status(symbol, step) == BuildStatus::IN_PROGRESS && !BuildScheduler::is_in_rebuild(session, symbol, step) {
                 error!("Trying to build a symbol that is NOT in the queue: {}", session.st().debug_path(symbol));
             }
         }
         if session.st().build_status(symbol, step) == BuildStatus::PENDING && session.st().previous_step_done(symbol, step) {
             Self::build_now_dependencies(session, symbol, step, visited);
             let entry_point = session.st().get_entry(symbol);
-            session.sync_odoo.remove_from_rebuild(symbol, step);
+            BuildScheduler::remove_from_rebuild(session, symbol, step);
             if step == BuildSteps::ARCH {
                 if let Some(mut builder) = PythonArchBuilder::new(session.st(), entry_point, symbol) {
                     builder.load_arch(session);
@@ -1178,44 +904,6 @@ impl SyncOdoo {
             SyncOdoo::build_now(session, function_key, BuildSteps::ARCH);
             SyncOdoo::build_now(session, function_key, BuildSteps::ARCH_EVAL);
         }
-    }
-
-    pub fn remove_from_rebuild(&mut self, symbol: SymbolKey, step: BuildSteps) {
-        if DEBUG_STEPS {
-            trace!("REMOVED FROM {step:?} - {}", self.symbol_table.debug_path(symbol));
-        }
-        if step == BuildSteps::ARCH {
-            self.rebuild_arch.remove(&symbol);
-        } else if step == BuildSteps::ARCH_EVAL {
-            self.rebuild_arch_eval.remove(&symbol);
-        } else if step == BuildSteps::VALIDATION {
-            self.rebuild_validation.remove(&symbol);
-        }
-    }
-
-    pub fn remove_from_rebuild_arch(&mut self, symbol: SymbolKey) {
-        self.rebuild_arch.remove(&symbol);
-    }
-
-    pub fn remove_from_rebuild_arch_eval(&mut self, symbol: SymbolKey) {
-        self.rebuild_arch_eval.remove(&symbol);
-    }
-
-    pub fn remove_from_rebuild_validation(&mut self, symbol: SymbolKey) {
-        self.rebuild_validation.remove(&symbol);
-    }
-
-    pub fn is_in_rebuild(&self, symbol: SymbolKey, step: BuildSteps) -> bool {
-        if step == BuildSteps::ARCH {
-            return self.rebuild_arch.contains(&symbol);
-        }
-        if step == BuildSteps::ARCH_EVAL {
-            return self.rebuild_arch_eval.contains(&symbol);
-        }
-        if step == BuildSteps::VALIDATION {
-            return self.rebuild_validation.contains(&symbol);
-        }
-        false
     }
 
     pub fn is_request_cancelled(&self) -> bool {
@@ -1381,7 +1069,7 @@ impl SyncOdoo {
         if !found_an_entry {
             info!("Path {} not found. Creating new entry", path.to_str().expect("unable to stringify path"));
             if EntryPointMgr::create_new_custom_entry_for_path(session, &path_in_tree.sanitize_cow(), &path_str) {
-                SyncOdoo::process_rebuilds(session, false);
+                BuildScheduler::process_rebuilds(session, false);
                 return SyncOdoo::get_symbol_of_opened_file(session, path)
             }
         }
@@ -1449,10 +1137,6 @@ impl SyncOdoo {
         !symbol_table.get_entry(file_symbol).borrow().is_main()
         && file_path_buff.components().next_back()
             .is_some_and(|c| c.as_os_str().to_str().is_some_and(|s| s == "__manifest__.py"))
-    }
-
-    pub fn get_rebuild_queue_size(&self) -> usize {
-        self.rebuild_arch.len() + self.rebuild_arch_eval.len() + self.rebuild_validation.len()
     }
 
     pub fn load_capabilities(&mut self, capabilities: &lsp_types::ClientCapabilities) {
@@ -1609,18 +1293,18 @@ impl SyncOdoo {
     }
 
     /// Add a language code from a source of res_lang records.
-    pub fn add_language(&mut self, lang_code: &str, source_file: SourceFileKey) {
-        let languages = self.languages_by_source
+    pub fn add_language(session: &mut SessionInfo, lang_code: &str, source_file: SourceFileKey) {
+        let languages = session.sync_odoo.languages_by_source
             .entry(source_file)
             .or_default();
         languages.extend(expand_language_code(lang_code));
-        self.revalidate_language_dependents();
+        SyncOdoo::revalidate_language_dependents(session);
     }
 
     /// Remove a source of res_lang records from the language registry.
-    pub fn remove_language_source(&mut self, source_file: SourceFileKey) {
-        if self.languages_by_source.remove(&source_file).is_some() {
-            self.revalidate_language_dependents();
+    pub fn remove_language_source(session: &mut SessionInfo, source_file: SourceFileKey) {
+        if session.sync_odoo.languages_by_source.remove(&source_file).is_some() {
+            SyncOdoo::revalidate_language_dependents(session);
         }
     }
 
@@ -1642,10 +1326,10 @@ impl SyncOdoo {
     }
 
     /// Schedule revalidation for all language-dependent symbols.
-    pub(crate) fn revalidate_language_dependents(&mut self) {
-        let to_revalidate = self.language_dependents.drain_valid(&self.symbol_table);
+    pub(crate) fn revalidate_language_dependents(session: &mut SessionInfo) {
+        let to_revalidate = session.sync_odoo.language_dependents.drain_valid(&session.sync_odoo.symbol_table);
         for sym in to_revalidate {
-            self.add_to_validations(sym);
+            BuildScheduler::queue(session, sym, BuildSteps::VALIDATION);
         }
     }
 
@@ -2311,7 +1995,7 @@ impl Odoo {
                                     }
                                 }
                                 EntryPointMgr::create_new_custom_entry_for_path(session, &tree_path.sanitize_cow(), &sanitized_path);
-                                SyncOdoo::process_rebuilds(session, false);
+                                BuildScheduler::process_rebuilds(session, false);
                             } else if updated {
                                 Odoo::update_file_index(session, &path, file_extension, true, false);
                             }
@@ -2345,7 +2029,7 @@ impl Odoo {
                     }
                 }
                 EntryPointMgr::create_new_untitled_entry_for_path(session, &path);
-                SyncOdoo::process_rebuilds(session, false);
+                BuildScheduler::process_rebuilds(session, false);
             }, // temporary file
             Some(scheme) => {
                 warn!("Unsupported URI scheme: {}", scheme);
@@ -2413,7 +2097,7 @@ impl Odoo {
                 if entry.borrow().path == parent_path.sanitize_cow() {
                     if let SymbolKey::Namespace(addons) = entry.borrow().get_symbol(session.st()).unwrap()
                     && let Some(module_symbol) = SymbolTable::create_module_from_path(session, &path_for_tree, addons) {
-                        session.sync_odoo.add_to_rebuild_arch(module_symbol);
+                        BuildScheduler::queue(session, module_symbol, BuildSteps::ARCH);
                     }
                     break;
                 }
@@ -2426,7 +2110,7 @@ impl Odoo {
                     Some(addons_symbol) if !addons_symbol.is_empty() => {
                         if let SymbolKey::Namespace(addons) = addons_symbol[0]
                         && let Some(module_symbol) = SymbolTable::create_module_from_path(session, &path_for_tree, addons) {
-                            session.sync_odoo.add_to_rebuild_arch(module_symbol);
+                            BuildScheduler::queue(session, module_symbol, BuildSteps::ARCH);
                         }
                     }
                     _ => {
@@ -2450,20 +2134,20 @@ impl Odoo {
             SyncOdoo::unload_path(session, Path::new(&old_path));
             FileMgr::delete_path(session, &old_path);
             session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&mut session.sync_odoo.symbol_table, &old_path);
-            SyncOdoo::process_rebuilds(session, false);
+            BuildScheduler::process_rebuilds(session, false);
             //2 - create new document
             let new_path_buf = Path::new(&new_path);
             let new_path_updated = new_path_buf.to_tree_path().sanitize();
             Odoo::search_symbols_to_rebuild(session, &new_path_updated);
-            SyncOdoo::process_rebuilds(session, false);
+            BuildScheduler::process_rebuilds(session, false);
             let tree = session.sync_odoo.path_to_main_entry_tree(new_path_buf);
             if let Some(tree) = tree
                 &&  new_path_buf.is_file() &&  session.st().get_symbol(session.sync_odoo.get_main_entry().borrow().root.into(), tree.as_slice(), u32::MAX).is_empty() {
                     //file has not been added to main entry. Let's build a new entry point
                     EntryPointMgr::create_new_custom_entry_for_path(session, &new_path_updated, &new_path_buf.sanitize_cow());
-                    SyncOdoo::process_rebuilds(session, false);
+                    BuildScheduler::process_rebuilds(session, false);
                 }
-            SyncOdoo::process_rebuilds(session, false);
+            BuildScheduler::process_rebuilds(session, false);
         }
     }
 
@@ -2478,7 +2162,7 @@ impl Odoo {
             Odoo::search_symbols_to_rebuild(session, &path_updated);
             session.sync_odoo.entry_point_mgr.borrow_mut().clean_entries(&mut session.sync_odoo.symbol_table);
         }
-        SyncOdoo::process_rebuilds(session, false);
+        BuildScheduler::process_rebuilds(session, false);
         //Now let's test if the symbol has been added to main entry tree or not
         for f in params.files.iter() {
             let path = FileMgr::uri2pathname(&f.uri);
@@ -2490,7 +2174,7 @@ impl Odoo {
             )) {
                 //file has not been added to main entry. Let's build a new entry point
                 EntryPointMgr::create_new_custom_entry_for_path(session, &path_updated, &path);
-                SyncOdoo::process_rebuilds(session, false);
+                BuildScheduler::process_rebuilds(session, false);
             }
         }
     }
@@ -2507,7 +2191,7 @@ impl Odoo {
             FileMgr::delete_path(session, &path);
             session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&mut session.sync_odoo.symbol_table, &Path::new(&path).to_tree_path().sanitize_cow());
         }
-        SyncOdoo::process_rebuilds(session, false);
+        BuildScheduler::process_rebuilds(session, false);
     }
 
     pub fn handle_did_change(session: &mut SessionInfo, params: DidChangeTextDocumentParams) {
@@ -2727,8 +2411,8 @@ impl Odoo {
         session.sync_odoo.get_file_mgr().borrow_mut().update_all_file_diagnostic_filters(session);
         session.update_delay_thread_delay_duration(session.sync_odoo.config.auto_refresh_delay());
         if languages_changed {
-            session.sync_odoo.revalidate_language_dependents();
-            SyncOdoo::process_rebuilds(session, false);
+            SyncOdoo::revalidate_language_dependents(session);
+            BuildScheduler::process_rebuilds(session, false);
         }
     }
 

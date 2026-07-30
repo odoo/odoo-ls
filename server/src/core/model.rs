@@ -1,6 +1,8 @@
 use itertools::Itertools;
 use lsp_types::MessageType;
 use std::cell::RefCell;
+use crate::constants::BuildSteps;
+use crate::core::build_scheduler::BuildScheduler;
 use crate::utils::HashMap;
 use crate::utils::HashSet;
 use std::collections::VecDeque;
@@ -387,7 +389,7 @@ impl Model {
             let st = session.st_mut();
             let module = st.find_module(dep);
             if module_change.is_none() || module.is_none() || ModuleSymbol::is_in_deps(st, module.unwrap(), &st[module_change.unwrap()].dir_name) {
-                session.sync_odoo.add_to_validations(dep);
+                BuildScheduler::queue(session, dep, BuildSteps::VALIDATION);
             }
         }
     }
