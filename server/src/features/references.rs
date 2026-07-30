@@ -1,7 +1,7 @@
 use crate::constants::{BuildSteps, PackageType};
+use crate::core::build_scheduler::BuildScheduler;
 use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr};
 use crate::core::file_mgr::Ast;
-use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::Dependencies;
 use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::symbol_keys::{ModuleKey, SourceFileKey, SymbolKey, XmlFileKey};
@@ -63,7 +63,7 @@ impl ReferenceFeature {
             return ReferenceFeature::get_reference_js(session, file_info, line, character);
         }
         //We want to search for references of the definition, and not the current symbol. Let's use definition feature for that
-        SyncOdoo::process_rebuilds(session, false);
+        BuildScheduler::process_rebuilds(session, false);
         let def_sources = match file_info.borrow().file_info_ast.borrow().ast {
             Ast::PythonAst(_) => {
                 GotoUtils::get_symbols(session, GotoRequest::Definition, file_symbol, file_info, line, character)

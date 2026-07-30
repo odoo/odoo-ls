@@ -1,3 +1,4 @@
+pub mod buildable;
 pub mod class_symbol;
 pub mod compiled_symbol;
 pub mod csv_file_symbol;

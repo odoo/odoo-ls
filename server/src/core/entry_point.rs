@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::{cell::RefCell, cmp, path::PathBuf, rc::Rc};
 use crate::constants::MissingDataSource;
+use crate::core::build_scheduler::BuildScheduler;
 use crate::utils::HashMap;
 
 use slotmap::Key;
@@ -16,8 +17,6 @@ use crate::{
     warn_or_panic,
     weak_collections::WeakSet,
 };
-
-use super::odoo::SyncOdoo;
 
 #[derive(Debug)]
 pub struct EntryPointMgr {
@@ -229,12 +228,12 @@ impl EntryPointMgr {
                 SymbolKey::JsFile(f) => {
                     session.st_mut()[f].self_import = true;
                     //arch of js files is done in build_ast of file_info, so we have to directly reload validations instead
-                    SyncOdoo::add_to_validations(session.sync_odoo, new_sym);
+                    BuildScheduler::queue(session, new_sym, BuildSteps::VALIDATION);
                     return true;
                 }
                 _ => {panic!("Unexpected symbol type: {:?}", new_sym);}
             }
-            SyncOdoo::add_to_rebuild_arch(session.sync_odoo, new_sym);
+            BuildScheduler::queue(session, new_sym, BuildSteps::ARCH);
         }
         true
     }
@@ -242,7 +241,7 @@ impl EntryPointMgr {
     pub fn create_new_untitled_entry_for_path(session: &mut SessionInfo, file_name: &str) -> bool {
         let new_sym = EntryPointMgr::add_entry_to_untitled(session, file_name.to_string());
         session.sync_odoo.symbol_table[new_sym].self_import = true;
-        SyncOdoo::add_to_rebuild_arch(session.sync_odoo, new_sym);
+        BuildScheduler::queue(session, new_sym, BuildSteps::ARCH);
         true
     }
 
@@ -488,14 +487,14 @@ impl EntryPoint {
     fn dispatch_rebuild(session: &mut SessionInfo, to_add: [Vec<SourceFileKey>; 3]) {
         let [arch, arch_eval, validation] = to_add;
         for s in arch {
-            session.sync_odoo.add_to_rebuild_arch(s);
+            BuildScheduler::queue(session, s, BuildSteps::ARCH);
         }
         for s in arch_eval {
-            session.sync_odoo.add_to_rebuild_arch_eval(s);
+            BuildScheduler::queue(session, s, BuildSteps::ARCH_EVAL);
         }
         for s in validation {
             SymbolTable::invalidate_sub_functions(session, s);
-            session.sync_odoo.add_to_validations(s);
+            BuildScheduler::queue(session, s, BuildSteps::VALIDATION);
         }
     }
 

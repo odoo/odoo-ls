@@ -1,8 +1,6 @@
 use crate::{
     Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, OYarn}, core::{
-        data_hooks,
-        diagnostics::{DiagnosticCode, create_diagnostic},
-        symbols::{
+        build_scheduler::BuildScheduler, data_hooks, diagnostics::{DiagnosticCode, create_diagnostic}, symbols::{
             Buildable, ModuleSymbol, symbol_keys::{CsvFileKey, XmlId, XmlRecordKey}
         },
     }, features::csv_ast_utils::{CsvFieldIter, CsvRecordIter}, oyarn, threads::SessionInfo
@@ -102,7 +100,7 @@ impl CsvArchBuilder {
             }
         }
         session.st_mut()[csv_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
-        session.sync_odoo.add_to_validations(csv_symbol);
+        BuildScheduler::queue(session, csv_symbol, BuildSteps::VALIDATION);
         diagnostics
     }
 

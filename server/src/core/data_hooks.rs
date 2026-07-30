@@ -1,5 +1,6 @@
 //! Hooks for XML/CSV data file events.
 
+use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::symbol_keys::{SourceFileKey, XmlRecordKey};
 use crate::threads::SessionInfo;
@@ -31,7 +32,7 @@ static record_creation_hooks: LazyLock<Vec<RecordCreationHook>> = LazyLock::new(
                 let Some(text) = session.st()[record_key].get_field_text(XmlFieldName::Code, session.st()) else {
                     return;
                 };
-                session.sync_odoo.add_language(&text, source_file);
+                SyncOdoo::add_language(session, &text, source_file);
             },
         },
     ]
@@ -70,7 +71,7 @@ static file_unload_hooks: LazyLock<Vec<FileUnloadHook>> = LazyLock::new(|| {
     vec![FileUnloadHook {
         // Hook: Remove language codes when data file is unloaded
         func: |session, file| {
-            session.sync_odoo.remove_language_source(file);
+            SyncOdoo::remove_language_source(session, file);
         },
     }]
 });

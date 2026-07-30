@@ -1,3 +1,4 @@
+use crate::core::build_scheduler::BuildScheduler;
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -141,7 +142,7 @@ impl PythonArchEval {
             }
         } else {
             if self.file_mode {
-                session.sync_odoo.add_to_validations(self.sym_stack[0]);
+                BuildScheduler::queue(session, self.sym_stack[0], BuildSteps::VALIDATION);
             }
         }
     }

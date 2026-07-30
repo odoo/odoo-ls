@@ -7,10 +7,11 @@ pub mod manifest_validation;
 pub mod module_utils;
 
 pub use storage::{
+    buildable::Buildable,
     class_symbol::ClassSymbol,
     compiled_symbol::CompiledSymbol,
     csv_file_symbol::CsvFileSymbol,
-    dependency_mgr::{Buildable, Dependencies},
+    dependency_mgr::Dependencies,
     disk_dir_symbol::DiskDirSymbol,
     file_symbol::FileSymbol,
     function_symbol::{self, FunctionSymbol},

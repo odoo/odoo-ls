@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use lsp_types::NumberOrString;
+use odoo_ls_server::constants::BuildSteps;
+use odoo_ls_server::core::build_scheduler::BuildScheduler;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::core::symbols::SymbolTable;
 use odoo_ls_server::core::symbols::symbol_keys::SourceFileKey;
@@ -18,8 +20,8 @@ const ACCESS_INVALID_FIELD_MULTI_CANDIDATE_LINE: u32 = 37;
 
 fn revalidate(session: &mut SessionInfo, file_sym: SourceFileKey) {
     SymbolTable::invalidate_sub_functions(session, file_sym);
-    session.sync_odoo.add_to_validations(file_sym);
-    SyncOdoo::process_rebuilds(session, false);
+    BuildScheduler::queue(session, file_sym, BuildSteps::VALIDATION);
+    BuildScheduler::process_rebuilds(session, false);
 }
 
 #[test]
