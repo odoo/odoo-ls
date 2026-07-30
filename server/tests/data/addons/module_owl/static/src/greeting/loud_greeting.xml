@@ -1,0 +1,10 @@
+<templates>
+    <t t-name="module_owl.LoudGreeting">
+        <div class="o_loud_greeting">
+            <span t-out="this.title"/>
+            <span t-out="this.punctuation"/>
+            <span t-out="this.props.name"/>
+            <span t-out="this.shout(this.volume)"/>
+        </div>
+    </t>
+</templates>
