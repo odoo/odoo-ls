@@ -2,6 +2,7 @@ use std::env;
 use std::path::PathBuf;
 
 use lsp_types::TextDocumentContentChangeEvent;
+use odoo_ls_server::core::build_scheduler::BuildScheduler;
 use odoo_ls_server::core::entry_point::EntryPointMgr;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::core::symbols::storage::SymbolTable;
@@ -47,7 +48,7 @@ fn test_stale_node_index_on_method_does_not_panic() {
     let file_path = PathBuf::from(&module_dir).join("stale_file.py").sanitize();
 
     EntryPointMgr::create_new_custom_entry_for_path(&mut session, &module_dir, &init_path);
-    SyncOdoo::process_rebuilds(&mut session, false);
+    BuildScheduler::process_rebuilds(&mut session, false);
 
     let file = session
         .sync_odoo

@@ -3,7 +3,7 @@ use std::{
 };
 use crate::{
     Sy, constants::MissingDataSource, core::{
-        evaluation_context::ContextKey, python_arch_eval_hooks::get_base_model_symbol, symbols::{storage::xml::xml_field_symbol::XmlFieldName, symbol_keys::XmlRecordKey},
+        build_scheduler::BuildScheduler, evaluation_context::ContextKey, python_arch_eval_hooks::get_base_model_symbol, symbols::{storage::xml::xml_field_symbol::XmlFieldName, symbol_keys::XmlRecordKey},
     }, oyarn, utils::{HashMap, HashSet},
 };
 
@@ -1027,14 +1027,10 @@ impl SymbolTable {
                     }
                 }
                 for (index, sym) in build_queue {
-                    if index == BuildSteps::ARCH as usize {
-                        session.sync_odoo.add_to_rebuild_arch(sym);
-                    } else if index == BuildSteps::ARCH_EVAL as usize {
-                        session.sync_odoo.add_to_rebuild_arch_eval(sym);
-                    } else if index == BuildSteps::VALIDATION as usize {
+                    if index == BuildSteps::VALIDATION as usize {
                         SymbolTable::invalidate_sub_functions(session, sym);
-                        session.sync_odoo.add_to_validations(sym);
                     }
+                    BuildScheduler::queue(session, sym, BuildSteps::from(index as i32));
                 }
             }
             if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL].contains(&step) && in_workspace {
@@ -1049,10 +1045,10 @@ impl SymbolTable {
                 }
                 for (index, sym) in build_queue {
                     if index + 1 == BuildSteps::ARCH_EVAL as usize {
-                        session.sync_odoo.add_to_rebuild_arch_eval(sym);
+                        BuildScheduler::queue(session, sym, BuildSteps::ARCH_EVAL);
                     } else if index + 1 == BuildSteps::VALIDATION as usize {
                         SymbolTable::invalidate_sub_functions(session, sym);
-                        session.sync_odoo.add_to_validations(sym);
+                        BuildScheduler::queue(session, sym, BuildSteps::VALIDATION);
                     }
                 }
                 for (model, from_module) in session.st().iter_all_model_keys(session, ref_to_inv.into()) {
@@ -1066,7 +1062,7 @@ impl SymbolTable {
                         .collect::<Vec<_>>() {
                     if !session.st_mut().is_symbol_in_parents(sym.into(), ref_to_inv.into()) {
                         SymbolTable::invalidate_sub_functions(session, sym);
-                        session.sync_odoo.add_to_validations(sym);
+                        BuildScheduler::queue(session, sym, BuildSteps::VALIDATION);
                     }
                 }
             }

@@ -13,6 +13,7 @@ use tracing::{trace, warn};
 use crate::constants::{
     BuildStatus, BuildSteps, DEBUG_STEPS, DEBUG_STEPS_ONLY_INTERNAL, DiagnosticSource, OYarn, SymType
 };
+use crate::core::build_scheduler::BuildScheduler;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
@@ -165,12 +166,12 @@ impl PythonArchBuilder {
             session.noqas_stack = old_stack_noqa;
             self._resolve_all_symbols(session);
             if self.file_mode {
-                session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0]);
+                BuildScheduler::queue(session, self.sym_stack[0], BuildSteps::ARCH_EVAL);
             }
         } else if self.file_mode {
             if matches!(symbol, SymbolKey::Module(_)) {
                 //even if there is no __init__.py, we need to go to rebuild_arch and validation to validate the manifest
-                session.sync_odoo.add_to_rebuild_arch_eval(self.sym_stack[0]);
+                BuildScheduler::queue(session, self.sym_stack[0], BuildSteps::ARCH_EVAL);
             } else {
                 let mut file_info = file_info_rc.borrow_mut();
                 file_info.publish_diagnostics(session);

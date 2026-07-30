@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 use core::str;
+use odoo_ls_server::core::build_scheduler::BuildScheduler;
 use odoo_ls_server::utils::HashMap;
 use std::{env, fs};
 
@@ -81,7 +82,7 @@ pub fn prepare_custom_entry_point(session: &mut SessionInfo, path: &str){
     let content = Some(event.as_slice());
     EntryPointMgr::create_new_custom_entry_for_path(session, &ep_path, &ep_path);
     let (_file_updated, _file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path, content, Some(1), false);
-    SyncOdoo::process_rebuilds(session, false);
+    BuildScheduler::process_rebuilds(session, false);
 }
 
 pub fn get_diagnostics_for_path(session: &mut SessionInfo, path: &str) -> Vec<Diagnostic> {
