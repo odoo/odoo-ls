@@ -35,4 +35,8 @@ impl CompiledSymbol {
         self.module_symbols.values().copied().collect()
     }
 
+    pub fn module_symbols(&self) -> &HashMap<OYarn, SymbolKey> {
+        &self.module_symbols
+    }
+
 }
