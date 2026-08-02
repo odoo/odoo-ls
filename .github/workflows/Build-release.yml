@@ -82,6 +82,8 @@ jobs:
 
       - name: Build
         working-directory: server
+        env:
+          CARGO_PROFILE_RELEASE_DEBUG: ${{ contains(matrix.target, 'windows') && 'line-tables-only' || '0' }}
         run: cargo build --bin odoo_ls_server --release --target ${{ matrix.target }}
 
       - name: Build schema
@@ -214,4 +216,3 @@ jobs:
             ./artifacts/*.tar.gz \
             ./artifacts/config_schema/config_schema.json \
             ./typeshed.zip
-
