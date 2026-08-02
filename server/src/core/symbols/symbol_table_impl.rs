@@ -366,9 +366,16 @@ impl SymbolTable {
     }
 
     pub fn has_modules(&self, target: SymbolKey) -> bool {
-        matches!(target, SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::DiskDir(_))
+        matches!(
+            target,
+            SymbolKey::Root(_)
+                | SymbolKey::Namespace(_)
+                | SymbolKey::PythonPackage(_)
+                | SymbolKey::Module(_)
+                | SymbolKey::DiskDir(_)
+                | SymbolKey::Compiled(_)
+        )
     }
-
 
     pub fn all_module_symbol(&self, target: SymbolKey) -> Vec<SymbolKey> {
         match target {
@@ -383,7 +390,7 @@ impl SymbolTable {
             SymbolKey::Module(m) => self[m].module_symbols().values().copied().collect(),
             SymbolKey::PythonPackage(p) => self[p].module_symbols().values().copied().collect(),
             SymbolKey::File(_) => panic!("No module symbol on File"),
-            SymbolKey::Compiled(_) => panic!("No module symbol on Compiled"),
+            SymbolKey::Compiled(c) => self[c].module_symbols().values().copied().collect(),
             SymbolKey::Class(_c) => panic!("No module symbol on Class"),
             SymbolKey::Function(_) => panic!("No module symbol on Function"),
             SymbolKey::Variable(_) => panic!("No module symbol on Variable"),
@@ -837,6 +844,9 @@ impl SymbolTable {
             },
             SymbolKey::DiskDir(d) => {
                 self[d].module_symbols().get(name).copied()
+            },
+            SymbolKey::Compiled(c) => {
+                self[c].module_symbols().get(name).copied()
             }
             _ => {None}
         }
@@ -2651,5 +2661,33 @@ mod get_symbol_tests {
         assert_eq!(result.len(), 2);
         assert!(result.contains(&SymbolKey::Function(m_if)));
         assert!(result.contains(&SymbolKey::Function(m_else)));
+    }
+
+    #[test]
+    fn compiled_child_is_found_by_name() {
+        let (mut st, root) = empty_table_with_root();
+        let parent = st.add_new_compiled(root, "cmod", "/test/cmod.so");
+        let child = st.add_new_compiled(parent.into(), "sub", "/test/cmod/sub");
+    
+        assert_eq!(st.get_module_symbol(parent.into(), "sub"), Some(child.into()));
+    }
+
+    #[test]
+    fn resolving_a_compiled_child_twice_keeps_one_key() {
+        let (mut st, root) = empty_table_with_root();
+        let parent: SymbolKey = st.add_new_compiled(root, "cmod", "/test/cmod.so").into();
+    
+        fn resolve(st: &mut SymbolTable, parent: SymbolKey) -> SymbolKey {
+            match st.get_module_symbol(parent, "sub") {
+                Some(found) => found,
+                None => st.add_new_compiled(parent, "sub", "/test/cmod/sub").into(),
+            }
+        }
+    
+        let first = resolve(&mut st, parent);
+        let second = resolve(&mut st, parent);
+    
+        assert_eq!(first, second, "the second resolution created a new symbol");
+        assert!(st.is_key_valid(first), "the second resolution deleted the first key");
     }
 }
