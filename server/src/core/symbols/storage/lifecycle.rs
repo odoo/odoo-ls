@@ -128,13 +128,14 @@ impl SymbolTable {
         class_key
     }
 
-    pub fn add_new_xml_file(&mut self, parent: ModuleKey, name: &str, path: &str) -> XmlFileKey {
+    pub fn add_new_xml_file(&mut self, parent: ModuleKey, name: &str, path: &str) -> Result<XmlFileKey, NameTakenError> {
+        self.check_data_symbol_path_vacant(parent, path)?;
         let parent_symbol = &self.modules[parent];
         let mut xml_file_symbol = XmlFileSymbol::new(name, path, parent, parent_symbol.is_external);
         xml_file_symbol.set_in_workspace(parent_symbol.in_workspace);
         let xml_file_key = self.xml_files.insert(xml_file_symbol);
         self.add_to_module_data_symbols(parent, path, xml_file_key.into());
-        xml_file_key
+        Ok(xml_file_key)
     }
 
     pub fn add_new_xml_record(&mut self, parent: XmlDataParent, model: (OYarn, Range<usize>) , xml_id: Option<OYarn>, range: TextRange) -> XmlRecordKey {
@@ -190,13 +191,14 @@ impl SymbolTable {
         xml_template_key
     }
 
-    pub fn add_new_csv_file(&mut self, parent: ModuleKey, name: &str, path: &str) -> CsvFileKey {
+    pub fn add_new_csv_file(&mut self, parent: ModuleKey, name: &str, path: &str) -> Result<CsvFileKey, NameTakenError> {
+        self.check_data_symbol_path_vacant(parent, path)?;
         let parent_symbol = &self.modules[parent];
         let mut csv_file_symbol = CsvFileSymbol::new(name, path, parent, parent_symbol.is_external);
         csv_file_symbol.set_in_workspace(parent_symbol.in_workspace);
         let csv_file_key = self.csv_files.insert(csv_file_symbol);
         self.add_to_module_data_symbols(parent, path, csv_file_key.into());
-        csv_file_key
+        Ok(csv_file_key)
     }
 
     pub fn add_new_js_file(&mut self, parent: JsFileParent, name: &str, path: &str) -> JsFileKey {
@@ -258,6 +260,13 @@ impl SymbolTable {
         }
     }
 
+    fn check_data_symbol_path_vacant(&self, parent: ModuleKey, path: &str) -> Result<(), NameTakenError> {
+        match self[parent].data_file_symbols.get(path).copied() {
+            Some(existing) => Err(NameTakenError(existing.into())),
+            None => Ok(())
+        }
+    }
+
     fn add_to_parent_fs_symbols(&mut self, parent: FileSystemSymbolParent, child: SymbolKey, name: &str, path: &str) {
         // A compiled can only be a parent to another compiled
         if let FileSystemSymbolParent::Compiled(_) = parent && !matches!(child, SymbolKey::Compiled(_)) {
@@ -278,7 +287,7 @@ impl SymbolTable {
 
     fn add_to_module_data_symbols(&mut self, parent: ModuleKey, path: &str, data_file: SourceFileKey) {
         let replaced_key = self.modules[parent].data_file_symbols.insert(path.to_string(), data_file);
-        self.remove_replaced(replaced_key);
+        Self::panic_on_replaced_key(replaced_key);
     }
     
     fn remove_from_module_data_symbols(&mut self, parent: ModuleKey, path: &str) {
@@ -471,8 +480,8 @@ mod tests {
         let in_namespace = f.st.add_new_file(f.namespace.into(), "in_namespace", "/root/ns/in_namespace.py")?;
         let package = f.st.add_new_python_package(f.root.into(), "a_package", "/root/a_package", "")?;
         let module = add_module(&mut f.st, f.namespace, "another_module", "/root/ns/another_module");
-        let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml");
-        let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv");
+        let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml")?;
+        let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv")?;
         let js_in_module = f.st.add_new_js_file(JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js");
         let js_in_disk_dir = f.st.add_new_js_file(JsFileParent::DiskDir(f.disk_dir), "lib.js", "/root/dd/lib.js");
         let sibling = f.st.add_new_file(f.module.into(), "sibling", "/root/ns/mod/sibling.py")?;
@@ -528,8 +537,8 @@ mod tests {
     #[test]
     fn xml_data_round_trips_and_dies_with_its_file() {
         let mut f = Fixture::new();
-        let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml");
-        let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv");
+        let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml").unwrap();
+        let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv").unwrap();
 
         let record = f.st.add_new_xml_record(XmlDataParent::XmlFile(xml_file), (oyarn!("res.partner"), 0..1), Some(oyarn!("a_partner")), range_at(0));
         let menuitem = f.st.add_new_xml_menuitem(xml_file, Some(oyarn!("a_menu")), range_at(10));
@@ -565,10 +574,10 @@ mod tests {
         f.st.add_new_variable(method, "local", range_at(20));
         f.st.add_new_variable(f.module, "MODULE_CONSTANT", range_at(0));
 
-        let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml");
+        let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml")?;
         let record = f.st.add_new_xml_record(XmlDataParent::XmlFile(xml_file), (oyarn!("res.partner"), 0..1), None, range_at(0));
         f.st.add_new_xml_field(XmlFieldParent::XmlRecord(record), oyarn!("name"), range_at(1), None, None, None);
-        let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv");
+        let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv")?;
         f.st.add_new_xml_record(XmlDataParent::CsvFile(csv_file), (oyarn!("res.partner"), 0..1), None, range_at(0));
         f.st.add_new_js_file(JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js");
 
@@ -596,8 +605,8 @@ mod tests {
         let mut f = Fixture::new();
         let file = f.st.add_new_file(f.module.into(), "models", "/root/ns/mod/models.py").unwrap();
         let constant = f.st.add_new_variable(f.module, "MODULE_CONSTANT", range_at(0));
-        let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml");
-        let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv");
+        let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml").unwrap();
+        let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv").unwrap();
         let js_file = f.st.add_new_js_file(JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js");
 
         let children = f.st.children(f.module.into());
