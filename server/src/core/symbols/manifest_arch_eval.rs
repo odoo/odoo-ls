@@ -51,12 +51,14 @@ impl ModuleSymbol {
             let (_, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path_string, None, None, false); //create ast if not in cache
             let mut file_info = file_info.borrow_mut();
             if file_name.ends_with(".xml") {
-                let xml_sym = session.st_mut().add_new_xml_file(symbol_key, &file_name, &path_string);
+                let xml_sym = session.st_mut().add_new_xml_file(symbol_key, &file_name, &path_string)
+                    .expect("path should not already exist, as checked above");
                 Self::on_data_file_load(session.st(), xml_sym.into());
                 session.st_mut().add_dependency(symbol_key.into(), xml_sym.into(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
                 ModuleSymbol::load_xml_arch(session, xml_sym, &mut file_info, false);
             } else if file_name.ends_with(".csv") {
-                let csv_sym = session.st_mut().add_new_csv_file(symbol_key, &file_name, &path_string);
+                let csv_sym = session.st_mut().add_new_csv_file(symbol_key, &file_name, &path_string)
+                    .expect("path should not already exist, as checked above");
                 Self::on_data_file_load(session.st(), csv_sym.into());
                 session.st_mut().add_dependency(symbol_key.into(), csv_sym.into(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
                 let Some(data) = file_info.file_info_ast.borrow().text_document.as_ref().map(|td| td.contents().to_string()) else {
@@ -156,7 +158,8 @@ impl ModuleSymbol {
             if session.st()[module].data_file_symbols().contains_key(file_path_str.as_ref()) { //already imported. can happen if the file is in multiple bundle or caught by multiple regex
                 continue;
             }
-            let xml_sym = session.st_mut().add_new_xml_file(module, &file_name, file_path_str.as_ref());
+            let xml_sym = session.st_mut().add_new_xml_file(module, &file_name, file_path_str.as_ref())
+                .expect("path should not already exist, as checked above");
             Self::on_data_file_load(session.st(), xml_sym.into());
             session.st_mut().add_dependency(module.into(), xml_sym.into(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
             let (_, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, file_path_str.as_ref(), None, None, false); //create ast if not in cache
