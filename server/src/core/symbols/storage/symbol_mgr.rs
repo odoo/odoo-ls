@@ -1,5 +1,6 @@
 use crate::utils::HashMap;
 
+use duplicate::duplicate_item;
 use ruff_text_size::TextSize;
 
 use crate::{constants::OYarn, core::symbols::symbol_keys::SymbolKey};
@@ -60,56 +61,58 @@ change_parent(ei_condition, else_body)
 change_parent(SectionIndex::Or(old_last_section | ei_body | else_body), next_sections)
     */
 
-macro_rules! impl_section_mgr_for {
-    ($($t:ty),+ $(,)?) => ($(
-    impl SymbolMgr for $t {
-        fn _init_symbol_mgr(&mut self) {
-            self.sections.push(SectionRange{
-                start: 0,
-                index: 0,
-                previous_indexes: SectionIndex::NONE
-            });
-        }
-
-        fn get_sections(&self) -> &[SectionRange] {
-            &self.sections
-        }
-
-        fn symbols(&self) -> &HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>> {
-            &self.symbols
-        }
-
-        fn get_section_for(&self, position: u32) -> SectionRange {
-            self.sections.iter().rev().find(|section| section.start <= position).unwrap_or(self.sections.last().unwrap()).clone()
-        }
-
-        fn get_last_index(&self) -> u32 {
-            (self.sections.len() - 1) as u32
-        }
-
-        /* Add a section at the END of the sections */
-        fn add_section(&mut self, range_start: TextSize, maybe_previous_indexes: Option<SectionIndex>) -> SectionRange{
-            let previous_indexes = maybe_previous_indexes.unwrap_or_else(|| {
-                let last_index = self.get_last_index();
-                SectionIndex::INDEX(last_index)
-            });
-            let new_section = SectionRange {
-                start: range_start.to_u32(),
-                index: self.sections.len() as u32,
-                previous_indexes,
-            };
-            self.sections.push(new_section.clone());
-            new_section
-        }
-
-        fn change_parent(&mut self, new_parent: SectionIndex, section: &mut SectionRange) {
-            section.previous_indexes = new_parent;
-        }
+#[duplicate_item(
+    name;
+    [FileSymbol];
+    [ClassSymbol];
+    [FunctionSymbol];
+    [ModuleSymbol];
+    [PythonPackageSymbol]
+)]
+impl SymbolMgr for name {
+    fn _init_symbol_mgr(&mut self) {
+        self.sections.push(SectionRange{
+            start: 0,
+            index: 0,
+            previous_indexes: SectionIndex::NONE
+        });
     }
-)+)
-}
 
-impl_section_mgr_for!(FileSymbol, ClassSymbol, FunctionSymbol, ModuleSymbol, PythonPackageSymbol);
+    fn get_sections(&self) -> &[SectionRange] {
+        &self.sections
+    }
+
+    fn symbols(&self) -> &HashMap<OYarn, HashMap<u32, Vec<SymbolKey>>> {
+        &self.symbols
+    }
+
+    fn get_section_for(&self, position: u32) -> SectionRange {
+        self.sections.iter().rev().find(|section| section.start <= position).unwrap_or(self.sections.last().unwrap()).clone()
+    }
+
+    fn get_last_index(&self) -> u32 {
+        (self.sections.len() - 1) as u32
+    }
+
+    /* Add a section at the END of the sections */
+    fn add_section(&mut self, range_start: TextSize, maybe_previous_indexes: Option<SectionIndex>) -> SectionRange{
+        let previous_indexes = maybe_previous_indexes.unwrap_or_else(|| {
+            let last_index = self.get_last_index();
+            SectionIndex::INDEX(last_index)
+        });
+        let new_section = SectionRange {
+            start: range_start.to_u32(),
+            index: self.sections.len() as u32,
+            previous_indexes,
+        };
+        self.sections.push(new_section.clone());
+        new_section
+    }
+
+    fn change_parent(&mut self, new_parent: SectionIndex, section: &mut SectionRange) {
+        section.previous_indexes = new_parent;
+    }
+}
 
 pub fn iter_symbol_keys(symbol: &impl SymbolMgr) -> impl Iterator<Item = & SymbolKey> {
     symbol.symbols().values()

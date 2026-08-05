@@ -1,5 +1,7 @@
 use std::ops::{Index, IndexMut};
 
+use duplicate::duplicate_item;
+
 use crate::core::symbols::symbol_keys::SourceFileKey;
 use crate::core::symbols::{CsvFileSymbol, FileSymbol, JsFileSymbol, ModuleSymbol, PythonPackageSymbol, XmlFileSymbol};
 use crate::weak_collections::WeakSet;
@@ -93,28 +95,22 @@ pub trait Dependencies {
     }
 }
 
-macro_rules! impl_dependencies {
-    ($($t:ty),* $(,)?) => { $(
-        impl Dependencies for $t {
-            fn dependencies(&self) -> &DependenciesTable { &self.dependencies }
-            fn dependents(&self) -> &DependentsTable { &self.dependents }
-            fn is_in_workspace(&self) -> bool { self.in_workspace }
+#[duplicate_item(name;
+    [FileSymbol];
+    [ModuleSymbol];
+    [PythonPackageSymbol];
+    [XmlFileSymbol];
+    [CsvFileSymbol];
+    [JsFileSymbol])]
+impl Dependencies for name {
+    fn dependencies(&self) -> &DependenciesTable { &self.dependencies }
+    fn dependents(&self) -> &DependentsTable { &self.dependents }
+    fn is_in_workspace(&self) -> bool { self.in_workspace }
 
-            fn set_in_workspace(&mut self, in_workspace: bool) {
-                self.in_workspace = in_workspace;
-                if !in_workspace { return; }
-                self.dependencies = DependenciesTable::default();
-                self.dependents = DependentsTable::default();
-            }
-        }
-    )* }
+    fn set_in_workspace(&mut self, in_workspace: bool) {
+        self.in_workspace = in_workspace;
+        if !in_workspace { return; }
+        self.dependencies = DependenciesTable::default();
+        self.dependents = DependentsTable::default();
+    }
 }
-
-impl_dependencies!(
-    FileSymbol,
-    ModuleSymbol,
-    PythonPackageSymbol,
-    XmlFileSymbol,
-    CsvFileSymbol,
-    JsFileSymbol,
-);
