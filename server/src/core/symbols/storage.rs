@@ -23,6 +23,7 @@ use crate::{constants::OYarn, core::symbols::{
         ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, JsFileKey, KeyValidator, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, VariableKey, XmlAssetKey, XmlDeleteKey, XmlFieldKey, XmlFileKey, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey
     }
 }};
+use duplicate::duplicate;
 use ext_symbol_store::ExtSymbolStore;
 use slotmap::{SlotMap, SparseSecondaryMap};
 use std::ops::{Index, IndexMut};
@@ -106,7 +107,7 @@ impl SymbolTable {
 }
 
 /*
-    Implement Index and IndexMut for each symbol type.
+    Implement Index IndexMut and KeyValidator for each symbol type.
     Allows to access symbols like symbol_table[file_key].
 
     E.g.:
@@ -124,84 +125,45 @@ impl SymbolTable {
     You can use SymbolTable methods like name, parent, etc that operate on SymbolKey.
  */
 
-macro_rules! impl_index {
-    ($key:ty, $output:ty, $field:ident) => {
-        impl Index<$key> for SymbolTable {
-            type Output = $output;
-            fn index(&self, key: $key) -> &$output {
-                &self.$field[key]
-            }
+duplicate!{
+    [
+        key output field;
+        [RootKey] [RootSymbol] [roots];
+        [DiskDirKey] [DiskDirSymbol] [disk_dirs];
+        [NamespaceKey] [NamespaceSymbol] [namespaces];
+        [PythonPackageKey] [PythonPackageSymbol] [python_packages];
+        [ModuleKey] [ModuleSymbol] [modules];
+        [FileKey] [FileSymbol] [files];
+        [CompiledKey] [CompiledSymbol] [compiled];
+        [ClassKey] [ClassSymbol] [classes];
+        [FunctionKey] [FunctionSymbol] [functions];
+        [VariableKey] [VariableSymbol] [variables];
+        [XmlFileKey] [XmlFileSymbol] [xml_files];
+        [XmlRecordKey] [XmlRecordSymbol] [xml_records];
+        [XmlFieldKey] [XmlFieldSymbol] [xml_fields];
+        [XmlMenuItemKey] [XmlMenuItemSymbol] [xml_menuitems];
+        [XmlTemplateKey] [XmlTemplateSymbol] [xml_templates];
+        [XmlAssetKey] [XmlAssetSymbol] [xml_assets];
+        [XmlDeleteKey] [XmlDeleteSymbol] [xml_deletes];
+        [CsvFileKey] [CsvFileSymbol] [csv_files];
+        [JsFileKey] [JsFileSymbol] [js_files];
+    ]
+    impl Index<key> for SymbolTable {
+        type Output = output;
+        fn index(&self, k: key) -> &output {
+            &self.field[k]
         }
-        impl IndexMut<$key> for SymbolTable {
-            fn index_mut(&mut self, key: $key) -> &mut $output {
-                &mut self.$field[key]
-            }
+    }
+
+    impl IndexMut<key> for SymbolTable {
+        fn index_mut(&mut self, k: key) -> &mut output {
+            &mut self.field[k]
         }
-    };
+    }
+
+    impl KeyValidator<key> for SymbolTable {
+        fn is_key_valid(&self, k: key) -> bool {
+            self.field.contains_key(k)
+        }
+    }
 }
-
-impl_index!(RootKey, RootSymbol, roots);
-impl_index!(DiskDirKey, DiskDirSymbol, disk_dirs);
-impl_index!(NamespaceKey, NamespaceSymbol, namespaces);
-impl_index!(PythonPackageKey, PythonPackageSymbol, python_packages);
-impl_index!(ModuleKey, ModuleSymbol, modules);
-impl_index!(FileKey, FileSymbol, files);
-impl_index!(CompiledKey, CompiledSymbol, compiled);
-impl_index!(FunctionKey, FunctionSymbol, functions);
-impl_index!(ClassKey, ClassSymbol, classes);
-impl_index!(VariableKey, VariableSymbol, variables);
-impl_index!(XmlFileKey, XmlFileSymbol, xml_files);
-impl_index!(XmlRecordKey, XmlRecordSymbol, xml_records);
-impl_index!(XmlFieldKey, XmlFieldSymbol, xml_fields);
-impl_index!(XmlMenuItemKey, XmlMenuItemSymbol, xml_menuitems);
-impl_index!(XmlTemplateKey, XmlTemplateSymbol, xml_templates);
-impl_index!(XmlAssetKey, XmlAssetSymbol, xml_assets);
-impl_index!(XmlDeleteKey, XmlDeleteSymbol, xml_deletes);
-impl_index!(CsvFileKey, CsvFileSymbol, csv_files);
-impl_index!(JsFileKey, JsFileSymbol, js_files);
-
-
-/*
-    Implement KeyValidator for each symbol type, to check if a key is valid.
-    This allows us to pass the symbol table as argument to methods that expect a
-    impl KeyValidator, like upgrade(), e.g.:
-
-    let symbol_table: SymbolTable = ...;
-    let weak_key: Weak<SymbolKey> = ...;
-
-    let maybe_valid_key: Option<SymbolKey> = weak_key.upgrade(&symbol_table);
-
-    let weak_file_key: Weak<FileKey> = ...;
-
-    let maybe_valid_file_key: Option<FileKey> = weak_file_key.upgrade(&symbol_table);
- */
-
-macro_rules! impl_key_validator {
-    ($key:ty, $field:ident) => {
-        impl KeyValidator<$key> for SymbolTable {
-            fn is_key_valid(&self, key: $key) -> bool {
-                self.$field.contains_key(key)
-            }
-        }
-    };
-}
-
-impl_key_validator!(RootKey, roots);
-impl_key_validator!(DiskDirKey, disk_dirs);
-impl_key_validator!(NamespaceKey, namespaces);
-impl_key_validator!(PythonPackageKey, python_packages);
-impl_key_validator!(ModuleKey, modules);
-impl_key_validator!(FileKey, files);
-impl_key_validator!(CompiledKey, compiled);
-impl_key_validator!(ClassKey, classes);
-impl_key_validator!(FunctionKey, functions);
-impl_key_validator!(VariableKey, variables);
-impl_key_validator!(XmlFileKey, xml_files);
-impl_key_validator!(XmlRecordKey, xml_records);
-impl_key_validator!(XmlFieldKey, xml_fields);
-impl_key_validator!(XmlMenuItemKey, xml_menuitems);
-impl_key_validator!(XmlTemplateKey, xml_templates);
-impl_key_validator!(XmlAssetKey, xml_assets);
-impl_key_validator!(XmlDeleteKey, xml_deletes);
-impl_key_validator!(CsvFileKey, csv_files);
-impl_key_validator!(JsFileKey, js_files);

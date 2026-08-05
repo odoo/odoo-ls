@@ -1,3 +1,4 @@
+use duplicate::duplicate_item;
 use odoo_ls_macros::{From, IntoKey, IntoSymbolKey, SymbolKeySubset, Validator};
 use slotmap::{Key, new_key_type};
 
@@ -244,40 +245,34 @@ impl<K: Copy> From<K> for Wk<K> {
 
 // Converts from a specific key type to a Weak of SymbolKey, e.g. FileKey to Weak<SymbolKey>
 /// impl From<$key_type> for Weak<SymbolKey>, e.g. From<FileKey> for Weak<SymbolKey>
-macro_rules! impl_weak_symbol_key_from {
-    ($($key_type:ty),* $(,)?) => {
-        $(
-            impl From<$key_type> for Wk<SymbolKey> {
-                fn from(key: $key_type) -> Self {
-                    Self { key: key.into() }
-                }
-            }
-        )*
-    };
-}
-
-impl_weak_symbol_key_from! {
-    RootKey,
-    DiskDirKey,
-    NamespaceKey,
-    PythonPackageKey,
-    ModuleKey,
-    FileKey,
-    CompiledKey,
-    ClassKey,
-    FunctionKey,
-    VariableKey,
-    XmlFileKey,
-    XmlRecordKey,
-    XmlFieldKey,
-    XmlMenuItemKey,
-    XmlTemplateKey,
-    XmlAssetKey,
-    XmlDeleteKey,
-    CsvFileKey,
-    JsFileKey,
-    SourceFileKey,
-    ModelSymbolKey,
+#[duplicate_item(
+    key_type;
+    [RootKey];
+    [DiskDirKey];
+    [NamespaceKey];
+    [PythonPackageKey];
+    [ModuleKey];
+    [FileKey];
+    [CompiledKey];
+    [ClassKey];
+    [FunctionKey];
+    [VariableKey];
+    [XmlFileKey];
+    [XmlRecordKey];
+    [XmlFieldKey];
+    [XmlMenuItemKey];
+    [XmlTemplateKey];
+    [XmlAssetKey];
+    [XmlDeleteKey];
+    [CsvFileKey];
+    [JsFileKey];
+    [SourceFileKey];
+    [ModelSymbolKey];
+)]
+impl From<key_type> for Wk<SymbolKey> {
+    fn from(key: key_type) -> Self {
+        Self { key: key.into() }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, SymbolKeySubset, IntoKey)]
@@ -355,22 +350,33 @@ impl SymbolKey {
 /// Allows comparing a SymbolKey directly with its subtypes e.g.
 /// symbol_key == file_key
 /// symbol_key == source_file_key
-macro_rules! impl_symbol_key_partial_eq {
-    ($($key_type:ty),* $(,)?) => {
-        $(
-            impl PartialEq<$key_type> for SymbolKey {
-                fn eq(&self, other: &$key_type) -> bool {
-                    *self == SymbolKey::from(*other)
-                }
-            }
-        )*
-    };
-}
-
-impl_symbol_key_partial_eq! {
-    RootKey, DiskDirKey, NamespaceKey, PythonPackageKey, ModuleKey,
-    FileKey, CompiledKey, ClassKey, FunctionKey, VariableKey,
-    XmlFileKey, CsvFileKey, SourceFileKey,
+#[duplicate_item(
+    key_type;
+    [RootKey];
+    [DiskDirKey];
+    [NamespaceKey];
+    [PythonPackageKey];
+    [ModuleKey];
+    [FileKey];
+    [CompiledKey];
+    [ClassKey];
+    [FunctionKey];
+    [VariableKey];
+    [XmlFileKey];
+    [XmlRecordKey];
+    [XmlFieldKey];
+    [XmlMenuItemKey];
+    [XmlTemplateKey];
+    [XmlAssetKey];
+    [XmlDeleteKey];
+    [CsvFileKey];
+    [JsFileKey];
+    [SourceFileKey];
+)]
+impl PartialEq<key_type> for SymbolKey {
+    fn eq(&self, other: &key_type) -> bool {
+        *self == SymbolKey::from(*other)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, From, IntoSymbolKey, Validator)]
