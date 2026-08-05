@@ -10,7 +10,7 @@ use crate::core::pre_parser::{PreParseCache, PreParser};
 use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::storage::metrics::{log_slotmap_capacities, log_symbol_counts, log_memory_usage};
-use crate::core::symbols::symbol_keys::{FunctionKey, ModuleKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlTemplateKey};
+use crate::core::symbols::symbol_keys::{BuildableSymbolKey, FunctionKey, ModuleKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlTemplateKey};
 use crate::core::tsserver_bridge::{TsServerBridge};
 use crate::features::tsserver_completion::TsCompletionResolveData;
 use crate::features::owl_virtual;
@@ -56,8 +56,6 @@ use super::file_mgr::FileMgr;
 use super::import_resolver::ImportCache;
 use crate::core::model::Model;
 use crate::core::python_arch_builder::PythonArchBuilder;
-use crate::core::python_arch_eval::PythonArchEval;
-use crate::core::python_validator::PythonValidator;
 use crate::utils::{PathSanitizer, ToFilePath as _, expand_language_code};
 use crate::S;
 //use super::python_arch_builder::PythonArchBuilder;
@@ -513,7 +511,7 @@ impl SyncOdoo {
             panic!("Unable to find builtins disk dir symbol");
         }
         let _builtins_rc_symbol = SymbolTable::create_from_path(session, &builtins_path, disk_dir_builtins[0], false);
-        BuildScheduler::queue(session, _builtins_rc_symbol.unwrap(), BuildSteps::ARCH);
+        BuildScheduler::queue(session, _builtins_rc_symbol.unwrap().unwrap_buildable_key());
         BuildScheduler::process_rebuilds(session, false)
     }
 
@@ -604,7 +602,7 @@ impl SyncOdoo {
         match odoo_odoo {
             SymbolKey::PythonPackage(p) => {
                 session.st_mut()[p].self_import = true;
-                BuildScheduler::queue(session, odoo_odoo, BuildSteps::ARCH);
+                BuildScheduler::queue(session, odoo_odoo.unwrap_buildable_key());
             },
             SymbolKey::Namespace(_) => {
                 //starting from > 18.0, odoo is now a namespace. Start import project from odoo/__main__.py
@@ -614,7 +612,7 @@ impl SyncOdoo {
                 };
                 let f = main_file.unwrap_file_key();
                 session.st_mut()[f].self_import = true;
-                BuildScheduler::queue(session, main_file, BuildSteps::ARCH);
+                BuildScheduler::queue(session, main_file.unwrap_buildable_key());
             },
             _ => panic!("Root symbol is not a package or namespace (> 18.0)")
         }
@@ -809,86 +807,6 @@ impl SyncOdoo {
         return self.entry_point_mgr.borrow().main_entry_point.as_ref().expect("Unable to find main entry point").clone()
     }
 
-    /* Ask for an immediate rebuild of the given symbol if possible.
-     */
-    pub fn build_now(session: &mut SessionInfo, symbol: impl Into<SymbolKey>, step: BuildSteps) {
-        // prevents dependency cycles
-        let mut visited = HashSet::default();
-        Self::build_now_impl(session, symbol.into(), step, &mut visited)
-    }
-
-    /// Helper for build_now. Mutually recursive with build_now_dependencies.
-    fn build_now_impl(session: &mut SessionInfo, symbol: SymbolKey, step: BuildSteps, visited: &mut HashSet<(SymbolKey, BuildSteps)>) {
-        if matches!(symbol,
-            SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::DiskDir(_) | SymbolKey::Compiled(_) | SymbolKey::Class(_) | SymbolKey::Variable(_))  {
-                return
-        };
-        if !visited.insert((symbol, step)) {
-            return; // already in the recursion chain — dep cycle
-        }
-        if DEBUG_REBUILD_NOW {
-            if session.st().build_status(symbol, step) == BuildStatus::INVALID {
-                panic!("Trying to build an invalid symbol: {}", session.st().debug_path(symbol));
-            }
-            if session.st().build_status(symbol, step) == BuildStatus::IN_PROGRESS && !BuildScheduler::is_in_rebuild(session, symbol, step) {
-                error!("Trying to build a symbol that is NOT in the queue: {}", session.st().debug_path(symbol));
-            }
-        }
-        if session.st().build_status(symbol, step) == BuildStatus::PENDING && session.st().previous_step_done(symbol, step) {
-            Self::build_now_dependencies(session, symbol, step, visited);
-            let entry_point = session.st().get_entry(symbol);
-            BuildScheduler::remove_from_rebuild(session, symbol, step);
-            if step == BuildSteps::ARCH {
-                if let Some(mut builder) = PythonArchBuilder::new(session.st(), entry_point, symbol) {
-                    builder.load_arch(session);
-                }
-            } else if step == BuildSteps::ARCH_EVAL {
-                if DEBUG_REBUILD_NOW
-                    && session.st().build_status(symbol, BuildSteps::ARCH) != BuildStatus::DONE {
-                        panic!("An evaluation has been requested on a non-arched symbol: {}", session.st().debug_path(symbol));
-                    }
-                if let Some(mut builder) = PythonArchEval::new(session.st(), entry_point, symbol) {
-                    builder.eval_arch(session);
-                };
-            } else if step == BuildSteps::VALIDATION {
-                if DEBUG_REBUILD_NOW
-                    && (session.st().build_status(symbol, BuildSteps::ARCH) != BuildStatus::DONE || session.st().build_status(symbol, BuildSteps::ARCH_EVAL) != BuildStatus::DONE) {
-                        panic!("An evaluation has been requested on a non-arched symbol: {}", session.st().debug_path(symbol));
-                    }
-                let mut validator = PythonValidator::new(session.st(), entry_point, symbol);
-                validator.validate(session);
-            }
-        }
-    }
-
-    /// Helper for build_now. Mutually recursive with build_now_impl.
-    fn build_now_dependencies(session: &mut SessionInfo, symbol: SymbolKey, step: BuildSteps, visited: &mut HashSet<(SymbolKey, BuildSteps)>) {
-        let Some(source_file) = symbol.as_source_file_key() else {
-            return;
-        };
-        for step_to_build in 0..2 {
-            let step_to_build = BuildSteps::from(step_to_build);
-            let all_dep = session.st().get_all_dependencies(source_file, step_to_build);
-            let mut build_queue = vec![];
-            for (index, dep_set) in all_dep.iter().enumerate() {
-                let dep_step = match index {
-                    0 => BuildSteps::ARCH,
-                    1 => BuildSteps::ARCH_EVAL,
-                    _ => panic!("Unexpected step index"),
-                };
-                for dep in dep_set.iter_valid(session.st()) {
-                    build_queue.push((dep, dep_step));
-                }
-            }
-            for (dep, dep_step) in build_queue {
-                Self::build_now_impl(session, dep.into(), dep_step, visited);
-            }
-            if step_to_build == step {
-                break;
-            }
-        }
-    }
-
     /// Ensure that a function symbol's evaluations are as fully populated
     pub fn ensure_func_evaluations(session: &mut SessionInfo, function_key: FunctionKey) {
         let Some(func_file) = session.st().get_file(function_key.into()) else {
@@ -897,12 +815,9 @@ impl SyncOdoo {
         if session.st()[function_key].evaluations.is_empty() && !session.st().is_external(func_file.into()) {
             // Run Arch eval on file, if possible, then run everything on the fn
             // until arch_eval
-            SyncOdoo::build_now(session, func_file, BuildSteps::ARCH_EVAL);
-            if session.st().build_status(func_file.into(), BuildSteps::ARCH_EVAL) == BuildStatus::INVALID {
-                return;
-            }
-            SyncOdoo::build_now(session, function_key, BuildSteps::ARCH);
-            SyncOdoo::build_now(session, function_key, BuildSteps::ARCH_EVAL);
+            BuildScheduler::build_now(session, func_file, BuildSteps::ARCH_EVAL);
+            BuildScheduler::build_now(session, function_key, BuildSteps::ARCH);
+            BuildScheduler::build_now(session, function_key, BuildSteps::ARCH_EVAL);
         }
     }
 
@@ -1329,7 +1244,8 @@ impl SyncOdoo {
     pub(crate) fn revalidate_language_dependents(session: &mut SessionInfo) {
         let to_revalidate = session.sync_odoo.language_dependents.drain_valid(&session.sync_odoo.symbol_table);
         for sym in to_revalidate {
-            BuildScheduler::queue(session, sym, BuildSteps::VALIDATION);
+            SymbolTable::invalidate(session, sym.as_source_file_key().unwrap(), BuildSteps::VALIDATION);
+            BuildScheduler::queue(session, sym.unwrap_buildable_key());
         }
     }
 
@@ -2097,7 +2013,7 @@ impl Odoo {
                 if entry.borrow().path == parent_path.sanitize_cow() {
                     if let SymbolKey::Namespace(addons) = entry.borrow().get_symbol(session.st()).unwrap()
                     && let Some(module_symbol) = SymbolTable::create_module_from_path(session, &path_for_tree, addons) {
-                        BuildScheduler::queue(session, module_symbol, BuildSteps::ARCH);
+                        BuildScheduler::queue(session, BuildableSymbolKey::Module(module_symbol));
                     }
                     break;
                 }
@@ -2110,7 +2026,7 @@ impl Odoo {
                     Some(addons_symbol) if !addons_symbol.is_empty() => {
                         if let SymbolKey::Namespace(addons) = addons_symbol[0]
                         && let Some(module_symbol) = SymbolTable::create_module_from_path(session, &path_for_tree, addons) {
-                            BuildScheduler::queue(session, module_symbol, BuildSteps::ARCH);
+                        BuildScheduler::queue(session, BuildableSymbolKey::Module(module_symbol));
                         }
                     }
                     _ => {

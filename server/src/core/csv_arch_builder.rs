@@ -29,6 +29,9 @@ impl CsvArchBuilder {
 
     pub fn load_csv(&mut self, session: &mut SessionInfo, csv_symbol: CsvFileKey, content: &str) -> Vec<Diagnostic> {
         let mut diagnostics = vec![];
+        if !session.st().ready_for_step(csv_symbol.into(), BuildSteps::ARCH) {
+            return diagnostics;
+        }
         session.st_mut()[csv_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
         let model_name_pb = PathBuf::from(&session.st()[csv_symbol].path);
         let model_name = Sy!(model_name_pb.file_stem().unwrap().to_str().unwrap().to_string());
@@ -99,8 +102,8 @@ impl CsvArchBuilder {
                 }
             }
         }
-        session.st_mut()[csv_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
-        BuildScheduler::queue(session, csv_symbol, BuildSteps::VALIDATION);
+        session.st_mut().set_build_status(csv_symbol.into(), BuildSteps::ARCH, BuildStatus::DONE);
+        BuildScheduler::queue(session, csv_symbol);
         diagnostics
     }
 

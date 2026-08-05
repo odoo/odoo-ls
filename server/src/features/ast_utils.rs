@@ -1,7 +1,7 @@
-use crate::constants::{BuildStatus, BuildSteps, SymType};
+use crate::constants::{BuildSteps, SymType};
+use crate::core::build_scheduler::BuildScheduler;
 use crate::core::evaluation::{AnalyzeAstResult, Evaluation, ExprOrIdent};
 use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
-use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::symbol_keys::{SourceFileKey, SymbolKey};
 use crate::core::import_resolver::{resolve_from_stmt, resolve_import_stmt};
 use crate::core::file_mgr::FileInfoAst;
@@ -74,12 +74,8 @@ impl AstUtils {
         };
         let parent_func = session.st().get_in_parents(scope.into(), &[SymType::FUNCTION], true);
         let scope_to_test = parent_func.map(|p| p.unwrap_function_key()).unwrap_or(scope);
-        if session.st()[scope_to_test].arch_status == BuildStatus::PENDING {
-            SyncOdoo::build_now(session, scope_to_test, BuildSteps::ARCH);
-        }
-        if session.st()[scope_to_test].arch_eval_status == BuildStatus::PENDING {
-            SyncOdoo::build_now(session, scope_to_test, BuildSteps::ARCH_EVAL);
-        }
+        BuildScheduler::build_now(session, scope_to_test, BuildSteps::ARCH);
+        BuildScheduler::build_now(session, scope_to_test, BuildSteps::ARCH_EVAL);
     }
 
     fn get_symbol_in_import(session: &mut SessionInfo, file_symbol: SourceFileKey, offset: u32, stmt: &Stmt) -> Option<(AnalyzeAstResult, Option<TextRange>)> {

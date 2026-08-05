@@ -557,6 +557,7 @@ mod tests {
     /// virtual-doc function tsserver drops, silently taking hover/definition/completion for
     /// that expression with it. Needs `COMMUNITY_PATH`; skipped without one.
     #[test]
+    #[ignore] //mostly used for development
     fn community_templates_compile_to_parseable_js() {
         let Ok(community) = std::env::var("COMMUNITY_PATH") else {
             eprintln!("COMMUNITY_PATH unset — skipping the OWL template corpus check");

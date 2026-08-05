@@ -27,12 +27,11 @@ pub struct ModuleSymbol {
     pub dir_name: OYarn,
     pub depends: Vec<(OYarn, TextRange)>,
     pub(in crate::core::symbols) all_depends: HashSet<OYarn>, //computed all depends to avoid too many recomputations
-    pub(in crate::core::symbols) data: Vec<(String, TextRange)>, // TODO
+    pub(in crate::core::symbols) data: Vec<(String, TextRange)>,
     pub(in crate::core::symbols) assets: Vec<(String, TextRange)>,
     pub xml_ids: HashMap<OYarn, WeakSet<XmlId>>, //Reference to xmlNode declaring xml_id. Can be from python or xml file.
-    pub arch_status: BuildStatus,
-    pub arch_eval_status: BuildStatus,
-    pub validation_status: BuildStatus,
+    pub (super) current_build_step: BuildSteps,
+    pub (super) build_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     pub not_found_data: HashMap<String, BuildSteps>,
     pub not_found_models: HashMap<OYarn, BuildSteps>,
@@ -86,9 +85,8 @@ impl ModuleSymbol {
             assets: Vec::new(),
             parent,
             module_symbols: HashMap::default(),
-            arch_status: BuildStatus::PENDING,
-            arch_eval_status: BuildStatus::PENDING,
-            validation_status: BuildStatus::PENDING,
+            current_build_step: BuildSteps::ARCH,
+            build_status: BuildStatus::PENDING,
             sections: vec![],
             symbols: HashMap::default(),
             model_dependencies: PtrWeakHashSet::new(),

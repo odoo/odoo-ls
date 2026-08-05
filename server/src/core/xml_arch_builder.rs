@@ -34,6 +34,9 @@ impl XmlArchBuilder {
     }
 
     pub fn load_arch(&mut self, session: &mut SessionInfo, file_info: &mut FileInfo, node: &Node) {
+        if !session.st().ready_for_step(self.xml_symbol.into(), BuildSteps::ARCH) {
+            return;
+        }
         let mut diagnostics = vec![];
         session.st_mut()[self.xml_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
         if DEBUG_STEPS {
@@ -46,9 +49,9 @@ impl XmlArchBuilder {
         } else {
             self.load_odoo_openerp_data(session, node, &mut diagnostics);
         }
-        session.st_mut()[self.xml_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
+        session.st_mut().set_build_status(self.xml_symbol.into(), BuildSteps::ARCH, BuildStatus::DONE);
         file_info.replace_diagnostics(DiagnosticSource::XML_ARCH, diagnostics);
-        BuildScheduler::queue(session, self.xml_symbol, BuildSteps::VALIDATION);
+        BuildScheduler::queue(session, self.xml_symbol);
     }
 
     pub fn on_operation_creation(
