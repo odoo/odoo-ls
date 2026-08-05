@@ -1,6 +1,6 @@
 use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, MissingDataSource, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{Buildable, storage::dependency_mgr::{DependenciesTable, DependentsTable}, symbol_keys::{JsFileParent, SymbolKey}}}, oyarn, utils::HashMap};
+use crate::{constants::{BuildStatus, BuildSteps, MissingDataSource, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{storage::dependency_mgr::{DependenciesTable, DependentsTable}, symbol_keys::{JsFileParent, SymbolKey}}}, oyarn, utils::HashMap};
 use std::{cell::RefCell, rc::Weak};
 
 #[derive(Debug)]
@@ -9,8 +9,8 @@ pub struct JsFileSymbol {
     pub path: String,
     pub is_external: bool,
     parent: JsFileParent,
-    pub arch_status: BuildStatus,
-    pub validation_status: BuildStatus,
+    pub (super) current_build_step: BuildSteps,
+    pub (super) build_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     pub not_found_data_ids: HashMap<MissingDataSource, BuildSteps>,
     pub (super) in_workspace: bool,
@@ -31,8 +31,8 @@ impl JsFileSymbol {
             path: path.to_string(),
             is_external,
             parent,
-            arch_status: BuildStatus::PENDING,
-            validation_status: BuildStatus::PENDING,
+            current_build_step: BuildSteps::VALIDATION,
+            build_status: BuildStatus::PENDING,
             not_found_paths: vec![],
             not_found_data_ids: HashMap::default(),
             in_workspace: false,
@@ -53,23 +53,4 @@ impl JsFileSymbol {
         vec![]
     }
 
-}
-
-impl Buildable for JsFileSymbol {
-    fn build_status(&self, step: BuildSteps) -> BuildStatus {
-        match step {
-            BuildSteps::SYNTAX => panic!(),
-            BuildSteps::ARCH => self.arch_status,
-            BuildSteps::ARCH_EVAL => panic!(),
-            BuildSteps::VALIDATION => self.validation_status,
-        }
-    }
-    fn set_build_status(&mut self, step: BuildSteps, status: BuildStatus) {
-        match step {
-            BuildSteps::SYNTAX => panic!(),
-            BuildSteps::ARCH => self.arch_status = status,
-            BuildSteps::ARCH_EVAL => panic!(),
-            BuildSteps::VALIDATION => self.validation_status = status,
-        }
-    }
 }

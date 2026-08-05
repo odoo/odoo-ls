@@ -214,7 +214,7 @@ impl<'a, 'e> Visit<'a> for JSArchBuilderVisitor<'e> {
     fn visit_property_definition(&mut self, it: &PropertyDefinition<'a>) {
         if it.r#static {
             let key_name = get_key_name(&it.key);
-            if key_name.as_deref() == Some("template") 
+            if key_name.as_deref() == Some("template")
             && let Some(Expression::StringLiteral(lit)) = &it.value {
                 let content_start = lit.span.start + 1;
                 let content_end = lit.span.end.saturating_sub(1);

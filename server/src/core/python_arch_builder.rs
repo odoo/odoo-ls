@@ -18,6 +18,7 @@ use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 use crate::core::python_utils;
+use crate::core::symbols::Buildable;
 use crate::core::symbols::symbol_keys::{FunctionKey, SourceFileKey, SymbolKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::threads::SessionInfo;
@@ -50,9 +51,6 @@ impl PythonArchBuilder {
         if matches!(symbol, SymbolKey::Namespace(_) | SymbolKey::Root(_) | SymbolKey::Compiled(_) | SymbolKey::Variable(_) | SymbolKey::Class(_)) {
             return None; // nothing to extract
         }
-        if symbol_table.build_status(symbol, BuildSteps::ARCH) != BuildStatus::PENDING {
-            return None;
-        }
         let file = symbol_table.get_file(symbol).unwrap();
         let file_mode = symbol == file;
 
@@ -70,10 +68,13 @@ impl PythonArchBuilder {
 
     pub fn load_arch(&mut self, session: &mut SessionInfo) {
         let symbol = self.sym_stack[0];
+        if !session.st().ready_for_step(symbol.unwrap_buildable_key(), BuildSteps::ARCH) {
+            return;
+        }
         if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !session.st().is_external(symbol)) {
             trace!("ARCH       - PYTHON {} - {}", session.st().path(self.file), session.st().name(symbol));
         }
-        session.st_mut().set_build_status(symbol, BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
+        session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
         let path = session.st().file_path(self.file).to_string();
         if self.file_mode {
             let in_workspace = session.st().parent(self.file)
@@ -124,7 +125,7 @@ impl PythonArchBuilder {
             } else {
                 //  If the file has been re-parsed since, those indexes address another tree.
                 if file_info_ast.text_hash != session.st().get_processed_text_hash(self.file) {
-                    session.st_mut().set_build_status(symbol, BuildSteps::ARCH, BuildStatus::INVALID);
+                    session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::ARCH, BuildStatus::INVALID);
                     return;
                 }
                 let f = self.sym_stack[0].unwrap_function_key();
@@ -165,13 +166,15 @@ impl PythonArchBuilder {
             session.current_noqa = old_noqa;
             session.noqas_stack = old_stack_noqa;
             self._resolve_all_symbols(session);
+            session.st_mut().set_build_status(self.sym_stack[0].unwrap_buildable_key(), BuildSteps::ARCH, BuildStatus::DONE);
             if self.file_mode {
-                BuildScheduler::queue(session, self.sym_stack[0], BuildSteps::ARCH_EVAL);
+                BuildScheduler::queue(session, self.sym_stack[0].unwrap_buildable_key());
             }
         } else if self.file_mode {
+            session.st_mut().set_build_status(self.sym_stack[0].unwrap_buildable_key(), BuildSteps::ARCH, BuildStatus::DONE);
             if matches!(symbol, SymbolKey::Module(_)) {
                 //even if there is no __init__.py, we need to go to rebuild_arch and validation to validate the manifest
-                BuildScheduler::queue(session, self.sym_stack[0], BuildSteps::ARCH_EVAL);
+                BuildScheduler::queue(session, self.sym_stack[0].unwrap_buildable_key());
             } else {
                 let mut file_info = file_info_rc.borrow_mut();
                 file_info.publish_diagnostics(session);
@@ -180,7 +183,6 @@ impl PythonArchBuilder {
         if self.file_mode {
             PythonArchBuilderHooks::on_file_done(session, self.file);
         }
-        session.st_mut().set_build_status(self.sym_stack[0], BuildSteps::ARCH, BuildStatus::DONE);
     }
 
     fn create_local_symbols_from_import_stmt(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: u32, _range: &TextRange) {
@@ -473,6 +475,8 @@ impl PythonArchBuilder {
                 let function_key = session.st_mut().add_new_function(
                     *self.sym_stack.last().unwrap(), &S!("<lambda>"), lambda_expr.range, lambda_expr.body.range().start()
                 );
+                //arch is considered done on the fly
+                session.st_mut().set_build_status(function_key.into(), BuildSteps::ARCH, BuildStatus::DONE);
                 if let Some(parameters) = &lambda_expr.parameters {
                     PythonArchBuilder::handle_func_args(function_key, session, parameters);
                 }
@@ -781,11 +785,11 @@ impl PythonArchBuilder {
         session.current_noqa = noqa;
         //visit body
         if !self.file_mode || session.st().get_in_parents(function_key.into(), &[SymType::CLASS], true).is_none() {
-            session.st_mut()[function_key].arch_status = BuildStatus::IN_PROGRESS;
+            session.st_mut()[function_key].set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
             self.sym_stack.push(function_key.into());
             self.visit_node(session, &func_def.body);
             self.sym_stack.pop();
-            session.st_mut()[function_key].arch_status = BuildStatus::DONE;
+            session.st_mut().set_build_status(function_key.into(), BuildSteps::ARCH, BuildStatus::DONE);
         }
         if add_noqa {
             session.noqas_stack.pop();

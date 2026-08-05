@@ -3,7 +3,7 @@ use std::{
 };
 use crate::{
     Sy, constants::MissingDataSource, core::{
-        build_scheduler::BuildScheduler, evaluation_context::ContextKey, python_arch_eval_hooks::get_base_model_symbol, symbols::{storage::xml::xml_field_symbol::XmlFieldName, symbol_keys::XmlRecordKey},
+        build_scheduler::BuildScheduler, evaluation_context::ContextKey, python_arch_eval_hooks::get_base_model_symbol, symbols::{storage::{buildable::ResettableBuildable as _, xml::xml_field_symbol::XmlFieldName}, symbol_keys::{BuildableSymbolKey, XmlRecordKey}},
     }, oyarn, utils::{HashMap, HashSet},
 };
 
@@ -456,53 +456,72 @@ impl SymbolTable {
     }
 
 
-    pub fn build_status(&self, target: SymbolKey, step: BuildSteps) -> BuildStatus {
+    pub fn build_status(&self, target: BuildableSymbolKey, step: BuildSteps) -> BuildStatus {
         debug_assert!(self.is_key_valid(target)); // expect valid key (self in Symbol method)
         match target {
-            SymbolKey::Root(_) => panic!(),
-            SymbolKey::Namespace(_) => panic!(),
-            SymbolKey::DiskDir(_) => panic!(),
-            SymbolKey::PythonPackage(k) => self[k].build_status(step),
-            SymbolKey::Module(k) => self[k].build_status(step),
-            SymbolKey::File(k) => self[k].build_status(step),
-            SymbolKey::Compiled(_) => panic!(),
-            SymbolKey::Class(_) => panic!(),
-            SymbolKey::Function(k) => self[k].build_status(step),
-            SymbolKey::Variable(_) => panic!(),
-            SymbolKey::XmlFile(k) => self[k].build_status(step),
-            SymbolKey::XmlRecord(_) => panic!(),
-            SymbolKey::XmlField(_) => panic!(),
-            SymbolKey::XmlMenuItem(_) => panic!(),
-            SymbolKey::XmlTemplate(_) => panic!(),
-            SymbolKey::XmlAsset(_) => panic!(),
-            SymbolKey::XmlDelete(_) => panic!(),
-            SymbolKey::CsvFile(k) => self[k].build_status(step),
-            SymbolKey::JsFile(j) => self[j].build_status(step),
+            BuildableSymbolKey::PythonPackage(k) => self[k].get_build_status(step),
+            BuildableSymbolKey::Module(k) => self[k].get_build_status(step),
+            BuildableSymbolKey::File(k) => self[k].get_build_status(step),
+            BuildableSymbolKey::Function(k) => self[k].get_build_status(step),
+            BuildableSymbolKey::XmlFile(k) => self[k].get_build_status(step),
+            BuildableSymbolKey::CsvFile(k) => self[k].get_build_status(step),
+            BuildableSymbolKey::JsFile(j) => self[j].get_build_status(step),
         }
     }
 
-    pub fn set_build_status(&mut self, target: SymbolKey, step: BuildSteps, status: BuildStatus) {
+    pub fn set_build_status(&mut self, target: BuildableSymbolKey, step: BuildSteps, status: BuildStatus) {
         debug_assert!(self.is_key_valid(target)); // expect valid key (self in Symbol method)
         match target {
-            SymbolKey::Root(_) => panic!(),
-            SymbolKey::Namespace(_) => panic!(),
-            SymbolKey::DiskDir(_) => panic!(),
-            SymbolKey::PythonPackage(k) => self[k].set_build_status(step, status),
-            SymbolKey::Module(k) => self[k].set_build_status(step, status),
-            SymbolKey::File(k) => self[k].set_build_status(step, status),
-            SymbolKey::Compiled(_) => panic!(),
-            SymbolKey::Class(_) => panic!(),
-            SymbolKey::Function(k) => self[k].set_build_status(step, status),
-            SymbolKey::Variable(_) => panic!(),
-            SymbolKey::XmlFile(k) => self[k].set_build_status(step, status),
-            SymbolKey::XmlRecord(_) => panic!(),
-            SymbolKey::XmlField(_) => panic!(),
-            SymbolKey::XmlMenuItem(_) => panic!(),
-            SymbolKey::XmlTemplate(_) => panic!(),
-            SymbolKey::XmlAsset(_) => panic!(),
-            SymbolKey::XmlDelete(_) => panic!(),
-            SymbolKey::CsvFile(k) => self[k].set_build_status(step, status),
-            SymbolKey::JsFile(j) => self[j].set_build_status(step, status),
+            BuildableSymbolKey::PythonPackage(k) => self[k].set_build_status(step, status),
+            BuildableSymbolKey::Module(k) => self[k].set_build_status(step, status),
+            BuildableSymbolKey::File(k) => self[k].set_build_status(step, status),
+            BuildableSymbolKey::Function(k) => self[k].set_build_status(step, status),
+            BuildableSymbolKey::XmlFile(k) => self[k].set_build_status(step, status),
+            BuildableSymbolKey::CsvFile(k) => self[k].set_build_status(step, status),
+            BuildableSymbolKey::JsFile(j) => self[j].set_build_status(step, status),
+        }
+    }
+
+    pub fn ready_for_step(&self, target: BuildableSymbolKey, step: BuildSteps) -> bool {
+        debug_assert!(self.is_key_valid(target)); // expect valid key (self in Symbol method)
+        let previous_step = self.previous_build_step(target, step);
+        if let Some(prev_step) = previous_step
+        && self.build_status(target, prev_step) != BuildStatus::DONE {
+            return false;
+        }
+        //To do a function, we have to check that the file ARCH and ARCH_EVAL is done, as we could need variables in it.
+        if matches!(target, BuildableSymbolKey::Function(_)) {
+            let file = self.get_file(target.into()).unwrap();
+            if step == BuildSteps::ARCH_EVAL && self.build_status(file.into(), BuildSteps::ARCH) != BuildStatus::DONE {
+                return false;
+            } else if step == BuildSteps::VALIDATION && self.build_status(file.into(), BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
+                return false;
+            }
+        }
+        self.build_status(target, step) == BuildStatus::PENDING
+    }
+
+    pub fn get_current_build_step(&self, target: BuildableSymbolKey) -> BuildSteps {
+        match target {
+            BuildableSymbolKey::Function(k) => self[k].get_current_build_step(),
+            BuildableSymbolKey::File(k) => self[k].get_current_build_step(),
+            BuildableSymbolKey::Module(k) => self[k].get_current_build_step(),
+            BuildableSymbolKey::PythonPackage(k) => self[k].get_current_build_step(),
+            BuildableSymbolKey::XmlFile(k) => self[k].get_current_build_step(),
+            BuildableSymbolKey::CsvFile(k) => self[k].get_current_build_step(),
+            BuildableSymbolKey::JsFile(j) => self[j].get_current_build_step(),
+        }
+    }
+
+    pub fn previous_build_step(&self, target: BuildableSymbolKey, step: BuildSteps) -> Option<BuildSteps> {
+        match target {
+            BuildableSymbolKey::PythonPackage(k) => self[k].previous_build_step(step),
+            BuildableSymbolKey::Module(k) => self[k].previous_build_step(step),
+            BuildableSymbolKey::File(k) => self[k].previous_build_step(step),
+            BuildableSymbolKey::Function(k) => self[k].previous_build_step(step),
+            BuildableSymbolKey::XmlFile(k) => self[k].previous_build_step(step),
+            BuildableSymbolKey::CsvFile(k) => self[k].previous_build_step(step),
+            BuildableSymbolKey::JsFile(j) => self[j].previous_build_step(step),
         }
     }
 
@@ -958,9 +977,6 @@ impl SymbolTable {
    }
 
     pub fn get_all_dependencies(&self, target: SourceFileKey, step: BuildSteps) -> &[WeakSet<SourceFileKey>] {
-        if step == BuildSteps::SYNTAX {
-            panic!("Can't get dependencies for syntax step")
-        }
         match target {
             SourceFileKey::Module(m) => self[m].get_all_dependencies(step as usize),
             SourceFileKey::PythonPackage(p) => self[p].get_all_dependencies(step as usize),
@@ -974,9 +990,6 @@ impl SymbolTable {
     /**Add a symbol as dependency on the step of the other symbol for the build level.
     * -> The build of the 'step' of 'target' requires the build of 'dep_level' of 'dependency' to be done */
     pub fn add_dependency(&mut self, target: SourceFileKey, dependency: SourceFileKey, step:BuildSteps, dep_level:BuildSteps) {
-        if step == BuildSteps::SYNTAX || dep_level == BuildSteps::SYNTAX {
-            panic!("Can't add dependency for syntax step")
-        }
         if dep_level > step {
             panic!("Can't add dependency for step {:?} and level {:?}", step, dep_level)
         }
@@ -1009,10 +1022,15 @@ impl SymbolTable {
         model.borrow_mut().add_dependent(target);
     }
 
-
+    /**
+     * reset the step of the symbol to given step and status to pending.
+     * It will signal the change to all dependents
+     */
     pub fn invalidate(session: &mut SessionInfo, symbol: SourceFileKey, step: BuildSteps) {
-        //signals that a change occurred to this symbol. "step" indicates which level of change occurred.
-        //It will trigger rebuild on all dependencies
+        if step == BuildSteps::VALIDATION {
+            SymbolTable::invalidate_sub_functions(session, symbol);
+        }
+        session.st_mut().reset_build_status(symbol.into(), step, BuildStatus::PENDING);
         let mut vec_to_invalidate = VecDeque::from([symbol]);
         while let Some(ref_to_inv) = vec_to_invalidate.pop_front() {
             let in_workspace = session.st().in_workspace(ref_to_inv.into());
@@ -1030,7 +1048,8 @@ impl SymbolTable {
                     if index == BuildSteps::VALIDATION as usize {
                         SymbolTable::invalidate_sub_functions(session, sym);
                     }
-                    BuildScheduler::queue(session, sym, BuildSteps::from(index as i32));
+                    session.st_mut().reset_build_status(sym.into(), BuildSteps::from(index as i32), BuildStatus::PENDING);
+                    BuildScheduler::queue(session, sym);
                 }
             }
             if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL].contains(&step) && in_workspace {
@@ -1045,10 +1064,12 @@ impl SymbolTable {
                 }
                 for (index, sym) in build_queue {
                     if index + 1 == BuildSteps::ARCH_EVAL as usize {
-                        BuildScheduler::queue(session, sym, BuildSteps::ARCH_EVAL);
+                        session.st_mut().reset_build_status(sym.into(), BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
+                        BuildScheduler::queue(session, sym);
                     } else if index + 1 == BuildSteps::VALIDATION as usize {
                         SymbolTable::invalidate_sub_functions(session, sym);
-                        BuildScheduler::queue(session, sym, BuildSteps::VALIDATION);
+                        session.st_mut().reset_build_status(sym.into(), BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
+                        BuildScheduler::queue(session, sym);
                     }
                 }
                 for (model, from_module) in session.st().iter_all_model_keys(session, ref_to_inv.into()) {
@@ -1062,7 +1083,8 @@ impl SymbolTable {
                         .collect::<Vec<_>>() {
                     if !session.st_mut().is_symbol_in_parents(sym.into(), ref_to_inv.into()) {
                         SymbolTable::invalidate_sub_functions(session, sym);
-                        BuildScheduler::queue(session, sym, BuildSteps::VALIDATION);
+                        session.st_mut().reset_build_status(sym.into(), BuildSteps::VALIDATION, BuildStatus::PENDING);
+                        BuildScheduler::queue(session, sym);
                     }
                 }
             }
@@ -1075,6 +1097,21 @@ impl SymbolTable {
         }
     }
 
+    /* set a build status, but any value is allowed.
+     * /!\ This should only be used by invalidate, so it's why it's private.
+     */
+    fn reset_build_status(&mut self, target: BuildableSymbolKey, step: BuildSteps, status: BuildStatus) {
+        match target {
+            BuildableSymbolKey::File(f) => self[f].reset_build_status(step, status),
+            BuildableSymbolKey::Module(m) => self[m].reset_build_status(step, status),
+            BuildableSymbolKey::PythonPackage(p) => self[p].reset_build_status(step, status),
+            BuildableSymbolKey::XmlFile(x) => self[x].reset_build_status(step, status),
+            BuildableSymbolKey::CsvFile(c) => self[c].reset_build_status(step, status),
+            BuildableSymbolKey::JsFile(j) => self[j].reset_build_status(step, status),
+            BuildableSymbolKey::Function(f) => self[f].reset_build_status(step, status),
+        }
+    }
+
     pub fn invalidate_sub_functions(session: &mut SessionInfo, target: SourceFileKey) {
         if let Some(deferred) = &mut session.sync_odoo.deferred_subfunc_invalidation {
             deferred.insert(target);
@@ -1084,22 +1121,18 @@ impl SymbolTable {
             for func_key in session.st().iter_inner_functions(target.into()) {
                 let func = &mut session.st_mut()[func_key];
                 func.evaluations.clear();
-                func.set_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
-                func.set_build_status(BuildSteps::VALIDATION, BuildStatus::PENDING);
+                func.reset_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
             }
         }
     }
 
-    pub fn previous_step_done(&self, target: SymbolKey, step: BuildSteps) -> bool {
-        if step == BuildSteps::SYNTAX {
-            panic!("Can't check previous step for syntax step")
+    pub fn previous_step_done(&self, target: BuildableSymbolKey, step: BuildSteps) -> bool {
+        let current_step = self.get_current_build_step(target);
+        let Some(previous_step) = self.previous_build_step(target, step) else {return true};
+        if current_step == previous_step {
+            return self.build_status(target, previous_step) == BuildStatus::DONE
         }
-        for i in 0 .. step as usize {
-            if self.build_status(target, BuildSteps::from(i as i32)) != BuildStatus::DONE {
-                return false;
-            }
-        }
-        true
+        current_step > previous_step
     }
 
     pub fn is_file_content(&self, target: SymbolKey) -> bool {
@@ -1495,7 +1528,7 @@ impl SymbolTable {
                     if var.evaluations.is_empty() && var.name != "__all__" && can_eval_external {
                         //no evaluation? let's check that the file has been evaluated
                         if let Some(file_symbol) = session.st().get_file(sym_key) {
-                            SyncOdoo::build_now(session, file_symbol, BuildSteps::ARCH_EVAL);
+                            BuildScheduler::build_now(session, file_symbol, BuildSteps::ARCH_EVAL);
                         }
                     }
                     let mut next_sym_refs = Self::next_refs_variable(session, v, context, &next_ref_weak.context);

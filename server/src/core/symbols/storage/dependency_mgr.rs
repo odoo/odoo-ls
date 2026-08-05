@@ -1,8 +1,7 @@
 use std::ops::{Index, IndexMut};
 
-use crate::constants::{BuildStatus, BuildSteps};
 use crate::core::symbols::symbol_keys::SourceFileKey;
-use crate::core::symbols::{CsvFileSymbol, FileSymbol, FunctionSymbol, JsFileSymbol, ModuleSymbol, PythonPackageSymbol, XmlFileSymbol};
+use crate::core::symbols::{CsvFileSymbol, FileSymbol, JsFileSymbol, ModuleSymbol, PythonPackageSymbol, XmlFileSymbol};
 use crate::weak_collections::WeakSet;
 
 /// Triangular dependency table, indexed by target build step, then by required dep level.

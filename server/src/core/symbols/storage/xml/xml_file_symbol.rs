@@ -5,7 +5,6 @@ use weak_table::PtrWeakHashSet;
 use crate::constants::MissingDataSource;
 use crate::core::symbols::storage::dependency_mgr::{DependenciesTable, DependentsTable};
 use crate::core::symbols::symbol_keys::{ModuleKey, SymbolKey, XmlDataKey};
-use crate::core::symbols::Buildable;
 use crate::{core::diagnostics::DiagnosticCode, threads::SessionInfo};
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::{FileInfo, NoqaInfo}, model::Model}, oyarn};
 use crate::utils::HashSet;
@@ -17,8 +16,8 @@ pub struct XmlFileSymbol {
     pub name: OYarn,
     pub path: String,
     pub is_external: bool,
-    pub arch_status: BuildStatus,
-    pub validation_status: BuildStatus,
+    pub (in crate::core::symbols::storage) current_build_step: BuildSteps,
+    pub (in crate::core::symbols::storage) build_status: BuildStatus,
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     pub not_found_models: HashMap<OYarn, BuildSteps>,
     pub not_found_data_ids: HashMap<MissingDataSource, BuildSteps>,
@@ -42,8 +41,8 @@ impl XmlFileSymbol {
             path: path.to_string(),
             is_external,
             parent,
-            arch_status: BuildStatus::PENDING,
-            validation_status: BuildStatus::PENDING,
+            current_build_step: BuildSteps::ARCH,
+            build_status: BuildStatus::PENDING,
             not_found_paths: vec![],
             not_found_models: HashMap::default(),
             not_found_data_ids: HashMap::default(),
@@ -70,25 +69,6 @@ impl XmlFileSymbol {
         &self.symbols
     }
 
-}
-
-impl Buildable for XmlFileSymbol {
-    fn build_status(&self, step: BuildSteps) -> BuildStatus {
-        match step {
-            BuildSteps::SYNTAX => panic!(),
-            BuildSteps::ARCH => self.arch_status,
-            BuildSteps::ARCH_EVAL => self.arch_status,
-            BuildSteps::VALIDATION => self.validation_status,
-        }
-    }
-    fn set_build_status(&mut self, step: BuildSteps, status: BuildStatus) {
-        match step {
-            BuildSteps::SYNTAX => panic!(),
-            BuildSteps::ARCH => self.arch_status = status,
-            BuildSteps::ARCH_EVAL => {},
-            BuildSteps::VALIDATION => self.validation_status = status,
-        }
-    }
 }
 
 impl XmlFileSymbol {

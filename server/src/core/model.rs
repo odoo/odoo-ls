@@ -389,7 +389,8 @@ impl Model {
             let st = session.st_mut();
             let module = st.find_module(dep);
             if module_change.is_none() || module.is_none() || ModuleSymbol::is_in_deps(st, module.unwrap(), &st[module_change.unwrap()].dir_name) {
-                BuildScheduler::queue(session, dep, BuildSteps::VALIDATION);
+                SymbolTable::invalidate(session, dep, BuildSteps::VALIDATION);
+                BuildScheduler::queue(session, dep);
             }
         }
     }

@@ -41,7 +41,7 @@ impl XmlValidator {
     }
 
     pub fn validate(&mut self, session: &mut SessionInfo) {
-        if session.st().build_status(self.xml_symbol.into(), BuildSteps::VALIDATION) != BuildStatus::PENDING {
+        if !session.st().ready_for_step(self.xml_symbol.into(), BuildSteps::VALIDATION) {
             return;
         }
         session.st_mut().set_build_status(self.xml_symbol.into(), BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);

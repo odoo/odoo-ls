@@ -13,7 +13,7 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::symbols::{ModuleSymbol, SymbolMgr};
 use crate::core::symbols::storage::SymbolTable;
-use crate::core::symbols::symbol_keys::{ClassKey, FunctionKey, ModuleKey, SourceFileKey, SymbolKey, VariableKey};
+use crate::core::symbols::symbol_keys::{BuildableSymbolKey, ClassKey, FunctionKey, ModuleKey, SourceFileKey, SymbolKey, VariableKey};
 use crate::{constants::*, oyarn};
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
@@ -49,9 +49,6 @@ impl PythonArchEval {
         if matches!(symbol, SymbolKey::Namespace(_) | SymbolKey::Root(_) | SymbolKey::Compiled(_) | SymbolKey::Variable(_) | SymbolKey::Class(_)) {
             return None; // nothing to evaluate
         }
-        if symbol_table.build_status(symbol,BuildSteps::ARCH) != BuildStatus::DONE || symbol_table.build_status(symbol, BuildSteps::ARCH_EVAL) != BuildStatus::PENDING {
-            return None;
-        }
         let file = symbol_table.get_file(symbol).unwrap();
         let file_mode = symbol == file;
         Some(PythonArchEval {
@@ -67,10 +64,13 @@ impl PythonArchEval {
 
     pub fn eval_arch(&mut self, session: &mut SessionInfo) {
         let symbol = self.sym_stack[0];
+        if !session.st().ready_for_step(self.sym_stack[0].unwrap_buildable_key(), BuildSteps::ARCH_EVAL) {
+            return;
+        }
         if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !session.st().is_external(symbol)) {
             trace!("ARCH_EVAL  - PYTHON {} - {}", session.st().path(self.file), session.st().name(symbol));
         }
-        session.st_mut().set_build_status(symbol, BuildSteps::ARCH_EVAL, BuildStatus::IN_PROGRESS);
+        session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::ARCH_EVAL, BuildStatus::IN_PROGRESS);
         let path = session.st().file_path(self.file);
         let Some(file_info_rc) = session.sync_odoo.get_file_mgr().borrow().get_file_info(path).clone() else {
             warn!("File info not found for {}", path);
@@ -90,7 +90,7 @@ impl PythonArchEval {
             let file_info_ast_bw  = file_info_ast.borrow();
             //  If the file has been re-parsed since, those indexes address another tree.
             if file_info_ast_bw.text_hash != session.st().get_processed_text_hash(self.file) {
-                session.st_mut().set_build_status(symbol, BuildSteps::ARCH_EVAL, BuildStatus::INVALID);
+                session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::ARCH_EVAL, BuildStatus::INVALID);
                 return;
             }
             let old_noqa = session.current_noqa.clone();
@@ -134,7 +134,7 @@ impl PythonArchEval {
             session.st_mut()[f].replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
             PythonArchEvalHooks::on_function_eval(session, &self.entry_point, f);
         }
-        session.st_mut().set_build_status(self.sym_stack[0], BuildSteps::ARCH_EVAL, BuildStatus::DONE);
+        session.st_mut().set_build_status(self.sym_stack[0].unwrap_buildable_key(), BuildSteps::ARCH_EVAL, BuildStatus::DONE);
         if session.st().is_external(self.sym_stack[0]) && (!self.file_mode  || !file_info_rc.borrow().opened) {
             if self.file_mode {
                 let file_path = session.st().file_path(self.file).to_string();
@@ -142,7 +142,7 @@ impl PythonArchEval {
             }
         } else {
             if self.file_mode {
-                BuildScheduler::queue(session, self.sym_stack[0], BuildSteps::VALIDATION);
+                BuildScheduler::queue(session, self.sym_stack[0].unwrap_buildable_key());
             }
         }
     }
@@ -317,16 +317,18 @@ impl PythonArchEval {
                     return; // can be not found if AST is incomplete
                 };
                 let function_key = lambda_sym.unwrap_function_key();
-                session.st_mut()[function_key].arch_eval_status = BuildStatus::IN_PROGRESS;
-                self.sym_stack.push(lambda_sym);
-                self.visit_expr(session, &lambda_expr.body);
-                let mut deps = vec![vec![], vec![]];
-                let (eval, diags) = Evaluation::eval_from_ast(session, &lambda_expr.body, lambda_sym, &lambda_expr.body.range().start(), false, &mut deps);
-                self.diagnostics.extend(diags);
-                session.st_mut().insert_dependencies(self.file, &deps, self.current_step);
-                FunctionSymbol::add_return_evaluations(function_key, session, eval);
-                self.sym_stack.pop();
-                session.st_mut()[function_key].arch_eval_status = BuildStatus::DONE;
+                if session.st().ready_for_step(function_key.into(), BuildSteps::ARCH_EVAL){
+                    session.st_mut().set_build_status(BuildableSymbolKey::Function(function_key), BuildSteps::ARCH_EVAL, BuildStatus::IN_PROGRESS);
+                    self.sym_stack.push(lambda_sym);
+                    self.visit_expr(session, &lambda_expr.body);
+                    let mut deps = vec![vec![], vec![]];
+                    let (eval, diags) = Evaluation::eval_from_ast(session, &lambda_expr.body, lambda_sym, &lambda_expr.body.range().start(), false, &mut deps);
+                    self.diagnostics.extend(diags);
+                    session.st_mut().insert_dependencies(self.file, &deps, self.current_step);
+                    FunctionSymbol::add_return_evaluations(function_key, session, eval);
+                    self.sym_stack.pop();
+                    session.st_mut().set_build_status(BuildableSymbolKey::Function(function_key), BuildSteps::ARCH_EVAL, BuildStatus::DONE);
+                }
             },
             Expr::Generator(_todo_expr_generator) => {
                 // generators are lazily evaluated,
@@ -662,7 +664,7 @@ impl PythonArchEval {
                 let sym_file = session.st().get_file(symbol);
                 if let Some(file) = sym_file {
                     if session.st().build_status(file.into(), BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
-                        SyncOdoo::build_now(session, file, BuildSteps::ARCH_EVAL);
+                        BuildScheduler::build_now(session, file, BuildSteps::ARCH_EVAL);
                     }
                     if self.file != file {
                         session.st_mut().add_dependency(self.file, file, self.current_step, BuildSteps::ARCH_EVAL);
@@ -777,8 +779,10 @@ impl PythonArchEval {
                     ..diagnostic
                 });
             }
-        if !self.file_mode || session.st().get_in_parents(function_sym_key, &[SymType::CLASS], true).is_none() {
-            session.st_mut()[f].arch_eval_status = BuildStatus::IN_PROGRESS;
+        if (!self.file_mode || session.st().get_in_parents(function_sym_key, &[SymType::CLASS], true).is_none())
+        && session.st().build_status(BuildableSymbolKey::Function(f), BuildSteps::ARCH_EVAL) ==  BuildStatus::PENDING 
+        {
+            session.st_mut().set_build_status(BuildableSymbolKey::Function(f), BuildSteps::ARCH_EVAL, BuildStatus::IN_PROGRESS);
             let old_noqa = session.current_noqa.clone();
             session.current_noqa = session.st().get_noqas(function_sym_key);
             self.sym_stack.push(function_sym_key);
@@ -787,7 +791,7 @@ impl PythonArchEval {
             session.current_noqa = old_noqa;
             PythonArchEval::handle_function_returns(session, func_stmt, f, &func_stmt.range.end(), &mut self.diagnostics);
             PythonArchEval::handle_func_evaluations(&mut session.sync_odoo.symbol_table, &func_stmt.body, f);
-            session.st_mut()[f].arch_eval_status = BuildStatus::DONE;
+            session.st_mut().set_build_status(BuildableSymbolKey::Function(f), BuildSteps::ARCH_EVAL, BuildStatus::DONE);
         }
     }
 

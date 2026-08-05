@@ -312,7 +312,8 @@ impl SymbolKey {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, SymbolKeySubset)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, SymbolKeySubset, IntoKey)]
+#[into_key(BuildableSymbolKey)]
 pub enum SourceFileKey {
     File(FileKey),
     PythonPackage(PythonPackageKey),
@@ -409,4 +410,56 @@ impl ModelSymbolKey {
 pub enum JsFileParent {
     Module(ModuleKey),
     DiskDir(DiskDirKey),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SymbolKeySubset)]
+pub enum BuildableSymbolKey {
+    Function(FunctionKey),
+    File(FileKey),
+    Module(ModuleKey),
+    PythonPackage(PythonPackageKey),
+    XmlFile(XmlFileKey),
+    CsvFile(CsvFileKey),
+    JsFile(JsFileKey),
+}
+
+impl BuildableSymbolKey {
+    pub fn as_source_file_key(&self) -> Option<SourceFileKey> {
+        match *self {
+            BuildableSymbolKey::File(k) => Some(k.into()),
+            BuildableSymbolKey::PythonPackage(k) => Some(k.into()),
+            BuildableSymbolKey::Module(k) => Some(k.into()),
+            BuildableSymbolKey::XmlFile(k) => Some(k.into()),
+            BuildableSymbolKey::CsvFile(k) => Some(k.into()),
+            BuildableSymbolKey::JsFile(k) => Some(k.into()),
+            _ => None,
+        }
+    }
+}
+
+impl SymbolKey {
+    pub fn as_buildable_symbol_key(&self) -> Option<BuildableSymbolKey> {
+        match *self {
+            SymbolKey::Function(k) => Some(BuildableSymbolKey::Function(k)),
+            SymbolKey::File(k) => Some(BuildableSymbolKey::File(k)),
+            SymbolKey::Module(k) => Some(BuildableSymbolKey::Module(k)),
+            SymbolKey::PythonPackage(k) => Some(BuildableSymbolKey::PythonPackage(k)),
+            SymbolKey::XmlFile(k) => Some(BuildableSymbolKey::XmlFile(k)),
+            SymbolKey::CsvFile(k) => Some(BuildableSymbolKey::CsvFile(k)),
+            SymbolKey::JsFile(k) => Some(BuildableSymbolKey::JsFile(k)),
+            _ => None,
+        }
+    }
+    pub fn unwrap_buildable_key(&self) -> BuildableSymbolKey {
+        match *self {
+            SymbolKey::Function(k) => BuildableSymbolKey::Function(k),
+            SymbolKey::File(k) => BuildableSymbolKey::File(k),
+            SymbolKey::Module(k) => BuildableSymbolKey::Module(k),
+            SymbolKey::PythonPackage(k) => BuildableSymbolKey::PythonPackage(k),
+            SymbolKey::XmlFile(k) => BuildableSymbolKey::XmlFile(k),
+            SymbolKey::CsvFile(k) => BuildableSymbolKey::CsvFile(k),
+            SymbolKey::JsFile(k) => BuildableSymbolKey::JsFile(k),
+            _ => panic!("Not a buildable symbol key"),
+        }
+    }
 }
