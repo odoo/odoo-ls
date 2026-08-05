@@ -19,8 +19,8 @@ const ACCESS_INVALID_VALUE_LINE: u32 = 26;
 const ACCESS_INVALID_FIELD_MULTI_CANDIDATE_LINE: u32 = 37;
 
 fn revalidate(session: &mut SessionInfo, file_sym: SourceFileKey) {
-    SymbolTable::invalidate_sub_functions(session, file_sym);
-    BuildScheduler::queue(session, file_sym, BuildSteps::VALIDATION);
+    SymbolTable::invalidate(session, file_sym, BuildSteps::VALIDATION);
+    BuildScheduler::queue(session, file_sym);
     BuildScheduler::process_rebuilds(session, false);
 }
 

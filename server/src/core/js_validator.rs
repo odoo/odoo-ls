@@ -27,6 +27,9 @@ impl JsValidator {
             let name = &session.st()[self.js_symbol].name;
             trace!("Validating JS File {}", name);
         }
+        if !session.st().ready_for_step(self.js_symbol.into(), BuildSteps::VALIDATION) {
+            return;
+        }
         session.st_mut().set_build_status(self.js_symbol.into(), BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
         let mut diagnostics = vec![];
         let Some(file_info) = SymbolTable::get_file_info_for_validation(session, self.js_symbol.into()) else {

@@ -4,7 +4,7 @@ use std::path::Path;
 use odoo_ls_server::constants::{BuildStatus, BuildSteps};
 use odoo_ls_server::core::build_scheduler::BuildScheduler;
 use odoo_ls_server::core::entry_point::EntryPointMgr;
-use odoo_ls_server::core::odoo::SyncOdoo;
+use odoo_ls_server::core::symbols::SymbolTable;
 use odoo_ls_server::core::symbols::symbol_keys::SymbolKey;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
@@ -39,16 +39,20 @@ fn test_build_now_arch_eval_cycle_does_not_overflow() {
     // invalation after a common dependency was changed. The class-base
     // ARCH_EVAL deps registered during the initial pass remain in the dep graph,
     // so build_now_dependencies walks file_a → file_b → file_c → file_a.
-    BuildScheduler::queue(&mut session, file_a, BuildSteps::ARCH_EVAL);
-    BuildScheduler::queue(&mut session, file_b, BuildSteps::ARCH_EVAL);
-    BuildScheduler::queue(&mut session, file_c, BuildSteps::ARCH_EVAL);
+    SymbolTable::invalidate(&mut session, file_a.as_source_file_key().unwrap(), BuildSteps::ARCH_EVAL);
+    SymbolTable::invalidate(&mut session, file_b.as_source_file_key().unwrap(), BuildSteps::ARCH_EVAL);
+    SymbolTable::invalidate(&mut session, file_c.as_source_file_key().unwrap(), BuildSteps::ARCH_EVAL);
 
-    assert_eq!(session.st().build_status(file_a, BuildSteps::ARCH_EVAL), BuildStatus::PENDING);
-    assert_eq!(session.st().build_status(file_b, BuildSteps::ARCH_EVAL), BuildStatus::PENDING);
-    assert_eq!(session.st().build_status(file_c, BuildSteps::ARCH_EVAL), BuildStatus::PENDING);
+    BuildScheduler::queue(&mut session, file_a.unwrap_buildable_key());
+    BuildScheduler::queue(&mut session, file_b.unwrap_buildable_key());
+    BuildScheduler::queue(&mut session, file_c.unwrap_buildable_key());
+
+    assert_eq!(session.st().build_status(file_a.unwrap_buildable_key(), BuildSteps::ARCH_EVAL), BuildStatus::PENDING);
+    assert_eq!(session.st().build_status(file_b.unwrap_buildable_key(), BuildSteps::ARCH_EVAL), BuildStatus::PENDING);
+    assert_eq!(session.st().build_status(file_c.unwrap_buildable_key(), BuildSteps::ARCH_EVAL), BuildStatus::PENDING);
 
     // Without the cycle guard in build_now_impl, this call stack-overflows.
-    SyncOdoo::build_now(&mut session, file_a, BuildSteps::ARCH_EVAL);
+    BuildScheduler::build_now(&mut session, file_a.unwrap_buildable_key(), BuildSteps::ARCH_EVAL);
 }
 
 fn get_file(session: &SessionInfo, module_dir: &str, name: &str) -> SymbolKey {

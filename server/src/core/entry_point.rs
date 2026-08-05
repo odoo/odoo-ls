@@ -7,7 +7,7 @@ use crate::utils::HashMap;
 use slotmap::Key;
 use tracing::{error, info, warn};
 
-use crate::core::symbols::symbol_keys::{FileKey, JsFileKey, RootKey, SourceFileKey, SymbolKey, Wk};
+use crate::core::symbols::symbol_keys::{BuildableSymbolKey, FileKey, JsFileKey, RootKey, SourceFileKey, SymbolKey, Wk};
 use crate::{
     tree::Tree,
     constants::{BuildSteps, OYarn},
@@ -228,12 +228,12 @@ impl EntryPointMgr {
                 SymbolKey::JsFile(f) => {
                     session.st_mut()[f].self_import = true;
                     //arch of js files is done in build_ast of file_info, so we have to directly reload validations instead
-                    BuildScheduler::queue(session, new_sym, BuildSteps::VALIDATION);
+                    BuildScheduler::queue(session, new_sym.unwrap_buildable_key());
                     return true;
                 }
                 _ => {panic!("Unexpected symbol type: {:?}", new_sym);}
             }
-            BuildScheduler::queue(session, new_sym, BuildSteps::ARCH);
+            BuildScheduler::queue(session, new_sym.unwrap_buildable_key());
         }
         true
     }
@@ -241,7 +241,7 @@ impl EntryPointMgr {
     pub fn create_new_untitled_entry_for_path(session: &mut SessionInfo, file_name: &str) -> bool {
         let new_sym = EntryPointMgr::add_entry_to_untitled(session, file_name.to_string());
         session.sync_odoo.symbol_table[new_sym].self_import = true;
-        BuildScheduler::queue(session, new_sym, BuildSteps::ARCH);
+        BuildScheduler::queue(session, BuildableSymbolKey::File(new_sym));
         true
     }
 
@@ -484,17 +484,10 @@ impl EntryPoint {
 
     /// Move symbols whose pending build step is `ARCH`/`ARCH_EVAL`/`VALIDATION` into the
     /// corresponding rebuild queue (validation additionally invalidates sub functions).
-    fn dispatch_rebuild(session: &mut SessionInfo, to_add: [Vec<SourceFileKey>; 3]) {
-        let [arch, arch_eval, validation] = to_add;
-        for s in arch {
-            BuildScheduler::queue(session, s, BuildSteps::ARCH);
-        }
-        for s in arch_eval {
-            BuildScheduler::queue(session, s, BuildSteps::ARCH_EVAL);
-        }
-        for s in validation {
-            SymbolTable::invalidate_sub_functions(session, s);
-            BuildScheduler::queue(session, s, BuildSteps::VALIDATION);
+    fn dispatch_rebuild(session: &mut SessionInfo, to_add: HashMap<SourceFileKey, BuildSteps>) {
+        for (source, step) in to_add {
+            SymbolTable::invalidate(session, source, step);
+            BuildScheduler::queue(session, source);
         }
     }
 
@@ -508,7 +501,7 @@ impl EntryPoint {
         not_found_mut: fn(&mut SymbolTable, SourceFileKey) -> Option<&mut HashMap<K, BuildSteps>>,
         not_found: fn(&SymbolTable, SourceFileKey) -> Option<&HashMap<K, BuildSteps>>,
     ) {
-        let mut to_add: [Vec<SourceFileKey>; 3] = [vec![], vec![], vec![]];
+        let mut to_add: HashMap<SourceFileKey, BuildSteps> = HashMap::default();
         for sym_key in symbols.iter_valid(session.st()) {
             let Some(not_found_map) = not_found_mut(session.st_mut(), sym_key) else {
                 continue;
@@ -516,9 +509,7 @@ impl EntryPoint {
             let Some(step) = not_found_map.get(key) else {
                 continue;
             };
-            if let BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION = step {
-                to_add[*step as usize].push(sym_key);
-            }
+            to_add.insert(sym_key, *step);
             not_found_map.remove(key);
         }
         Self::dispatch_rebuild(session, to_add);
@@ -531,16 +522,17 @@ impl EntryPoint {
     from the not_found_symbols list to the rebuild list. Return True is something should be rebuilt */
     pub fn search_symbols_to_rebuild(&mut self, session: &mut SessionInfo, path: &str, tree: Tree) {
         let flat_tree = tree.flatten();
-        let mut to_add = [vec![], vec![], vec![]];
+        let mut to_add = HashMap::default();
         for s in self.not_found_symbols.iter_valid(session.st()) {
             if let SourceFileKey::Module(p) = s {
                 let module_package = &mut session.st_mut()[p];
                 if let Some(step) = module_package.not_found_data.get(path) {
-                    match step {
-                        BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION => {
-                            to_add[*step as usize].push(s);
+                    if let Some(previous) = to_add.get(&s) {
+                        if *step < *previous {
+                            to_add.insert(s, *step);
                         }
-                        _ => {}
+                    } else {
+                        to_add.insert(s, *step);
                     }
                     module_package.not_found_data.remove(path);
                     continue; //as if a data has been found, we won't find anything later, so we can continue the loop
@@ -552,8 +544,12 @@ impl EntryPoint {
                 if flat_tree[..prefix] != not_found_tree[..prefix] {
                     return true; // keep
                 }
-                if let BuildSteps::ARCH | BuildSteps::ARCH_EVAL | BuildSteps::VALIDATION = step {
-                    to_add[*step as usize].push(s);
+                if let Some(previous) = to_add.get(&s) {
+                    if *step < *previous {
+                        to_add.insert(s, *step);
+                    }
+                } else {
+                    to_add.insert(s, *step);
                 }
                 false // drop
             });

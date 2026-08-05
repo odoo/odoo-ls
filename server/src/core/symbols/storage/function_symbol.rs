@@ -39,9 +39,8 @@ pub struct FunctionSymbol {
     pub node_index: AtomicNodeIndex,
     pub diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>, //only temporary used for CLASS and FUNCTION to be collected like others are stored on FileInfo
     pub evaluations: Vec<Evaluation>, //Vec, because sometimes a single allocation can be ambiguous, like ''' a = "5" if X else 5 '''
-    pub arch_status: BuildStatus,
-    pub arch_eval_status: BuildStatus,
-    pub validation_status: BuildStatus,
+    pub(super) current_build_step: BuildSteps,
+    pub(super) build_status: BuildStatus,
     pub range: TextRange,
     pub body_range: TextRange,
     pub args: Vec<Argument>,
@@ -73,9 +72,8 @@ impl FunctionSymbol {
             node_index: AtomicNodeIndex::default(),
             doc_string: None,
             evaluations: vec![],
-            arch_status: BuildStatus::PENDING,
-            arch_eval_status: BuildStatus::PENDING,
-            validation_status: BuildStatus::PENDING,
+            current_build_step: BuildSteps::ARCH,
+            build_status: BuildStatus::PENDING,
             sections: vec![],
             symbols: HashMap::default(),
             args: vec![],

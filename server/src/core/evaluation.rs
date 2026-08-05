@@ -1,3 +1,4 @@
+use crate::core::build_scheduler::BuildScheduler;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
@@ -637,7 +638,7 @@ impl Evaluation {
         let parent_file_or_func = session.st().parent_file_or_function(parent).unwrap();
         let is_in_validation = match parent_file_or_func.typ() {
             SymType::FILE | SymType::PACKAGE(_) | SymType::FUNCTION => {
-                session.st().build_status(parent_file_or_func, BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
+                session.st().build_status(parent_file_or_func.unwrap_buildable_key(), BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
             },
             _ => {false}
         };
@@ -909,7 +910,7 @@ impl Evaluation {
                                 //let be sure that the class file has been loaded, and add dependency to it
                                 if required_dependencies.len() >= 2 {
                                     let class_file = session.st().get_file(base_sym).unwrap();
-                                    SyncOdoo::build_now(session, class_file, BuildSteps::ARCH_EVAL);
+                                    BuildScheduler::build_now(session, class_file, BuildSteps::ARCH_EVAL);
                                     if !session.st().is_external(class_file.into()) {
                                         required_dependencies[1].push(class_file);
                                     }
@@ -1055,7 +1056,7 @@ impl Evaluation {
                         if let Some(base_loc) = base_loc {
                             let file = session.st().get_file(base_loc);
                             if let Some(base_loc_file) = file {
-                                SyncOdoo::build_now(session, base_loc_file, BuildSteps::ARCH_EVAL);
+                                BuildScheduler::build_now(session, base_loc_file, BuildSteps::ARCH_EVAL);
                                 if session.st().in_workspace(base_loc_file.into()) {
                                     if required_dependencies.len() == 2 {
                                         required_dependencies[1].push(base_loc_file);
@@ -1397,12 +1398,14 @@ impl Evaluation {
                 let lambda_sym = session.st().get_positioned_symbol(parent, "<lambda>", &lambda_expr.range);
                 if let Some(lambda_sym) = lambda_sym {
                     if is_in_validation || session.sync_odoo.evaluation_search.is_some() {
-                        if is_in_validation {
-                            session.st_mut().set_build_status(lambda_sym, BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
+                        let mut is_validating_steps = false;
+                        if is_in_validation && session.st().ready_for_step(lambda_sym.unwrap_buildable_key(), BuildSteps::VALIDATION) {
+                            is_validating_steps = true;
+                            session.st_mut().set_build_status(lambda_sym.unwrap_buildable_key(), BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                         }
                         let (_, diags) = Evaluation::eval_from_ast(session, &lambda_expr.body, lambda_sym, &lambda_expr.body.range().start(), false, required_dependencies);
-                        if is_in_validation {
-                            session.st_mut().set_build_status(lambda_sym, BuildSteps::VALIDATION, BuildStatus::DONE);
+                        if is_validating_steps {
+                            session.st_mut().set_build_status(lambda_sym.unwrap_buildable_key(), BuildSteps::VALIDATION, BuildStatus::DONE);
                             diagnostics.extend(diags);
                         }
                     }

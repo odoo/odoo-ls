@@ -85,7 +85,6 @@ impl fmt::Display for SymType {
 
 #[derive(Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Copy, Clone)]
 pub enum BuildSteps {
-    SYNTAX     = -1, //can't be 0, because others should be able to be used as vec index
     ARCH       = 0,
     ARCH_EVAL  = 1,
     VALIDATION = 2,
@@ -94,7 +93,6 @@ pub enum BuildSteps {
 impl From<i32> for BuildSteps {
     fn from(value: i32) -> Self {
         match value {
-            -1 => BuildSteps::SYNTAX,
             0 => BuildSteps::ARCH,
             1 => BuildSteps::ARCH_EVAL,
             2 => BuildSteps::VALIDATION,
@@ -124,7 +122,6 @@ pub enum DiagnosticSource {
 impl From<BuildSteps> for DiagnosticSource {
     fn from(value: BuildSteps) -> Self {
         match value {
-            BuildSteps::SYNTAX => DiagnosticSource::PY_SYNTAX,
             BuildSteps::ARCH => DiagnosticSource::PY_ARCH,
             BuildSteps::ARCH_EVAL => DiagnosticSource::PY_ARCH_EVAL,
             BuildSteps::VALIDATION => DiagnosticSource::PY_VALIDATION,

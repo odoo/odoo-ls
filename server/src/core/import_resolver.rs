@@ -1,6 +1,7 @@
 use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
 use ruff_python_ast::name::Name;
 use tracing::error;
+use crate::core::build_scheduler::BuildScheduler;
 use crate::utils::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -16,7 +17,6 @@ use crate::threads::SessionInfo;
 use crate::utils::{is_dir_cs, PathSanitizer};
 
 use super::entry_point::{EntryPoint, EntryPointType};
-use super::odoo::SyncOdoo;
 
 pub struct ImportResult {
     pub name: OYarn, //the last imported element
@@ -241,7 +241,7 @@ pub fn create_module_from_name(session: &mut SessionInfo, odoo_addons: Namespace
         let Some(module) = SymbolTable::create_module_from_path(session, &full_path, odoo_addons) else {
             continue;
         };
-        SyncOdoo::build_now(session, module, BuildSteps::ARCH);
+        BuildScheduler::build_now(session, module, BuildSteps::ARCH);
         return Some(module);
     }
     None
@@ -409,7 +409,9 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
             || session.sync_odoo.is_file_cs(&full_path.join("__init__.pyi").sanitize_cow())
         ) {
             if let Some(symbol) = SymbolTable::create_from_path(session, &full_path, parent, false) {
-                SyncOdoo::build_now(session, symbol, BuildSteps::ARCH);
+                if let Some(buildable) = symbol.as_buildable_symbol_key() {
+                    BuildScheduler::build_now(session, buildable, BuildSteps::ARCH);
+                }
                 return Ok(symbol);
             }
             continue;
@@ -419,7 +421,9 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
             let path = full_path.with_extension(extension);
             if session.sync_odoo.is_file_cs(&path.sanitize_cow()) {
                 if let Some(symbol) = SymbolTable::create_from_path(session, &path, parent, false) {
-                    SyncOdoo::build_now(session, symbol, BuildSteps::ARCH);
+                    if let Some(buildable) = symbol.as_buildable_symbol_key() {
+                        BuildScheduler::build_now(session, buildable, BuildSteps::ARCH);
+                    }
                     return Ok(symbol);
                 }
                 continue 'paths;
@@ -428,7 +432,9 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
         // Try as directory (namespace)
         if is_dir {
             if let Some(symbol) = SymbolTable::create_from_path(session, &full_path, parent, false) {
-                SyncOdoo::build_now(session, symbol, BuildSteps::ARCH);
+                if let Some(buildable) = symbol.as_buildable_symbol_key() {
+                    BuildScheduler::build_now(session, buildable, BuildSteps::ARCH);
+                }
                 return Ok(symbol);
             }
             continue;

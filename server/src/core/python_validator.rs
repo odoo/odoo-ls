@@ -5,14 +5,14 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::path::Path;
 use lsp_types::{Diagnostic, Position, Range};
+use crate::core::build_scheduler::BuildScheduler;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation_context::{ContextKey, ContextValue};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::symbol_keys::{ClassKey, ModelSymbolKey, ModuleKey, SourceFileKey, SymbolKey};
 use crate::{constants::*, oyarn};
-use crate::core::odoo::SyncOdoo;
-use crate::core::symbols::ModuleSymbol;
+use crate::core::symbols::{ModuleSymbol};
 use crate::threads::SessionInfo;
 use crate::utils::{PathSanitizer as _};
 use crate::S;
@@ -54,14 +54,14 @@ impl PythonValidator {
     /* Validate the symbol. The dependencies must be done before any validation. */
     pub fn validate(&mut self, session: &mut SessionInfo) {
         let symbol = self.sym_stack[0];
-        if session.st().build_status(symbol, BuildSteps::VALIDATION) != BuildStatus::PENDING {
+        if !session.st().ready_for_step(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION) {
             return;
         }
         let file_info_rc = SymbolTable::get_file_info_for_validation(session, self.file).clone();
         let file_info_rc = match file_info_rc {
             Some(f) => f,
             None => {
-                session.st_mut().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::INVALID);
+                session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION, BuildStatus::INVALID);
                 return;
             }
         };
@@ -69,20 +69,17 @@ impl PythonValidator {
         match symbol {
             SymbolKey::File(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) => {
                 let source_file_key = symbol.as_source_file_key().unwrap();
-                if session.st().build_status(symbol, BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
-                    return;
-                }
                 if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !session.st().is_external(symbol)) {
                     trace!("VALIDATION - PYTHON FILE {}", session.st().paths(symbol).first().unwrap_or(&S!("No path found")));
                 }
-                session.st_mut().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
+                session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 file_info_rc.borrow_mut().replace_diagnostics(DiagnosticSource::PY_VALIDATION, vec![]);
                 if !file_info_rc.borrow().file_info_ast.borrow().ast.is_built() {
                     file_info_rc.borrow_mut().prepare_ast(session);
                 }
                 let file_info = file_info_rc.borrow();
                 if file_info_rc.borrow().file_info_ast.borrow().text_hash != session.st().get_processed_text_hash(source_file_key) {
-                    session.st_mut().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::INVALID);
+                    session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION, BuildStatus::INVALID);
                     return;
                 }
                 let file_info_ast_rc = file_info.file_info_ast.clone();
@@ -107,28 +104,18 @@ impl PythonValidator {
                     trace!("VALIDATION - PYTHON FUNCTION: {}", session.st().name(symbol));
                 }
                 self.file_mode = false;
-                let func = symbol;
-                let Some(parent_file) = session.st().get_file(func) else {
+                let Some(parent_file) = session.st().get_file(symbol) else {
                     panic!("Parent file not found on validating function")
                 };
                 if file_info_rc.borrow().file_info_ast.borrow().text_hash != session.st_mut().get_processed_text_hash(parent_file) {
-                    session.st_mut().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::INVALID);
+                    session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION, BuildStatus::INVALID);
                     return;
                 }
-                if session.st()[f].arch_status == BuildStatus::PENDING { //TODO other checks to do? maybe odoo step, or?????????
-                    session.st_mut().set_build_status(symbol, BuildSteps::ARCH, BuildStatus::PENDING);
-                    session.st_mut().set_build_status(symbol, BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
-                    session.st_mut().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::PENDING);
-                    SyncOdoo::build_now(session, func, BuildSteps::ARCH);
-                }
-                if session.st()[f].arch_eval_status == BuildStatus::PENDING { //TODO other checks to do? maybe odoo step, or?????????
-                    SyncOdoo::build_now(session, func, BuildSteps::ARCH_EVAL);
-                }
-                if session.st()[f].arch_eval_status != BuildStatus::DONE {
+                if !session.st().ready_for_step(f.into(), BuildSteps::VALIDATION) {
                     return;
                 }
                 self.diagnostics = vec![];
-                session.st_mut().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
+                session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 if !file_info_rc.borrow().file_info_ast.borrow().ast.is_built() {
                     file_info_rc.borrow_mut().prepare_ast(session);
                 }
@@ -165,7 +152,7 @@ impl PythonValidator {
             _ => {panic!("Only File, function can be validated")}
         }
         let symbol = self.sym_stack[0];
-        session.st_mut().set_build_status(symbol, BuildSteps::VALIDATION, BuildStatus::DONE);
+        session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION, BuildStatus::DONE);
         if matches!(symbol.typ(), SymType::FILE | SymType::PACKAGE(_)) {
             if !session.st().in_workspace(symbol) {
                 if !session.st().is_external(symbol) {
@@ -205,11 +192,16 @@ impl PythonValidator {
                 Stmt::FunctionDef(f) => {
                     let sym = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &f.name, &f.range);
                     if let Some(sym) = sym {
-                        let val_status = session.st().build_status(sym, BuildSteps::VALIDATION);
-                        if val_status == BuildStatus::PENDING {
+                        if session.st().ready_for_step(sym.unwrap_buildable_key(), BuildSteps::ARCH) {
+                            BuildScheduler::build_now(session, sym.unwrap_buildable_key(), BuildSteps::ARCH);
+                        }
+                        if session.st().ready_for_step(sym.unwrap_buildable_key(), BuildSteps::ARCH_EVAL) {
+                            BuildScheduler::build_now(session, sym.unwrap_buildable_key(), BuildSteps::ARCH_EVAL);
+                        }
+                        if session.st().ready_for_step(sym.unwrap_buildable_key(), BuildSteps::VALIDATION) {
                             let mut v = PythonValidator::new(session.st(), self.entry_point.clone(), sym);
                             v.validate(session);
-                        } else if val_status == BuildStatus::IN_PROGRESS {
+                        } else if session.st().build_status(sym.unwrap_buildable_key(), BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS {
                             panic!("cyclic validation detected... Aborting");
                         }
                         let f = sym.unwrap_function_key();

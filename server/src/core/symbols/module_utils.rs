@@ -2,7 +2,7 @@ use std::path::Path;
 
 use lsp_types::Diagnostic;
 
-use crate::{Sy, constants::{BuildSteps, DiagnosticSource, OYarn}, core::{build_scheduler::BuildScheduler, diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileMgr, import_resolver::create_module_from_name, odoo::SyncOdoo, symbols::{ModuleSymbol, SymbolTable, symbol_keys::{ModuleKey, NamespaceKey, SymbolKey}}}, threads::SessionInfo, utils::PathSanitizer};
+use crate::{Sy, constants::{BuildSteps, DiagnosticSource, OYarn}, core::{build_scheduler::BuildScheduler, diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileMgr, import_resolver::create_module_from_name, symbols::{ModuleSymbol, SymbolTable, symbol_keys::{ModuleKey, NamespaceKey, SymbolKey}}}, threads::SessionInfo, utils::PathSanitizer};
 
 
 
@@ -36,7 +36,7 @@ impl ModuleSymbol {
         for (depend, range) in dependencies.iter() {
             if let Some(dependency) = session.sync_odoo.modules.get(depend).and_then(|m| m.upgrade(session.st())) {
                 // Dependency already in modules
-                SyncOdoo::build_now(session, dependency, BuildSteps::ARCH);
+                BuildScheduler::build_now(session, dependency, BuildSteps::ARCH);
                 if session.st()[dependency].all_depends.contains(&name)
                     && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS04012, &[depend]) {
                         diagnostics.push(Diagnostic {
@@ -82,7 +82,7 @@ impl ModuleSymbol {
         if tests_path.exists() && !session.st()[module_key].module_symbols().contains_key("tests") {
             let symbol = SymbolTable::create_from_path(session, &tests_path, module_key.into(), false);
             if let Some(sym) = symbol && !matches!(sym, SymbolKey::Namespace(_)) {
-                BuildScheduler::queue(session, sym, BuildSteps::ARCH);
+                BuildScheduler::queue(session, sym.unwrap_buildable_key());
             }
         }
     }

@@ -6,7 +6,7 @@ use tracing::info;
 
 use crate::{
     Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource, MissingDataSource, OYarn}, core::{
-        diagnostics::{DiagnosticCode, create_diagnostic}, evaluation_utils::DeepFieldEvalWalker, file_mgr::FileInfo, symbols::{SymbolTable, symbol_keys::{CsvFileKey, ModuleKey}}
+        diagnostics::{DiagnosticCode, create_diagnostic}, evaluation_utils::DeepFieldEvalWalker, file_mgr::FileInfo, symbols::{Buildable as _, SymbolTable, symbol_keys::{CsvFileKey, ModuleKey}}
     }, features::csv_ast_utils::CsvFieldIter, oyarn, threads::SessionInfo
 };
 use std::{cell::RefCell, rc::Rc};
@@ -28,17 +28,17 @@ impl CsvValidator {
     }
 
     pub fn validate(&mut self, session: &mut SessionInfo, csv_symbol: CsvFileKey) {
-        if session.st().build_status(csv_symbol.into(), BuildSteps::VALIDATION) != BuildStatus::PENDING {
+        if !session.st().ready_for_step(csv_symbol.into(), BuildSteps::VALIDATION){
             return;
         }
         let mut diagnostics = vec![];
-        session.st_mut().set_build_status(csv_symbol.into(), BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
+        session.st_mut()[csv_symbol].set_build_status(BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
         let path = session.st()[csv_symbol].path.clone();
         if DEBUG_STEPS {
             info!("VALIDATION - CSV: {}", path);
         }
         let Some(file_info) = SymbolTable::get_file_info_for_validation(session, csv_symbol.into()) else {
-            session.st_mut().set_build_status(csv_symbol.into(), BuildSteps::VALIDATION, BuildStatus::INVALID);
+            session.st_mut()[csv_symbol].set_build_status(BuildSteps::VALIDATION, BuildStatus::INVALID);
             return;
         };
         let Some(data) = file_info.borrow().file_info_ast.borrow().text_document.as_ref().map(|td| td.contents().to_string()) else {
