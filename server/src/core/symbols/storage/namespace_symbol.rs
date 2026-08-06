@@ -80,4 +80,13 @@ impl NamespaceSymbol {
             .flat_map(|d| d.module_symbols.values())
             .copied()
     }
+
+    pub fn get_child(&self, name: &str) -> Option<SymbolKey> {
+        for dir in self.directories.iter() {
+            if let Some(child) = dir.module_symbols.get(name) {
+                return Some(*child);
+            }
+        }
+        None
+    }
 }

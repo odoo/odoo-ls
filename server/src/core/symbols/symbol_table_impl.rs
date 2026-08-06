@@ -3,7 +3,7 @@ use std::{
 };
 use crate::{
     Sy, constants::MissingDataSource, core::{
-        build_scheduler::BuildScheduler, evaluation_context::ContextKey, python_arch_eval_hooks::get_base_model_symbol, symbols::{storage::{FileContentParent, buildable::ResettableBuildable as _, xml::xml_field_symbol::XmlFieldName}, symbol_keys::{BuildableSymbolKey, XmlRecordKey}},
+        build_scheduler::BuildScheduler, evaluation_context::ContextKey, python_arch_eval_hooks::get_base_model_symbol, symbols::{storage::{FileContentParent, FileSystemSymbolParent, buildable::ResettableBuildable as _, xml::xml_field_symbol::XmlFieldName}, symbol_keys::{BuildableSymbolKey, XmlRecordKey}},
     }, oyarn, utils::{HashMap, HashSet},
 };
 
@@ -358,48 +358,6 @@ impl SymbolTable {
         }
     }
 
-    pub fn has_modules(&self, target: SymbolKey) -> bool {
-        matches!(
-            target,
-            SymbolKey::Root(_)
-                | SymbolKey::Namespace(_)
-                | SymbolKey::PythonPackage(_)
-                | SymbolKey::Module(_)
-                | SymbolKey::DiskDir(_)
-                | SymbolKey::Compiled(_)
-        )
-    }
-
-    pub fn all_module_symbol(&self, target: SymbolKey) -> Vec<SymbolKey> {
-        match target {
-            SymbolKey::Root(r) => self[r].module_symbols().values().copied().collect(),
-            SymbolKey::Namespace(n) => {
-                self[n].directories().iter()
-                    .flat_map(|x| x.module_symbols().values())
-                    .copied()
-                    .collect()
-            },
-            SymbolKey::DiskDir(d) => self[d].module_symbols().values().copied().collect(),
-            SymbolKey::Module(m) => self[m].module_symbols().values().copied().collect(),
-            SymbolKey::PythonPackage(p) => self[p].module_symbols().values().copied().collect(),
-            SymbolKey::File(_) => panic!("No module symbol on File"),
-            SymbolKey::Compiled(c) => self[c].module_symbols().values().copied().collect(),
-            SymbolKey::Class(_c) => panic!("No module symbol on Class"),
-            SymbolKey::Function(_) => panic!("No module symbol on Function"),
-            SymbolKey::Variable(_) => panic!("No module symbol on Variable"),
-            SymbolKey::XmlFile(_) => panic!("No module symbol on XmlFileSymbol"),
-            SymbolKey::XmlRecord(_) => panic!("No module symbol on XmlRecordSymbol"),
-            SymbolKey::XmlField(_) => panic!("No module symbol on XmlFieldSymbol"),
-            SymbolKey::XmlMenuItem(_) => panic!("No module symbol on XmlMenuItemSymbol"),
-            SymbolKey::XmlTemplate(_) => panic!("No module symbol on XmlTemplateSymbol"),
-            SymbolKey::XmlAsset(_) => panic!("No module symbol on XmlAssetSymbol"),
-            SymbolKey::XmlDelete(_) => panic!("No module symbol on XmlDeleteSymbol"),
-            SymbolKey::CsvFile(_) => panic!("No module symbol on CsvFileSymbol"),
-            SymbolKey::JsFile(_) => panic!("No module symbol on JsFileSymbol"),
-        }
-    }
-
-
     pub fn in_workspace(&self, target: SymbolKey) -> bool {
         match target {
             SymbolKey::Root(_) => false,
@@ -686,9 +644,9 @@ impl SymbolTable {
     }
 
     ///Given a path, create the appropriated symbol and attach it to the given parent
-    pub fn create_from_path(session: &mut SessionInfo, path: &Path, parent: SymbolKey, require_module: bool) -> Option<SymbolKey> {
+    pub fn create_from_path(session: &mut SessionInfo, path: &Path, parent: FileSystemSymbolParent, require_module: bool) -> Option<SymbolKey> {
         if require_module {
-            let SymbolKey::Namespace(addons) = parent else {
+            let FileSystemSymbolParent::Namespace(addons) = parent else {
                 return None;
             };
             return Self::create_module_from_path(session, path, addons).map(SymbolKey::from)
@@ -703,7 +661,7 @@ impl SymbolTable {
             return Some(session.st_mut().add_new_file(parent, &name, &path_str).into());
         }
         if path_str.ends_with(".js") && !session.sync_odoo.config.is_javascript_disabled()
-            && let SymbolKey::DiskDir(d) = parent
+            && let FileSystemSymbolParent::DiskDir(d) = parent
         {
             //js file created here is because of js in a custom entrypoint, and that should be created under a diskdir.
             //JS files under a Module should be created by the module loading, through load_assets
@@ -711,7 +669,7 @@ impl SymbolTable {
         }
         let main_entry_tree = session.sync_odoo.get_main_entry_tree(parent);
         if main_entry_tree == (&["odoo", "addons"], &[]) && path.join("__manifest__.py").exists() {
-            if let SymbolKey::Namespace(addons) = parent {
+            if let FileSystemSymbolParent::Namespace(addons) = parent {
                 let module = Self::add_new_module_package(session, addons, &name, path);
                 let dir_name = session.st()[module].dir_name.clone();
                 session.sync_odoo.modules.insert(dir_name, module.into());
@@ -751,6 +709,10 @@ impl SymbolTable {
             return None;
         }
         let name = path.components().next_back().unwrap().as_os_str().to_str().unwrap();
+        if FileSystemSymbolParent::from(addons).get_child(session.st(), name).is_some() {
+            // Module already exists, do not create a new one
+            return None;
+        }
         let module = Self::add_new_module_package(session, addons, name, path);
         let dir_name = session.sync_odoo.symbol_table[module].dir_name.clone();
         session.sync_odoo.modules.insert(dir_name, module.into());
@@ -846,33 +808,7 @@ impl SymbolTable {
     Return a symbol that is in module symbols (symbol that represent something on disk - file, package, namespace)
      */
     pub fn get_module_symbol(&self, target: SymbolKey, name: &str) -> Option<SymbolKey> {
-        match target {
-            SymbolKey::Namespace(n) => {
-                for dir in self[n].directories().iter() {
-                    let result = dir.module_symbols().get(name);
-                    if result.is_some() {
-                        return result.copied();
-                    }
-                }
-                None
-            },
-            SymbolKey::Module(m) => {
-                self[m].module_symbols().get(name).copied()
-            },
-            SymbolKey::PythonPackage(p) => {
-                self[p].module_symbols().get(name).copied()
-            }
-            SymbolKey::Root(r) => {
-                self[r].module_symbols().get(name).copied()
-            },
-            SymbolKey::DiskDir(d) => {
-                self[d].module_symbols().get(name).copied()
-            },
-            SymbolKey::Compiled(c) => {
-                self[c].module_symbols().get(name).copied()
-            }
-            _ => {None}
-        }
+        FileSystemSymbolParent::try_from(target).ok()?.get_child(self, name)
     }
 
     /**
@@ -1092,9 +1028,9 @@ impl SymbolTable {
                     }
                 }
             }
-            if session.st().has_modules(ref_to_inv.into()) {
-                for sym in session.st().all_module_symbol(ref_to_inv.into()).iter()
-                        .filter_map(|&s| s.as_source_file_key()) {
+            if let Ok(parent) = FileSystemSymbolParent::try_from(SymbolKey::from(ref_to_inv)) {
+                let all_module_symbols = parent.children(session.st());
+                for sym in all_module_symbols.into_iter().filter_map(|s| s.as_source_file_key()) {
                     vec_to_invalidate.push_back(sym);
                 }
             }
@@ -2472,7 +2408,7 @@ mod get_symbol_tests {
     use ruff_text_size::TextSize;
 
     /// Build an empty symbol table with a single root and return `(table, root_key)`.
-    fn empty_table_with_root() -> (SymbolTable, SymbolKey) {
+    fn empty_table_with_root() -> (SymbolTable, RootKey) {
         let mut st = SymbolTable::new();
         let entry = EntryPoint::new(
             &mut st,
@@ -2482,7 +2418,7 @@ mod get_symbol_tests {
             None,
             None,
         );
-        let root = SymbolKey::Root(entry.borrow().root);
+        let root = entry.borrow().root;
         (st, root)
     }
 
@@ -2496,18 +2432,18 @@ mod get_symbol_tests {
         let (st, root) = empty_table_with_root();
         let files: &[&str] = &[];
         let content: &[&str] = &[];
-        assert!(st.get_symbol(root, (files, content), u32::MAX).is_empty());
+        assert!(st.get_symbol(root.into(), (files, content), u32::MAX).is_empty());
     }
 
     #[test]
     fn file_only() {
         let (mut st, root) = empty_table_with_root();
-        let file = st.add_new_file(root, "my_file", "/test/my_file.py");
+        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py");
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &[];
         assert_eq!(
-            st.get_symbol(root, (files, content), u32::MAX),
+            st.get_symbol(root.into(), (files, content), u32::MAX),
             vec![SymbolKey::File(file)]
         );
     }
@@ -2515,13 +2451,13 @@ mod get_symbol_tests {
     #[test]
     fn file_plus_one_content() {
         let (mut st, root) = empty_table_with_root();
-        let file = st.add_new_file(root, "my_file", "/test/my_file.py");
+        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py");
         let class = st.add_new_class(file.into(), "MyClass", range_at(0), TextSize::new(0));
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["MyClass"];
         assert_eq!(
-            st.get_symbol(root, (files, content), u32::MAX),
+            st.get_symbol(root.into(), (files, content), u32::MAX),
             vec![SymbolKey::Class(class)]
         );
     }
@@ -2529,14 +2465,14 @@ mod get_symbol_tests {
     #[test]
     fn file_plus_nested_content() {
         let (mut st, root) = empty_table_with_root();
-        let file = st.add_new_file(root, "my_file", "/test/my_file.py");
+        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py");
         let class = st.add_new_class(file.into(), "MyClass", range_at(0), TextSize::new(0));
         let method = st.add_new_function(class.into(), "method", range_at(1), TextSize::new(1));
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["MyClass", "method"];
         assert_eq!(
-            st.get_symbol(root, (files, content), u32::MAX),
+            st.get_symbol(root.into(), (files, content), u32::MAX),
             vec![SymbolKey::Function(method)]
         );
     }
@@ -2545,7 +2481,7 @@ mod get_symbol_tests {
     fn deeply_nested_content() {
         // Content path longer than 2: file -> Outer -> Inner -> v
         let (mut st, root) = empty_table_with_root();
-        let file = st.add_new_file(root, "my_file", "/test/my_file.py");
+        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py");
         let outer = st.add_new_class(file.into(), "Outer", range_at(0), TextSize::new(0));
         let inner = st.add_new_class(outer.into(), "Inner", range_at(1), TextSize::new(1));
         let var = st.add_new_variable(SymbolKey::Class(inner), "v", range_at(2));
@@ -2553,7 +2489,7 @@ mod get_symbol_tests {
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["Outer", "Inner", "v"];
         assert_eq!(
-            st.get_symbol(root, (files, content), u32::MAX),
+            st.get_symbol(root.into(), (files, content), u32::MAX),
             vec![SymbolKey::Variable(var)]
         );
     }
@@ -2562,14 +2498,14 @@ mod get_symbol_tests {
     fn nested_file_paths() {
         // File tree with several levels: package -> file -> class
         let (mut st, root) = empty_table_with_root();
-        let package = st.add_new_python_package(root, "pkg", "/test/pkg", "");
+        let package = st.add_new_python_package(root.into(), "pkg", "/test/pkg", "");
         let file = st.add_new_file(package.into(), "mod", "/test/pkg/mod.py");
         let class = st.add_new_class(file.into(), "Cls", range_at(0), TextSize::new(0));
 
         let files: &[&str] = &["pkg", "mod"];
         let content: &[&str] = &["Cls"];
         assert_eq!(
-            st.get_symbol(root, (files, content), u32::MAX),
+            st.get_symbol(root.into(), (files, content), u32::MAX),
             vec![SymbolKey::Class(class)]
         );
     }
@@ -2577,22 +2513,22 @@ mod get_symbol_tests {
     #[test]
     fn missing_file_returns_empty() {
         let (mut st, root) = empty_table_with_root();
-        st.add_new_file(root, "my_file", "/test/my_file.py");
+        st.add_new_file(root.into(), "my_file", "/test/my_file.py");
 
         let files: &[&str] = &["does_not_exist"];
         let content: &[&str] = &[];
-        assert!(st.get_symbol(root, (files, content), u32::MAX).is_empty());
+        assert!(st.get_symbol(root.into(), (files, content), u32::MAX).is_empty());
     }
 
     #[test]
     fn missing_content_returns_empty() {
         let (mut st, root) = empty_table_with_root();
-        let file = st.add_new_file(root, "my_file", "/test/my_file.py");
+        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py");
         st.add_new_class(file.into(), "MyClass", range_at(0), TextSize::new(0));
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["Missing"];
-        assert!(st.get_symbol(root, (files, content), u32::MAX).is_empty());
+        assert!(st.get_symbol(root.into(), (files, content), u32::MAX).is_empty());
     }
 
     #[test]
@@ -2600,14 +2536,14 @@ mod get_symbol_tests {
         // Two variables with the same name in the same section: only the last
         // declaration visible before the position is returned.
         let (mut st, root) = empty_table_with_root();
-        let file = st.add_new_file(root, "my_file", "/test/my_file.py");
+        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py");
         let _first = st.add_new_variable(SymbolKey::File(file), "x", range_at(5));
         let second = st.add_new_variable(SymbolKey::File(file), "x", range_at(15));
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["x"];
         assert_eq!(
-            st.get_symbol(root, (files, content), u32::MAX),
+            st.get_symbol(root.into(), (files, content), u32::MAX),
             vec![SymbolKey::Variable(second)]
         );
     }
@@ -2616,7 +2552,7 @@ mod get_symbol_tests {
     fn same_name_respects_position() {
         // Querying before the second declaration returns the first one.
         let (mut st, root) = empty_table_with_root();
-        let file = st.add_new_file(root, "my_file", "/test/my_file.py");
+        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py");
         let first = st.add_new_variable(SymbolKey::File(file), "x", range_at(5));
         let _second = st.add_new_variable(SymbolKey::File(file), "x", range_at(15));
 
@@ -2624,7 +2560,7 @@ mod get_symbol_tests {
         let content: &[&str] = &["x"];
         // position 10 is after `first` (at 5) but before `second` (at 15)
         assert_eq!(
-            st.get_symbol(root, (files, content), 10),
+            st.get_symbol(root.into(), (files, content), 10),
             vec![SymbolKey::Variable(first)]
         );
     }
@@ -2634,7 +2570,7 @@ mod get_symbol_tests {
         // A name defined in two mutually-exclusive branches (if / else) must
         // resolve to both symbols once the branches merge.
         let (mut st, root) = empty_table_with_root();
-        let file = st.add_new_file(root, "my_file", "/test/my_file.py");
+        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py");
         let file_key = SymbolKey::File(file);
 
         // sections: 0 base | 1 if-test | 2 if-body | 3 else-body | 4 merge(OR[2,3])
@@ -2656,7 +2592,7 @@ mod get_symbol_tests {
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["x"];
-        let result = st.get_symbol(root, (files, content), u32::MAX);
+        let result = st.get_symbol(root.into(), (files, content), u32::MAX);
         assert_eq!(result.len(), 2);
         assert!(result.contains(&SymbolKey::Variable(x_if)));
         assert!(result.contains(&SymbolKey::Variable(x_else)));
@@ -2667,7 +2603,7 @@ mod get_symbol_tests {
         // The same name resolving to multiple symbols must keep walking every
         // branch for the remaining content path (tests the flat_map behaviour).
         let (mut st, root) = empty_table_with_root();
-        let file = st.add_new_file(root, "my_file", "/test/my_file.py");
+        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py");
         let file_key = SymbolKey::File(file);
 
         {
@@ -2690,7 +2626,7 @@ mod get_symbol_tests {
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &["A", "m"];
-        let result = st.get_symbol(root, (files, content), u32::MAX);
+        let result = st.get_symbol(root.into(), (files, content), u32::MAX);
         assert_eq!(result.len(), 2);
         assert!(result.contains(&SymbolKey::Function(m_if)));
         assert!(result.contains(&SymbolKey::Function(m_else)));
@@ -2699,7 +2635,7 @@ mod get_symbol_tests {
     #[test]
     fn compiled_child_is_found_by_name() {
         let (mut st, root) = empty_table_with_root();
-        let parent = st.add_new_compiled(root, "cmod", "/test/cmod.so");
+        let parent = st.add_new_compiled(root.into(), "cmod", "/test/cmod.so");
         let child = st.add_new_compiled(parent.into(), "sub", "/test/cmod/sub");
     
         assert_eq!(st.get_module_symbol(parent.into(), "sub"), Some(child.into()));
@@ -2708,12 +2644,12 @@ mod get_symbol_tests {
     #[test]
     fn resolving_a_compiled_child_twice_keeps_one_key() {
         let (mut st, root) = empty_table_with_root();
-        let parent: SymbolKey = st.add_new_compiled(root, "cmod", "/test/cmod.so").into();
+        let parent: SymbolKey = st.add_new_compiled(root.into(), "cmod", "/test/cmod.so").into();
     
         fn resolve(st: &mut SymbolTable, parent: SymbolKey) -> SymbolKey {
             match st.get_module_symbol(parent, "sub") {
                 Some(found) => found,
-                None => st.add_new_compiled(parent, "sub", "/test/cmod/sub").into(),
+                None => st.add_new_compiled(parent.try_into().unwrap(), "sub", "/test/cmod/sub").into(),
             }
         }
     

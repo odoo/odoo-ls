@@ -2,6 +2,7 @@ use std::path::Path;
 use std::{cell::RefCell, cmp, path::PathBuf, rc::Rc};
 use crate::constants::MissingDataSource;
 use crate::core::build_scheduler::BuildScheduler;
+use crate::core::symbols::storage::FileSystemSymbolParent;
 use crate::utils::HashMap;
 
 use slotmap::Key;
@@ -73,14 +74,14 @@ impl EntryPointMgr {
      * /!\ path must point to a directory on disk */
     pub fn create_dir_symbols_from_path_to_entry(session: &mut SessionInfo, path: &Path, entry: Rc<RefCell<EntryPoint>>) -> Option<SymbolKey> {
         let mut iter_path = PathBuf::new();
-        let mut current_sym: SymbolKey = entry.borrow().root.into();
+        let mut current_sym: FileSystemSymbolParent = entry.borrow().root.into();
         let component_count = path.components().count();
         for component in path.components().take(component_count - 1) {
             iter_path.push(component);
             if let Some(name) = component.as_os_str().to_str() {
-                let sym = session.st().get_module_symbol(current_sym, name);
+                let sym = current_sym.get_child(session.st(), name);
                 if let Some(existing_sym) = sym {
-                    current_sym = existing_sym;
+                    current_sym = existing_sym.try_into().expect("Expected existing_sym to be a DiskDirKey");
                 } else {
                     let disk_dir = session.st_mut().add_new_disk_dir(current_sym, name, iter_path.to_str().unwrap());
                     current_sym = disk_dir.into();
