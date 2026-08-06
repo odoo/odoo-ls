@@ -75,7 +75,7 @@ pub enum FileSystemSymbolParent {
 }
 
 impl FileSystemSymbolParent {
-    /// Helper for Self::children
+    /// Helper for Self::children and get_child
     fn fs_symbols(self, st: &SymbolTable) -> &HashMap<OYarn, SymbolKey> {
         match self {
             Self::Root(r) => &st[r].fs_symbols,
@@ -112,7 +112,14 @@ impl FileSystemSymbolParent {
         }
         self.fs_symbols_mut(st).remove(name);
     }
-
+    
+    pub fn get_child(self, st: &SymbolTable, name: &str) -> Option<SymbolKey> {
+        if let Self::Namespace(ns) = self {
+            return st[ns].get_child(name);
+        }
+        self.fs_symbols(st).get(name).copied()
+    }
+    
     pub fn children(self, st: &SymbolTable) -> Vec<SymbolKey> {
         if let Self::Namespace(ns) = self {
             return st[ns].children().collect();
