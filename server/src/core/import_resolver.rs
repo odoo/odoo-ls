@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use ruff_text_size::TextRange;
 use ruff_python_ast::{Alias, AtomicNodeIndex, Identifier};
-use crate::core::symbols::storage::SymbolTable;
+use crate::core::symbols::storage::{FileSystemSymbolParent, SymbolTable};
 use crate::core::symbols::symbol_keys::{ModuleKey, NamespaceKey, SourceFileKey, SymbolKey};
 use crate::{constants::*, oyarn, Sy, S};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
@@ -295,11 +295,12 @@ fn get_or_create_symbol(
             Some(ref symbols) => {
                 let mut next_symbol = vec![];
                 for &s in symbols.iter() {
-                    let mut current_batch_symbol = session.st().get_module_symbol(s, branch);
-                    if current_batch_symbol.is_none() && matches!(s, SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::Compiled(_) | SymbolKey::DiskDir(_)) {
-                        current_batch_symbol = resolve_new_symbol(session, s, branch, asname).ok()
+                    if let Ok(parent) = FileSystemSymbolParent::try_from(s) {
+                        let current_batch_symbol = parent
+                            .get_child(session.st(), branch)
+                            .or_else(|| resolve_new_symbol(session, parent, branch, asname).ok());
+                        next_symbol.extend(current_batch_symbol);
                     }
-                    next_symbol.extend(current_batch_symbol);
                 }
                 if next_symbol.is_empty() {
                     syms = None;
@@ -339,10 +340,12 @@ fn get_or_create_symbol(
                     if ((entry.borrow().is_public() && level == 0) || entry.borrow().is_valid_for(from_path)) && entry.borrow().addon_to_odoo_path.is_none() {
                         let entry_point = entry.borrow().get_symbol(session.st());
                         if let Some(entry_point) = entry_point {
-                            let mut next_symbol = session.st().get_module_symbol(entry_point, branch);
-                            if next_symbol.is_none() && matches!(entry_point, SymbolKey::Root(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) | SymbolKey::Compiled(_) | SymbolKey::DiskDir(_)) {
-                                next_symbol = resolve_new_symbol(session, entry_point, branch, asname).ok()
-                            }
+                            let Ok(parent) = FileSystemSymbolParent::try_from(entry_point) else {
+                                continue;
+                            };
+                            let next_symbol = parent
+                                .get_child(session.st(), branch)
+                                .or_else(|| resolve_new_symbol(session, parent, branch, asname).ok());
                             let Some(next_symbol) = next_symbol else {
                                 continue;
                             };
@@ -384,17 +387,17 @@ fn get_or_create_symbol(
 
 /// Resolve a new symbol from disk, creating it if found, or just creating a COMPILED symbol if a parent is COMPILED
 /// parent : parent symbol where to search, either ROOT, NAMESPACE, PACKAGE, COMPILED or DISK_DIR
-fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_name: &OYarn, asname: Option<&str>) -> Result<SymbolKey, &'static str> {
+fn resolve_new_symbol(session: &mut SessionInfo, parent: FileSystemSymbolParent, imported_name: &OYarn, asname: Option<&str>) -> Result<SymbolKey, &'static str> {
     if imported_name.is_empty() {
         return Err("Empty name");
     }
     let sym_name = asname.unwrap_or(imported_name.as_str());
     // COMPILED: we can only create a COMPILED symbol
-    if matches!(parent, SymbolKey::Compiled(_)) {
+    if matches!(parent, FileSystemSymbolParent::Compiled(_)) {
         return Ok(session.st_mut().add_new_compiled(parent, sym_name, "").into());
     }
     // ROOT, NAMESPACE, PACKAGE or DISK_DIR: we can search on disk
-    'paths: for path in session.st().paths(parent) {
+    'paths: for path in session.st().paths(parent.into()) {
         let is_stub = session.sync_odoo.stubs_dirs.contains(&path);
         let mut full_path = PathBuf::from(path);
         full_path.push(imported_name.as_str());
@@ -434,7 +437,7 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: SymbolKey, imported_nam
             continue;
         }
         // Try as compiled
-        if !is_stub && !matches!(parent, SymbolKey::Root(_)) {
+        if !is_stub && !matches!(parent, FileSystemSymbolParent::Root(_)) {
             // Probe the suffixes CPython itself accepts for extension modules,
             // in the order it would try them (see importlib.machinery.EXTENSION_SUFFIXES).
             let base = &full_path_str;

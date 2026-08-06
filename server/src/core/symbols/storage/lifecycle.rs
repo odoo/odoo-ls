@@ -41,9 +41,8 @@ impl SymbolTable {
         self.roots.insert(root_symbol)
     }
     // Create a sub-symbol that is representing a file
-    pub fn add_new_file(&mut self, parent: SymbolKey, name: &str, path: &str) -> FileKey {
-        let is_external = self.is_external(parent);
-        let parent = FileSystemSymbolParent::try_from(parent).expect("parent should be FileSystemItemParent");
+    pub fn add_new_file(&mut self, parent: FileSystemSymbolParent, name: &str, path: &str) -> FileKey {
+        let is_external = self.is_external(parent.into());
         let file_symbol = FileSymbol::new(name, path, parent, is_external);
         let file_key = self.files.insert(file_symbol);
         self.add_to_parent_module_symbols(parent, file_key.into(), name, path);
@@ -51,36 +50,32 @@ impl SymbolTable {
     }
 
     //Create a sub-symbol that is representing a package
-    pub fn add_new_python_package(&mut self, parent: SymbolKey, name: &str, path: &str, i_ext: &'static str) -> PythonPackageKey {
-        let is_external = self.is_external(parent);
-        let parent = FileSystemSymbolParent::try_from(parent).expect("parent should be FileSystemItemParent");
+    pub fn add_new_python_package(&mut self, parent: FileSystemSymbolParent, name: &str, path: &str, i_ext: &'static str) -> PythonPackageKey {
+        let is_external = self.is_external(parent.into());
         let package_symbol = PythonPackageSymbol::new(name, path, parent, is_external, i_ext);
         let package_key = self.python_packages.insert(package_symbol);
         self.add_to_parent_module_symbols(parent, package_key.into(), name, path);
         package_key
     }
 
-    pub fn add_new_namespace(&mut self, parent: SymbolKey, name: &str, path: &str) -> NamespaceKey {
-        let is_external = self.is_external(parent);
-        let parent = FileSystemSymbolParent::try_from(parent).expect("parent should be FileSystemItemParent");
+    pub fn add_new_namespace(&mut self, parent: FileSystemSymbolParent, name: &str, path: &str) -> NamespaceKey {
+        let is_external = self.is_external(parent.into());
         let namespace_symbol = NamespaceSymbol::new(name, vec![path.to_string()], parent, is_external);
         let namespace_key = self.namespaces.insert(namespace_symbol);
         self.add_to_parent_module_symbols(parent, namespace_key.into(), name, path);
         namespace_key
     }
 
-    pub fn add_new_disk_dir(&mut self, parent: SymbolKey, name: &str, path: &str) -> DiskDirKey {
-        let is_external = self.is_external(parent);
-        let parent = FileSystemSymbolParent::try_from(parent).expect("parent should be FileSystemItemParent");
+    pub fn add_new_disk_dir(&mut self, parent: FileSystemSymbolParent, name: &str, path: &str) -> DiskDirKey {
+        let is_external = self.is_external(parent.into());
         let disk_dir_symbol = DiskDirSymbol::new(name, path, parent, is_external);
         let disk_dir_key = self.disk_dirs.insert(disk_dir_symbol);
         self.add_to_parent_module_symbols(parent, disk_dir_key.into(), name, path);
         disk_dir_key
     }
 
-    pub fn add_new_compiled(&mut self, parent: SymbolKey, name: &str, path: &str) -> CompiledKey {
-        let is_external = self.is_external(parent);
-        let parent = FileSystemSymbolParent::try_from(parent).expect("parent should be FileSystemItemParent");
+    pub fn add_new_compiled(&mut self, parent: FileSystemSymbolParent, name: &str, path: &str) -> CompiledKey {
+        let is_external = self.is_external(parent.into());
         let compiled_symbol = CompiledSymbol::new(name, path, parent, is_external);
         let compiled_key = self.compiled.insert(compiled_symbol);
         self.add_to_parent_module_symbols(parent, compiled_key.into(), name, path);
@@ -234,7 +229,6 @@ impl SymbolTable {
     }
 
     // ====== Helpers for symbol creation ======
-    // 
     /// Evict a child displaced by a map insert with a colliding name/path. This
     /// prevents a leak, but `unload` side effects are NOT run. Callers should
     /// properly unload the symbol first.

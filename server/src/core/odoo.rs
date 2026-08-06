@@ -9,7 +9,7 @@ use crate::core::js_validator::JsValidator;
 use crate::core::module_load_order::sort_by_load_order;
 use crate::core::pre_parser::{PreParseCache, PreParser};
 use crate::core::symbols::ModuleSymbol;
-use crate::core::symbols::storage::SymbolTable;
+use crate::core::symbols::storage::{FileSystemSymbolParent, JsFileParent, SymbolTable};
 use crate::core::symbols::storage::metrics::{log_slotmap_capacities, log_symbol_counts, log_memory_usage};
 use crate::core::symbols::symbol_keys::{FunctionKey, ModuleKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlTemplateKey};
 use crate::core::tsserver_bridge::{TsServerBridge};
@@ -152,7 +152,7 @@ pub struct SyncOdoo {
     rebuild_arch_eval: FifoWeakHashSet<SymbolKey>,
     rebuild_validation: FifoWeakHashSet<SymbolKey>,
     pub state_init: InitState,
-    pub must_reload_paths: Vec<(Wk<SymbolKey>, String)>, // formerly Weak refs
+    pub must_reload_paths: Vec<(Wk<FileSystemSymbolParent>, String)>, // formerly Weak refs
     pub load_odoo_addons: bool, //indicate if we want to load odoo addons or not
     pub need_rebuild: bool, //if true, the next process_rebuilds will drop everything and rebuild everything
     pub import_cache: Option<ImportCache>,
@@ -520,7 +520,8 @@ impl SyncOdoo {
         if disk_dir_builtins.is_empty() {
             panic!("Unable to find builtins disk dir symbol");
         }
-        let _builtins_rc_symbol = SymbolTable::create_from_path(session, &builtins_path, disk_dir_builtins[0], false);
+        let parent = disk_dir_builtins[0].try_into().expect("Expected disk_dir_builtins[0] to be a DiskDirKey");
+        let _builtins_rc_symbol = SymbolTable::create_from_path(session, &builtins_path, parent, false);
         session.sync_odoo.add_to_rebuild_arch(_builtins_rc_symbol.unwrap());
         SyncOdoo::process_rebuilds(session, false)
     }
@@ -601,10 +602,9 @@ impl SyncOdoo {
         session.sync_odoo.version = version;
         //build base
         let config_odoo_path = Path::new(&odoo_path);
-        let Some(odoo_sym) = odoo_sym else {
-            panic!("Odoo root symbol not found")
-        };
+        let odoo_sym = odoo_sym.expect("Expected odoo root symbol to be found");
         session.st_mut().set_is_external(odoo_sym, false);
+        let odoo_sym: FileSystemSymbolParent = odoo_sym.try_into().expect("odoo root symbol to be a DiskDir");
         let odoo_odoo = SymbolTable::create_from_path(session, &config_odoo_path.join("odoo"), odoo_sym, false);
         let Some(odoo_odoo) = odoo_odoo else {
             panic!("Not able to find odoo with given path. Aborting...");
@@ -614,9 +614,9 @@ impl SyncOdoo {
                 session.st_mut()[p].self_import = true;
                 session.sync_odoo.add_to_rebuild_arch(odoo_odoo);
             },
-            SymbolKey::Namespace(_) => {
+            SymbolKey::Namespace(ns) => {
                 //starting from > 18.0, odoo is now a namespace. Start import project from odoo/__main__.py
-                let main_file = SymbolTable::create_from_path(session, &config_odoo_path.join("odoo").join("__main__.py"),  odoo_odoo, false);
+                let main_file = SymbolTable::create_from_path(session, &config_odoo_path.join("odoo").join("__main__.py"),  ns.into(), false);
                 let Some(main_file) = main_file else {
                     panic!("Not able to find odoo/__main__.py. Aborting...");
                 };
@@ -642,7 +642,8 @@ impl SyncOdoo {
                 return false;
             }
             //if we are > 18.1, odoo.addons is not imported automatically anymore. Let's try to import it manually
-            let addons_folder = SymbolTable::create_from_path(session, &config_odoo_path.join("odoo").join("addons"), odoo_odoo, false);
+            let parent = odoo_odoo.try_into().expect("Expected odoo to be a package or namespace");
+            let addons_folder = SymbolTable::create_from_path(session, &config_odoo_path.join("odoo").join("addons"), parent, false);
             if let Some(SymbolKey::Namespace(addons_ns)) = addons_folder {
                 addons_ns
             } else {
@@ -1274,22 +1275,24 @@ impl SyncOdoo {
             //check if we should not reimport automatically
             SymbolKey::PythonPackage(package_key) => {
                 let package = &session.st()[package_key];
-                let parent: SymbolKey = package.parent().into();
                 if package.self_import {
-                    session.sync_odoo.must_reload_paths.push((Wk::from(parent), package.path.clone()));
+                    session.sync_odoo.must_reload_paths.push((Wk::from(package.parent()), package.path.clone()));
                 }
             },
             SymbolKey::File(file_key) => {
                 let file = &session.st()[file_key];
-                let parent: SymbolKey = file.parent().into();
                 if file.self_import {
-                    session.sync_odoo.must_reload_paths.push((Wk::from(parent), file.path.clone()));
+                    session.sync_odoo.must_reload_paths.push((Wk::from(file.parent()), file.path.clone()));
                 }
             },
             SymbolKey::JsFile(file_key) => {
                 let file = &session.st()[file_key];
                 if file.self_import {
-                    session.sync_odoo.must_reload_paths.push((SymbolKey::from(file.parent()).into(), file.path.clone()));
+                    let parent: FileSystemSymbolParent = match file.parent() {
+                        JsFileParent::Module(module_key) => module_key.into(),
+                        JsFileParent::DiskDir(disk_dir_key) => disk_dir_key.into(),
+                    };
+                    session.sync_odoo.must_reload_paths.push((Wk::from(parent), file.path.clone()));
                 }
                 ModuleSymbol::on_js_file_unload(session, file_key);
             },
