@@ -20,6 +20,7 @@ use crate::core::{config::{DiagnosticFilter, DiagnosticFilterPathType}, js_arch_
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode, DiagnosticSetting};
 use crate::core::text_document::TextDocument;
 use crate::features::node_index_ast::IndexedModule;
+use crate::core::symbols::symbol_keys::SourceFileKey;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer;
 use std::rc::Rc;
@@ -1020,6 +1021,29 @@ impl FileMgr {
             drop(file_info_mut);
         }
         (updated, return_info)
+    }
+
+    /// Get the cached file info for `symbol`, recreating it from disk if it was
+    /// evicted from the cache. The `bool` is false if that recreate attempt
+    /// failed to load real content (e.g. the file doesn't exist) - the
+    /// returned `FileInfo` is still a valid, usable (if empty) entry either
+    /// way. Callers that require actual content should check the flag and
+    /// treat a failure as invalid/pending; callers that can tolerate an
+    /// absent file (e.g. arch building a module that has no `__init__.py`)
+    /// can ignore it.
+    pub fn get_or_recreate_file_info(session: &mut SessionInfo, symbol: SourceFileKey) -> (Rc<RefCell<FileInfo>>, bool) {
+        let path = session.sync_odoo.symbol_table.file_path(symbol).to_string();
+        let maybe_file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
+        match maybe_file_info {
+            Some(file_info) => (file_info, true),
+            None => {
+                let (loaded, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path, None, Some(-100), true);
+                if !loaded {
+                    warn!("File info not found for {} at path {}", session.sync_odoo.symbol_table.name(symbol), path);
+                }
+                (file_info, loaded)
+            }
+        }
     }
 
     pub fn update_all_file_diagnostic_filters(&mut self, session: &SessionInfo) {

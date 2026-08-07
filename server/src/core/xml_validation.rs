@@ -2,7 +2,7 @@ use std::{
     cell::RefCell,
     rc::Rc,
 };
-use crate::{constants::BuildStatus, core::{odoo::SyncOdoo, symbols::{ModuleSymbol, storage::xml::xml_field_symbol::XmlFieldName}}, utils::{HashMap, HashSet}};
+use crate::{constants::BuildStatus, core::{file_mgr::FileMgr, odoo::SyncOdoo, symbols::{ModuleSymbol, storage::xml::xml_field_symbol::XmlFieldName}}, utils::{HashMap, HashSet}};
 
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
@@ -66,9 +66,10 @@ impl XmlValidator {
         }
         session.st_mut()[self.xml_symbol].not_found_models.extend(missing_model_dependencies.into_iter().map(|m| (m, BuildSteps::VALIDATION)));
         session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(self.xml_symbol.into());
-        let Some(file_info) = SymbolTable::get_file_info_for_validation(session, self.xml_symbol.into()) else {
+        let (file_info, loaded) = FileMgr::get_or_recreate_file_info(session, self.xml_symbol.into());
+        if !loaded {
             return;
-        };
+        }
         file_info.borrow_mut().replace_diagnostics(DiagnosticSource::XML_VALIDATION, diagnostics);
         file_info.borrow_mut().publish_diagnostics(session);
         session.st_mut().set_build_status(self.xml_symbol.into(), BuildSteps::VALIDATION, BuildStatus::DONE);

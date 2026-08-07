@@ -9,14 +9,13 @@ use crate::{
 
 use lsp_types::{Diagnostic, DiagnosticTag, Range, SymbolKind};
 use ruff_text_size::TextRange;
-use tracing::warn;
 
 use crate::{
     constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType}, core::{
         diagnostics::{DiagnosticCode, create_diagnostic},
         entry_point::EntryPoint,
         evaluation::{Evaluation, EvaluationSymbolPtr},
-        file_mgr::{FileInfo, FileMgr, NoqaInfo},
+        file_mgr::{FileMgr, NoqaInfo},
         model::Model,
         odoo::SyncOdoo,
         symbols::{
@@ -2374,38 +2373,6 @@ impl SymbolTable {
     /// Util for debug logs
     pub fn debug_path(&self, target: SymbolKey) -> String {
         self.paths(target).first().cloned().unwrap_or(self.name(target).to_string())
-    }
-
-    pub fn get_file_info_for_validation(
-        session: &mut SessionInfo,
-        symbol: SourceFileKey,
-    ) -> Option<Rc<RefCell<FileInfo>>> {
-        let tree_path = session.sync_odoo.symbol_table.path(symbol).to_owned();
-        let file_info = session
-            .sync_odoo
-            .get_file_mgr()
-            .borrow()
-            .get_file_info(session.sync_odoo.symbol_table.file_path(symbol));
-        match file_info {
-            Some(file_info) => Some(file_info),
-            None => {
-                let (updated, result) = session
-                    .sync_odoo
-                    .get_file_mgr()
-                    .borrow_mut()
-                    .update_file_info(session, &tree_path, None, Some(-100), true);
-                if updated {
-                    Some(result)
-                } else {
-                    warn!(
-                        "File info not found for validating symbol: {} at path {}",
-                        session.sync_odoo.symbol_table.name(symbol),
-                        tree_path
-                    );
-                    None
-                }
-            }
-        }
     }
 
     pub fn get_xml_defined_model(session: &SessionInfo, xml_record_key: XmlRecordKey) -> Option<Rc<RefCell<Model>>> {

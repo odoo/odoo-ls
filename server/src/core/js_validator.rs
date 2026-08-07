@@ -1,7 +1,7 @@
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::trace;
 
-use crate::{Sy, constants::{BuildStatus, DiagnosticSource, MissingDataSource}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, symbols::SymbolTable}, features::xml_ast_utils::XmlAstUtils};
+use crate::{Sy, constants::{BuildStatus, DiagnosticSource, MissingDataSource}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileMgr}, features::xml_ast_utils::XmlAstUtils};
 use crate::{
     constants::{BuildSteps, OYarn, DEBUG_STEPS},
     core::{
@@ -32,10 +32,11 @@ impl JsValidator {
         }
         session.st_mut().set_build_status(self.js_symbol.into(), BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
         let mut diagnostics = vec![];
-        let Some(file_info) = SymbolTable::get_file_info_for_validation(session, self.js_symbol.into()) else {
+        let (file_info, loaded) = FileMgr::get_or_recreate_file_info(session, self.js_symbol.into());
+        if !loaded {
             session.st_mut().set_build_status(self.js_symbol.into(), BuildSteps::VALIDATION, BuildStatus::INVALID);
             return;
-        };
+        }
         if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
             // JS Symbols do not go through the arch step,
             // Custom JS files may not have been built yet, so we need to build the AST first before validating
