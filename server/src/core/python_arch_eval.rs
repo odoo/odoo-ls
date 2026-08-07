@@ -13,7 +13,7 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::symbols::{ModuleSymbol, SymbolMgr};
 use crate::core::symbols::storage::SymbolTable;
-use crate::core::symbols::symbol_keys::{BuildableSymbolKey, ClassKey, FunctionKey, ModuleKey, SourceFileKey, SymbolKey, VariableKey};
+use crate::core::symbols::symbol_keys::{BuildableSymbolKey, ClassKey, FunctionKey, ModuleKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey, VariableKey};
 use crate::{constants::*, oyarn};
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
@@ -45,18 +45,15 @@ pub struct PythonArchEval {
 }
 
 impl PythonArchEval {
-    pub fn new(symbol_table: &SymbolTable, entry_point: Rc<RefCell<EntryPoint>>, symbol: SymbolKey) -> Option<Self> {
-        if matches!(symbol, SymbolKey::Namespace(_) | SymbolKey::Root(_) | SymbolKey::Compiled(_) | SymbolKey::Variable(_) | SymbolKey::Class(_)) {
-            return None; // nothing to evaluate
-        }
-        let file = symbol_table.get_file(symbol).unwrap();
-        let file_mode = symbol == file;
+    pub fn new(symbol_table: &SymbolTable, entry_point: Rc<RefCell<EntryPoint>>, symbol: PythonBuildableSymbolKey) -> Option<Self> {
+        let file = symbol_table.get_file(symbol.into()).unwrap();
+        let file_mode = SymbolKey::from(symbol) == SymbolKey::from(file);
         Some(PythonArchEval {
             entry_point,
             file,
             file_mode,
             current_step: if file_mode {BuildSteps::ARCH_EVAL} else {BuildSteps::VALIDATION},
-            sym_stack: vec![symbol],
+            sym_stack: vec![symbol.into()],
             diagnostics: Vec::new(),
             safe_import: vec![false],
         })

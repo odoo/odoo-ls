@@ -469,3 +469,35 @@ impl SymbolKey {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SymbolKeySubset, IntoKey)]
+#[into_key(BuildableSymbolKey)]
+pub enum PythonBuildableSymbolKey {
+    Function(FunctionKey),
+    File(FileKey),
+    Module(ModuleKey),
+    PythonPackage(PythonPackageKey),
+}
+
+impl BuildableSymbolKey {
+    pub fn as_python_buildable(&self) -> Option<PythonBuildableSymbolKey> {
+        match *self {
+            BuildableSymbolKey::File(k) => Some(k.into()),
+            BuildableSymbolKey::Function(k) => Some(k.into()),
+            BuildableSymbolKey::PythonPackage(k) => Some(k.into()),
+            BuildableSymbolKey::Module(k) => Some(k.into()),
+            _ => None,
+        }
+    }
+}
+impl SymbolKey {
+    pub fn as_python_buildable(&self) -> Option<PythonBuildableSymbolKey> {
+        match *self {
+            SymbolKey::Function(k) => Some(PythonBuildableSymbolKey::Function(k)),
+            SymbolKey::File(k) => Some(PythonBuildableSymbolKey::File(k)),
+            SymbolKey::Module(k) => Some(PythonBuildableSymbolKey::Module(k)),
+            SymbolKey::PythonPackage(k) => Some(PythonBuildableSymbolKey::PythonPackage(k)),
+            _ => None,
+        }
+    }
+}
