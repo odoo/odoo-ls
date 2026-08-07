@@ -10,7 +10,7 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation_context::{ContextKey, ContextValue};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
-use crate::core::symbols::symbol_keys::{ClassKey, ModelSymbolKey, ModuleKey, SourceFileKey, SymbolKey};
+use crate::core::symbols::symbol_keys::{ClassKey, ModelSymbolKey, ModuleKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey};
 use crate::{constants::*, oyarn};
 use crate::core::symbols::{ModuleSymbol};
 use crate::threads::SessionInfo;
@@ -38,12 +38,12 @@ pub struct PythonValidator {
 It will validate this node and run a validator on all subsymbol and dependencies.
 It will try to inference the return type of functions if it is not annotated; */
 impl PythonValidator {
-    pub fn new(symbol_table: &SymbolTable, entry_point: Rc<RefCell<EntryPoint>>, symbol: SymbolKey) -> Self {
+    pub fn new(symbol_table: &SymbolTable, entry_point: Rc<RefCell<EntryPoint>>, symbol: PythonBuildableSymbolKey) -> Self {
         Self {
             entry_point,
-            file: symbol_table.get_file(symbol).unwrap(),
+            file: symbol_table.get_file(symbol.into()).unwrap(),
             file_mode: true,
-            sym_stack: vec![symbol],
+            sym_stack: vec![symbol.into()],
             diagnostics: vec![],
             safe_imports: vec![false],
             current_module: symbol_table.find_module(symbol),
@@ -199,8 +199,10 @@ impl PythonValidator {
                             BuildScheduler::build_now(session, sym.unwrap_buildable_key(), BuildSteps::ARCH_EVAL);
                         }
                         if session.st().ready_for_step(sym.unwrap_buildable_key(), BuildSteps::VALIDATION) {
-                            let mut v = PythonValidator::new(session.st(), self.entry_point.clone(), sym);
-                            v.validate(session);
+                            if let Some(python_buildable) = sym.as_python_buildable() {
+                                let mut v = PythonValidator::new(session.st(), self.entry_point.clone(), python_buildable);
+                                v.validate(session);
+                            }
                         } else if session.st().build_status(sym.unwrap_buildable_key(), BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS {
                             panic!("cyclic validation detected... Aborting");
                         }
