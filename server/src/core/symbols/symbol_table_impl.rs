@@ -492,9 +492,8 @@ impl SymbolTable {
         //To do a function, we have to check that the file ARCH and ARCH_EVAL is done, as we could need variables in it.
         if matches!(target, BuildableSymbolKey::Function(_)) {
             let file = self.get_file(target.into()).unwrap();
-            if step == BuildSteps::ARCH_EVAL && self.build_status(file.into(), BuildSteps::ARCH) != BuildStatus::DONE {
-                return false;
-            } else if step == BuildSteps::VALIDATION && self.build_status(file.into(), BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
+            if step == BuildSteps::ARCH_EVAL && self.build_status(file.into(), BuildSteps::ARCH) != BuildStatus::DONE
+            || step == BuildSteps::VALIDATION && self.build_status(file.into(), BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
                 return false;
             }
         }

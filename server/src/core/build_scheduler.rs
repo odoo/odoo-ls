@@ -32,18 +32,20 @@ impl BuildScheduler {
             rebuild_validation: FifoWeakHashSet::new(),
         }
     }
-    
+
     /// Build one item from the build queues, preferably ARCH, then ARCH_EVAL, then VALIDATION if `validation` is `true`.
     /// Returns true if an item was built, false if all queues are empty.
     pub fn build_one(session: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, validation: bool) -> bool {
         while let Some(symbol) = bs!(session).rebuild_arch.pop_front_valid(&session.sync_odoo.symbol_table) {
-            if let Some(mut builder) = PythonArchBuilder::new(session.st(), entry.clone(), symbol.into()) {
+            if let Some(python_buildable) = symbol.as_python_buildable() 
+            && let Some(mut builder) = PythonArchBuilder::new(session.st(), entry.clone(), python_buildable) {
                 builder.load_arch(session);
                 return true;
             }
         }
         while let Some(symbol) = bs!(session).rebuild_arch_eval.pop_front_valid(&session.sync_odoo.symbol_table) {
-            if let Some(mut builder) = PythonArchEval::new(session.st(), entry.clone(), symbol.into()) {
+            if let Some(python_buildable) = symbol.as_python_buildable() 
+            && let Some(mut builder) = PythonArchEval::new(session.st(), entry.clone(), python_buildable) {
                 builder.eval_arch(session);
                 return true;
             }
@@ -210,7 +212,8 @@ impl BuildScheduler {
                     continue;
                 }
                 already_arch_rebuilt.insert(tree);
-                if let Some(mut builder) = PythonArchBuilder::new(session.st(), entry, sym_key.into()) {
+                if let Some(python_buildable) = sym_key.as_python_buildable()
+                && let Some(mut builder) = PythonArchBuilder::new(session.st(), entry, python_buildable) {
                     builder.load_arch(session);
                 };
                 continue;
@@ -226,7 +229,8 @@ impl BuildScheduler {
                     continue;
                 }
                 already_arch_eval_rebuilt.insert(tree);
-                if let Some(mut builder) = PythonArchEval::new(session.st(), entry, sym_key.into()) {
+                if let Some(python_buildable) = sym_key.as_python_buildable()
+                && let Some(mut builder) = PythonArchEval::new(session.st(), entry, python_buildable) {
                     builder.eval_arch(session);
                 };
                 continue;
@@ -283,8 +287,10 @@ impl BuildScheduler {
                 validator.validate(session);
             },
             _ => {
-                let mut validator = PythonValidator::new(session.st(), entry, sym_key);
-                validator.validate(session);
+                if let Some(python_buildable) = sym_key.as_python_buildable() {
+                    let mut validator = PythonValidator::new(session.st(), entry, python_buildable);
+                    validator.validate(session);
+                }
             }
         }
     }
@@ -313,17 +319,19 @@ impl BuildScheduler {
         if session.st().ready_for_step(symbol, step) {
             Self::build_now_dependencies(session, symbol, step, visited);
             let entry_point = session.st().get_entry(symbol);
-            if step == BuildSteps::ARCH {
-                if let Some(mut builder) = PythonArchBuilder::new(session.st(), entry_point, symbol.into()) {
-                    builder.load_arch(session);
+            if let Some(python_buildable) = symbol.as_python_buildable() {
+                if step == BuildSteps::ARCH {
+                    if let Some(mut builder) = PythonArchBuilder::new(session.st(), entry_point, python_buildable) {
+                        builder.load_arch(session);
+                    }
+                } else if step == BuildSteps::ARCH_EVAL {
+                    if let Some(mut builder) = PythonArchEval::new(session.st(), entry_point, python_buildable) {
+                        builder.eval_arch(session);
+                    };
+                } else if step == BuildSteps::VALIDATION {
+                    let mut validator = PythonValidator::new(session.st(), entry_point, python_buildable);
+                    validator.validate(session);
                 }
-            } else if step == BuildSteps::ARCH_EVAL {
-                if let Some(mut builder) = PythonArchEval::new(session.st(), entry_point, symbol.into()) {
-                    builder.eval_arch(session);
-                };
-            } else if step == BuildSteps::VALIDATION {
-                let mut validator = PythonValidator::new(session.st(), entry_point, symbol.into());
-                validator.validate(session);
             }
         } else if DEBUG_REBUILD_NOW {
             let current_step = session.st().get_current_build_step(symbol);

@@ -19,7 +19,7 @@ use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 use crate::core::python_utils;
 use crate::core::symbols::Buildable;
-use crate::core::symbols::symbol_keys::{FunctionKey, SourceFileKey, SymbolKey};
+use crate::core::symbols::symbol_keys::{FunctionKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::threads::SessionInfo;
 use crate::{oyarn, S};
@@ -47,19 +47,16 @@ pub struct PythonArchBuilder {
 }
 
 impl PythonArchBuilder {
-    pub fn new(symbol_table: &SymbolTable, entry_point: Rc<RefCell<EntryPoint>>, symbol: SymbolKey) -> Option<Self> {
-        if matches!(symbol, SymbolKey::Namespace(_) | SymbolKey::Root(_) | SymbolKey::Compiled(_) | SymbolKey::Variable(_) | SymbolKey::Class(_)) {
-            return None; // nothing to extract
-        }
-        let file = symbol_table.get_file(symbol).unwrap();
-        let file_mode = symbol == file;
+    pub fn new(symbol_table: &SymbolTable, entry_point: Rc<RefCell<EntryPoint>>, symbol: PythonBuildableSymbolKey) -> Option<Self> {
+        let file = symbol_table.get_file(symbol.into()).unwrap();
+        let file_mode = SymbolKey::from(symbol) == SymbolKey::from(file);
 
         Some(PythonArchBuilder {
             entry_point,
             file,
             file_mode,
             current_step: if file_mode {BuildSteps::ARCH} else {BuildSteps::VALIDATION},
-            sym_stack: vec![symbol],
+            sym_stack: vec![symbol.into()],
             __all_symbols_to_add: Vec::new(),
             diagnostics: vec![],
             file_info: None,
