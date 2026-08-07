@@ -57,14 +57,11 @@ impl PythonValidator {
         if !session.st().ready_for_step(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION) {
             return;
         }
-        let file_info_rc = SymbolTable::get_file_info_for_validation(session, self.file).clone();
-        let file_info_rc = match file_info_rc {
-            Some(f) => f,
-            None => {
-                session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION, BuildStatus::INVALID);
-                return;
-            }
-        };
+        let (file_info_rc, loaded) = FileMgr::get_or_recreate_file_info(session, self.file);
+        if !loaded {
+            session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION, BuildStatus::INVALID);
+            return;
+        }
         self.file_info = Some(file_info_rc.clone());
         match symbol {
             SymbolKey::File(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) => {

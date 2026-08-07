@@ -26,7 +26,7 @@ use crate::{oyarn, S};
 
 use super::entry_point::EntryPoint;
 use super::evaluation::{EvaluationSymbolPtr, EvaluationSymbolWeak};
-use super::file_mgr::{combine_noqa_info, FileInfo};
+use super::file_mgr::{combine_noqa_info, FileInfo, FileMgr};
 use super::import_resolver::ImportResult;
 use super::odoo::SyncOdoo;
 use super::python_utils::AssignTargetType;
@@ -83,24 +83,10 @@ impl PythonArchBuilder {
             let odoo_addons = session.st()[m].parent();
             ModuleSymbol::load_module_arch(m, session, odoo_addons);
         }
-        let file_info_rc = match self.file_mode {
-            true => {
-                let maybe_file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).clone();
-                match maybe_file_info {
-                    Some(file_info) => {
-                        if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
-                            file_info.borrow_mut().prepare_ast(session);
-                        }
-                        file_info
-                    },
-                    None => {
-                        let (_, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path, None, None, false); //create ast if not in cache
-                        file_info
-                    }
-                }
-                },
-            false => {session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).unwrap()}
-        };
+        let (file_info_rc, _) = FileMgr::get_or_recreate_file_info(session, self.file);
+        if self.file_mode && !file_info_rc.borrow().file_info_ast.borrow().ast.is_built() {
+            file_info_rc.borrow_mut().prepare_ast(session);
+        }
         self.file_info = Some(file_info_rc.clone());
         if self.file_mode {
             //diagnostics for functions are stored directly on funcs

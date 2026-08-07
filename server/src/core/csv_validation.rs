@@ -6,7 +6,7 @@ use tracing::info;
 
 use crate::{
     Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource, MissingDataSource, OYarn}, core::{
-        diagnostics::{DiagnosticCode, create_diagnostic}, evaluation_utils::DeepFieldEvalWalker, file_mgr::FileInfo, symbols::{Buildable as _, SymbolTable, symbol_keys::{CsvFileKey, ModuleKey}}
+        diagnostics::{DiagnosticCode, create_diagnostic}, evaluation_utils::DeepFieldEvalWalker, file_mgr::{FileInfo, FileMgr}, symbols::{Buildable as _, symbol_keys::{CsvFileKey, ModuleKey}}
     }, features::csv_ast_utils::CsvFieldIter, oyarn, threads::SessionInfo
 };
 use std::{cell::RefCell, rc::Rc};
@@ -37,10 +37,11 @@ impl CsvValidator {
         if DEBUG_STEPS {
             info!("VALIDATION - CSV: {}", path);
         }
-        let Some(file_info) = SymbolTable::get_file_info_for_validation(session, csv_symbol.into()) else {
+        let (file_info, loaded) = FileMgr::get_or_recreate_file_info(session, csv_symbol.into());
+        if !loaded {
             session.st_mut()[csv_symbol].set_build_status(BuildSteps::VALIDATION, BuildStatus::INVALID);
             return;
-        };
+        }
         let Some(data) = file_info.borrow().file_info_ast.borrow().text_document.as_ref().map(|td| td.contents().to_string()) else {
             // File can be invalid (not valid UTF-8 and so text_document is empty)
             return;
