@@ -436,7 +436,7 @@ impl FileInfo {
             return false;
         }
         self.file_info_ast.borrow_mut().text_hash = new_hash;
-        self.diagnostics.clear();
+        self.clear_diagnostics();
         self._build_ast(session, is_external);
         true
     }
@@ -705,6 +705,11 @@ impl FileInfo {
         for (key, value) in diagnostics {
             self.diagnostics.entry(key).or_default().extend(value);
         }
+    }
+
+    pub fn clear_diagnostics(&mut self) {
+        self.need_push = true;
+        self.diagnostics.clear();
     }
 
     fn update_range(&self, mut diagnostic: Diagnostic, encoding: PositionEncoding) -> Diagnostic {
@@ -1042,7 +1047,7 @@ impl FileMgr {
         if let Some(to_del) = to_del
             && SyncOdoo::is_in_workspace_or_entry(session, uri) {
                 let mut to_del = (*to_del).borrow_mut();
-                to_del.diagnostics.clear();
+                to_del.clear_diagnostics();
                 to_del.publish_diagnostics(session)
             }
     }
@@ -1066,7 +1071,7 @@ impl FileMgr {
                 continue;
             }
             let mut to_del = file.borrow_mut();
-            to_del.diagnostics.clear();
+            to_del.clear_diagnostics();
             to_del.publish_diagnostics(session)
         }
         drop(file_mgr);
