@@ -2073,14 +2073,6 @@ impl Odoo {
             let new_path_updated = new_path_buf.to_tree_path().sanitize();
             Odoo::search_symbols_to_rebuild(session, &new_path_updated);
             BuildScheduler::process_rebuilds(session, false);
-            let tree = session.sync_odoo.path_to_main_entry_tree(new_path_buf);
-            if let Some(tree) = tree
-                &&  new_path_buf.is_file() &&  session.st().get_symbol(session.sync_odoo.get_main_entry().borrow().root.into(), tree.as_slice(), u32::MAX).is_empty() {
-                    //file has not been added to main entry. Let's build a new entry point
-                    EntryPointMgr::create_new_custom_entry_for_path(session, &new_path_updated, &new_path_buf.sanitize_cow());
-                    BuildScheduler::process_rebuilds(session, false);
-                }
-            BuildScheduler::process_rebuilds(session, false);
         }
     }
 
@@ -2096,20 +2088,6 @@ impl Odoo {
             session.sync_odoo.entry_point_mgr.borrow_mut().clean_entries(&mut session.sync_odoo.symbol_table);
         }
         BuildScheduler::process_rebuilds(session, false);
-        //Now let's test if the symbol has been added to main entry tree or not
-        for f in params.files.iter() {
-            let path = FileMgr::uri2pathname(&f.uri);
-            let path_updated = Path::new(&path).to_tree_path().sanitize();
-            let tree = session.sync_odoo.path_to_main_entry_tree(Path::new(&path));
-            if Path::new(&path).is_file() && (tree.is_none() || (
-                session.st().get_symbol(session.sync_odoo.get_main_entry().borrow().root.into(), tree.unwrap().as_slice(), u32::MAX).is_empty()
-                && !session.sync_odoo.get_main_entry().borrow().data_file_symbols.contains_key(&path_updated)
-            )) {
-                //file has not been added to main entry. Let's build a new entry point
-                EntryPointMgr::create_new_custom_entry_for_path(session, &path_updated, &path);
-                BuildScheduler::process_rebuilds(session, false);
-            }
-        }
     }
 
     pub fn handle_did_delete(session: &mut SessionInfo, params: DeleteFilesParams) {
