@@ -194,6 +194,13 @@ OLS03026, DiagnosticSetting::Error, "Invalid value for operator: 'access'; The v
 */
 OLS03027, DiagnosticSetting::Error, "Invalid field for operator: 'access'; The field should be a model id or a Many2One field to a model",
 /**
+* You are accessing a method or field that only exists because of a model extension (_inherit)
+* declared in a module that is not in the dependencies of the current module. This works only
+* because that module currently happens to be installed alongside yours ("indirect inheritance")
+* and can break if it's ever made optional or uninstalled. Add it to your manifest's depends.
+*/
+OLS03028, DiagnosticSetting::Warning, "'{0}' is only defined through indirect inheritance from module '{1}', which are not declared as a dependency",
+/**
 * Form is no longer available on odoo.tests.common, thus it should not be imported from there.
 */
 OLS03301, DiagnosticSetting::Warning, "Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form",

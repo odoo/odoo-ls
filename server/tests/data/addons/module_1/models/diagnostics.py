@@ -174,3 +174,5 @@ class ConcreteO2mLine(models.Model):
     _description = "Concrete line model pointing to the concrete parent"
 
     record_id = fields.Many2one("module_1.concrete_o2m_parent")
+
+import odoo.addons.module_2.models.base_test_models # OLS03003

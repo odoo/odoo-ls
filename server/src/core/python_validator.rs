@@ -20,6 +20,7 @@ use crate::S;
 use super::entry_point::EntryPoint;
 use super::evaluation::{Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak, EvaluationValue};
 use super::file_mgr::{FileInfo, FileMgr};
+use super::import_resolver::manual_import;
 use super::python_arch_eval::PythonArchEval;
 
 #[derive(Debug)]
@@ -214,10 +215,10 @@ impl PythonValidator {
                     self.visit_try(session, t);
                 },
                 Stmt::Import(i) => {
-                    self._resolve_import(session, None, &i.names, None, &i.range);
+                    self.resolve_import(session, None, &i.names, None, &i.range);
                 },
                 Stmt::ImportFrom(i) => {
-                    self._resolve_import(session, i.module.as_ref(), &i.names, Some(i.level), &i.range);
+                    self.resolve_import(session, i.module.as_ref(), &i.names, Some(i.level), &i.range);
                 },
                 Stmt::Assign(a) => {
                     self.visit_assign(session, a);
@@ -297,46 +298,60 @@ impl PythonValidator {
         self.safe_imports.pop();
     }
 
-    fn _resolve_import(&mut self, session: &mut SessionInfo, _from_stmt: Option<&Identifier>, name_aliases: &[Alias], _level: Option<u32>, _range: &TextRange) {
+    fn resolve_import(&mut self, session: &mut SessionInfo, from_stmt: Option<&Identifier>, name_aliases: &[Alias], _level: Option<u32>, _range: &TextRange) {
         let file_symbol = session.st().get_file(self.sym_stack[0]).expect("file symbol not found");
         for alias in name_aliases.iter() {
             if alias.name.id == "*" {
                 continue;
             }
-            if let Some(current_module) = self.current_module {
-                let var_name = match &alias.asname {
-                    Some(asname) => asname,
-                    None => alias.name.split(".").next().unwrap(),
-                };
-                let variable = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), var_name, &alias.range);
-                if let Some(variable) = variable {
-                    let v = variable.unwrap_variable_key();
-                    for evaluation in session.st()[v].evaluations.clone() {
-                        let eval_sym = evaluation.symbol.get_symbol(session, None, &mut self.diagnostics, Some(file_symbol.into()));
-                        match eval_sym {
-                            EvaluationSymbolPtr::WEAK(w) => {
-                                if let Some(symbol) = w.weak.upgrade(session.st()) {
-                                    let module = session.st().find_module(symbol);
-                                    if let Some(module) = module {
-                                        let dir_name = &session.st()[module].dir_name;
-                                        if !ModuleSymbol::is_in_deps(session.st(), current_module, dir_name) && !self.safe_imports.last().unwrap()
-                                            && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03003, &[dir_name]) {
-                                                self.diagnostics.push(Diagnostic {
-                                                    range: Range::new(Position::new(alias.range.start().to_u32(), 0), Position::new(alias.range.end().to_u32(), 0)),
-                                                    ..diagnostic_base.clone()
-                                                });
-                                            }
-                                    }
-                                }
-                            },
-                            _ => {
-                                panic!("Internal error: evaluated has invalid evaluationType");
+            let Some(current_module) = self.current_module else {
+                continue;
+            };
+            let var_name = match &alias.asname {
+                Some(asname) => asname,
+                None => alias.name.split(".").next().unwrap(),
+            };
+            let variable = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), var_name, &alias.range);
+            if let Some(variable) = variable {
+                let v = variable.unwrap_variable_key();
+                for evaluation in session.st()[v].evaluations.clone() {
+                    let eval_sym = evaluation.symbol.get_symbol(session, None, &mut self.diagnostics, Some(file_symbol.into()));
+                    match eval_sym {
+                        EvaluationSymbolPtr::WEAK(w) => {
+                            if let Some(symbol) = w.weak.upgrade(session.st()) {
+                                self.check_import_module_in_deps(session, current_module, symbol, &alias.range);
                             }
+                        },
+                        _ => {
+                            panic!("Internal error: evaluated has invalid evaluationType");
                         }
                     }
                 }
             }
+            // Check normal deep import statements, e.g. from odoo.addons.<module>
+            if from_stmt.is_none() && alias.asname.is_none() && alias.name.contains('.') {
+                let deep_results = manual_import(session, file_symbol.into(), None, alias.name.as_str(), Some(S!("_")), 0, &mut None);
+                for result in deep_results {
+                    for symbol in result.symbols {
+                        self.check_import_module_in_deps(session, current_module, symbol, &alias.range);
+                    }
+                }
+            }
         }
+    }
+
+    fn check_import_module_in_deps(&mut self, session: &mut SessionInfo, current_module: ModuleKey, symbol: SymbolKey, range: &TextRange) {
+        let Some(module) = session.st().find_module(symbol) else {
+            return;
+        };
+        let dir_name = session.st()[module].dir_name.clone();
+        if !ModuleSymbol::is_in_deps(session.st(), current_module, &dir_name) && !self.safe_imports.last().unwrap()
+            && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03003, &[&dir_name]) {
+                self.diagnostics.push(Diagnostic {
+                    range: Range::new(Position::new(range.start().to_u32(), 0), Position::new(range.end().to_u32(), 0)),
+                    ..diagnostic_base
+                });
+            }
     }
 
     fn visit_aug_assign(&mut self, session: &mut SessionInfo, assign: &StmtAugAssign) {

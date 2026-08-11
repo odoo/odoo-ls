@@ -1,42 +1,22 @@
 use std::{
     cell::RefCell, collections::{VecDeque, hash_map}, path::Path, rc::Rc,
 };
-use crate::{
-    Sy, constants::MissingDataSource, core::{
-        build_scheduler::BuildScheduler, evaluation_context::ContextKey, python_arch_eval_hooks::get_base_model_symbol, symbols::{storage::{FileContentParent, FileSystemSymbolParent, buildable::ResettableBuildable as _, xml::xml_field_symbol::XmlFieldName}, symbol_keys::{BuildableSymbolKey, XmlRecordKey}},
-    }, oyarn, utils::{HashMap, HashSet},
-};
 
 use lsp_types::{Diagnostic, DiagnosticTag, Range, SymbolKind};
 use ruff_text_size::TextRange;
 
 use crate::{
-    constants::{BuildStatus, BuildSteps, OYarn, PackageType, SymType}, core::{
-        diagnostics::{DiagnosticCode, create_diagnostic},
-        entry_point::EntryPoint,
-        evaluation::{Evaluation, EvaluationSymbolPtr},
-        file_mgr::{FileMgr, NoqaInfo},
-        model::Model,
-        odoo::SyncOdoo,
-        symbols::{
-            storage::{
-                dependency_mgr::{DependenciesTable, DependentsTable},
-                SymbolTable,
-            },
-            symbol_keys::{
-                ClassKey, FunctionKey, KeyValidator, ModuleKey, NamespaceKey, RootKey,
-                SourceFileKey, SymbolKey, VariableKey, XmlDataKey,
-            },
-            symbol_mgr::{iter_symbol_keys, ContentSymbols, SectionIndex, SectionRange, SymbolMgr},
-            Buildable, Dependencies,
+    Sy, constants::{BuildStatus, BuildSteps, MissingDataSource, OYarn, PackageType, SymType}, core::{
+        build_scheduler::BuildScheduler, diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPoint, evaluation::{Evaluation, EvaluationSymbolPtr}, evaluation_context::{Context, ContextKey, ContextValue}, file_mgr::{FileMgr, NoqaInfo}, model::Model, odoo::SyncOdoo, python_arch_eval_hooks::get_base_model_symbol, symbols::{
+            Buildable, Dependencies, ModuleSymbol, storage::{
+                FileContentParent, FileSystemSymbolParent, SymbolTable, buildable::ResettableBuildable as _, dependency_mgr::{DependenciesTable, DependentsTable}, xml::xml_field_symbol::XmlFieldName,
+            }, symbol_keys::{
+                BuildableSymbolKey, ClassKey, FunctionKey, KeyValidator, ModuleKey, NamespaceKey,
+                RootKey, SourceFileKey, SymbolKey, VariableKey, XmlDataKey, XmlRecordKey,
+            }, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys},
         },
-    },
-    threads::SessionInfo,
-    tree::{OYarnExt, Tree},
-    utils::PathSanitizer,
-    weak_collections::WeakSet,
+    }, oyarn, threads::SessionInfo, tree::{OYarnExt, Tree}, utils::{HashMap, HashSet, PathSanitizer}, weak_collections::WeakSet,
 };
-use crate::core::evaluation_context::{Context, ContextValue};
 
 impl SymbolTable {
 
@@ -1300,7 +1280,7 @@ impl SymbolTable {
         if !matches!(base_attr, SymbolKey::Class(_)) {
             return res;
         }
-        //TODO shouldn't we set the from_module in the call to get_member_symbol?
+
         let get_method = Self::get_member_symbol(session, class_key.into(), "__get__", None, true, false, false, true, false).0.first().copied();
         let Some(SymbolKey::Function(get_method)) = get_method else {
             return res;
@@ -2002,10 +1982,10 @@ impl SymbolTable {
         is_super: bool
     ) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
         let mut visited_classes: HashSet<ClassKey> = HashSet::default();
-        Self::_get_member_symbol_helper(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super, &mut visited_classes)
+        Self::get_member_symbol_helper(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super, &mut visited_classes)
     }
 
-    fn _get_member_symbol_helper(
+    fn get_member_symbol_helper(
         session: &mut SessionInfo,
         target: SymbolKey,
         name: &str,
@@ -2031,13 +2011,22 @@ impl SymbolTable {
         Self::member_symbol_hook(session, target, name, &mut diagnostics);
         let mod_sym = session.st().get_module_symbol(target, name);
         if let Some(mod_sym) = mod_sym
-            && !only_fields {
+            && !only_fields
+        {
+            let in_deps = match (mod_sym, from_module) {
+                (SymbolKey::Module(member_module), Some(module)) => {
+                    ModuleSymbol::is_in_deps(session.st(), module, session.st().name(member_module))
+                }
+                _ => true,
+            };
+            if in_deps {
                 if all {
                     extend_result(vec![mod_sym], &mut result, &mut visited_symbols);
                 } else {
                     return (vec![mod_sym], diagnostics);
                 }
             }
+        }
         if !is_super {
             let mut content_syms = session.st().get_sub_symbol(target, name, u32::MAX).symbols;
             if only_fields {
@@ -2098,43 +2087,40 @@ impl SymbolTable {
         if model_data.is_some() && !prevent_comodel {
             let model = session.sync_odoo.models.get(&model_data.as_ref().unwrap().name).cloned();
             if let Some(model) = model {
-                let mut from_module = from_module;
-                if from_module.is_none() {
-                    from_module = session.st().find_module(target);
+                // from_module: None means no dependency filtering (return everything)
+                let model_symbols = Model::get_full_model_classes(model.clone(), session, from_module);
+                for model_symbol in model_symbols {
+                    if target == model_symbol || visited_classes.contains(&model_symbol) {
+                        continue;
+                    }
+                    visited_classes.insert(model_symbol);
+                    let member_from_module = session.st().find_module(model_symbol);
+                    let (attributs, att_diagnostic) = Self::get_member_symbol_helper(session, model_symbol.into(), name, member_from_module, true, only_fields, only_methods, all, false, visited_classes);
+                    diagnostics.extend(att_diagnostic);
+                    if all {
+                        extend_result(attributs, &mut result, &mut visited_symbols);
+                    } else {
+                        if !attributs.is_empty() {
+                            return (attributs, diagnostics);
+                        }
+                    }
                 }
-                if let Some(from_module) = from_module {
-                    let model_symbols = Model::get_full_model_classes(model.clone(), session, Some(from_module));
+                for model_inherits_symbol in model.clone().borrow().get_inherits_models(session, from_module) {
+                    //only fields are visible on inherits, not methods
+                    let model_symbols = Model::get_full_model_classes(model_inherits_symbol, session, from_module);
                     for model_symbol in model_symbols {
                         if target == model_symbol || visited_classes.contains(&model_symbol) {
                             continue;
                         }
                         visited_classes.insert(model_symbol);
-                        let (attributs, att_diagnostic) = Self::_get_member_symbol_helper(session, model_symbol.into(), name, None, true, only_fields, only_methods, all, false, visited_classes);
+                        let member_from_module = session.st().find_module(model_symbol);
+                        let (attributs, att_diagnostic) = Self::get_member_symbol_helper(session, model_symbol.into(), name, member_from_module, true, true, only_methods, all, false, visited_classes);
                         diagnostics.extend(att_diagnostic);
                         if all {
                             extend_result(attributs, &mut result, &mut visited_symbols);
                         } else {
                             if !attributs.is_empty() {
                                 return (attributs, diagnostics);
-                            }
-                        }
-                    }
-                    for model_inherits_symbol in model.clone().borrow().get_inherits_models(session, from_module) {
-                        //only fields are visible on inherits, not methods
-                        let model_symbols = Model::get_full_model_classes(model_inherits_symbol, session, Some(from_module));
-                        for model_symbol in model_symbols {
-                            if target == model_symbol || visited_classes.contains(&model_symbol) {
-                                continue;
-                            }
-                            visited_classes.insert(model_symbol);
-                            let (attributs, att_diagnostic) = Self::_get_member_symbol_helper(session, model_symbol.into(), name, None, true, true, only_methods, all, false, visited_classes);
-                            diagnostics.extend(att_diagnostic);
-                            if all {
-                                extend_result(attributs, &mut result, &mut visited_symbols);
-                            } else {
-                                if !attributs.is_empty() {
-                                    return (attributs, diagnostics);
-                                }
                             }
                         }
                     }
@@ -2162,7 +2148,6 @@ impl SymbolTable {
         }
         (result, diagnostics)
     }
-
 
     /**
      * Only browse file content, do not use on namespace or packages to browse disk
