@@ -1122,7 +1122,20 @@ impl Evaluation {
                                     }
                                     evals.push(eval);
                                 });
-                            }
+                            } else if is_in_validation && module.is_some() {
+                                    // Retry unfiltered: if it resolves at all, it's only reachable through
+                                    // a module outside our dependencies ("indirect inheritance").
+                                    let (indirect_syms, _) = SymbolTable::get_member_symbol(session, base_loc, &expr.attr, None, false, false, false, false, is_super);
+                                    if let Some(indirect_module) = indirect_syms.first().and_then(|&sym| session.st().find_module(sym)) {
+                                        let dir_name = session.st()[indirect_module].dir_name.clone();
+                                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03028, &[&expr.attr, dir_name.as_str()]) {
+                                            diagnostics.push(Diagnostic {
+                                                range: FileMgr::textRange_to_temporary_Range(&expr.range()),
+                                                ..diagnostic
+                                            });
+                                        }
+                                    }
+                                }
                         }
                     }
                 }
