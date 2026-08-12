@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell, collections::{VecDeque, hash_map}, path::Path, rc::Rc,
+    collections::{VecDeque, hash_map}, path::Path,
 };
 
 use lsp_types::{Diagnostic, DiagnosticTag, Range, SymbolKind};
@@ -7,11 +7,11 @@ use ruff_text_size::TextRange;
 
 use crate::{
     Sy, constants::{BuildStatus, BuildSteps, MissingDataSource, OYarn, PackageType, SymType}, core::{
-        build_scheduler::BuildScheduler, diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPoint, evaluation::{Evaluation, EvaluationSymbolPtr}, evaluation_context::{Context, ContextKey, ContextValue}, file_mgr::{FileInfo, FileMgr, NoqaInfo}, model::{Model, ModelKey}, odoo::SyncOdoo, python_arch_eval_hooks::get_base_model_symbol, symbols::{
+        build_scheduler::BuildScheduler, diagnostics::{DiagnosticCode, create_diagnostic}, evaluation::{Evaluation, EvaluationSymbolPtr}, evaluation_context::{Context, ContextKey, ContextValue}, file_mgr::{FileInfo, FileMgr, NoqaInfo}, model::{Model, ModelKey}, odoo::SyncOdoo, python_arch_eval_hooks::get_base_model_symbol, symbols::{
             Buildable, Dependencies, ModuleSymbol, storage::{
                 FileContentParent, FileSystemSymbolParent, SymbolTable, buildable::ResettableBuildable as _, dependency_mgr::{DependenciesTable, DependentsTable}, lifecycle::NameTakenError, xml::xml_field_symbol::XmlFieldName,
             }, symbol_keys::{
-                BuildableSymbolKey, ClassKey, FunctionKey, KeyValidator, ModuleKey, NamespaceKey,
+                BuildableSymbolKey, ClassKey, EntryPointKey, FunctionKey, KeyValidator, ModuleKey, NamespaceKey,
                 RootKey, SourceFileKey, SymbolKey, VariableKey, XmlDataKey, XmlRecordKey,
             }, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys},
         },
@@ -698,7 +698,7 @@ impl SymbolTable {
         {
             //js file created here is because of js in a custom entrypoint, and that should be created under a diskdir.
             //JS files under a Module should be created by the module loading, through load_assets
-            let js_file = session.st_mut().add_new_js_file(d.into(), &name, &path_str)?;
+            let js_file = session.sync_odoo.symbol_table.add_new_js_file(&mut session.sync_odoo.entry_point_mgr, d.into(), &name, &path_str)?;
             return Ok(js_file.into());
         }
         let main_entry_tree = session.sync_odoo.get_main_entry_tree(parent);
@@ -771,9 +771,9 @@ impl SymbolTable {
         self.get_tree_helper(symbol_key.into()).0
     }
 
-    pub fn get_tree_and_entry(&self, symbol_key: SymbolKey) -> (Tree, Rc<RefCell<EntryPoint>>) {
+    pub fn get_tree_and_entry(&self, symbol_key: SymbolKey) -> (Tree, EntryPointKey) {
         let (tree, root_key) = self.get_tree_helper(symbol_key);
-        let entry = self[root_key].entry_point().clone();
+        let entry = self[root_key].entry_point();
         (tree, entry)
     }
 
@@ -783,9 +783,9 @@ impl SymbolTable {
      * otherwise return the full tree, even if it is related to an entrypoint.
      * Which is possible due to relative imports e.g. `from ..module import X`.
      */
-    pub fn get_local_tree(&self, symbol_key: SymbolKey) -> Tree {
-        let (mut tree, entry) = self.get_tree_and_entry(symbol_key);
-        let entry_tree = &entry.borrow().tree;
+    pub fn get_local_tree(session: &SessionInfo, symbol_key: SymbolKey) -> Tree {
+        let (mut tree, entry) = session.st().get_tree_and_entry(symbol_key);
+        let entry_tree = &session.ep_mgr()[entry].tree;
         if tree.0.starts_with(entry_tree) {
             tree.0.drain(0..entry_tree.len());
         }
@@ -1215,9 +1215,9 @@ impl SymbolTable {
         current.unwrap_root_key()
     }
 
-    pub fn get_entry(&self, target: impl Into<SymbolKey>) -> Rc<RefCell<EntryPoint>> {
+    pub fn get_entry(&self, target: impl Into<SymbolKey>) -> EntryPointKey {
         let root = self.get_root(target.into());
-        self[root].entry_point().clone()
+        self[root].entry_point()
     }
 
     pub fn has_in_parents(&self, symbol: SymbolKey, to_test: SymbolKey, stop_same_file: bool) -> bool {
@@ -2427,13 +2427,14 @@ impl SymbolTable {
 #[cfg(test)]
 mod get_symbol_tests {
     use super::*;
-    use crate::core::entry_point::{EntryPoint, EntryPointType};
+    use crate::core::entry_point::{EntryPointMgr, EntryPointType};
     use ruff_text_size::TextSize;
 
     /// Build an empty symbol table with a single root and return `(table, root_key)`.
     fn empty_table_with_root() -> (SymbolTable, RootKey) {
         let mut st = SymbolTable::new();
-        let entry = EntryPoint::new(
+        let mut ep_mgr = EntryPointMgr::new();
+        let entry_key = ep_mgr.create_entry_point(
             &mut st,
             "/test".to_string(),
             vec![],
@@ -2441,7 +2442,7 @@ mod get_symbol_tests {
             None,
             None,
         );
-        let root = entry.borrow().root;
+        let root = ep_mgr[entry_key].root;
         (st, root)
     }
 

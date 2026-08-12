@@ -49,11 +49,12 @@ impl JsValidator {
         }
         let template_refs = session.file_mgr()[file_info].file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
 
-        if session.sync_odoo.symbol_table.get_entry(self.js_symbol).borrow().is_main() {
+        if session.sync_odoo.entry_point_mgr[session.sync_odoo.symbol_table.get_entry(self.js_symbol)].is_main() {
             for template_ref in template_refs.iter() {
                 if !XmlAstUtils::ensure_js_template_validity(session, &template_ref.t_name) {
                     session.st_mut()[self.js_symbol].not_found_data_ids.insert(MissingDataSource::TEMPLATE(Sy!(template_ref.t_name.clone())), BuildSteps::VALIDATION);
-                        session.sync_odoo.get_main_entry().borrow_mut().not_found_data_ids.insert(self.js_symbol.into());
+                        let main_entry = session.sync_odoo.get_main_entry();
+                        session.ep_mgr_mut()[main_entry].not_found_data_ids.insert(self.js_symbol.into());
                     if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS06000, &[]) {
                         diagnostics.push(Diagnostic {
                             range: Range { start: Position::new(template_ref.range.start().to_u32(), 0), end: Position::new(template_ref.range.end().to_u32(), 0) },

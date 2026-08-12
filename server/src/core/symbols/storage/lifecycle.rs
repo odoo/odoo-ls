@@ -11,7 +11,7 @@
 
 use crate::{
     constants::{OYarn, PackageType, SymType}, core::{
-        entry_point::{EntryPoint, EntryPointCleanupToken}, odoo::SyncOdoo, symbols::{
+        entry_point::EntryPointMgr, odoo::SyncOdoo, symbols::{
             ClassSymbol, CompiledSymbol, CsvFileSymbol, Dependencies, DiskDirSymbol, FileSymbol, FunctionSymbol, JsFileSymbol, ModuleSymbol, NamespaceSymbol, PythonPackageSymbol, RootSymbol, SymbolTable, VariableSymbol, XmlFileSymbol, storage::{
                 FileContentParent, FileSystemSymbolParent, JsFileParent, XmlDataParent, XmlFieldParent, xml::{
                     xml_asset_symbol::XmlAssetSymbol, xml_delete_symbol::XmlDeleteSymbol,
@@ -19,13 +19,13 @@ use crate::{
                     xml_record_symbol::XmlRecordSymbol, xml_template_symbol::XmlTemplateSymbol,
                 },
             }, symbol_keys::{
-                ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FileSystemSymbolKey, FunctionKey, JsFileKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey, VariableKey, XmlAssetKey, XmlDeleteKey, XmlFieldKey, XmlFileKey, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey,
+                ClassKey, CompiledKey, CsvFileKey, DiskDirKey, EntryPointKey, FileKey, FileSystemSymbolKey, FunctionKey, JsFileKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey, VariableKey, XmlAssetKey, XmlDeleteKey, XmlFieldKey, XmlFileKey, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey,
             },
         },
     }, oyarn, threads::SessionInfo,
 };
 use ruff_text_size::{TextRange, TextSize};
-use std::{cell::RefCell, ops::Range, path::Path, rc::Rc};
+use std::{ops::Range, path::Path};
 
 #[derive(Debug)]
 pub struct NameTakenError(pub SymbolKey);
@@ -34,10 +34,22 @@ impl SymbolTable {
 
     // ===== Symbol creation methods ======
 
-    pub fn new_root(&mut self, entry_point: Rc<RefCell<EntryPoint>>) -> RootKey {
-        let root_symbol = RootSymbol::new(entry_point);
-        self.roots.insert(root_symbol)
+    /// Creates the `RootSymbol` owned by a newly created `EntryPoint`. Only called from
+    /// `EntryPointMgr::create_entry_point`, which patches the entry point's `root` field
+    /// with the returned key right after.
+    pub(crate) fn insert_root(&mut self, entry_key: EntryPointKey) -> RootKey {
+        self.roots.insert(RootSymbol::new(entry_key))
     }
+
+    /// Drops `root` and its whole subtree if it's still present. Only called from
+    /// `EntryPointMgr::drop_entry_point`, for entry points that own their root (i.e. not
+    /// `EntryPointType::ADDON`, which shares the main entry's root).
+    pub(crate) fn drop_root_if_present(&mut self, root: RootKey) {
+        if self.roots.contains_key(root) {
+            self.remove(root.into());
+        }
+    }
+
     // Create a sub-symbol that is representing a file
     pub fn add_new_file(&mut self, parent: FileSystemSymbolParent, name: &str, path: &str) -> Result<FileKey, NameTakenError> {
         self.check_fs_symbol_name_vacant(parent, name)?;
@@ -205,13 +217,13 @@ impl SymbolTable {
         Ok(csv_file_key)
     }
 
-    pub fn add_new_js_file(&mut self, parent: JsFileParent, name: &str, path: &str) -> Result<JsFileKey, NameTakenError> {
+    pub fn add_new_js_file(&mut self, entry_point_mgr: &mut EntryPointMgr, parent: JsFileParent, name: &str, path: &str) -> Result<JsFileKey, NameTakenError> {
         self.check_js_symbol_path_vacant(parent, name)?;
         let mut js_file_symbol = JsFileSymbol::new(name, path, parent, self.is_external(parent.into()));
         js_file_symbol.set_in_workspace(self.in_workspace(parent.into()));
         let js_file_key = self.js_files.insert(js_file_symbol);
         self.add_to_parent_js_symbols(parent, path, js_file_key);
-        ModuleSymbol::on_js_file_load(self, js_file_key);
+        ModuleSymbol::on_js_file_load(self, entry_point_mgr, js_file_key);
         Ok(js_file_key)
     }
 
@@ -326,13 +338,6 @@ impl SymbolTable {
         unload_recursively(session, symbol.into());
         session.st_mut().unlink_from_parent(symbol);
         session.st_mut().remove(symbol.into());
-    }
-
-    /// Only accessible from entry point module
-    pub fn drop_root(&mut self, root: RootKey, _: EntryPointCleanupToken) {
-        if self.roots.contains_key(root) {
-            self.remove(root.into());
-        }
     }
 
     // ===== Symbol removal helpers ======
@@ -456,7 +461,7 @@ impl SymbolTable {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::entry_point::EntryPointType;
+    use crate::core::entry_point::{EntryPointMgr, EntryPointType};
     use crate::core::symbols::symbol_keys::KeyValidator;
     use crate::oyarn;
 
@@ -478,6 +483,7 @@ mod tests {
     /// path, so everything given `namespace` as parent must live under `/root/ns`.
     struct Fixture {
         st: SymbolTable,
+        ep_mgr: EntryPointMgr,
         root: RootKey,
         namespace: NamespaceKey,
         disk_dir: DiskDirKey,
@@ -487,12 +493,13 @@ mod tests {
     impl Fixture {
         fn new() -> Self {
             let mut st = SymbolTable::new();
-            let entry = EntryPoint::new(&mut st, "/root".to_string(), vec![], EntryPointType::MAIN, None, None);
-            let root = entry.borrow().root;
+            let mut ep_mgr = EntryPointMgr::new();
+            let entry_key = ep_mgr.create_entry_point(&mut st, "/root".to_string(), vec![], EntryPointType::MAIN, None, None);
+            let root = ep_mgr[entry_key].root;
             let namespace = st.add_new_namespace(root.into(), "ns", "/root/ns").unwrap();
             let disk_dir = st.add_new_disk_dir(root.into(), "dd", "/root/dd").unwrap();
             let module = add_module(&mut st, namespace, "mod", "/root/ns/mod");
-            Self { st, root, namespace, disk_dir, module }
+            Self { st, ep_mgr, root, namespace, disk_dir, module }
         }
 
         fn holds(&mut self, parent: SymbolKey, child: impl Into<SymbolKey>) -> bool {
@@ -511,8 +518,8 @@ mod tests {
         let module = add_module(&mut f.st, f.namespace, "another_module", "/root/ns/another_module");
         let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml")?;
         let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv")?;
-        let js_in_module = f.st.add_new_js_file(JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js")?;
-        let js_in_disk_dir = f.st.add_new_js_file(JsFileParent::DiskDir(f.disk_dir), "lib.js", "/root/dd/lib.js")?;
+        let js_in_module = f.st.add_new_js_file(&mut f.ep_mgr, JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js")?;
+        let js_in_disk_dir = f.st.add_new_js_file(&mut f.ep_mgr, JsFileParent::DiskDir(f.disk_dir), "lib.js", "/root/dd/lib.js")?;
         let sibling = f.st.add_new_file(f.module.into(), "sibling", "/root/ns/mod/sibling.py")?;
 
         let cases: Vec<(SymbolKey, SourceFileKey)> = vec![
@@ -608,7 +615,7 @@ mod tests {
         _ = f.st.add_new_xml_field(XmlFieldParent::XmlRecord(record), "name", range_at(1), None, None, None);
         let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv")?;
         f.st.add_new_xml_record(XmlDataParent::CsvFile(csv_file), (oyarn!("res.partner"), 0..1), None, range_at(0));
-        _ = f.st.add_new_js_file(JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js");
+        _ = f.st.add_new_js_file(&mut f.ep_mgr, JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js");
 
         // injected into a file outside the module, but owned by one of its files: it dies with
         // the owner, through `ext_symbols` rather than through any holder.
@@ -636,7 +643,7 @@ mod tests {
         let constant = f.st.add_new_variable(f.module, "MODULE_CONSTANT", range_at(0));
         let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml").unwrap();
         let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv").unwrap();
-        let js_file = f.st.add_new_js_file(JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js").unwrap();
+        let js_file = f.st.add_new_js_file(&mut f.ep_mgr, JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js").unwrap();
 
         let children = f.st.children(f.module.into());
         for expected in [SymbolKey::from(file), constant.into(), xml_file.into(), csv_file.into(), js_file.into()] {

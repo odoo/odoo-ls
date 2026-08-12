@@ -2,7 +2,7 @@ use lsp_types::{Diagnostic, Position, Range};
 use roxmltree::Node;
 use ruff_text_size::{TextRange, TextSize};
 
-use crate::{Sy, constants::OYarn, core::{diagnostics::{DiagnosticCode, create_diagnostic}, model::Model, odoo::SyncOdoo, symbols::{storage::{XmlFieldParent, xml::xml_field_symbol::XmlFieldName}, symbol_keys::{XmlFieldKey, XmlId, XmlRecordKey}}}, oyarn, threads::SessionInfo, utils};
+use crate::{Sy, constants::OYarn, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPoint, model::Model, odoo::SyncOdoo, symbols::{storage::{XmlFieldParent, xml::xml_field_symbol::XmlFieldName}, symbol_keys::{XmlFieldKey, XmlId, XmlRecordKey}}}, oyarn, threads::SessionInfo, utils};
 
 use super::xml_arch_builder::XmlArchBuilder;
 
@@ -785,11 +785,8 @@ impl XmlArchBuilder {
         };
         let model = session.sync_odoo.model_mgr.add_or_get_model(&model_name);
         Model::add_symbol(session, model, record);
-        session
-            .sync_odoo
-            .get_main_entry()
-            .borrow_mut()
-            .search_rebuild_for_models(session, model_name);
+        let main_entry = session.sync_odoo.get_main_entry();
+        EntryPoint::search_rebuild_for_models(session, main_entry, model_name);
     }
 
     fn register_ir_model_fields_record(&self, session: &mut SessionInfo, record: XmlRecordKey) {

@@ -18,7 +18,7 @@ fn test_follow_ref() {
         .join("tests/data/python/expressions/follow_ref.py")
         .sanitize();
     setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
-    assert!(session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.len() == 1);
+    assert!(session.sync_odoo.entry_point_mgr.custom_entry_points.len() == 1);
     let file_mgr = session.file_mgr();
     let file_info = file_mgr.get_file_info(&path).unwrap();
     let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&path))

@@ -6,8 +6,6 @@ use ruff_python_ast::{
 };
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use slotmap::Key;
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::vec;
 use tracing::{trace, warn};
 
@@ -21,12 +19,11 @@ use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 use crate::core::python_utils;
 use crate::core::symbols::Buildable;
-use crate::core::symbols::symbol_keys::{FunctionKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey};
+use crate::core::symbols::symbol_keys::{EntryPointKey, FunctionKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::threads::SessionInfo;
 use crate::{oyarn, S};
 
-use super::entry_point::EntryPoint;
 use super::evaluation::{EvaluationSymbolPtr, EvaluationSymbolWeak};
 use super::file_mgr::{combine_noqa_info, FileInfo, FileMgr};
 use super::import_resolver::ImportResult;
@@ -38,7 +35,7 @@ use super::symbols::symbol_mgr::SectionIndex;
 
 #[derive(Debug)]
 pub struct PythonArchBuilder {
-    entry_point: Rc<RefCell<EntryPoint>>,
+    entry_point: EntryPointKey,
     file: SourceFileKey,
     file_mode: bool,
     current_step: BuildSteps,
@@ -49,7 +46,7 @@ pub struct PythonArchBuilder {
 }
 
 impl PythonArchBuilder {
-    pub fn new(symbol_table: &SymbolTable, entry_point: Rc<RefCell<EntryPoint>>, symbol: PythonBuildableSymbolKey) -> Option<Self> {
+    pub fn new(symbol_table: &SymbolTable, entry_point: EntryPointKey, symbol: PythonBuildableSymbolKey) -> Option<Self> {
         let file = symbol_table.get_file(symbol.into()).unwrap();
         let file_mode = SymbolKey::from(symbol) == SymbolKey::from(file);
 
@@ -183,7 +180,7 @@ impl PythonArchBuilder {
                     level,
                     &mut None).remove(0); //we don't need the vector with this call as there will be 1 result.
                 if !import_result.found {
-                    self.entry_point.borrow_mut().not_found_symbols.insert(self.file);
+                    session.ep_mgr_mut()[self.entry_point].not_found_symbols.insert(self.file);
                     session.st_mut().not_found_paths_mut(self.file).push((self.current_step, import_result.file_tree.clone()));
                     continue;
                 }

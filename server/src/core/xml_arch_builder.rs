@@ -1,5 +1,5 @@
 use crate::{
-    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource, MissingDataSource, OYarn}, core::{build_scheduler::BuildScheduler, entry_point::EntryPointType, file_mgr::FileInfoKey, symbols::{ModuleSymbol, symbol_keys::{XmlDataKey, XmlId}}}, features::xml_ast_utils::XmlAstUtils, threads::SessionInfo
+    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource, MissingDataSource, OYarn}, core::{build_scheduler::BuildScheduler, entry_point::{EntryPoint, EntryPointType}, file_mgr::FileInfoKey, symbols::{ModuleSymbol, symbol_keys::{XmlDataKey, XmlId}}}, features::xml_ast_utils::XmlAstUtils, threads::SessionInfo
 };
 use crate::{
     core::{
@@ -42,7 +42,7 @@ impl XmlArchBuilder {
             info!("ARCH       - XML: {}", session.st()[self.xml_symbol].path);
         }
         let ep = session.st().get_entry(self.xml_symbol);
-        self.is_in_main_ep = ep.borrow().typ == EntryPointType::MAIN || ep.borrow().typ == EntryPointType::ADDON;
+        self.is_in_main_ep = session.ep_mgr()[ep].typ == EntryPointType::MAIN || session.ep_mgr()[ep].typ == EntryPointType::ADDON;
         if self.web_asset {
             self.load_frontend_data(session, node, &mut diagnostics);
         } else {
@@ -95,7 +95,7 @@ impl XmlArchBuilder {
             if let XmlDataKey::XmlRecord(record) = xml_data {
                 data_hooks::on_record_creation(session, self.xml_symbol.into(), record);
             }
-            session.sync_odoo.get_main_entry().borrow_mut().search_rebuild_for_data_id(session, MissingDataSource::XML_ID(Sy!(id.clone())));
+            { let main_entry = session.sync_odoo.get_main_entry(); EntryPoint::search_rebuild_for_data_id(session, main_entry, MissingDataSource::XML_ID(Sy!(id.clone()))); }
             ModuleSymbol::insert_xml_id(session.st_mut(), xml_module, Sy!(id), XmlId::from(xml_data));
         }
         if let Some(t_name) = t_name {
@@ -114,7 +114,7 @@ impl XmlArchBuilder {
                     error!("Template data is not a XmlTemplateKey for t-name: {}", t_name);
                     return;
                 };
-                session.sync_odoo.get_main_entry().borrow_mut().search_rebuild_for_data_id(session, MissingDataSource::TEMPLATE(Sy!(t_name.clone())));
+                { let main_entry = session.sync_odoo.get_main_entry(); EntryPoint::search_rebuild_for_data_id(session, main_entry, MissingDataSource::TEMPLATE(Sy!(t_name.clone()))); }
                 session.sync_odoo.js_templates.entry(t_name).or_default().insert(template);
             }
         }

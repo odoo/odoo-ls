@@ -1,8 +1,4 @@
-use std::{
-    cell::RefCell,
-    rc::Rc,
-};
-use crate::{constants::BuildStatus, core::{file_mgr::{FileInfo, FileMgr}, model::ModelKey, odoo::SyncOdoo, symbols::{ModuleSymbol, storage::xml::xml_field_symbol::XmlFieldName,}}, utils::{HashMap, HashSet}};
+use crate::{constants::BuildStatus, core::{entry_point::EntryPointMgr, file_mgr::{FileInfo, FileMgr}, model::ModelKey, odoo::SyncOdoo, symbols::{ModuleSymbol, storage::xml::xml_field_symbol::XmlFieldName}}, utils::{HashMap, HashSet}};
 
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
@@ -12,8 +8,8 @@ use crate::{
     constants::{BuildSteps, MissingDataSource, OYarn, DEBUG_STEPS},
     core::{
         diagnostics::{create_diagnostic, DiagnosticCode},
-        entry_point::{EntryPoint, EntryPointType},
-        symbols::symbol_keys::{ModuleKey, SourceFileKey, XmlFileKey},
+        entry_point::EntryPointType,
+        symbols::symbol_keys::{EntryPointKey, ModuleKey, SourceFileKey, XmlFileKey},
     },
     oyarn,
     threads::SessionInfo,
@@ -29,8 +25,8 @@ pub struct XmlValidator {
 
 impl XmlValidator {
 
-    pub fn new(entry: &Rc<RefCell<EntryPoint>>, symbol: XmlFileKey, symbol_table: &SymbolTable) -> Self {
-        let is_in_main_ep = entry.borrow().typ == EntryPointType::MAIN || entry.borrow().typ == EntryPointType::ADDON;
+    pub fn new(entry: EntryPointKey, symbol: XmlFileKey, symbol_table: &SymbolTable, entry_point_mgr: &EntryPointMgr) -> Self {
+        let is_in_main_ep = entry_point_mgr[entry].typ == EntryPointType::MAIN || entry_point_mgr[entry].typ == EntryPointType::ADDON;
         let module = symbol_table.find_module(symbol).unwrap();
         Self {
             xml_symbol: symbol,
@@ -61,11 +57,12 @@ impl XmlValidator {
         for &model in model_dependencies.iter() {
             session.model_mgr_mut()[model].add_dependent(self.xml_symbol.into());
         }
+        let main_entry = session.sync_odoo.get_main_entry();
         if !missing_model_dependencies.is_empty() {
-            session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(self.xml_symbol.into());
+            session.ep_mgr_mut()[main_entry].not_found_symbols_for_models.insert(self.xml_symbol.into());
         }
         session.st_mut()[self.xml_symbol].not_found_models.extend(missing_model_dependencies.into_iter().map(|m| (m, BuildSteps::VALIDATION)));
-        session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(self.xml_symbol.into());
+        session.ep_mgr_mut()[main_entry].not_found_symbols_for_models.insert(self.xml_symbol.into());
         let (file_info, loaded) = FileMgr::get_or_recreate_file_info(session, self.xml_symbol.into());
         if !loaded {
             return;
@@ -336,7 +333,8 @@ impl XmlValidator {
                     MissingDataSource::TEMPLATE(t_call_name.clone()),
                     BuildSteps::VALIDATION,
                 );
-                session.sync_odoo.get_main_entry().borrow_mut().not_found_data_ids.insert(self.xml_symbol.into());
+                let main_entry = session.sync_odoo.get_main_entry();
+                session.ep_mgr_mut()[main_entry].not_found_data_ids.insert(self.xml_symbol.into());
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05073, &[t_call_str]) {
                     diagnostics.push(Diagnostic {
                         range: Range {
@@ -397,7 +395,8 @@ impl XmlValidator {
                     MissingDataSource::XML_ID(t_call_name.clone()),
                     BuildSteps::VALIDATION,
                 );
-                session.sync_odoo.get_main_entry().borrow_mut().not_found_data_ids.insert(self.xml_symbol.into());
+                let main_entry = session.sync_odoo.get_main_entry();
+                session.ep_mgr_mut()[main_entry].not_found_data_ids.insert(self.xml_symbol.into());
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05073, &[t_call_str]) {
                     diagnostics.push(Diagnostic {
                         range: Range {

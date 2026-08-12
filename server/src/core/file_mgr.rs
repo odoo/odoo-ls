@@ -1091,9 +1091,8 @@ impl FileMgr {
         //Do not modify the file if a version is not given but the file is opened
         let mut updated: bool = false;
         if (version.is_some() && version.unwrap() != -100) || !session.file_mgr()[file_key].opened || force {
-            let ep_mgr = session.sync_odoo.entry_point_mgr.borrow();
-            let is_part_of_ep = ep_mgr.iter_all_but_public().any(|entry| uri.starts_with(&entry.borrow().path));
-            drop(ep_mgr);
+            let ep_mgr = &session.sync_odoo.entry_point_mgr;
+            let is_part_of_ep = ep_mgr.iter_all_but_public().any(|entry| uri.starts_with(&ep_mgr[entry].path));
             updated = FileInfo::update(session, file_key, uri, content, version, !is_part_of_ep, force, is_untitled);
         }
         (updated, file_key)
@@ -1168,9 +1167,8 @@ impl FileMgr {
                 continue;
             }
             let mut found = false;
-            for entry in session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter() {
-                let entry = entry.borrow();
-                if file_mgr[file].uri == entry.path {
+            for &entry in session.sync_odoo.entry_point_mgr.custom_entry_points.iter() {
+                if file_mgr[file].uri == session.sync_odoo.entry_point_mgr[entry].path {
                     found = true;
                     break;
                 }

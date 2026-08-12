@@ -4,20 +4,18 @@ use tracing::error;
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::symbols::symbol_table_impl::CreateError;
 use crate::utils::HashMap;
-use std::rc::Rc;
-use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use ruff_text_size::TextRange;
 use ruff_python_ast::{Alias, AtomicNodeIndex, Identifier};
 use crate::core::symbols::storage::{FileSystemSymbolParent, SymbolTable};
-use crate::core::symbols::symbol_keys::{ModuleKey, NamespaceKey, SourceFileKey, SymbolKey};
+use crate::core::symbols::symbol_keys::{EntryPointKey, ModuleKey, NamespaceKey, SourceFileKey, SymbolKey};
 use crate::{constants::*, oyarn, S};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::threads::SessionInfo;
 use crate::utils::{is_dir_cs, PathSanitizer};
 
-use super::entry_point::{EntryPoint, EntryPointType};
+use super::entry_point::EntryPointType;
 
 pub struct ImportResult {
     pub name: OYarn, //the last imported element
@@ -95,7 +93,7 @@ pub fn resolve_from_stmt(
         start_symbol = Some(vec![source_root]);
     }
     let (from_symbol, fallback_sym) = get_or_create_symbol(session,
-        &entry,
+        entry,
         source_path.as_str(),
         start_symbol,
         &file_tree,
@@ -151,7 +149,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
         let name_last_name: Vec<OYarn> = vec![name_split.last().unwrap().clone()];
         let (mut next_symbol, mut fallback_sym) = get_or_create_symbol(
             session,
-            &entry,
+            entry,
             source_path.as_str(),
             from_symbols.clone(),
             &name_first_part,
@@ -180,7 +178,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
         if !name_middle_part.is_empty() {
             (next_symbol, fallback_sym) = get_or_create_symbol(
                 session,
-                &entry,
+                entry,
                 "",
                 Some(next_symbol.as_ref().unwrap().clone()),
                 &name_middle_part,
@@ -197,7 +195,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
             // now we can search for the last symbol, or create it if it doesn't exist
             let (mut last_symbol, fallback_sym) = get_or_create_symbol(
                 session,
-                &entry,
+                entry,
                 "",
                 Some(next_symbol.as_ref().unwrap().clone()),
                 &name_last_name,
@@ -283,7 +281,7 @@ fn resolve_packages(symbol_table: &SymbolTable, from_file: SymbolKey, level: u32
 }
 
 fn get_or_create_symbol(
-    session: &mut SessionInfo, for_entry: &Rc<RefCell<EntryPoint>>, from_path: &str, symbol: Option<Vec<SymbolKey>>, names: &[OYarn], level: u32
+    session: &mut SessionInfo, for_entry: EntryPointKey, from_path: &str, symbol: Option<Vec<SymbolKey>>, names: &[OYarn], level: u32
 ) -> (Option<Vec<SymbolKey>>, Option<Vec<SymbolKey>>) {
     let mut syms = symbol.clone();
     let mut last_symbols = symbol;
@@ -316,7 +314,7 @@ fn get_or_create_symbol(
                 // Can we have sym None and level != 0 ? maybe on get_all_valid_names? tbc
                 if level == 0
                     && let Some(ref cache) = session.sync_odoo.import_cache {
-                        let cache_module = if for_entry.borrow().typ == EntryPointType::MAIN || for_entry.borrow().typ == EntryPointType::ADDON {
+                        let cache_module = if session.ep_mgr()[for_entry].typ == EntryPointType::MAIN || session.ep_mgr()[for_entry].typ == EntryPointType::ADDON {
                             cache.main_modules.get(branch)
                         } else {
                             cache.modules.get(branch)
@@ -335,13 +333,12 @@ fn get_or_create_symbol(
                         }
                     }
                 let mut found = false;
-                let entry_point_mgr = session.sync_odoo.entry_point_mgr.clone();
-                let entry_point_mgr = entry_point_mgr.borrow();
-                let from_path = session.sync_odoo.entry_point_mgr.borrow().transform_addon_path(Path::new(from_path));
+                let from_path = session.sync_odoo.entry_point_mgr.transform_addon_path(Path::new(from_path));
                 let from_path = Path::new(&from_path);
-                for entry in entry_point_mgr.iter_for_import(for_entry) {
-                    if ((entry.borrow().is_public() && level == 0) || entry.borrow().is_valid_for(from_path)) && entry.borrow().addon_to_odoo_path.is_none() {
-                        let entry_point = entry.borrow().get_symbol(session.st());
+                let entries: Vec<EntryPointKey> = session.sync_odoo.entry_point_mgr.iter_for_import(for_entry).collect();
+                for entry in entries {
+                    if ((session.ep_mgr()[entry].is_public() && level == 0) || session.ep_mgr()[entry].is_valid_for(from_path)) && session.ep_mgr()[entry].addon_to_odoo_path.is_none() {
+                        let entry_point = session.ep_mgr()[entry].get_symbol(session.st());
                         if let Some(entry_point) = entry_point {
                             let Ok(parent) = FileSystemSymbolParent::try_from(entry_point) else {
                                 continue;
@@ -353,11 +350,11 @@ fn get_or_create_symbol(
                                 continue;
                             };
                             if level == 0 {
-                                if entry.borrow().is_public() {
+                                if session.ep_mgr()[entry].is_public() {
                                     if let Some(cache) = session.sync_odoo.import_cache.as_mut() {
                                         cache.modules.insert(branch.clone(), Some(vec![next_symbol]));
                                     }
-                                } else if matches!(entry.borrow().typ, EntryPointType::MAIN | EntryPointType::ADDON)
+                                } else if matches!(session.ep_mgr()[entry].typ, EntryPointType::MAIN | EntryPointType::ADDON)
                                     && let Some(cache) = session.sync_odoo.import_cache.as_mut() {
                                         cache.main_modules.insert(branch.clone(), Some(vec![next_symbol]));
                                     }
@@ -370,9 +367,10 @@ fn get_or_create_symbol(
                     }
                 }
                 if !found {
-                    if for_entry.borrow().typ != EntryPointType::CUSTOM
+                    let for_entry_typ = session.ep_mgr()[for_entry].typ.clone();
+                    if for_entry_typ != EntryPointType::CUSTOM
                         && let Some(cache) = session.sync_odoo.import_cache.as_mut() {
-                            if for_entry.borrow().typ == EntryPointType::MAIN || for_entry.borrow().typ == EntryPointType::ADDON {
+                            if for_entry_typ == EntryPointType::MAIN || for_entry_typ == EntryPointType::ADDON {
                                 cache.main_modules.insert(branch.clone(), None);
                             } else {
                                 cache.modules.insert(branch.clone(), None);
@@ -505,13 +503,12 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: Source
         if !file_tree.is_empty() { //symbol was not found
             return result;
         } else { //nothing was provided, so we have to add the root symbol of any valid entrypoint
-            let entry_point_mgr = session.sync_odoo.entry_point_mgr.clone();
-            let entry_point_mgr = entry_point_mgr.borrow();
-            let from_path = session.sync_odoo.entry_point_mgr.borrow().transform_addon_path(Path::new(&source_path));
+            let entry_point_mgr = &session.sync_odoo.entry_point_mgr;
+            let from_path = entry_point_mgr.transform_addon_path(Path::new(&source_path));
             let from_path = Path::new(&from_path);
-            for entry in entry_point_mgr.iter_for_import(&entry) {
-                if (entry.borrow().is_public() && (level == 0)) || entry.borrow().is_valid_for(from_path) {
-                    let entry_point = entry.borrow().get_symbol(session.st());
+            for candidate_entry in entry_point_mgr.iter_for_import(entry) {
+                if (entry_point_mgr[candidate_entry].is_public() && (level == 0)) || entry_point_mgr[candidate_entry].is_valid_for(from_path) {
+                    let entry_point = entry_point_mgr[candidate_entry].get_symbol(session.st());
                     if let Some(entry_point) = entry_point {
                         symbols_to_browse.push(entry_point);
                     }
@@ -537,7 +534,7 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: Source
     if import_parts.len() > 1 {
         let (next_symbol, _fallback_sym) = get_or_create_symbol(
             session,
-            &entry,
+            entry,
             &source_path,
             from_symbol.clone(),
             &import_parts[0..import_parts.len()-1].iter().map(|s| oyarn!("{}", *s)).collect::<Vec<_>>(),
