@@ -51,7 +51,7 @@ fn test_nested_bare_dir_file_is_kept_on_close_even_though_not_flagged_in_workspa
     });
 
     assert!(
-        session.sync_odoo.get_file_mgr().borrow().get_file_info(&point_path).is_some(),
+        session.file_mgr().get_file_info(&point_path).is_some(),
         "closing must not evict the FileInfo of a live, valid, internal, non-external file"
     );
     assert!(!session.sync_odoo.get_symbol(&pkg_dir, (&["models", "point"], &[]), u32::MAX).is_empty());

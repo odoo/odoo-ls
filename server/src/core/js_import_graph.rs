@@ -26,14 +26,11 @@ struct ImportGraph {
 impl ImportGraph {
     /// Scan every parsed JS file and resolve its recorded specifiers against the workspace.
     fn build(session: &SessionInfo) -> Self {
-        let js_files: Vec<(String, Vec<JsImport>, Vec<String>)> = session
-            .sync_odoo
-            .get_file_mgr()
-            .borrow()
+        let js_files: Vec<(String, Vec<JsImport>, Vec<String>)> = session.file_mgr()
             .files
             .values()
             .filter_map(|file_info| {
-                let file_info = file_info.borrow();
+                let file_info = &session.file_mgr()[*file_info];
                 let ast = file_info.file_info_ast.borrow();
                 matches!(ast.ast, Ast::JsAst(_)).then(|| {
                     // TODO: review these expensive clones
@@ -109,7 +106,7 @@ pub fn resolve_import_specifier(session: &SessionInfo, specifier: &str, importer
         let src = PathBuf::from(&session.st()[module].path).join("static").join("src");
         Some(src.sanitize())
     };
-    let is_known = |path: &str| session.sync_odoo.get_file_mgr().borrow().files.contains_key(path);
+    let is_known = |path: &str| session.file_mgr().files.contains_key(path);
     resolve_specifier(specifier, importer, module_src,  is_known)
 }
 

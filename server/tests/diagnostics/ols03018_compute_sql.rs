@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use lsp_types::{NumberOrString, TextDocumentContentChangeEvent};
+use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::Odoo;
 use odoo_ls_server::odoo_version::OdooVersion;
 use odoo_ls_server::threads::SessionInfo;
@@ -15,7 +16,7 @@ const MISSING_COMPUTE_SQL_LINE: u32 = 8;
 /// Replays didChange, the only path that unloads the symbols and re-runs the field init hook
 fn reload(session: &mut SessionInfo, path: &str, text: String, version: i32) {
     let event = [TextDocumentContentChangeEvent { range: None, range_length: None, text }];
-    session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path, Some(event.as_slice()), Some(version), false);
+    FileMgr::update_file_info(session, path, Some(event.as_slice()), Some(version), false);
     Odoo::update_file_index(session, Path::new(path), "py", false, false);
 }
 
