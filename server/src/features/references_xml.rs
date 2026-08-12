@@ -28,7 +28,7 @@ impl XmlAstReferenceVisitor {
         results.iter().map(|range|
             Location {
                 uri: uri.clone(),
-                range: session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, range),
+                range: FileMgr::std_range_to_range(session, &path, range),
             }
         ).collect()
     }

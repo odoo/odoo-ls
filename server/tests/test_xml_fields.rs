@@ -114,9 +114,7 @@ fn test_xml_fields_def_hover_completion() {
     let py_file_str = py_file_path.sanitize_cow();
 
     // ---------- CSV definition checks ----------
-    let file_mgr = session.sync_odoo.get_file_mgr();
-
-    let x_test_model_csv_info = file_mgr.borrow().get_file_info(&x_test_model_csv).unwrap();
+    let x_test_model_csv_info = session.file_mgr().get_file_info(&x_test_model_csv).unwrap();
     let Some(x_test_model_csv_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
         x_test_model_csv_path,
@@ -128,7 +126,7 @@ fn test_xml_fields_def_hover_completion() {
     let x_name_defs = test_utils::get_definition_locs(
         &mut session,
         x_test_model_csv_symbol,
-        &x_test_model_csv_info,
+        x_test_model_csv_info,
         0,
         5,
     );
@@ -148,7 +146,7 @@ fn test_xml_fields_def_hover_completion() {
     let test_record_defs = test_utils::get_definition_locs(
         &mut session,
         x_test_model_csv_symbol,
-        &x_test_model_csv_info,
+        x_test_model_csv_info,
         1,
         8,
     );
@@ -162,7 +160,7 @@ fn test_xml_fields_def_hover_completion() {
     assert_eq!(test_record_defs[0].target_range.start.character, 0);
     assert_eq!(test_record_defs[0].target_range.end.character, 20);
 
-    let x_test_model_m2o_csv_info = file_mgr.borrow().get_file_info(&x_test_model_m2o_csv).unwrap();
+    let x_test_model_m2o_csv_info = session.file_mgr().get_file_info(&x_test_model_m2o_csv).unwrap();
     let Some(x_test_model_m2o_csv_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
         x_test_model_m2o_csv_path,
@@ -174,7 +172,7 @@ fn test_xml_fields_def_hover_completion() {
     let x_name_m2o_defs = test_utils::get_definition_locs(
         &mut session,
         x_test_model_m2o_csv_symbol,
-        &x_test_model_m2o_csv_info,
+        x_test_model_m2o_csv_info,
         0,
         5,
     );
@@ -194,7 +192,7 @@ fn test_xml_fields_def_hover_completion() {
     let test_m2o_record_defs = test_utils::get_definition_locs(
         &mut session,
         x_test_model_m2o_csv_symbol,
-        &x_test_model_m2o_csv_info,
+        x_test_model_m2o_csv_info,
         1,
         10,
     );
@@ -213,7 +211,7 @@ fn test_xml_fields_def_hover_completion() {
     assert_eq!(test_m2o_record_defs[0].target_range.end.character, 24);
 
     // ---------- Python hover + definition checks ----------
-    let py_file_info = file_mgr.borrow().get_file_info(&py_file_str).unwrap();
+    let py_file_info = session.file_mgr().get_file_info(&py_file_str).unwrap();
     let Some(py_file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
         py_file_path,
@@ -222,27 +220,27 @@ fn test_xml_fields_def_hover_completion() {
     };
 
     // Hover model name in self.env["x_test_model_m2o"]
-    let hover_model = test_utils::get_hover_markdown(&mut session, py_file_symbol, &py_file_info, 6, 24)
+    let hover_model = test_utils::get_hover_markdown(&mut session, py_file_symbol, py_file_info, 6, 24)
         .unwrap_or_else(|| panic!("Expected hover content on model name"));
     assert!(hover_model.contains("x_test_model_m2o"), "Model hover should include x_test_model_m2o; got:\n{}", hover_model);
 
     // Hover on x_other_model and x_name in domain string
-    let hover_x_other_model = test_utils::get_hover_markdown(&mut session, py_file_symbol, &py_file_info, 6, 52)
+    let hover_x_other_model = test_utils::get_hover_markdown(&mut session, py_file_symbol, py_file_info, 6, 52)
         .unwrap_or_else(|| panic!("Expected hover content on x_other_model"));
     assert!(hover_x_other_model.contains("XML record"), "Hover on x_other_model should return an XML-backed record description; got:\n{}", hover_x_other_model);
     assert!(hover_x_other_model.contains("m2o_field"), "Hover on x_other_model should reference m2o_field; got:\n{}", hover_x_other_model);
 
-    let hover_x_name = test_utils::get_hover_markdown(&mut session, py_file_symbol, &py_file_info, 6, 63)
+    let hover_x_name = test_utils::get_hover_markdown(&mut session, py_file_symbol, py_file_info, 6, 63)
         .unwrap_or_else(|| panic!("Expected hover content on x_name"));
     assert!(hover_x_name.contains("XML record"), "Hover on x_name should return an XML-backed record description; got:\n{}", hover_x_name);
 
     // Hover on search() call itself should return something useful
-    let hover_search = test_utils::get_hover_markdown(&mut session, py_file_symbol, &py_file_info, 6, 39)
+    let hover_search = test_utils::get_hover_markdown(&mut session, py_file_symbol, py_file_info, 6, 39)
         .unwrap_or_else(|| panic!("Expected hover content on search"));
     assert!(hover_search.contains("search"), "Hover on search should mention search; got:\n{}", hover_search);
 
     // Definition from Python model and fields should resolve to XML model/field records
-    let py_model_defs = test_utils::get_definition_locs(&mut session, py_file_symbol, &py_file_info, 6, 24);
+    let py_model_defs = test_utils::get_definition_locs(&mut session, py_file_symbol, py_file_info, 6, 24);
     assert!(
         py_model_defs
             .iter()
@@ -255,7 +253,7 @@ fn test_xml_fields_def_hover_completion() {
             .collect::<Vec<_>>()
     );
 
-    let py_x_other_model_defs = test_utils::get_definition_locs(&mut session, py_file_symbol, &py_file_info, 6, 52);
+    let py_x_other_model_defs = test_utils::get_definition_locs(&mut session, py_file_symbol, py_file_info, 6, 52);
     assert!(
         py_x_other_model_defs
             .iter()
@@ -268,7 +266,7 @@ fn test_xml_fields_def_hover_completion() {
             .collect::<Vec<_>>()
     );
 
-    let py_x_name_defs = test_utils::get_definition_locs(&mut session, py_file_symbol, &py_file_info, 6, 63);
+    let py_x_name_defs = test_utils::get_definition_locs(&mut session, py_file_symbol, py_file_info, 6, 63);
     assert!(
         py_x_name_defs
             .iter()
@@ -286,7 +284,7 @@ fn test_xml_fields_def_hover_completion() {
     let py_source_model_prefix = py_test_source("x_", "x_other_model.x_name");
     simulate_file_change(&mut session, &py_file_str, &py_source_model_prefix, 2);
 
-    let py_file_info = file_mgr.borrow().get_file_info(&py_file_str).unwrap();
+    let py_file_info = session.file_mgr().get_file_info(&py_file_str).unwrap();
     let Some(py_file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
         py_file_path,
@@ -296,7 +294,7 @@ fn test_xml_fields_def_hover_completion() {
     let model_completion_labels = completion_labels(CompletionFeature::autocomplete(
         &mut session,
         py_file_symbol,
-        &py_file_info,
+        py_file_info,
         Some(CompletionContext {
             trigger_kind: lsp_types::CompletionTriggerKind::TRIGGER_CHARACTER,
             trigger_character: Some(".".to_string()),
@@ -314,7 +312,7 @@ fn test_xml_fields_def_hover_completion() {
     let py_source_domain_prefix = py_test_source("x_test_model_m2o", "x_");
     simulate_file_change(&mut session, &py_file_str, &py_source_domain_prefix, 3);
 
-    let py_file_info = file_mgr.borrow().get_file_info(&py_file_str).unwrap();
+    let py_file_info = session.file_mgr().get_file_info(&py_file_str).unwrap();
     let Some(py_file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
         py_file_path,
@@ -324,7 +322,7 @@ fn test_xml_fields_def_hover_completion() {
     let domain_field_labels = completion_labels(CompletionFeature::autocomplete(
         &mut session,
         py_file_symbol,
-        &py_file_info,
+        py_file_info,
         Some(CompletionContext {
             trigger_kind: lsp_types::CompletionTriggerKind::TRIGGER_CHARACTER,
             trigger_character: Some(".".to_string()),
@@ -342,7 +340,7 @@ fn test_xml_fields_def_hover_completion() {
     let py_source_nested_prefix = py_test_source("x_test_model_m2o", "x_other_model.x");
     simulate_file_change(&mut session, &py_file_str, &py_source_nested_prefix, 4);
 
-    let py_file_info = file_mgr.borrow().get_file_info(&py_file_str).unwrap();
+    let py_file_info = session.file_mgr().get_file_info(&py_file_str).unwrap();
     let Some(py_file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
         py_file_path,
@@ -352,7 +350,7 @@ fn test_xml_fields_def_hover_completion() {
     let nested_field_labels = completion_labels(CompletionFeature::autocomplete(
         &mut session,
         py_file_symbol,
-        &py_file_info,
+        py_file_info,
         Some(CompletionContext {
             trigger_kind: lsp_types::CompletionTriggerKind::TRIGGER_CHARACTER,
             trigger_character: Some(".".to_string()),
@@ -373,7 +371,7 @@ fn test_xml_fields_def_hover_completion() {
     let py_source_inherits = py_test_source("x_delegating_model", "parent_");
     simulate_file_change(&mut session, &py_file_str, &py_source_inherits, 5);
 
-    let py_file_info = file_mgr.borrow().get_file_info(&py_file_str).unwrap();
+    let py_file_info = session.file_mgr().get_file_info(&py_file_str).unwrap();
     let Some(py_file_symbol) = SyncOdoo::get_symbol_of_opened_file(
         &mut session,
         py_file_path,
@@ -383,7 +381,7 @@ fn test_xml_fields_def_hover_completion() {
     let inherits_field_labels = completion_labels(CompletionFeature::autocomplete(
         &mut session,
         py_file_symbol,
-        &py_file_info,
+        py_file_info,
         Some(CompletionContext {
             trigger_kind: lsp_types::CompletionTriggerKind::TRIGGER_CHARACTER,
             trigger_character: Some(".".to_string()),

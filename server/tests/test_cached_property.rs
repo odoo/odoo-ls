@@ -20,8 +20,8 @@ fn test_cached_and_lazy_property_are_properties() {
         .sanitize();
     setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&path).unwrap();
+    let file_mgr = session.file_mgr();
+    let file_info = file_mgr.get_file_info(&path).unwrap();
     let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&path))
         .expect("Failed to get file symbol");
 
@@ -46,7 +46,7 @@ fn test_cached_and_lazy_property_are_properties() {
     }
 
     // Hover presents a property, and not the signature of a method
-    let hover = test_utils::get_hover_markdown(&mut session, file_symbol, &file_info, 35, 4)
+    let hover = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 35, 4)
         .unwrap_or_default();
     assert!(
         hover.contains("(property)") && !hover.contains("def via_functools"),
@@ -59,7 +59,7 @@ fn test_cached_and_lazy_property_are_properties() {
     let helper = helper[0];
 
     // line 36: `h.plain_prop.helper`
-    let resolved = get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, 36, 15);
+    let resolved = get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 36, 15);
     assert!(
         resolved.contains(&helper),
         "h.plain_prop.helper should resolve to Inner.helper, got: {:?}",
@@ -67,7 +67,7 @@ fn test_cached_and_lazy_property_are_properties() {
     );
 
     // line 37: `h.via_functools.helper`
-    let resolved = get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, 37, 18);
+    let resolved = get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 37, 18);
     assert!(
         resolved.contains(&helper),
         "h.via_functools.helper should resolve to Inner.helper, got: {:?}",
