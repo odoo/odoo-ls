@@ -121,8 +121,8 @@ impl CsvAstUtils {
     ) -> Vec<GotoSource> {
         let mut results = vec![];
         let module = session.st().find_module(file_symbol);
-        let Some(model) = session.sync_odoo.models.get(model_name).cloned() else {return vec![];};
-        let Some(main_symbol) = model.borrow().get_main_symbols(session, module).next() else {
+        let Some(model) = session.model_mgr().get_model_key(model_name) else {return vec![];};
+        let Some(main_symbol) = session.model_mgr()[model].get_main_symbols(session, module).next() else {
             return results;
         };
         let mut headers = vec![];
