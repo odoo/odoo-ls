@@ -50,7 +50,7 @@ impl CsvValidator {
         let model_name = model_name_pb.file_stem().unwrap().to_str().unwrap();
         let csv_module = session.st().find_module(csv_symbol);
         let mut rdr = csv::ReaderBuilder::new().from_reader(data.as_bytes());
-        let Some(model) = session.sync_odoo.models.get(model_name).cloned() else {
+        let Some(model_key) = session.model_mgr().get_model_key(model_name) else {
             let mut max_range = 1;
             if let Ok(headers) = rdr.headers() {
                 max_range = headers.len();
@@ -64,14 +64,13 @@ impl CsvValidator {
             self.finalize_validation(session, csv_symbol, &file_info, diagnostics);
             return;
         };
-        session.st_mut().add_model_dependencies(csv_symbol.into(), &model);
+        session.model_mgr_mut()[model_key].add_dependent(csv_symbol.into());
         let Some(csv_module) = csv_module else {
             self.finalize_validation(session, csv_symbol, &file_info, diagnostics);
             return;
         };
         let model_main_class_sym = {
-            let model_ref = model.borrow();
-            let mut model_main_sym = model_ref.get_main_symbols(session, Some(csv_module));
+            let mut model_main_sym = session.model_mgr()[model_key].get_main_symbols(session, Some(csv_module));
             let Some(model_main_sym) = model_main_sym.find_map(|s| s.as_class_key()) else {
                 return;
             };
