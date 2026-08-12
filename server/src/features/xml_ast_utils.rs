@@ -105,14 +105,13 @@ impl XmlAstUtils {
     /// `<button name="X"/>` resolution.
     fn resolve_member_on_model(session: &mut SessionInfo, model_name: &str, member_name: &str, from_module: Option<ModuleKey>, on_dep_only: bool) -> Vec<SymbolKey> {
         let mut out = Vec::new();
-        let Some(model) = session.sync_odoo.models.get(model_name).cloned() else { return out };
+        let Some(model) = session.model_mgr().get_model_key(model_name) else { return out };
         let from_module = if on_dep_only { from_module } else { None };
-        for class_key in Model::get_full_model_classes(model.clone(), session, from_module) {
+        for class_key in Model::get_full_model_classes(model, session, from_module) {
             let content = session.st().get_content_symbol(class_key.into(), member_name, u32::MAX);
             out.extend(content.symbols);
         }
-        let model_ref = model.borrow();
-        for xml_record_key in model_ref.get_xml_model_field_symbols(session.st(), from_module) {
+        for xml_record_key in session.model_mgr()[model].get_xml_model_field_symbols(session.st(), from_module) {
             let field_name = session.st()[xml_record_key].get_field_text(XmlFieldName::Name, session.st());
             if field_name.as_deref() == Some(member_name) {
                 out.push(xml_record_key.into());
@@ -126,14 +125,14 @@ impl XmlAstUtils {
             if attr.name() == "model" {
                 scope.record_model = Some(attr.value());
                 if attr.range_value().start <= offset && attr.range_value().end >= offset
-                    && let Some(model) = session.sync_odoo.models.get(attr.value()).cloned()
+                    && let Some(model) = session.model_mgr().get_model_key(attr.value())
                 {
                     let from_module = match on_dep_only {
                         true => from_module,
                         false => None,
                     };
                     results.0.extend(
-                        model.borrow().get_model_symbols(session.st(), from_module).map(SymbolKey::from)
+                        session.model_mgr()[model].get_model_symbols(session.st(), from_module).map(SymbolKey::from)
                         );
                     results.1 = Some(attr.range_value());
                 }
@@ -295,13 +294,13 @@ impl XmlAstUtils {
     }
 
     fn add_model_result(session: &mut SessionInfo, node: &Node, from_module: Option<ModuleKey>, results: &mut (Vec<SymbolKey>, Option<Range<usize>>), on_dep_only: bool) {
-        if let Some(model) = session.sync_odoo.models.get(node.text().unwrap()).cloned() {
+        if let Some(model) = session.model_mgr().get_model_key(node.text().unwrap()) {
             let from_module = match on_dep_only {
                 true => from_module,
                 false => None,
             };
             results.0.extend(
-                model.borrow().get_model_symbols(session.st(), from_module).map(SymbolKey::from)
+                session.model_mgr()[model].get_model_symbols(session.st(), from_module).map(SymbolKey::from)
             );
             results.1 = Some(node.range());
         }
