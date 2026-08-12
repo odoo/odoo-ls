@@ -27,8 +27,8 @@ impl ModuleSymbol {
             let Some(model_name) = path.file_stem().and_then(OsStr::to_str).map(|n| Sy!(n.to_string())) else {
                 continue;
             };
-            let maybe_model = session.sync_odoo.models.get(&model_name).cloned();
-            let model_exists = maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols(session.st())).unwrap_or(false);
+            let maybe_model = session.model_mgr().get_model(&model_name);
+            let model_exists = maybe_model.map(|m| m.has_symbols(session.st())).unwrap_or(false);
             if !model_exists {
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[&model_name]) {
                     diagnostics.push(Diagnostic {

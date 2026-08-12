@@ -53,12 +53,11 @@ impl DeepFieldEvalWalker {
                     else {
                         continue;
                     };
-                    let Some(related_models) = session.sync_odoo.models.get(relation.as_str())
+                    let Some(related_models) = session.model_mgr().get_model(&relation)
                     else {
                         continue;
                     };
                     related_models
-                        .borrow()
                         .get_main_symbols(session, self.from_module)
                         .collect::<Vec<_>>()
                 }
@@ -114,8 +113,7 @@ impl DeepFieldEvalWalker {
         let symbols = match base_object {
             SymbolKey::XmlRecord(xml_record_key) => {
                 if let Some(model) = SymbolTable::get_xml_defined_model(session, xml_record_key) {
-                    model
-                        .borrow()
+                    session.model_mgr()[model]
                         .get_xml_model_field_symbols(session.st(), self.from_module)
                         .filter_map(|f_key| {
                             let field_name = session.st()[f_key]
