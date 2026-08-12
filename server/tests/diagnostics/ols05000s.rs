@@ -45,8 +45,8 @@ fn test_ols05000s_xml_file() {
     let check_xml_warning = |ols_code: &str, line: u32| {
         check_xml_diagnostic(&bikes_xml_diagnostics, ols_code, line, DiagnosticSeverity::WARNING);
     };
-    // OLS05001 - Disabled TODO: Re-enable when OLS05001 is implemented
     check_xml_diag("OLS05003", 25);
+    check_xml_diag("OLS05001", 29);
     check_xml_diag("OLS05004", 36);
     check_xml_diag("OLS05005", 38);
     check_xml_diag("OLS05006", 39);
