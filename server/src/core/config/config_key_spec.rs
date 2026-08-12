@@ -34,6 +34,9 @@ pub enum ConfigKey {
     TsServerCommand,
     DisableJavascript,
     TsCheck,
+    DisableSemanticTokensPython,
+    DisableSemanticTokensJavascript,
+    DisableSemanticTokensXml,
 }
 
 pub(super) fn specs() -> Vec<FieldSpec> {
@@ -106,6 +109,12 @@ pub(super) fn specs() -> Vec<FieldSpec> {
             .triggers_restart(),
         FieldSpec::new(TsCheck, "ts_check", Bool)
             .triggers_restart()
-            .default(ConfigValue::bool(false))
+            .default(ConfigValue::bool(false)),
+        FieldSpec::new(DisableSemanticTokensPython, "disable_semantic_tokens_python", Bool)
+            .default(ConfigValue::bool(false)),
+        FieldSpec::new(DisableSemanticTokensJavascript, "disable_semantic_tokens_javascript", Bool)
+            .default(ConfigValue::bool(false)),
+        FieldSpec::new(DisableSemanticTokensXml, "disable_semantic_tokens_xml", Bool)
+            .default(ConfigValue::bool(false)),
     ]
 }

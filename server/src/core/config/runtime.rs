@@ -221,6 +221,15 @@ impl ConfigEntry {
     pub fn ts_check(&self) -> bool {
         self.as_bool(ConfigKey::TsCheck)
     }
+    pub fn is_semantic_tokens_python_disabled(&self) -> bool {
+        self.as_bool(ConfigKey::DisableSemanticTokensPython)
+    }
+    pub fn is_semantic_tokens_javascript_disabled(&self) -> bool {
+        self.as_bool(ConfigKey::DisableSemanticTokensJavascript)
+    }
+    pub fn is_semantic_tokens_xml_disabled(&self) -> bool {
+        self.as_bool(ConfigKey::DisableSemanticTokensXml)
+    }
 }
 
 /// Whether the change between two resolved configs requires a server restart:
