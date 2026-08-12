@@ -11,7 +11,7 @@ fn test_unpack() {
     let mut session = setup::setup::create_init_session(&mut odoo, config);
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/for_loop_unpack.py").sanitize();
     setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
-    assert!(session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.len() == 1);
+    assert!(session.sync_odoo.entry_point_mgr.custom_entry_points.len() == 1);
     let st = &session.sync_odoo.symbol_table;
 
     let int_type = session.sync_odoo.get_symbol("", (&["builtins"], &["int"]), u32::MAX)[0];

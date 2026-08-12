@@ -65,8 +65,8 @@ fn test_js_file_lifecycle_with_odoo() {
         session.file_mgr().get_file_info(&js_path).is_some(),
         "FileInfo should exist after didOpen"
     );
-    let has_custom_entry = session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter()
-        .any(|ep| ep.borrow().path.contains("test_component"));
+    let has_custom_entry = session.sync_odoo.entry_point_mgr.custom_entry_points.iter()
+        .any(|&ep| session.ep_mgr()[ep].path.contains("test_component"));
     assert!(has_custom_entry, "Custom entry point should be created for the JS file");
 
     // — edit —
@@ -100,8 +100,8 @@ fn test_js_file_lifecycle_with_odoo() {
         !session.sync_odoo.opened_files.contains(&js_path),
         "JS file should be removed from opened_files after didClose"
     );
-    let entry_after_close = session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter()
-        .any(|ep| ep.borrow().path.contains("test_component") && !ep.borrow().path.contains("renamed"));
+    let entry_after_close = session.sync_odoo.entry_point_mgr.custom_entry_points.iter()
+        .any(|&ep| session.ep_mgr()[ep].path.contains("test_component") && !session.ep_mgr()[ep].path.contains("renamed"));
     assert!(!entry_after_close, "Custom entry for original JS file should be removed after didClose");
 
     // — rename on disk —
@@ -140,8 +140,8 @@ fn test_js_file_lifecycle_with_odoo() {
         session.file_mgr().get_file_info(&new_js_path).is_some(),
         "FileInfo should exist for renamed JS file"
     );
-    let has_renamed_entry = session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter()
-        .any(|ep| ep.borrow().path.contains("test_component_renamed"));
+    let has_renamed_entry = session.sync_odoo.entry_point_mgr.custom_entry_points.iter()
+        .any(|&ep| session.ep_mgr()[ep].path.contains("test_component_renamed"));
     assert!(has_renamed_entry, "Custom entry point should exist for renamed JS file");
 
     // — edit renamed file —

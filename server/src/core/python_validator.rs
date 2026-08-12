@@ -1,8 +1,6 @@
 use ruff_python_ast::{Alias, AnyRootNodeRef, Expr, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtMatch, StmtRaise, StmtTry, StmtTypeAlias, StmtWith};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::{trace, warn};
-use std::rc::Rc;
-use std::cell::RefCell;
 use std::path::Path;
 use lsp_types::{Diagnostic, Position, Range};
 use crate::core::build_scheduler::BuildScheduler;
@@ -11,14 +9,13 @@ use crate::core::evaluation_context::{ContextKey, ContextValue};
 use crate::core::file_mgr::FileInfoKey;
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
-use crate::core::symbols::symbol_keys::{ClassKey, ModelSymbolKey, ModuleKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey};
+use crate::core::symbols::symbol_keys::{ClassKey, EntryPointKey, ModelSymbolKey, ModuleKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey};
 use crate::{constants::*, oyarn};
 use crate::core::symbols::{ModuleSymbol};
 use crate::threads::SessionInfo;
 use crate::utils::{PathSanitizer as _};
 use crate::S;
 
-use super::entry_point::EntryPoint;
 use super::evaluation::{Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak, EvaluationValue};
 use super::file_mgr::{FileInfo, FileMgr};
 use super::import_resolver::manual_import;
@@ -26,7 +23,7 @@ use super::python_arch_eval::PythonArchEval;
 
 #[derive(Debug)]
 pub struct PythonValidator {
-    entry_point: Rc<RefCell<EntryPoint>>,
+    entry_point: EntryPointKey,
     file: SourceFileKey,
     file_mode: bool,
     sym_stack: Vec<SymbolKey>,
@@ -40,7 +37,7 @@ pub struct PythonValidator {
 It will validate this node and run a validator on all subsymbol and dependencies.
 It will try to inference the return type of functions if it is not annotated; */
 impl PythonValidator {
-    pub fn new(symbol_table: &SymbolTable, entry_point: Rc<RefCell<EntryPoint>>, symbol: PythonBuildableSymbolKey) -> Self {
+    pub fn new(symbol_table: &SymbolTable, entry_point: EntryPointKey, symbol: PythonBuildableSymbolKey) -> Self {
         Self {
             entry_point,
             file: symbol_table.get_file(symbol.into()).unwrap(),
@@ -198,7 +195,7 @@ impl PythonValidator {
                         }
                         if session.st().ready_for_step(sym.unwrap_buildable_key(), BuildSteps::VALIDATION) {
                             if let Some(python_buildable) = sym.as_python_buildable() {
-                                let mut v = PythonValidator::new(session.st(), self.entry_point.clone(), python_buildable);
+                                let mut v = PythonValidator::new(session.st(), self.entry_point, python_buildable);
                                 v.validate(session);
                             }
                         } else if session.st().build_status(sym.unwrap_buildable_key(), BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS {
@@ -482,7 +479,7 @@ impl PythonValidator {
                             }
                             let file_key = file_symbol.unwrap_file_key();
                             session.st_mut()[file_key].not_found_models.insert(oyarn!("{comodel_field_name}"), BuildSteps::ARCH_EVAL);
-                            session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(file_symbol);
+                            { let main_entry = session.sync_odoo.get_main_entry(); session.ep_mgr_mut()[main_entry].not_found_symbols_for_models.insert(file_symbol); }
                         }
                     }
                     for (special_fn_field_name, special_fn_field_arg_range) in [
@@ -785,7 +782,7 @@ impl PythonValidator {
             };
             let file_key = SymbolKey::from(file_symbol).unwrap_file_key();
             session.st_mut()[file_key].not_found_models.insert(oyarn!("{}", model_name), BuildSteps::ARCH_EVAL);
-            session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(file_symbol);
+            { let main_entry = session.sync_odoo.get_main_entry(); session.ep_mgr_mut()[main_entry].not_found_symbols_for_models.insert(file_symbol); }
         }
     }
 

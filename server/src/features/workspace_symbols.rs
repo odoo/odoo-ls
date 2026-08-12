@@ -23,7 +23,6 @@ impl WorkspaceSymbolFeature {
 
     pub fn get_workspace_symbols(session: &mut SessionInfo<'_>, query: String) -> Result<Option<WorkspaceSymbolResponse>, ResponseError> {
         let mut symbols = vec![];
-        let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         let mut can_resolve_location_range = false;
         if let Some(cap_workspace) = session.sync_odoo.capabilities.workspace.as_ref()
             && let Some(workspace_symb) = cap_workspace.symbol.as_ref()
@@ -36,16 +35,16 @@ impl WorkspaceSymbolFeature {
                     }
                 }
         let mut visited_roots = HashSet::default();
-        for entry in ep_mgr.borrow().iter_all() {
-            if entry.borrow().typ == EntryPointType::BUILTIN || entry.borrow().typ == EntryPointType::PUBLIC { //We don't want to search in builtins
+        let entries = session.sync_odoo.entry_point_mgr.iter_all().collect::<Vec<_>>();
+        for entry in entries {
+            if session.ep_mgr()[entry].typ == EntryPointType::BUILTIN || session.ep_mgr()[entry].typ == EntryPointType::PUBLIC { //We don't want to search in builtins
                 continue;
             }
-            // Several entry points (e.g. MAIN and its ADDON entry points) can share the same
-            // root symbol; only traverse each root once to avoid duplicate results.
-            if !visited_roots.insert(entry.borrow().root) {
+            let root = session.ep_mgr()[entry].root;
+            if !visited_roots.insert(root) {
                 continue;
             }
-            if WorkspaceSymbolFeature::browse_symbol(session, entry.borrow().root.into(), &query, None, None, can_resolve_location_range, &mut symbols) {
+            if WorkspaceSymbolFeature::browse_symbol(session, root.into(), &query, None, None, can_resolve_location_range, &mut symbols) {
                 return Err(cancelled());
             }
         }
