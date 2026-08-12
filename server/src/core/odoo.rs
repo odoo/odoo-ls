@@ -55,7 +55,7 @@ use super::config::{self, DEFAULT_PROFILE_NAME, get_configuration, ConfigEntry, 
 use super::entry_point::{EntryPoint, EntryPointMgr};
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportCache;
-use crate::core::model::Model;
+use crate::core::model::{Model, ModelMgr};
 use crate::core::python_arch_builder::PythonArchBuilder;
 use crate::utils::{PathSanitizer, ToFilePath as _, expand_language_code};
 use crate::S;
@@ -139,7 +139,7 @@ pub struct SyncOdoo {
     pub progress_token: i32,
     file_mgr: Rc<RefCell<FileMgr>>,
     pub modules: HashMap<OYarn, Wk<ModuleKey>>,
-    pub models: HashMap<OYarn, Rc<RefCell<Model>>>,
+    pub model_mgr: ModelMgr,
     pub interrupt_rebuild: Arc<AtomicBool>,
     pub terminate_rebuild: Arc<AtomicBool>,
     pub current_request_id: Option<RequestId>,
@@ -203,7 +203,7 @@ impl SyncOdoo {
             stubs_dirs: SyncOdoo::default_stubs(),
             stdlib_dir: SyncOdoo::default_stdlib(),
             modules: HashMap::default(),
-            models: HashMap::default(),
+            model_mgr: ModelMgr::new(),
             interrupt_rebuild: Arc::new(AtomicBool::new(false)),
             terminate_rebuild: Arc::new(AtomicBool::new(false)),
             current_request_id: None,
@@ -244,7 +244,7 @@ impl SyncOdoo {
         session.sync_odoo.stubs_dirs = SyncOdoo::default_stubs();
         session.sync_odoo.stdlib_dir = SyncOdoo::default_stdlib();
         session.sync_odoo.modules = HashMap::default();
-        session.sync_odoo.models = HashMap::default();
+        session.sync_odoo.model_mgr.clear_models();
         session.sync_odoo.build_scheduler = BuildScheduler::new();
         session.sync_odoo.state_init = InitState::NOT_READY;
         session.sync_odoo.load_odoo_addons = true;
@@ -933,10 +933,10 @@ impl SyncOdoo {
             },
             SymbolKey::Class(class_key) => {
                 if let Some(model_data) = &session.st()[class_key]._model {
-                    let model = session.sync_odoo.models.get(&model_data.name).cloned();
-                    if let Some(model) = model {
-                        let module = session.st().find_module(class_key);
-                        model.borrow_mut().remove_symbol(session, class_key,  module);
+                    let model = session.model_mgr().get_model_key(&model_data.name);
+                    if let Some(model_key) = model {
+                        let module: Option<ModuleKey> = session.st().find_module(class_key);
+                        Model::remove_symbol(session, model_key, class_key,  module);
                     }
                 }
             },

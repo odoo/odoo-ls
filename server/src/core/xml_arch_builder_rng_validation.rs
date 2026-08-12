@@ -1,5 +1,3 @@
-use std::{cell::RefCell, rc::Rc};
-
 use lsp_types::{Diagnostic, Position, Range};
 use roxmltree::Node;
 use ruff_text_size::{TextRange, TextSize};
@@ -785,13 +783,8 @@ impl XmlArchBuilder {
         else {
             return;
         };
-        let model = session
-            .sync_odoo
-            .models
-            .entry(model_name.clone())
-            .or_insert_with(|| Rc::new(RefCell::new(Model::new(model_name.clone()))))
-            .clone();
-        model.borrow_mut().add_symbol(session, record);
+        let model = session.sync_odoo.model_mgr.add_or_get_model(&model_name);
+        Model::add_symbol(session, model, record);
         session
             .sync_odoo
             .get_main_entry()
@@ -854,8 +847,8 @@ impl XmlArchBuilder {
         } else {
             return;
         };
-        if let Some(model) = session.sync_odoo.models.get(&model_name).cloned() {
-            model.borrow_mut().add_xml_field_symbol(session, record);
+        if let Some(model) = session.model_mgr().get_model_key(&model_name) {
+            Model::add_xml_field_symbol(session, model, record);
         }
     }
 }
