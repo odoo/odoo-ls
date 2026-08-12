@@ -81,13 +81,13 @@ impl ModuleSymbol {
     pub fn on_data_file_load(symbol_table: &SymbolTable, data_file: SourceFileKey) {
         let path = symbol_table.path(data_file);
         let entry = symbol_table.get_entry(data_file);
-        entry.borrow_mut().data_symbols.insert(path.to_string(), data_file.into());
+        entry.borrow_mut().data_file_symbols.insert(path.to_string(), data_file.into());
     }
 
     pub fn on_data_file_unload(session: &mut SessionInfo, data_file: SourceFileKey) {
         let path = session.st().path(data_file);
         let entry = session.st().get_entry(data_file);
-        entry.borrow_mut().data_symbols.remove(path);
+        entry.borrow_mut().data_file_symbols.remove(path);
         data_hooks::on_file_unload(session, data_file);
     }
 

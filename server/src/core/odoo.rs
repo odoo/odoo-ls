@@ -837,7 +837,7 @@ impl SyncOdoo {
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_all() {
             let path_str = path.sanitize_cow();
-            let sym_in_data = entry.borrow().data_symbols.get(path_str.as_ref()).copied();
+            let sym_in_data = entry.borrow().data_file_symbols.get(path_str.as_ref()).copied();
             if let Some(sym) = sym_in_data {
                 if let Some(sym) = sym.upgrade(session.st()) {
                     SymbolTable::unload(session, sym);
@@ -931,7 +931,7 @@ impl SyncOdoo {
         let path_in_tree = path.to_tree_path();
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_main() {
-            let sym_in_data = entry.borrow().data_symbols.get(path_str.as_ref()).cloned();
+            let sym_in_data = entry.borrow().data_file_symbols.get(path_str.as_ref()).cloned();
             if let Some(sym) = sym_in_data {
                 if let Some(sym) = sym.upgrade(session.st()) {
                     return Some(sym);
@@ -956,7 +956,7 @@ impl SyncOdoo {
         //Not found? Then return if it is matching a non-public entry strictly matching the file
         let mut found_an_entry = false; //there to ensure that a wrongly built entry would create infinite loop
         for entry in ep_mgr.borrow().custom_entry_points.iter() {
-            let sym_in_data = entry.borrow().data_symbols.get(path_str.as_ref()).cloned();
+            let sym_in_data = entry.borrow().data_file_symbols.get(path_str.as_ref()).cloned();
             if let Some(sym) = sym_in_data {
                 if let Some(sym) = sym.upgrade(session.st()) {
                     return Some(sym);
@@ -1905,7 +1905,7 @@ impl Odoo {
                             let tree_path = path.to_tree_path();
                             if tree.is_none() ||
                             (session.st().get_symbol(session.sync_odoo.get_main_entry().borrow().root.into(), tree.as_ref().unwrap().as_slice(), u32::MAX).is_empty()
-                            && !session.sync_odoo.get_main_entry().borrow().data_symbols.contains_key(sanitized_path.as_ref())
+                            && !session.sync_odoo.get_main_entry().borrow().data_file_symbols.contains_key(sanitized_path.as_ref())
                             && !session.sync_odoo.get_main_entry().borrow().js_symbols.contains_key(sanitized_path.as_ref()))
                             {
                                 //main entry doesn't handle this file. Let's test customs entries, or create a new one
@@ -2094,7 +2094,7 @@ impl Odoo {
             let tree = session.sync_odoo.path_to_main_entry_tree(Path::new(&path));
             if Path::new(&path).is_file() && (tree.is_none() || (
                 session.st().get_symbol(session.sync_odoo.get_main_entry().borrow().root.into(), tree.unwrap().as_slice(), u32::MAX).is_empty()
-                && !session.sync_odoo.get_main_entry().borrow().data_symbols.contains_key(&path_updated)
+                && !session.sync_odoo.get_main_entry().borrow().data_file_symbols.contains_key(&path_updated)
             )) {
                 //file has not been added to main entry. Let's build a new entry point
                 EntryPointMgr::create_new_custom_entry_for_path(session, &path_updated, &path);

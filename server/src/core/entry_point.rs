@@ -400,7 +400,7 @@ pub struct EntryPoint {
     /// files with pending model lookups
     pub not_found_symbols_for_models: WeakSet<SourceFileKey>,
     pub to_delete: bool,
-    pub data_symbols: HashMap<String, Wk<SourceFileKey>>, //key is path, value is weak key. Strong key is hold by the module symbol
+    pub data_file_symbols: HashMap<String, Wk<SourceFileKey>>, //key is path, value is weak key. Strong key is hold by the module symbol
     pub js_symbols: HashMap<String, Wk<JsFileKey>>, //key is path, value is weak key. Strong key is hold by the module symbol
 }
 impl EntryPoint {
@@ -415,7 +415,7 @@ impl EntryPoint {
             not_found_data_ids: WeakSet::new(),
             root: RootKey::null(), // set below
             to_delete: false,
-            data_symbols: HashMap::default(),
+            data_file_symbols: HashMap::default(),
             js_symbols: HashMap::default(),
         }));
         let root = symbol_table.new_root(entry.clone());
@@ -442,7 +442,7 @@ impl EntryPoint {
             not_found_symbols_for_models: WeakSet::new(),
             root,
             to_delete: false,
-            data_symbols: HashMap::default(),
+            data_file_symbols: HashMap::default(),
             js_symbols: HashMap::default(),
         }))
     }
