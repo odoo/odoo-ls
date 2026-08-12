@@ -40,7 +40,7 @@ fn test_untitled_buffer_close_does_not_crash() {
     });
 
     assert!(
-        !session.sync_odoo.entry_point_mgr.borrow().untitled_entry_points.iter().any(|ep| ep.borrow().path == untitled_uri_str),
+        !session.sync_odoo.entry_point_mgr.untitled_entry_points.iter().any(|&ep| session.sync_odoo.entry_point_mgr[ep].path == untitled_uri_str),
         "the untitled entry point must still be removed on close"
     );
 }
