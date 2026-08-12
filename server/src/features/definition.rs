@@ -1,11 +1,10 @@
 use lsp_types::{GotoDefinitionResponse, Location, LocationLink, Range};
-use std::{cell::RefCell, rc::Rc};
 use roxmltree;
 
-use crate::core::file_mgr::{Ast, FileInfo, FileMgr};
+use crate::core::file_mgr::{Ast, FileInfoKey, FileMgr};
 use crate::core::tsserver_bridge;
 use crate::features::owl_component_utils;
-use crate::core::symbols::symbol_keys::SourceFileKey;
+use crate::core::symbols::symbol_keys::{SourceFileKey};
 use crate::features::goto_utils::{GotoRequest, GotoSource, GotoSourceType, GotoUtils};
 use crate::features::owl_virtual;
 use crate::features::owl_xml_utils::TEMPLATE_NAME_ATTRS;
@@ -17,11 +16,11 @@ impl DefinitionFeature {
 
     pub fn get_location(session: &mut SessionInfo,
         file_symbol: SourceFileKey,
-        file_info: &Rc<RefCell<FileInfo>>,
+        file_info: FileInfoKey,
         line: u32,
         character: u32
     ) -> Option<GotoDefinitionResponse> {
-        let ast_type = file_info.borrow().file_info_ast.borrow().ast.clone();
+        let ast_type = session.file_mgr()[file_info].file_info_ast.borrow().ast.clone();
         let definitions_sources = match ast_type {
             Ast::PythonAst(_) => GotoUtils::get_symbols(session, GotoRequest::Definition, file_symbol, file_info, line, character),
             Ast::XmlAst => GotoUtils::get_symbols_xml(session, file_symbol, file_info, line, character),
@@ -39,13 +38,13 @@ impl DefinitionFeature {
         Some(GotoDefinitionResponse::Link(links))
     }
 
-    fn get_js_definition(session: &mut SessionInfo, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<GotoDefinitionResponse> {
+    fn get_js_definition(session: &mut SessionInfo, file_info: FileInfoKey, line: u32, character: u32) -> Option<GotoDefinitionResponse> {
         // Check if cursor is over a template reference (e.g. `static template = "module.xml_id"`)
         let encoding = session.sync_odoo.encoding;
-        let template_refs = file_info.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
+        let template_refs = session.file_mgr()[file_info].file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
         for template_ref in &template_refs {
             // @todo: this is a change from the previous (fda's) call. Check if equivalent, and why it changed.
-            let range = file_info.borrow().text_range_to_range(template_ref.range, encoding);
+            let range = session.file_mgr()[file_info].text_range_to_range(template_ref.range, encoding);
             if Self::position_in_range(line, character, &range) {
                 let Some(templates) = session.sync_odoo.js_templates.get(&template_ref.t_name) else { continue; };
                 let mut locations = vec![];
@@ -59,9 +58,9 @@ impl DefinitionFeature {
             }
         }
 
-        let file_path = &file_info.borrow().uri;
+        let file_path = session.file_mgr()[file_info].uri.clone();
         let locs: Vec<Location> = if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
-            bridge.get_definition(file_path, line, character)
+            bridge.get_definition(&file_path, line, character)
                 .iter()
                 .map(tsserver_bridge::ts_to_lsp_location)
                 .collect()
@@ -80,14 +79,14 @@ impl DefinitionFeature {
     /// props, tag names) is delegated to the self-locating `owl_virtual::definition_xml_owl`.
     fn get_owl_js_definition(
         session: &mut SessionInfo,
-        file_info: &Rc<RefCell<FileInfo>>,
+        file_info: FileInfoKey,
         line: u32,
         character: u32,
     ) -> Option<GotoDefinitionResponse> {
         let encoding = session.sync_odoo.encoding;
-        let data = file_info.borrow().file_info_ast.borrow()
+        let data = session.file_mgr()[file_info].file_info_ast.borrow()
             .text_document.as_ref()?.contents().to_string();
-        let offset = file_info.borrow().position_to_offset(line, character, encoding);
+        let offset = session.file_mgr()[file_info].position_to_offset(line, character, encoding);
         let document = roxmltree::Document::parse(&data).ok()?;
 
         // A template-name value (an xml_id): `t-name` → the component class; `t-call` /
@@ -143,7 +142,7 @@ impl DefinitionFeature {
     /// `static template` references it (via `js_component_by_template` → descriptors).
     fn goto_component_from_template(
         session: &mut SessionInfo,
-        file_info: &Rc<RefCell<FileInfo>>,
+        file_info: FileInfoKey,
         template_name: &str,
         value_range: std::ops::Range<usize>,
     ) -> Option<GotoDefinitionResponse> {
@@ -167,7 +166,7 @@ impl DefinitionFeature {
             encoding,
         );
 
-        let origin_lsp_range = file_info.borrow().std_range_to_range(&value_range, encoding);
+        let origin_lsp_range = session.file_mgr()[file_info].std_range_to_range(&value_range, encoding);
 
         Some(GotoDefinitionResponse::Link(vec![LocationLink {
             origin_selection_range: Some(origin_lsp_range),
@@ -181,12 +180,12 @@ impl DefinitionFeature {
     /// declaration(s) of the named template, via `js_templates`.
     fn goto_template_declaration(
         session: &mut SessionInfo,
-        file_info: &Rc<RefCell<FileInfo>>,
+        file_info: FileInfoKey,
         template_name: &str,
         value_range: std::ops::Range<usize>,
     ) -> Option<GotoDefinitionResponse> {
         let encoding = session.sync_odoo.encoding;
-        let origin = file_info.borrow().std_range_to_range(&value_range, encoding);
+        let origin = session.file_mgr()[file_info].std_range_to_range(&value_range, encoding);
 
         let locations = session.sync_odoo.js_templates.get(template_name)?
             .iter_valid(&session.sync_odoo.symbol_table)

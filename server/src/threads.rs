@@ -8,7 +8,7 @@ use lsp_types::{CompletionItem, CompletionResponse, DocumentSymbolResponse, Goto
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tracing::{error, info, warn};
-use crate::{constants::{DiagnosticSource, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::{build_scheduler::BuildScheduler, model::ModelMgr, symbols::storage::SymbolTable}, create_session, lsp_types_custom::{ConfigDiagnosticAction, ConfigDiagnosticMessage}};
+use crate::{constants::{DiagnosticSource, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::{build_scheduler::BuildScheduler, file_mgr::FileMgr, model::ModelMgr, symbols::storage::SymbolTable}, create_session, lsp_types_custom::{ConfigDiagnosticAction, ConfigDiagnosticMessage}};
 
 use crate::{core::{file_mgr::NoqaInfo, odoo::{Odoo, SyncOdoo}}, server::ServerError, utils::PathSanitizer, S};
 
@@ -209,6 +209,13 @@ impl <'a> SessionInfo<'a> {
         &mut self.sync_odoo.model_mgr
     }
 
+    pub fn file_mgr(&self) -> &FileMgr {
+        &self.sync_odoo.file_mgr
+    }
+
+    pub fn file_mgr_mut(&mut self) -> &mut FileMgr {
+        &mut self.sync_odoo.file_mgr
+    }
 }
 
 /// Send a notification to the client using the given method and parameters via the provided sender.

@@ -35,7 +35,7 @@ impl CsvAstReferenceVisitor {
                     if symbols.contains(&target_sym) {
                         results.push(Location {
                             uri: uri.clone(),
-                            range: session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, &std::ops::Range {
+                            range: FileMgr::std_range_to_range(session, &path, &std::ops::Range {
                                 start,
                                 end,
                             }),
@@ -48,7 +48,7 @@ impl CsvAstReferenceVisitor {
                     if sub_symbols.contains(&target_sym) {
                         results.push(Location {
                             uri: uri.clone(),
-                            range: session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, &std::ops::Range {
+                            range: FileMgr::std_range_to_range(session, &path, &std::ops::Range {
                                 start,
                                 end,
                             }),
@@ -81,7 +81,7 @@ impl CsvAstReferenceVisitor {
                 if xml_id == *search_str {
                     locations.push(Location {
                         uri: uri.clone(),
-                        range: session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, path, &std::ops::Range {
+                        range: FileMgr::std_range_to_range(session, path, &std::ops::Range {
                             start,
                             end,
                         }),

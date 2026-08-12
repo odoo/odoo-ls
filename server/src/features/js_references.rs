@@ -3,16 +3,14 @@
 //! the virtual-document machinery these functions drive. See
 //! `server/docs/owl-virtual-docs.md` §5.
 
-use std::cell::RefCell;
-use std::rc::Rc;
 
 use lsp_types::Location;
 use ruff_source_file::PositionEncoding;
 
-use crate::core::file_mgr::FileInfo;
+use crate::core::file_mgr::FileInfoKey;
 use crate::core::js_import_graph;
 use crate::core::symbols::storage::XmlDataParent;
-use crate::core::symbols::symbol_keys::XmlTemplateKey;
+use crate::core::symbols::symbol_keys::{XmlTemplateKey};
 use crate::core::tsserver_bridge::{TsLocation, ts_to_lsp_location};
 use crate::features::owl_virtual::{
     MappedRef, OwlVirtualDoc, build_virtual_docs, commit_staged_roots, is_owl_artifact_path,
@@ -34,7 +32,7 @@ fn push_unique(locations: &mut Vec<Location>, loc: Location) {
 /// references hit back onto that template).
 struct InheritedDoc {
     doc: OwlVirtualDoc,
-    xml_fi: Rc<RefCell<FileInfo>>,
+    xml_fi: FileInfoKey,
 }
 
 /// `class_name -> super_class_name` over every known component whose superclass is a plain
@@ -166,15 +164,12 @@ fn stage_subclass_docs(session: &mut SessionInfo, anchor_files: &[String]) -> Ve
 
     let mut docs: Vec<InheritedDoc> = vec![];
     for sub_path in sub_paths {
-        let Some(sub_fi) = session
-            .sync_odoo
-            .get_file_mgr()
-            .borrow()
+        let Some(sub_fi) = session.file_mgr()
             .get_file_info(&sub_path)
         else {
             continue;
         };
-        for inherited in virtual_docs_for_js(session, &sub_fi) {
+        for inherited in virtual_docs_for_js(session, sub_fi) {
             if docs
                 .iter()
                 .any(|d| d.doc.virtual_path == inherited.doc.virtual_path)
@@ -194,24 +189,21 @@ fn stage_subclass_docs(session: &mut SessionInfo, anchor_files: &[String]) -> Ve
 /// to remap hits back onto its template.
 fn virtual_docs_for_js(
     session: &mut SessionInfo,
-    js_fi: &Rc<RefCell<FileInfo>>,
+    js_fi: FileInfoKey,
 ) -> Vec<InheritedDoc> {
-    let js_path = js_fi.borrow().uri.clone();
+    let js_path = session.file_mgr()[js_fi].uri.clone();
     let mut out = vec![];
     for xml_path in xml_files_backing_js(session, js_fi) {
-        let Some(xml_fi) = session
-            .sync_odoo
-            .get_file_mgr()
-            .borrow()
+        let Some(xml_fi) = session.file_mgr()
             .get_file_info(&xml_path)
         else {
             continue;
         };
-        for doc in build_virtual_docs(session, &xml_fi) {
+        for doc in build_virtual_docs(session, xml_fi) {
             if doc.real_path == js_path {
                 out.push(InheritedDoc {
                     doc,
-                    xml_fi: xml_fi.clone(),
+                    xml_fi,
                 });
             }
         }
@@ -224,6 +216,7 @@ fn virtual_docs_for_js(
 /// hits are duplicates of files already in the program, dropped); an unknown virtual path
 /// is dropped (leak guard).
 fn remap_query_a_hit(
+    session: &SessionInfo,
     inherited: &[InheritedDoc],
     encoding: PositionEncoding,
     loc: &TsLocation,
@@ -233,7 +226,7 @@ fn remap_query_a_hit(
         return Some(ts_to_lsp_location(loc));
     }
     let id = inherited.iter().find(|id| id.doc.virtual_path == file)?;
-    match map_virtual_ref(&id.doc, &id.xml_fi, encoding, loc)? {
+    match map_virtual_ref(session, &id.doc, id.xml_fi, encoding, loc)? {
         MappedRef::Xml(loc) => Some(loc),
         MappedRef::RealJs(_) => None,
     }
@@ -248,12 +241,12 @@ fn remap_query_a_hit(
 /// See `server/docs/owl-virtual-docs.md` §5.
 pub fn references_js_owl(
     session: &mut SessionInfo,
-    file_info: &Rc<RefCell<FileInfo>>,
+    file_info: FileInfoKey,
     line: u32,
     character: u32,
 ) -> Option<Vec<Location>> {
     let encoding = session.sync_odoo.encoding;
-    let js_path = file_info.borrow().uri.clone();
+    let js_path = session.file_mgr()[file_info].uri.clone();
 
     // Anchor expansion at the *declaring* file (the real file is already open — one cheap
     // round trip); anchoring at the cursor's file would miss an imported symbol's callers.
@@ -293,7 +286,7 @@ pub fn references_js_owl(
             .get_references(&js_path, line, character)
     };
     for hit in &raw_a {
-        if let Some(loc) = remap_query_a_hit(&remap_docs, encoding, hit) {
+        if let Some(loc) = remap_query_a_hit(session, &remap_docs, encoding, hit) {
             push_unique(&mut locations, loc);
         }
     }
@@ -316,7 +309,7 @@ pub fn references_js_owl(
         for hit in &raw_b {
             for d in remap_docs.iter().filter(|d| d.doc.real_path == js_path) {
                 if let Some(MappedRef::Xml(loc) | MappedRef::RealJs(loc)) =
-                    map_virtual_ref(&d.doc, &d.xml_fi, encoding, hit)
+                    map_virtual_ref(session, &d.doc, d.xml_fi, encoding, hit)
                 {
                     push_unique(&mut locations, loc);
                     break;
@@ -339,7 +332,7 @@ pub fn references_js_owl(
 /// references. See `server/docs/owl-virtual-docs.md` §5.
 pub fn references_xml_owl_member(
     session: &mut SessionInfo,
-    file_info: &Rc<RefCell<FileInfo>>,
+    file_info: FileInfoKey,
     line: u32,
     character: u32,
 ) -> Option<Vec<Location>> {
@@ -392,7 +385,7 @@ pub fn references_xml_owl_member(
     let mut remap_docs = inherited;
     remap_docs.push(InheritedDoc {
         doc,
-        xml_fi: file_info.clone(),
+        xml_fi: file_info,
     });
 
     // Query A — cross-file JS callers + own/subclass-template references, over each anchor.
@@ -402,7 +395,7 @@ pub fn references_xml_owl_member(
             bridge.get_references(path, *al, *ac)
         };
         for hit in &raw_a {
-            if let Some(loc) = remap_query_a_hit(&remap_docs, encoding, hit) {
+            if let Some(loc) = remap_query_a_hit(session, &remap_docs, encoding, hit) {
                 push_unique(&mut collected, loc);
             }
         }
@@ -417,7 +410,7 @@ pub fn references_xml_owl_member(
             bridge.get_references(&own.doc.virtual_path, v_line, v_char)
         };
         for hit in &raw_b {
-            match map_virtual_ref(&own.doc, &own.xml_fi, encoding, hit) {
+            match map_virtual_ref(session, &own.doc, own.xml_fi, encoding, hit) {
                 Some(MappedRef::Xml(loc)) | Some(MappedRef::RealJs(loc)) => {
                     push_unique(&mut collected, loc)
                 }
@@ -437,10 +430,9 @@ pub fn references_xml_owl_member(
 /// of this `.js` file: `static template` refs → `js_templates` → each symbol's parent file.
 fn xml_files_backing_js(
     session: &mut SessionInfo,
-    file_info: &Rc<RefCell<FileInfo>>,
+    file_info: FileInfoKey,
 ) -> Vec<String> {
-    let template_names: Vec<String> = file_info
-        .borrow()
+    let template_names: Vec<String> = session.file_mgr()[file_info]
         .file_info_ast
         .borrow()
         .ast

@@ -5,7 +5,7 @@ use ruff_python_ast::{Expr, ExprStringLiteral, Stmt};
 use ruff_text_size::Ranged;
 use tracing::info;
 
-use crate::{constants::{DEBUG_STEPS, DiagnosticSource}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileInfo, symbols::{ModuleSymbol, symbol_keys::ModuleKey}}, oyarn, threads::SessionInfo, utils::{HashSet, PathSanitizer}};
+use crate::{constants::{DEBUG_STEPS, DiagnosticSource}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::{FileInfo, FileInfoKey, FileMgr}, symbols::{ModuleSymbol, symbol_keys::ModuleKey}}, oyarn, threads::SessionInfo, utils::{HashSet, PathSanitizer}};
 
 
 
@@ -16,26 +16,26 @@ impl ModuleSymbol {
         if DEBUG_STEPS {
             info!("ARCH       - MANIFEST: {}", manifest_path.sanitize_cow());
         }
-        let (_, manifest_file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &manifest_path.sanitize_cow(), None, None, false);
-        let mut manifest_file_info = (*manifest_file_info).borrow_mut();
-        if manifest_file_info.file_info_ast.borrow().ast.as_py_ast().indexed_module.is_none() {
+        let (_, manifest_file_info) = FileMgr::update_file_info(session, &manifest_path.sanitize_cow(), None, None, false);
+        if session.file_mgr()[manifest_file_info].file_info_ast.borrow().ast.as_py_ast().indexed_module.is_none() {
             return;
         }
-        let diags = ModuleSymbol::load_manifest(session, module_key, &manifest_file_info);
+        let diags = ModuleSymbol::load_manifest(session, module_key, manifest_file_info);
         if session.sync_odoo.modules.contains_key(&session.st()[module_key].dir_name) {
             //TODO: handle multiple modules with the same name
         }
-        manifest_file_info.replace_diagnostics(DiagnosticSource::PY_SYNTAX, diags);
-        manifest_file_info.publish_diagnostics(session);
+        session.file_mgr_mut()[manifest_file_info].replace_diagnostics(DiagnosticSource::PY_SYNTAX, diags);
+        FileInfo::publish_diagnostics(session, manifest_file_info);
         info!("Detected module: {:?}", session.st()[module_key].path);
     }
 
 
     /* Load manifest to identify the module characteristics.
     Returns list of od diagnostics to publish in manifest file. */
-    fn load_manifest(session: &mut SessionInfo, module_key: ModuleKey, file_info: &FileInfo) -> Vec<Diagnostic> {
+    fn load_manifest(session: &mut SessionInfo, module_key: ModuleKey, file_info: FileInfoKey) -> Vec<Diagnostic> {
         let mut res = vec![];
-        let file_info_ast = file_info.file_info_ast.borrow();
+        let file_info_ast_rc = session.file_mgr()[file_info].file_info_ast.clone();
+        let file_info_ast = file_info_ast_rc.borrow();
         let ast = file_info_ast.get_stmts().unwrap();
         if ast.len() != 1 || !matches!(ast.first(), Some(Stmt::Expr(expr)) if expr.value.is_dict_expr()) {
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04001, &[]) {

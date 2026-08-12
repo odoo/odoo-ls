@@ -1,7 +1,7 @@
 use crate::constants::{BuildSteps, PackageType};
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr};
-use crate::core::file_mgr::Ast;
+use crate::core::file_mgr::{Ast, FileInfoKey};
 use crate::core::symbols::Dependencies;
 use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::storage::XmlDataParent;
@@ -14,7 +14,7 @@ use crate::features::references_csv::CsvAstReferenceVisitor;
 use crate::features::references_xml::XmlAstReferenceVisitor;
 use crate::{
     constants::SymType,
-    core::file_mgr::{FileInfo, FileMgr},
+    core::file_mgr::FileMgr,
     threads::SessionInfo,
     utils::PathSanitizer,
 };
@@ -26,7 +26,7 @@ use ruff_python_ast::{
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::error;
 use crate::utils::HashSet;
-use std::{cell::RefCell, path::Path, rc::Rc};
+use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub enum ReferenceTarget {
@@ -59,13 +59,14 @@ impl ReferenceFeature {
     * Get all References to a symbol at the provided line and char
      */
     /// TODO: Odoo specific (XML field refs, string-based model refs)
-    pub fn get_references(session: &mut SessionInfo, file_symbol: SourceFileKey, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Vec<Location>> {
-        if matches!(file_info.borrow().file_info_ast.borrow().ast, Ast::JsAst(_)) {
+    pub fn get_references(session: &mut SessionInfo, file_symbol: SourceFileKey, file_info: FileInfoKey, line: u32, character: u32) -> Option<Vec<Location>> {
+        if matches!(session.file_mgr()[file_info].file_info_ast.borrow().ast, Ast::JsAst(_)) {
             return ReferenceFeature::get_reference_js(session, file_info, line, character);
         }
         //We want to search for references of the definition, and not the current symbol. Let's use definition feature for that
         BuildScheduler::process_rebuilds(session, false);
-        let def_sources = match file_info.borrow().file_info_ast.borrow().ast {
+        let ast = session.file_mgr()[file_info].file_info_ast.borrow().ast.clone();
+        let def_sources = match ast {
             Ast::PythonAst(_) => {
                 GotoUtils::get_symbols(session, GotoRequest::Definition, file_symbol, file_info, line, character)
             },
@@ -143,15 +144,15 @@ impl ReferenceFeature {
                         }
                     }
                     for &file in files_to_check.iter() {
-                        let Some(dep_file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(session.st().path(file)) else {
+                        let Some(dep_file_info) = session.file_mgr().get_file_info(session.st().path(file)) else {
                             continue;
                         };
                         match file {
                             SourceFileKey::File(_) | SourceFileKey::PythonPackage(_) | SourceFileKey::Module(_) => {
-                                locations.extend(ReferenceFeature::references_in_file(session, file, &dep_file_info, &ReferenceTarget::Symbol(definition_source)));
+                                locations.extend(ReferenceFeature::references_in_file(session, file, dep_file_info, &ReferenceTarget::Symbol(definition_source)));
                             },
                             SourceFileKey::XmlFile(xml_file) => {
-                                let data = dep_file_info.borrow().file_info_ast.borrow().text_document.as_ref()?.contents().to_string();
+                                let data = session.file_mgr()[dep_file_info].file_info_ast.borrow().text_document.as_ref()?.contents().to_string();
                                 let document = roxmltree::Document::parse(&data);
                                 if let Ok(document) = document {
                                     let root = document.root_element();
@@ -160,7 +161,7 @@ impl ReferenceFeature {
                             },
                             SourceFileKey::CsvFile(csv_file) => {
                                 if SymbolTable::is_field(session, definition_source) {
-                                    let data = dep_file_info.borrow().file_info_ast.borrow().text_document.as_ref()?.contents().to_string();
+                                    let data = session.file_mgr()[dep_file_info].file_info_ast.borrow().text_document.as_ref()?.contents().to_string();
                                     let mut csv_reader = csv::ReaderBuilder::new().from_reader(data.as_bytes());
                                     let model_class = session.st().get_in_parents(definition_source, &[SymType::CLASS], true);
                                     if let Some(SymbolKey::Class(model_class)) = model_class
@@ -178,9 +179,9 @@ impl ReferenceFeature {
                     if matches!(sym_typ, SymType::CLASS | SymType::FUNCTION | SymType::VARIABLE) {
                         let file = session.st().get_file(definition_source).unwrap();
                         let path = session.st().path(file);
-                        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(path);
+                        let file_info = session.file_mgr().get_file_info(path);
                         if let Some(file_info) = file_info {
-                            let transformed_range = file_info.borrow().text_range_to_range(session.st().range(definition_source), session.sync_odoo.encoding);
+                            let transformed_range = session.file_mgr()[file_info].text_range_to_range(session.st().range(definition_source), session.sync_odoo.encoding);
                             let uri = FileMgr::pathname2uri(path);
                             locations.push(Location {
                                 uri,
@@ -219,15 +220,15 @@ impl ReferenceFeature {
                         }
                     }
                     for source_file in files_to_process {
-                        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(session.st().file_path(source_file));
+                        let file_info = session.file_mgr().get_file_info(session.st().file_path(source_file));
                         if let Some(file_info) = file_info {
                             let full_xml_id = format!("{}.{}", data_module_name, xml_id);
                             match source_file {
                                 SourceFileKey::File(_)| SourceFileKey::PythonPackage(_) | SourceFileKey::Module(_) => {
-                                    locations.extend(ReferenceFeature::references_in_file(session, source_file, &file_info, &ReferenceTarget::String(full_xml_id)));
+                                    locations.extend(ReferenceFeature::references_in_file(session, source_file, file_info, &ReferenceTarget::String(full_xml_id)));
                                 },
                                 SourceFileKey::XmlFile(xml_file) => {
-                                    let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref()?.contents().to_string();
+                                    let data = session.file_mgr()[file_info].file_info_ast.borrow().text_document.as_ref()?.contents().to_string();
                                     let document = roxmltree::Document::parse(&data);
                                     if let Ok(document) = document {
                                         let root = document.root_element();
@@ -235,7 +236,7 @@ impl ReferenceFeature {
                                     }
                                 },
                                 SourceFileKey::CsvFile(csv_file) => {
-                                    let data = file_info.borrow().file_info_ast.borrow().text_document.as_ref()?.contents().to_string();
+                                    let data = session.file_mgr()[file_info].file_info_ast.borrow().text_document.as_ref()?.contents().to_string();
                                     let mut csv_reader = csv::ReaderBuilder::new().from_reader(data.as_bytes());
                                     locations.extend(CsvAstReferenceVisitor::search_target(session, csv_file, &mut csv_reader, None, &ReferenceTarget::String(full_xml_id), &data));
                                 },
@@ -254,7 +255,7 @@ impl ReferenceFeature {
         // finds nothing there: a template-name value → template-name references; a
         // `this.member` expression → component-member references (disjoint attribute sets).
         if locations.is_empty()
-            && matches!(file_info.borrow().file_info_ast.borrow().ast, Ast::XmlAst)
+            && matches!(session.file_mgr()[file_info].file_info_ast.borrow().ast, Ast::XmlAst)
         {
             if let Some(owl_refs) = Self::references_xml_owl(session, file_info, line, character) {
                 return Some(owl_refs);
@@ -271,14 +272,14 @@ impl ReferenceFeature {
         }
     }
 
-    fn get_reference_js(session: &mut SessionInfo, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Vec<Location>> {
+    fn get_reference_js(session: &mut SessionInfo, file_info: FileInfoKey, line: u32, character: u32) -> Option<Vec<Location>> {
         // A cursor on a `static template = "name"` string is a reference to that
         // *template name*: resolved in-house (complete over t-call/t-inherit/component
         // sites, and no tsserver string-literal noise).
         let encoding = session.sync_odoo.encoding;
-        let template_refs = file_info.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
+        let template_refs = session.file_mgr()[file_info].file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
         for template_ref in &template_refs {
-            let range = file_info.borrow().text_range_to_range(template_ref.range, encoding);
+            let range = session.file_mgr()[file_info].text_range_to_range(template_ref.range, encoding);
             if Self::position_in_lsp_range(line, character, &range) {
                 let refs = Self::collect_template_name_references(session, &template_ref.t_name);
                 return if refs.is_empty() { None } else { Some(refs) };
@@ -293,11 +294,11 @@ impl ReferenceFeature {
     // @todo-ref: move these 3 methods to a dedicated js_references file ??
     /// Find-references for an OWL/QWeb *template name* under the cursor (a `t-name` /
     /// `t-call` / `t-inherit` value); defers to [`collect_template_name_references`].
-    fn references_xml_owl(session: &mut SessionInfo, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<Vec<Location>> {
+    fn references_xml_owl(session: &mut SessionInfo, file_info: FileInfoKey, line: u32, character: u32) -> Option<Vec<Location>> {
         let encoding = session.sync_odoo.encoding;
-        let data = file_info.borrow().file_info_ast.borrow()
+        let data = session.file_mgr()[file_info].file_info_ast.borrow()
             .text_document.as_ref()?.contents().to_string();
-        let offset = file_info.borrow().position_to_offset(line, character, encoding);
+        let offset = session.file_mgr()[file_info].position_to_offset(line, character, encoding);
 
         let document = roxmltree::Document::parse(&data).ok()?;
         let (_attr_name, template_name, _range) =
@@ -346,8 +347,8 @@ impl ReferenceFeature {
         }
         for (xml_file, range) in xml_hits {
             let path = session.st()[xml_file].path.clone();
-            let Some(dep_fi) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path) else { continue; };
-            let lsp_range = dep_fi.borrow().text_range_to_range(range, encoding);
+            let Some(dep_fi) = session.file_mgr().get_file_info(&path) else { continue; };
+            let lsp_range = session.file_mgr()[dep_fi].text_range_to_range(range, encoding);
             locations.push(Location { uri: FileMgr::pathname2uri(&path), range: lsp_range });
         }
 
@@ -360,11 +361,11 @@ impl ReferenceFeature {
             .map(|desc| desc.file_path.clone())
             .collect();
         for path in js_paths {
-            let Some(fi) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path) else { continue };
-            let refs = fi.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
+            let Some(fi) = session.file_mgr().get_file_info(&path) else { continue };
+            let refs = session.file_mgr()[fi].file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
             for template_ref in refs {
                 if template_ref.t_name == template_name {
-                    let range = fi.borrow().text_range_to_range(template_ref.range, encoding);
+                    let range = session.file_mgr()[fi].text_range_to_range(template_ref.range, encoding);
                     locations.push(Location { uri: FileMgr::pathname2uri(&path), range });
                 }
             }
@@ -373,8 +374,8 @@ impl ReferenceFeature {
         locations
     }
 
-    fn references_in_file(session: &mut SessionInfo, file_symbol: SourceFileKey, file_info: &Rc<RefCell<FileInfo>>, reference_target: &ReferenceTarget) -> Vec<Location> {
-        let file_info_ast = file_info.borrow().file_info_ast.clone();
+    fn references_in_file(session: &mut SessionInfo, file_symbol: SourceFileKey, file_info: FileInfoKey, reference_target: &ReferenceTarget) -> Vec<Location> {
+        let file_info_ast = session.file_mgr()[file_info].file_info_ast.clone();
         if file_info_ast.borrow().get_stmts().is_none() { //filter modules with only manifest or file outside of workspace
             return vec![];
         }
@@ -399,9 +400,9 @@ impl ReferenceFeature {
     fn find_name_in_manifest(session: &mut SessionInfo, module: ModuleKey) -> Vec<Location> {
         let mut locations = Vec::new();
         let manifest = Path::new(&session.st()[module].path).join("__manifest__.py").sanitize();
-        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest).clone();
+        let file_info = session.file_mgr().get_file_info(&manifest);
         if let Some(file_info) = file_info {
-            let file_info_ast = file_info.borrow().file_info_ast.clone();
+            let file_info_ast = session.file_mgr()[file_info].file_info_ast.clone();
             let file_info_ast = file_info_ast.borrow();
             if let Some(stmts) = file_info_ast.get_stmts() {
                 if stmts.len() != 1 {
@@ -415,7 +416,7 @@ impl ReferenceFeature {
                     let Expr::StringLiteral(key_s) = key else {continue;};
                     let Expr::StringLiteral(value_s) = value else {continue;};
                     if key_s.value.to_str() == "name" {
-                        let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &manifest, value_s.range());
+                        let range = FileMgr::text_range_to_range(session, &manifest, value_s.range());
                         locations.push(Location {
                             uri: FileMgr::pathname2uri(&manifest),
                             range,
@@ -430,9 +431,9 @@ impl ReferenceFeature {
     fn find_depend_in_manifest(session: &mut SessionInfo, module: ModuleKey, module_name: &str) -> Vec<Location> {
         let mut locations = Vec::new();
         let manifest = Path::new(&session.st()[module].path).join("__manifest__.py").sanitize();
-        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest).clone();
+        let file_info = session.file_mgr().get_file_info(&manifest);
         if let Some(file_info) = file_info {
-            let file_info_ast = file_info.borrow().file_info_ast.clone();
+            let file_info_ast = session.file_mgr()[file_info].file_info_ast.clone();
             let file_info_ast = file_info_ast.borrow();
             if let Some(stmts) = file_info_ast.get_stmts() {
                 if stmts.len() != 1 {
@@ -449,7 +450,7 @@ impl ReferenceFeature {
                         for value in depends_d.elts.iter() {
                             let Expr::StringLiteral(value_s) = value else {continue;};
                             if value_s.value.to_str() == module_name {
-                                let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &manifest, value_s.range());
+                                let range = FileMgr::text_range_to_range(session, &manifest, value_s.range());
                                 locations.push(Location {
                                     uri: FileMgr::pathname2uri(&manifest),
                                     range,
@@ -570,7 +571,7 @@ impl ReferenceVisitor {
                 if let Some(symbol) = w.weak.upgrade(session.st())
                     && symbol == eval_search_sym {
                         let path = session.st().path(file_symbol).to_string();
-                        let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, alias.range);
+                        let range = FileMgr::text_range_to_range(session, &path, alias.range);
                         session.sync_odoo.evaluation_locations.push(Location {
                             uri: FileMgr::pathname2uri(&path),
                             range,

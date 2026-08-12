@@ -268,15 +268,15 @@ impl SymbolTable {
 
     /* 
     * Return the header range of a class or function, by substracting the body of the element from the full range.
-    * Require a fileInfo to use the lineIndex and get the line before the body, or a less precise end range will be returned
+    * Require a fileInfo key to use the lineIndex and get the line before the body, or a less precise end range will be returned
     */
-    pub fn header_range(&self, target: SymbolKey, file_info: Option<Rc<RefCell<FileInfo>>>) -> Option<TextRange> {
+    pub fn header_range(&self, target: SymbolKey, file_info: Option<&FileInfo>) -> Option<TextRange> {
         let range = self.range(target);
         if let Some(body_range) = self.body_range(target)
         && body_range.start() > range.start() {
             let end = match file_info {
                 Some(file_info)=> {
-                    file_info.borrow().prev_line_end(body_range.start())
+                    file_info.prev_line_end(body_range.start())
                         .filter(|&end| end > range.start())
                         .unwrap_or(body_range.start())
                 },

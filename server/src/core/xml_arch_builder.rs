@@ -1,6 +1,5 @@
-use super::file_mgr::FileInfo;
 use crate::{
-    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource, MissingDataSource, OYarn}, core::{build_scheduler::BuildScheduler, entry_point::EntryPointType, symbols::{ModuleSymbol, symbol_keys::{XmlDataKey, XmlId}}}, features::xml_ast_utils::XmlAstUtils, threads::SessionInfo
+    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource, MissingDataSource, OYarn}, core::{build_scheduler::BuildScheduler, entry_point::EntryPointType, file_mgr::FileInfoKey, symbols::{ModuleSymbol, symbol_keys::{XmlDataKey, XmlId}}}, features::xml_ast_utils::XmlAstUtils, threads::SessionInfo
 };
 use crate::{
     core::{
@@ -33,7 +32,7 @@ impl XmlArchBuilder {
         }
     }
 
-    pub fn load_arch(&mut self, session: &mut SessionInfo, file_info: &mut FileInfo, node: &Node) {
+    pub fn load_arch(&mut self, session: &mut SessionInfo, file_info: FileInfoKey, node: &Node) {
         if !session.st().ready_for_step(self.xml_symbol.into(), BuildSteps::ARCH) {
             return;
         }
@@ -49,8 +48,8 @@ impl XmlArchBuilder {
         } else {
             self.load_odoo_openerp_data(session, node, &mut diagnostics);
         }
-        session.st_mut().set_build_status(self.xml_symbol.into(), BuildSteps::ARCH, BuildStatus::DONE);
-        file_info.replace_diagnostics(DiagnosticSource::XML_ARCH, diagnostics);
+        session.st_mut()[self.xml_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
+        session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::XML_ARCH, diagnostics);
         BuildScheduler::queue(session, self.xml_symbol);
     }
 

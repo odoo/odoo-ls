@@ -6,11 +6,9 @@ use tracing::info;
 
 use crate::{
     Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource, MissingDataSource, OYarn}, core::{
-        diagnostics::{DiagnosticCode, create_diagnostic}, evaluation_utils::DeepFieldEvalWalker, file_mgr::{FileInfo, FileMgr}, symbols::{Buildable as _, symbol_keys::{CsvFileKey, ModuleKey}}
+        diagnostics::{DiagnosticCode, create_diagnostic}, evaluation_utils::DeepFieldEvalWalker, file_mgr::{FileInfo, FileInfoKey, FileMgr}, symbols::{Buildable as _, symbol_keys::{CsvFileKey, ModuleKey}}
     }, features::csv_ast_utils::CsvFieldIter, oyarn, threads::SessionInfo
 };
-use std::{cell::RefCell, rc::Rc};
-
 pub struct CsvValidator {
 }
 
@@ -42,7 +40,7 @@ impl CsvValidator {
             session.st_mut()[csv_symbol].set_build_status(BuildSteps::VALIDATION, BuildStatus::INVALID);
             return;
         }
-        let Some(data) = file_info.borrow().file_info_ast.borrow().text_document.as_ref().map(|td| td.contents().to_string()) else {
+        let Some(data) = session.file_mgr()[file_info].file_info_ast.borrow().text_document.as_ref().map(|td| td.contents().to_string()) else {
             // File can be invalid (not valid UTF-8 and so text_document is empty)
             return;
         };
@@ -61,12 +59,12 @@ impl CsvValidator {
                     ..diagnostic.clone()
                 });
             }
-            self.finalize_validation(session, csv_symbol, &file_info, diagnostics);
+            self.finalize_validation(session, csv_symbol, file_info, diagnostics);
             return;
         };
         session.model_mgr_mut()[model_key].add_dependent(csv_symbol.into());
         let Some(csv_module) = csv_module else {
-            self.finalize_validation(session, csv_symbol, &file_info, diagnostics);
+            self.finalize_validation(session, csv_symbol, file_info, diagnostics);
             return;
         };
         let model_main_class_sym = {
@@ -108,13 +106,13 @@ impl CsvValidator {
                 }
             }
         }
-        self.finalize_validation(session, csv_symbol, &file_info, diagnostics);
+        self.finalize_validation(session, csv_symbol, file_info, diagnostics);
     }
 
-    fn finalize_validation(&self, session: &mut SessionInfo, csv_symbol: CsvFileKey, file_info: &Rc<RefCell<FileInfo>>, diagnostics: Vec<Diagnostic>) {
+    fn finalize_validation(&self, session: &mut SessionInfo, csv_symbol: CsvFileKey, file_info: FileInfoKey, diagnostics: Vec<Diagnostic>) {
         session.sync_odoo.symbol_table.set_build_status(csv_symbol.into(), BuildSteps::VALIDATION, BuildStatus::DONE);
-        file_info.borrow_mut().replace_diagnostics(DiagnosticSource::CSV_VALIDATION, diagnostics);
-        file_info.borrow_mut().publish_diagnostics(session);
+        session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::CSV_VALIDATION, diagnostics);
+        FileInfo::publish_diagnostics(session, file_info);
     }
 
     fn validate_record(&self, session: &mut SessionInfo, csv_module: ModuleKey, headers_is_xml: &[bool], record: &StringRecord, diagnostics: &mut Vec<Diagnostic>, data: &str) {
