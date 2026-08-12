@@ -29,7 +29,7 @@ fn test_js_lifecycle() {
 
     let (mut odoo, mut config) = setup::setup::setup_server(true);
     config.set_string_list(ConfigKey::AddonsPaths, [addons_path().sanitize(), fixture_path.clone()]);
-    odoo.get_file_mgr().borrow_mut()
+    odoo.file_mgr
         .add_workspace_folder(S!("asset_events_addons"), FileMgr::pathname2uri(&fixture_path));
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
@@ -264,7 +264,7 @@ fn test_component_index_lifecycle(session: &mut SessionInfo, fixture: &TempDir) 
 
     Odoo::handle_did_close(session, make_js_close_params(uri));
     assert!(
-        session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).is_some(),
+        session.file_mgr().get_file_info(&path).is_some(),
         "a workspace file stays in the cache when it is closed",
     );
     assert_eq!(
@@ -298,7 +298,7 @@ fn test_js_file_lifecycle_with_odoo(session: &mut SessionInfo) {
         "JS file should be in opened_files after didOpen"
     );
     assert!(
-        session.sync_odoo.get_file_mgr().borrow().get_file_info(&js_path).is_some(),
+        session.file_mgr().get_file_info(&js_path).is_some(),
         "FileInfo should exist after didOpen"
     );
     let has_entry = session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter()
@@ -314,11 +314,10 @@ fn test_js_file_lifecycle_with_odoo(session: &mut SessionInfo) {
         "JS file should still be in opened_files after didChange"
     );
     {
-        let file_mgr = session.sync_odoo.get_file_mgr();
-        let file_mgr = file_mgr.borrow();
+        let file_mgr = session.file_mgr();
         let file_info = file_mgr.get_file_info(&js_path).expect("FileInfo must exist after edit");
         assert_eq!(
-            file_info.borrow().version,
+            session.file_mgr()[file_info].version,
             Some(2),
             "File version should be updated to 2 after didChange"
         );
@@ -362,7 +361,7 @@ fn test_js_file_lifecycle_with_odoo(session: &mut SessionInfo) {
         "Renamed JS file should be in opened_files after re-open"
     );
     assert!(
-        session.sync_odoo.get_file_mgr().borrow().get_file_info(&new_js_path).is_some(),
+        session.file_mgr().get_file_info(&new_js_path).is_some(),
         "FileInfo should exist for renamed JS file"
     );
     let has_renamed_entry = session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter()
@@ -373,11 +372,10 @@ fn test_js_file_lifecycle_with_odoo(session: &mut SessionInfo) {
     let final_content = "/** @odoo-module */\nexport class TestComponent { setup() {} destroy() {} }\n";
     Odoo::handle_did_change(session, make_js_change_params(new_js_uri.clone(), 2, final_content));
     {
-        let file_mgr = session.sync_odoo.get_file_mgr();
-        let file_mgr = file_mgr.borrow();
+        let file_mgr = session.file_mgr();
         let file_info = file_mgr.get_file_info(&new_js_path).expect("FileInfo must exist after edit of renamed file");
         assert_eq!(
-            file_info.borrow().version,
+            session.file_mgr()[file_info].version,
             Some(2),
             "Renamed file version should be 2 after edit"
         );

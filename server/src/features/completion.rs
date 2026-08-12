@@ -5,7 +5,7 @@ use crate::core::evaluation::{
 };
 use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
-use crate::core::file_mgr::FileInfo;
+use crate::core::file_mgr::FileInfoKey;
 use crate::core::import_resolver;
 use crate::core::odoo::SyncOdoo;
 use crate::core::python_odoo_builder::ACCESS_OPERATOR_OPTIONS;
@@ -28,7 +28,6 @@ use ruff_python_ast::{
 };
 use ruff_text_size::{Ranged, TextSize};
 use crate::utils::HashSet;
-use std::{cell::RefCell, rc::Rc};
 
 
 #[allow(non_camel_case_types)]
@@ -55,13 +54,13 @@ impl CompletionFeature {
 
     pub fn autocomplete(session: &mut SessionInfo,
         file_symbol: SourceFileKey,
-        file_info: &Rc<RefCell<FileInfo>>,
+        file_info: FileInfoKey,
         completion_context: Option<CompletionContext>,
         line: u32,
         character: u32
     ) -> Option<CompletionResponse> {
-        let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
-        let file_info_ast = file_info.borrow().file_info_ast.clone();
+        let offset = session.file_mgr()[file_info].position_to_offset(line, character, session.sync_odoo.encoding);
+        let file_info_ast = session.file_mgr()[file_info].file_info_ast.clone();
         let file_info_ast = file_info_ast.borrow();
         let ast = file_info_ast.get_stmts().unwrap();
         let is_completion_invoked = completion_context.as_ref().is_none_or(|context| {

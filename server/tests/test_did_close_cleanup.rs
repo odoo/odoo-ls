@@ -67,7 +67,7 @@ fn test_closing_a_standalone_file_still_releases_its_own_entry() {
         "and so must its symbols"
     );
     assert!(
-        session.sync_odoo.get_file_mgr().borrow().get_file_info(&point_path).is_some(),
+        session.file_mgr().get_file_info(&point_path).is_some(),
         "the file is still on disk, so its cache is kept"
     );
 }
@@ -118,14 +118,14 @@ fn test_closing_an_external_file_drops_its_cache_but_keeps_its_symbols() {
         },
     });
     BuildScheduler::process_rebuilds(&mut session, false);
-    assert!(session.sync_odoo.get_file_mgr().borrow().get_file_info(&lib_path).is_some());
+    assert!(session.file_mgr().get_file_info(&lib_path).is_some());
 
     Odoo::handle_did_close(&mut session, DidCloseTextDocumentParams {
         text_document: TextDocumentIdentifier { uri: lib_uri },
     });
 
     assert!(
-        session.sync_odoo.get_file_mgr().borrow().get_file_info(&lib_path).is_none(),
+        session.file_mgr().get_file_info(&lib_path).is_none(),
         "its cache is the thing a close is allowed to reclaim"
     );
     assert!(

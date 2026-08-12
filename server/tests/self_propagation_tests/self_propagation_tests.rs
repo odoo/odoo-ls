@@ -50,15 +50,15 @@ fn test_model_subscription() {
     );
 
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let file_mgr = session.file_mgr();
+    let file_info = file_mgr.get_file_info(&test_file).unwrap();
     let model_a_sym = session.st().get_symbol(file_symbol.into(),(&[], &["ModelA"]), u32::MAX);
     assert_eq!(model_a_sym.len(), 1, "Expected 1 symbol for ModelA");
     let model_b_sym = session.st().get_symbol(file_symbol.into(),(&[], &["ModelB"]), u32::MAX);
     assert_eq!(model_b_sym.len(), 1, "Expected 1 symbol for ModelB");
 
     let create_new_in_model_a = follow_evaluation_refs(
-        test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, 8, 14),
+        test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 8, 14),
         &mut session,
     );
     assert!(
@@ -67,7 +67,7 @@ fn test_model_subscription() {
     );
 
     let create_from_self_env_in_model_a = follow_evaluation_refs(
-        test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, 11, 14),
+        test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 11, 14),
         &mut session,
     );
     assert!(
@@ -76,7 +76,7 @@ fn test_model_subscription() {
     );
 
     let search_in_a_in_model_a = follow_evaluation_refs(
-        test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, 14, 14),
+        test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 14, 14),
         &mut session,
     );
     assert!(
@@ -84,13 +84,13 @@ fn test_model_subscription() {
         "Expected to find ModelA symbol"
     );
 
-    let create_new_in_model_b = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, 27, 24);
+    let create_new_in_model_b = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 27, 24);
     assert!(
         create_new_in_model_b.iter().any(|sym| sym == &model_b_sym[0]),
         "Expected to find ModelB symbol"
     );
 
-    let create_from_self_env_in_model_b = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, 28, 34);
+    let create_from_self_env_in_model_b = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 28, 34);
     assert!(
         create_from_self_env_in_model_b.iter().any(|sym| sym == &model_a_sym[0]),
         "Expected to find ModelA symbol"
@@ -104,7 +104,7 @@ fn test_model_subscription() {
     assert_eq!(b_sym.len(), 1, "Expected 1 symbol for B");
 
     let method_self_in_a = follow_evaluation_refs(
-        test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, 31, 14),
+        test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 31, 14),
         &mut session,
     );
     assert!(
@@ -113,7 +113,7 @@ fn test_model_subscription() {
     );
 
     let method_hard_a_in_a = follow_evaluation_refs(
-        test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, 33, 14),
+        test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 33, 14),
         &mut session,
     );
     assert!(
@@ -121,13 +121,13 @@ fn test_model_subscription() {
         "Expected to find A symbol"
     );
 
-    let method_b_self_in_b = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, 38, 32);
+    let method_b_self_in_b = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 38, 32);
     assert!(
         method_b_self_in_b.iter().any(|sym| sym == &b_sym[0]),
         "Expected to find B symbol"
     );
 
-    let method_b_hard_a_in_b = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, 41, 34);
+    let method_b_hard_a_in_b = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 41, 34);
     assert!(
         method_b_hard_a_in_b.iter().any(|sym| sym == &a_sym[0]),
         "Expected to find A symbol"

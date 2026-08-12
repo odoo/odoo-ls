@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use lsp_types::TextDocumentContentChangeEvent;
 use odoo_ls_server::core::build_scheduler::BuildScheduler;
 use odoo_ls_server::core::entry_point::EntryPointMgr;
+use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::core::symbols::storage::SymbolTable;
 use odoo_ls_server::utils::PathSanitizer;
@@ -76,7 +77,7 @@ fn test_stale_node_index_on_method_does_not_panic() {
         range_length: None,
         text: REPARSED_WITHOUT_FUNCTION.to_string(),
     }];
-    let (updated, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(
+    let (updated, file_info) = FileMgr::update_file_info(
         &mut session,
         &file_path,
         Some(change.as_slice()),
@@ -85,7 +86,7 @@ fn test_stale_node_index_on_method_does_not_panic() {
     );
     assert!(updated, "the file should have been re-parsed");
     assert_ne!(
-        file_info.borrow().file_info_ast.borrow().text_hash,
+        session.file_mgr()[file_info].file_info_ast.borrow().text_hash,
         session.st().get_processed_text_hash(file),
         "the re-parse should have left the file symbol's hash stale"
     );
