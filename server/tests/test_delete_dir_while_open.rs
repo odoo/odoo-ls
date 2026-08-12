@@ -127,7 +127,7 @@ fn test_delete_open_file_then_close_it_clears_everything() {
         "symbol must also be cleared on close, not just its cache"
     );
     assert!(
-        !session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter().any(|ep| ep.borrow().path == point_path),
+        !session.sync_odoo.entry_point_mgr.custom_entry_points.iter().any(|&ep| session.ep_mgr()[ep].path == point_path),
         "entry point must be gone too, not left dangling"
     );
 }
@@ -156,7 +156,7 @@ fn test_feature_request_on_deleted_open_file_does_not_resurrect_a_phantom_entry(
         },
     });
     BuildScheduler::process_rebuilds(&mut session, false);
-    let entries_before = session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.len();
+    let entries_before = session.sync_odoo.entry_point_mgr.custom_entry_points.len();
 
     std::fs::remove_file(&point_path).unwrap();
     Odoo::handle_did_delete(&mut session, DeleteFilesParams {
@@ -167,7 +167,7 @@ fn test_feature_request_on_deleted_open_file_does_not_resurrect_a_phantom_entry(
     let resolved = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&point_path));
     assert!(resolved.is_some(), "should resolve the real, still-live symbol");
     assert_eq!(
-        session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.len(), entries_before,
+        session.sync_odoo.entry_point_mgr.custom_entry_points.len(), entries_before,
         "no phantom entry point should have been created"
     );
 
@@ -229,7 +229,7 @@ fn test_delete_open_file_then_recreate_it_keeps_it() {
     BuildScheduler::process_rebuilds(&mut session, false);
 
     assert!(
-        session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter().any(|ep| ep.borrow().path == point_path),
+        session.sync_odoo.entry_point_mgr.custom_entry_points.iter().any(|&ep| session.ep_mgr()[ep].path == point_path),
         "entry point was never actually removed"
     );
     assert!(

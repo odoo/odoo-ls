@@ -3,6 +3,7 @@ use lsp_types::Diagnostic;
 use tracing::error;
 
 use crate::constants::OYarn;
+use crate::core::entry_point::EntryPoint;
 use crate::core::evaluation_context::ContextKey;
 use crate::core::model::{Model, ModelData};
 use crate::core::symbols::{ClassSymbol, ModuleSymbol};
@@ -67,7 +68,8 @@ impl PythonOdooBuilder {
             let model_key = session.model_mgr_mut().add_or_get_model(&model_name);
                 Model::add_symbol(session, model_key, sym);
         }
-        session.sync_odoo.get_main_entry().borrow_mut().search_rebuild_for_models(session, model_name);
+        let main_entry = session.sync_odoo.get_main_entry();
+        EntryPoint::search_rebuild_for_models(session, main_entry, model_name);
         self.process_fields(session, sym);
         diagnostics
     }

@@ -37,7 +37,8 @@ impl ModuleSymbol {
                     });
                 }
                 session.st_mut()[module_key].not_found_models.insert(model_name.clone(), BuildSteps::VALIDATION);
-                session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(module_key.into());
+                let main_entry = session.sync_odoo.get_main_entry();
+                session.ep_mgr_mut()[main_entry].not_found_symbols_for_models.insert(module_key.into());
             }
         }
         let manifest_path = Path::new(&root_path).join("__manifest__.py");

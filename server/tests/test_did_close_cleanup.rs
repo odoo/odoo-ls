@@ -59,7 +59,7 @@ fn test_closing_a_standalone_file_still_releases_its_own_entry() {
     });
 
     assert!(
-        !session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter().any(|ep| ep.borrow().path == point_path),
+        !session.ep_mgr().custom_entry_points.iter().any(|&ep| session.ep_mgr()[ep].path == point_path),
         "the entry point created for the buffer must go with it"
     );
     assert!(

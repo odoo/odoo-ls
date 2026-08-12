@@ -24,8 +24,8 @@ fn make_py_close_params(uri: lsp_types::Uri) -> lsp_types::DidCloseTextDocumentP
 }
 
 fn has_custom_entry(session: &odoo_ls_server::threads::SessionInfo, needle: &str) -> bool {
-    session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter()
-        .any(|ep| ep.borrow().path.contains(needle))
+    session.sync_odoo.entry_point_mgr.custom_entry_points.iter()
+        .any(|&ep| session.ep_mgr()[ep].path.contains(needle))
 }
 
 /// Standalone (non-module) Python file: `did_create` must not eagerly build it;

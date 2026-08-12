@@ -35,18 +35,18 @@ fn test_addon_entry_losing_its_symbol_does_not_panic() {
     // stand-in for the real "odoo" main entry point
     let main_sym = EntryPointMgr::set_main_entry(&mut session, fixture_root.clone()).unwrap();
     session.st_mut().set_is_external(main_sym, false);
-    let main_entry = session.sync_odoo.entry_point_mgr.borrow().main_entry_point.as_ref().unwrap().clone();
-    session.sync_odoo.main_entry_tree = main_entry.borrow().tree.clone();
+    let &main_entry = session.ep_mgr().main_entry_point.as_ref().unwrap();
+    session.sync_odoo.main_entry_tree = session.ep_mgr()[main_entry].tree.clone();
 
     // stand-in for the real "odoo.addons" namespace
-    EntryPointMgr::create_dir_symbols_for_new_entry(&mut session, &addons_dir, main_entry.clone());
-    EntryPointMgr::add_entry_to_addons(&mut session, addons_dir.clone(), main_entry.clone(), vec![Sy!("odoo"), Sy!("addons")]);
+    EntryPointMgr::create_dir_symbols_for_new_entry(&mut session, &addons_dir, main_entry);
+    EntryPointMgr::add_entry_to_addons(&mut session, addons_dir.clone(), main_entry, vec![Sy!("odoo"), Sy!("addons")]);
 
     session.sync_odoo.config.set_string_list(odoo_ls_server::core::config::ConfigKey::AddonsPaths, vec![addons_dir.clone()]);
 
-    let entry = session.sync_odoo.entry_point_mgr.borrow().addons_entry_points.last().unwrap().clone();
+    let &entry = session.ep_mgr().addons_entry_points.last().unwrap();
     assert!(
-        matches!(entry.borrow().get_symbol(session.st()), Some(SymbolKey::Namespace(_))),
+        matches!(session.ep_mgr()[entry].get_symbol(session.st()), Some(SymbolKey::Namespace(_))),
         "sanity check: the addon entry should resolve to a Namespace symbol right after creation"
     );
 
@@ -57,7 +57,7 @@ fn test_addon_entry_losing_its_symbol_does_not_panic() {
     });
 
     assert!(
-        session.sync_odoo.entry_point_mgr.borrow().addons_entry_points.is_empty(),
+        session.ep_mgr().addons_entry_points.is_empty(),
         "the now-symbol-less entry should have been cleaned up instead of left dangling"
     );
     assert_eq!(
@@ -86,11 +86,11 @@ fn test_addon_entry_losing_its_symbol_does_not_panic() {
         "restoring the addon entry point should ask the client to restart exactly once"
     );
     assert_eq!(
-        session.sync_odoo.entry_point_mgr.borrow().addons_entry_points.len(), 1,
+        session.ep_mgr().addons_entry_points.len(), 1,
         "the addons path should have been re-registered as a real addon entry"
     );
     assert!(
-        session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.is_empty(),
+        session.ep_mgr().custom_entry_points.is_empty(),
         "the recreated module should not have fallen back to a disconnected custom entry"
     );
     let module = session.sync_odoo.get_symbol(&fixture_root, (&["odoo", "addons", "new_module"], &[]), u32::MAX);
