@@ -1956,22 +1956,31 @@ impl Odoo {
                 let ast_type = file_info.borrow().file_info_ast.borrow().ast.clone();
                 match ast_type {
                     Ast::PythonAst(_) => {
+                        if session.sync_odoo.config.is_semantic_tokens_python_disabled() {
+                            return Ok(None);
+                        }
                         if file_info.borrow().file_info_ast.borrow().ast.as_py_ast().indexed_module.is_some() {
                             let tokens = SemanticTokensFeature::tokens_python(session, file_symbol, &file_info);
                             return Ok(Some(SemanticTokensResult::Tokens(tokens)));
                         }
                     },
                     Ast::JsAst(_) => {
+                        if session.sync_odoo.config.is_semantic_tokens_javascript_disabled() {
+                            return Ok(None);
+                        }
                         let uri = file_info.borrow().uri.clone();
                         let tokens = SemanticTokensFeature::tokens_javascript(session, &uri, &file_info);
                         return Ok(Some(SemanticTokensResult::Tokens(tokens)));
                     },
                     Ast::XmlAst => {
+                        if session.sync_odoo.config.is_semantic_tokens_xml_disabled() {
+                            return Ok(None);
+                        }
                         if let Some(tokens) = owl_virtual::semantic_tokens_xml(session, &file_info) {
                             return Ok(Some(SemanticTokensResult::Tokens(tokens)));
                         }
                     },
-                    _ => {},
+                    _ => {}
                 }
             }
         }
