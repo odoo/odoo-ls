@@ -144,16 +144,14 @@ impl Server {
         }
         #[allow(deprecated)]
         if let Some(workspace_folders) = initialize_params.workspace_folders {
-            let sync_odoo = self.sync_odoo.lock().unwrap();
-            let file_mgr = sync_odoo.get_file_mgr();
-            let mut file_mgr = file_mgr.borrow_mut();
+            let mut sync_odoo = self.sync_odoo.lock().unwrap();
+            let file_mgr = &mut sync_odoo.file_mgr;
             for added in workspace_folders.iter() {
                 file_mgr.add_workspace_folder(added.name.clone(), added.uri.clone());
             }
         } else if let Some( root_uri) = initialize_params.root_uri.as_ref() { //keep for backward compatibility
-            let sync_odoo = self.sync_odoo.lock().unwrap();
-            let file_mgr = sync_odoo.get_file_mgr();
-            let mut file_mgr = file_mgr.borrow_mut();
+            let mut sync_odoo = self.sync_odoo.lock().unwrap();
+            let file_mgr = &mut sync_odoo.file_mgr;
             file_mgr.add_workspace_folder(S!("_root"), root_uri.clone());
         }
         let initialize_data = InitializeResult {

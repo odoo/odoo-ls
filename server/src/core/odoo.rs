@@ -2,7 +2,7 @@ use crate::constants::OYarn;
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
-use crate::core::file_mgr::{AstKind, PreloadedFile};
+use crate::core::file_mgr::{AstKind, FileInfo, PreloadedFile};
 use crate::core::js_arch_builder::ComponentDescriptor;
 use crate::core::js_module_scope;
 use crate::core::module_load_order::sort_by_load_order;
@@ -177,7 +177,7 @@ pub struct SyncOdoo {
     pub stubs_dirs: Vec<String>,
     pub stdlib_dir: String,
     pub progress_token: i32,
-    file_mgr: Rc<RefCell<FileMgr>>,
+    pub file_mgr: FileMgr,
     pub modules: HashMap<OYarn, Wk<ModuleKey>>,
     pub model_mgr: ModelMgr,
     pub interrupt_rebuild: Arc<AtomicBool>,
@@ -239,7 +239,7 @@ impl SyncOdoo {
             has_valid_python: false,
             main_entry_tree: vec![],
             progress_token: 0,
-            file_mgr: Rc::new(RefCell::new(FileMgr::new())),
+            file_mgr: FileMgr::new(),
             stubs_dirs: SyncOdoo::default_stubs(),
             stdlib_dir: SyncOdoo::default_stdlib(),
             modules: HashMap::default(),
@@ -849,11 +849,6 @@ impl SyncOdoo {
         }
         false
     }
-
-    pub fn get_file_mgr(&self) -> Rc<RefCell<FileMgr>> {
-        self.file_mgr.clone()
-    }
-
     pub fn unload_path(session: &mut SessionInfo, path: &Path) {
         Self::unload_path_if(session, path, |_, _| true);
     }
@@ -1075,7 +1070,7 @@ impl SyncOdoo {
     }
 
     pub fn is_in_workspace_or_entry(session: &SessionInfo, path: &str) -> bool {
-        if session.sync_odoo.file_mgr.borrow().is_in_workspace(path) {
+        if session.sync_odoo.file_mgr.is_in_workspace(path) {
             return true;
         }
         for entry in session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter() {
@@ -1533,32 +1528,34 @@ impl Odoo {
                 //If the file is not in main entry, and is a manifest file, we skip it
                 return Ok(None);
             }
-            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
+            let file_info = session.file_mgr().get_file_info(&path);
             if let Some(file_info) = file_info {
-                if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
-                    file_info.borrow_mut().prepare_ast(session);
+                if !session.file_mgr()[file_info].file_info_ast.borrow().ast.is_built() {
+                    FileInfo::prepare_ast(session, file_info);
                 }
-                let ast_kind = file_info.borrow().file_info_ast.borrow().ast.kind();
+                let file_mgr = session.file_mgr();
+                let ast_kind = file_mgr[file_info].file_info_ast.borrow().ast.kind();
                 match ast_kind {
                     AstKind::PythonAst => {
-                        if file_info.borrow_mut().file_info_ast.borrow().ast.as_py_ast().indexed_module.is_some() {
-                            return Ok(HoverFeature::hover_python(session, file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                        if file_mgr[file_info].file_info_ast.borrow().ast.as_py_ast().indexed_module.is_some() {
+                            return Ok(HoverFeature::hover_python(session, file_symbol, file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                         }
                     },
                     AstKind::XmlAst => {
                         let Position { line, character } = params.text_document_position_params.position;
                         // OWL-template JS expressions first; everything else → XML hover.
                         // @todo: check if not breaking python-related hover
-                        if let Some(hover) = owl_virtual::hover_xml_owl(session, &file_info, line, character) {
+                        if let Some(hover) = owl_virtual::hover_xml_owl(session, file_info, line, character) {
                             return Ok(Some(hover));
                         }
-                        return Ok(HoverFeature::hover_xml(session, file_symbol, &file_info, line, character));
+                        return Ok(HoverFeature::hover_xml(session, file_symbol, file_info, line, character));
                     },
                     AstKind::CsvAst => {
-                        return Ok(HoverFeature::hover_csv(session, file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                        return Ok(HoverFeature::hover_csv(session, file_symbol, file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                     },
                     AstKind::JsAst => {
-                        return Ok(HoverFeature::hover_js(session, &file_info.borrow().uri, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
+                        let uri = file_mgr[file_info].uri.clone();
+                        return Ok(HoverFeature::hover_js(session, &uri, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                     }
                 }
             }
@@ -1591,19 +1588,20 @@ impl Odoo {
         };
         let file_path_buf = PathBuf::from(path.clone());
         if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &file_path_buf) {
-            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
+            let file_info = session.file_mgr().get_file_info(&path);
             if let Some(file_info) = file_info {
-                if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
-                    file_info.borrow_mut().prepare_ast(session);
+                if !session.file_mgr()[file_info].file_info_ast.borrow().ast.is_built() {
+                    FileInfo::prepare_ast(session, file_info);
                 }
-                let ast_kind = file_info.borrow().file_info_ast.borrow().ast.kind();
+                let file_mgr = session.file_mgr();
+                let ast_kind = file_mgr[file_info].file_info_ast.borrow().ast.kind();
                 match ast_kind {
                     AstKind::PythonAst => {
                         if session.sync_odoo.config.is_semantic_tokens_python_disabled() {
                             return Ok(None);
                         }
-                        if file_info.borrow().file_info_ast.borrow().ast.as_py_ast().indexed_module.is_some() {
-                            let tokens = SemanticTokensFeature::tokens_python(session, file_symbol, &file_info);
+                        if file_mgr[file_info].file_info_ast.borrow().ast.as_py_ast().indexed_module.is_some() {
+                            let tokens = SemanticTokensFeature::tokens_python(session, file_symbol, file_info);
                             return Ok(Some(SemanticTokensResult::Tokens(tokens)));
                         }
                     },
@@ -1611,15 +1609,15 @@ impl Odoo {
                         if session.sync_odoo.config.is_semantic_tokens_javascript_disabled() {
                             return Ok(None);
                         }
-                        let uri = file_info.borrow().uri.clone();
-                        let tokens = SemanticTokensFeature::tokens_javascript(session, &uri, &file_info);
+                        let uri = file_mgr[file_info].uri.clone();
+                        let tokens = SemanticTokensFeature::tokens_javascript(session, &uri, file_info);
                         return Ok(Some(SemanticTokensResult::Tokens(tokens)));
                     },
                     AstKind::XmlAst => {
                         if session.sync_odoo.config.is_semantic_tokens_xml_disabled() {
                             return Ok(None);
                         }
-                        if let Some(tokens) = owl_virtual::semantic_tokens_xml(session, &file_info) {
+                        if let Some(tokens) = owl_virtual::semantic_tokens_xml(session, file_info) {
                             return Ok(Some(SemanticTokensResult::Tokens(tokens)));
                         }
                     },
@@ -1676,22 +1674,22 @@ impl Odoo {
                 //If the file is not in main entry, and is a manifest file, we skip it
                 return Ok(None);
             }
-            let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
+            let file_info = session.file_mgr().get_file_info(&path);
             if let Some(file_info) = file_info {
-                if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
-                    file_info.borrow_mut().prepare_ast(session);
+                if !session.file_mgr()[file_info].file_info_ast.borrow().ast.is_built() {
+                    FileInfo::prepare_ast(session, file_info);
                 }
-                if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
+                if !session.file_mgr()[file_info].file_info_ast.borrow().ast.is_built() {
                     return Ok(None);
                 }
                 return match is_declaration {
                     false => {
-                        Ok(DefinitionFeature::get_location(session, file_symbol, &file_info,
+                        Ok(DefinitionFeature::get_location(session, file_symbol, file_info,
                             params.text_document_position_params.position.line,
                             params.text_document_position_params.position.character))
                     },
                     true => {
-                        Ok(DeclarationFeature::get_location(session, file_symbol, &file_info,
+                        Ok(DeclarationFeature::get_location(session, file_symbol, file_info,
                             params.text_document_position_params.position.line,
                             params.text_document_position_params.position.character))
                     }
@@ -1719,12 +1717,13 @@ impl Odoo {
                 //If the file is not in main entry, and is a manifest file, we skip it
                 return Ok(None);
             }
-            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
+            let file_mgr = session.file_mgr();
+            let file_info = file_mgr.get_file_info(&path);
             if let Some(file_info) = file_info {
-                if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
-                    file_info.borrow_mut().prepare_ast(session);
+                if !file_mgr[file_info].file_info_ast.borrow().ast.is_built() {
+                    FileInfo::prepare_ast(session, file_info);
                 }
-                return Ok(ReferenceFeature::get_references(session, file_symbol, &file_info, params.text_document_position.position.line, params.text_document_position.position.character));
+                return Ok(ReferenceFeature::get_references(session, file_symbol, file_info, params.text_document_position.position.line, params.text_document_position.position.character));
             }
         }
         Ok(None)
@@ -1765,14 +1764,15 @@ impl Odoo {
                 //If the file is not in main entry, and is a manifest file, we skip it
                 return Ok(None);
             }
-            let file_info = session.sync_odoo.get_file_mgr().borrow_mut().get_file_info(&path);
+
+            let file_info = session.file_mgr().get_file_info(&path);
             if let Some(file_info) = file_info {
-                if schema != "untitled" && !file_info.borrow().file_info_ast.borrow().ast.is_built() {
-                    file_info.borrow_mut().prepare_ast(session);
+                if schema != "untitled" && !session.file_mgr()[file_info].file_info_ast.borrow().ast.is_built() {
+                    FileInfo::prepare_ast(session, file_info);
                 }
                 let trigger_kind = params.context.as_ref()
                     .map_or(CompletionTriggerKind::INVOKED, |context| context.trigger_kind);
-                let ast_kind = file_info.borrow().file_info_ast.borrow().ast.kind();
+                let ast_kind = session.file_mgr()[file_info].file_info_ast.borrow().ast.kind();
                 match ast_kind {
                     AstKind::JsAst => {
                         let module_scope = js_module_scope::importable_module_prefixes(session, &path);
@@ -1790,16 +1790,16 @@ impl Odoo {
                         return Ok(None);
                     },
                     AstKind::XmlAst => {
-                        if let Some(list) = owl_virtual::completion_xml_owl(session, &file_info, params.text_document_position.position.line, params.text_document_position.position.character, trigger_kind) {
+                        if let Some(list) = owl_virtual::completion_xml_owl(session, file_info, params.text_document_position.position.line, params.text_document_position.position.character, trigger_kind) {
                             return Ok(Some(CompletionResponse::List(list)));
                         }
                     },
                     _ => {}
                 }
-                if ast_kind == AstKind::PythonAst && file_info.borrow_mut().file_info_ast.borrow().ast.as_py_ast().indexed_module.is_some() {
+                if ast_kind == AstKind::PythonAst && session.file_mgr()[file_info].file_info_ast.borrow().ast.as_py_ast().indexed_module.is_some() {
                     return Ok(CompletionFeature::autocomplete(session,
                         file_symbol,
-                        &file_info,
+                        file_info,
                         params.context,
                         params.text_document_position.position.line,
                         params.text_document_position.position.character
@@ -1853,8 +1853,7 @@ impl Odoo {
     }
 
     pub fn handle_did_change_workspace_folders(session: &mut SessionInfo, params: DidChangeWorkspaceFoldersParams) {
-        let file_mgr = session.sync_odoo.get_file_mgr();
-        let mut file_mgr = file_mgr.borrow_mut();
+        let file_mgr = session.file_mgr_mut();
         for added in params.event.added {
             file_mgr.add_workspace_folder(added.name.clone(), added.uri);
         }
@@ -2044,10 +2043,11 @@ impl Odoo {
             && let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
                 bridge.close_file(&path);
             }
-        if let Some(file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path) {
-            let mut file_info = file_info.borrow_mut();
-            file_info.opened = false;
-            file_info.version = None;
+        let file_mgr = session.file_mgr_mut();
+        let file_info = file_mgr.get_file_info(&path);
+        if let Some(file_info) = file_info {
+            file_mgr[file_info].opened = false;
+            file_mgr[file_info].version = None;
         }
         session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&mut session.sync_odoo.symbol_table, &Path::new(&path).to_tree_path().sanitize_cow());
         // Clear it now if deleted from disk or external
@@ -2174,7 +2174,8 @@ impl Odoo {
         for f in params.files.iter() {
             let path = FileMgr::uri2pathname(&f.uri);
             session.log_message(MessageType::INFO, format!("Deleting {}", path));
-            let is_open_file = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).is_some_and(|fi| fi.borrow().opened);
+            let file_mgr = session.file_mgr();
+            let is_open_file = file_mgr.get_file_info(&path).is_some_and(|fi| file_mgr[fi].opened);
             if !is_open_file {
                 SyncOdoo::unload_path(session, Path::new(&path));
                 FileMgr::delete_path(session, &path);
@@ -2272,9 +2273,9 @@ impl Odoo {
     fn update_file_cache(session: &mut SessionInfo, path: &str, extension: &str, content: Option<&[TextDocumentContentChangeEvent]>, version: i32) -> (bool, bool) {
         if Odoo::is_recognized_extension(session, extension) || Odoo::is_config_workspace_file(session, Path::new(path)){
             session.log_message(MessageType::INFO, format!("File Change Event: {}, version {}", path, version));
-            let (file_updated, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path, content, Some(version), false);
-            file_info.borrow_mut().publish_diagnostics(session); //To push potential syntax errors or refresh previous one
-            return (!file_info.borrow().opened || version >= 0, file_updated);
+            let (file_updated, file_info) = FileMgr::update_file_info(session, path, content, Some(version), false);
+            FileInfo::publish_diagnostics(session, file_info); //To push potential syntax errors or refresh previous one
+            return (!session.file_mgr()[file_info].opened || version >= 0, file_updated);
         }
         (false, false)
     }
@@ -2313,12 +2314,12 @@ impl Odoo {
                 return Ok(None);
             }
         };
-        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
+        let file_info = session.file_mgr().get_file_info(&path);
         if let Some(file_info) = file_info {
-            if schema != "untitled" && !file_info.borrow().file_info_ast.borrow().ast.is_built() {
-                file_info.borrow_mut().prepare_ast(session);
+            if schema != "untitled" && !session.file_mgr()[file_info].file_info_ast.borrow().ast.is_built() {
+                FileInfo::prepare_ast(session, file_info);
             }
-            return Ok(DocumentSymbolFeature::get_symbols(session, &file_info));
+            return Ok(DocumentSymbolFeature::get_symbols(session, file_info));
         }
         Ok(None)
     }
@@ -2339,9 +2340,7 @@ impl Odoo {
 
     /// Checks if the given path is a configuration file under one of the workspace folders.
     fn is_config_workspace_file(session: &mut SessionInfo, path: &Path) -> bool {
-        session.sync_odoo
-        .get_file_mgr()
-        .borrow()
+        session.file_mgr()
         .get_processed_workspace_folders()
         .iter()
         .any(|(_, ws_dir)| path.starts_with(ws_dir) && path.ends_with("odools.toml"))
@@ -2398,7 +2397,7 @@ impl Odoo {
         session.sync_odoo.config_file = Some(cfg_file);
         // Recalculate diagnostic filters
         session.sync_odoo.config = new_config;
-        session.sync_odoo.get_file_mgr().borrow_mut().update_all_file_diagnostic_filters(session);
+        FileMgr::update_all_file_diagnostic_filters(session);
         session.update_delay_thread_delay_duration(session.sync_odoo.config.auto_refresh_delay());
         if languages_changed {
             SyncOdoo::revalidate_language_dependents(session);
@@ -2407,27 +2406,27 @@ impl Odoo {
     }
 
     pub fn handle_tsserver_new_diagnostics(session: &mut SessionInfo<'_>, msg: TsServerDiagnostics) {
-        let file_mgr = session.sync_odoo.get_file_mgr();
+        let file_mgr = session.file_mgr();
         let file_path = Path::new(&msg.file).sanitize();
-        if let Some(file_info) = file_mgr.borrow().get_file_info(&file_path) {
+        if let Some(file_info) = file_mgr.get_file_info(&file_path) {
             //as we receive line and character from tsserver, transform into offset to store in (offset, 0) structure
             //TODO maybe find a way to handle it properly as XML is doing the same
             let diagnostics: Vec<Diagnostic> = msg.diagnostics.iter().map(|d| {
                 let mut new_d = d.clone();
                 new_d.range = Range{
                     start: Position {
-                        line: file_info.borrow().position_to_offset(d.range.start.line, d.range.start.character, session.sync_odoo.encoding) as u32,
+                        line: session.file_mgr()[file_info].position_to_offset(d.range.start.line, d.range.start.character, session.sync_odoo.encoding) as u32,
                         character: 0
                     },
                     end: Position {
-                        line: file_info.borrow().position_to_offset(d.range.end.line, d.range.end.character, session.sync_odoo.encoding) as u32,
+                        line: session.file_mgr()[file_info].position_to_offset(d.range.end.line, d.range.end.character, session.sync_odoo.encoding) as u32,
                         character: 0
                     },
                 };
                 new_d
             }).collect();
-            file_info.borrow_mut().replace_diagnostics(msg.diagnostic_level, diagnostics); //TsServer will alwayse use ARCH/ARCH_EVAL and VALIDATION level to store diagnostics, while SYNTAX is reserved to OXC
-            file_info.borrow_mut().publish_diagnostics(session);
+            session.file_mgr_mut()[file_info].replace_diagnostics(msg.diagnostic_level, diagnostics); //TsServer will alwayse use ARCH/ARCH_EVAL and VALIDATION level to store diagnostics, while SYNTAX is reserved to OXC
+            FileInfo::publish_diagnostics(session, file_info);
         } else {
             warn!("Received diagnostics for unknown file: {}", msg.file);
         }

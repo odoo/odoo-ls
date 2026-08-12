@@ -247,8 +247,8 @@ impl AnalyzeAstResult {
 fn record_evaluation_hit(session: &mut SessionInfo, parent: SymbolKey, range: TextRange) -> bool {
     let Some(file) = session.st().get_file(parent) else { return false };
     let file_path = session.st().path(file).to_string();
-    let Some(file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&file_path) else { return false };
-    let transformed_range = file_info.borrow().text_range_to_range(range, session.sync_odoo.encoding);
+    let Some(file_info) = session.file_mgr().get_file_info(&file_path) else { return false };
+    let transformed_range = session.file_mgr()[file_info].text_range_to_range(range, session.sync_odoo.encoding);
     let uri = FileMgr::pathname2uri(&file_path);
     session.sync_odoo.evaluation_locations.push(Location { uri, range: transformed_range });
     true

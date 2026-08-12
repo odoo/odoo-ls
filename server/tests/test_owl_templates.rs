@@ -59,10 +59,10 @@ fn test_goto_definition_from_js_template_to_xml() {
     let js_path = module_owl_path(&["static", "src", "counter", "counter.js"]);
     let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&js_path))
         .expect("JS asset file should have a symbol after init");
-    let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&js_path).unwrap();
+    let file_info = session.file_mgr().get_file_info(&js_path).unwrap();
 
     // line 4: `    static template = "module_owl.Counter";` — cursor inside the string content.
-    let locs = test_utils::get_definition_locs(&mut session, file_symbol, &file_info, 4, 25);
+    let locs = test_utils::get_definition_locs(&mut session, file_symbol, file_info, 4, 25);
     assert!(!locs.is_empty(), "expected a definition for the OWL template string");
     assert!(
         locs[0].target_uri.to_string().ends_with("counter.xml"),

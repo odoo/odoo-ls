@@ -62,7 +62,7 @@ fn test_js_file_lifecycle_with_odoo() {
         "JS file should be in opened_files after didOpen"
     );
     assert!(
-        session.sync_odoo.get_file_mgr().borrow().get_file_info(&js_path).is_some(),
+        session.file_mgr().get_file_info(&js_path).is_some(),
         "FileInfo should exist after didOpen"
     );
     let has_custom_entry = session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter()
@@ -81,11 +81,10 @@ fn test_js_file_lifecycle_with_odoo() {
         "JS file should still be in opened_files after didChange"
     );
     {
-        let file_mgr = session.sync_odoo.get_file_mgr();
-        let file_mgr = file_mgr.borrow();
+        let file_mgr = session.file_mgr();
         let file_info = file_mgr.get_file_info(&js_path).expect("FileInfo must exist after edit");
         assert_eq!(
-            file_info.borrow().version,
+            session.file_mgr()[file_info].version,
             Some(2),
             "File version should be updated to 2 after didChange"
         );
@@ -138,7 +137,7 @@ fn test_js_file_lifecycle_with_odoo() {
         "Renamed JS file should be in opened_files after re-open"
     );
     assert!(
-        session.sync_odoo.get_file_mgr().borrow().get_file_info(&new_js_path).is_some(),
+        session.file_mgr().get_file_info(&new_js_path).is_some(),
         "FileInfo should exist for renamed JS file"
     );
     let has_renamed_entry = session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter()
@@ -152,11 +151,10 @@ fn test_js_file_lifecycle_with_odoo() {
         make_js_change_params(new_js_uri.clone(), 2, final_content),
     );
     {
-        let file_mgr = session.sync_odoo.get_file_mgr();
-        let file_mgr = file_mgr.borrow();
+        let file_mgr = session.file_mgr();
         let file_info = file_mgr.get_file_info(&new_js_path).expect("FileInfo must exist after edit of renamed file");
         assert_eq!(
-            file_info.borrow().version,
+            session.file_mgr()[file_info].version,
             Some(2),
             "Renamed file version should be 2 after edit"
         );

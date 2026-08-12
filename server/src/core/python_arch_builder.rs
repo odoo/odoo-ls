@@ -5,6 +5,7 @@ use ruff_python_ast::{
     StmtMatch, StmtTry, StmtWhile, StmtWith,
 };
 use ruff_text_size::{Ranged, TextRange, TextSize};
+use slotmap::Key;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::vec;
@@ -15,6 +16,7 @@ use crate::constants::{
 };
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
+use crate::core::file_mgr::FileInfoKey;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 use crate::core::python_utils;
@@ -43,7 +45,7 @@ pub struct PythonArchBuilder {
     sym_stack: Vec<SymbolKey>,
     __all_symbols_to_add: Vec<(String, TextRange)>,
     diagnostics: Vec<Diagnostic>,
-    file_info: Option<Rc<RefCell<FileInfo>>>,
+    file_info: FileInfoKey,
 }
 
 impl PythonArchBuilder {
@@ -59,7 +61,8 @@ impl PythonArchBuilder {
             sym_stack: vec![symbol.into()],
             __all_symbols_to_add: Vec::new(),
             diagnostics: vec![],
-            file_info: None,
+            // It always gets set during the load_arch call
+            file_info: FileInfoKey::null(),
         })
     }
 
@@ -83,24 +86,21 @@ impl PythonArchBuilder {
             let odoo_addons = session.st()[m].parent();
             ModuleSymbol::load_module_arch(m, session, odoo_addons);
         }
-        let (file_info_rc, _) = FileMgr::get_or_recreate_file_info(session, self.file);
-        if self.file_mode && !file_info_rc.borrow().file_info_ast.borrow().ast.is_built() {
-            file_info_rc.borrow_mut().prepare_ast(session);
+        let (file_info_key, _) = FileMgr::get_or_recreate_file_info(session, self.file);
+        if self.file_mode && !session.file_mgr()[file_info_key].file_info_ast.borrow().ast.is_built() {
+            FileInfo::prepare_ast(session, file_info_key);
         }
-        self.file_info = Some(file_info_rc.clone());
+        self.file_info = file_info_key;
         if self.file_mode {
             //diagnostics for functions are stored directly on funcs
-            let mut file_info = file_info_rc.borrow_mut();
-            file_info.replace_diagnostics(DiagnosticSource::PY_ARCH, self.diagnostics.clone());
+            session.file_mgr_mut()[file_info_key].replace_diagnostics(DiagnosticSource::PY_ARCH, self.diagnostics.clone());
         }
-        let file_info = file_info_rc.borrow();
-        let file_info_ast_rc = file_info.file_info_ast.clone();
+        let file_info_ast_rc = session.file_mgr()[file_info_key].file_info_ast.clone();
         let file_noqa =if self.file_mode {
-             file_info.noqas_blocs.get(&0).cloned()
+             session.file_mgr()[file_info_key].noqas_blocs.get(&0).cloned()
         } else {
             None
         };
-        drop(file_info);
         let file_info_ast= file_info_ast_rc.borrow();
         if let Some(indexed_module) = &file_info_ast.ast.as_py_ast().indexed_module {
             let ast = if self.file_mode {
@@ -159,8 +159,7 @@ impl PythonArchBuilder {
                 //even if there is no __init__.py, we need to go to rebuild_arch and validation to validate the manifest
                 BuildScheduler::queue(session, self.sym_stack[0].unwrap_buildable_key());
             } else {
-                let mut file_info = file_info_rc.borrow_mut();
-                file_info.publish_diagnostics(session);
+                FileInfo::publish_diagnostics(session, file_info_key);
             }
         } else {
             session.st_mut().set_build_status(self.sym_stack[0].unwrap_buildable_key(), BuildSteps::ARCH, BuildStatus::INVALID)
@@ -764,7 +763,7 @@ impl PythonArchBuilder {
         //add params
         PythonArchBuilder::handle_func_args(function_key, session, &func_def.parameters);
         let mut add_noqa = false;
-        if let Some(noqa_bloc) = self.file_info.as_ref().unwrap().borrow().noqas_blocs.get(&func_def.range.start().to_u32()) {
+        if let Some(noqa_bloc) = session.file_mgr()[self.file_info].noqas_blocs.get(&func_def.range.start().to_u32()) {
             session.noqas_stack.push(noqa_bloc.clone());
             add_noqa = true;
         }
@@ -791,24 +790,23 @@ impl PythonArchBuilder {
         let parent = *self.sym_stack.last().unwrap();
         let class_key = session.st_mut().add_new_class(
             parent, class_def.name.id.as_str(), class_def.range, class_def.body.first().unwrap().range().start());
-        let class_sym = &mut session.sync_odoo.symbol_table[class_key];
 
         if !class_def.body.is_empty() && class_def.body[0].is_expr_stmt() {
             let expr = class_def.body[0].as_expr_stmt().unwrap();
             if expr.value.is_literal_expr() {
                 let const_expr = expr.value.as_literal_expr().unwrap();
                 if let Some(s) = const_expr.as_string_literal() {
-                    class_sym.doc_string = Some(s.value.to_string());
+                    session.sync_odoo.symbol_table[class_key].doc_string = Some(s.value.to_string());
                 }
             }
         }
         let mut add_noqa = false;
-        if let Some(noqa_bloc) = self.file_info.as_ref().unwrap().borrow().noqas_blocs.get(&class_def.range.start().to_u32()) {
+        if let Some(noqa_bloc) = session.file_mgr()[self.file_info].noqas_blocs.get(&class_def.range.start().to_u32()) {
             session.noqas_stack.push(noqa_bloc.clone());
             add_noqa = true;
         }
         let noqas = combine_noqa_info(&session.noqas_stack);
-        class_sym.noqas = noqas.clone();
+        session.sync_odoo.symbol_table[class_key].noqas = noqas.clone();
         session.current_noqa = noqas;
         self.sym_stack.push(class_key.into());
         self.visit_node(session, &class_def.body);

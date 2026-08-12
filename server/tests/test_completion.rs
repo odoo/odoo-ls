@@ -27,15 +27,15 @@ fn test_depends_kwarg_nested_field_completion() {
     assert!(Path::new(&test_file).exists(), "Test file does not exist: {}", test_file);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let file_mgr = session.file_mgr();
+    let file_info = file_mgr.get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file)) else {
         panic!("Failed to get file symbol");
     };
 
     // Line `    partner_display_name_dep = fields.Char(compute="_compute_partner_display_name_dep", depends=["partner_id.disp"])`
     // (0-indexed line 79), cursor right after "disp" inside the string.
-    let response = CompletionFeature::autocomplete(&mut session, file_symbol, &file_info, None, 79, 113);
+    let response = CompletionFeature::autocomplete(&mut session, file_symbol, file_info, None, 79, 113);
     let labels = labels(response);
     assert!(labels.iter().any(|l| l == "display_name"), "Expected display_name to be suggested for the 'disp' prefix, got: {:?}", labels);
     assert!(!labels.iter().any(|l| l == "create_uid"), "create_uid does not match the 'disp' prefix, got: {:?}", labels);
