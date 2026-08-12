@@ -6,39 +6,16 @@ use lsp_types::{Diagnostic, DiagnosticTag, Range, SymbolKind};
 use ruff_text_size::TextRange;
 
 use crate::{
-    constants::{BuildStatus, BuildSteps, MissingDataSource, OYarn, PackageType, SymType},
-    core::{
-        build_scheduler::BuildScheduler,
-        diagnostics::{create_diagnostic, DiagnosticCode},
-        entry_point::EntryPoint,
-        evaluation::{Evaluation, EvaluationSymbolPtr},
-        evaluation_context::{Context, ContextKey, ContextValue},
-        file_mgr::{FileInfo, FileMgr, NoqaInfo},
-        model::Model,
-        odoo::SyncOdoo,
-        python_arch_eval_hooks::get_base_model_symbol,
-        symbols::{
-            storage::{
-                buildable::ResettableBuildable as _,
-                dependency_mgr::{DependenciesTable, DependentsTable},
-                lifecycle::NameTakenError,
-                xml::xml_field_symbol::XmlFieldName,
-                FileContentParent, FileSystemSymbolParent, SymbolTable,
-            },
-            symbol_keys::{
+    Sy, constants::{BuildStatus, BuildSteps, MissingDataSource, OYarn, PackageType, SymType}, core::{
+        build_scheduler::BuildScheduler, diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPoint, evaluation::{Evaluation, EvaluationSymbolPtr}, evaluation_context::{Context, ContextKey, ContextValue}, file_mgr::{FileInfo, FileMgr, NoqaInfo}, model::{Model, ModelKey}, odoo::SyncOdoo, python_arch_eval_hooks::get_base_model_symbol, symbols::{
+            Buildable, Dependencies, ModuleSymbol, storage::{
+                FileContentParent, FileSystemSymbolParent, SymbolTable, buildable::ResettableBuildable as _, dependency_mgr::{DependenciesTable, DependentsTable}, lifecycle::NameTakenError, xml::xml_field_symbol::XmlFieldName,
+            }, symbol_keys::{
                 BuildableSymbolKey, ClassKey, FunctionKey, KeyValidator, ModuleKey, NamespaceKey,
                 RootKey, SourceFileKey, SymbolKey, VariableKey, XmlDataKey, XmlRecordKey,
-            },
-            symbol_mgr::{iter_symbol_keys, ContentSymbols, SectionIndex, SectionRange, SymbolMgr},
-            Buildable, Dependencies, ModuleSymbol,
+            }, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys},
         },
-    },
-    oyarn,
-    threads::SessionInfo,
-    tree::{OYarnExt, Tree},
-    utils::{HashMap, HashSet, PathSanitizer},
-    weak_collections::WeakSet,
-    Sy,
+    }, oyarn, threads::SessionInfo, tree::{OYarnExt, Tree}, utils::{HashMap, HashSet, PathSanitizer}, weak_collections::WeakSet,
 };
 #[derive(Debug)]
 pub enum CreateError {
@@ -1002,19 +979,6 @@ impl SymbolTable {
         self.dependents_as_mut(dependency)[level_i][step_i - level_i].insert(target);
     }
 
-    pub fn add_model_dependencies(&mut self, target: SourceFileKey, model: &Rc<RefCell<Model>>) {
-        let model_dependencies = match target {
-            SourceFileKey::Module(m) => &mut self[m].model_dependencies,
-            SourceFileKey::PythonPackage(p) => &mut self[p].model_dependencies,
-            SourceFileKey::File(f) => &mut self[f].model_dependencies,
-            SourceFileKey::XmlFile(x) => &mut self[x].model_dependencies,
-            SourceFileKey::CsvFile(c) => &mut self[c].model_dependencies,
-            SourceFileKey::JsFile(j) => &mut self[j].model_dependencies,
-        };
-        model_dependencies.insert(model.clone());
-        model.borrow_mut().add_dependent(target);
-    }
-
     /**
      * reset the step of the symbol to given step and status to pending.
      * It will signal the change to all dependents
@@ -1066,7 +1030,7 @@ impl SymbolTable {
                     }
                 }
                 for (model, from_module) in session.st().iter_all_model_keys(session, ref_to_inv.into()) {
-                    model.borrow().add_dependents_to_validation(session, from_module);
+                    Model::add_dependents_to_validation(session, model, from_module);
                 }
             }
             if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::VALIDATION].contains(&step) && in_workspace {
@@ -1724,16 +1688,16 @@ impl SymbolTable {
                     }
                 }
                 let model_option = session.st()[class_key]._model.as_ref().and_then(|model_data|
-                    session.sync_odoo.models.get(&model_data.name).cloned()
+                    session.model_mgr().get_model(&model_data.name)
                 );
                 if let Some(model) = model_option && with_co_models {
                     // no recursion because it is handled in all_symbols_inherits
-                    let (model_symbols, model_inherits_symbols) = model.borrow().all_symbols_inherits(session, from_module);
-                    for (model_key, dependency) in model_symbols {
-                        if dependency.is_some() || class_key == model_key {
+                    let (model_symbols, model_inherits_symbols) = model.all_symbols_inherits(session, from_module);
+                    for (model_class_key, dependency) in model_symbols {
+                        if dependency.is_some() || class_key == model_class_key {
                             continue;
                         }
-                        let model_sym = &session.st()[model_key];
+                        let model_sym = &session.st()[model_class_key];
                         let all_symbols: Vec<_> = iter_symbol_keys(model_sym).copied().collect();
                         for s in all_symbols {
                             if (only_fields && !Self::is_field(session, s)) || (only_methods && !matches!(s, SymbolKey::Function(_))) {
@@ -1743,11 +1707,11 @@ impl SymbolTable {
                             append_result(name, s);
                         }
                     }
-                    for (model_key, dependency) in model_inherits_symbols {
-                        if dependency.is_some() || class_key == model_key {
+                    for (model_class_key, dependency) in model_inherits_symbols {
+                        if dependency.is_some() || class_key == model_class_key {
                             continue;
                         }
-                        let model_sym = &session.st()[model_key];
+                        let model_sym = &session.st()[model_class_key];
                         // for inherits symbols, we only add fields
                         let all_symbols: Vec<_> = iter_symbol_keys(model_sym).copied().collect();
                         let fields = all_symbols.into_iter().filter(|&s| Self::is_field(session, s)).collect::<Vec<_>>();
@@ -1772,8 +1736,7 @@ impl SymbolTable {
                 let Some(model) = SymbolTable::get_xml_defined_model(session, xml_record_key) else {
                     return;
                 };
-                let model_ref = model.borrow();
-                let fields = model_ref.get_xml_model_field_symbols(session.st(), from_module);
+                let fields = session.model_mgr()[model].get_xml_model_field_symbols(session.st(), from_module);
                 let fields_with_names = fields.filter_map(|f_key| {
                     let field_name =
                         session.st()[f_key].get_field_text(XmlFieldName::Name, session.st())?;
@@ -2143,8 +2106,7 @@ impl SymbolTable {
         if let SymbolKey::XmlRecord(xml_record_key) = target
             && let Some(model) = SymbolTable::get_xml_defined_model(session, xml_record_key)
         {
-            let model_ref = model.borrow();
-            let fields = model_ref.get_xml_model_field_symbols(session.st(), from_module);
+            let fields = session.model_mgr()[model].get_xml_model_field_symbols(session.st(), from_module);
             let matching_fields = fields.filter_map(|f_key| {
                 let field_name =
                     session.st()[f_key].get_field_text(XmlFieldName::Name, session.st())?;
@@ -2182,10 +2144,10 @@ impl SymbolTable {
         };
         let model_data = &session.st()[c]._model;
         if model_data.is_some() && !prevent_comodel {
-            let model = session.sync_odoo.models.get(&model_data.as_ref().unwrap().name).cloned();
+            let model = session.model_mgr().get_model_key(&model_data.as_ref().unwrap().name);
             if let Some(model) = model {
                 // from_module: None means no dependency filtering (return everything)
-                let model_symbols = Model::get_full_model_classes(model.clone(), session, from_module);
+                let model_symbols = Model::get_full_model_classes(model, session, from_module);
                 for model_symbol in model_symbols {
                     if target == model_symbol || visited_classes.contains(&model_symbol) {
                         continue;
@@ -2202,7 +2164,7 @@ impl SymbolTable {
                         }
                     }
                 }
-                for model_inherits_symbol in model.clone().borrow().get_inherits_models(session, from_module) {
+                for model_inherits_symbol in session.model_mgr()[model].get_inherits_models(session, from_module) {
                     //only fields are visible on inherits, not methods
                     let model_symbols = Model::get_full_model_classes(model_inherits_symbol, session, from_module);
                     for model_symbol in model_symbols {
@@ -2348,23 +2310,23 @@ impl SymbolTable {
         &self,
         session: &SessionInfo,
         key: SymbolKey,
-    ) -> Vec<(Rc<RefCell<Model>>, Option<ModuleKey>)> {
+    ) -> Vec<(ModelKey, Option<ModuleKey>)> {
         let mut res = vec![];
 
         fn iter_recursive(
             session: &SessionInfo,
             key: SymbolKey,
-            res: &mut Vec<(Rc<RefCell<Model>>, Option<ModuleKey>)>,
+            res: &mut Vec<(ModelKey, Option<ModuleKey>)>,
         ) {
             let table = session.st();
             match key {
                 SymbolKey::Class(class) => {
-                    if let Some(model_data) =
+                    if let Some(model_key) =
                         session.st()[class]._model.as_ref().and_then(|model_data| {
-                            session.sync_odoo.models.get(&model_data.name).cloned()
+                            session.model_mgr().get_model_key(&model_data.name)
                         })
                     {
-                        res.push((model_data, session.st().find_module(class)));
+                        res.push((model_key, session.st().find_module(class)));
                     }
                     let class_sym = &table[class];
                     for child_key in iter_symbol_keys(class_sym) {
@@ -2456,10 +2418,9 @@ impl SymbolTable {
     pub fn debug_path(&self, target: SymbolKey) -> String {
         self.paths(target).first().cloned().unwrap_or(self.name(target).to_string())
     }
-
-    pub fn get_xml_defined_model(session: &SessionInfo, xml_record_key: XmlRecordKey) -> Option<Rc<RefCell<Model>>> {
+    pub fn get_xml_defined_model(session: &SessionInfo, xml_record_key: XmlRecordKey) -> Option<ModelKey> {
         let model_name = session.st().get_declared_model(xml_record_key)?;
-        session.sync_odoo.models.get(model_name).cloned()
+        session.model_mgr().get_model_key(model_name)
     }
 }
 

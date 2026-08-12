@@ -541,12 +541,12 @@ impl PythonArchEval {
                     let Some(model_data) = session.st()[c]._model.as_ref() else {
                         continue;
                     };
-                    let Some(model) = session.sync_odoo.models.get(&model_data.name).cloned() else {
+                    let Some(model) = session.model_mgr().get_model_key(&model_data.name) else {
                         continue;
                     };
                     let fn_name = session.st().name(self.sym_stack[0]).clone();
                     let module = session.st().find_module(parent_class);
-                    let allowed_fields = model.borrow().get_method_computed_field_names(session, module, &fn_name);
+                    let allowed_fields = session.model_mgr()[model].get_method_computed_field_names(session, module, &fn_name);
                     if allowed_fields.is_empty() {
                         continue;
                     }

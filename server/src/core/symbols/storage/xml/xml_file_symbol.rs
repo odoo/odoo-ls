@@ -1,14 +1,12 @@
 use lsp_types::Diagnostic;
 use roxmltree::Error;
-use weak_table::PtrWeakHashSet;
 
 use crate::constants::MissingDataSource;
 use crate::core::symbols::storage::dependency_mgr::{DependenciesTable, DependentsTable};
 use crate::core::symbols::symbol_keys::{ModuleKey, XmlDataKey};
 use crate::{core::diagnostics::DiagnosticCode, threads::SessionInfo};
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::{FileInfo, NoqaInfo}, model::Model}, oyarn};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::file_mgr::{FileInfo, NoqaInfo}, oyarn};
 use crate::utils::HashSet;
-use std::{cell::RefCell, rc::Weak};
 use crate::utils::HashMap;
 
 #[derive(Debug)]
@@ -23,7 +21,6 @@ pub struct XmlFileSymbol {
     pub not_found_data_ids: HashMap<MissingDataSource, BuildSteps>,
     pub (in crate::core::symbols) in_workspace: bool,
     pub self_import: bool,
-    pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
     pub dependencies: DependenciesTable,
     pub dependents: DependentsTable,
     pub processed_text_hash: u64,
@@ -49,7 +46,6 @@ impl XmlFileSymbol {
             data_symbols: HashSet::default(),
             in_workspace: false,
             self_import: false,
-            model_dependencies: PtrWeakHashSet::new(),
             dependencies: DependenciesTable::default(),
             dependents: DependentsTable::default(),
             processed_text_hash: 0,

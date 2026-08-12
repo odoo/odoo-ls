@@ -10,33 +10,19 @@
 //! checks, unlike keys stored elsewhere (as Weak).
 
 use crate::{
-    constants::{OYarn, PackageType, SymType},
-    core::{
-        entry_point::{EntryPoint, EntryPointCleanupToken},
-        odoo::SyncOdoo,
-        symbols::{
-            storage::{
-                xml::{
+    constants::{OYarn, PackageType, SymType}, core::{
+        entry_point::{EntryPoint, EntryPointCleanupToken}, odoo::SyncOdoo, symbols::{
+            ClassSymbol, CompiledSymbol, CsvFileSymbol, Dependencies, DiskDirSymbol, FileSymbol, FunctionSymbol, JsFileSymbol, ModuleSymbol, NamespaceSymbol, PythonPackageSymbol, RootSymbol, SymbolTable, VariableSymbol, XmlFileSymbol, storage::{
+                FileContentParent, FileSystemSymbolParent, JsFileParent, XmlDataParent, XmlFieldParent, xml::{
                     xml_asset_symbol::XmlAssetSymbol, xml_delete_symbol::XmlDeleteSymbol,
                     xml_field_symbol::XmlFieldSymbol, xml_menuitem_symbol::XmlMenuItemSymbol,
                     xml_record_symbol::XmlRecordSymbol, xml_template_symbol::XmlTemplateSymbol,
                 },
-                FileContentParent, FileSystemSymbolParent, JsFileParent, XmlDataParent,
-                XmlFieldParent,
+            }, symbol_keys::{
+                ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FileSystemSymbolKey, FunctionKey, JsFileKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey, VariableKey, XmlAssetKey, XmlDeleteKey, XmlFieldKey, XmlFileKey, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey,
             },
-            symbol_keys::{
-                ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FileSystemSymbolKey,
-                FunctionKey, JsFileKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey,
-                SourceFileKey, SymbolKey, VariableKey, XmlAssetKey, XmlDeleteKey, XmlFieldKey,
-                XmlFileKey, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey,
-            },
-            ClassSymbol, CompiledSymbol, CsvFileSymbol, Dependencies, DiskDirSymbol, FileSymbol,
-            FunctionSymbol, JsFileSymbol, ModuleSymbol, NamespaceSymbol, PythonPackageSymbol,
-            RootSymbol, SymbolTable, VariableSymbol, XmlFileSymbol,
         },
-    },
-    oyarn,
-    threads::SessionInfo,
+    }, oyarn, threads::SessionInfo,
 };
 use ruff_text_size::{TextRange, TextSize};
 use std::{cell::RefCell, ops::Range, path::Path, rc::Rc};

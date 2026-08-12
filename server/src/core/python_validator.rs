@@ -460,12 +460,12 @@ impl PythonValidator {
                             let Some(file_symbol) = session.st().get_file(class.into()) else {
                                 break 'comodel_check;
                             };
-                            let maybe_model = session.sync_odoo.models.get(comodel_field_name);
-                            if maybe_model.map(|m| m.borrow_mut().has_symbols(session.st())).unwrap_or(false) {
-                                let model = maybe_model.unwrap().clone();
-                                session.st_mut().add_model_dependencies(file_symbol, &model);
+                            if let Some(model_key) = session.model_mgr().get_model_key(comodel_field_name)
+                                && session.model_mgr()[model_key].has_symbols(session.st())
+                            {
+                                session.model_mgr_mut()[model_key].add_dependent(file_symbol);
                                 let Some(from_module) = maybe_from_module else {break 'comodel_check;};
-                                if !model.clone().borrow().model_in_deps(session, from_module) {
+                                if !session.model_mgr()[model_key].model_in_deps(session, from_module) {
                                     if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03015, &[comodel_field_name]) {
                                         self.diagnostics.push(Diagnostic {
                                             range: Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
@@ -526,14 +526,13 @@ impl PythonValidator {
                         let Some(comodel_name) = eval_weak.get_weak().context.get(ContextKey::ComodelName).map(ContextValue::as_str) else {
                             continue;
                         };
-                        let Some(model) = session.sync_odoo.models.get(comodel_name).cloned() else {
+                        let Some(model) = session.model_mgr().get_model_key(comodel_name) else {
                             continue;
                         };
                         let Some(module) = maybe_from_module else {
                             continue;
                         };
-                        let main_syms = model
-                            .borrow()
+                        let main_syms = session.model_mgr()[model]
                             .get_main_symbols(session, Some(module))
                             .filter_map(|k| k.as_class_key())
                             .collect::<Vec<_>>();
@@ -543,8 +542,7 @@ impl PythonValidator {
                         let valid_xml_field_found = {
                             // Look for XML field that has name, ttype, and relation set
                             // Whose name matches the inverse name, is many2one and has the relation set to the current model
-                            model
-                                .borrow()
+                            session.model_mgr()[model]
                                 .get_xml_model_field_symbols(session.st(), Some(module))
                                 .any(|rec_key| {
                                     let name = session.st()[rec_key]
@@ -676,14 +674,13 @@ impl PythonValidator {
             }
         }
         // Check name for shadowing warning
-        let Some(model) = session.sync_odoo.models.get(&model_name).cloned() else {
+        let Some(model) = session.model_mgr().get_model_key(&model_name) else {
             return;
         };
         let inherited_model_names = session.st()[class]._model.as_ref().unwrap().inherit.clone();
         if !inherited_model_names.contains(&model_name)
             // Defining it here because it is an expensive call
-            && let conflicting_symbols = model
-                .borrow()
+            && let conflicting_symbols = session.model_mgr()[model]
                 .get_main_symbols(session, maybe_from_module)
                 .filter(|&main_sym| main_sym != class.into())
                 .collect::<Vec<_>>()
@@ -744,15 +741,14 @@ impl PythonValidator {
         let Some(from) = self.current_module else {
             return; //TODO do we want to raise something?
         };
-        let model = session.sync_odoo.models.get(model_name);
-        if model.map(|m| m.borrow_mut().has_symbols(session.st())).unwrap_or(false) {
-            let model = model.unwrap().clone();
+        if let Some(model_key) = session.model_mgr().get_model_key(model_name)
+            && session.model_mgr()[model_key].has_symbols(session.st())
+        {
             let file = session.st().get_file(class_key.into()).unwrap();
-            session.st_mut().add_model_dependencies(file, &model);
-            let borrowed_model = model.borrow();
+            session.model_mgr_mut()[model_key].add_dependent(file);
             let mut main_modules = vec![];
             let mut found_one = false;
-            for main_sym in borrowed_model.get_main_symbols(session, None).filter_map(|sym| sym.as_class_key()) {
+            for main_sym in session.model_mgr()[model_key].get_main_symbols(session, None).filter_map(|sym| sym.as_class_key()) {
                 let main_sym_module = session.st().find_module(main_sym);
                 if let Some(main_sym_module) = main_sym_module {
                     let module_name = &session.st()[main_sym_module].dir_name;

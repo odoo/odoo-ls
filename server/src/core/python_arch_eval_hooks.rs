@@ -1,5 +1,6 @@
 use crate::core::evaluation_context::ContextKey;
 use crate::core::evaluation::HookName;
+use crate::core::model::ModelKey;
 use crate::utils::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -14,7 +15,6 @@ use tracing::warn;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation::GetSymbolHook;
 use crate::core::evaluation::GetSymbolHookCallable;
-use crate::core::model::Model;
 use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation_context::Context;
 use crate::constants::*;
@@ -979,7 +979,7 @@ impl PythonArchEvalHooks {
 
     /// Make the file of `scope` depend on the definitions of `model`, unless it is an orm file
     /// itself, as that would create a self-dependency.
-    fn add_model_dependencies_outside_orm(session: &mut SessionInfo, scope: Option<SymbolKey>, model: &Rc<RefCell<Model>>) {
+    fn add_model_dependencies_outside_orm(session: &mut SessionInfo, scope: Option<SymbolKey>, model: ModelKey) {
         let Some(scope_file) = scope.and_then(|s| session.st().get_file(s)) else {
             return;
         };
@@ -990,7 +990,7 @@ impl PythonArchEvalHooks {
             session.sync_odoo.get_main_entry_tree(scope_file).0.starts_with_strs(&["odoo", "orm"])
         };
         if !is_orm_file {
-            session.st_mut().add_model_dependencies(scope_file, model);
+            session.model_mgr_mut()[model].add_dependent(scope_file);
         }
     }
 
@@ -1001,19 +1001,20 @@ impl PythonArchEvalHooks {
     fn eval_env_model(session: &mut SessionInfo, model_name: &str, context: Option<&Context>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
     {
         let res = Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(Wk::null(), Some(true), false)));
-        let maybe_model = session.sync_odoo.models.get(model_name).cloned();
-        let model_exists = maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols(session.st())).unwrap_or(false);
+        let Some(model_key) = session.model_mgr().get_model_key(model_name) else {
+            return res;
+        };
+        let model_exists = session.model_mgr()[model_key].has_symbols(session.st());
         if !model_exists {
             return res;
         }
-        let Some(model) = maybe_model else { unreachable!() };
         let from_module = if let Some(ContextValue::MODULE(m)) = context.and_then(|c| c.get(ContextKey::Module)) {
             m.upgrade(session.st())
         } else {
             None
         };
-        PythonArchEvalHooks::add_model_dependencies_outside_orm(session, scope, &model);
-        let model = model.borrow();
+        PythonArchEvalHooks::add_model_dependencies_outside_orm(session, scope, model_key);
+        let model = &session.model_mgr()[model_key];
         let mut symbols = model.get_main_symbols(session, from_module);
         if let Some(first_class) = symbols.next() {
             return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(first_class, Some(true), false)));
@@ -1046,20 +1047,19 @@ impl PythonArchEvalHooks {
         let Some(ContextValue::STRING(s)) = context.get(ContextKey::Args) else {
             return res
         };
-        let maybe_model = session.sync_odoo.models.get(s.as_str()).cloned();
+
         let has_class_in_parents = scope.as_ref().map(|&scope| session.st().get_in_parents(scope, &[SymType::CLASS], true).is_some()).unwrap_or(false);
-        let model_exists = maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols(session.st())).unwrap_or(false);
-        if model_exists {
-            let Some(model) = maybe_model else {unreachable!()};
+        if let Some(model_key) = session.model_mgr().get_model_key(s)
+            && session.model_mgr()[model_key].has_symbols(session.st())
+        {
             let module = context.get(ContextKey::Module);
             let from_module = if let Some(ContextValue::MODULE(m)) = module {
                 m.upgrade(session.st())
             } else {
                 None
             };
-            PythonArchEvalHooks::add_model_dependencies_outside_orm(session, scope, &model);
-            let model = model.clone();
-            let model = model.borrow();
+            PythonArchEvalHooks::add_model_dependencies_outside_orm(session, scope, model_key);
+            let model = &session.model_mgr()[model_key];
             let mut symbols = model.get_main_symbols(session, from_module);
             if let Some(first_class) = symbols.next() {
                 return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(first_class, Some(true), false)));
@@ -1215,11 +1215,11 @@ impl PythonArchEvalHooks {
 
     fn eval_relational_with_comodel(session: &mut SessionInfo, comodel: &ContextValue, context: &Context, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>{
         let comodel = comodel.as_str();
-        let comodel_sym = session.sync_odoo.models.get(comodel).cloned();
-        if let Some(comodel_sym) = comodel_sym {
+        let maybe_comodel = session.model_mgr().get_model_key(comodel);
+        if let Some(comodel_key) = maybe_comodel {
             // Add dependency
             if let Some(scope) = scope.and_then(|s| session.st().get_file(s)) {
-                session.st_mut().add_model_dependencies(scope, &comodel_sym);
+                session.model_mgr_mut()[comodel_key].add_dependent(scope);
             }
             let module = context.get(ContextKey::Module);
             let mut from_module = None;
@@ -1228,8 +1228,7 @@ impl PythonArchEvalHooks {
             {
                 from_module = Some(m);
             }
-            let comodel_sym_ref = comodel_sym.borrow();
-            let mut main_symbol = comodel_sym_ref.get_main_symbols(session, from_module);
+            let mut main_symbol = session.model_mgr()[comodel_key].get_main_symbols(session, from_module);
             if let Some(key) = main_symbol.next() {
                 return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: key.into(), context: Context::default(), instance: Some(true), is_super: false}))
             }
@@ -1374,7 +1373,7 @@ impl PythonArchEvalHooks {
             }
             return diagnostics;
         }
-        let Some(model) = session.sync_odoo.models.get(returns_str).cloned() else {
+        let Some(model) = session.model_mgr().get_model_key(returns_str) else {
             if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03002, &[]) {
                 diagnostics.push(Diagnostic {
                     range: FileMgr::textRange_to_temporary_Range(&expr.range()),
@@ -1383,8 +1382,7 @@ impl PythonArchEvalHooks {
             };
             return diagnostics;
         };
-        let Some(main_model_sym) = model
-            .borrow()
+        let Some(main_model_sym) = session.model_mgr()[model]
             .get_main_symbols(session, session.st().find_module(func_sym))
             .next()
         else {
