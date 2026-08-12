@@ -73,7 +73,7 @@ impl ModuleSymbol {
 
     fn report_missing_dependency(session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>, module: ModuleKey, name: &OYarn, depend: &OYarn, range: &TextRange) {
         let entry = session.st().get_entry(module);
-        entry.borrow_mut().not_found_symbols.insert(module.into());
+        session.ep_mgr_mut()[entry].not_found_symbols.insert(module.into());
         session.st_mut()[module].not_found_paths.push((BuildSteps::ARCH, vec![Sy!("odoo"), Sy!("addons"), depend.clone()]));
         if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS04010, &[name, depend]) {
             diagnostics.push(Diagnostic {

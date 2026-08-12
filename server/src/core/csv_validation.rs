@@ -142,7 +142,8 @@ impl CsvValidator {
                 let Some(module) = module_symbol.upgrade(session.st()) else {continue};
                 if !session.st()[module].xml_ids.contains_key(*id_split.last().unwrap()) {
                     session.st_mut()[csv_module].not_found_data_ids.insert(MissingDataSource::XML_ID(complete_id), BuildSteps::VALIDATION);
-                    session.sync_odoo.get_main_entry().borrow_mut().not_found_data_ids.insert(csv_module.into());
+                    let main_entry = session.sync_odoo.get_main_entry();
+                    session.ep_mgr_mut()[main_entry].not_found_data_ids.insert(csv_module.into());
                     if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05001, &[]) {
                         diagnostics.push(Diagnostic {
                             range: Range { start: Position::new(start as u32, 0), end: Position::new(end as u32, 0) },
