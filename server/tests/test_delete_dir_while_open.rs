@@ -51,7 +51,7 @@ fn test_delete_open_file_then_edit_it() {
         },
     });
     BuildScheduler::process_rebuilds(&mut session, false);
-    assert!(session.sync_odoo.get_file_mgr().borrow().get_file_info(&point_path).is_some());
+    assert!(session.file_mgr().get_file_info(&point_path).is_some());
     assert!(session.sync_odoo.opened_files.contains(&point_path));
     let point_sym_before = session.sync_odoo.get_symbol(&point_path, (&[], &["Thing"]), u32::MAX);
     assert!(!point_sym_before.is_empty(), "point.Thing should resolve before any delete");
@@ -62,7 +62,7 @@ fn test_delete_open_file_then_edit_it() {
     });
 
     assert!(session.sync_odoo.opened_files.contains(&point_path), "delete must not implicitly close it");
-    assert!(session.sync_odoo.get_file_mgr().borrow().get_file_info(&point_path).is_some(), "FileInfo must survive");
+    assert!(session.file_mgr().get_file_info(&point_path).is_some(), "FileInfo must survive");
     assert!(
         !session.sync_odoo.get_symbol(&point_path, (&[], &["Thing"]), u32::MAX).is_empty(),
         "symbol must survive the delete while open - the root-cause fix"
@@ -78,9 +78,9 @@ fn test_delete_open_file_then_edit_it() {
         }],
     });
 
-    let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&point_path)
+    let file_info = session.file_mgr().get_file_info(&point_path)
         .expect("FileInfo must still exist after the incremental edit");
-    let contents = file_info.borrow().file_info_ast.borrow().text_document.as_ref()
+    let contents = session.file_mgr()[file_info].file_info_ast.borrow().text_document.as_ref()
         .expect("text_document must be populated after the incremental edit")
         .contents().to_string();
     assert!(contents.starts_with("xclass Thing"), "edit should have applied against the live symbol, got: {contents:?}");
@@ -111,7 +111,7 @@ fn test_delete_open_file_then_close_it_clears_everything() {
     Odoo::handle_did_delete(&mut session, DeleteFilesParams {
         files: vec![FileDelete { uri: point_uri.to_string() }],
     });
-    assert!(session.sync_odoo.get_file_mgr().borrow().get_file_info(&point_path).is_some(), "must survive the delete while open");
+    assert!(session.file_mgr().get_file_info(&point_path).is_some(), "must survive the delete while open");
 
     // 2. The user eventually closes the tab without ever reopening it.
     Odoo::handle_did_close(&mut session, DidCloseTextDocumentParams {
@@ -119,7 +119,7 @@ fn test_delete_open_file_then_close_it_clears_everything() {
     });
 
     assert!(
-        session.sync_odoo.get_file_mgr().borrow().get_file_info(&point_path).is_none(),
+        session.file_mgr().get_file_info(&point_path).is_none(),
         "FileInfo must finally be cleared once closed, not leak for the rest of the session"
     );
     assert!(
@@ -177,7 +177,7 @@ fn test_feature_request_on_deleted_open_file_does_not_resurrect_a_phantom_entry(
         text_document: TextDocumentIdentifier { uri: point_uri },
     });
     assert!(
-        session.sync_odoo.get_file_mgr().borrow().get_file_info(&point_path).is_none(),
+        session.file_mgr().get_file_info(&point_path).is_none(),
         "a feature request must not be able to silently disable cleanup"
     );
 }
@@ -206,7 +206,7 @@ fn test_delete_open_file_then_recreate_it_keeps_it() {
     Odoo::handle_did_delete(&mut session, DeleteFilesParams {
         files: vec![FileDelete { uri: point_uri.to_string() }],
     });
-    assert!(session.sync_odoo.get_file_mgr().borrow().get_file_info(&point_path).is_some(), "must survive the delete while open");
+    assert!(session.file_mgr().get_file_info(&point_path).is_some(), "must survive the delete while open");
 
     // 2. The user edits the still-open buffer (never saved yet).
     Odoo::handle_did_change(&mut session, DidChangeTextDocumentParams {
@@ -217,8 +217,9 @@ fn test_delete_open_file_then_recreate_it_keeps_it() {
             text: "renamed_method".to_string(),
         }],
     });
-    let edited_content = session.sync_odoo.get_file_mgr().borrow().get_file_info(&point_path)
-        .unwrap().borrow().file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
+    let edited_content = session.file_mgr()[
+        session.file_mgr().get_file_info(&point_path).unwrap()
+        ].file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
 
     // 3. The user saves the buffer, recreating the file on disk.
     std::fs::write(&point_path, &edited_content).unwrap();
@@ -244,7 +245,7 @@ fn test_delete_open_file_then_recreate_it_keeps_it() {
     Odoo::handle_did_close(&mut session, DidCloseTextDocumentParams {
         text_document: TextDocumentIdentifier { uri: point_uri },
     });
-    assert!(session.sync_odoo.get_file_mgr().borrow().get_file_info(&point_path).is_some());
+    assert!(session.file_mgr().get_file_info(&point_path).is_some());
 }
 
 // Scope boundary, documented rather than silently dropped: deleting a whole
@@ -273,7 +274,7 @@ fn test_directory_delete_with_nested_open_file_is_not_deferred() {
         },
     });
     BuildScheduler::process_rebuilds(&mut session, false);
-    assert!(session.sync_odoo.get_file_mgr().borrow().get_file_info(&point_path).unwrap().borrow().opened);
+    assert!(session.file_mgr()[session.file_mgr().get_file_info(&point_path).unwrap()].opened);
     assert!(!session.sync_odoo.get_symbol(&dir, (&["models", "point"], &["Thing"]), u32::MAX).is_empty());
 
     // Delete the whole `pkg` dir (not point.py directly). `pkg` has an

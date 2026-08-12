@@ -2,10 +2,11 @@ use lsp_types::Diagnostic;
 use roxmltree::Error;
 
 use crate::constants::MissingDataSource;
+use crate::core::file_mgr::FileInfoKey;
 use crate::core::symbols::storage::dependency_mgr::{DependenciesTable, DependentsTable};
 use crate::core::symbols::symbol_keys::{ModuleKey, XmlDataKey};
 use crate::{core::diagnostics::DiagnosticCode, threads::SessionInfo};
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::file_mgr::{FileInfo, NoqaInfo}, oyarn};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::file_mgr::NoqaInfo, oyarn};
 use crate::utils::HashSet;
 use crate::utils::HashMap;
 
@@ -64,8 +65,8 @@ impl XmlFileSymbol {
 }
 
 impl XmlFileSymbol {
-    pub fn build_syntax_diagnostics(session: &SessionInfo, diagnostics: &mut Vec<Diagnostic>, file_info: &mut FileInfo, doc_error: &Error) {
-        let offset = file_info.position_to_offset(doc_error.pos().row -1, doc_error.pos().col -1, session.sync_odoo.encoding);
+    pub fn build_syntax_diagnostics(session: &SessionInfo, diagnostics: &mut Vec<Diagnostic>, file_info: FileInfoKey, doc_error: &Error) {
+        let offset = session.file_mgr()[file_info].position_to_offset(doc_error.pos().row -1, doc_error.pos().col -1, session.sync_odoo.encoding);
         if let Some(diagnostic) = crate::core::diagnostics::create_diagnostic(session, DiagnosticCode::OLS05000, &[&doc_error.to_string()]) {
             diagnostics.push(lsp_types::Diagnostic {
                 range: lsp_types::Range::new(lsp_types::Position::new(offset as u32, 0), lsp_types::Position::new(offset as u32 + 1, 0)),

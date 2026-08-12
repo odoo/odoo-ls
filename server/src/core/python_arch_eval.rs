@@ -26,7 +26,7 @@ use crate::threads::SessionInfo;
 use super::config::DiagMissingImportsMode;
 use super::entry_point::EntryPoint;
 use super::evaluation::{EvaluationSymbolPtr, EvaluationSymbolWeak};
-use super::file_mgr::FileMgr;
+use super::file_mgr::{FileInfo, FileMgr};
 use super::import_resolver::ImportResult;
 use super::python_arch_eval_hooks::PythonArchEvalHooks;
 use super::python_odoo_builder::PythonOdooBuilder;
@@ -68,13 +68,13 @@ impl PythonArchEval {
             trace!("ARCH_EVAL  - PYTHON {} - {}", session.st().path(self.file), session.st().name(symbol));
         }
         session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::ARCH_EVAL, BuildStatus::IN_PROGRESS);
-        let (file_info_rc, _) = FileMgr::get_or_recreate_file_info(session, self.file);
-        if !file_info_rc.borrow().file_info_ast.borrow().ast.is_built() {
-            file_info_rc.borrow_mut().prepare_ast(session);
-        }
-        let file_info = (*file_info_rc).borrow();
-        let file_info_ast = file_info.file_info_ast.clone();
-        drop(file_info);
+        let file_info_ast = {
+            let (file_info_key, _) = FileMgr::get_or_recreate_file_info(session, self.file);
+            if !session.file_mgr()[file_info_key].file_info_ast.borrow().ast.is_built() {
+                FileInfo::prepare_ast(session, file_info_key);
+            }
+            session.file_mgr()[file_info_key].file_info_ast.clone()
+        };
         if let SymbolKey::Module(m) = symbol  {
             ModuleSymbol::load_data(m, session);
             ModuleSymbol::load_assets(m, session);
@@ -118,9 +118,12 @@ impl PythonArchEval {
             }
             session.current_noqa = old_noqa;
         }
+        let file_path = self.file_path(session);
         if self.file_mode {
-            file_info_rc.borrow_mut().replace_diagnostics(DiagnosticSource::PY_ARCH_EVAL, self.diagnostics.clone());
-            PythonArchEvalHooks::on_file_eval(session, &self.entry_point, self.file);
+            if let Some(file_info_key) = session.file_mgr().get_file_info(&file_path) {
+                session.file_mgr_mut()[file_info_key].replace_diagnostics(DiagnosticSource::PY_ARCH_EVAL, self.diagnostics.clone());
+                PythonArchEvalHooks::on_file_eval(session, &self.entry_point, self.file);
+            }
         } else {
             //then Symbol must be a function
             let f = symbol.unwrap_function_key();
@@ -128,16 +131,21 @@ impl PythonArchEval {
             PythonArchEvalHooks::on_function_eval(session, &self.entry_point, f);
         }
         session.st_mut().set_build_status(self.sym_stack[0].unwrap_buildable_key(), BuildSteps::ARCH_EVAL, BuildStatus::DONE);
-        if session.st().is_external(self.sym_stack[0]) && (!self.file_mode  || !file_info_rc.borrow().opened) {
-            if self.file_mode {
-                let file_path = session.st().file_path(self.file).to_string();
-                FileMgr::delete_file_path(session, &file_path);
-            }
-        } else {
-            if self.file_mode {
-                BuildScheduler::queue(session, self.sym_stack[0].unwrap_buildable_key());
-            }
+        if !self.file_mode {
+            return;
         }
+        if session.st().is_external(self.sym_stack[0])
+        && let Some(file_info_key) = session.file_mgr().get_file_info(&file_path)
+        && FileMgr::delete_entry_by_key(session, file_info_key, SyncOdoo::is_in_workspace_or_entry(session, &file_path))
+        {
+            // File is external, and deleted, early exit
+            return;
+        }
+        BuildScheduler::queue(session, self.sym_stack[0].unwrap_buildable_key());
+    }
+
+    fn file_path(&self, session: &SessionInfo) -> String {
+        session.st().file_path(self.file).to_string()
     }
 
     fn visit_stmt(&mut self, session: &mut SessionInfo, stmt: &Stmt) {

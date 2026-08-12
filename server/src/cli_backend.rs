@@ -199,10 +199,7 @@ impl CliBackend {
                     continue;
                 }
             };
-            session
-                .sync_odoo
-                .get_file_mgr()
-                .borrow_mut()
+            session.file_mgr_mut()
                 .add_workspace_folder(id.clone(), uri);
         }
 
@@ -309,10 +306,7 @@ mod tests {
         // Add workspace folders to session
         for (id, path) in &ws_folders {
             if let Ok(uri) = FileMgr::try_pathname2uri(path) {
-                session
-                    .sync_odoo
-                    .get_file_mgr()
-                    .borrow_mut()
+                session.file_mgr_mut()
                     .add_workspace_folder(id.clone(), uri);
             }
         }
