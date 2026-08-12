@@ -1,7 +1,7 @@
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::trace;
 
-use crate::{Sy, constants::{BuildStatus, DiagnosticSource, MissingDataSource}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileMgr}, features::xml_ast_utils::XmlAstUtils};
+use crate::{Sy, constants::{BuildStatus, DiagnosticSource, MissingDataSource}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileInfo, file_mgr::FileMgr}, features::xml_ast_utils::XmlAstUtils};
 use crate::{
     constants::{BuildSteps, OYarn, DEBUG_STEPS},
     core::{
@@ -37,20 +37,17 @@ impl JsValidator {
             session.st_mut().set_build_status(self.js_symbol.into(), BuildSteps::VALIDATION, BuildStatus::INVALID);
             return;
         }
-        if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
+        if !session.file_mgr()[file_info].file_info_ast.borrow().ast.is_built() {
             // JS Symbols do not go through the arch step,
             // Custom JS files may not have been built yet, so we need to build the AST first before validating
-            file_info.borrow_mut().prepare_ast(session);
-            if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
+            FileInfo::prepare_ast(session, file_info);
+            if !session.file_mgr()[file_info].file_info_ast.borrow().ast.is_built() {
                 // Still not built, something went wrong, we cannot validate this file
                 session.st_mut().set_build_status(self.js_symbol.into(), BuildSteps::VALIDATION, BuildStatus::INVALID);
                 return;
             }
         }
-        let mut file_info = file_info.borrow_mut();
-        let file_info_ast = file_info.file_info_ast.borrow();
-        let template_refs = file_info_ast.ast.as_js_ast().js_template_refs.clone();
-        drop(file_info_ast);
+        let template_refs = session.file_mgr()[file_info].file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
 
         if session.sync_odoo.symbol_table.get_entry(self.js_symbol).borrow().is_main() {
             for template_ref in template_refs.iter() {
@@ -71,8 +68,8 @@ impl JsValidator {
                 }
             }
         }
-        file_info.replace_diagnostics(DiagnosticSource::JS_VALIDATION, diagnostics);
-        file_info.publish_diagnostics(session);
+        session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::JS_VALIDATION, diagnostics);
+        FileInfo::publish_diagnostics(session, file_info);
         session.st_mut().set_build_status(self.js_symbol.into(), BuildSteps::VALIDATION, BuildStatus::DONE);
     }
 }

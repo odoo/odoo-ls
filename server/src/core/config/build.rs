@@ -62,8 +62,7 @@ pub(super) fn resolve(session: &mut SessionInfo) -> Result<(ConfigMap, ConfigVie
 
 fn build_profiles(session: &mut SessionInfo) -> Result<ProfileSet, String> {
     let (ws_folders, unique_ws): (Vec<(String, String)>, HashMap<String, String>) = {
-        let fm = session.sync_odoo.get_file_mgr();
-        let fm = fm.borrow();
+        let fm = session.file_mgr();
         (
             fm.get_processed_workspace_folders().into_iter().collect(),
             fm.get_unique_workspace_folders(),
@@ -105,10 +104,7 @@ fn build_profiles(session: &mut SessionInfo) -> Result<ProfileSet, String> {
     fill_defaults(&mut acc);
 
     let ctx = PipelineCtx {
-        unique_ws_folders: &session
-            .sync_odoo
-            .get_file_mgr()
-            .borrow()
+        unique_ws_folders: &session.file_mgr()
             .get_unique_workspace_folders(),
         current_ws: None, // Global so we do not have a specific ws
     };

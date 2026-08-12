@@ -36,15 +36,15 @@ fn test_depends_kwarg_nested_field_completion(session: &mut SessionInfo) {
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
     assert!(Path::new(&test_file).exists(), "Test file does not exist: {}", test_file);
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let file_mgr = session.file_mgr();
+    let file_info = file_mgr.get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
         panic!("Failed to get file symbol");
     };
 
     // Line `    partner_display_name_dep = fields.Char(compute="_compute_partner_display_name_dep", depends=["partner_id.disp"])`
     // (0-indexed line 79), cursor right after "disp" inside the string.
-    let response = CompletionFeature::autocomplete(session, file_symbol, &file_info, None, 79, 113);
+    let response = CompletionFeature::autocomplete(session, file_symbol, file_info, None, 79, 113);
     let labels = labels(response);
     assert!(labels.iter().any(|l| l == "display_name"), "Expected display_name to be suggested for the 'disp' prefix, got: {:?}", labels);
     assert!(!labels.iter().any(|l| l == "create_uid"), "create_uid does not match the 'disp' prefix, got: {:?}", labels);
@@ -70,13 +70,13 @@ fn test_lambda_is_not_a_member(session: &mut SessionInfo) {
     };
     Odoo::handle_did_open(session, did_open_params);
 
-    let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&test_file).unwrap();
+    let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
         panic!("Failed to get file symbol");
     };
 
     // `return self.` is line 25 of the fixture (0-indexed 24), cursor after the dot.
-    let response = CompletionFeature::autocomplete(session, file_symbol, &file_info, None, 24, 20);
+    let response = CompletionFeature::autocomplete(session, file_symbol, file_info, None, 24, 20);
     let labels = labels(response);
     assert!(labels.iter().any(|l| l == "company_id"), "Expected the model fields to be suggested after 'self.', got: {:?}", labels);
     assert!(!labels.iter().any(|l| l == "<lambda>"), "<lambda> is not a member and must not be suggested, got: {:?}", labels);
