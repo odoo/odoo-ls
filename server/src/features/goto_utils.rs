@@ -1,10 +1,11 @@
-use std::{cell::RefCell, path::Path, rc::Rc};
+use std::path::Path;
 
 use lsp_types::{LocationLink, Range};
 use ruff_python_ast::Expr;
 use ruff_text_size::TextRange;
 
 use crate::constants::PackageType;
+use crate::core::file_mgr::FileInfoKey;
 use crate::core::symbols::symbol_keys::{ModuleKey, SourceFileKey};
 use crate::features::features_utils::{FeaturesUtils, SegmentPick, StringResolution};
 use crate::utils::HashSet;
@@ -12,7 +13,7 @@ use crate::{
     constants::{OYarn, SymType},
     core::{
         evaluation::{EvaluationValue, ExprOrIdent},
-        file_mgr::{FileInfo, FileMgr},
+        file_mgr::FileMgr,
         python_odoo_builder::MAGIC_FIELDS,
         symbols::{
             symbol_keys::SymbolKey,
@@ -63,7 +64,7 @@ impl GotoUtils {
                     if session.st().get_file(field).is_some() {
                         sources.push(GotoSource {
                             source: GotoSourceType::SymbolKey(field),
-                            origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, field_range)),
+                            origin_selection_range: Some(FileMgr::text_range_to_range(session, &path, field_range)),
                         });
                     }
                 }
@@ -80,7 +81,7 @@ impl GotoUtils {
                     }
                     sources.push(GotoSource {
                         source: GotoSourceType::SymbolKey(sym_key),
-                        origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, string_range)),
+                        origin_selection_range: Some(FileMgr::text_range_to_range(session, &path, string_range)),
                     });
                 }
             }
@@ -97,7 +98,7 @@ impl GotoUtils {
                     }
                     sources.push(GotoSource {
                         source: GotoSourceType::SymbolKey(xml_id),
-                        origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, string_range)),
+                        origin_selection_range: Some(FileMgr::text_range_to_range(session, &path, string_range)),
                     });
                 }
             }
@@ -154,12 +155,12 @@ impl GotoUtils {
     pub fn get_symbols(session: &mut SessionInfo,
         goto_request: GotoRequest,
         file_symbol: SourceFileKey,
-        file_info: &Rc<RefCell<FileInfo>>,
+        file_info: FileInfoKey,
         line: u32,
         character: u32
     ) -> Vec<GotoSource> {
-        let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
-        let file_info_ast_clone = file_info.borrow().file_info_ast.clone();
+        let offset = session.file_mgr()[file_info].position_to_offset(line, character, session.sync_odoo.encoding);
+        let file_info_ast_clone = session.file_mgr()[file_info].file_info_ast.clone();
         let file_info_ast_ref = file_info_ast_clone.borrow();
         let (analyse_ast_result, _range, expr, call_expr) = AstUtils::get_symbols(session, &file_info_ast_ref, file_symbol, offset as u32);
         if analyse_ast_result.evaluations.is_empty() {
@@ -188,7 +189,8 @@ impl GotoUtils {
         while index < evaluations.len() {
             let eval = &evaluations[index];
             if let Some((string_val, string_range)) = eval.value.as_ref().and_then(EvaluationValue::as_string_literal).map(|expr| (expr.value.to_str(), expr.range)) {
-                if let Some(resolution) = FeaturesUtils::resolve_string_symbols(session, file_symbol, &file_info.borrow().uri, string_val, string_range, call_expr.as_ref(), SegmentPick::Cursor(offset)) {
+                let uri = session.file_mgr()[file_info].uri.clone();
+                if let Some(resolution) = FeaturesUtils::resolve_string_symbols(session, file_symbol, &uri, string_val, string_range, call_expr.as_ref(), SegmentPick::Cursor(offset)) {
                     GotoUtils::push_string_sources(session, resolution, file_symbol, string_range, &mut definition_sources);
                 }
                 index += 1;
@@ -227,12 +229,12 @@ impl GotoUtils {
 
     pub fn get_symbols_xml(session: &mut SessionInfo,
         file_symbol: SourceFileKey,
-        file_info: &Rc<RefCell<FileInfo>>,
+        file_info: FileInfoKey,
         line: u32,
         character: u32
     ) -> Vec<GotoSource> {
-        let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
-        let Some(data) = file_info.borrow().file_info_ast.borrow().text_document.as_ref().map(|td| td.contents().to_string()) else {
+        let offset = session.file_mgr()[file_info].position_to_offset(line, character, session.sync_odoo.encoding);
+        let Some(data) = session.file_mgr()[file_info].file_info_ast.borrow().text_document.as_ref().map(|td| td.contents().to_string()) else {
             // File can be invalid (not valid UTF-8 and so text_document is empty)
             return vec![];
         };
@@ -246,7 +248,7 @@ impl GotoUtils {
                     let path = session.sync_odoo.symbol_table.path(file_symbol).to_string();
                     GotoSource {
                         source: GotoSourceType::SymbolKey(xml_ast_result),
-                        origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, origin_range.as_ref().unwrap()))
+                        origin_selection_range: Some(FileMgr::std_range_to_range(session, &path, origin_range.as_ref().unwrap()))
                     }
                 });
             }
@@ -256,14 +258,14 @@ impl GotoUtils {
 
     pub fn get_symbols_csv(session: &mut SessionInfo,
         file_symbol: SourceFileKey,
-        file_info: &Rc<RefCell<FileInfo>>,
+        file_info: FileInfoKey,
         line: u32,
         character: u32
     ) -> Vec<GotoSource> {
         let model_name_pb = Path::new(session.st().path(file_symbol));
         let model_name = Sy!(model_name_pb.file_stem().unwrap().to_str().unwrap().to_string());
-        let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
-        let Some(data) = file_info.borrow().file_info_ast.borrow().text_document.as_ref().map(|td| td.contents().to_string()) else {
+        let offset = session.file_mgr()[file_info].position_to_offset(line, character, session.sync_odoo.encoding);
+        let Some(data) = session.file_mgr()[file_info].file_info_ast.borrow().text_document.as_ref().map(|td| td.contents().to_string()) else {
             // File can be invalid (not valid UTF-8 and so text_document is empty)
             return vec![];
         };
@@ -293,10 +295,10 @@ impl GotoUtils {
                         if let Some(file) = session.st().get_file(*symbol_key) {
                             let path = session.st().path(file).to_string();
                             let range = if session.st().has_range(*symbol_key) {
-                                let file_mgr = session.sync_odoo.get_file_mgr();
-                                let file_info = file_mgr.borrow().get_file_info(&path);
+                                let file_mgr = session.file_mgr();
+                                let file_info = file_mgr.get_file_info(&path).map(|fik| &file_mgr[fik]);
                                 let header_range = session.st().header_range(*symbol_key, file_info);
-                                session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, header_range.unwrap_or(
+                                FileMgr::text_range_to_range(session, &path, header_range.unwrap_or(
                                     session.st().range(*symbol_key)
                                 ))
                             } else {
@@ -325,8 +327,8 @@ impl GotoUtils {
                 vec![LocationLink{
                     origin_selection_range: def.origin_selection_range,
                     target_uri: FileMgr::pathname2uri(uri),
-                    target_selection_range: session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, uri, *range),
-                    target_range: session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, uri, *range),
+                    target_selection_range: FileMgr::text_range_to_range(session, uri, *range),
+                    target_range: FileMgr::text_range_to_range(session, uri, *range),
                 }]
             }
         }

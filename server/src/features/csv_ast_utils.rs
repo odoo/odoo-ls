@@ -1,12 +1,9 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use csv::{Reader, StringRecord};
 use lsp_types::Range;
 use ruff_text_size::{TextRange, TextSize};
 
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
-use crate::core::file_mgr::FileInfo;
+use crate::core::file_mgr::FileInfoKey;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::symbol_keys::CsvFileKey;
 use crate::features::goto_utils::{GotoSource, GotoSourceType};
@@ -146,7 +143,7 @@ impl CsvAstUtils {
         if !csv_reader.has_headers() {
             return results;
         }
-        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(session.st().file_path(file_symbol.into())).unwrap();
+        let file_info = session.file_mgr().get_file_info(session.st().file_path(file_symbol.into())).unwrap();
         let Ok(header) = csv_reader.headers() else { return results;};
         for (h_start, end, h) in CsvFieldIter::new(header, content).unwrap() {
             headers.push(oyarn!("{}", h));
@@ -168,11 +165,9 @@ impl CsvAstUtils {
                         results.push(GotoSource {
                             source: GotoSourceType::SymbolKey(sym),
                             origin_selection_range: Some(Range {
-                                start: file_info
-                                    .borrow()
+                                start: session.file_mgr()[file_info]
                                     .offset_to_position(h_start as u32, session.sync_odoo.encoding),
-                                end: file_info
-                                    .borrow()
+                                end: session.file_mgr()[file_info]
                                     .offset_to_position(substring_end, session.sync_odoo.encoding),
                             }),
                         })
@@ -195,12 +190,11 @@ impl CsvAstUtils {
                         results.push(GotoSource {
                             source: GotoSourceType::SymbolKey(sym),
                             origin_selection_range: Some(Range {
-                                start: file_info.borrow().offset_to_position(
+                                start: session.file_mgr()[file_info].offset_to_position(
                                     substring_start,
                                     session.sync_odoo.encoding,
                                 ),
-                                end: file_info
-                                    .borrow()
+                                end: session.file_mgr()[file_info]
                                     .offset_to_position(end as u32, session.sync_odoo.encoding),
                             }),
                         })
@@ -220,7 +214,7 @@ impl CsvAstUtils {
                     main_symbol.into(),
                     module,
                     content,
-                    &file_info,
+                    file_info,
                 );
             }
         }
@@ -237,7 +231,7 @@ impl CsvAstUtils {
         main_symbol: SymbolKey,
         module: Option<ModuleKey>,
         content: &str,
-        file_info: &Rc<RefCell<FileInfo>>,
+        file_info: FileInfoKey,
     ) {
         let Some(field_iter) = CsvFieldIter::new(record, content) else { return; };
         //Search for selected field
@@ -286,8 +280,8 @@ impl CsvAstUtils {
                 return;
             };
             let id_range = Range {
-                start: file_info.borrow().offset_to_position(id_start as u32, session.sync_odoo.encoding),
-                end: file_info.borrow().offset_to_position(id_end as u32, session.sync_odoo.encoding),
+                start: session.file_mgr()[file_info].offset_to_position(id_start as u32, session.sync_odoo.encoding),
+                end: session.file_mgr()[file_info].offset_to_position(id_end as u32, session.sync_odoo.encoding),
             };
             // We found the relational model referred to, we can lookup the xml_id now
             results.extend(

@@ -62,7 +62,7 @@ fn test_ols05072_duplicate_template() {
 
     let (mut odoo, mut config) = setup::setup::setup_server(true);
     config.set_string_list(ConfigKey::AddonsPaths, [addons_path().sanitize(), fixture_path.clone()]);
-    odoo.get_file_mgr().borrow_mut()
+    odoo.file_mgr
         .add_workspace_folder(S!("duplicate_templates_addons"), FileMgr::pathname2uri(&fixture_path));
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
