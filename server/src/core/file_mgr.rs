@@ -1186,8 +1186,8 @@ impl FileMgr {
 
     /// External = owned by a `public` entry point only, not by any entry the user actually owns.
     pub fn is_external_path(session: &SessionInfo, uri: &str) -> bool {
-        let ep_mgr = session.sync_odoo.entry_point_mgr.borrow();
-        !ep_mgr.iter_all_but_public().any(|entry| uri.starts_with(&entry.borrow().path))
+        let ep_mgr = &session.sync_odoo.entry_point_mgr;
+        !ep_mgr.iter_all_but_public().any(|entry| uri.starts_with(ep_mgr[entry].path()))
     }
 
     pub fn update_file_info(session: &mut SessionInfo, uri: &str, content: Option<&[TextDocumentContentChangeEvent]>, version: Option<i32>, force: bool) -> (bool, FileInfoKey) {
@@ -1300,9 +1300,8 @@ impl FileMgr {
                 continue;
             }
             let mut found = false;
-            for entry in session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter() {
-                let entry = entry.borrow();
-                if file_mgr[file].uri == entry.path {
+            for &entry in session.sync_odoo.entry_point_mgr.custom_entry_points().iter() {
+                if file_mgr[file].uri == session.sync_odoo.entry_point_mgr[entry].path() {
                     found = true;
                     break;
                 }

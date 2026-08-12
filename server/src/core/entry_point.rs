@@ -1,15 +1,15 @@
 use std::path::Path;
-use std::{cell::RefCell, cmp, path::PathBuf, rc::Rc};
+use std::{cmp, path::PathBuf};
 use crate::constants::MissingDataSource;
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::symbols::storage::FileSystemSymbolParent;
 use crate::core::symbols::symbol_table_impl::CreateError;
 use crate::utils::HashMap;
 
-use slotmap::Key;
+use slotmap::{Key, SlotMap};
 use tracing::{error, info, warn};
 
-use crate::core::symbols::symbol_keys::{BuildableSymbolKey, FileKey, JsFileKey, RootKey, SourceFileKey, SymbolKey, Wk};
+use crate::core::symbols::symbol_keys::{BuildableSymbolKey, FileKey, JsFileKey, KeyValidator, RootKey, SourceFileKey, SymbolKey, Wk};
 use crate::{
     tree::Tree,
     constants::{BuildSteps, OYarn},
@@ -20,14 +20,20 @@ use crate::{
     weak_collections::WeakSet,
 };
 
+use slotmap::new_key_type;
+
+new_key_type! {
+    pub struct EntryPointKey;
+}
 #[derive(Debug)]
 pub struct EntryPointMgr {
-    pub builtins_entry_points: Vec<Rc<RefCell<EntryPoint>>>,
-    pub public_entry_points: Vec<Rc<RefCell<EntryPoint>>>,
-    pub main_entry_point: Option<Rc<RefCell<EntryPoint>>>,
-    pub addons_entry_points: Vec<Rc<RefCell<EntryPoint>>>,
-    pub custom_entry_points: Vec<Rc<RefCell<EntryPoint>>>,
-    pub untitled_entry_points: Vec<Rc<RefCell<EntryPoint>>>,
+    entry_points: SlotMap<EntryPointKey, EntryPoint>,
+    builtins_entry_points: Vec<EntryPointKey>,
+    public_entry_points: Vec<EntryPointKey>,
+    main_entry_point: Option<EntryPointKey>,
+    addons_entry_points: Vec<EntryPointKey>,
+    custom_entry_points: Vec<EntryPointKey>,
+    untitled_entry_points: Vec<EntryPointKey>,
 }
 
 impl Default for EntryPointMgr {
@@ -36,10 +42,30 @@ impl Default for EntryPointMgr {
     }
 }
 
+impl std::ops::Index<EntryPointKey> for EntryPointMgr {
+    type Output = EntryPoint;
+    fn index(&self, k: EntryPointKey) -> &EntryPoint {
+        &self.entry_points[k]
+    }
+}
+
+impl std::ops::IndexMut<EntryPointKey> for EntryPointMgr {
+    fn index_mut(&mut self, k: EntryPointKey) -> &mut EntryPoint {
+        &mut self.entry_points[k]
+    }
+}
+
+impl KeyValidator<EntryPointKey> for EntryPointMgr {
+    fn is_key_valid(&self, k: EntryPointKey) -> bool {
+        self.entry_points.contains_key(k)
+    }
+}
+
 impl EntryPointMgr {
 
     pub fn new() -> Self {
         Self {
+            entry_points: SlotMap::with_key(),
             builtins_entry_points: vec![],
             public_entry_points: vec![],
             main_entry_point: None,
@@ -48,35 +74,124 @@ impl EntryPointMgr {
             untitled_entry_points: vec![],
         }
     }
+
+    /// Creates a new `EntryPoint` together with its owning `RootSymbol`, wiring the
+    /// cross-reference in one place, and tracks it in the `Vec`/`Option` matching its `typ`.
+    /// The only way to create a root-owning entry point (builtin/public/main/custom/untitled —
+    /// everything except addons, which share the main entry's root; see
+    /// `create_addon_entry_point`).
+    fn create_entry_point(
+        &mut self,
+        symbol_table: &mut SymbolTable,
+        path: String,
+        tree: Vec<OYarn>,
+        typ: EntryPointType,
+        addon_to_odoo_path: Option<String>,
+        addon_to_odoo_tree: Option<Vec<OYarn>>,
+    ) -> EntryPointKey {
+        let entry_key = self.entry_points.insert(EntryPoint::new(path, tree, typ, addon_to_odoo_path, addon_to_odoo_tree, RootKey::null()));
+        let root = symbol_table.insert_root(entry_key, EntryPointToken(()));
+        self.entry_points[entry_key].root = root;
+        match typ {
+            EntryPointType::MAIN => self.main_entry_point = Some(entry_key),
+            EntryPointType::ADDON => self.addons_entry_points.push(entry_key),
+            EntryPointType::BUILTIN => self.builtins_entry_points.push(entry_key),
+            EntryPointType::PUBLIC => self.public_entry_points.push(entry_key),
+            EntryPointType::CUSTOM => self.custom_entry_points.push(entry_key),
+            EntryPointType::UNTITLED => self.untitled_entry_points.push(entry_key),
+        }
+        entry_key
+    }
+
+    /// Creates a new `EntryPoint` that shares an existing root instead of owning one —
+    /// addon entry points piggyback on the main entry's root/subtree, and are tracked in
+    /// `addons_entry_points`. Must only ever be dropped via `remove_entry`, which knows not
+    /// to cascade into the shared root for `EntryPointType::ADDON`.
+    fn create_addon_entry_point(
+        &mut self,
+        path: String,
+        tree: Vec<OYarn>,
+        addon_to_odoo_path: Option<String>,
+        addon_to_odoo_tree: Option<Vec<OYarn>>,
+        shared_root: RootKey,
+    ) -> EntryPointKey {
+        let entry_key = self.entry_points.insert(EntryPoint::new(path, tree, EntryPointType::ADDON, addon_to_odoo_path, addon_to_odoo_tree, shared_root));
+        self.addons_entry_points.push(entry_key);
+        entry_key
+    }
+
+    /// Drops an `EntryPoint` entirely: its slotmap slot, its `Vec`/`Option` membership, and
+    /// (unless it's an addon sharing the main entry's root) its `RootSymbol` subtree. The only
+    /// place any of the three is touched — the sole way an `EntryPointKey` ever becomes invalid.
+    fn remove_entry(&mut self, symbol_table: &mut SymbolTable, key: EntryPointKey, token: EntryPointToken) {
+        let ep = self.entry_points.remove(key).expect("valid entry key");
+        match ep.typ {
+            EntryPointType::MAIN => self.main_entry_point = None,
+            EntryPointType::ADDON => self.addons_entry_points.retain(|&k| k != key),
+            EntryPointType::BUILTIN => self.builtins_entry_points.retain(|&k| k != key),
+            EntryPointType::PUBLIC => self.public_entry_points.retain(|&k| k != key),
+            EntryPointType::CUSTOM => self.custom_entry_points.retain(|&k| k != key),
+            EntryPointType::UNTITLED => self.untitled_entry_points.retain(|&k| k != key),
+        }
+        if ep.typ != EntryPointType::ADDON {
+            symbol_table.drop_root_if_present(ep.root, token);
+        }
+    }
+
+    // ========== Getters =============
+    pub fn main_entry_point(&self) -> Option<EntryPointKey> {
+        self.main_entry_point
+    }
+
+    pub fn builtins_entry_points(&self) -> &[EntryPointKey] {
+        &self.builtins_entry_points
+    }
+
+    pub fn public_entry_points(&self) -> &[EntryPointKey] {
+        &self.public_entry_points
+    }
+
+    pub fn addons_entry_points(&self) -> &[EntryPointKey] {
+        &self.addons_entry_points
+    }
+
+    pub fn custom_entry_points(&self) -> &[EntryPointKey] {
+        &self.custom_entry_points
+    }
+
+    pub fn untitled_entry_points(&self) -> &[EntryPointKey] {
+        &self.untitled_entry_points
+    }
+
     /// Create a new entry for an untitled (in-memory) file.
     /// Returns the file symbol for the untitled entry.
     pub fn add_entry_to_untitled(session: &mut SessionInfo, path: String) -> FileKey {
         // For untitled files, we use a minimal tree: just the name as a single OYarn
         info!("Adding new untitled entry point: {}", path);
         let tree = vec![OYarn::from(path.clone())];
-        let entry = EntryPoint::new(
-            session.st_mut(),
+        let entry_key = session.sync_odoo.entry_point_mgr.create_entry_point(
+            &mut session.sync_odoo.symbol_table,
             path.clone(),
             tree,
             EntryPointType::UNTITLED,
             None,
             None,
         );
-        session.sync_odoo.entry_point_mgr.borrow_mut().untitled_entry_points.push(entry.clone());
         // Create one file symbol under the root for the untitled file
         let path_stem = Path::new(&path).with_extension("");
         let name = path_stem.components().next_back().unwrap().as_os_str().to_str().unwrap();
 
-        session.st_mut().add_new_file(entry.borrow().root.into(), name, &path).expect("fresh root has no children")
+        let root = session.ep_mgr()[entry_key].root;
+        session.st_mut().add_new_file(root.into(), name, &path).expect("fresh root has no children")
     }
 
     /**
      * Create each required directory symbols for a given path.
      * /!\ path must point to a directory on disk */
-    pub fn create_dir_symbols_for_new_entry(session: &mut SessionInfo, path: &str, entry: Rc<RefCell<EntryPoint>>) -> Option<SymbolKey> {
+    pub fn create_dir_symbols_for_new_entry(session: &mut SessionInfo, path: &str, entry: EntryPointKey) -> Option<SymbolKey> {
         let path = Path::new(path);
         let mut iter_path = PathBuf::new();
-        let mut current_sym: FileSystemSymbolParent = entry.borrow().root.into();
+        let mut current_sym: FileSystemSymbolParent = session.ep_mgr()[entry].root.into();
         let component_count = path.components().count();
         for component in path.components().take(component_count - 1) {
             iter_path.push(component);
@@ -106,16 +221,15 @@ impl EntryPointMgr {
     pub fn set_main_entry(session: &mut SessionInfo, path: String) -> Option<SymbolKey> {
         info!("Setting Main entry point: {}", path);
         let entry_point_tree = Path::new(&path).to_tree();
-        let entry = EntryPoint::new(
+        let entry_key = session.sync_odoo.entry_point_mgr.create_entry_point(
             &mut session.sync_odoo.symbol_table,
             path.clone(),
             entry_point_tree.flatten(),
             EntryPointType::MAIN,
             None,
             None);
-        session.sync_odoo.entry_point_mgr.borrow_mut().main_entry_point = Some(entry.clone());
 
-        EntryPointMgr::create_dir_symbols_for_new_entry(session, &path, entry)
+        EntryPointMgr::create_dir_symbols_for_new_entry(session, &path, entry_key)
     }
 
     /* Create a new entry to builtins.
@@ -124,16 +238,15 @@ impl EntryPointMgr {
     pub fn add_entry_to_builtins(session: &mut SessionInfo, path: String) -> Option<SymbolKey> {
         info!("Adding new builtins entry point: {}", path);
         let entry_point_tree = Path::new(&path).to_tree();
-        let entry = EntryPoint::new(
+        let entry_key = session.sync_odoo.entry_point_mgr.create_entry_point(
             &mut session.sync_odoo.symbol_table,
             path.clone(),
             entry_point_tree.flatten(),
             EntryPointType::BUILTIN,
             None,
             None);
-        session.sync_odoo.entry_point_mgr.borrow_mut().builtins_entry_points.push(entry.clone());
 
-        EntryPointMgr::create_dir_symbols_for_new_entry(session, &path, entry)
+        EntryPointMgr::create_dir_symbols_for_new_entry(session, &path, entry_key)
     }
 
     /* Create a new entry to public.
@@ -155,44 +268,48 @@ impl EntryPointMgr {
             }
         }
         let entry_point_tree = Path::new(&path).to_tree();
-        let entry = EntryPoint::new(
+        let entry_key = session.sync_odoo.entry_point_mgr.create_entry_point(
             &mut session.sync_odoo.symbol_table,
             path.clone(),
             entry_point_tree.flatten(),
             EntryPointType::PUBLIC,
             None,
             None);
-        session.sync_odoo.entry_point_mgr.borrow_mut().public_entry_points.push(entry.clone());
 
-        EntryPointMgr::create_dir_symbols_for_new_entry(session, &path, entry)
+        EntryPointMgr::create_dir_symbols_for_new_entry(session, &path, entry_key)
     }
 
     /* Create a new entry to addons.
      * This function, unlike its siblings, does not a produce a symbol.
      */
-    pub fn add_entry_to_addons(session: &mut SessionInfo, path: String, main_entry: Rc<RefCell<EntryPoint>>, added_tree: Vec<OYarn>) {
+    pub fn add_entry_to_addons(session: &mut SessionInfo, path: String, added_tree: Vec<OYarn>) -> Option<EntryPointKey> {
         info!("Adding new addon entry point: {}", path);
+        let Some(main_entry) = session.ep_mgr().main_entry_point else {
+            warn!("Cannot add addon entry point {path}: there is no main entry point to share a root with");
+            return None;
+        };
         let entry_point_tree = Path::new(&path).to_tree();
-        let addon_to_odoo_path = Some(main_entry.borrow().path.clone() + "/" + added_tree.join("/").as_str());
-        let addon_to_odoo_tree = Some(main_entry.borrow().tree.iter().chain(&added_tree).cloned().collect());
-        let shared_root = main_entry.borrow().root;
-        let entry = EntryPoint::new_with_shared_root(
+        let (main_path, main_tree, shared_root) = {
+            let main = &session.ep_mgr()[main_entry];
+            (main.path.clone(), main.tree.clone(), main.root)
+        };
+        let addon_to_odoo_path = Some(main_path + "/" + added_tree.join("/").as_str());
+        let addon_to_odoo_tree = Some(main_tree.iter().chain(&added_tree).cloned().collect());
+        Some(session.ep_mgr_mut().create_addon_entry_point(
             path,
             entry_point_tree.flatten(),
-            EntryPointType::ADDON,
             addon_to_odoo_path,
             addon_to_odoo_tree,
             shared_root
-        );
-        session.sync_odoo.entry_point_mgr.borrow_mut().addons_entry_points.push(entry.clone());
+        ))
     }
 
-    /* Re-add a configured addons path that was dropped by clean_entries after its
+    /* Re-add a configured addons path that was dropped by remove_entries_with_path after its
      * directory got deleted. Rebuilds the "odoo.addons" namespace if needed.
      */
-    pub fn restore_addon_entry(session: &mut SessionInfo, path: &str) -> Option<Rc<RefCell<EntryPoint>>> {
-        let main_entry = session.sync_odoo.entry_point_mgr.borrow().main_entry_point.as_ref()?.clone();
-        let main_sym = main_entry.borrow().get_symbol(session.st())?;
+    pub fn restore_addon_entry(session: &mut SessionInfo, path: &str) -> Option<EntryPointKey> {
+        let &main_entry = session.ep_mgr().main_entry_point.as_ref()?;
+        let main_sym = session.ep_mgr()[main_entry].get_symbol(session.st())?;
         match session.st().get_symbol(main_sym, (&["odoo", "addons"], &[]), u32::MAX).first() {
             Some(&SymbolKey::Namespace(k)) => {
                 if !session.st()[k].paths().iter().any(|p| p == path) {
@@ -213,61 +330,61 @@ impl EntryPointMgr {
             }
         }
         info!("Restoring addon entry point: {}", path);
-        EntryPointMgr::add_entry_to_addons(session, path.to_string(), main_entry, vec![OYarn::from("odoo"), OYarn::from("addons")]);
-        session.sync_odoo.entry_point_mgr.borrow().addons_entry_points.last().cloned()
+        EntryPointMgr::add_entry_to_addons(session, path.to_string(), vec![OYarn::from("odoo"), OYarn::from("addons")])
     }
 
-    /* Create a new entry to public.
-    return the symbol at the end of the path
-     */
-    pub fn add_entry_to_customs(session: &mut SessionInfo, path: &str) -> Option<SymbolKey> {
+    /// Create a new custom entry. Returns its key along with the symbol at the end of the path,
+    /// so a caller that can't use the entry drops exactly that entry.
+    fn add_entry_to_customs(session: &mut SessionInfo, path: &str) -> (EntryPointKey, Option<SymbolKey>) {
         info!("Adding new custom entry point: {}", path);
         let entry_point_tree = Path::new(path).to_tree();
-        let entry = EntryPoint::new(
+        let entry_key = session.sync_odoo.entry_point_mgr.create_entry_point(
             &mut session.sync_odoo.symbol_table,
             path.to_string(),
             entry_point_tree.flatten(),
             EntryPointType::CUSTOM,
             None,
             None);
-        session.sync_odoo.entry_point_mgr.borrow_mut().custom_entry_points.push(entry.clone());
-        EntryPointMgr::create_dir_symbols_for_new_entry(session, path, entry)
+        (entry_key, EntryPointMgr::create_dir_symbols_for_new_entry(session, path, entry_key))
     }
 
     /// Create a new custom entry point for a given tree path and file path.
     /// tree_path can possibly be the path stripped from __manifest__/__init__.py
     pub fn create_new_custom_entry_for_path(session: &mut SessionInfo, tree_path: &str, file_path: &str) -> bool {
-        let new_sym = EntryPointMgr::add_entry_to_customs(session, tree_path);
-        if let Some(new_sym) = new_sym {
-            session.st_mut().set_is_external(new_sym, false);
-            match new_sym {
-                SymbolKey::PythonPackage(p) => {
-                    session.st_mut()[p].self_import = true;
-                },
-                SymbolKey::File(f) => {
-                    session.st_mut()[f].self_import = true;
-                },
-                SymbolKey::Namespace(n) => {
-                    if file_path.ends_with("__manifest__.py") {
-                        warn!("new custom entry point for manifest without related init.py is not supported outside of main entry point. skipping...");
-                        session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&mut session.sync_odoo.symbol_table, tree_path);
-                    } else {
-                        // There was an __init__.py, that was renamed or deleted.
-                        // Another notification will come for the deletion of the file, so we just warn here.
-                        warn_or_panic!("Trying to create a custom entrypoint on a namespace symbol: {:?}", session.st()[n].paths());
-                    }
-                    return false;
+        let (entry_key, new_sym) = EntryPointMgr::add_entry_to_customs(session, tree_path);
+        let Some(new_sym) = new_sym else {
+            // Nothing on disk: don't leave an empty entry behind
+            session.sync_odoo.entry_point_mgr.drop_entry(&mut session.sync_odoo.symbol_table, entry_key);
+            return false;
+        };
+        session.st_mut().set_is_external(new_sym, false);
+        match new_sym {
+            SymbolKey::PythonPackage(p) => {
+                session.st_mut()[p].self_import = true;
+            },
+            SymbolKey::File(f) => {
+                session.st_mut()[f].self_import = true;
+            },
+            SymbolKey::Namespace(n) => {
+                if file_path.ends_with("__manifest__.py") {
+                    warn!("new custom entry point for manifest without related init.py is not supported outside of main entry point. skipping...");
+                    session.sync_odoo.entry_point_mgr.drop_entry(&mut session.sync_odoo.symbol_table, entry_key);
+                } else {
+                    // There was an __init__.py, that was renamed or deleted.
+                    // Another notification will come for the deletion of the file, so we just warn here.
+                    warn_or_panic!("Trying to create a custom entrypoint on a namespace symbol: {:?}", session.st()[n].paths());
                 }
-                SymbolKey::JsFile(f) => {
-                    session.st_mut()[f].self_import = true;
-                    //arch of js files is done in build_ast of file_info, so we have to directly reload validations instead
-                    BuildScheduler::queue(session, new_sym.unwrap_buildable_key());
-                    return true;
-                }
-                _ => {panic!("Unexpected symbol type: {:?}", new_sym);}
+                return false;
             }
-            BuildScheduler::queue(session, new_sym.unwrap_buildable_key());
+            SymbolKey::JsFile(f) => {
+                session.st_mut()[f].self_import = true;
+                //arch of js files is done in build_ast of file_info, so we have to directly reload validations instead
+                BuildScheduler::queue(session, new_sym.unwrap_buildable_key());
+                return true;
+            }
+            _ => {panic!("Unexpected symbol type: {:?}", new_sym);}
         }
+        BuildScheduler::queue(session, new_sym.unwrap_buildable_key());
         true
     }
 
@@ -278,139 +395,115 @@ impl EntryPointMgr {
         true
     }
 
-    pub fn iter_for_import(&self, current_entry: &Rc<RefCell<EntryPoint>>) -> Box<dyn Iterator<Item = &Rc<RefCell<EntryPoint>>> + '_> {
-        let mut is_main = false;
-        for entry in self.iter_main() {
-            if Rc::ptr_eq(current_entry, entry) {
-                is_main = true;
-                break;
-            }
-        }
+    pub fn iter_for_import(&self, current_entry: EntryPointKey) -> Box<dyn Iterator<Item = EntryPointKey> + '_> {
+        let is_main = self.iter_main().any(|entry| entry == current_entry);
         if is_main {
-            Box::new(self.addons_entry_points.iter().chain(
-            self.main_entry_point.iter()).chain(
-            self.builtins_entry_points.iter()).chain(
-            self.public_entry_points.iter()))
+            Box::new(self.addons_entry_points.iter().copied().chain(
+            self.main_entry_point.iter().copied()).chain(
+            self.builtins_entry_points.iter().copied()).chain(
+            self.public_entry_points.iter().copied()))
         } else {
-            Box::new(self.custom_entry_points.iter().chain(
-            self.builtins_entry_points.iter()).chain(
-            self.public_entry_points.iter()))
+            Box::new(self.custom_entry_points.iter().copied().chain(
+            self.builtins_entry_points.iter().copied()).chain(
+            self.public_entry_points.iter().copied()))
         }
     }
 
-    pub fn iter_all(&self) -> impl Iterator<Item = &Rc<RefCell<EntryPoint>>> {
-        self.addons_entry_points.iter()
-            .chain(self.main_entry_point.iter())
-            .chain(self.builtins_entry_points.iter())
-            .chain(self.public_entry_points.iter())
-            .chain(self.custom_entry_points.iter())
-            .chain(self.untitled_entry_points.iter())
+    pub fn iter_all(&self) -> impl Iterator<Item = EntryPointKey> {
+        self.addons_entry_points.iter().copied()
+            .chain(self.main_entry_point.iter().copied())
+            .chain(self.builtins_entry_points.iter().copied())
+            .chain(self.public_entry_points.iter().copied())
+            .chain(self.custom_entry_points.iter().copied())
+            .chain(self.untitled_entry_points.iter().copied())
     }
 
     //iter through all main entry points, sorted by tree length (from bigger to smaller)
-    pub fn iter_main(&self) -> impl Iterator<Item = &Rc<RefCell<EntryPoint>>>
+    pub fn iter_main(&self) -> impl Iterator<Item = EntryPointKey>
     {
-        let mut collected = self.main_entry_point.iter().chain(self.addons_entry_points.iter()).collect::<Vec<_>>();
-        collected.sort_by_key(|ep| std::cmp::Reverse(ep.borrow().tree.len()));
+        let mut collected = self.main_entry_point.iter().copied().chain(self.addons_entry_points.iter().copied()).collect::<Vec<_>>();
+        collected.sort_by_key(|&ep| std::cmp::Reverse(self[ep].tree.len()));
         collected.into_iter()
     }
 
-    pub fn iter_all_but_main(&self) -> impl Iterator<Item = &Rc<RefCell<EntryPoint>>> {
-        self.builtins_entry_points.iter()
-        .chain(self.public_entry_points.iter())
-        .chain(self.custom_entry_points.iter())
-        .chain(self.untitled_entry_points.iter())
+    pub fn iter_all_but_main(&self) -> impl Iterator<Item = EntryPointKey> {
+        self.builtins_entry_points.iter().copied()
+        .chain(self.public_entry_points.iter().copied())
+        .chain(self.custom_entry_points.iter().copied())
+        .chain(self.untitled_entry_points.iter().copied())
     }
 
-    pub fn iter_all_but_public(&self) -> impl Iterator<Item = &Rc<RefCell<EntryPoint>>> {
-        self.main_entry_point.iter().chain(
-        self.addons_entry_points.iter()).chain(
-        self.custom_entry_points.iter()
+    pub fn iter_all_but_public(&self) -> impl Iterator<Item = EntryPointKey> {
+        self.main_entry_point.iter().copied().chain(
+        self.addons_entry_points.iter().copied()).chain(
+        self.custom_entry_points.iter().copied()
         )
     }
 
     pub fn reset_entry_points(&mut self, symbol_table: &mut SymbolTable, with_custom_entries: bool) {
-        self.builtins_entry_points.drain(..).for_each(|ep| Self::drop_entry(symbol_table, &ep));
-        self.public_entry_points.drain(..).for_each(|ep| Self::drop_entry(symbol_table, &ep));
-        if let Some(main_ep) = &self.main_entry_point {
-            Self::drop_entry(symbol_table, main_ep);
-            self.main_entry_point = None;
-            // addons entries share the same root as the main entry
-            self.addons_entry_points.clear();
+        let builtins = std::mem::take(&mut self.builtins_entry_points);
+        for ep in builtins {
+            self.drop_entry(symbol_table, ep);
+        }
+        let public = std::mem::take(&mut self.public_entry_points);
+        for ep in public {
+            self.drop_entry(symbol_table, ep);
+        }
+        if let Some(main_ep) = self.main_entry_point {
+            self.drop_entry(symbol_table, main_ep);
+        }
+        // addons entries share the same root as the main entry — they never own a
+        // root themselves, but each still holds its own `EntryPointKey` slot, so it
+        // must go through `drop_entry` too, not just be cleared from the Vec.
+        let addons = std::mem::take(&mut self.addons_entry_points);
+        for ep in addons {
+            self.drop_entry(symbol_table, ep);
         }
         if with_custom_entries {
-            self.custom_entry_points.drain(..).for_each(|ep| Self::drop_entry(symbol_table, &ep));
+            let custom = std::mem::take(&mut self.custom_entry_points);
+            for ep in custom {
+                self.drop_entry(symbol_table, ep);
+            }
         }
     }
 
+    /// Removes every entry point at `path` (exact match for untitled entries, `path` or any
+    /// subdirectory otherwise). Dropping the main entry also drops all addons, which share its root.
+    ///
+    /// All the concerned EntryPointKeys become invalid after this operation.
     pub fn remove_entries_with_path(&mut self, symbol_table: &mut SymbolTable, path: &str) {
-        for entry in self.iter_all() {
-            if (entry.borrow().typ == EntryPointType::UNTITLED && entry.borrow().path == *path)
-            || (entry.borrow().typ != EntryPointType::UNTITLED
-            && Path::new(&entry.borrow().path).starts_with(path)){  //delete any entrypoint that would be in a subdirectory too
-                entry.borrow_mut().to_delete = true;
-            }
-        }
-        self.clean_entries(symbol_table);
-    }
-
-    pub fn check_custom_entry_to_delete_with_path(&mut self, path: &str) {
-        for entry in self.custom_entry_points.iter() {
-            if entry.borrow().path == *path {
-                entry.borrow_mut().to_delete = true;
-            }
-        }
-    }
-
-    pub fn clean_entries(&mut self, symbol_table: &mut SymbolTable) {
-        if let Some(main) = self.main_entry_point.as_ref()
-            && main.borrow().to_delete {
-                info!("Dropping main entry point");
-                Self::drop_entry(symbol_table, main);
-                self.main_entry_point = None;
-                // addons entries share the same root as the main entry
-                self.addons_entry_points.clear();
-            }
-        // addons entries share the main entry's root, so drop them without drop_entry/drop_root
-        self.addons_entry_points.retain(|entry| {
-            if entry.borrow().to_delete {
-                info!("Dropping addon entry point {}", entry.borrow().path);
-                false
+        let mut to_drop: Vec<EntryPointKey> = self.iter_all().filter(|&e| {
+            let ep = &self[e];
+            if ep.typ == EntryPointType::UNTITLED {
+                ep.path == path
             } else {
-                true
+                Path::new(&ep.path).starts_with(path)
             }
-        });
-        let mut drop_if_flagged = |label: &str, entries: &mut Vec<Rc<RefCell<EntryPoint>>>| {
-            entries.retain(|entry| {
-                if entry.borrow().to_delete {
-                    info!("Dropping {} entry point {}", label, entry.borrow().path);
-                    Self::drop_entry(symbol_table, entry);
-                    false
-                } else {
-                    true
-                }
-            });
-        };
-        drop_if_flagged("builtin",  &mut self.builtins_entry_points);
-        drop_if_flagged("public",   &mut self.public_entry_points);
-        drop_if_flagged("custom",   &mut self.custom_entry_points);
-        drop_if_flagged("untitled", &mut self.untitled_entry_points);
+        }).collect();
+        if self.main_entry_point.is_some_and(|m| to_drop.contains(&m)) {
+            let addons: Vec<EntryPointKey> = self.addons_entry_points.iter().copied().filter(|a| !to_drop.contains(a)).collect();
+            to_drop.extend(addons);
+        }
+        for key in to_drop {
+            info!("Dropping {:?} entry point {}", self[key].typ, self[key].path);
+            self.drop_entry(symbol_table, key);
+        }
     }
 
-    /// Clears the tree rooted at the entry point from the symbol table.
-    /// Shoud be called on every entry point removal.
-    fn drop_entry(symbol_table: &mut SymbolTable, ep: &Rc<RefCell<EntryPoint>>) {
-        let root = ep.borrow().root;
-        symbol_table.drop_root(root, EntryPointCleanupToken(()));
+    /// Drops an entry point (root/subtree cascade included, unless it's an addon —
+    /// see `remove_entry`). Should be called instead of removing an
+    /// `EntryPointKey` from a `Vec` bare — the only place an `EntryPoint` is destroyed.
+    fn drop_entry(&mut self, symbol_table: &mut SymbolTable, ep: EntryPointKey) {
+        self.remove_entry(symbol_table, ep, EntryPointToken(()));
     }
 
     /// Transform the path of an addon to the odoo relative path.
     /// Otherwise, return the path as is.
     pub fn transform_addon_path(&self, path: &Path) -> String {
-        for entry in self.addons_entry_points.iter() {
-            if entry.borrow().is_valid_for(path) {
+        for &entry in self.addons_entry_points.iter() {
+            if self[entry].is_valid_for(path) {
                 let path_str = path.sanitize_cow();
-                return path_str.replace(&entry.borrow().path, entry.borrow().addon_to_odoo_path.as_ref().unwrap());
+                return path_str.replace(&self[entry].path, self[entry].addon_to_odoo_path.as_ref().unwrap());
             }
         }
         path.sanitize()
@@ -418,7 +511,7 @@ impl EntryPointMgr {
 
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy,PartialEq)]
 pub enum EntryPointType {
     MAIN,
     BUILTIN,
@@ -430,62 +523,39 @@ pub enum EntryPointType {
 
 #[derive(Debug, Clone)]
 pub struct EntryPoint {
-    pub path: String,
-    pub tree: Vec<OYarn>,
-    pub typ: EntryPointType,
-    pub addon_to_odoo_path: Option<String>, //contains the odoo path if this is an addon entry point
-    pub addon_to_odoo_tree: Option<Vec<OYarn>>, //contains the odoo tree if this is an addon entry point
-    pub root: RootKey,
+    path: String,
+    tree: Vec<OYarn>,
+    typ: EntryPointType,
+    addon_to_odoo_path: Option<String>, //contains the odoo path if this is an addon entry point
+    addon_to_odoo_tree: Option<Vec<OYarn>>, //contains the odoo tree if this is an addon entry point
+    root: RootKey,
     pub not_found_symbols: WeakSet<SourceFileKey>,
     pub not_found_data_ids: WeakSet<SourceFileKey>,
     /// files with pending model lookups
     pub not_found_symbols_for_models: WeakSet<SourceFileKey>,
-    pub to_delete: bool,
     pub data_file_symbols: HashMap<String, Wk<SourceFileKey>>, //key is path, value is weak key. Strong key is hold by the module symbol
     pub js_symbols: HashMap<String, Wk<JsFileKey>>, //key is path, value is weak key. Strong key is hold by the module symbol
 }
 impl EntryPoint {
-    pub fn new(symbol_table: &mut SymbolTable, path: String, tree: Vec<OYarn>, typ: EntryPointType, addon_to_odoo_path: Option<String>, addon_to_odoo_tree: Option<Vec<OYarn>>) -> Rc<RefCell<Self>> {
-        let entry = Rc::new(RefCell::new(Self { path,
-            tree,
-            typ,
-            addon_to_odoo_path,
-            addon_to_odoo_tree,
-            not_found_symbols: WeakSet::new(),
-            not_found_symbols_for_models: WeakSet::new(),
-            not_found_data_ids: WeakSet::new(),
-            root: RootKey::null(), // set below
-            to_delete: false,
-            data_file_symbols: HashMap::default(),
-            js_symbols: HashMap::default(),
-        }));
-        let root = symbol_table.new_root(entry.clone());
-        entry.borrow_mut().root = root;
-        entry
-    }
-
-    pub fn new_with_shared_root(
-        path: String,
-        tree: Vec<OYarn>,
-        typ: EntryPointType,
-        addon_to_odoo_path: Option<String>,
-        addon_to_odoo_tree: Option<Vec<OYarn>>,
-        root: RootKey
-    ) -> Rc<RefCell<Self>> {
-        Rc::new(RefCell::new(Self {
+    /// Plain value constructor. `root` is a placeholder (`RootKey::null()`) for a
+    /// root-owning entry point that `EntryPointMgr::create_entry_point` patches once the
+    /// `RootSymbol` exists, or the real shared root for an addon entry point
+    /// (`EntryPointMgr::create_addon_entry_point`). Do not call directly — those two are
+    /// the only sanctioned ways to obtain an `EntryPointKey`.
+    fn new(path: String, tree: Vec<OYarn>, typ: EntryPointType, addon_to_odoo_path: Option<String>, addon_to_odoo_tree: Option<Vec<OYarn>>, root: RootKey) -> Self {
+        Self {
             path,
             tree,
             typ,
             addon_to_odoo_path,
             addon_to_odoo_tree,
             not_found_symbols: WeakSet::new(),
-            not_found_data_ids: WeakSet::new(),
             not_found_symbols_for_models: WeakSet::new(),
+            not_found_data_ids: WeakSet::new(),
             root,
-            to_delete: false,
             data_file_symbols: HashMap::default(),
             js_symbols: HashMap::default(),
-        }))
+        }
     }
 
     pub fn is_valid_for(&self, path: &Path) -> bool {
@@ -493,6 +563,30 @@ impl EntryPoint {
             return self.path == path.sanitize_cow();
         }
         path.starts_with(&self.path)
+    }
+
+    pub fn typ(&self) -> EntryPointType {
+        self.typ
+    }
+
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    pub fn tree(&self) -> &[OYarn] {
+        &self.tree
+    }
+
+    pub fn root(&self) -> RootKey {
+        self.root
+    }
+
+    pub fn addon_to_odoo_path(&self) -> Option<&str> {
+        self.addon_to_odoo_path.as_deref()
+    }
+
+    pub fn addon_to_odoo_tree(&self) -> Option<&[OYarn]> {
+        self.addon_to_odoo_tree.as_deref()
     }
 
     pub fn is_public(&self) -> bool {
@@ -562,10 +656,11 @@ impl EntryPoint {
 
     /* Consider the given 'tree' path as updated (or new) and move all symbols that were searching for it
     from the not_found_symbols list to the rebuild list. Return True is something should be rebuilt */
-    pub fn search_symbols_to_rebuild(&mut self, session: &mut SessionInfo, path: &str, tree: Tree) {
+    pub fn search_symbols_to_rebuild(session: &mut SessionInfo, entry: EntryPointKey, path: &str, tree: Tree) {
         let flat_tree = tree.flatten();
         let mut to_add = HashMap::default();
-        for s in self.not_found_symbols.iter_valid(session.st()) {
+        let to_process: Vec<SourceFileKey> = session.ep_mgr()[entry].not_found_symbols.iter_valid(session.st()).collect();
+        for s in to_process {
             if let SourceFileKey::Module(p) = s {
                 let module_package = &mut session.st_mut()[p];
                 if let Some(step) = module_package.not_found_data.get(path) {
@@ -597,7 +692,8 @@ impl EntryPoint {
             });
         }
         Self::dispatch_rebuild(session, to_add);
-        self.not_found_symbols.retain_valid(session.st(), |&sym| {
+        let mut not_found_symbols = std::mem::take(&mut session.ep_mgr_mut()[entry].not_found_symbols);
+        not_found_symbols.retain_valid(session.st(), |&sym| {
             if !session.st().not_found_paths(sym).is_empty() {
                 return true;
             }
@@ -606,32 +702,48 @@ impl EntryPoint {
             }
             false
         });
+        session.ep_mgr_mut()[entry].not_found_symbols = not_found_symbols;
     }
 
-    pub fn search_rebuild_for_models(&mut self, session: &mut SessionInfo, model_name: OYarn) {
+    pub fn search_rebuild_for_models(session: &mut SessionInfo, entry: EntryPointKey, model_name: OYarn) {
+        let mut not_found_symbols_for_models = std::mem::take(&mut session.ep_mgr_mut()[entry].not_found_symbols_for_models);
         Self::search_rebuild_for_key(
             session,
-            &mut self.not_found_symbols_for_models,
+            &mut not_found_symbols_for_models,
             &model_name,
             SymbolTable::not_found_models_mut,
             SymbolTable::not_found_models,
         );
+        session.ep_mgr_mut()[entry].not_found_symbols_for_models = not_found_symbols_for_models;
     }
 
-    pub fn search_rebuild_for_data_id(&mut self, session: &mut SessionInfo, data: MissingDataSource) {
+    pub fn search_rebuild_for_data_id(session: &mut SessionInfo, entry: EntryPointKey, data: MissingDataSource) {
+        let mut not_found_data_ids = std::mem::take(&mut session.ep_mgr_mut()[entry].not_found_data_ids);
         Self::search_rebuild_for_key(
             session,
-            &mut self.not_found_data_ids,
+            &mut not_found_data_ids,
             &data,
             SymbolTable::not_found_data_ids_mut,
             SymbolTable::not_found_data_ids,
         );
+        session.ep_mgr_mut()[entry].not_found_data_ids = not_found_data_ids;
     }
 }
 
-/// Capability token restricting [`SymbolTable::drop_root`] to this module.
+/// Capability token restricting root creation and removal (`SymbolTable::insert_root`,
+/// `SymbolTable::drop_root_if_present`) to this module, so a `RootSymbol` only ever exists
+/// alongside the `EntryPoint` that owns it.
 ///
 /// The `()` field is private, so the tuple-struct constructor
-/// `EntryPointCleanupToken(())` only compiles inside this module; Rust
+/// `EntryPointToken(())` only compiles inside this module; Rust
 /// treats a tuple-struct constructor as private if any field is.
-pub struct EntryPointCleanupToken(());
+pub struct EntryPointToken(());
+
+#[cfg(test)]
+impl EntryPointMgr {
+    /// Test-only: a main entry point and its root, for symbol-table unit tests that have no
+    /// `SessionInfo` to go through `set_main_entry`.
+    pub(crate) fn create_main_entry_for_test(&mut self, symbol_table: &mut SymbolTable, path: &str) -> EntryPointKey {
+        self.create_entry_point(symbol_table, path.to_string(), vec![], EntryPointType::MAIN, None, None)
+    }
+}
