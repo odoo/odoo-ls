@@ -30,10 +30,9 @@ fn test_untitled_buffer_close_does_not_crash() {
     });
     BuildScheduler::process_rebuilds(&mut session, false);
 
-    let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&untitled_uri_str)
+    let file_info = session.file_mgr().get_file_info(&untitled_uri_str)
         .expect("FileInfo for the untitled buffer should exist once opened");
-    assert!(file_info.borrow().opened);
-    drop(file_info);
+    assert!(session.file_mgr()[file_info].opened);
     assert!(SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&untitled_uri_str)).is_some());
 
     Odoo::handle_did_close(&mut session, DidCloseTextDocumentParams {
