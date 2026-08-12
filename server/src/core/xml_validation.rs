@@ -195,22 +195,34 @@ impl XmlValidator {
                         }
                 }
             }
-            let field = &session.st()[*field_key];
             // Validate field ref_key
-            if let Some((ref_key_val, ref_key_range)) = field.ref_key.as_ref(){
+            let ref_key = session.st()[*field_key].ref_key.clone();
+            if let Some((ref_key_val, ref_key_range)) = ref_key.as_ref(){
                 let xml_id_split: Vec<_> = ref_key_val.split('.').collect();
                 match xml_id_split.len() {
                     0 => {}, // Should not happen
                     1 => { // Local reference, check that it is not empty
                         let ref_xml_id = xml_id_split[0];
-                        if ref_xml_id.is_empty()
-                            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05039, &[]) {
+                        if ref_xml_id.is_empty() {
+                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05039, &[]) {
                                 diagnostics.push(Diagnostic {
                                     range: Range { start: Position::new(ref_key_range.start().into(), 0), end: Position::new(ref_key_range.end().into(), 0) },
                                     ..diagnostic
                                 });
                             }
-
+                        } else {
+                            let range = std::ops::Range {
+                                start: ref_key_range.start().to_usize(),
+                                end: ref_key_range.end().to_usize(),
+                            };
+                            if SyncOdoo::get_xml_ids(session, self.xml_symbol.into(), ref_xml_id, &range, diagnostics).is_empty(&session.sync_odoo.symbol_table)
+                            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05001, &[]) {
+                                diagnostics.push(Diagnostic {
+                                    range: Range { start: Position::new(ref_key_range.start().into(), 0), end: Position::new(ref_key_range.end().into(), 0) },
+                                    ..diagnostic
+                                });
+                            }
+                        }
                     },
                     2 => {
                         let module_name = xml_id_split[0];
@@ -231,6 +243,7 @@ impl XmlValidator {
                     }
                 }
             }
+            let field = &session.st()[*field_key];
             //Check that the field belong to the model
             if all_fields.contains(field_name) {
                 //Check specific attributes
