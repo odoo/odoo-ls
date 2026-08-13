@@ -21,3 +21,4 @@ pub mod ols04000_1_to_20;
 pub mod ols05000s;
 pub mod ols05073_74;
 pub mod implicit_class_method_no_ols_01007;
+pub mod panic_super_arg;

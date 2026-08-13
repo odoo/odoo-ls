@@ -252,6 +252,34 @@ fn record_evaluation_hit(session: &mut SessionInfo, parent: SymbolKey, range: Te
     true
 }
 
+/// Resolve and filter super class args
+/// Only returns evaluations that are classes, and returns their instance values
+fn resolve_super_class_args(
+    class_evals: &[Evaluation],
+    session: &mut SessionInfo,
+    context: Option<&Context>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Vec<(Wk<SymbolKey>, bool)> {
+    let mut hits = Vec::new();
+    for class_eval in class_evals {
+        let class_sym_weak_eval = class_eval.symbol.get_symbol_as_weak(session, context, diagnostics, None);
+        let Some(class_sym) = class_sym_weak_eval.weak.upgrade(session.st()) else { continue };
+        let resolved = SymbolTable::follow_ref(
+            &EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(class_sym, None, false)),
+            session, None, false, false, None, None,
+        );
+        hits.extend(resolved.iter().filter(|r| r.has_weak()).filter_map(|r| {
+            let w = r.get_weak();
+            if let Some(symbol) = w.weak.upgrade(session.st()) && matches!(symbol, SymbolKey::Class(_)) {
+                Some((w.weak, w.instance.unwrap_or(false)))
+            } else {
+                None
+            }
+        }));
+    }
+    hits
+}
+
 impl Evaluation {
 
     pub fn new_list(odoo: &mut SyncOdoo, values: Option<Vec<Expr>>, range: TextRange) -> Evaluation {
@@ -814,56 +842,52 @@ impl Evaluation {
                         } else {
                             if session.sync_odoo.match_tree_from_any_entry(base_sym, (&["builtins"], &["super"])) {
                                 //  - If 1st argument exists, we add that class with symbol_type Super
-                                let super_class = if !expr.arguments.is_empty() {
+                                let super_classes = if !expr.arguments.is_empty() {
                                     let (class_eval, diags) = Evaluation::eval_from_ast(session, &expr.arguments.args[0], parent, max_infer, false, required_dependencies);
                                     diagnostics.extend(diags);
-                                    if class_eval.len() != 1 {
-                                        return AnalyzeAstResult::from_only_diagnostics(diagnostics);
-                                    }
-                                    let class_sym_weak_eval= class_eval[0].symbol.get_symbol_as_weak(session, Some(context), &mut diagnostics, None);
-                                    
-                                    class_sym_weak_eval.weak.upgrade(session.st()).and_then(|class_sym|{
-                                        let class_sym_weak_eval = &SymbolTable::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
-                                            class_sym, None, false
-                                        )), session, None, false, false, None, None)[0];
-                                        if !matches!(class_sym_weak_eval.upgrade_weak(session.st()).unwrap(), SymbolKey::Class(_)) {
-                                            return None;
+                                    let class_hits = resolve_super_class_args(&class_eval, session, Some(context), &mut diagnostics);
+                                    // Split into classes (instance=false) and instances
+                                    let (classes, instances): (Vec<_>, Vec<_>) = class_hits.into_iter().partition(|(_, instance)| !instance);
+                                    if classes.is_empty() {
+                                        // Only warn if every candidate was an instance; if some candidate resolved to a
+                                        // usable class, prefer it silently instead of flagging the ambiguous ones.
+                                        if !instances.is_empty()
+                                            && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS01005, &[])
+                                        {
+                                            diagnostics.push(Diagnostic {
+                                                range: Range::new(Position::new(expr.arguments.args[0].range().start().to_u32(), 0),
+                                                Position::new(expr.arguments.args[0].range().end().to_u32(), 0)),
+                                                ..diagnostic_base
+                                            });
                                         }
-                                        let class_sym_weak_eval = class_sym_weak_eval.get_weak();
-                                        if class_sym_weak_eval.instance.unwrap_or(false) {
-                                            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS01005, &[]) {
-                                                diagnostics.push(Diagnostic {
-                                                    range: Range::new(Position::new(expr.arguments.args[0].range().start().to_u32(), 0),
-                                                    Position::new(expr.arguments.args[0].range().end().to_u32(), 0)),
-                                                    ..diagnostic_base
-                                                });
-                                            }
-                                            None
-                                        } else {
-                                            let mut is_instance = None;
-                                            let mut default_instance = true; //used if we can't evaluate the instance parameter
-                                            if let SymbolKey::Function(f) = parent && session.st()[f].is_class_method {
-                                                default_instance = false;
-                                            }
-                                            if expr.arguments.args.len() >= 2 {
-                                                let (object_or_type_eval, diags) = Evaluation::eval_from_ast(session, &expr.arguments.args[1], parent, max_infer, false, required_dependencies);
-                                                diagnostics.extend(diags);
-                                                if object_or_type_eval.len() != 1 {
-                                                    return Some((class_sym_weak_eval.weak, Some(default_instance)))
-                                                }
-                                                let object_or_type_weak_eval = &SymbolTable::follow_ref(
+                                        vec![]
+                                    } else {
+                                        let mut default_instance = true; //used if we can't evaluate the instance parameter
+                                        if let SymbolKey::Function(f) = parent && session.st()[f].is_class_method {
+                                            default_instance = false;
+                                        }
+                                        let is_instance = if expr.arguments.args.len() >= 2 {
+                                            let (object_or_type_eval, diags) = Evaluation::eval_from_ast(session, &expr.arguments.args[1], parent, max_infer, false, required_dependencies);
+                                            diagnostics.extend(diags);
+                                            if object_or_type_eval.len() != 1 {
+                                                Some(default_instance)
+                                            } else {
+                                                let object_or_type_weak_eval = SymbolTable::follow_ref(
                                                     &object_or_type_eval[0].symbol.get_symbol(
                                                         session, Some(context), &mut diagnostics, Some(parent)),
-                                                        session, None, false, false, None, None)[0];
-                                                if object_or_type_weak_eval.has_weak() {
-                                                    is_instance = Some(object_or_type_weak_eval.get_weak().instance.unwrap_or(default_instance));
-                                                } else {
-                                                    is_instance = Some(default_instance);
-                                                }
+                                                        session, None, false, false, None, None);
+                                                Some(
+                                                    object_or_type_weak_eval.first()
+                                                        .filter(|r| r.has_weak())
+                                                        .map(|r| r.get_weak().instance.unwrap_or(default_instance))
+                                                        .unwrap_or(default_instance)
+                                                )
                                             }
-                                            Some((class_sym_weak_eval.weak, is_instance))
-                                        }
-                                    })
+                                        } else {
+                                            None
+                                        };
+                                        classes.into_iter().map(|(class_weak, _)| (class_weak, is_instance)).collect()
+                                    }
                                 //  - Otherwise we get the encapsulating class
                                 } else {
                                     match session.st().get_in_parents(parent, &[SymType::CLASS], true) {
@@ -875,7 +899,7 @@ impl Evaluation {
                                                     ..diagnostic
                                                 });
                                             }
-                                            None
+                                            vec![]
                                         },
                                         Some(parent_class) => {
                                             let mut instance = Some(true);
@@ -888,11 +912,11 @@ impl Evaluation {
                                                     instance = None;
                                                 }
                                             }
-                                            Some((parent_class.into(), instance))
+                                            vec![(parent_class.into(), instance)]
                                         }
                                     }
                                 };
-                                if let Some((super_class, instance)) = super_class{
+                                for (super_class, instance) in super_classes {
                                     evals.push(Evaluation{
                                         symbol: EvaluationSymbol {
                                             sym: EvaluationSymbolPtr::SELF(EvaluationSymbolWeak{
