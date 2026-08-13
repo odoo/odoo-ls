@@ -197,7 +197,8 @@ pub fn unpack_assign(targets: &[Expr], annotation: Option<&Expr>, value: Option<
                 }
                 for (index, target) in expr.elts.iter().enumerate() {
                     match target {
-                        Expr::Name(tar) => {
+                        // Annotation and value can be None when evaluation for loop var in arch build and in document symbol
+                        Expr::Name(tar) if annotation.is_none() || value.is_some() => {
                             res.push(Assign {
                                 target: AssignTargetType::Name(tar.clone()),
                                 annotation: None,
@@ -230,7 +231,7 @@ pub fn unpack_assign(targets: &[Expr], annotation: Option<&Expr>, value: Option<
                 }
                 for (index, target) in expr.elts.iter().enumerate() {
                     match target {
-                        Expr::Name(tar) => {
+                        Expr::Name(tar) if annotation.is_none() || value.is_some() => {
                             res.push(Assign {
                                 target: AssignTargetType::Name(tar.clone()),
                                 annotation: None,

@@ -268,6 +268,49 @@ fn test_assigns() {
 }
 
 #[test]
+fn test_ann_assign_invalid_target() {
+    // Regression test: annotated assignment with a tuple/list target is invalid Python
+    // (only a single Name/Attribute/Subscript target can be annotated - and only a
+    // single target can be annotated without a value at all), but ruff's error-recovery
+    // parser still produces a StmtAnnAssign for it - a very plausible mid-typing state.
+    // This must not panic. Since there's no value and more than one target, unpack_assign
+    // now deliberately produces no Assign at all for these (the `if value.is_some()`
+    // guard on the Tuple/List fallback arm), so no variable is created for them - same
+    // as if the (invalid) statement weren't there. A single annotated target with no
+    // value is still valid and must keep working normally.
+    let (mut odoo, config) = setup::setup::setup_server(false);
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let path = env::current_dir().unwrap().join("tests/data/python/expressions/ann_assign_invalid_target.py").sanitize();
+    setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
+    assert!(session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.len() == 1);
+    let int_type = session.sync_odoo.get_symbol("", (&["builtins"], &["int"]), u32::MAX)[0];
+    let st = &session.sync_odoo.symbol_table;
+
+    let x = session.sync_odoo.get_symbol(path.as_str(), (&[], &["x"]), u32::MAX);
+    assert!(x.is_empty());
+    let y = session.sync_odoo.get_symbol(path.as_str(), (&[], &["y"]), u32::MAX);
+    assert!(y.is_empty());
+
+    let x2 = session.sync_odoo.get_symbol(path.as_str(), (&[], &["x2"]), u32::MAX);
+    assert!(x2.is_empty());
+    let y2 = session.sync_odoo.get_symbol(path.as_str(), (&[], &["y2"]), u32::MAX);
+    assert!(y2.is_empty());
+
+    // "x3, y3:" - annotation not typed yet either; must not panic regardless.
+    let x3 = session.sync_odoo.get_symbol(path.as_str(), (&[], &["x3"]), u32::MAX);
+    assert!(x3.is_empty());
+    let y3 = session.sync_odoo.get_symbol(path.as_str(), (&[], &["y3"]), u32::MAX);
+    assert!(y3.is_empty());
+
+    // A single annotated target with no value is valid Python and must still work.
+    let single_target = session.sync_odoo.get_symbol(path.as_str(), (&[], &["single_target"]), u32::MAX);
+    assert!(single_target.len() == 1);
+    assert!(st.evaluations(single_target[0]).as_ref().unwrap().len() == 1);
+    let eval = st.evaluations(single_target[0]).as_ref().unwrap()[0].symbol.get_symbol_ptr().upgrade_weak(&session.sync_odoo.symbol_table);
+    assert!(eval.unwrap() == int_type);
+}
+
+#[test]
 fn test_sections() {
     let (mut odoo, config) = setup::setup::setup_server(false);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
