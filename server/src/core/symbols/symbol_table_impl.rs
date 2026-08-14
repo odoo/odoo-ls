@@ -1387,6 +1387,14 @@ impl SymbolTable {
     If filter_on_tree is set, stop following when one of the symbols in the chain is in the tree, and only return those symbols.
         */
     pub fn follow_ref(evaluation: &EvaluationSymbolPtr, session: &mut SessionInfo, context: Option<&Context>, stop_on_type: bool, stop_on_value: bool, filter_on_tree: Option<(&[&str], &[&str])>, max_scope: Option<SymbolKey>) -> Vec<EvaluationSymbolPtr> {
+        /// Symbol Identity inside follow_ref
+        /// SymbolKey + instance + context (identity keys only)
+        #[derive(Hash, PartialEq, Eq)]
+        struct FollowRefSymID {
+            sym: SymbolKey,
+            instance: Option<bool>,
+            context: Context,
+        }
         let default_result = match filter_on_tree.as_ref() {
             Some(_) => vec![],
             None => vec![evaluation.clone()],
@@ -1443,10 +1451,15 @@ impl SymbolTable {
                 continue;
             };
             // Avoid cycles
-            if visited.contains(&sym_key) {
+            let key = FollowRefSymID {
+                sym: sym_key,
+                instance: next_ref_weak.instance,
+                context: next_ref_weak.context.identity_view(),
+            };
+            if visited.contains(&key) {
                 continue;
             }
-            visited.insert(sym_key);
+            visited.insert(key);
             let next_ref_weak_instance = next_ref_weak.instance;
             match sym_key {
                 SymbolKey::Variable(v) => {
