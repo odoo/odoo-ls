@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 use ruff_python_ast::Arguments;
 use ruff_text_size::TextRange;
 use thin_vec::ThinVec;
@@ -52,6 +54,45 @@ pub enum ContextKey {
     EMPTY,
 }
 
+impl ContextKey {
+    /// Whether a value stored under this key's value can affect the identity of a symbol evaluation step.
+    pub fn is_identity_relevant(&self) -> bool {
+        // Add all branches manually to force a compiler error if a new key is added and not handled here.
+        match self {
+            ContextKey::Args
+            | ContextKey::BaseAttr
+            | ContextKey::BaseAttrInserted
+            | ContextKey::BaseCall
+            | ContextKey::BaseIsSelf
+            | ContextKey::Compute
+            | ContextKey::ComodelName
+            | ContextKey::ConstructingClass
+            | ContextKey::Default
+            | ContextKey::Delegate
+            | ContextKey::FieldParent
+            | ContextKey::IsAttrOfInstance
+            | ContextKey::IsInValidation
+            | ContextKey::Inverse
+            | ContextKey::InverseName
+            | ContextKey::Module
+            | ContextKey::Parameters
+            | ContextKey::ParentFor
+            | ContextKey::ParentInstance
+            | ContextKey::Related
+            | ContextKey::Required
+            | ContextKey::Search => true,
+            ContextKey::Range
+            | ContextKey::ComodelNameArgRange
+            | ContextKey::RelatedArgRange
+            | ContextKey::ComputeArgRange
+            | ContextKey::InverseArgRange
+            | ContextKey::InverseNameArgRange
+            | ContextKey::SearchArgRange
+            | ContextKey::EMPTY => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ContextValue {
     BOOLEAN(bool),
@@ -62,6 +103,21 @@ pub enum ContextValue {
     RANGE(TextRange),
     // empty value after removal - should not be used as value
     EMPTY,
+}
+
+impl Hash for ContextValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            ContextValue::BOOLEAN(b) => b.hash(state),
+            ContextValue::STRING(s) => s.hash(state),
+            ContextValue::MODULE(m) => m.hash(state),
+            ContextValue::SYMBOL(s) => s.hash(state),
+            ContextValue::RANGE(r) => r.hash(state),
+            // Hash by range, as the type does not implement Hash.
+            ContextValue::ARGUMENTS(a) => a.range.hash(state),
+            ContextValue::EMPTY => 0.hash(state),
+        }
+    }
 }
 
 impl FromIterator<(ContextKey, ContextValue)> for Context {
@@ -190,6 +246,37 @@ impl PartialEq for Context {
     fn eq(&self, other: &Self) -> bool {
         self.iter().count() == other.iter().count()
             && self.iter().all(|(k, v)| other.get(*k) == Some(v))
+    }
+}
+
+// Our PartialEq implementation is sound and reflexive, so we can assert Eq by hand.
+impl Eq for Context {}
+
+impl Hash for Context {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let mut entries: Vec<&(ContextKey, ContextValue)> = self.iter().collect();
+        // We know key is unique, so sorting by key is sufficient to get a canonical order.
+        // It also assert order-independence
+        entries.sort_by_key(|(k, _)| *k);
+        entries.len().hash(state);
+        for (k, v) in entries {
+            k.hash(state);
+            v.hash(state);
+        }
+    }
+}
+
+impl Context {
+    /// A copy of this context containing only entries that can affect what a
+    /// downstream evaluation step produces (see `ContextKey::is_identity_relevant`).
+    /// Two contexts with the same identity view are interchangeable for the
+    /// purpose of deciding whether re-visiting a symbol would repeat prior work.
+    pub fn identity_view(&self) -> Context {
+        Context::from_iter(
+            self.iter()
+                .filter(|(k, _)| k.is_identity_relevant())
+                .cloned()
+        )
     }
 }
 
@@ -470,5 +557,71 @@ mod tests {
         with_empty.remove(ContextKey::Required);
         let clean = Context::from_iter([(ContextKey::Default, ContextValue::STRING("d".to_string()))]);
         assert_eq!(with_empty, clean);
+    }
+
+    fn hash_of<T: Hash>(value: &T) -> u64 {
+        use std::hash::Hasher;
+        let mut hasher = rustc_hash::FxHasher::default();
+        value.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    #[test]
+    fn identity_relevant_excludes_only_positional_keys() {
+        assert!(!ContextKey::Range.is_identity_relevant());
+        assert!(!ContextKey::ComodelNameArgRange.is_identity_relevant());
+        assert!(!ContextKey::RelatedArgRange.is_identity_relevant());
+        assert!(!ContextKey::EMPTY.is_identity_relevant());
+        assert!(ContextKey::ComodelName.is_identity_relevant());
+        assert!(ContextKey::Related.is_identity_relevant());
+        assert!(ContextKey::BaseAttr.is_identity_relevant());
+        assert!(ContextKey::IsAttrOfInstance.is_identity_relevant());
+    }
+
+    #[test]
+    fn identity_view_drops_cosmetic_entries() {
+        let ctx = Context::from_iter([
+            (ContextKey::ComodelName, ContextValue::STRING("res.partner".to_string())),
+            (ContextKey::ComodelNameArgRange, ContextValue::RANGE(TextRange::default())),
+        ]);
+        let view = ctx.identity_view();
+        assert!(view.contains_key(&ContextKey::ComodelName));
+        assert!(!view.contains_key(&ContextKey::ComodelNameArgRange));
+    }
+
+    #[test]
+    fn identity_view_equal_and_same_hash_when_only_cosmetic_differs() {
+        let a = Context::from_iter([
+            (ContextKey::ComodelName, ContextValue::STRING("res.partner".to_string())),
+            (ContextKey::ComodelNameArgRange, ContextValue::RANGE(TextRange::new(0.into(), 1.into()))),
+        ]);
+        let b = Context::from_iter([
+            (ContextKey::ComodelName, ContextValue::STRING("res.partner".to_string())),
+            (ContextKey::ComodelNameArgRange, ContextValue::RANGE(TextRange::new(5.into(), 9.into()))),
+        ]);
+        // same comodel, different diagnostic range -> same step for cycle-detection purposes
+        assert_eq!(a.identity_view(), b.identity_view());
+        assert_eq!(hash_of(&a.identity_view()), hash_of(&b.identity_view()));
+    }
+
+    #[test]
+    fn identity_view_distinguishes_semantic_values() {
+        let a = Context::from_iter([(ContextKey::ComodelName, ContextValue::STRING("res.partner".to_string()))]);
+        let b = Context::from_iter([(ContextKey::ComodelName, ContextValue::STRING("res.users".to_string()))]);
+        // different comodel -> must not be collapsed into the same step
+        assert_ne!(a.identity_view(), b.identity_view());
+    }
+
+    #[test]
+    fn context_hash_is_order_independent() {
+        let a = Context::from_iter([
+            (ContextKey::Required, ContextValue::BOOLEAN(true)),
+            (ContextKey::Search, ContextValue::BOOLEAN(false)),
+        ]);
+        let b = Context::from_iter([
+            (ContextKey::Search, ContextValue::BOOLEAN(false)),
+            (ContextKey::Required, ContextValue::BOOLEAN(true)),
+        ]);
+        assert_eq!(hash_of(&a), hash_of(&b));
     }
 }

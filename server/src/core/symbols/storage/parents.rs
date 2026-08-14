@@ -16,7 +16,7 @@ use super::SymbolTable;
 
 // ==== File content ====
 
-#[derive(Debug, Clone, Copy, SymbolKeySubset)]
+#[derive(Debug, Clone, Copy, SymbolKeySubset, Hash)]
 pub enum FileContentParent {
     File(FileKey),
     PythonPackage(PythonPackageKey),
@@ -64,7 +64,7 @@ impl FileContentParent {
 
 // ==== Filesystem items (aka module symbols) ====
 
-#[derive(Debug, Clone, Copy, SymbolKeySubset)]
+#[derive(Debug, Clone, Copy, SymbolKeySubset, Hash)]
 pub enum FileSystemSymbolParent {
     Root(RootKey),
     DiskDir(DiskDirKey),
@@ -154,7 +154,7 @@ impl JsFileParent {
 
 // ==== Xml data ====
 
-#[derive(Debug, Clone, Copy, SymbolKeySubset)]
+#[derive(Debug, Clone, Copy, SymbolKeySubset, Hash)]
 pub enum XmlDataParent {
     XmlFile(XmlFileKey),
     CsvFile(CsvFileKey),
@@ -178,7 +178,7 @@ impl XmlDataParent {
 
 // ==== Xml Fields ====
 
-#[derive(Debug, Clone, Copy, SymbolKeySubset)]
+#[derive(Debug, Clone, Copy, SymbolKeySubset, Hash)]
 pub enum XmlFieldParent {
     XmlRecord(XmlRecordKey),
     XmlAsset(XmlAssetKey),

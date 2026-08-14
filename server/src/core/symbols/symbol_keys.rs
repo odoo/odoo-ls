@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 use duplicate::duplicate_item;
 use odoo_ls_macros::{From, IntoKey, IntoSymbolKey, SymbolKeySubset, Validator};
 use slotmap::{Key, new_key_type};
@@ -206,12 +208,12 @@ pub trait KeyValidator<K> {
 }
 
 /// Weak key. Wraps a key that might be invalid, and must be upgraded to be used.
-#[derive(PartialEq, Debug, Clone, Copy)]
-pub struct Wk<K: Copy> {
+#[derive(PartialEq, Debug, Clone, Copy, Hash)]
+pub struct Wk<K: Copy + Hash> {
     key: K,
 }
 
-impl<K: Copy> Wk<K> {
+impl<K: Copy + Hash> Wk<K> {
     pub fn upgrade(&self, table: &impl KeyValidator<K>) -> Option<K> {
         if table.is_key_valid(self.key) {
             Some(self.key)
@@ -224,7 +226,7 @@ impl<K: Copy> Wk<K> {
     }
 
     /// Converts a Wk of a specific type to a Wk of a generic one, e.g.: Wk<FileKey> to Wk<SymbolKey>
-    pub fn map_into<T: Copy>(self) -> Wk<T> where K: Into<T> {
+    pub fn map_into<T: Copy + Hash>(self) -> Wk<T> where K: Into<T> {
         Wk { key: self.key.into() }
     }
 }
@@ -236,7 +238,7 @@ impl Wk<SymbolKey> {
 }
 
 // Converts to a Weak of the same key type, e.g. FileKey to Weak<FileKey>
-impl<K: Copy> From<K> for Wk<K> {
+impl<K: Copy + Hash> From<K> for Wk<K> {
     fn from(key: K) -> Self {
         Self { key }
     }
