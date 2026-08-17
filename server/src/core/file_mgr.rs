@@ -379,10 +379,9 @@ impl FileInfo {
         // See https://github.com/Microsoft/language-server-protocol/issues/177
         // Return true if the update has been done and not discarded
         match version {
-            // -100, we set FileInfo to -100 if it was not opened yet. Otherwise, we do not change the version
-            Some(-100) => if !self.opened {
-                self.version = Some(-100);
-            } else if !force { // If opened, with -100, we do not update
+            // -100, Set version to -100 later only if no failure occurs
+            Some(-100) => if self.opened && !force {
+                // Opened files can only receive version -100 if forced, abort
                 return false;
             },
             // normal version number, we update if higher, and set to opened anyway
@@ -419,10 +418,16 @@ impl FileInfo {
             if let Some(preloaded) = SyncOdoo::take_preloaded(session, &sanitized_path) {
                 // no need to gate on hash change: pre-parser only runs on first build
                 self.apply_preloaded(session, preloaded);
+                if version == Some(-100) && !self.opened {
+                    self.version = Some(-100);
+                }
                 return true;
             }
             match fs::read_to_string(path) {
                 Ok(content) => {
+                    if version == Some(-100) && !self.opened {
+                        self.version = Some(-100);
+                    }
                     self.file_info_ast.borrow_mut().text_document = Some(TextDocument::new(content, self.version.unwrap_or(-1)));
                 },
                 Err(e) => {
