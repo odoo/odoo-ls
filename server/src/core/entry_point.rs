@@ -181,6 +181,32 @@ impl EntryPointMgr {
         session.sync_odoo.entry_point_mgr.borrow_mut().addons_entry_points.push(entry.clone());
     }
 
+    /* Re-add a configured addons path that was dropped by clean_entries after its
+     * directory got deleted. Rebuilds the "odoo.addons" namespace if needed.
+     */
+    pub fn restore_addon_entry(session: &mut SessionInfo, path: &str) -> Option<Rc<RefCell<EntryPoint>>> {
+        let main_entry = session.sync_odoo.entry_point_mgr.borrow().main_entry_point.as_ref()?.clone();
+        let main_sym = main_entry.borrow().get_symbol(session.st())?;
+        match session.st().get_symbol(main_sym, (&["odoo", "addons"], &[]), u32::MAX).first() {
+            Some(&SymbolKey::Namespace(k)) => {
+                if !session.st()[k].paths().iter().any(|p| p == path) {
+                    session.st_mut()[k].add_path(path.to_string());
+                }
+            }
+            _ => {
+                let odoo_pkg = session
+                    .st()
+                    .get_symbol(main_sym, (&["odoo"], &[]), u32::MAX)
+                    .first()
+                    .and_then(|&sym| sym.try_into().ok())?;
+                session.st_mut().add_new_namespace(odoo_pkg, "addons", path);
+            }
+        }
+        info!("Restoring addon entry point: {}", path);
+        EntryPointMgr::add_entry_to_addons(session, path.to_string(), main_entry, vec![OYarn::from("odoo"), OYarn::from("addons")]);
+        session.sync_odoo.entry_point_mgr.borrow().addons_entry_points.last().cloned()
+    }
+
     /* Create a new entry to public.
     return the symbol at the end of the path
      */
@@ -339,6 +365,15 @@ impl EntryPointMgr {
                 // addons entries share the same root as the main entry
                 self.addons_entry_points.clear();
             }
+        // addons entries share the main entry's root, so drop them without drop_entry/drop_root
+        self.addons_entry_points.retain(|entry| {
+            if entry.borrow().to_delete {
+                info!("Dropping addon entry point {}", entry.borrow().path);
+                false
+            } else {
+                true
+            }
+        });
         let mut drop_if_flagged = |label: &str, entries: &mut Vec<Rc<RefCell<EntryPoint>>>| {
             entries.retain(|entry| {
                 if entry.borrow().to_delete {
