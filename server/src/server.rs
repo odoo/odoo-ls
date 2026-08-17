@@ -10,7 +10,7 @@ use serde_json::json;
 use nix;
 use tracing::{error, info, warn};
 
-use crate::{S, constants::{DEBUG_THREADS, EXTENSION_VERSION}, core::odoo::SyncOdoo, crash_buffer, threads::{DelayedProcessingMessage, ThreadMessage, delayed_changes_process_thread, message_processor_thread_main}};
+use crate::{S, constants::{DEBUG_THREADS, EXTENSION_VERSION}, core::odoo::{OdooNotification, SyncOdoo}, crash_buffer, threads::{DelayedProcessingMessage, ThreadMessage, delayed_changes_process_thread, message_processor_thread_main}};
 
 
 /**
@@ -270,7 +270,7 @@ impl Server {
 
         self.connection.as_ref().unwrap().initialize_finish(id, serde_json::to_value(initialize_data).unwrap())?;
         let _ = self.connection.as_ref().unwrap().sender.send(Message::Notification(lsp_server::Notification {
-            method: "$Odoo/setPid".to_string(),
+            method: OdooNotification::SetPid.as_str().to_string(),
             params: json!({
                 "server_pid": std::process::id(),
             })

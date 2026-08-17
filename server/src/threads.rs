@@ -10,7 +10,7 @@ use serde_json::Value;
 use tracing::{error, info, warn};
 use crate::{constants::{DiagnosticSource, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::{build_scheduler::BuildScheduler, symbols::storage::SymbolTable}, create_session, lsp_types_custom::{ConfigDiagnosticAction, ConfigDiagnosticMessage}};
 
-use crate::{core::{file_mgr::NoqaInfo, odoo::{Odoo, SyncOdoo}}, server::ServerError, utils::PathSanitizer, S};
+use crate::{core::{file_mgr::NoqaInfo, odoo::{Odoo, OdooNotification, SyncOdoo}}, server::ServerError, utils::PathSanitizer, S};
 
 
 pub struct SessionInfo<'a> {
@@ -55,9 +55,17 @@ impl <'a> SessionInfo<'a> {
         self.sender.clone()
     }
 
+    /// Test-only: counts restart notifications and drains out the rest
+    pub fn test_drain_restart_notifications(&self) -> usize {
+        self.receiver.try_iter()
+            .filter(|msg| matches!(msg, Message::Notification(n) if n.method == OdooNotification::RestartNeeded.as_str()))
+            .count()
+    }
+
     /// Send a notification to the client using the given method and parameters via the session sender.
     /// Panics if the send fails and the server is not shutting down.
-    pub fn send_notification<T: Serialize>(&self, method: &str, params: T) {
+    pub fn send_notification<M: Into<&'static str>, T: Serialize>(&self, method: M, params: T) {
+        let method = method.into();
         if let Err(e) = send_notification_via(&self.sender, method, params)
             && !self.sync_odoo.terminate_rebuild.load(std::sync::atomic::Ordering::SeqCst)
         {
@@ -117,7 +125,7 @@ impl <'a> SessionInfo<'a> {
     }
 
     pub fn send_config_diagnostic(&self, action: ConfigDiagnosticAction, messages: &[ConfigDiagnosticMessage]) {
-        self.send_notification("$Odoo/diagnostic_config", serde_json::json!({
+        self.send_notification(OdooNotification::DiagnosticConfig, serde_json::json!({
             "action": action.as_str(),
             "messages": messages
         }));
@@ -281,7 +289,7 @@ fn restart_server(sync_odoo: &Arc<Mutex<SyncOdoo>>, sender_session: &Sender<Mess
             noqas_stack: vec![],
             current_noqa: NoqaInfo::None,
         };
-        session.send_notification("$Odoo/restartNeeded", ());
+        session.send_notification(OdooNotification::RestartNeeded, ());
     }
 }
 
@@ -297,7 +305,7 @@ fn notify_git_lock(sync_odoo: &Arc<Mutex<SyncOdoo>>, sender_session: &Sender<Mes
             current_noqa: NoqaInfo::None,
         };
         error!("Git index lock detected, notifying client: {}", status);
-        session.send_notification("$Odoo/loadingStatusUpdate", status);
+        session.send_notification(OdooNotification::LoadingStatusUpdate, status);
     }
 }
 

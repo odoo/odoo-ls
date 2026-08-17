@@ -116,6 +116,45 @@ impl TypeshedWeakReferences {
     }
 }
 
+/// Method names for the server's custom "$Odoo/..." LSP notifications, kept in one place so
+/// call sites can't typo a raw string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OdooNotification {
+    JsLsStatus,
+    InvalidPythonPath,
+    DiagnosticConfig,
+    RestartNeeded,
+    LoadingStatusUpdate,
+    SetConfiguration,
+    SetPid,
+}
+
+impl OdooNotification {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::JsLsStatus => "$Odoo/jsLsStatus",
+            Self::InvalidPythonPath => "$Odoo/invalid_python_path",
+            Self::DiagnosticConfig => "$Odoo/diagnostic_config",
+            Self::RestartNeeded => "$Odoo/restartNeeded",
+            Self::LoadingStatusUpdate => "$Odoo/loadingStatusUpdate",
+            Self::SetConfiguration => "$Odoo/setConfiguration",
+            Self::SetPid => "$Odoo/setPid",
+        }
+    }
+}
+
+impl From<OdooNotification> for &'static str {
+    fn from(notification: OdooNotification) -> Self {
+        notification.as_str()
+    }
+}
+
+impl std::fmt::Display for OdooNotification {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug)]
 pub struct SyncOdoo {
     pub version: OdooVersion,
@@ -294,7 +333,7 @@ impl SyncOdoo {
         info!("Full Config: {:?}", config);
         let start_time = Instant::now();
         session.sync_odoo.state_init = InitState::NOT_READY;
-        session.send_notification("$Odoo/loadingStatusUpdate", "start");
+        session.send_notification(OdooNotification::LoadingStatusUpdate, "start");
         session.sync_odoo.config = config;
         if session.sync_odoo.config.no_typeshed_stubs() {
             session.sync_odoo.stubs_dirs.clear();
@@ -322,7 +361,7 @@ impl SyncOdoo {
             match Command::new(session.sync_odoo.config.python_path().clone()).args(["-c", "import sys; import json; print(json.dumps(sys.path))"]).output() {
                 Err(err) => {
                     warn!("Wrong python command: {}, error: {}", session.sync_odoo.config.python_path().clone(), err);
-                    session.send_notification("$Odoo/invalid_python_path", ());
+                    session.send_notification(OdooNotification::InvalidPythonPath, ());
                     break 'python_check;
                 },
                 Ok(output) => {
@@ -348,7 +387,7 @@ impl SyncOdoo {
             match Command::new(session.sync_odoo.config.python_path().clone()).args(["-c", "import sys, importlib.machinery, json; print(json.dumps({'version_info': list(sys.version_info)[:3], 'ext_suffixes': list(importlib.machinery.EXTENSION_SUFFIXES)}))"]).output() {
                 Err(err) => {
                     warn!("Wrong python command: {}, error: {}", session.sync_odoo.config.python_path().clone(), err);
-                    session.send_notification("$Odoo/invalid_python_path", ());
+                    session.send_notification(OdooNotification::InvalidPythonPath, ());
                 },
                 Ok(output) => {
                     session.sync_odoo.has_valid_python = true;
@@ -376,7 +415,7 @@ impl SyncOdoo {
             }
         }
         let tsserver_handle = if session.sync_odoo.config.is_javascript_disabled() {
-            session.send_notification("$Odoo/jsLsStatus", false);
+            session.send_notification(OdooNotification::JsLsStatus, false);
             None
         } else {
             let client_sender = session.clone_sender();
@@ -387,7 +426,7 @@ impl SyncOdoo {
                 let ts_check = session.sync_odoo.config.ts_check();
                 std::thread::spawn(move || {
                     let bridge = SyncOdoo::setup_and_start_tsserver(tsserver_cmd, sender, odoo_path, addons_paths, ts_check);
-                    let _ = send_notification_via(&client_sender, "$Odoo/jsLsStatus", bridge.is_some());
+                    let _ = send_notification_via(&client_sender, OdooNotification::JsLsStatus.into(), bridge.is_some());
                     bridge
                 })
             })
@@ -429,7 +468,7 @@ impl SyncOdoo {
                 ]);},
             }
         }
-        session.send_notification("$Odoo/loadingStatusUpdate", "stop");
+        session.send_notification(OdooNotification::LoadingStatusUpdate, "stop");
         session.log_message(MessageType::INFO, format!("End of initialization. Time taken: {} ms", start_time.elapsed().as_millis()));
     }
 
@@ -1337,7 +1376,7 @@ impl Odoo {
                 "diagnostics": config_file.diagnostic_messages(),
             });
             session.send_notification(
-                "$Odoo/setConfiguration",
+                OdooNotification::SetConfiguration,
                 payload
             );
         }
@@ -2040,10 +2079,21 @@ impl Odoo {
             }
         }
         // test if the new path is a new module under odoo/addons namespace.
-        let Some(addons) = session.sync_odoo.addons_namespace() else {
+        let Some(parent_path) = path_for_tree.parent().map(|parent| parent.sanitize_cow().into_owned()) else {
             return;
         };
-        let Some(parent_path) = path_for_tree.parent().map(|parent| parent.sanitize_cow()) else {
+        // path may have been deleted and recreated since; restore it if still configured
+        let already_registered = ep_mgr.borrow().addons_entry_points.iter()
+            .any(|entry| entry.borrow().path == parent_path);
+        if !already_registered && session.sync_odoo.config.addons_paths().contains(&parent_path) {
+            let restored = EntryPointMgr::restore_addon_entry(session, &parent_path);
+            if restored.is_some() {
+                // Request restart to get a clean reload, but not early return -
+                // also queue it in the build scheduler later, in case the client does not support `RestartNeeded`
+                session.send_notification(OdooNotification::RestartNeeded, ());
+            }
+        }
+        let Some(addons) = session.sync_odoo.addons_namespace() else {
             return;
         };
         if !session.st()[addons].directories().iter().any(|d| d.path == parent_path) {
@@ -2340,7 +2390,7 @@ impl Odoo {
     pub fn handle_config_update(session: &mut SessionInfo, new_config: ConfigEntry, cfg_file: ConfigView) {
         if config::needs_restart(&session.sync_odoo.config, &new_config) {
             // Changes require a restart, ask the client to restart the server
-            session.send_notification("$Odoo/restartNeeded", ());
+            session.send_notification(OdooNotification::RestartNeeded, ());
             return;
         }
         // Changes can be applied without restart

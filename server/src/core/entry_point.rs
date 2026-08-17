@@ -73,7 +73,7 @@ impl EntryPointMgr {
     /**
      * Create each required directory symbols for a given path.
      * /!\ path must point to a directory on disk */
-    fn create_dir_symbols_for_new_entry(session: &mut SessionInfo, path: &str, entry: Rc<RefCell<EntryPoint>>) -> Option<SymbolKey> {
+    pub fn create_dir_symbols_for_new_entry(session: &mut SessionInfo, path: &str, entry: Rc<RefCell<EntryPoint>>) -> Option<SymbolKey> {
         let path = Path::new(path);
         let mut iter_path = PathBuf::new();
         let mut current_sym: FileSystemSymbolParent = entry.borrow().root.into();
@@ -81,8 +81,12 @@ impl EntryPointMgr {
         for component in path.components().take(component_count - 1) {
             iter_path.push(component);
             if let Some(name) = component.as_os_str().to_str() {
-                let disk_dir = session.st_mut().add_new_disk_dir(current_sym, name, iter_path.to_str().unwrap());
-                current_sym = disk_dir.expect("Starting from fresh root, no name collision expected").into();
+                current_sym = if let Some(existing_sym) = current_sym.get_child(session.st(), name) {
+                    existing_sym.try_into().expect("Expected existing_sym to be a DiskDirKey")
+                } else {
+                    session.st_mut().add_new_disk_dir(current_sym, name, iter_path.to_str().unwrap())
+                        .expect("Starting from fresh root, no name collision expected").into()
+                };
             } else {
                 error!("Unable to convert path component to string");
                 return None;
@@ -181,6 +185,36 @@ impl EntryPointMgr {
             shared_root
         );
         session.sync_odoo.entry_point_mgr.borrow_mut().addons_entry_points.push(entry.clone());
+    }
+
+    /* Re-add a configured addons path that was dropped by clean_entries after its
+     * directory got deleted. Rebuilds the "odoo.addons" namespace if needed.
+     */
+    pub fn restore_addon_entry(session: &mut SessionInfo, path: &str) -> Option<Rc<RefCell<EntryPoint>>> {
+        let main_entry = session.sync_odoo.entry_point_mgr.borrow().main_entry_point.as_ref()?.clone();
+        let main_sym = main_entry.borrow().get_symbol(session.st())?;
+        match session.st().get_symbol(main_sym, (&["odoo", "addons"], &[]), u32::MAX).first() {
+            Some(&SymbolKey::Namespace(k)) => {
+                if !session.st()[k].paths().iter().any(|p| p == path) {
+                    session.st_mut()[k].add_path(path.to_string());
+                }
+            }
+            None => {
+                let odoo_pkg = session
+                    .st()
+                    .get_symbol(main_sym, (&["odoo"], &[]), u32::MAX)
+                    .first()
+                    .and_then(|&sym| sym.try_into().ok())?;
+                session.st_mut().add_new_namespace(odoo_pkg, "addons", path).ok()?;
+            }
+            Some(other) => {
+                warn!("odoo.addons resolved to unexpected symbol {other:?} while restoring addon entry {path}");
+                return None;
+            }
+        }
+        info!("Restoring addon entry point: {}", path);
+        EntryPointMgr::add_entry_to_addons(session, path.to_string(), main_entry, vec![OYarn::from("odoo"), OYarn::from("addons")]);
+        session.sync_odoo.entry_point_mgr.borrow().addons_entry_points.last().cloned()
     }
 
     /* Create a new entry to public.
@@ -337,6 +371,15 @@ impl EntryPointMgr {
                 // addons entries share the same root as the main entry
                 self.addons_entry_points.clear();
             }
+        // addons entries share the main entry's root, so drop them without drop_entry/drop_root
+        self.addons_entry_points.retain(|entry| {
+            if entry.borrow().to_delete {
+                info!("Dropping addon entry point {}", entry.borrow().path);
+                false
+            } else {
+                true
+            }
+        });
         let mut drop_if_flagged = |label: &str, entries: &mut Vec<Rc<RefCell<EntryPoint>>>| {
             entries.retain(|entry| {
                 if entry.borrow().to_delete {
