@@ -2,6 +2,7 @@
 use lsp_types::{Diagnostic, NumberOrString};
 use odoo_ls_server::{
     S, core::{
+        evaluation::Evaluation,
         file_mgr::FileInfo,
         symbols::{storage::SymbolTable, symbol_keys::{SourceFileKey, SymbolKey}},
     }, features::ast_utils::AstUtils, odoo_version::OdooVersion, threads::SessionInfo
@@ -183,6 +184,39 @@ pub fn verify_diagnostics_against_doc(
             }).collect::<Vec<String>>().join(", "),
         );
     }
+}
+
+/// Resolves a list of evaluations to their final types, following references and
+/// executing any `get_symbol_hook` attached along the way. Unlike
+/// `get_resolved_symbols_at_position` (which inspects the raw evaluation pointer
+/// without running hooks), this is needed to correctly resolve evaluations that
+/// stay lazy/hook-based (e.g. class-member templates), matching what the hover
+/// feature itself would show.
+pub fn resolve_evaluation_types(session: &mut SessionInfo, evals: &[Evaluation]) -> Vec<SymbolKey> {
+    evals
+        .iter()
+        .flat_map(|eval| {
+            SymbolTable::follow_ref(
+                &eval.symbol.get_symbol(session, None, &mut vec![], None),
+                session,
+                None,
+                false,
+                false,
+                None,
+                None,
+            )
+        })
+        .collect::<Vec<_>>()
+        .iter()
+        .filter_map(|ev| ev.upgrade_weak(session.st()))
+        .collect()
+}
+
+/// Resolves the evaluations stored on `symbol` (a variable or function) to their
+/// final types. See `resolve_evaluation_types`.
+pub fn resolve_symbol_types(session: &mut SessionInfo, symbol: SymbolKey) -> Vec<SymbolKey> {
+    let evals = session.st().evaluations(symbol).cloned().unwrap_or_default();
+    resolve_evaluation_types(session, &evals)
 }
 
 pub fn get_resolved_symbols_at_position(
