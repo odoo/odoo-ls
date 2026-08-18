@@ -176,6 +176,8 @@ impl PythonArchBuilder {
                 let mut file_info = file_info_rc.borrow_mut();
                 file_info.publish_diagnostics(session);
             }
+        } else {
+            session.st_mut().set_build_status(self.sym_stack[0].unwrap_buildable_key(), BuildSteps::ARCH, BuildStatus::INVALID)
         }
         if self.file_mode {
             PythonArchBuilderHooks::on_file_done(session, self.file);

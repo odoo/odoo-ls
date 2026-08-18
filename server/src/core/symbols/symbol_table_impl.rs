@@ -524,6 +524,18 @@ impl SymbolTable {
         }
     }
 
+    pub fn first_step(&self, target: BuildableSymbolKey) -> BuildSteps {
+        match target {
+            BuildableSymbolKey::Function(k) => self[k].first_step(),
+            BuildableSymbolKey::File(k) => self[k].first_step(),
+            BuildableSymbolKey::Module(k) => self[k].first_step(),
+            BuildableSymbolKey::PythonPackage(k) => self[k].first_step(),
+            BuildableSymbolKey::XmlFile(k) => self[k].first_step(),
+            BuildableSymbolKey::CsvFile(k) => self[k].first_step(),
+            BuildableSymbolKey::JsFile(j) => self[j].first_step(),
+        }
+    }
+
     pub fn iter_symbols(&self, target: SymbolKey) -> hash_map::Iter<'_, OYarn, HashMap<u32, Vec<SymbolKey>>> {
         match target {
             SymbolKey::File(f) => {
@@ -1067,7 +1079,7 @@ impl SymbolTable {
                         BuildScheduler::queue(session, sym);
                     } else if index + 1 == BuildSteps::VALIDATION as usize {
                         SymbolTable::invalidate_sub_functions(session, sym);
-                        session.st_mut().reset_build_status(sym.into(), BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
+                        session.st_mut().reset_build_status(sym.into(), BuildSteps::VALIDATION, BuildStatus::PENDING);
                         BuildScheduler::queue(session, sym);
                     }
                 }
