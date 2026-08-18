@@ -55,21 +55,14 @@ impl <'a> SessionInfo<'a> {
         self.sender.clone()
     }
 
+    /// Send a notification to the client using the given method and parameters via the session sender.
+    /// Panics if the send fails and the server is not shutting down.
     pub fn send_notification<T: Serialize>(&self, method: &str, params: T) {
-        let param = serde_json::to_value(params);
-        let Ok(param) = param else {
-            error!("Unable to serialize parameters for method {}", method);
-            return;
-        };
-        if let Err(e) = self.sender.send(
-            Message::Notification(lsp_server::Notification{
-                method: method.to_string(),
-                params: param
-            })
-        )
-            && !self.sync_odoo.terminate_rebuild.load(std::sync::atomic::Ordering::SeqCst) {
+        if let Err(e) = send_notification_via(&self.sender, method, params)
+            && !self.sync_odoo.terminate_rebuild.load(std::sync::atomic::Ordering::SeqCst)
+        {
                 panic!("Failed to send_notification({}), error: {:?}, but server is not shutting down", method, e);
-            }
+        }
     }
 
     pub fn show_message(&self, msg_type: MessageType, msg: String) {
@@ -206,6 +199,21 @@ impl <'a> SessionInfo<'a> {
         &mut self.sync_odoo.symbol_table
     }
 
+}
+
+/// Send a notification to the client using the given method and parameters via the provided sender.
+pub fn send_notification_via<T: Serialize>(sender: &Sender<Message>, method: &str, params: T) -> Result<(), Box<dyn std::error::Error>> {
+    let param = serde_json::to_value(params);
+    let Ok(param) = param else {
+        error!("Unable to serialize parameters for method {}", method);
+        return Err(Box::<dyn std::error::Error>::from(format!("Unable to serialize parameters for method {}", method)));
+    };
+    sender.send(
+        Message::Notification(lsp_server::Notification{
+            method: method.to_string(),
+            params: param
+        }
+    )).map_err(Box::<dyn std::error::Error>::from)
 }
 
 fn to_value<T: Serialize + std::fmt::Debug>(result: Result<Option<T>, ResponseError>) -> (Option<Value>, Option<ResponseError>) {
