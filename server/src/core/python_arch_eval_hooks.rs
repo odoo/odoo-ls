@@ -211,7 +211,7 @@ static arch_eval_file_hooks: LazyLock<Vec<PythonArchEvalFileHook>> = LazyLock::n
         }
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![((15, 0), (999, 0), (&["odoo", "addons", "base", "models", "ir_rule"], &["IrRule", "global"]))],
+                            trees: vec![((15, 0), (19, 4), (&["odoo", "addons", "base", "models", "ir_rule"], &["IrRule", "global"]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey| {
         let file_path = odoo.symbol_table.path(file_symbol);
