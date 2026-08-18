@@ -25,7 +25,7 @@ use crate::features::completion::CompletionFeature;
 use crate::features::definition::DefinitionFeature;
 use crate::features::hover::HoverFeature;
 use crate::progress_reporter::ProgressReporterPercentage;
-use crate::threads::{SessionInfo, ThreadMessage, TsServerDiagnostics};
+use crate::threads::{send_notification_via, SessionInfo, ThreadMessage, TsServerDiagnostics};
 use crate::features::semantic_tokens::SemanticTokensFeature;
 use crate::weak_collections::{WeakMap, WeakSet};
 use crate::utils::{HashMap, is_dir_cs, is_file_cs};
@@ -374,15 +374,19 @@ impl SyncOdoo {
             }
         }
         let tsserver_handle = if session.sync_odoo.config.is_javascript_disabled() {
+            session.send_notification("$Odoo/jsLsStatus", false);
             None
         } else {
+            let client_sender = session.clone_sender();
             session.clone_sender_to_main().map(|sender| {
                 let tsserver_cmd = session.sync_odoo.config.tsserver_command();
                 let odoo_path = session.sync_odoo.config.odoo_path().clone();
                 let addons_paths = session.sync_odoo.config.addons_paths().iter().cloned().collect::<Vec<_>>();
                 let ts_check = session.sync_odoo.config.ts_check();
                 std::thread::spawn(move || {
-                    SyncOdoo::setup_and_start_tsserver(tsserver_cmd, sender, odoo_path, addons_paths, ts_check)
+                    let bridge = SyncOdoo::setup_and_start_tsserver(tsserver_cmd, sender, odoo_path, addons_paths, ts_check);
+                    let _ = send_notification_via(&client_sender, "$Odoo/jsLsStatus", bridge.is_some());
+                    bridge
                 })
             })
         };
