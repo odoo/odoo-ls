@@ -31,7 +31,7 @@ pub fn setup_server(with_odoo: bool) -> (SyncOdoo, ConfigEntry) {
     let subscriber = FmtSubscriber::builder()
         .with_thread_ids(true)
         .with_file(false)
-        .with_max_level(LevelFilter::TRACE)
+        .with_max_level(LevelFilter::INFO)
         .with_ansi(false)
         .with_writer(file_writer)
         .finish();

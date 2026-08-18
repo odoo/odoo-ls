@@ -6,6 +6,9 @@ use crate::{constants::{BuildStatus, BuildSteps}, core::symbols::{CsvFileSymbol,
 pub trait Buildable {
     /// Returns the current build step of the symbol
     fn get_current_build_step(&self) -> BuildSteps;
+    fn first_step(&self) -> BuildSteps;
+    /// Return if the given step is valid for the symbol
+    fn is_step_valid(&self, step: BuildSteps) -> bool;
     /// Returns the step that should be built before the given step, if any
     fn previous_build_step(&self, step: BuildSteps) -> Option<BuildSteps>;
     /// Returns the step that should be built after the given step, if any
@@ -37,6 +40,9 @@ impl ResettableBuildable for name {
         if step > self.current_build_step {
             return;
         }
+        if !self.is_step_valid(step) {
+            panic!("Cannot reset build status to an invalid step");
+        }
         self.current_build_step = step;
         self.build_status = status;
     }
@@ -47,6 +53,16 @@ impl ResettableBuildable for name {
 impl Buildable for name {
     fn get_current_build_step(&self) -> BuildSteps {
         self.current_build_step
+    }
+    fn first_step(&self) -> BuildSteps {
+        BuildSteps::ARCH
+    }
+    fn is_step_valid(&self, step: BuildSteps) -> bool {
+        match step {
+            BuildSteps::ARCH => true,
+            BuildSteps::ARCH_EVAL => true,
+            BuildSteps::VALIDATION => true,
+        }
     }
     fn previous_build_step(&self, step: BuildSteps) -> Option<BuildSteps> {
         match step {
@@ -104,6 +120,16 @@ impl Buildable for name {
     fn get_current_build_step(&self) -> BuildSteps {
         self.current_build_step
     }
+    fn first_step(&self) -> BuildSteps {
+        BuildSteps::ARCH
+    }
+    fn is_step_valid(&self, step: BuildSteps) -> bool {
+        match step {
+            BuildSteps::ARCH => true,
+            BuildSteps::ARCH_EVAL => false,
+            BuildSteps::VALIDATION => true,
+        }
+    }
     fn previous_build_step(&self, step: BuildSteps) -> Option<BuildSteps> {
         match step {
             BuildSteps::ARCH => None,
@@ -158,6 +184,16 @@ impl Buildable for name {
 impl Buildable for JsFileSymbol {
     fn get_current_build_step(&self) -> BuildSteps {
         self.current_build_step
+    }
+    fn first_step(&self) -> BuildSteps {
+        BuildSteps::VALIDATION
+    }
+    fn is_step_valid(&self, step: BuildSteps) -> bool {
+        match step {
+            BuildSteps::ARCH => false,
+            BuildSteps::ARCH_EVAL => false,
+            BuildSteps::VALIDATION => true,
+        }
     }
     fn previous_build_step(&self, _step: BuildSteps) -> Option<BuildSteps> {
         None

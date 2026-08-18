@@ -868,7 +868,8 @@ impl SyncOdoo {
             if DEBUG_MEMORY {
                 info!("Unloading symbol {:?} at {:?}", session.st().name(source_file), session.st().path(source_file));
             }
-            SymbolTable::invalidate(session, source_file, BuildSteps::ARCH);
+            let buildable_symbol = BuildableSymbolKey::from(source_file);
+            SymbolTable::invalidate(session, source_file, session.st().first_step(buildable_symbol));
         }
         match symbol {
             //check if we should not reimport automatically
