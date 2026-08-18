@@ -445,28 +445,10 @@ impl BuildableSymbolKey {
 
 impl SymbolKey {
     pub fn as_buildable_symbol_key(&self) -> Option<BuildableSymbolKey> {
-        match *self {
-            SymbolKey::Function(k) => Some(BuildableSymbolKey::Function(k)),
-            SymbolKey::File(k) => Some(BuildableSymbolKey::File(k)),
-            SymbolKey::Module(k) => Some(BuildableSymbolKey::Module(k)),
-            SymbolKey::PythonPackage(k) => Some(BuildableSymbolKey::PythonPackage(k)),
-            SymbolKey::XmlFile(k) => Some(BuildableSymbolKey::XmlFile(k)),
-            SymbolKey::CsvFile(k) => Some(BuildableSymbolKey::CsvFile(k)),
-            SymbolKey::JsFile(k) => Some(BuildableSymbolKey::JsFile(k)),
-            _ => None,
-        }
+        BuildableSymbolKey::try_from(*self).ok()
     }
     pub fn unwrap_buildable_key(&self) -> BuildableSymbolKey {
-        match *self {
-            SymbolKey::Function(k) => BuildableSymbolKey::Function(k),
-            SymbolKey::File(k) => BuildableSymbolKey::File(k),
-            SymbolKey::Module(k) => BuildableSymbolKey::Module(k),
-            SymbolKey::PythonPackage(k) => BuildableSymbolKey::PythonPackage(k),
-            SymbolKey::XmlFile(k) => BuildableSymbolKey::XmlFile(k),
-            SymbolKey::CsvFile(k) => BuildableSymbolKey::CsvFile(k),
-            SymbolKey::JsFile(k) => BuildableSymbolKey::JsFile(k),
-            _ => panic!("Not a buildable symbol key"),
-        }
+        BuildableSymbolKey::try_from(*self).expect("Not a BuildableSymbolKey")
     }
 }
 
