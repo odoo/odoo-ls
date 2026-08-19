@@ -411,7 +411,7 @@ impl SyncOdoo {
                                 ConfigDiagnosticMessage {
                                     level: ConfigDiagnosticMessageLevel::WARNING,
                                     message:
-                                    "tsserver unable to start. Make sure that tsserver is installed and available in your PATH. You can install it with 'npm install -g typescript'. If you want to disable tsserver, set the tsserver_command configuration to an empty string.".to_string(),
+                                    "tsserver unable to start. Make sure that tsserver is installed and available in your PATH. You can install it with 'npm install -g typescript@6'. If you want to disable tsserver, set the tsserver_command configuration to an empty string.".to_string(),
                                 }
                             ]);
                         } else {
