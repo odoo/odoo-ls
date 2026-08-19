@@ -538,7 +538,7 @@ impl XmlArchBuilder {
             session.st_mut()[data].t_inherit = Some(t_inherit);
         }
         if let Some(found_t_name_node) = found_t_name_node && let Some(found_t_name) = &found_t_name
-            && found_t_name.contains(".")
+            && !found_t_name.contains(".")
             && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05071, &[])
         {
             diagnostics.push(Diagnostic {
