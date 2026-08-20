@@ -2,11 +2,30 @@ use duplicate::duplicate_item;
 
 use crate::{constants::{BuildStatus, BuildSteps}, core::symbols::{CsvFileSymbol, FileSymbol, FunctionSymbol, JsFileSymbol, ModuleSymbol, PythonPackageSymbol, XmlFileSymbol}};
 
+mod private_accessors {
+    use crate::constants::{BuildStatus, BuildSteps};
 
-pub trait Buildable {
+    pub trait BuildableAccessors {
+        fn _build_status(&self) -> BuildStatus;
+        fn _build_status_mut(&mut self) -> &mut BuildStatus;
+        fn _current_build_step_mut(&mut self) -> &mut BuildSteps;
+        fn _current_build_step(&self) -> BuildSteps;
+    }
+}
+
+#[duplicate_item(name; [ModuleSymbol]; [PythonPackageSymbol]; [FileSymbol]; [FunctionSymbol]; [XmlFileSymbol]; [CsvFileSymbol]; [JsFileSymbol])]
+impl private_accessors::BuildableAccessors for name {
+    fn _build_status(&self) -> BuildStatus { self.build_status }
+    fn _build_status_mut(&mut self) -> &mut BuildStatus { &mut self.build_status }
+    fn _current_build_step_mut(&mut self) -> &mut BuildSteps { &mut self.current_build_step }
+    fn _current_build_step(&self) -> BuildSteps { self.current_build_step }
+}
+
+
+pub trait Buildable: private_accessors::BuildableAccessors {
     const STEPS: &'static [BuildSteps];
     /// Returns the current build step of the symbol
-    fn get_current_build_step(&self) -> BuildSteps;
+    fn get_current_build_step(&self) -> BuildSteps { self._current_build_step() }
     fn first_step(&self) -> BuildSteps { Self::STEPS[0] }
     /// Return if the given step is valid for the symbol
     fn is_step_valid(&self, step: BuildSteps) -> bool { Self::STEPS.contains(&step) }
@@ -55,11 +74,6 @@ pub trait Buildable {
             *self._build_status_mut() = status;
         }
     }
-    
-    // Accessors for internal use only
-    fn _build_status(&self) -> BuildStatus;
-    fn _build_status_mut(&mut self) -> &mut BuildStatus;
-    fn _current_build_step_mut(&mut self) -> &mut BuildSteps;
 }
 
 pub(in crate::core::symbols) trait ResettableBuildable {
@@ -94,33 +108,15 @@ impl ResettableBuildable for name {
 #[duplicate_item(name; [ModuleSymbol]; [PythonPackageSymbol]; [FileSymbol]; [FunctionSymbol])]
 impl Buildable for name {
     const STEPS: &'static [BuildSteps] = &[BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::VALIDATION];
-    fn get_current_build_step(&self) -> BuildSteps {
-        self.current_build_step
-    }
-    fn _build_status(&self) -> BuildStatus { self.build_status }
-    fn _build_status_mut(&mut self) -> &mut BuildStatus { &mut self.build_status }
-    fn _current_build_step_mut(&mut self) -> &mut BuildSteps { &mut self.current_build_step }
 }
 
 //only arch and validation
 #[duplicate_item(name; [XmlFileSymbol]; [CsvFileSymbol])]
 impl Buildable for name {
     const STEPS: &'static [BuildSteps] = &[BuildSteps::ARCH, BuildSteps::VALIDATION];
-    fn get_current_build_step(&self) -> BuildSteps {
-        self.current_build_step
-    }
-    fn _build_status(&self) -> BuildStatus { self.build_status }
-    fn _build_status_mut(&mut self) -> &mut BuildStatus { &mut self.build_status }
-    fn _current_build_step_mut(&mut self) -> &mut BuildSteps { &mut self.current_build_step }
 }
 
 // only validation
 impl Buildable for JsFileSymbol {
     const STEPS: &'static [BuildSteps] = &[BuildSteps::VALIDATION];
-    fn get_current_build_step(&self) -> BuildSteps {
-        self.current_build_step
-    }
-    fn _build_status(&self) -> BuildStatus { self.build_status }
-    fn _build_status_mut(&mut self) -> &mut BuildStatus { &mut self.build_status }
-    fn _current_build_step_mut(&mut self) -> &mut BuildSteps { &mut self.current_build_step }
 }
