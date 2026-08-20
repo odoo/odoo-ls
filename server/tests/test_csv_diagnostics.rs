@@ -10,7 +10,7 @@ use std::path::Path;
 mod setup;
 mod test_utils;
 
-fn csv_test_paths() -> (String, String, String, String) {
+fn csv_test_paths() -> (String, String, String, String, String) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("data")
@@ -28,12 +28,15 @@ fn csv_test_paths() -> (String, String, String, String) {
     let valid_csv = test_addons_path
         .join("module_for_diagnostics").join("data").join("bike_parts.wheel.csv")
         .sanitize();
+    let relational_ids = test_addons_path
+        .join("module_for_diagnostics").join("data").join("bikes.bike.csv")
+        .sanitize();
 
-    for path in [&field_mismatch, &invalid_xml_id, &duplicate_column, &valid_csv] {
+    for path in [&field_mismatch, &invalid_xml_id, &duplicate_column, &valid_csv, &relational_ids] {
         assert!(Path::new(path).exists(), "Test file does not exist: {}", path);
     }
 
-    (field_mismatch, invalid_xml_id, duplicate_column, valid_csv)
+    (field_mismatch, invalid_xml_id, duplicate_column, valid_csv, relational_ids)
 }
 
 fn collect_all_csv_diagnostics(session: &mut SessionInfo, paths: &[&str]) -> HashMap<String, Vec<Diagnostic>> {
@@ -57,18 +60,19 @@ fn test_csv_diagnostics() {
     let (mut odoo, config) = setup::setup::setup_server(true);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
-    let (field_mismatch, invalid_xml_id, duplicate_column, valid_csv) = csv_test_paths();
+    let (field_mismatch, invalid_xml_id, duplicate_column, valid_csv, relational_ids) = csv_test_paths();
 
     // Collect all diagnostics in one pass (consuming the message queue once)
     let all_diags = collect_all_csv_diagnostics(
         &mut session,
-        &[&field_mismatch, &invalid_xml_id, &duplicate_column, &valid_csv],
+        &[&field_mismatch, &invalid_xml_id, &duplicate_column, &valid_csv, &relational_ids],
     );
 
     test_field_count_mismatch(get_diags_for(&all_diags, &field_mismatch));
     test_xml_id_format(get_diags_for(&all_diags, &invalid_xml_id));
     test_duplicate_column(get_diags_for(&all_diags, &duplicate_column));
     test_valid_file_no_errors(get_diags_for(&all_diags, &valid_csv));
+    test_relational_id_column(get_diags_for(&all_diags, &relational_ids), &relational_ids);
 }
 
 /// OLS05069: header has 4 fields, data row has 3
@@ -196,4 +200,15 @@ fn test_valid_file_no_errors(diagnostics: &[Diagnostic]) {
             .collect::<Vec<_>>()
             .join("; ")
     );
+}
+
+/// Each id of a relational `/id` list is validated on its own, bikes.bike.csv line 2 has one bad
+fn test_relational_id_column(diagnostics: &[Diagnostic], path: &str) {
+    let unknown: Vec<_> = diagnostics.iter().filter(|d| has_code(d, "OLS05001")).collect();
+    assert_eq!(unknown.len(), 1, "Expected only the one bogus id to be unknown, got: {:?}", diagnostics);
+    // The range spans that id alone, not the whole cell
+    let content = std::fs::read_to_string(path).unwrap();
+    let range = &unknown[0].range;
+    let line = content.lines().nth(range.start.line as usize).expect("diagnostic line");
+    assert_eq!(&line[range.start.character as usize..range.end.character as usize], "bike_wheel_DOES_NOT_EXIST");
 }
