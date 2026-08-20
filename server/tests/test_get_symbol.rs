@@ -450,6 +450,31 @@ fn test_definition_csv() {
 }
 
 #[test]
+fn test_definition_csv_relational_ids() {
+    let (mut odoo, config) = setup::setup::setup_server(true);
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let bikes_csv = test_addons_path.join("module_for_diagnostics").join("data").join("bikes.bike.csv").sanitize();
+    let wheels_csv = test_addons_path.join("module_for_diagnostics").join("data").join("bike_parts.wheel.csv").sanitize();
+    assert!(Path::new(&bikes_csv).exists(), "Test file does not exist: {}", bikes_csv);
+
+    let file_mgr = session.sync_odoo.get_file_mgr();
+    let file_info = file_mgr.borrow().get_file_info(&bikes_csv).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&bikes_csv)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    // line 1 is bike_m2m_ok,Ok Bike,"bike_wheel_6,module_for_diagnostics.bike_wheel_6"
+    for (character, id_start, id_end) in [(25, 21, 33), (40, 34, 69)] {
+        let locs = test_utils::get_definition_locs(&mut session, file_symbol, &file_info, 1, character);
+        assert!(!locs.is_empty(), "Expected a location for the xml id at character {character}");
+        assert_eq!(locs[0].target_uri.to_file_path().unwrap().sanitize(), wheels_csv, "Expected the definition to be in bike_parts.wheel.csv");
+        let origin = locs[0].origin_selection_range.expect("Expected the clicked xml id to be the origin range");
+        assert_eq!((origin.start.line, origin.start.character, origin.end.character), (1, id_start, id_end), "Expected only the clicked xml id to be highlighted");
+    }
+}
+
+#[test]
 fn test_model_subscription() {
     // Setup: Get the symbol for BaseTestModel and verify its existence
     let (mut odoo, config) = setup::setup::setup_server(true);

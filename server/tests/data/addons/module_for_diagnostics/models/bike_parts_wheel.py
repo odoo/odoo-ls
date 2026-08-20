@@ -18,6 +18,7 @@ class BikesBike(models.Model):
 
     name = fields.Char(string='Wheel Name', required=True, translate=True)
     wheel_id = fields.Many2one('bike_parts.wheel', string='Wheel')
+    wheel_ids = fields.Many2many('bike_parts.wheel', string='Wheels')
     bike_weight = fields.Float(string='Bike Weight (kg)', compute='_compute_bike_weight', store=True)
 
     @api.depends('wheel_id.price')

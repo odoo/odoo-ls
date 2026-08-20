@@ -1,8 +1,12 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use csv::{Reader, StringRecord};
 use lsp_types::Range;
 use ruff_text_size::{TextRange, TextSize};
 
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
+use crate::core::file_mgr::FileInfo;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::symbol_keys::CsvFileKey;
 use crate::features::goto_utils::{GotoSource, GotoSourceType};
@@ -61,6 +65,19 @@ impl<'a> Iterator for CsvFieldIter<'a> {
         self.field_idx += 1;
         Some((start, end, field))
     }
+}
+
+/// Each xml id of a `/id` cell with its byte range, a relational column comma separating them.
+pub fn split_csv_xml_ids<'a>(field: &'a str, content: &str, cell_start: usize) -> impl Iterator<Item = (&'a str, usize, usize)> {
+    // the cell spans its quotes when it carries them, the ids inside it do not
+    let value_start = cell_start + usize::from(content.as_bytes().get(cell_start) == Some(&b'"'));
+    let mut offset = 0;
+    field.split(',').filter_map(move |segment| {
+        let start = value_start + offset + segment.len() - segment.trim_start().len();
+        offset += segment.len() + 1;
+        let xml_id = segment.trim();
+        (!xml_id.is_empty()).then_some((xml_id, start, start + xml_id.len()))
+    })
 }
 
 pub struct CsvRecordIter<'a> {
@@ -193,7 +210,18 @@ impl CsvAstUtils {
         }
         if headers.contains(&oyarn!("id")) {
             for record in csv_reader.records().filter_map(Result::ok) {
-                    CsvAstUtils::get_symbols_in_record(session, offset, &headers, &record, &mut results, file_symbol, main_symbol.into(), module, content);
+                CsvAstUtils::get_symbols_in_record(
+                    session,
+                    offset,
+                    &headers,
+                    &record,
+                    &mut results,
+                    file_symbol,
+                    main_symbol.into(),
+                    module,
+                    content,
+                    &file_info,
+                );
             }
         }
         results
@@ -209,6 +237,7 @@ impl CsvAstUtils {
         main_symbol: SymbolKey,
         module: Option<ModuleKey>,
         content: &str,
+        file_info: &Rc<RefCell<FileInfo>>,
     ) {
         let Some(field_iter) = CsvFieldIter::new(record, content) else { return; };
         //Search for selected field
@@ -252,18 +281,27 @@ impl CsvAstUtils {
                 return;
             };
             // We found the relational model referred to, we can lookup the xml_id now
+            let Some((xml_id, id_start, id_end)) = split_csv_xml_ids(field, content, start)
+                .find(|(_, id_start, id_end)| offset >= *id_start && offset <= *id_end)
+            else {
+                return;
+            };
+            let id_range = Range {
+                start: file_info.borrow().offset_to_position(id_start as u32, session.sync_odoo.encoding),
+                end: file_info.borrow().offset_to_position(id_end as u32, session.sync_odoo.encoding),
+            };
             results.extend(
                 SyncOdoo::get_xml_ids(
                     session,
                     csv_symbol.into(),
-                    field_data.as_str(),
+                    xml_id,
                     &std::ops::Range::default(), //we don't care about range as it's used only for diagnostic
                     &mut vec![],
                 )
                 .iter_valid(session.st())
                 .map(|xml_id| GotoSource {
                     source: GotoSourceType::SymbolKey(xml_id.into()),
-                    origin_selection_range: None,
+                    origin_selection_range: Some(id_range),
                 }),
             );
         }
