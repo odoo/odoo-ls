@@ -201,13 +201,14 @@ impl SymbolTable {
         Ok(csv_file_key)
     }
 
-    pub fn add_new_js_file(&mut self, parent: JsFileParent, name: &str, path: &str) -> JsFileKey {
+    pub fn add_new_js_file(&mut self, parent: JsFileParent, name: &str, path: &str) -> Result<JsFileKey, NameTakenError> {
+        self.check_js_symbol_path_vacant(parent, name)?;
         let mut js_file_symbol = JsFileSymbol::new(name, path, parent, self.is_external(parent.into()));
         js_file_symbol.set_in_workspace(self.in_workspace(parent.into()));
         let js_file_key = self.js_files.insert(js_file_symbol);
         self.add_to_parent_js_symbols(parent, path, js_file_key);
         ModuleSymbol::on_js_file_load(self, js_file_key);
-        js_file_key
+        Ok(js_file_key)
     }
 
     pub fn add_new_ext_symbol(
@@ -266,6 +267,13 @@ impl SymbolTable {
             None => Ok(())
         }
     }
+ 
+    fn check_js_symbol_path_vacant(&self, parent: JsFileParent, name: &str) -> Result<(), NameTakenError> {
+        match parent.js_symbols(self).get(name).copied() {
+            Some(existing) => Err(NameTakenError(existing.into())),
+            None => Ok(())
+        }
+    }
 
     fn add_to_parent_fs_symbols(&mut self, parent: FileSystemSymbolParent, child: SymbolKey, name: &str, path: &str) {
         // A compiled can only be a parent to another compiled
@@ -296,7 +304,7 @@ impl SymbolTable {
 
     fn add_to_parent_js_symbols(&mut self, parent: JsFileParent, path: &str, js_key: JsFileKey) {
         let replaced_key = parent.js_symbols_mut(self).insert(path.to_string(), js_key);
-        self.remove_replaced(replaced_key);
+        Self::panic_on_replaced_key(replaced_key);
     }
 
     fn remove_from_parent_js_symbols(&mut self, parent: JsFileParent, path: &str) {
@@ -482,8 +490,8 @@ mod tests {
         let module = add_module(&mut f.st, f.namespace, "another_module", "/root/ns/another_module");
         let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml")?;
         let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv")?;
-        let js_in_module = f.st.add_new_js_file(JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js");
-        let js_in_disk_dir = f.st.add_new_js_file(JsFileParent::DiskDir(f.disk_dir), "lib.js", "/root/dd/lib.js");
+        let js_in_module = f.st.add_new_js_file(JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js")?;
+        let js_in_disk_dir = f.st.add_new_js_file(JsFileParent::DiskDir(f.disk_dir), "lib.js", "/root/dd/lib.js")?;
         let sibling = f.st.add_new_file(f.module.into(), "sibling", "/root/ns/mod/sibling.py")?;
 
         let cases: Vec<(SymbolKey, SourceFileKey)> = vec![
@@ -579,7 +587,7 @@ mod tests {
         f.st.add_new_xml_field(XmlFieldParent::XmlRecord(record), oyarn!("name"), range_at(1), None, None, None);
         let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv")?;
         f.st.add_new_xml_record(XmlDataParent::CsvFile(csv_file), (oyarn!("res.partner"), 0..1), None, range_at(0));
-        f.st.add_new_js_file(JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js");
+        _ = f.st.add_new_js_file(JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js");
 
         // injected into a file outside the module, but owned by one of its files: it dies with
         // the owner, through `ext_symbols` rather than through any holder.
@@ -607,7 +615,7 @@ mod tests {
         let constant = f.st.add_new_variable(f.module, "MODULE_CONSTANT", range_at(0));
         let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml").unwrap();
         let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv").unwrap();
-        let js_file = f.st.add_new_js_file(JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js");
+        let js_file = f.st.add_new_js_file(JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js").unwrap();
 
         let children = f.st.children(f.module.into());
         for expected in [SymbolKey::from(file), constant.into(), xml_file.into(), csv_file.into(), js_file.into()] {

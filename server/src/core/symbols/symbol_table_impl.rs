@@ -721,7 +721,8 @@ impl SymbolTable {
         {
             //js file created here is because of js in a custom entrypoint, and that should be created under a diskdir.
             //JS files under a Module should be created by the module loading, through load_assets
-            return Ok(session.st_mut().add_new_js_file(d.into(), &name, &path_str).into());
+            let js_file = session.st_mut().add_new_js_file(d.into(), &name, &path_str)?;
+            return Ok(js_file.into());
         }
         let main_entry_tree = session.sync_odoo.get_main_entry_tree(parent);
         if main_entry_tree == (&["odoo", "addons"], &[]) && path.join("__manifest__.py").exists() {

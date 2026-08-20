@@ -199,7 +199,8 @@ impl ModuleSymbol {
                 continue;
             }
             let file_name = file_path.file_name().unwrap().to_str().unwrap().to_string();
-            let js_key = session.st_mut().add_new_js_file(module.into(), &file_name, file_path_str.as_ref());
+            let js_key = session.st_mut().add_new_js_file(module.into(), &file_name, file_path_str.as_ref())
+                .expect("path should not already exist, as checked above");
             session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, file_path_str.as_ref(), None, None, false); //create ast if not in cache
             // as the update_file_info built the arch, let's add the file to the validation queue.
             BuildScheduler::queue(session, js_key);
