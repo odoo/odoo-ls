@@ -747,6 +747,8 @@ impl PythonValidator {
         let model = session.sync_odoo.models.get(model_name);
         if model.map(|m| m.borrow_mut().has_symbols(session.st())).unwrap_or(false) {
             let model = model.unwrap().clone();
+            let file = session.st().get_file(class_key.into()).unwrap();
+            session.st_mut().add_model_dependencies(file, &model);
             let borrowed_model = model.borrow();
             let mut main_modules = vec![];
             let mut found_one = false;
