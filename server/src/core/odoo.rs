@@ -1524,6 +1524,50 @@ impl SyncOdoo {
         ModuleSymbol::get_xml_id(session.st(), module_key, id_split.last().unwrap()).unwrap_or_default()
     }
 
+    /// Xml ids matching a prefix as (defining module, local id, in deps), filtered while iterating.
+    pub fn get_xml_ids_by_prefix(session: &SessionInfo, from_file: SourceFileKey, prefix: &str, model_filter: Option<&OYarn>) -> Vec<(ModuleKey, OYarn, bool)> {
+        let mut results = vec![];
+        if !session.st().get_entry(from_file).borrow().is_main() {
+            return results;
+        }
+        let Some(current_module) = session.st().find_module(from_file) else {
+            return results;
+        };
+        // a qualified prefix names its module, a bare one is a module name still being typed
+        let (module_prefix, id_prefix) = match prefix.split_once('.') {
+            Some((module_prefix, id_prefix)) => (module_prefix, Some(id_prefix)),
+            None => (prefix, None),
+        };
+        for module_wk in session.sync_odoo.modules.values() {
+            let Some(module_key) = module_wk.upgrade(session.st()) else { continue };
+            let dir_name = &session.st()[module_key].dir_name;
+            let names_module = match id_prefix {
+                Some(_) => dir_name == module_prefix,
+                None => dir_name.starts_with(module_prefix),
+            };
+            if !names_module {
+                continue;
+            }
+            let in_deps = ModuleSymbol::is_in_deps(session.st(), current_module, dir_name);
+            for (local_id, xml_ids) in session.st()[module_key].xml_ids.iter().filter(|(local_id, _)| local_id.starts_with(id_prefix.unwrap_or(""))) {
+                if xml_ids.iter_valid(session.st()).any(|xml_id| match model_filter {
+                    None => true,
+                    Some(model) => matches!(xml_id, XmlId::XmlRecord(record_key) if session.st()[record_key].model.0 == *model),
+                }) {
+                    results.push((module_key, local_id.clone(), in_deps));
+                }
+            }
+        }
+        results
+    }
+
+    /// Whether an xml id points to a res.groups record, a `groups` list accepting no other model.
+    pub fn is_group_xml_id(session: &mut SessionInfo, from_file: SourceFileKey, group: &str, range: &std::ops::Range<usize>, diagnostics: &mut Vec<Diagnostic>) -> bool {
+        let xml_ids = SyncOdoo::get_xml_ids(session, from_file, group, range, diagnostics);
+        xml_ids.iter_valid(session.st()).any(|xml_id|
+            matches!(xml_id, XmlId::XmlRecord(record_key) if session.st()[record_key].model.0 == "res.groups"))
+    }
+
     pub fn get_ts_dict(&mut self) -> Wk<SymbolKey> {
         if self.typeshed_weak_cache.dict.is_expired(&self.symbol_table) {
             self.typeshed_weak_cache.dict = self.get_symbol("", (&["builtins"], &["dict"]), u32::MAX).last().copied().unwrap().into();

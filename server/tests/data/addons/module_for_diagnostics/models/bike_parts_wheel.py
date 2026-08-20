@@ -19,6 +19,9 @@ class BikesBike(models.Model):
     name = fields.Char(string='Wheel Name', required=True, translate=True)
     wheel_id = fields.Many2one('bike_parts.wheel', string='Wheel')
     wheel_ids = fields.Many2many('bike_parts.wheel', string='Wheels')
+    restricted = fields.Char(groups='base.group_user,!base.group_portal,module_for_diagnostics.no_such_group') # OLS05054
+    hidden = fields.Char(groups='.') # Ok, odoo.fields.NO_ACCESS
+    not_a_group = fields.Char(groups='module_for_diagnostics.bike_1') # OLS05054
     bike_weight = fields.Float(string='Bike Weight (kg)', compute='_compute_bike_weight', store=True)
 
     @api.depends('wheel_id.price')
@@ -28,9 +31,12 @@ class BikesBike(models.Model):
                 bike.bike_weight = bike.wheel_id.price * 0.5
             else:
                 bike.bike_weight = 0.0
-        self.env.ref('module_for_diagnostics.bike_wheel_DOES_NOT_EXIST') # TODO: OLS05001
+        self.env.ref('module_for_diagnostics.bike_wheel_DOES_NOT_EXIST') # OLS05001
         self.env.ref('bike_wheel_DOES_NOT_EXIST') # OLS05002
         self.env.ref('module_for_diagnostics.bike_wheel_6') # Ok
+        self.env.ref('base.module_base') # Ok, the registry generates it
+        self.env.ref('base.field_res_partner__name') # Ok, the registry generates it
+        self.env.ref('base.selection__res_partner__type__contact') # Ok, the registry generates it
         self.env.ref('WRONG_MODULE.bike_wheel_6') # OLS05003
         self.env.ref('module_for_diagnostics.bike_wheel_6.too.many.dots') # OLS05051
         self.env.ref('WRONG_MODULE.bike_wheel_6', False) # Ok, the caller takes an empty result

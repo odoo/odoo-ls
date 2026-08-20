@@ -18,6 +18,7 @@ use crate::core::evaluation_context::Context;
 use crate::constants::*;
 use crate::tree::OYarnExt;
 use crate::tree::Tree;
+use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::symbol_keys::FunctionKey;
 use crate::core::symbols::symbol_keys::SourceFileKey;
 use crate::core::symbols::symbol_keys::SymbolKey;
@@ -1136,6 +1137,7 @@ impl PythonArchEvalHooks {
         let context_arguments = [
             ("comodel_name", "str", ContextKey::ComodelName, ContextKey::ComodelNameArgRange),
             ("related", "str", ContextKey::Related, ContextKey::RelatedArgRange),
+            ("groups", "str", ContextKey::Groups, ContextKey::GroupsArgRange),
             ("compute", "str", ContextKey::Compute, ContextKey::ComputeArgRange),
             ("inverse", "str", ContextKey::Inverse, ContextKey::InverseArgRange),
             ("search", "str", ContextKey::Search, ContextKey::SearchArgRange),
@@ -1369,6 +1371,20 @@ impl PythonArchEvalHooks {
             return None;
         }
         let module_key = module.unwrap().upgrade(session.st())?;
+        // ir.model.data entries the registry builds at install time, never declared in the sources
+        let is_generated = (module_name == "base" && xml_id.starts_with("module_"))
+            || xml_id.starts_with("selection__")
+            || xml_id.strip_prefix("field_").is_some_and(|field| field.contains("__"));
+        if in_validation && !xml_id.is_empty() && !xml_id.contains('.') && !is_generated {
+            let is_known = ModuleSymbol::get_xml_id(session.st(), module_key, &xml_id)
+                .is_some_and(|xml_ids| xml_ids.iter_valid(session.st()).next().is_some());
+            if !is_known && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05001, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
+                    ..diagnostic
+                });
+            }
+        }
         if let Some(scope) = scope && let Some(file) = session.st_mut().get_file(scope)
             && file != module_key.into() {
                 session.st_mut().add_dependency(file, module_key.into(), BuildSteps::VALIDATION, BuildSteps::ARCH);

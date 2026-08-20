@@ -32,6 +32,8 @@ pub enum ContextKey {
     Default,
     Delegate,
     FieldParent,
+    Groups,
+    GroupsArgRange,
     IsAttrOfInstance,
     IsInValidation,
     Inverse,
