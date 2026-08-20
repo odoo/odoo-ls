@@ -136,7 +136,7 @@ impl BuildScheduler {
     }
 
     fn add_from_self_reload(session: &mut SessionInfo) {
-        for (weak_sym, path) in session.sync_odoo.must_reload_paths.clone().iter() {
+        for (weak_sym, path) in std::mem::take(&mut session.sync_odoo.must_reload_paths) {
             let Some(parent) = weak_sym.upgrade(session.st()) else {
                 continue;
             };
@@ -148,7 +148,6 @@ impl BuildScheduler {
                    "reload path {path} still occupied by {existing:?}: unload failed to unlink it" 
                 ),
             };
-            session.sync_odoo.must_reload_paths.retain(|(_, p)| p != path);
             session.st_mut().set_is_external(new_symbol, false);
             match new_symbol {
                 SymbolKey::PythonPackage(p) => {
@@ -172,7 +171,6 @@ impl BuildScheduler {
             }
             BuildScheduler::queue(session, new_symbol.unwrap_buildable_key());
         }
-        session.sync_odoo.must_reload_paths.retain(|x| x.0.upgrade(&session.sync_odoo.symbol_table).is_some());
     }
 
     pub fn process_rebuilds(session: &mut SessionInfo, no_validation: bool) -> bool {
