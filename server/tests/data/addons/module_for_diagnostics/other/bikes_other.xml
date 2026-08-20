@@ -1,0 +1,6 @@
+<odoo>
+    <record id="bike_wheel_other" model="bike_parts.wheel">
+        <field name="name">Other Wheel</field>
+        <field name="price">150.0</field>
+    </record>
+</odoo>
