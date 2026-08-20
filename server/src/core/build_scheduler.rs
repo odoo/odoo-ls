@@ -3,7 +3,7 @@ use std::{cell::RefCell, path::Path, rc::Rc, sync::atomic::Ordering};
 use lsp_types::MessageType;
 use tracing::{error, info, trace};
 
-use crate::{S, constants::{BuildStatus, BuildSteps, DEBUG_REBUILD_NOW, DEBUG_STEPS, DEBUG_THREADS, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::{csv_validation::CsvValidator, entry_point::EntryPoint, import_resolver::ImportCache, js_validator::JsValidator, odoo::InitState, python_arch_builder::PythonArchBuilder, python_arch_eval::PythonArchEval, python_validator::PythonValidator, symbols::{SymbolTable, symbol_keys::{BuildableSymbolKey, SymbolKey}}, xml_validation::XmlValidator}, fifo_ptr_weak_hash_set::FifoWeakHashSet, progress_reporter::ProgressReporterRemaining, threads::SessionInfo, tree::Tree, utils::HashSet};
+use crate::{S, constants::{BuildStatus, BuildSteps, DEBUG_REBUILD_NOW, DEBUG_STEPS, DEBUG_THREADS, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::{csv_validation::CsvValidator, entry_point::EntryPoint, import_resolver::ImportCache, js_validator::JsValidator, odoo::InitState, python_arch_builder::PythonArchBuilder, python_arch_eval::PythonArchEval, python_validator::PythonValidator, symbols::{SymbolTable, symbol_keys::{BuildableSymbolKey, SymbolKey}, symbol_table_impl::CreateError}, xml_validation::XmlValidator}, fifo_ptr_weak_hash_set::FifoWeakHashSet, progress_reporter::ProgressReporterRemaining, threads::SessionInfo, tree::Tree, utils::HashSet};
 
 #[derive(Debug)]
 pub struct BuildScheduler {
@@ -141,9 +141,12 @@ impl BuildScheduler {
                 continue;
             };
             let in_addons = session.sync_odoo.get_main_entry_tree(parent) == (&["odoo", "addons"], &[]);
-            let new_symbol = SymbolTable::create_from_path(session, Path::new(path), parent, in_addons);
-            let Some(new_symbol) = new_symbol else {
-                continue;
+            let new_symbol = match SymbolTable::create_from_path(session, Path::new(&path), parent, in_addons) {
+                Ok(symbol) => symbol,
+                Err(CreateError::NothingOnDisk) => continue,
+                Err(CreateError::Existing(existing)) => panic!(
+                   "reload path {path} still occupied by {existing:?}: unload failed to unlink it" 
+                ),
             };
             session.sync_odoo.must_reload_paths.retain(|(_, p)| p != path);
             session.st_mut().set_is_external(new_symbol, false);

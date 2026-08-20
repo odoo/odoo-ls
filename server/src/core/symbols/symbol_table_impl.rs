@@ -6,17 +6,49 @@ use lsp_types::{Diagnostic, DiagnosticTag, Range, SymbolKind};
 use ruff_text_size::TextRange;
 
 use crate::{
-    Sy, constants::{BuildStatus, BuildSteps, MissingDataSource, OYarn, PackageType, SymType}, core::{
-        build_scheduler::BuildScheduler, diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPoint, evaluation::{Evaluation, EvaluationSymbolPtr}, evaluation_context::{Context, ContextKey, ContextValue}, file_mgr::{FileInfo, FileMgr, NoqaInfo}, model::Model, odoo::SyncOdoo, python_arch_eval_hooks::get_base_model_symbol, symbols::{
-            Buildable, Dependencies, ModuleSymbol, storage::{
-                FileContentParent, FileSystemSymbolParent, SymbolTable, buildable::ResettableBuildable as _, dependency_mgr::{DependenciesTable, DependentsTable}, xml::xml_field_symbol::XmlFieldName,
-            }, symbol_keys::{
+    constants::{BuildStatus, BuildSteps, MissingDataSource, OYarn, PackageType, SymType},
+    core::{
+        build_scheduler::BuildScheduler,
+        diagnostics::{create_diagnostic, DiagnosticCode},
+        entry_point::EntryPoint,
+        evaluation::{Evaluation, EvaluationSymbolPtr},
+        evaluation_context::{Context, ContextKey, ContextValue},
+        file_mgr::{FileInfo, FileMgr, NoqaInfo},
+        model::Model,
+        odoo::SyncOdoo,
+        python_arch_eval_hooks::get_base_model_symbol,
+        symbols::{
+            storage::{
+                buildable::ResettableBuildable as _,
+                dependency_mgr::{DependenciesTable, DependentsTable},
+                lifecycle::NameTakenError,
+                xml::xml_field_symbol::XmlFieldName,
+                FileContentParent, FileSystemSymbolParent, SymbolTable,
+            },
+            symbol_keys::{
                 BuildableSymbolKey, ClassKey, FunctionKey, KeyValidator, ModuleKey, NamespaceKey,
                 RootKey, SourceFileKey, SymbolKey, VariableKey, XmlDataKey, XmlRecordKey,
-            }, symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys},
+            },
+            symbol_mgr::{iter_symbol_keys, ContentSymbols, SectionIndex, SectionRange, SymbolMgr},
+            Buildable, Dependencies, ModuleSymbol,
         },
-    }, oyarn, threads::SessionInfo, tree::{OYarnExt, Tree}, utils::{HashMap, HashSet, PathSanitizer}, weak_collections::WeakSet,
+    },
+    oyarn,
+    threads::SessionInfo,
+    tree::{OYarnExt, Tree},
+    utils::{HashMap, HashSet, PathSanitizer},
+    weak_collections::WeakSet,
+    Sy,
 };
+#[derive(Debug)]
+pub enum CreateError {
+    NothingOnDisk,
+    Existing(SymbolKey)
+}
+
+impl From<NameTakenError> for CreateError {
+    fn from(e: NameTakenError) -> Self { Self::Existing(e.0) }
+}
 
 impl SymbolTable {
 
@@ -668,10 +700,10 @@ impl SymbolTable {
     }
 
     ///Given a path, create the appropriated symbol and attach it to the given parent
-    pub fn create_from_path(session: &mut SessionInfo, path: &Path, parent: FileSystemSymbolParent, require_module: bool) -> Option<SymbolKey> {
+    pub fn create_from_path(session: &mut SessionInfo, path: &Path, parent: FileSystemSymbolParent, require_module: bool) -> Result<SymbolKey, CreateError> {
         if require_module {
             let FileSystemSymbolParent::Namespace(addons) = parent else {
-                return None;
+                return Err(CreateError::NothingOnDisk);
             };
             return Self::create_module_from_path(session, path, addons).map(SymbolKey::from)
         }
@@ -682,29 +714,29 @@ impl SymbolTable {
         };
         let path_str = path.sanitize_cow();
         if path_str.ends_with(".py") || path_str.ends_with(".pyi") || FileMgr::is_untitled(&path_str) {
-            return Some(session.st_mut().add_new_file(parent, &name, &path_str).into());
+            return Ok(session.st_mut().add_new_file(parent, &name, &path_str)?.into());
         }
         if path_str.ends_with(".js") && !session.sync_odoo.config.is_javascript_disabled()
             && let FileSystemSymbolParent::DiskDir(d) = parent
         {
             //js file created here is because of js in a custom entrypoint, and that should be created under a diskdir.
             //JS files under a Module should be created by the module loading, through load_assets
-            return Some(session.st_mut().add_new_js_file(d.into(), &name, &path_str).into());
+            return Ok(session.st_mut().add_new_js_file(d.into(), &name, &path_str).into());
         }
         let main_entry_tree = session.sync_odoo.get_main_entry_tree(parent);
         if main_entry_tree == (&["odoo", "addons"], &[]) && path.join("__manifest__.py").exists() {
             if let FileSystemSymbolParent::Namespace(addons) = parent {
-                let module = Self::add_new_module_package(session, addons, &name, path);
+                let module = Self::add_new_module_package(session, addons, &name, path)?;
                 let dir_name = session.st()[module].dir_name.clone();
                 session.sync_odoo.modules.insert(dir_name, module.into());
-                return Some(module.into());
+                return Ok(module.into());
             } else {
                 if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
                     let i_ext = if path.join("__init__.py").exists() { "" } else { "i" };
-                    let package_key = session.st_mut().add_new_python_package(parent, &name, &path_str, i_ext);
-                    return Some(package_key.into());
+                    let package_key = session.st_mut().add_new_python_package(parent, &name, &path_str, i_ext)?;
+                    return Ok(package_key.into());
                 } else {
-                    return None;
+                    return Err(CreateError::NothingOnDisk);
                 }
             }
         } else {
@@ -712,35 +744,31 @@ impl SymbolTable {
             if path.join("__init__.py").exists() || path.join("__init__.pyi").exists() {
                 if main_entry_tree == (&["odoo"], &[]) && path_str.ends_with("addons") {
                     //Force namespace for odoo/addons
-                    let namespace_key = symbol_table.add_new_namespace(parent, &name, &path_str);
-                    return Some(namespace_key.into());
+                    let namespace_key = symbol_table.add_new_namespace(parent, &name, &path_str)?;
+                    return Ok(namespace_key.into());
                 } else {
                     let i_ext = if path.join("__init__.py").exists() { "" } else { "i" };
-                    let package_key = symbol_table.add_new_python_package(parent, &name, &path_str, i_ext);
-                    return Some(package_key.into());
+                    let package_key = symbol_table.add_new_python_package(parent, &name, &path_str, i_ext)?;
+                    return Ok(package_key.into());
                 }
             } else if path.is_dir() {
-                let namespace_key = symbol_table.add_new_namespace(parent, &name, &path_str);
-                return Some(namespace_key.into());
+                let namespace_key = symbol_table.add_new_namespace(parent, &name, &path_str)?;
+                return Ok(namespace_key.into());
             }
         }
-        None
+        Err(CreateError::NothingOnDisk)
     }
 
-    pub fn create_module_from_path(session: &mut SessionInfo, path: &Path, addons: NamespaceKey) -> Option<ModuleKey> {
+    pub fn create_module_from_path(session: &mut SessionInfo, path: &Path, addons: NamespaceKey) -> Result<ModuleKey, CreateError> {
         let main_entry_tree = session.sync_odoo.get_main_entry_tree(addons);
         if !(main_entry_tree == (&["odoo", "addons"], &[]) && path.join("__manifest__.py").exists()) {
-            return None;
+            return Err(CreateError::NothingOnDisk);
         }
         let name = path.components().next_back().unwrap().as_os_str().to_str().unwrap();
-        if FileSystemSymbolParent::from(addons).get_child(session.st(), name).is_some() {
-            // Module already exists, do not create a new one
-            return None;
-        }
-        let module = Self::add_new_module_package(session, addons, name, path);
+        let module = Self::add_new_module_package(session, addons, name, path)?;
         let dir_name = session.sync_odoo.symbol_table[module].dir_name.clone();
         session.sync_odoo.modules.insert(dir_name, module.into());
-        Some(module)
+        Ok(module)
     }
 
     fn get_tree_helper(&self, symbol_key: SymbolKey) -> (Tree, RootKey) {
@@ -2471,7 +2499,7 @@ mod get_symbol_tests {
     #[test]
     fn file_only() {
         let (mut st, root) = empty_table_with_root();
-        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py");
+        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py").unwrap();
 
         let files: &[&str] = &["my_file"];
         let content: &[&str] = &[];
@@ -2484,7 +2512,7 @@ mod get_symbol_tests {
     #[test]
     fn file_plus_one_content() {
         let (mut st, root) = empty_table_with_root();
-        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py");
+        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py").unwrap();
         let class = st.add_new_class(file.into(), "MyClass", range_at(0), TextSize::new(0));
 
         let files: &[&str] = &["my_file"];
@@ -2498,7 +2526,7 @@ mod get_symbol_tests {
     #[test]
     fn file_plus_nested_content() {
         let (mut st, root) = empty_table_with_root();
-        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py");
+        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py").unwrap();
         let class = st.add_new_class(file.into(), "MyClass", range_at(0), TextSize::new(0));
         let method = st.add_new_function(class.into(), "method", range_at(1), TextSize::new(1));
 
@@ -2514,7 +2542,7 @@ mod get_symbol_tests {
     fn deeply_nested_content() {
         // Content path longer than 2: file -> Outer -> Inner -> v
         let (mut st, root) = empty_table_with_root();
-        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py");
+        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py").unwrap();
         let outer = st.add_new_class(file.into(), "Outer", range_at(0), TextSize::new(0));
         let inner = st.add_new_class(outer.into(), "Inner", range_at(1), TextSize::new(1));
         let var = st.add_new_variable(SymbolKey::Class(inner), "v", range_at(2));
@@ -2531,8 +2559,8 @@ mod get_symbol_tests {
     fn nested_file_paths() {
         // File tree with several levels: package -> file -> class
         let (mut st, root) = empty_table_with_root();
-        let package = st.add_new_python_package(root.into(), "pkg", "/test/pkg", "");
-        let file = st.add_new_file(package.into(), "mod", "/test/pkg/mod.py");
+        let package = st.add_new_python_package(root.into(), "pkg", "/test/pkg", "").unwrap();
+        let file = st.add_new_file(package.into(), "mod", "/test/pkg/mod.py").unwrap();
         let class = st.add_new_class(file.into(), "Cls", range_at(0), TextSize::new(0));
 
         let files: &[&str] = &["pkg", "mod"];
@@ -2546,7 +2574,7 @@ mod get_symbol_tests {
     #[test]
     fn missing_file_returns_empty() {
         let (mut st, root) = empty_table_with_root();
-        st.add_new_file(root.into(), "my_file", "/test/my_file.py");
+        _ = st.add_new_file(root.into(), "my_file", "/test/my_file.py");
 
         let files: &[&str] = &["does_not_exist"];
         let content: &[&str] = &[];
@@ -2556,7 +2584,7 @@ mod get_symbol_tests {
     #[test]
     fn missing_content_returns_empty() {
         let (mut st, root) = empty_table_with_root();
-        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py");
+        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py").unwrap();
         st.add_new_class(file.into(), "MyClass", range_at(0), TextSize::new(0));
 
         let files: &[&str] = &["my_file"];
@@ -2569,7 +2597,7 @@ mod get_symbol_tests {
         // Two variables with the same name in the same section: only the last
         // declaration visible before the position is returned.
         let (mut st, root) = empty_table_with_root();
-        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py");
+        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py").unwrap();
         let _first = st.add_new_variable(SymbolKey::File(file), "x", range_at(5));
         let second = st.add_new_variable(SymbolKey::File(file), "x", range_at(15));
 
@@ -2585,7 +2613,7 @@ mod get_symbol_tests {
     fn same_name_respects_position() {
         // Querying before the second declaration returns the first one.
         let (mut st, root) = empty_table_with_root();
-        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py");
+        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py").unwrap();
         let first = st.add_new_variable(SymbolKey::File(file), "x", range_at(5));
         let _second = st.add_new_variable(SymbolKey::File(file), "x", range_at(15));
 
@@ -2603,7 +2631,7 @@ mod get_symbol_tests {
         // A name defined in two mutually-exclusive branches (if / else) must
         // resolve to both symbols once the branches merge.
         let (mut st, root) = empty_table_with_root();
-        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py");
+        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py").unwrap();
         let file_key = SymbolKey::File(file);
 
         // sections: 0 base | 1 if-test | 2 if-body | 3 else-body | 4 merge(OR[2,3])
@@ -2636,7 +2664,7 @@ mod get_symbol_tests {
         // The same name resolving to multiple symbols must keep walking every
         // branch for the remaining content path (tests the flat_map behaviour).
         let (mut st, root) = empty_table_with_root();
-        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py");
+        let file = st.add_new_file(root.into(), "my_file", "/test/my_file.py").unwrap();
         let file_key = SymbolKey::File(file);
 
         {
@@ -2668,8 +2696,8 @@ mod get_symbol_tests {
     #[test]
     fn compiled_child_is_found_by_name() {
         let (mut st, root) = empty_table_with_root();
-        let parent = st.add_new_compiled(root.into(), "cmod", "/test/cmod.so");
-        let child = st.add_new_compiled(parent.into(), "sub", "/test/cmod/sub");
+        let parent = st.add_new_compiled(root.into(), "cmod", "/test/cmod.so").unwrap();
+        let child = st.add_new_compiled(parent.into(), "sub", "/test/cmod/sub").unwrap();
     
         assert_eq!(st.get_module_symbol(parent.into(), "sub"), Some(child.into()));
     }
@@ -2677,12 +2705,12 @@ mod get_symbol_tests {
     #[test]
     fn resolving_a_compiled_child_twice_keeps_one_key() {
         let (mut st, root) = empty_table_with_root();
-        let parent: SymbolKey = st.add_new_compiled(root.into(), "cmod", "/test/cmod.so").into();
+        let parent: SymbolKey = st.add_new_compiled(root.into(), "cmod", "/test/cmod.so").unwrap().into();
     
         fn resolve(st: &mut SymbolTable, parent: SymbolKey) -> SymbolKey {
             match st.get_module_symbol(parent, "sub") {
                 Some(found) => found,
-                None => st.add_new_compiled(parent.try_into().unwrap(), "sub", "/test/cmod/sub").into(),
+                None => st.add_new_compiled(parent.try_into().unwrap(), "sub", "/test/cmod/sub").unwrap().into(),
             }
         }
     

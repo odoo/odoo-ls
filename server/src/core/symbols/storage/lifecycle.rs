@@ -32,6 +32,9 @@ use crate::{
 use ruff_text_size::{TextRange, TextSize};
 use std::{cell::RefCell, ops::Range, path::Path, rc::Rc};
 
+#[derive(Debug)]
+pub struct NameTakenError(pub SymbolKey);
+
 impl SymbolTable {
 
     // ===== Symbol creation methods ======
@@ -41,55 +44,61 @@ impl SymbolTable {
         self.roots.insert(root_symbol)
     }
     // Create a sub-symbol that is representing a file
-    pub fn add_new_file(&mut self, parent: FileSystemSymbolParent, name: &str, path: &str) -> FileKey {
+    pub fn add_new_file(&mut self, parent: FileSystemSymbolParent, name: &str, path: &str) -> Result<FileKey, NameTakenError> {
+        self.check_fs_symbol_name_vacant(parent, name)?;
         let is_external = self.is_external(parent.into());
         let file_symbol = FileSymbol::new(name, path, parent, is_external);
         let file_key = self.files.insert(file_symbol);
-        self.add_to_parent_module_symbols(parent, file_key.into(), name, path);
-        file_key
+        self.add_to_parent_fs_symbols(parent, file_key.into(), name, path);
+        Ok(file_key)
     }
 
     //Create a sub-symbol that is representing a package
-    pub fn add_new_python_package(&mut self, parent: FileSystemSymbolParent, name: &str, path: &str, i_ext: &'static str) -> PythonPackageKey {
+    pub fn add_new_python_package(&mut self, parent: FileSystemSymbolParent, name: &str, path: &str, i_ext: &'static str) -> Result<PythonPackageKey, NameTakenError> {
+        self.check_fs_symbol_name_vacant(parent, name)?;
         let is_external = self.is_external(parent.into());
         let package_symbol = PythonPackageSymbol::new(name, path, parent, is_external, i_ext);
         let package_key = self.python_packages.insert(package_symbol);
-        self.add_to_parent_module_symbols(parent, package_key.into(), name, path);
-        package_key
+        self.add_to_parent_fs_symbols(parent, package_key.into(), name, path);
+        Ok(package_key)
     }
 
-    pub fn add_new_namespace(&mut self, parent: FileSystemSymbolParent, name: &str, path: &str) -> NamespaceKey {
+    pub fn add_new_namespace(&mut self, parent: FileSystemSymbolParent, name: &str, path: &str) -> Result<NamespaceKey, NameTakenError> {
+        self.check_fs_symbol_name_vacant(parent, name)?;
         let is_external = self.is_external(parent.into());
         let namespace_symbol = NamespaceSymbol::new(name, vec![path.to_string()], parent, is_external);
         let namespace_key = self.namespaces.insert(namespace_symbol);
-        self.add_to_parent_module_symbols(parent, namespace_key.into(), name, path);
-        namespace_key
+        self.add_to_parent_fs_symbols(parent, namespace_key.into(), name, path);
+        Ok(namespace_key)
     }
 
-    pub fn add_new_disk_dir(&mut self, parent: FileSystemSymbolParent, name: &str, path: &str) -> DiskDirKey {
+    pub fn add_new_disk_dir(&mut self, parent: FileSystemSymbolParent, name: &str, path: &str) -> Result<DiskDirKey, NameTakenError> {
+        self.check_fs_symbol_name_vacant(parent, name)?;
         let is_external = self.is_external(parent.into());
         let disk_dir_symbol = DiskDirSymbol::new(name, path, parent, is_external);
         let disk_dir_key = self.disk_dirs.insert(disk_dir_symbol);
-        self.add_to_parent_module_symbols(parent, disk_dir_key.into(), name, path);
-        disk_dir_key
+        self.add_to_parent_fs_symbols(parent, disk_dir_key.into(), name, path);
+        Ok(disk_dir_key)
     }
 
-    pub fn add_new_compiled(&mut self, parent: FileSystemSymbolParent, name: &str, path: &str) -> CompiledKey {
+    pub fn add_new_compiled(&mut self, parent: FileSystemSymbolParent, name: &str, path: &str) -> Result<CompiledKey, NameTakenError> {
+        self.check_fs_symbol_name_vacant(parent, name)?;
         let is_external = self.is_external(parent.into());
         let compiled_symbol = CompiledSymbol::new(name, path, parent, is_external);
         let compiled_key = self.compiled.insert(compiled_symbol);
-        self.add_to_parent_module_symbols(parent, compiled_key.into(), name, path);
-        compiled_key
+        self.add_to_parent_fs_symbols(parent, compiled_key.into(), name, path);
+        Ok(compiled_key)
     }
 
-    pub fn add_new_module_package(session: &mut SessionInfo, parent: NamespaceKey, name: &str, path: &Path) -> ModuleKey {
+    pub fn add_new_module_package(session: &mut SessionInfo, parent: NamespaceKey, name: &str, path: &Path) -> Result<ModuleKey, NameTakenError> {
+        session.st().check_fs_symbol_name_vacant(parent.into(), name)?;
         let is_external = session.sync_odoo.symbol_table.is_external(parent.into());
         let module = ModuleSymbol::new(name, path, parent, is_external);
         let path_str = module.path.clone();
         let module_key = session.st_mut().modules.insert(module);
+        session.st_mut().add_to_parent_fs_symbols(parent.into(), module_key.into(), name, &path_str);
         ModuleSymbol::load_manifest_content(session, module_key);
-        session.st_mut().add_to_parent_module_symbols(parent.into(), module_key.into(), name, &path_str);
-        module_key
+        Ok(module_key)
     }
 
     pub fn add_new_variable(&mut self, parent: impl Into<SymbolKey>, name: &str, range: TextRange) -> VariableKey {
@@ -237,17 +246,28 @@ impl SymbolTable {
             self.remove(replaced.into());
         }
     }
-    
-    fn add_to_parent_module_symbols(&mut self, parent: FileSystemSymbolParent, child: SymbolKey, name: &str, path: &str) {
+
+    fn panic_on_replaced_key(replaced: Option<impl Into<SymbolKey>>) {
+        if replaced.is_some() { panic!("replaced key on insertion") }
+    }
+
+    fn check_fs_symbol_name_vacant(&self, parent: FileSystemSymbolParent, name: &str) -> Result<(), NameTakenError> {
+        match parent.get_child(self, name) {
+            Some(existing) => Err(NameTakenError(existing)),
+            None => Ok(())
+        }
+    }
+
+    fn add_to_parent_fs_symbols(&mut self, parent: FileSystemSymbolParent, child: SymbolKey, name: &str, path: &str) {
         // A compiled can only be a parent to another compiled
         if let FileSystemSymbolParent::Compiled(_) = parent && !matches!(child, SymbolKey::Compiled(_)) {
             panic!("Impossible to add a {} to a CompiledSymbol parent", child.typ());
         }
         let replaced_key = parent.add_fs_symbol(self, name, child, path);
-        self.remove_replaced(replaced_key);
+        Self::panic_on_replaced_key(replaced_key);
     }
 
-    fn remove_from_parent_module_symbols(&mut self, parent: FileSystemSymbolParent, name: &str) {
+    fn remove_from_parent_fs_symbols(&mut self, parent: FileSystemSymbolParent, name: &str) {
         parent.remove_fs_symbol(self, name);
     }
 
@@ -359,19 +379,19 @@ impl SymbolTable {
                 let file_symbol = &self[f];
                 let name = file_symbol.name.to_string();
                 let parent = file_symbol.parent();
-                self.remove_from_parent_module_symbols(parent, &name);
+                self.remove_from_parent_fs_symbols(parent, &name);
             },
             SourceFileKey::Module(m) => {
                 let module_symbol = &self[m];
                 let name = module_symbol.name.to_string();
                 let parent = module_symbol.parent();
-                self.remove_from_parent_module_symbols(parent.into(), &name);
+                self.remove_from_parent_fs_symbols(parent.into(), &name);
             },
             SourceFileKey::PythonPackage(p) => {
                 let package_symbol = &self[p];
                 let name = package_symbol.name.to_string();
                 let parent = package_symbol.parent();
-                self.remove_from_parent_module_symbols(parent, &name);
+                self.remove_from_parent_fs_symbols(parent, &name);
             },
             SourceFileKey::XmlFile(x) => {
                 let xml_symbol = &self[x];
@@ -412,7 +432,7 @@ mod tests {
         let is_external = st.is_external(parent.into());
         let module = ModuleSymbol::new(name, Path::new(path), parent, is_external);
         let module_key = st.modules.insert(module);
-        st.add_to_parent_module_symbols(parent.into(), module_key.into(), name, path);
+        st.add_to_parent_fs_symbols(parent.into(), module_key.into(), name, path);
         module_key
     }
 
@@ -431,8 +451,8 @@ mod tests {
             let mut st = SymbolTable::new();
             let entry = EntryPoint::new(&mut st, "/root".to_string(), vec![], EntryPointType::MAIN, None, None);
             let root = entry.borrow().root;
-            let namespace = st.add_new_namespace(root.into(), "ns", "/root/ns");
-            let disk_dir = st.add_new_disk_dir(root.into(), "dd", "/root/dd");
+            let namespace = st.add_new_namespace(root.into(), "ns", "/root/ns").unwrap();
+            let disk_dir = st.add_new_disk_dir(root.into(), "dd", "/root/dd").unwrap();
             let module = add_module(&mut st, namespace, "mod", "/root/ns/mod");
             Self { st, root, namespace, disk_dir, module }
         }
@@ -443,19 +463,19 @@ mod tests {
     }
 
     #[test]
-    fn source_files_round_trip_through_their_parent() {
+    fn source_files_round_trip_through_their_parent() -> Result<(), NameTakenError> {
         let mut f = Fixture::new();
         // One child per `SourceFileKey` variant. `File` and `JsFile` appear twice, to cover both
         // of their parent kinds; the namespace is the only hand-written `FileSystemItemHolder`.
-        let in_root = f.st.add_new_file(f.root.into(), "in_root", "/root/in_root.py");
-        let in_namespace = f.st.add_new_file(f.namespace.into(), "in_namespace", "/root/ns/in_namespace.py");
-        let package = f.st.add_new_python_package(f.root.into(), "a_package", "/root/a_package", "");
+        let in_root = f.st.add_new_file(f.root.into(), "in_root", "/root/in_root.py")?;
+        let in_namespace = f.st.add_new_file(f.namespace.into(), "in_namespace", "/root/ns/in_namespace.py")?;
+        let package = f.st.add_new_python_package(f.root.into(), "a_package", "/root/a_package", "")?;
         let module = add_module(&mut f.st, f.namespace, "another_module", "/root/ns/another_module");
         let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml");
         let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv");
         let js_in_module = f.st.add_new_js_file(JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js");
         let js_in_disk_dir = f.st.add_new_js_file(JsFileParent::DiskDir(f.disk_dir), "lib.js", "/root/dd/lib.js");
-        let sibling = f.st.add_new_file(f.module.into(), "sibling", "/root/ns/mod/sibling.py");
+        let sibling = f.st.add_new_file(f.module.into(), "sibling", "/root/ns/mod/sibling.py")?;
 
         let cases: Vec<(SymbolKey, SourceFileKey)> = vec![
             (f.root.into(), in_root.into()),
@@ -477,12 +497,13 @@ mod tests {
         }
 
         assert!(f.holds(f.module.into(), sibling), "an unlink evicted an unrelated sibling");
+        Ok(())
     }
 
     #[test]
     fn file_content_round_trips_and_dies_with_its_file() {
         let mut f = Fixture::new();
-        let file = f.st.add_new_file(f.module.into(), "models", "/root/ns/mod/models.py");
+        let file = f.st.add_new_file(f.module.into(), "models", "/root/ns/mod/models.py").unwrap();
         let class = f.st.add_new_class(file.into(), "AClass", range_at(0), TextSize::new(0));
         let method = f.st.add_new_function(class.into(), "method", range_at(10), TextSize::new(10));
         let local = f.st.add_new_variable(method, "local", range_at(20));
@@ -536,9 +557,9 @@ mod tests {
     /// child-like relation `children()` does not cover. Removing the module has to leave
     /// nothing behind.
     #[test]
-    fn unloading_a_module_leaves_no_orphan() {
+    fn unloading_a_module_leaves_no_orphan() -> Result<(), NameTakenError> {
         let mut f = Fixture::new();
-        let file = f.st.add_new_file(f.module.into(), "models", "/root/ns/mod/models.py");
+        let file = f.st.add_new_file(f.module.into(), "models", "/root/ns/mod/models.py")?;
         let class = f.st.add_new_class(file.into(), "AClass", range_at(0), TextSize::new(0));
         let method = f.st.add_new_function(class.into(), "method", range_at(10), TextSize::new(10));
         f.st.add_new_variable(method, "local", range_at(20));
@@ -553,7 +574,7 @@ mod tests {
 
         // injected into a file outside the module, but owned by one of its files: it dies with
         // the owner, through `ext_symbols` rather than through any holder.
-        let host = f.st.add_new_file(f.root.into(), "host", "/root/host.py");
+        let host = f.st.add_new_file(f.root.into(), "host", "/root/host.py")?;
         let injected = f.st.add_new_ext_symbol(host.into(), "injected", range_at(30), file.into());
 
         f.st.assert_no_orphans();
@@ -565,6 +586,7 @@ mod tests {
         assert!(!f.st.is_key_valid(injected), "the ext symbol outlived its owner");
         assert!(f.st.is_key_valid(host), "removing the module took the injection target down");
         f.st.assert_no_orphans();
+        Ok(())
     }
 
     /// `ModuleSymbol` implements four holder traits, which is why `children` is a sequence of
@@ -572,7 +594,7 @@ mod tests {
     #[test]
     fn module_children_join_every_family_it_holds() {
         let mut f = Fixture::new();
-        let file = f.st.add_new_file(f.module.into(), "models", "/root/ns/mod/models.py");
+        let file = f.st.add_new_file(f.module.into(), "models", "/root/ns/mod/models.py").unwrap();
         let constant = f.st.add_new_variable(f.module, "MODULE_CONSTANT", range_at(0));
         let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml");
         let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv");

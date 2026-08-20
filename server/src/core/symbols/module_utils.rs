@@ -1,8 +1,11 @@
 use std::path::Path;
 
 use lsp_types::Diagnostic;
+use ruff_text_size::TextRange;
+use tracing::warn;
 
 use crate::{Sy, constants::{BuildSteps, DiagnosticSource, OYarn}, core::{build_scheduler::BuildScheduler, diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileMgr, import_resolver::create_module_from_name, symbols::{ModuleSymbol, SymbolTable, symbol_keys::{ModuleKey, NamespaceKey, SymbolKey}}}, threads::SessionInfo, utils::PathSanitizer};
+use crate::core::symbols::symbol_table_impl::CreateError;
 
 
 
@@ -33,37 +36,52 @@ impl ModuleSymbol {
         let mut diagnostics: Vec<Diagnostic> = vec![];
         let mut loaded: Vec<OYarn> = vec![];
         let dependencies = module.depends.clone();
-        for (depend, range) in dependencies.iter() {
-            if let Some(dependency) = session.sync_odoo.modules.get(depend).and_then(|m| m.upgrade(session.st())) {
-                // Dependency already in modules
-                BuildScheduler::build_now(session, dependency, BuildSteps::ARCH);
-                if session.st()[dependency].all_depends.contains(&name)
-                    && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS04012, &[depend]) {
-                        diagnostics.push(Diagnostic {
-                            range: FileMgr::textRange_to_temporary_Range(range),
-                            ..diagnostic_base.clone()
-                        });
+        for (depend, range) in dependencies {
+            match session.st()[odoo_addons].get_child(&depend) {
+                Some(SymbolKey::Module(dependency)) => {
+                    // Dependency already in modules
+                    BuildScheduler::build_now(session, dependency, BuildSteps::ARCH);
+                    if session.st()[dependency].all_depends.contains(&name)
+                        && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS04012, &[&depend]) {
+                            diagnostics.push(Diagnostic {
+                                range: FileMgr::textRange_to_temporary_Range(&range),
+                                ..diagnostic_base.clone()
+                            });
+                        }
+                    ModuleSymbol::extend_dependencies(session.st_mut(), symbol_key, dependency);
+                },
+                Some(other) => {
+                    // odoo addons has a child symbol with the same name but not a module
+                    warn!("dependency '{depend}' of '{name}' is {:?} at {:?}", other.typ(), session.st().paths(other));
+                    Self::report_missing_dependency(session, &mut diagnostics, symbol_key, &name, &depend, &range);
+                },
+                None => match create_module_from_name(session, odoo_addons, &depend) {
+                    Ok(dependency) => {
+                        // Dependency just added to modules
+                        loaded.push(depend);
+                        ModuleSymbol::extend_dependencies(session.st_mut(), symbol_key, dependency);
+                    },
+                    Err(CreateError::Existing(_)) => unreachable!("name checked vacant on odoo_addons above"),
+                    Err(CreateError::NothingOnDisk) => {
+                        // Dependency not found nor created
+                        Self::report_missing_dependency(session, &mut diagnostics, symbol_key, &name, &depend, &range);
                     }
-                ModuleSymbol::extend_dependencies(session.st_mut(), symbol_key, dependency);
-            } else if let Some(dependency) = create_module_from_name(session, odoo_addons, depend) {
-                // Dependency just added to modules
-                loaded.push(depend.clone());
-                ModuleSymbol::extend_dependencies(session.st_mut(), symbol_key, dependency);
-            } else {
-                // Dependency not found nor created
-                let entry = session.st().get_entry(symbol_key);
-                entry.borrow_mut().not_found_symbols.insert(symbol_key.into());
-                session.st_mut()[symbol_key].not_found_paths.push((BuildSteps::ARCH, vec![Sy!("odoo"), Sy!("addons"), depend.clone()]));
-                if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS04010, &[&name, depend]) {
-                    diagnostics.push(Diagnostic {
-                        range: FileMgr::textRange_to_temporary_Range(range),
-                        ..diagnostic_base.clone()
-                    });
                 }
             }
-
         }
         (diagnostics, loaded)
+    }
+
+    fn report_missing_dependency(session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>, module: ModuleKey, name: &OYarn, depend: &OYarn, range: &TextRange) {
+        let entry = session.st().get_entry(module);
+        entry.borrow_mut().not_found_symbols.insert(module.into());
+        session.st_mut()[module].not_found_paths.push((BuildSteps::ARCH, vec![Sy!("odoo"), Sy!("addons"), depend.clone()]));
+        if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS04010, &[name, depend]) {
+            diagnostics.push(Diagnostic {
+                range: FileMgr::textRange_to_temporary_Range(range),
+                ..diagnostic_base
+            });
+        }
     }
 
     fn extend_dependencies(symbol_table: &mut SymbolTable, symbol_key: ModuleKey, dependency: ModuleKey) {
@@ -81,7 +99,7 @@ impl ModuleSymbol {
         let tests_path = Path::new(&root_path).join("tests");
         if tests_path.exists() && !session.st()[module_key].module_symbols().contains_key("tests") {
             let symbol = SymbolTable::create_from_path(session, &tests_path, module_key.into(), false);
-            if let Some(sym) = symbol && !matches!(sym, SymbolKey::Namespace(_)) {
+            if let Ok(sym) = symbol && !matches!(sym, SymbolKey::Namespace(_)) {
                 BuildScheduler::queue(session, sym.unwrap_buildable_key());
             }
         }
