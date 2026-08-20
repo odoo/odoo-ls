@@ -1,0 +1,4 @@
+id,name,wheel_ids/id
+bike_m2m_ok,Ok Bike,"bike_wheel_6,module_for_diagnostics.bike_wheel_6"
+bike_m2m_bad,Bad Bike,"bike_wheel_6, bike_wheel_DOES_NOT_EXIST"
+bike_m2m_data,Data Bike,"bike_wheel_demo,bike_wheel_other"

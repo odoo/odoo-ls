@@ -98,7 +98,7 @@ impl XmlArchBuilder {
                 },
                 "groups" => {
                     let missing_groups = attr.value().split(",")
-                        .filter(|group| self.get_group_ids(session, group.trim_start_matches("-"), &attr, diagnostics).is_empty())
+                        .filter(|group| !SyncOdoo::is_group_xml_id(session, self.xml_symbol.into(), group.trim_start_matches("-"), &attr.range(), diagnostics))
                         .collect::<Vec<&str>>()
                         .join(",");
                     if !missing_groups.is_empty()
