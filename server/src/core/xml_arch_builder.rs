@@ -6,12 +6,11 @@ use crate::{
     core::{
         data_hooks,
         diagnostics::{create_diagnostic, DiagnosticCode},
-        odoo::SyncOdoo,
         symbols::{Buildable, symbol_keys::XmlFileKey},
     },
 };
 use lsp_types::Diagnostic;
-use roxmltree::{Attribute, Node};
+use roxmltree::Node;
 use tracing::{info, error, warn};
 
 /*
@@ -116,19 +115,5 @@ impl XmlArchBuilder {
                 session.sync_odoo.js_templates.entry(t_name).or_default().insert(template);
             }
         }
-    }
-
-    pub fn get_group_ids(&self, session: &mut SessionInfo, xml_id: &str, attr: &Attribute, diagnostics: &mut Vec<Diagnostic>) -> Vec<XmlId> {
-        let xml_ids = SyncOdoo::get_xml_ids(session, self.xml_symbol.into(), xml_id, &attr.range(), diagnostics);
-        let mut res = vec![];
-        for data in xml_ids.iter_valid(session.st()) {
-            if let XmlId::XmlRecord(r) = data {
-                let record = &session.st()[r];
-                if record.model.0 == "res.groups" {
-                    res.push(data);
-                }
-            }
-        }
-        res
     }
 }
