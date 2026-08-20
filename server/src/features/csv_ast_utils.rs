@@ -63,6 +63,17 @@ impl<'a> Iterator for CsvFieldIter<'a> {
     }
 }
 
+/// Each xml id of a `/id` cell with its byte range, a relational column comma separating them.
+pub fn split_csv_xml_ids(field: &str, value_start: usize) -> impl Iterator<Item = (&str, usize, usize)> {
+    let mut offset = 0;
+    field.split(',').filter_map(move |segment| {
+        let start = value_start + offset + segment.len() - segment.trim_start().len();
+        offset += segment.len() + 1;
+        let xml_id = segment.trim();
+        (!xml_id.is_empty()).then_some((xml_id, start, start + xml_id.len()))
+    })
+}
+
 pub struct CsvRecordIter<'a> {
     content: &'a str,
     records: csv::StringRecordsIter<'a, &'a [u8]>,

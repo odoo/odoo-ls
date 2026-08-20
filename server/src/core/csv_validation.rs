@@ -7,7 +7,7 @@ use tracing::info;
 use crate::{
     Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource, MissingDataSource, OYarn}, core::{
         diagnostics::{DiagnosticCode, create_diagnostic}, evaluation_utils::DeepFieldEvalWalker, file_mgr::FileInfo, symbols::{SymbolTable, symbol_keys::{CsvFileKey, ModuleKey}}
-    }, features::csv_ast_utils::CsvFieldIter, oyarn, threads::SessionInfo
+    }, features::csv_ast_utils::{CsvFieldIter, split_csv_xml_ids}, oyarn, threads::SessionInfo
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -119,11 +119,16 @@ impl CsvValidator {
 
     fn validate_record(&self, session: &mut SessionInfo, csv_module: ModuleKey, headers_is_xml: &[bool], record: &StringRecord, diagnostics: &mut Vec<Diagnostic>, data: &str) {
         let Some(field_iter) = CsvFieldIter::new(record, data) else { return; };
-        for (idx, (start, end, field)) in field_iter.enumerate() {
+        for (idx, (start, _end, field)) in field_iter.enumerate() {
             let Some(&should_be_xml_id) = headers_is_xml.get(idx) else { break;};
-            if should_be_xml_id {
+            if !should_be_xml_id {
+                continue;
+            }
+            // the cell spans its quotes when it carries them, the ids inside it do not
+            let value_start = start + usize::from(data.as_bytes().get(start) == Some(&b'"'));
+            for (xml_id, id_start, id_end) in split_csv_xml_ids(field, value_start) {
                 //check that field_data is a valid xml id
-                let id_split = field.split(".").collect::<Vec<&str>>();
+                let id_split = xml_id.split(".").collect::<Vec<&str>>();
                 let mut module_name = session.st().name(csv_module).as_str();
                 if id_split.len() == 2 {
                     module_name = id_split.first().unwrap();
@@ -134,7 +139,7 @@ impl CsvValidator {
                 let Some(&module_symbol) = session.sync_odoo.modules.get(module_name) else {
                     if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05003, &[]) {
                         diagnostics.push(Diagnostic {
-                            range: Range { start: Position::new(start as u32, 0), end: Position::new(end as u32, 0) },
+                            range: Range { start: Position::new(id_start as u32, 0), end: Position::new(id_end as u32, 0) },
                             ..diagnostic.clone()
                         });
                     }
@@ -147,7 +152,7 @@ impl CsvValidator {
                     session.sync_odoo.get_main_entry().borrow_mut().not_found_data_ids.insert(csv_module.into());
                     if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05001, &[]) {
                         diagnostics.push(Diagnostic {
-                            range: Range { start: Position::new(start as u32, 0), end: Position::new(end as u32, 0) },
+                            range: Range { start: Position::new(id_start as u32, 0), end: Position::new(id_end as u32, 0) },
                             ..diagnostic.clone()
                         });
                     }

@@ -161,3 +161,24 @@ fn test_valid_file_no_errors(diagnostics: &[Diagnostic]) {
             .join("; ")
     );
 }
+
+/// A relational `/id` column lists its ids comma separated, each one validated on its own.
+#[test]
+fn test_csv_relational_id_column_is_a_list() {
+    let (mut odoo, config) = setup::setup::setup_server(true);
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests").join("data").join("addons")
+        .join("module_for_diagnostics").join("data").join("bikes.bike.csv")
+        .sanitize();
+
+    let diagnostics = setup::setup::get_diagnostics_for_path(&mut session, &path);
+    let unknown = diagnostics.iter().filter(|diag| has_code(diag, "OLS05001")).collect::<Vec<_>>();
+    assert_eq!(unknown.len(), 1, "only the one bogus id is unknown, got: {diagnostics:?}");
+
+    // The range spans that id alone, not the whole cell, so the ids beside it stay untouched.
+    let content = std::fs::read_to_string(&path).unwrap();
+    let range = &unknown[0].range;
+    let line = content.lines().nth(range.start.line as usize).expect("diagnostic line");
+    assert_eq!(&line[range.start.character as usize..range.end.character as usize], "bike_wheel_DOES_NOT_EXIST");
+}
