@@ -1481,9 +1481,8 @@ impl PythonArchEvalHooks {
         if !parameters.args[0].is_string_literal_expr() {
             return None;
         }
-        if parameters.keywords.len() == 1
-        // read raise_if_not_found keyword argument
-        && !parameters.keywords[0].value.as_boolean_literal_expr().map(|b| b.value).unwrap_or(true) {
+        if parameters.find_argument_value("raise_if_not_found", 1)
+            .and_then(Expr::as_boolean_literal_expr).is_some_and(|literal| !literal.value) {
             return None; // No need to process if the second argument (raise_if_not_found) is false
         }
         let xml_id_expr = parameters.args[0].as_string_literal_expr().unwrap();
