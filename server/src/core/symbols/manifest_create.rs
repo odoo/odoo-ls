@@ -67,8 +67,10 @@ impl ModuleSymbol {
                                 ModuleSymbol::load_manifest_name(session, module_key, &mut res, key_literal, value);
                             } else if key_str == "depends" {
                                 ModuleSymbol::load_manifest_depends(session, module_key, &mut res, key_literal, value);
-                            } else if key_str == "data" {
-                                ModuleSymbol::load_manifest_data(session, module_key, &mut res, key_literal, value);
+                            } else if key_str == "data" || key_str == "demo" {
+                                ModuleSymbol::load_manifest_data(session, module_key, &mut res, key_literal, value, false);
+                            } else if key_str == "other_files" {
+                                ModuleSymbol::load_manifest_data(session, module_key, &mut res, key_literal, value, true);
                             } else if key_str == "assets" {
                                 ModuleSymbol::load_manifest_assets(session, module_key, &mut res, key_literal, value);
                             } else if key_str == "active"
@@ -153,7 +155,8 @@ impl ModuleSymbol {
         }
     }
 
-    fn load_manifest_data(session: &mut SessionInfo, module_key: ModuleKey, diagnostics: &mut Vec<Diagnostic>, key_literal: &ExprStringLiteral, value: &Expr) {
+    /// A manifest key listing data files, `other_files` alone being limited to the xml it declares.
+    fn load_manifest_data(session: &mut SessionInfo, module_key: ModuleKey, diagnostics: &mut Vec<Diagnostic>, key_literal: &ExprStringLiteral, value: &Expr, xml_only: bool) {
         if !value.is_list_expr() {
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04007, &[]) {
                 diagnostics.push(Diagnostic {
@@ -171,8 +174,13 @@ impl ModuleSymbol {
                         });
                     }
                 } else {
+                    let data_url = data.as_string_literal_expr().unwrap().value.to_string();
+                    // an `other_files` csv is read by module code, so it does not name a model
+                    if xml_only && !data_url.ends_with(".xml") {
+                        continue;
+                    }
                     let module = &mut session.st_mut()[module_key];
-                    module.data.push((data.as_string_literal_expr().unwrap().value.to_string(), data.range()));
+                    module.data.push((data_url, data.range()));
                 }
             }
         }
