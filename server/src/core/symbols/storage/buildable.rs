@@ -4,20 +4,62 @@ use crate::{constants::{BuildStatus, BuildSteps}, core::symbols::{CsvFileSymbol,
 
 
 pub trait Buildable {
+    const STEPS: &'static [BuildSteps];
     /// Returns the current build step of the symbol
     fn get_current_build_step(&self) -> BuildSteps;
-    fn first_step(&self) -> BuildSteps;
+    fn first_step(&self) -> BuildSteps { Self::STEPS[0] }
     /// Return if the given step is valid for the symbol
-    fn is_step_valid(&self, step: BuildSteps) -> bool;
+    fn is_step_valid(&self, step: BuildSteps) -> bool { Self::STEPS.contains(&step) }
     /// Returns the step that should be built before the given step, if any
-    fn previous_build_step(&self, step: BuildSteps) -> Option<BuildSteps>;
+    fn previous_build_step(&self, step: BuildSteps) -> Option<BuildSteps> {
+        Self::STEPS.iter().rev().find(|&&s| s < step).copied()
+    }
     /// Returns the step that should be built after the given step, if any
-    fn next_build_step(&self, step: BuildSteps) -> Option<BuildSteps>;
+    fn next_build_step(&self, step: BuildSteps) -> Option<BuildSteps> {
+        Self::STEPS.iter().find(|&&s| s > step).copied()
+    }
     /// Returns the build status of the symbol for the given step
-    fn get_build_status(&self, step: BuildSteps) -> BuildStatus;
+    fn get_build_status(&self, step: BuildSteps) -> BuildStatus {
+        if self.get_current_build_step() > step {
+            BuildStatus::DONE
+        } else if self.get_current_build_step() == step {
+            self._build_status()
+        } else {
+            BuildStatus::PENDING
+        }
+    }
     /// Sets the build status of the symbol for the given step. You can only set status for the current step or a future step only!
     /// If you want to reset the status to a previous step, you have to use SymbolTable::invalidate() instead
-    fn set_build_status(&mut self, step: BuildSteps, status: BuildStatus);
+    fn set_build_status(&mut self, step: BuildSteps, status: BuildStatus) {
+        if self.get_current_build_step() > step {
+            if status != BuildStatus::DONE {
+                panic!("A previous build step should not be changed to a non-DONE status. It should be done through invalidate_build_step() instead")
+            }
+            return;
+        }
+        while self.get_current_build_step() != step {
+            if let Some(next_step) = self.next_build_step(self.get_current_build_step()) {
+                *self._current_build_step_mut() = next_step;
+            } else {
+                panic!("Cannot set build status for a step that is not the current step or a future step");
+            }
+        }
+        if status == BuildStatus::DONE {
+            if let Some(next_step) = self.next_build_step(self.get_current_build_step()) {
+                *self._current_build_step_mut() = next_step;
+                *self._build_status_mut() = BuildStatus::PENDING;
+            } else {
+                *self._build_status_mut() = BuildStatus::DONE;
+            }
+        } else {
+            *self._build_status_mut() = status;
+        }
+    }
+    
+    // Accessors for internal use only
+    fn _build_status(&self) -> BuildStatus;
+    fn _build_status_mut(&mut self) -> &mut BuildStatus;
+    fn _current_build_step_mut(&mut self) -> &mut BuildSteps;
 }
 
 pub(in crate::core::symbols) trait ResettableBuildable {
@@ -51,188 +93,34 @@ impl ResettableBuildable for name {
 //arch - arch_eval - validation
 #[duplicate_item(name; [ModuleSymbol]; [PythonPackageSymbol]; [FileSymbol]; [FunctionSymbol])]
 impl Buildable for name {
+    const STEPS: &'static [BuildSteps] = &[BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::VALIDATION];
     fn get_current_build_step(&self) -> BuildSteps {
         self.current_build_step
     }
-    fn first_step(&self) -> BuildSteps {
-        BuildSteps::ARCH
-    }
-    fn is_step_valid(&self, step: BuildSteps) -> bool {
-        match step {
-            BuildSteps::ARCH => true,
-            BuildSteps::ARCH_EVAL => true,
-            BuildSteps::VALIDATION => true,
-        }
-    }
-    fn previous_build_step(&self, step: BuildSteps) -> Option<BuildSteps> {
-        match step {
-            BuildSteps::ARCH => None,
-            BuildSteps::ARCH_EVAL => Some(BuildSteps::ARCH),
-            BuildSteps::VALIDATION => Some(BuildSteps::ARCH_EVAL),
-        }
-    }
-    fn next_build_step(&self, step: BuildSteps) -> Option<BuildSteps> {
-        match step {
-            BuildSteps::ARCH => Some(BuildSteps::ARCH_EVAL),
-            BuildSteps::ARCH_EVAL => Some(BuildSteps::VALIDATION),
-            BuildSteps::VALIDATION => None,
-        }
-    }
-    fn get_build_status(&self, step: BuildSteps) -> BuildStatus {
-        if self.current_build_step > step {
-            BuildStatus::DONE
-        } else if self.current_build_step == step {
-            self.build_status
-        } else {
-            BuildStatus::PENDING
-        }
-    }
-    fn set_build_status(&mut self, step: BuildSteps, status: BuildStatus) {
-        if self.current_build_step > step {
-            if status != BuildStatus::DONE {
-                panic!("A previous build step should not be changed to a non-DONE status. It should be done through invalidate_build_step() instead")
-            }
-            return;
-        }
-        while self.current_build_step != step {
-            if let Some(next_step) = self.next_build_step(self.current_build_step) {
-                self.current_build_step = next_step;
-            } else {
-                panic!("Cannot set build status for a step that is not the current step or a future step");
-            }
-        }
-        if status == BuildStatus::DONE {
-            if let Some(next_step) = self.next_build_step(self.current_build_step) {
-                self.current_build_step = next_step;
-                self.build_status = BuildStatus::PENDING;
-            } else {
-                self.build_status = BuildStatus::DONE;
-            }
-        } else {
-            self.build_status = status;
-        }
-    }
+    fn _build_status(&self) -> BuildStatus { self.build_status }
+    fn _build_status_mut(&mut self) -> &mut BuildStatus { &mut self.build_status }
+    fn _current_build_step_mut(&mut self) -> &mut BuildSteps { &mut self.current_build_step }
 }
 
 //only arch and validation
 #[duplicate_item(name; [XmlFileSymbol]; [CsvFileSymbol])]
 impl Buildable for name {
+    const STEPS: &'static [BuildSteps] = &[BuildSteps::ARCH, BuildSteps::VALIDATION];
     fn get_current_build_step(&self) -> BuildSteps {
         self.current_build_step
     }
-    fn first_step(&self) -> BuildSteps {
-        BuildSteps::ARCH
-    }
-    fn is_step_valid(&self, step: BuildSteps) -> bool {
-        match step {
-            BuildSteps::ARCH => true,
-            BuildSteps::ARCH_EVAL => false,
-            BuildSteps::VALIDATION => true,
-        }
-    }
-    fn previous_build_step(&self, step: BuildSteps) -> Option<BuildSteps> {
-        match step {
-            BuildSteps::ARCH => None,
-            BuildSteps::ARCH_EVAL => None,
-            BuildSteps::VALIDATION => Some(BuildSteps::ARCH),
-        }
-    }
-    fn next_build_step(&self, step: BuildSteps) -> Option<BuildSteps> {
-        match step {
-            BuildSteps::ARCH => Some(BuildSteps::VALIDATION),
-            BuildSteps::ARCH_EVAL => None,
-            BuildSteps::VALIDATION => None,
-        }
-    }
-    fn get_build_status(&self, step: BuildSteps) -> BuildStatus {
-        if self.current_build_step > step {
-            BuildStatus::DONE
-        } else if self.current_build_step == step {
-            self.build_status
-        } else {
-            BuildStatus::PENDING
-        }
-    }
-    fn set_build_status(&mut self, step: BuildSteps, status: BuildStatus) {
-        if self.current_build_step > step {
-            if status != BuildStatus::DONE {
-                panic!("A previous build step should not be changed to a non-DONE status. It should be done through invalidate_build_step() instead")
-            }
-            return;
-        }
-        while self.current_build_step != step {
-            if let Some(next_step) = self.next_build_step(self.current_build_step) {
-                self.current_build_step = next_step;
-            } else {
-                panic!("Cannot set build status for a step that is not the current step or a future step");
-            }
-        }
-        if status == BuildStatus::DONE {
-            if let Some(next_step) = self.next_build_step(self.current_build_step) {
-                self.current_build_step = next_step;
-                self.build_status = BuildStatus::PENDING;
-            } else {
-                self.build_status = BuildStatus::DONE;
-            }
-        } else {
-            self.build_status = status;
-        }
-    }
+    fn _build_status(&self) -> BuildStatus { self.build_status }
+    fn _build_status_mut(&mut self) -> &mut BuildStatus { &mut self.build_status }
+    fn _current_build_step_mut(&mut self) -> &mut BuildSteps { &mut self.current_build_step }
 }
 
 // only validation
 impl Buildable for JsFileSymbol {
+    const STEPS: &'static [BuildSteps] = &[BuildSteps::VALIDATION];
     fn get_current_build_step(&self) -> BuildSteps {
         self.current_build_step
     }
-    fn first_step(&self) -> BuildSteps {
-        BuildSteps::VALIDATION
-    }
-    fn is_step_valid(&self, step: BuildSteps) -> bool {
-        match step {
-            BuildSteps::ARCH => false,
-            BuildSteps::ARCH_EVAL => false,
-            BuildSteps::VALIDATION => true,
-        }
-    }
-    fn previous_build_step(&self, _step: BuildSteps) -> Option<BuildSteps> {
-        None
-    }
-    fn next_build_step(&self, _step: BuildSteps) -> Option<BuildSteps> {
-        None
-    }
-    fn get_build_status(&self, step: BuildSteps) -> BuildStatus {
-        if self.current_build_step > step {
-            BuildStatus::DONE
-        } else if self.current_build_step == step {
-            self.build_status
-        } else {
-            BuildStatus::PENDING
-        }
-    }
-    fn set_build_status(&mut self, step: BuildSteps, status: BuildStatus) {
-        if self.current_build_step > step {
-            if status != BuildStatus::DONE {
-                panic!("A previous build step should not be changed to a non-DONE status. It should be done through invalidate_build_step() instead")
-            }
-            return;
-        }
-        while self.current_build_step != step {
-            if let Some(next_step) = self.next_build_step(self.current_build_step) {
-                self.current_build_step = next_step;
-            } else {
-                panic!("Cannot set build status for a step that is not the current step or a future step");
-            }
-        }
-        if status == BuildStatus::DONE {
-            if let Some(next_step) = self.next_build_step(self.current_build_step) {
-                self.current_build_step = next_step;
-                self.build_status = BuildStatus::PENDING;
-            } else {
-                self.build_status = BuildStatus::DONE;
-            }
-        } else {
-            self.build_status = status;
-        }
-    }
+    fn _build_status(&self) -> BuildStatus { self.build_status }
+    fn _build_status_mut(&mut self) -> &mut BuildStatus { &mut self.build_status }
+    fn _current_build_step_mut(&mut self) -> &mut BuildSteps { &mut self.current_build_step }
 }
