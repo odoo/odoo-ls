@@ -33,3 +33,5 @@ class BikesBike(models.Model):
         self.env.ref('module_for_diagnostics.bike_wheel_6') # Ok
         self.env.ref('WRONG_MODULE.bike_wheel_6') # OLS05003
         self.env.ref('module_for_diagnostics.bike_wheel_6.too.many.dots') # OLS05051
+        self.env.ref('WRONG_MODULE.bike_wheel_6', False) # Ok, the caller takes an empty result
+        self.env.ref('WRONG_MODULE.bike_wheel_6', raise_if_not_found=False) # Ok, same spelled by name
