@@ -3,6 +3,7 @@ use std::{cell::RefCell, cmp, path::PathBuf, rc::Rc};
 use crate::constants::MissingDataSource;
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::symbols::storage::FileSystemSymbolParent;
+use crate::core::symbols::symbol_table_impl::CreateError;
 use crate::utils::HashMap;
 
 use slotmap::Key;
@@ -66,32 +67,33 @@ impl EntryPointMgr {
         let path_stem = Path::new(&path).with_extension("");
         let name = path_stem.components().next_back().unwrap().as_os_str().to_str().unwrap();
 
-        session.st_mut().add_new_file(entry.borrow().root.into(), name, &path)
+        session.st_mut().add_new_file(entry.borrow().root.into(), name, &path).expect("fresh root has no children")
     }
 
     /**
      * Create each required directory symbols for a given path.
      * /!\ path must point to a directory on disk */
-    pub fn create_dir_symbols_from_path_to_entry(session: &mut SessionInfo, path: &Path, entry: Rc<RefCell<EntryPoint>>) -> Option<SymbolKey> {
+    fn create_dir_symbols_for_new_entry(session: &mut SessionInfo, path: &str, entry: Rc<RefCell<EntryPoint>>) -> Option<SymbolKey> {
+        let path = Path::new(path);
         let mut iter_path = PathBuf::new();
         let mut current_sym: FileSystemSymbolParent = entry.borrow().root.into();
         let component_count = path.components().count();
         for component in path.components().take(component_count - 1) {
             iter_path.push(component);
             if let Some(name) = component.as_os_str().to_str() {
-                let sym = current_sym.get_child(session.st(), name);
-                if let Some(existing_sym) = sym {
-                    current_sym = existing_sym.try_into().expect("Expected existing_sym to be a DiskDirKey");
-                } else {
-                    let disk_dir = session.st_mut().add_new_disk_dir(current_sym, name, iter_path.to_str().unwrap());
-                    current_sym = disk_dir.into();
-                }
+                let disk_dir = session.st_mut().add_new_disk_dir(current_sym, name, iter_path.to_str().unwrap());
+                current_sym = disk_dir.expect("Starting from fresh root, no name collision expected").into();
             } else {
                 error!("Unable to convert path component to string");
                 return None;
             }
         }
-        SymbolTable::create_from_path(session, path, current_sym, false)
+        match SymbolTable::create_from_path(session, path, current_sym, false) {
+            Ok(sym) => Some(sym),
+            Err(CreateError::NothingOnDisk) => None,
+            Err(CreateError::Existing(key)) =>
+                unreachable!("callers pass a freshly created EntryPoint, so the chain should be empty; found {key:?}"),
+        }
     }
 
     /* Create a new main entry_point.
@@ -109,7 +111,7 @@ impl EntryPointMgr {
             None);
         session.sync_odoo.entry_point_mgr.borrow_mut().main_entry_point = Some(entry.clone());
 
-        EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry)
+        EntryPointMgr::create_dir_symbols_for_new_entry(session, &path, entry)
     }
 
     /* Create a new entry to builtins.
@@ -127,7 +129,7 @@ impl EntryPointMgr {
             None);
         session.sync_odoo.entry_point_mgr.borrow_mut().builtins_entry_points.push(entry.clone());
 
-        EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry)
+        EntryPointMgr::create_dir_symbols_for_new_entry(session, &path, entry)
     }
 
     /* Create a new entry to public.
@@ -158,7 +160,7 @@ impl EntryPointMgr {
             None);
         session.sync_odoo.entry_point_mgr.borrow_mut().public_entry_points.push(entry.clone());
 
-        EntryPointMgr::_create_dir_symbols_for_new_entry(session, &path, entry)
+        EntryPointMgr::create_dir_symbols_for_new_entry(session, &path, entry)
     }
 
     /* Create a new entry to addons.
@@ -195,11 +197,7 @@ impl EntryPointMgr {
             None,
             None);
         session.sync_odoo.entry_point_mgr.borrow_mut().custom_entry_points.push(entry.clone());
-        EntryPointMgr::_create_dir_symbols_for_new_entry(session, path, entry)
-    }
-
-    fn _create_dir_symbols_for_new_entry(session: &mut SessionInfo, path: &str, entry: Rc<RefCell<EntryPoint>>) -> Option<SymbolKey> {
-        EntryPointMgr::create_dir_symbols_from_path_to_entry(session, Path::new(path), entry)
+        EntryPointMgr::create_dir_symbols_for_new_entry(session, path, entry)
     }
 
     /// Create a new custom entry point for a given tree path and file path.

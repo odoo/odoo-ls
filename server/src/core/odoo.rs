@@ -11,6 +11,7 @@ use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::storage::{FileSystemSymbolParent, JsFileParent, SymbolTable};
 use crate::core::symbols::storage::metrics::{log_slotmap_capacities, log_symbol_counts, log_memory_usage};
 use crate::core::symbols::symbol_keys::{BuildableSymbolKey, FunctionKey, ModuleKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlTemplateKey};
+use crate::core::symbols::symbol_table_impl::CreateError;
 use crate::core::tsserver_bridge::{TsServerBridge};
 use crate::features::tsserver_completion::TsCompletionResolveData;
 use crate::features::owl_virtual;
@@ -600,7 +601,7 @@ impl SyncOdoo {
         session.st_mut().set_is_external(odoo_sym, false);
         let odoo_sym: FileSystemSymbolParent = odoo_sym.try_into().expect("odoo root symbol to be a DiskDir");
         let odoo_odoo = SymbolTable::create_from_path(session, &config_odoo_path.join("odoo"), odoo_sym, false);
-        let Some(odoo_odoo) = odoo_odoo else {
+        let Ok(odoo_odoo) = odoo_odoo else {
             panic!("Not able to find odoo with given path. Aborting...");
         };
         match odoo_odoo {
@@ -611,7 +612,7 @@ impl SyncOdoo {
             SymbolKey::Namespace(ns) => {
                 //starting from > 18.0, odoo is now a namespace. Start import project from odoo/__main__.py
                 let main_file = SymbolTable::create_from_path(session, &config_odoo_path.join("odoo").join("__main__.py"),  ns.into(), false);
-                let Some(main_file) = main_file else {
+                let Ok(main_file) = main_file else {
                     panic!("Not able to find odoo/__main__.py. Aborting...");
                 };
                 let f = main_file.unwrap_file_key();
@@ -638,7 +639,7 @@ impl SyncOdoo {
             //if we are > 18.1, odoo.addons is not imported automatically anymore. Let's try to import it manually
             let parent = odoo_odoo.try_into().expect("Expected odoo to be a package or namespace");
             let addons_folder = SymbolTable::create_from_path(session, &config_odoo_path.join("odoo").join("addons"), parent, false);
-            if let Some(SymbolKey::Namespace(addons_ns)) = addons_folder {
+            if let Ok(SymbolKey::Namespace(addons_ns)) = addons_folder {
                 addons_ns
             } else {
                 session.log_message(MessageType::WARNING, "Not able to find odoo/addons. Please check your configuration. Switching to non-odoo mode...".to_string());
@@ -687,7 +688,7 @@ impl SyncOdoo {
                 for item in Path::new(addon_path).read_dir().expect("Unable to browse and odoo addon directory") {
                     if let Ok(item) = item
                         && item.file_type().unwrap().is_dir() && !session.sync_odoo.modules.contains_key(item.file_name().to_str().unwrap())
-                            && let Some(module_symbol) = SymbolTable::create_module_from_path(session, &item.path(), addons_symbol) {
+                            && let Ok(module_symbol) = SymbolTable::create_module_from_path(session, &item.path(), addons_symbol) {
                                 modules.push(module_symbol);
                             }
                 }
@@ -2057,9 +2058,16 @@ impl Odoo {
             let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
             for entry in ep_mgr.borrow().addons_entry_points.iter() {
                 if entry.borrow().path == parent_path.sanitize_cow() {
-                    if let SymbolKey::Namespace(addons) = entry.borrow().get_symbol(session.st()).unwrap()
-                    && let Some(module_symbol) = SymbolTable::create_module_from_path(session, &path_for_tree, addons) {
-                        BuildScheduler::queue(session, BuildableSymbolKey::Module(module_symbol));
+                    if let SymbolKey::Namespace(addons) = entry.borrow().get_symbol(session.st()).unwrap() {
+                        match SymbolTable::create_module_from_path(session, &path_for_tree, addons) {
+                            Ok(module_symbol) => {
+                                BuildScheduler::queue(session, BuildableSymbolKey::Module(module_symbol));
+                            },
+                            Err(CreateError::NothingOnDisk) => {}, // not a module dir
+                            Err(CreateError::Existing(_symbol)) =>  {
+                                warn!("cannot create module at {}: name already taken", path_for_tree.sanitize_cow());
+                            }
+                        }
                     }
                     break;
                 }
@@ -2070,9 +2078,16 @@ impl Odoo {
                 );
                 match addons_symbol {
                     Some(addons_symbol) if !addons_symbol.is_empty() => {
-                        if let SymbolKey::Namespace(addons) = addons_symbol[0]
-                        && let Some(module_symbol) = SymbolTable::create_module_from_path(session, &path_for_tree, addons) {
-                        BuildScheduler::queue(session, BuildableSymbolKey::Module(module_symbol));
+                        if let SymbolKey::Namespace(addons) = addons_symbol[0] {
+                            match SymbolTable::create_module_from_path(session, &path_for_tree, addons) {
+                                Ok(module_symbol) => {
+                                    BuildScheduler::queue(session, BuildableSymbolKey::Module(module_symbol));
+                                },
+                                Err(CreateError::NothingOnDisk) => {},
+                                Err(CreateError::Existing(_symbol)) => {
+                                    warn!("cannot create module at {}: name already taken", path_for_tree.sanitize_cow());
+                                },
+                            }
                         }
                     }
                     _ => {

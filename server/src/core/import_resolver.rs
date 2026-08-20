@@ -2,6 +2,7 @@ use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
 use ruff_python_ast::name::Name;
 use tracing::error;
 use crate::core::build_scheduler::BuildScheduler;
+use crate::core::symbols::symbol_table_impl::CreateError;
 use crate::utils::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -98,7 +99,6 @@ pub fn resolve_from_stmt(
         source_path.as_str(),
         start_symbol,
         &file_tree,
-        None,
         level);
     let fallback_sym = Some(fallback_sym.unwrap_or(vec![source_root]));
     (from_symbol, fallback_sym, file_tree)
@@ -155,8 +155,8 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
             source_path.as_str(),
             from_symbols.clone(),
             &name_first_part,
-            None,
-        0);
+            0
+        );
         if next_symbol.is_none()
             && name_split.len() == 1
             && let Some(from_symbols) = from_symbols.as_ref() {
@@ -184,8 +184,8 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
                 "",
                 Some(next_symbol.as_ref().unwrap().clone()),
                 &name_middle_part,
-                None,
-            0);
+                0
+            );
         }
         if next_symbol.is_none() {
             if alias.asname.is_some() {
@@ -201,8 +201,8 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
                 "",
                 Some(next_symbol.as_ref().unwrap().clone()),
                 &name_last_name,
-                None,
-            0);
+                0
+            );
             if last_symbol.is_none() { //If not a file/package, try to look up in symbols in current file (second parameter of get_symbol)
                 //TODO what if multiple values?
                 let name_symbol_vec = next_symbol.as_ref().unwrap().iter().flat_map(|&s| session.st().get_symbol(s, (&[], &name_last_name), u32::MAX)).collect::<Vec<_>>();
@@ -232,19 +232,22 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
     result
 }
 
-pub fn create_module_from_name(session: &mut SessionInfo, odoo_addons: NamespaceKey, name: &str) -> Option<ModuleKey> {
+pub fn create_module_from_name(session: &mut SessionInfo, odoo_addons: NamespaceKey, name: &str) -> Result<ModuleKey, CreateError> {
     for path in session.st()[odoo_addons].paths() {
         let full_path = Path::new(&path).join(name);
         if !session.sync_odoo.is_dir_cs(&full_path.sanitize_cow()) {
             continue;
         }
-        let Some(module) = SymbolTable::create_module_from_path(session, &full_path, odoo_addons) else {
-            continue;
-        };
-        BuildScheduler::build_now(session, module, BuildSteps::ARCH);
-        return Some(module);
+        match SymbolTable::create_module_from_path(session, &full_path, odoo_addons) {
+            Err(CreateError::NothingOnDisk) => continue,
+            Err(e @ CreateError::Existing(_)) => return Err(e),
+            Ok(module) => {
+                BuildScheduler::build_now(session, module, BuildSteps::ARCH);
+                return Ok(module);
+            },
+        }
     }
-    None
+    Err(CreateError::NothingOnDisk)
 }
 
 fn resolve_packages(symbol_table: &SymbolTable, from_file: SymbolKey, level: u32, from_stmt: Option<&Identifier>) -> Option<Vec<OYarn>> {
@@ -280,7 +283,7 @@ fn resolve_packages(symbol_table: &SymbolTable, from_file: SymbolKey, level: u32
 }
 
 fn get_or_create_symbol(
-    session: &mut SessionInfo, for_entry: &Rc<RefCell<EntryPoint>>, from_path: &str, symbol: Option<Vec<SymbolKey>>, names: &[OYarn], asname: Option<&str>, level: u32
+    session: &mut SessionInfo, for_entry: &Rc<RefCell<EntryPoint>>, from_path: &str, symbol: Option<Vec<SymbolKey>>, names: &[OYarn], level: u32
 ) -> (Option<Vec<SymbolKey>>, Option<Vec<SymbolKey>>) {
     let mut syms = symbol.clone();
     let mut last_symbols = symbol;
@@ -298,7 +301,7 @@ fn get_or_create_symbol(
                     if let Ok(parent) = FileSystemSymbolParent::try_from(s) {
                         let current_batch_symbol = parent
                             .get_child(session.st(), branch)
-                            .or_else(|| resolve_new_symbol(session, parent, branch, asname).ok());
+                            .or_else(|| resolve_new_symbol(session, parent, branch).ok());
                         next_symbol.extend(current_batch_symbol);
                     }
                 }
@@ -345,7 +348,7 @@ fn get_or_create_symbol(
                             };
                             let next_symbol = parent
                                 .get_child(session.st(), branch)
-                                .or_else(|| resolve_new_symbol(session, parent, branch, asname).ok());
+                                .or_else(|| resolve_new_symbol(session, parent, branch).ok());
                             let Some(next_symbol) = next_symbol else {
                                 continue;
                             };
@@ -385,24 +388,25 @@ fn get_or_create_symbol(
     (syms, last_symbols)
 }
 
+/// Helper for get_or_create_symbol: symbol for `sym_name` has been checked as non-existant.
 /// Resolve a new symbol from disk, creating it if found, or just creating a COMPILED symbol if a parent is COMPILED
 /// parent : parent symbol where to search, either ROOT, NAMESPACE, PACKAGE, COMPILED or DISK_DIR
-fn resolve_new_symbol(session: &mut SessionInfo, parent: FileSystemSymbolParent, imported_name: &OYarn, asname: Option<&str>) -> Result<SymbolKey, &'static str> {
-    if imported_name.is_empty() {
+fn resolve_new_symbol(session: &mut SessionInfo, parent: FileSystemSymbolParent, name: &str) -> Result<SymbolKey, &'static str> {
+    if name.is_empty() {
         return Err("Empty name");
     }
-    let sym_name = asname.unwrap_or(imported_name.as_str());
     // COMPILED: we can only create a COMPILED symbol
     if matches!(parent, FileSystemSymbolParent::Compiled(_)) {
-        return Ok(session.st_mut().add_new_compiled(parent, sym_name, "").into());
+        let compiled = session.st_mut().add_new_compiled(parent, name, "").expect("sym_name should not collide");
+        return Ok(compiled.into());
     }
     // ROOT, NAMESPACE, PACKAGE or DISK_DIR: we can search on disk
     'paths: for path in session.st().paths(parent.into()) {
         let is_stub = session.sync_odoo.stubs_dirs.contains(&path);
         let mut full_path = PathBuf::from(path);
-        full_path.push(imported_name.as_str());
+        full_path.push(name);
         if is_stub {
-            full_path.push(imported_name.as_str());
+            full_path.push(name);
         }
         let full_path_str = full_path.sanitize_cow();
         let is_dir = session.sync_odoo.is_dir_cs(&full_path_str);
@@ -411,7 +415,7 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: FileSystemSymbolParent,
             session.sync_odoo.is_file_cs(&full_path.join("__init__.py").sanitize_cow())
             || session.sync_odoo.is_file_cs(&full_path.join("__init__.pyi").sanitize_cow())
         ) {
-            if let Some(symbol) = SymbolTable::create_from_path(session, &full_path, parent, false) {
+            if let Some(symbol) = create_new_from_path(session, &full_path, parent) {
                 if let Some(buildable) = symbol.as_buildable_symbol_key() {
                     BuildScheduler::build_now(session, buildable, BuildSteps::ARCH);
                 }
@@ -423,7 +427,7 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: FileSystemSymbolParent,
         for extension in ["py", "pyi"] {
             let path = full_path.with_extension(extension);
             if session.sync_odoo.is_file_cs(&path.sanitize_cow()) {
-                if let Some(symbol) = SymbolTable::create_from_path(session, &path, parent, false) {
+                if let Some(symbol) = create_new_from_path(session, &path, parent) {
                     if let Some(buildable) = symbol.as_buildable_symbol_key() {
                         BuildScheduler::build_now(session, buildable, BuildSteps::ARCH);
                     }
@@ -434,7 +438,7 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: FileSystemSymbolParent,
         }
         // Try as directory (namespace)
         if is_dir {
-            if let Some(symbol) = SymbolTable::create_from_path(session, &full_path, parent, false) {
+            if let Some(symbol) = create_new_from_path(session, &full_path, parent) {
                 if let Some(buildable) = symbol.as_buildable_symbol_key() {
                     BuildScheduler::build_now(session, buildable, BuildSteps::ARCH);
                 }
@@ -452,12 +456,24 @@ fn resolve_new_symbol(session: &mut SessionInfo, parent: FileSystemSymbolParent,
                 .collect::<Vec<_>>();
             for candidate in candidates {
                 if session.sync_odoo.is_file_cs(&candidate) {
-                    return Ok(session.st_mut().add_new_compiled(parent, sym_name, &candidate).into());
+                    return Ok(
+                        session.st_mut().add_new_compiled(parent, name, &candidate)
+                            .expect("sym name should not collide, as checked by the caller").into()
+                    );
                 }
             }
         }
     }
     Err("Symbol not found")
+}
+
+/// `create_from_path` for a name already checked as free: `Existing` is a bug, `None` = nothing on disk.
+fn create_new_from_path(session: &mut SessionInfo, path: &Path, parent: FileSystemSymbolParent) -> Option<SymbolKey> {
+    match SymbolTable::create_from_path(session, path, parent, false) {
+        Ok(symbol) => Some(symbol),
+        Err(CreateError::NothingOnDisk) => None,
+        Err(CreateError::Existing(_)) => panic!("child expected to be non-existant"),
+    }
 }
 
 /*
@@ -525,7 +541,6 @@ pub fn get_all_valid_names(session: &mut SessionInfo, source_file_symbol: Source
             &source_path,
             from_symbol.clone(),
             &import_parts[0..import_parts.len()-1].iter().map(|s| oyarn!("{}", *s)).collect::<Vec<_>>(),
-            None,
             level,
         );
         if next_symbol.is_none() {
