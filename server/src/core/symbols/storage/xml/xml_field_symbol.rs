@@ -1,6 +1,6 @@
 use ruff_text_size::TextRange;
 
-use crate::{constants::OYarn, core::symbols::storage::XmlFieldParent};
+use crate::{constants::OYarn, core::symbols::storage::XmlFieldParent, oyarn};
 use std::fmt::Display;
 
 
@@ -18,7 +18,7 @@ pub struct XmlFieldSymbol {
 
 impl XmlFieldSymbol {
     pub fn new(
-        field_name: OYarn,
+        field_name: &str,
         range: TextRange,
         text: Option<String>,
         text_range: Option<TextRange>,
@@ -27,7 +27,7 @@ impl XmlFieldSymbol {
         is_external: bool,
     ) -> Self {
         Self {
-            field_name,
+            field_name: oyarn!("{}", field_name),
             range,
             text,
             text_range,

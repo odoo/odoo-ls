@@ -108,8 +108,8 @@ impl CsvArchBuilder {
     }
 
     fn extract_record(&self, session: &mut SessionInfo, file_symbol: CsvFileKey, model_name: OYarn, record: &StringRecord, content: &str) -> Option<XmlRecordKey> {
-        let field_iter = CsvFieldIter::new(record, content)?;
-        let mut last_end = 0;
+        let fields: Vec<_> = CsvFieldIter::new(record, content)?.collect();
+        let last_end = fields.last().map_or(0, |(_, end, _)| *end);
         let mut xml_id = None;
         let record_key = session.st_mut().add_new_xml_record(
             file_symbol.into(),
@@ -121,18 +121,25 @@ impl CsvArchBuilder {
             TextRange::new(TextSize::new(0), TextSize::new(0_u32)) //dummy
         );
         let headers = &session.st()[file_symbol].headers.clone();
-        for (idx, (start, end, field)) in field_iter.enumerate() {
-            let field_name = headers.get(idx).unwrap().clone();
-            if field_name == "id" {
-                xml_id = Some(oyarn!("{}", field));
-            }
-            session.st_mut().add_new_xml_field(record_key.into(),
+        // Iterate in reverse order so that the last occurrence of a field is the one that is stored
+        for (idx, (start, end, field)) in fields.into_iter().enumerate().rev() {
+            let field_name = headers.get(idx).unwrap();
+            match session.st_mut().add_new_xml_field(record_key.into(),
                 field_name,
                 TextRange::new(TextSize::new(start as u32), TextSize::new(end as u32)),
                 Some(field.to_string()),
                 Some(TextRange::new(TextSize::new(start as u32), TextSize::new(end as u32))),
-                None);
-            last_end = end;
+                None
+            ) {
+                Ok(_) => {
+                    if field_name == "id" {
+                        xml_id = Some(oyarn!("{}", field));
+                    }
+                },
+                Err(_) => {
+                    //TODO: add diagnostic for duplicate fields?
+                }
+            };
         }
         let rec = &mut session.st_mut()[record_key];
         rec.xml_id = xml_id;

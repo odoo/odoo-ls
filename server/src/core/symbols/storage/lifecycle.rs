@@ -175,12 +175,21 @@ impl SymbolTable {
         xml_delete_key
     }
 
-    pub fn add_new_xml_field(&mut self, parent: XmlFieldParent, field_name: OYarn, range: TextRange, text: Option<String>, text_range: Option<TextRange>, ref_key: Option<(String, TextRange)>) -> XmlFieldKey {
+    pub fn add_new_xml_field(
+        &mut self,
+        parent: XmlFieldParent,
+        field_name: &str,
+        range: TextRange,
+        text: Option<String>,
+        text_range: Option<TextRange>,
+        ref_key: Option<(String, TextRange)>,
+    ) -> Result<XmlFieldKey, NameTakenError> {
+        self.check_xml_field_name_vacant(parent, field_name)?;
         let is_external = self.is_external(parent.into());
-        let xml_field_sym = XmlFieldSymbol::new(field_name.clone(), range, text, text_range, ref_key, parent, is_external);
+        let xml_field_sym = XmlFieldSymbol::new(field_name, range, text, text_range, ref_key, parent, is_external);
         let xml_field_key = self.xml_fields.insert(xml_field_sym);
-        self.add_field_to_xml_record(parent, xml_field_key, field_name.as_str());
-        xml_field_key
+        self.add_field_to_xml_record(parent, xml_field_key, field_name);
+        Ok(xml_field_key)
     }
 
     pub fn add_new_xml_template(&mut self, parent: XmlFileKey, name: Option<OYarn>, t_name: Option<OYarn>, range: TextRange, is_web: bool) -> XmlTemplateKey {
@@ -241,15 +250,6 @@ impl SymbolTable {
     }
 
     // ====== Helpers for symbol creation ======
-    /// Evict a child displaced by a map insert with a colliding name/path. This
-    /// prevents a leak, but `unload` side effects are NOT run. Callers should
-    /// properly unload the symbol first.
-    fn remove_replaced(&mut self, replaced: Option<impl Into<SymbolKey>>) {
-        if let Some(replaced) = replaced {
-            self.remove(replaced.into());
-        }
-    }
-
     fn panic_on_replaced_key(replaced: Option<impl Into<SymbolKey>>) {
         if replaced.is_some() { panic!("replaced key on insertion") }
     }
@@ -275,6 +275,13 @@ impl SymbolTable {
         }
     }
 
+    fn check_xml_field_name_vacant(&self, parent: XmlFieldParent, name: &str) -> Result<(), NameTakenError> {
+        match parent.fields(self).get(name).copied() {
+            Some(existing) => Err(NameTakenError(existing.into())),
+            None => Ok(())
+        }
+    }
+
     fn add_to_parent_fs_symbols(&mut self, parent: FileSystemSymbolParent, child: SymbolKey, name: &str, path: &str) {
         // A compiled can only be a parent to another compiled
         if let FileSystemSymbolParent::Compiled(_) = parent && !matches!(child, SymbolKey::Compiled(_)) {
@@ -290,7 +297,7 @@ impl SymbolTable {
 
     fn add_field_to_xml_record(&mut self, parent: XmlFieldParent, field: XmlFieldKey, name: &str) {
         let replaced_key = parent.fields_mut(self).insert(oyarn!("{}", name), field);
-        self.remove_replaced(replaced_key);
+        Self::panic_on_replaced_key(replaced_key);
     }
 
     fn add_to_module_data_symbols(&mut self, parent: ModuleKey, path: &str, data_file: SourceFileKey) {
@@ -550,7 +557,7 @@ mod tests {
 
         let record = f.st.add_new_xml_record(XmlDataParent::XmlFile(xml_file), (oyarn!("res.partner"), 0..1), Some(oyarn!("a_partner")), range_at(0));
         let menuitem = f.st.add_new_xml_menuitem(xml_file, Some(oyarn!("a_menu")), range_at(10));
-        let field = f.st.add_new_xml_field(XmlFieldParent::XmlRecord(record), oyarn!("name"), range_at(1), None, None, None);
+        let field = f.st.add_new_xml_field(XmlFieldParent::XmlRecord(record), "name", range_at(1), None, None, None).unwrap();
         let csv_record = f.st.add_new_xml_record(XmlDataParent::CsvFile(csv_file), (oyarn!("res.partner"), 0..1), Some(oyarn!("a_csv_partner")), range_at(0));
 
         assert!(f.holds(xml_file.into(), record));
@@ -584,7 +591,7 @@ mod tests {
 
         let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml")?;
         let record = f.st.add_new_xml_record(XmlDataParent::XmlFile(xml_file), (oyarn!("res.partner"), 0..1), None, range_at(0));
-        f.st.add_new_xml_field(XmlFieldParent::XmlRecord(record), oyarn!("name"), range_at(1), None, None, None);
+        _ = f.st.add_new_xml_field(XmlFieldParent::XmlRecord(record), "name", range_at(1), None, None, None);
         let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv")?;
         f.st.add_new_xml_record(XmlDataParent::CsvFile(csv_file), (oyarn!("res.partner"), 0..1), None, range_at(0));
         _ = f.st.add_new_js_file(JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js");
