@@ -237,16 +237,9 @@ impl XmlArchBuilder {
             found_id.clone().map(|id| oyarn!("{}", id)),
             TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32))
         );
-        for child in node.children().filter(|n| n.is_element()) {
-            if self.load_field(session, &child, record.into(), diagnostics).is_none() && child.tag_name().name() != "field" {
-                // Diagnostic only for non-field tags, not for invalid ones
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05015, &[child.tag_name().name()]) {
-                    diagnostics.push(Diagnostic {
-                        range: Range { start: Position::new(child.range().start as u32, 0), end: Position::new(child.range().end as u32, 0) },
-                        ..diagnostic.clone()
-                    });
-                }
-            }
+        // load fields in reverse order to have last field declaration overwrite previous ones, as Odoo does
+        for child in node.children().filter(|n| n.is_element()).rev() {
+            self.load_field(session, &child, record.into(), diagnostics);
         }
         self.register_ir_model_record(session, record);
         self.register_ir_model_fields_record(session, record);
@@ -256,7 +249,15 @@ impl XmlArchBuilder {
 
     // load a field and add it to the parent symbol. Parent could be either XmlRecordKey or XmlAssetKey
     fn load_field(&mut self, session: &mut SessionInfo, node: &Node, parent: XmlFieldParent, diagnostics: &mut Vec<Diagnostic>) -> Option<XmlFieldKey> {
-        if node.tag_name().name() != "field" { return None; }
+        if node.tag_name().name() != "field" {
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05015, &[node.tag_name().name()]) {
+                diagnostics.push(Diagnostic {
+                    range: Range { start: Position::new(node.range().start as u32, 0), end: Position::new(node.range().end as u32, 0) },
+                    ..diagnostic
+                });
+            }
+            return None;
+        }
         let Some(node_name_node) = node.attribute_node("name") else {
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05016, &[]) {
                 diagnostics.push(Diagnostic {
@@ -390,14 +391,15 @@ impl XmlArchBuilder {
                 text_range = Some(child.range());
             }
         }
-        let field = session.st_mut().add_new_xml_field(
+        // TODO: add diagnostic for duplicate fields?
+        session.st_mut().add_new_xml_field(
             parent,
-            oyarn!("{}", node_name_node.value()),
+            node_name_node.value(),
             TextRange::new(TextSize::new(node_name_node.range().start as u32), TextSize::new(node_name_node.range().end as u32)),
             text,
             text_range.map(|r| TextRange::new(TextSize::new(r.start as u32), TextSize::new(r.end as u32))),
-            ref_key);
-        Some(field)
+            ref_key
+        ).ok()
     }
 
     fn load_value(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
@@ -687,7 +689,8 @@ impl XmlArchBuilder {
             TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32)));
         // Validate children: must be bundle, path, or field
         let (mut has_bundle, mut has_path) = (false, false);
-        for child in node.children().filter(|n| n.is_element()) {
+        // iterate in reverse order so that last field declaration overwrite previous ones, as Odoo does
+        for child in node.children().filter(|n| n.is_element()).rev() {
             match child.tag_name().name() {
                 "bundle" => {
                     has_bundle = true;
