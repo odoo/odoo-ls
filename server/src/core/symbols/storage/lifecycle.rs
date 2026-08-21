@@ -10,24 +10,33 @@
 //! checks, unlike keys stored elsewhere (as Weak).
 
 use crate::{
-    constants::{OYarn, PackageType, SymType}, core::{
+    constants::{OYarn, PackageType, SymType},
+    core::{
         entry_point::{EntryPoint, EntryPointCleanupToken},
         odoo::SyncOdoo,
         symbols::{
-            ClassSymbol, CompiledSymbol, CsvFileSymbol, Dependencies, DiskDirSymbol, FileSymbol, FunctionSymbol, JsFileSymbol, ModuleSymbol, NamespaceSymbol, PythonPackageSymbol, RootSymbol, SymbolTable, VariableSymbol, XmlFileSymbol, storage::{
-                FileContentParent, FileSystemSymbolParent, JsFileParent, XmlDataParent, XmlFieldParent, xml::{
+            storage::{
+                xml::{
                     xml_asset_symbol::XmlAssetSymbol, xml_delete_symbol::XmlDeleteSymbol,
                     xml_field_symbol::XmlFieldSymbol, xml_menuitem_symbol::XmlMenuItemSymbol,
                     xml_record_symbol::XmlRecordSymbol, xml_template_symbol::XmlTemplateSymbol,
-                }
-            }, symbol_keys::{
-                ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FunctionKey, JsFileKey,
-                ModuleKey, NamespaceKey, PythonPackageKey, RootKey, SourceFileKey, SymbolKey,
-                VariableKey, XmlAssetKey, XmlDeleteKey, XmlFieldKey, XmlFileKey,
-                XmlMenuItemKey, XmlRecordKey, XmlTemplateKey,
-            }
+                },
+                FileContentParent, FileSystemSymbolParent, JsFileParent, XmlDataParent,
+                XmlFieldParent,
+            },
+            symbol_keys::{
+                ClassKey, CompiledKey, CsvFileKey, DiskDirKey, FileKey, FileSystemSymbolKey,
+                FunctionKey, JsFileKey, ModuleKey, NamespaceKey, PythonPackageKey, RootKey,
+                SourceFileKey, SymbolKey, VariableKey, XmlAssetKey, XmlDeleteKey, XmlFieldKey,
+                XmlFileKey, XmlMenuItemKey, XmlRecordKey, XmlTemplateKey,
+            },
+            ClassSymbol, CompiledSymbol, CsvFileSymbol, Dependencies, DiskDirSymbol, FileSymbol,
+            FunctionSymbol, JsFileSymbol, ModuleSymbol, NamespaceSymbol, PythonPackageSymbol,
+            RootSymbol, SymbolTable, VariableSymbol, XmlFileSymbol,
         },
-    }, oyarn, threads::SessionInfo
+    },
+    oyarn,
+    threads::SessionInfo,
 };
 use ruff_text_size::{TextRange, TextSize};
 use std::{cell::RefCell, ops::Range, path::Path, rc::Rc};
@@ -321,7 +330,7 @@ impl SymbolTable {
 
     /// Remove `symbol` and its descendants, and clean up.
     /// WARNING: After this call, `symbol` and its descendants are no longer valid keys.
-    pub fn unload(session: &mut SessionInfo, symbol: SourceFileKey) {
+    pub fn unload(session: &mut SessionInfo, symbol: FileSystemSymbolKey) {
         fn unload_recursively(session: &mut SessionInfo, symbol: SymbolKey) {
             for child in session.st().children(symbol) {
                 unload_recursively(session, child);
@@ -397,44 +406,63 @@ impl SymbolTable {
         result
     }
 
-    fn unlink_from_parent(&mut self, child: SourceFileKey) {
+    fn unlink_from_parent(&mut self, child: FileSystemSymbolKey) {
         match child {
-            SourceFileKey::File(f) => {
+            FileSystemSymbolKey::File(f) => {
                 let file_symbol = &self[f];
                 let name = file_symbol.name.to_string();
                 let parent = file_symbol.parent();
                 self.remove_from_parent_fs_symbols(parent, &name);
             },
-            SourceFileKey::Module(m) => {
+            FileSystemSymbolKey::Module(m) => {
                 let module_symbol = &self[m];
                 let name = module_symbol.name.to_string();
                 let parent = module_symbol.parent();
                 self.remove_from_parent_fs_symbols(parent.into(), &name);
             },
-            SourceFileKey::PythonPackage(p) => {
+            FileSystemSymbolKey::PythonPackage(p) => {
                 let package_symbol = &self[p];
                 let name = package_symbol.name.to_string();
                 let parent = package_symbol.parent();
                 self.remove_from_parent_fs_symbols(parent, &name);
             },
-            SourceFileKey::XmlFile(x) => {
+            FileSystemSymbolKey::Namespace(n) => {
+                let namespace_symbol = &self[n];
+                let name = namespace_symbol.name.clone();
+                let parent = namespace_symbol.parent();
+                self.remove_from_parent_fs_symbols(parent, &name);
+            },
+            FileSystemSymbolKey::DiskDir(d) => {
+                let disk_dir_symbol = &self[d];
+                let name = disk_dir_symbol.name.clone();
+                let parent = disk_dir_symbol.parent();
+                self.remove_from_parent_fs_symbols(parent, &name);
+            },
+            FileSystemSymbolKey::Compiled(c) => {
+                let compiled_symbol = &self[c];
+                let name = compiled_symbol.name.clone();
+                let parent = compiled_symbol.parent();
+                self.remove_from_parent_fs_symbols(parent, &name);
+            },
+            FileSystemSymbolKey::XmlFile(x) => {
                 let xml_symbol = &self[x];
                 let parent = xml_symbol.parent();
                 let path = xml_symbol.path.clone();
                 self.remove_from_module_data_symbols(parent, &path);
             },
-            SourceFileKey::CsvFile(c) => {
+            FileSystemSymbolKey::CsvFile(c) => {
                 let csv_symbol = &self[c];
                 let parent = csv_symbol.parent();
                 let path = csv_symbol.path.clone();
                 self.remove_from_module_data_symbols(parent, &path);
             },
-            SourceFileKey::JsFile(j) => {
+            FileSystemSymbolKey::JsFile(j) => {
                 let js_symbol = &self[j];
                 let parent = js_symbol.parent();
                 let path = js_symbol.path.clone();
                 self.remove_from_parent_js_symbols(parent, &path);
             },
+            
         }
     }
 }
@@ -516,7 +544,7 @@ mod tests {
             assert!(f.holds(parent, child), "{child:?} is not a child of {parent:?}");
             assert_eq!(f.st.parent(child), Some(parent), "{child:?} does not point back at {parent:?}");
 
-            f.st.unlink_from_parent(child);
+            f.st.unlink_from_parent(child.into());
             assert!(!f.holds(parent, child), "{child:?} is still a child of {parent:?} after unlink");
         }
 

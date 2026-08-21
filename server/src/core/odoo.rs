@@ -10,7 +10,7 @@ use crate::core::pre_parser::{PreParseCache, PreParser};
 use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::storage::{FileSystemSymbolParent, JsFileParent, SymbolTable};
 use crate::core::symbols::storage::metrics::{log_slotmap_capacities, log_symbol_counts, log_memory_usage};
-use crate::core::symbols::symbol_keys::{BuildableSymbolKey, FunctionKey, ModuleKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlTemplateKey};
+use crate::core::symbols::symbol_keys::{BuildableSymbolKey, FileSystemSymbolKey, FunctionKey, ModuleKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlTemplateKey};
 use crate::core::symbols::symbol_table_impl::CreateError;
 use crate::core::tsserver_bridge::{TsServerBridge};
 use crate::features::tsserver_completion::TsCompletionResolveData;
@@ -852,7 +852,7 @@ impl SyncOdoo {
             if let Some(sym) = sym_in_data {
                 if let Some(sym) = sym.upgrade(session.st())
                     && should_unload(session.st(), sym.into()) {
-                        SymbolTable::unload(session, sym);
+                        SymbolTable::unload(session, sym.into());
                         unloaded_any = true;
                     }
                 continue;
@@ -872,11 +872,11 @@ impl SyncOdoo {
                 let Some(&path_symbol) = path_symbols.first() else {
                     continue;
                 };
-                let Some(source_file) = path_symbol.as_source_file_key() else {
+                let Ok(file_or_dir) = FileSystemSymbolKey::try_from(path_symbol) else {
                     continue;
                 };
                 if should_unload(session.st(), path_symbol) {
-                    SymbolTable::unload(session, source_file);
+                    SymbolTable::unload(session, file_or_dir);
                     unloaded_any = true;
                 }
             }
