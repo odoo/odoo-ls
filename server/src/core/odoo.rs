@@ -2071,14 +2071,34 @@ impl Odoo {
         if !session.st()[addons].directories().iter().any(|d| d.path == parent_path) {
             return;
         }
-        match SymbolTable::create_module_from_path(session, &path_for_tree, addons) {
-            Ok(module_symbol) => {
-                BuildScheduler::queue(session, BuildableSymbolKey::Module(module_symbol));
-            },
-            Err(CreateError::NothingOnDisk) => {}, // not a module dir
-            Err(CreateError::Existing(_symbol)) => {
-                // @todo: unload the existing symbol, then add the module symbol
-                warn!("cannot create module at {}: name already taken", path_for_tree.sanitize_cow());
+        if let Some(module_symbol) = Self::create_or_replace_module(session, &path_for_tree, addons) {
+            BuildScheduler::queue(session, BuildableSymbolKey::Module(module_symbol));
+        }
+    }
+
+    /// Create the module at `path` under `addons`, or replace non-module symbol that already holds
+    /// the name - e.g. namespace or a package before `__manifest__.py` existed.
+    fn create_or_replace_module(session: &mut SessionInfo, path: &Path, addons: NamespaceKey) -> Option<ModuleKey> {
+        let existing = match SymbolTable::create_module_from_path(session, path, addons) {
+            Ok(module) => return Some(module),
+            Err(CreateError::NothingOnDisk) => return None, // not a module dir
+            Err(CreateError::Existing(existing)) => existing,
+        };
+        if matches!(existing, SymbolKey::Module(_)) {
+            // Two addons paths declare the same module name: keep first one
+            warn!("module {} is already loaded, ignoring {}", session.st().name(existing), path.sanitize_cow());
+            return None;
+        }
+        let existing_fs_key = FileSystemSymbolKey::try_from(existing).ok()?;
+        SymbolTable::unload(session, existing_fs_key);
+        match SymbolTable::create_module_from_path(session, path, addons) {
+            Ok(module) => Some(module),
+            Err(CreateError::Existing(_)) => unreachable!("name freed by the unload just above"),
+            Err(CreateError::NothingOnDisk) => {
+                // only possible in a race condition: dir and/or __manifest__.py got removed
+                // between the two calls to `create_module_from_path`
+                error!("{} stopped being a module while replacing the previous symbol", path.sanitize_cow());
+                None
             }
         }
     }
