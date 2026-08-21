@@ -309,7 +309,7 @@ impl SymbolKey {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, SymbolKeySubset, IntoKey)]
-#[into_key(BuildableSymbolKey)]
+#[into_key(BuildableSymbolKey, FileSystemSymbolKey)]
 pub enum SourceFileKey {
     File(FileKey),
     PythonPackage(PythonPackageKey),
@@ -477,4 +477,18 @@ impl SymbolKey {
             _ => None,
         }
     }
+}
+
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SymbolKeySubset)]
+pub enum FileSystemSymbolKey {
+    DiskDir(DiskDirKey),
+    Namespace(NamespaceKey),
+    PythonPackage(PythonPackageKey),
+    Module(ModuleKey),
+    Compiled(CompiledKey),
+    File(FileKey),
+    XmlFile(XmlFileKey),
+    CsvFile(CsvFileKey),
+    JsFile(JsFileKey),
 }
