@@ -13,6 +13,8 @@ use ruff_text_size::TextRange;
 use tracing::warn;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation::GetSymbolHook;
+use crate::core::evaluation::GetSymbolHookCallable;
+use crate::core::model::Model;
 use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation_context::Context;
 use crate::constants::*;
@@ -268,6 +270,49 @@ static arch_eval_function_hooks: LazyLock<Vec<PythonArchEvalFunctionHook>> = Laz
             range: None
         }];
     }},
+    /* Environment.user/company/companies are annotated with the generic BaseModel, and are refined
+       to their model (res.users / res.company) through a get_symbol_hook, as the model classes are
+       not loaded yet when the Environment file is built. Function hooks, unlike file hooks, are
+       applied after the annotation of the function, and so can override it. */
+    PythonArchEvalFunctionHook {odoo_entry: true,
+        tree: vec![((0, 0), (18, 1), (&["odoo", "api"], &["Environment", "user"])),
+        ((18, 1), (999, 0), (&["odoo", "orm", "environments"], &["Environment", "user"]))],
+        if_exist_only: true,
+        func: |odoo, _entry_point, symbol| {
+            PythonArchEvalHooks::set_hook_evaluation(odoo, symbol, PythonArchEvalHooks::eval_env_user, HookName::EvalEnvUser);
+        }
+    },
+    PythonArchEvalFunctionHook {odoo_entry: true,
+        tree: vec![((0, 0), (18, 1), (&["odoo", "api"], &["Environment", "company"])),
+        ((18, 1), (999, 0), (&["odoo", "orm", "environments"], &["Environment", "company"]))],
+        if_exist_only: true,
+        func: |odoo, _entry_point, symbol| {
+            PythonArchEvalHooks::set_hook_evaluation(odoo, symbol, PythonArchEvalHooks::eval_env_company, HookName::EvalEnvCompany);
+        }
+    },
+    PythonArchEvalFunctionHook {odoo_entry: true,
+        tree: vec![((0, 0), (18, 1), (&["odoo", "api"], &["Environment", "companies"])),
+        ((18, 1), (999, 0), (&["odoo", "orm", "environments"], &["Environment", "companies"]))],
+        if_exist_only: true,
+        func: |odoo, _entry_point, symbol| {
+            PythonArchEvalHooks::set_hook_evaluation(odoo, symbol, PythonArchEvalHooks::eval_env_company, HookName::EvalEnvCompany);
+        }
+    },
+    // lang is typed str | None and does not depend on any model, so we resolve it eagerly.
+    PythonArchEvalFunctionHook {odoo_entry: true,
+        tree: vec![((0, 0), (18, 1), (&["odoo", "api"], &["Environment", "lang"])),
+        ((18, 1), (999, 0), (&["odoo", "orm", "environments"], &["Environment", "lang"]))],
+        if_exist_only: true,
+        func: |odoo, _entry_point, symbol| {
+            let str_sym = odoo.get_symbol(odoo.config.odoo_path().as_ref().unwrap(), (&["builtins"], &["str"]), u32::MAX);
+            if let Some(&str_sym) = str_sym.last() {
+                odoo.symbol_table[symbol].evaluations = vec![
+                    Evaluation::eval_from_symbol(&odoo.symbol_table, str_sym, Some(true)),
+                    Evaluation::new_none(),
+                ];
+            }
+        }
+    },
     PythonArchEvalFunctionHook {odoo_entry: true,
                         tree: vec![((0, 0), (18, 1), (&["odoo", "modules", "registry"], &["Registry", "__getitem__"])),
                         ((18, 1), (999, 0), (&["odoo", "orm", "registry"], &["Registry", "__getitem__"]))],
@@ -919,6 +964,78 @@ impl PythonArchEvalHooks {
         diagnostics
     }
 
+    /// Set the evaluation of a function to a single hook, resolving its symbol at evaluation time.
+    fn set_hook_evaluation(odoo: &mut SyncOdoo, symbol: FunctionKey, callable: GetSymbolHookCallable, name: HookName) {
+        odoo.symbol_table[symbol].evaluations = vec![Evaluation {
+            symbol: EvaluationSymbol::new_with_symbol(Wk::null(),
+                Some(true),
+                Context::default(),
+                Some(GetSymbolHook{callable, name})
+            ),
+            value: None,
+            range: None
+        }];
+    }
+
+    /// Make the file of `scope` depend on the definitions of `model`, unless it is an orm file
+    /// itself, as that would create a self-dependency.
+    fn add_model_dependencies_outside_orm(session: &mut SessionInfo, scope: Option<SymbolKey>, model: &Rc<RefCell<Model>>) {
+        let Some(scope_file) = scope.and_then(|s| session.st().get_file(s)) else {
+            return;
+        };
+        let is_orm_file = if session.sync_odoo.version < (18, 1) {
+            let env_files = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "api"], &[]), u32::MAX);
+            env_files.last().is_some_and(|&env_file| env_file == scope_file)
+        } else {
+            session.sync_odoo.get_main_entry_tree(scope_file).0.starts_with_strs(&["odoo", "orm"])
+        };
+        if !is_orm_file {
+            session.st_mut().add_model_dependencies(scope_file, model);
+        }
+    }
+
+    /// Resolve a fixed model name to its main class instance at evaluation time, mirroring the
+    /// model-index lookup and dependency handling of `eval_env_get_item`. Used by the Environment
+    /// attribute hooks (user/company/companies) whose model classes cannot be known when the
+    /// Environment file is built.
+    fn eval_env_model(session: &mut SessionInfo, model_name: &str, context: Option<&Context>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
+    {
+        let res = Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(Wk::null(), Some(true), false)));
+        let maybe_model = session.sync_odoo.models.get(model_name).cloned();
+        let model_exists = maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols(session.st())).unwrap_or(false);
+        if !model_exists {
+            return res;
+        }
+        let Some(model) = maybe_model else { unreachable!() };
+        let from_module = if let Some(ContextValue::MODULE(m)) = context.and_then(|c| c.get(ContextKey::Module)) {
+            m.upgrade(session.st())
+        } else {
+            None
+        };
+        PythonArchEvalHooks::add_model_dependencies_outside_orm(session, scope, &model);
+        let model = model.borrow();
+        let mut symbols = model.get_main_symbols(session, from_module);
+        if let Some(first_class) = symbols.next() {
+            return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(first_class, Some(true), false)));
+        }
+        // model exists but not in the current dependencies: retry ignoring the module
+        drop(symbols);
+        if let Some(first_class) = model.get_main_symbols(session, None).next() {
+            return Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(first_class, Some(true), false)));
+        }
+        res
+    }
+
+    pub fn eval_env_user(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: Option<&Context>, _diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
+    {
+        PythonArchEvalHooks::eval_env_model(session, "res.users", context, scope)
+    }
+
+    pub fn eval_env_company(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: Option<&Context>, _diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
+    {
+        PythonArchEvalHooks::eval_env_model(session, "res.company", context, scope)
+    }
+
     pub fn eval_env_get_item(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
     {
         let res = Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(Wk::null(), Some(true), false)));
@@ -940,21 +1057,7 @@ impl PythonArchEvalHooks {
             } else {
                 None
             };
-            if let Some(scope_file) = scope.and_then(|s| session.st().get_file(s)) {
-                //exclude orm files
-                if session.sync_odoo.version < (18, 1) {
-                    let env_files = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "api"], &[]), u32::MAX);
-                    let env_file = *env_files.last().unwrap();
-                    if env_file != scope_file {
-                        session.st_mut().add_model_dependencies(scope_file, &model);
-                    }
-                } else {
-                    let tree = session.sync_odoo.get_main_entry_tree(scope_file);
-                    if !tree.0.starts_with_strs(&["odoo", "orm"]) {
-                        session.st_mut().add_model_dependencies(scope_file, &model);
-                    }
-                }
-            }
+            PythonArchEvalHooks::add_model_dependencies_outside_orm(session, scope, &model);
             let model = model.clone();
             let model = model.borrow();
             let mut symbols = model.get_main_symbols(session, from_module);
