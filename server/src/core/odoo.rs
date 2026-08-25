@@ -838,21 +838,31 @@ impl SyncOdoo {
     }
 
     pub fn unload_path(session: &mut SessionInfo, path: &Path) {
+        Self::unload_path_if(session, path, |_, _| true);
+    }
+
+    /// Like `unload_path`, but only unloads a symbol when `should_unload` returns true. Returns whether anything was unloaded.
+    pub fn unload_path_if(session: &mut SessionInfo, path: &Path, should_unload: impl Fn(&SymbolTable, SymbolKey) -> bool) -> bool {
+        let mut unloaded_any = false;
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_all() {
             let path_str = path.sanitize_cow();
             let sym_in_data = entry.borrow().data_file_symbols.get(path_str.as_ref()).copied();
             if let Some(sym) = sym_in_data {
-                if let Some(sym) = sym.upgrade(session.st()) {
-                    SymbolTable::unload(session, sym);
-                }
+                if let Some(sym) = sym.upgrade(session.st())
+                    && should_unload(session.st(), sym.into()) {
+                        SymbolTable::unload(session, sym);
+                        unloaded_any = true;
+                    }
                 continue;
             }
             let sym_in_js = entry.borrow().js_symbols.get(path_str.as_ref()).cloned();
             if let Some(sym) = sym_in_js {
-                if let Some(sym) = sym.upgrade(session.st()) {
-                    SymbolTable::unload(session, sym.into());
-                }
+                if let Some(sym) = sym.upgrade(session.st())
+                    && should_unload(session.st(), sym.into()) {
+                        SymbolTable::unload(session, sym.into());
+                        unloaded_any = true;
+                    }
                 continue;
             }
             if entry.borrow().is_valid_for(path) {
@@ -864,9 +874,13 @@ impl SyncOdoo {
                 let Some(source_file) = path_symbol.as_source_file_key() else {
                     continue;
                 };
-                SymbolTable::unload(session, source_file);
+                if should_unload(session.st(), path_symbol) {
+                    SymbolTable::unload(session, source_file);
+                    unloaded_any = true;
+                }
             }
         }
+        unloaded_any
     }
 
     /// Side effects of unloading a symbol
@@ -2004,12 +2018,23 @@ impl Odoo {
             && let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
                 bridge.close_file(&path);
             }
-        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
-        if let Some(file_info) = file_info {
-            file_info.borrow_mut().opened = false;
-            file_info.borrow_mut().version = None;
+        if let Some(file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path) {
+            let mut file_info = file_info.borrow_mut();
+            file_info.opened = false;
+            file_info.version = None;
         }
         session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&mut session.sync_odoo.symbol_table, &Path::new(&path).to_tree_path().sanitize_cow());
+        // Clear it now if deleted from disk or external
+        let path_exists = !FileMgr::is_untitled(&path) && Path::new(&path).exists();
+        let cleared = if !path_exists {
+            SyncOdoo::unload_path(session, Path::new(&path));
+            true
+        } else {
+            SyncOdoo::unload_path_if(session, Path::new(&path), |st, sym| st.is_external(sym))
+        };
+        if cleared {
+            FileMgr::delete_file_path(session, &path);
+        }
     }
 
     pub fn search_symbols_to_rebuild(session: &mut SessionInfo, path: &str) {
@@ -2101,10 +2126,12 @@ impl Odoo {
         for f in params.files.iter() {
             let path = FileMgr::uri2pathname(&f.uri);
             session.log_message(MessageType::INFO, format!("Deleting {}", path));
-            //1 - delete old uri
-            SyncOdoo::unload_path(session, Path::new(&path));
-            FileMgr::delete_path(session, &path);
-            session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&mut session.sync_odoo.symbol_table, &Path::new(&path).to_tree_path().sanitize_cow());
+            let is_open_file = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).is_some_and(|fi| fi.borrow().opened);
+            if !is_open_file {
+                SyncOdoo::unload_path(session, Path::new(&path));
+                FileMgr::delete_path(session, &path);
+                session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&mut session.sync_odoo.symbol_table, &Path::new(&path).to_tree_path().sanitize_cow());
+            }
         }
         BuildScheduler::process_rebuilds(session, false);
     }

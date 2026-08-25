@@ -1072,6 +1072,11 @@ impl FileMgr {
 
     /// Helper for delete_path and delete_file_path
     fn delete_entry(session: &mut SessionInfo, key: &str, uri: &str) {
+        // Do not delete an opened file's cache; handle_did_close decides whether to clear it on close.
+        if let Some(file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(key)
+            && file_info.borrow().opened {
+                return;
+            }
         let to_del = session.sync_odoo.get_file_mgr().borrow_mut().files.remove(key);
         if let Some(to_del) = to_del
             && SyncOdoo::is_in_workspace_or_entry(session, uri) {
