@@ -155,9 +155,12 @@ impl PythonValidator {
                 if !session.st().is_external(symbol) {
                     return;
                 }
-                let file = symbol.as_source_file_key().unwrap();
-                let file_path = session.sync_odoo.symbol_table.file_path(file).to_string();
-                FileMgr::delete_file_path(session, &file_path);
+                let file_info = self.file_info.as_ref().unwrap();
+                if !file_info.borrow().opened { // Never delete opened files
+                    let file = symbol.as_source_file_key().unwrap();
+                    let file_path = session.sync_odoo.symbol_table.file_path(file).to_string();
+                    FileMgr::delete_file_path(session, &file_path);
+                }
             } else {
                 self.file_info.as_ref().unwrap().borrow_mut().publish_diagnostics(session);
             }
