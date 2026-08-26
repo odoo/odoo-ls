@@ -10,6 +10,7 @@ use crate::{
             symbol_keys::{ModelSymbolKey, ModuleKey, SymbolKey, VariableKey},
         },
     },
+    oyarn,
     threads::SessionInfo,
 };
 
@@ -31,7 +32,7 @@ impl VariableSymbol {
 
     pub fn new(name: &str, parent: FileContentParent, range: TextRange, is_external: bool) -> Self {
         Self {
-            name: name.to_string().into(),
+            name: oyarn!("{}", name),
             is_external,
             doc_string: None,
             parent,
