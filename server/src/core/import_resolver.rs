@@ -11,7 +11,7 @@ use ruff_text_size::TextRange;
 use ruff_python_ast::{Alias, AtomicNodeIndex, Identifier};
 use crate::core::symbols::storage::{FileSystemSymbolParent, SymbolTable};
 use crate::core::symbols::symbol_keys::{ModuleKey, NamespaceKey, SourceFileKey, SymbolKey};
-use crate::{constants::*, oyarn, Sy, S};
+use crate::{constants::*, oyarn, S};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::threads::SessionInfo;
 use crate::utils::{is_dir_cs, PathSanitizer};
@@ -113,8 +113,8 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
     let mut result = vec![];
     for alias in name_aliases {
         result.push(ImportResult{
-            name: OYarn::from(alias.name.as_ref().to_string()),
-            var_name: OYarn::from(alias.asname.as_ref().unwrap_or(&alias.name).to_string()),
+            name: oyarn!("{}", alias.name),
+            var_name: oyarn!("{}", alias.asname.as_ref().unwrap_or(&alias.name)),
             found: false,
             symbols: fallback_syms.as_ref().unwrap().clone(),
             file_tree: file_tree.clone(),
@@ -592,10 +592,10 @@ fn valid_name_from_disk(path: &str, start_filter: &str) -> HashMap<OYarn, SymTyp
                     let dir_name_str = dir_name.to_string_lossy();
                     if dir_name_str.starts_with(start_filter) {
                         let mut typ = SymType::NAMESPACE;
-                        if Path::new(&path).join(dir_name_str.to_string()).join("__init__.py").exists() {
+                        if Path::new(&path).join(dir_name_str.as_ref()).join("__init__.py").exists() {
                             typ = SymType::PACKAGE(PackageType::PYTHON_PACKAGE);
                         }
-                        res.insert(Sy!(dir_name_str.to_string()), typ);
+                        res.insert(oyarn!("{}", dir_name_str), typ);
                     }
                 } else if file_type.is_file() {
                     let file_name = entry.file_name();
@@ -604,7 +604,7 @@ fn valid_name_from_disk(path: &str, start_filter: &str) -> HashMap<OYarn, SymTyp
                         let Some(stem) = Path::new(&file_name_str).file_stem() else {continue};
                         let Some(filename) = stem.to_str() else {continue};
                         if filename == "__init__" {continue;}
-                        res.insert(Sy!(filename.to_string()), SymType::FILE);
+                        res.insert(oyarn!("{}", filename), SymType::FILE);
                     }
                 }
                 //TODO support for symlinks?
