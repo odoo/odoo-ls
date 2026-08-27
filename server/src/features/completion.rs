@@ -1086,12 +1086,12 @@ fn add_nested_field_names(
                 false,
             );
             for (symbol_name, symbols) in all_symbols {
-                //we could use symbol_name to remove duplicated names, but it would hide functions vs variables
                 if symbol_name.starts_with(name) {
                     let mut found_one = false;
-                    for final_sym in symbols.iter() {
-                        if specific_field_type.is_none() || SymbolTable::is_specific_field(session, *final_sym, &["Many2one", "One2many", "Many2many", specific_field_type.as_ref().unwrap().as_str()]){
-                            items.push(build_completion_item_from_symbol(session, vec![*final_sym], &symbol_name, Context::default()));
+                    // Remove duplicates, except those of different type, where it show a user that a field and a function have a name collision.
+                    for final_sym in symbols.into_iter().unique_by(|&sym| sym.typ()) {
+                        if specific_field_type.is_none() || SymbolTable::is_specific_field(session, final_sym, &["Many2one", "One2many", "Many2many", specific_field_type.as_ref().unwrap().as_str()]){
+                            items.push(build_completion_item_from_symbol(session, vec![final_sym], &symbol_name, Context::default()));
                             found_one = true;
                         }
                     }
