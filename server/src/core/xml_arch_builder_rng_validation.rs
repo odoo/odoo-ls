@@ -391,15 +391,25 @@ impl XmlArchBuilder {
                 text_range = Some(child.range());
             }
         }
-        // TODO: add diagnostic for duplicate fields?
-        session.st_mut().add_new_xml_field(
+        match session.st_mut().add_new_xml_field(
             parent,
             node_name_node.value(),
             TextRange::new(TextSize::new(node_name_node.range().start as u32), TextSize::new(node_name_node.range().end as u32)),
             text,
             text_range.map(|r| TextRange::new(TextSize::new(r.start as u32), TextSize::new(r.end as u32))),
             ref_key
-        ).ok()
+        ) {
+            Ok(field) => Some(field),
+            Err(_) => {
+                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05076, &[node_name_node.value()]) {
+                    diagnostics.push(Diagnostic {
+                        range: Range { start: Position::new(node_name_node.range().start as u32, 0), end: Position::new(node_name_node.range().end as u32, 0) },
+                        ..diagnostic
+                    });
+                }
+                None
+            },
+        }
     }
 
     fn load_value(&mut self, session: &mut SessionInfo, node: &Node, diagnostics: &mut Vec<Diagnostic>) -> bool {
