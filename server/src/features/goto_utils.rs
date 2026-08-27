@@ -270,8 +270,12 @@ impl GotoUtils {
                         if let Some(file) = session.st().get_file(*symbol_key) {
                             let path = session.st().path(file).to_string();
                             let range = if session.st().has_range(*symbol_key) {
-                                let range = session.st().range(*symbol_key);
-                                session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, range)
+                                let file_mgr = session.sync_odoo.get_file_mgr();
+                                let file_info = file_mgr.borrow().get_file_info(&path);
+                                let header_range = session.st().header_range(*symbol_key, file_info);
+                                session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, header_range.unwrap_or(
+                                    session.st().range(*symbol_key)
+                                ))
                             } else {
                                 Range::default()
                             };

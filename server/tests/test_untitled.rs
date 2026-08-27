@@ -98,5 +98,5 @@ fn test_untitled_file_lifecycle() {
     let def_loc = &def_locs[0];
     // Should point to line 0 (def foo)
     assert_eq!(def_loc.range.start.line, 0, "Definition should start at line 0 (function definition), got: {:?}", def_loc);
-    assert_eq!(def_loc.range.end.line, 1, "Definition should end at line 0 (function definition), got: {:?}", def_loc);
+    assert_eq!(def_loc.range.end.line, 0, "Definition should end at line 0 (function definition), got: {:?}", def_loc);
 }

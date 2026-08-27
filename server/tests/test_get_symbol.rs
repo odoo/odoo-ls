@@ -298,15 +298,17 @@ fn test_definition() {
     assert_eq!(compute_arg_locs[0].target_uri.to_file_path().unwrap().sanitize(), module1_test_file, "Expected location to be in the same file");
     let sym_compute_something = session.st().get_symbol(m1_tf_file_symbol.into(), (&[], &["BaseTestModel", "_compute_something"]), u32::MAX);
     assert_eq!(sym_compute_something.len(), 1, "Expected 1 symbol for _compute_something");
-    let range = session.st().range(sym_compute_something[0]);
-    assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, range), compute_arg_locs[0].target_range, "Expected _compute_something to be at the same location as the compute argument");
+    let range = session.st().header_range(sym_compute_something[0], Some(m1_tf_file_info.clone())).unwrap();
+    let range = file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, range);
+    assert_eq!(range, compute_arg_locs[0].target_range, "Expected _compute_something to be at the same location as the compute argument");
 
     // Test definition for model class BaseTestModel compute something in module_2, first on the super call
     let compute_arg_locs = test_utils::get_definition_locs(&mut session, m2_tf_file_symbol, &m2_tf_file_info, 10, 36);
     assert_eq!(compute_arg_locs.len(), 1, "Expected 1 location for compute method '_compute_something'");
     assert_eq!(compute_arg_locs[0].target_uri.to_file_path().unwrap().sanitize(), module1_test_file, "Expected location to be in module_1 file");
-    let range = session.st().range(sym_compute_something[0]);
-    assert_eq!(file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, range), compute_arg_locs[0].target_range, "Expected _compute_something to be at the same location as the compute argument");
+    let range = session.st().header_range(sym_compute_something[0], Some(m1_tf_file_info.clone())).unwrap();
+    let range = file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, range);
+    assert_eq!(range, compute_arg_locs[0].target_range, "Expected _compute_something to be at the same location as the compute argument");
 
     // Then on the compute keyword argument in module_2, it should point to both methods in module_1 and module_2
     let compute_kwarg_locs = test_utils::get_definition_locs(&mut session, m2_tf_file_symbol, &m2_tf_file_info, 6, 50);
@@ -317,10 +319,12 @@ fn test_definition() {
     assert_eq!(sym_compute_something_m2.len(), 1, "Expected 1 symbol for _compute_something in module_2");
 
     // Check that compute_kwarg_locs contains the range of the compute something syms from both files
-    let range = session.st().range(sym_compute_something[0]);
-    assert!(compute_kwarg_locs.iter().any(|loc| file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, range) == loc.target_range), "Expected _compute_something to be at the same location as the compute keyword argument in module_1");
-    let range_m2 = session.st().range(sym_compute_something_m2[0]);
-    assert!(compute_kwarg_locs.iter().any(|loc| file_mgr.borrow().text_range_to_range(&mut session, &module2_test_file, range_m2) == loc.target_range), "Expected _compute_something to be at the same location as the compute keyword argument in module_2");
+    let range = session.st().header_range(sym_compute_something[0], Some(m1_tf_file_info.clone())).unwrap();
+    let range = file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, range);
+    assert!(compute_kwarg_locs.iter().any(|loc| range == loc.target_range), "Expected _compute_something to be at the same location as the compute keyword argument in module_1");
+    let range_m2 = session.st().header_range(sym_compute_something_m2[0], Some(m2_tf_file_info.clone())).unwrap();
+    let range_m2 = file_mgr.borrow().text_range_to_range(&mut session, &module2_test_file, range_m2);
+    assert!(compute_kwarg_locs.iter().any(|loc| range_m2 == loc.target_range), "Expected _compute_something to be at the same location as the compute keyword argument in module_2");
 
     // Now test go to def of `partner_id.country_id.phone_code` on each field.
     let partner_id_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, &m1_tf_file_info, 33, 25);

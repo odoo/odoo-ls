@@ -116,7 +116,6 @@ pub fn get_definition_locs(
         .collect::<Vec<_>>()
 }
 
-
 pub fn diag_on_line(diagnostics: &[lsp_types::Diagnostic], line: u32) -> Vec<&lsp_types::Diagnostic> {
     diagnostics.iter().filter(|d| d.range.start.line <= line && d.range.end.line >= line).collect()
 }

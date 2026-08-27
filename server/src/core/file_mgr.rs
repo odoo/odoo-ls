@@ -27,7 +27,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use crate::S;
 use crate::constants::*;
-use ruff_text_size::{Ranged, TextRange};
+use ruff_text_size::{Ranged, TextRange, TextSize};
 use percent_encoding::{AsciiSet, CONTROLS};
 
 use super::odoo::SyncOdoo;
@@ -874,6 +874,17 @@ impl FileInfo {
 
     pub fn position_to_offset(&self, line: u32, char: u32, encoding: PositionEncoding) -> usize {
         FileInfo::position_to_offset_with_text_document(self.file_info_ast.borrow().text_document.as_ref().expect("no text_document provided"), line, char, encoding)
+    }
+
+    /// Returns the offset of the end of the line preceding the line that `offset` is on
+    /// (excluding the newline character), using the document's `LineIndex`.
+    pub fn prev_line_end(&self, offset: TextSize) -> Option<TextSize> {
+        let ast_ref = self.file_info_ast.borrow();
+        let td = ast_ref.text_document.as_ref()?;
+        let index = td.index();
+        let line = index.line_index(offset);
+        let prev_line = line.checked_sub(OneIndexed::new(1).unwrap()).unwrap_or(line);
+        Some(index.line_end_exclusive(prev_line, td.contents()))
     }
 }
 
