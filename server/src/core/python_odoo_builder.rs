@@ -300,6 +300,13 @@ impl PythonOdooBuilder {
 
     fn _add_magic_fields(&mut self, session: &mut SessionInfo) {
         let symbol = self.symbol;
+        {
+            // Magic fields and log_access fields are only added to the original model definition.
+            let model = session.st_mut()[symbol]._model.as_ref().expect("_add_magic_fields should only be called after _load_class_attributes has set the model");
+            if model.inherit.contains(&model.name){
+                return;
+            }
+        }
         //These magic fields are added at odoo step, but it should be ok as most usage will be done in functions, not outside.
         //id
         let range = session.st()[symbol].range;
