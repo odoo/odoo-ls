@@ -3,7 +3,7 @@ use crate::{
         build_scheduler::BuildScheduler, data_hooks, diagnostics::{DiagnosticCode, create_diagnostic}, symbols::{
             Buildable, ModuleSymbol, symbol_keys::{CsvFileKey, XmlId, XmlRecordKey}
         },
-    }, features::csv_ast_utils::{CsvFieldIter, CsvRecordIter}, oyarn, threads::SessionInfo
+    }, features::csv_ast_utils::{CsvFieldIter, CsvRecordIter}, oyarn, threads::SessionInfo, utils::HashSet
 };
 use csv::StringRecord;
 use lsp_types::{Diagnostic, Position, Range};
@@ -42,15 +42,27 @@ impl CsvArchBuilder {
         if DEBUG_STEPS {
             info!("ARCH       - CSV: {}", session.st()[csv_symbol].path);
         }
-        let csv = &mut session.st_mut()[csv_symbol];
         let mut rdr = csv::ReaderBuilder::new().from_reader(content.as_bytes());
         if rdr.has_headers()
             && let Ok(header) = rdr.headers() {
+                let csv = &mut session.st_mut()[csv_symbol];
                 for h in header.iter() {
                     csv.headers.push(oyarn!("{}", h));
                 }
+                // Look for duplicate column (field) names. Odoo keeps the last one, so we issue a warning for the one getting overridden.
+                let columns: Vec<_> = CsvFieldIter::new(header, content).into_iter().flatten().collect();
+                let mut seen = HashSet::default();
+                for (start, end, name) in columns.into_iter().rev() {
+                    if !seen.insert(name)
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05076, &[name]) {
+                            diagnostics.push(Diagnostic {
+                                range: Range { start: Position::new(start as u32, 0), end: Position::new(end as u32, 0) },
+                                ..diagnostic
+                            });
+                        }
+                }
             }
-        if csv.headers.contains(&Sy!("id")) {
+        if session.st()[csv_symbol].headers.contains(&Sy!("id")) {
             for (start, end, result) in CsvRecordIter::new(&mut rdr, content) {
                 match result {
                     Ok(result) => {
@@ -137,7 +149,8 @@ impl CsvArchBuilder {
                     }
                 },
                 Err(_) => {
-                    //TODO: add diagnostic for duplicate fields?
+                    // field already stored, this one gets overriden.
+                    // Diagnostic issued on the header in `load_csv`.
                 }
             };
         }

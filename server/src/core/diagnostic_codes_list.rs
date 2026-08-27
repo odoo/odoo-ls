@@ -586,6 +586,11 @@ OLS05074, DiagnosticSetting::Error, "Template '{0}' is not declared in any depen
 */
 OLS05075, DiagnosticSetting::Warning, "It is discouraged to declare a template at the root of the file. Consider adding an 'odoo' or 'template' node as root of the file",
 /**
+* The same field is declared twice in a record or an asset node, or twice in a CSV header row.
+* Odoo keeps the last declaration, so the earlier ones have no effect.
+*/
+OLS05076, DiagnosticSetting::Warning, "Duplicate declaration of field '{0}'. Only the last one is used",
+/**
 * Template not found
 */
 OLS06000, DiagnosticSetting::Error, "Template not found",
