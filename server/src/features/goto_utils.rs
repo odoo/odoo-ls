@@ -5,8 +5,9 @@ use ruff_python_ast::Expr;
 use ruff_text_size::TextRange;
 
 use crate::constants::PackageType;
-use crate::core::symbols::symbol_keys::SourceFileKey;
+use crate::core::symbols::symbol_keys::{ModuleKey, SourceFileKey};
 use crate::features::features_utils::{FeaturesUtils, SegmentPick, StringResolution};
+use crate::utils::HashSet;
 use crate::{
     constants::{OYarn, SymType},
     core::{
@@ -50,13 +51,24 @@ impl GotoUtils {
         let path = session.st().path(file_symbol).to_string();
         match resolution {
             StringResolution::Members(members) => {
+                let from_module = session.st().find_module(file_symbol);
+                let mut display_name_classes: HashSet<SymbolKey> = HashSet::default();
                 for (field, field_range) in members {
+                    if let Some(name) = GotoUtils::implicit_magic_field_name(session, field) {
+                        if name == "display_name" && let Some(class_sym) = session.st().parent(field) {
+                            display_name_classes.insert(class_sym);
+                        }
+                        continue;
+                    }
                     if session.st().get_file(field).is_some() {
                         sources.push(GotoSource {
                             source: GotoSourceType::SymbolKey(field),
                             origin_selection_range: Some(session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, field_range)),
                         });
                     }
+                }
+                for class_sym in display_name_classes.into_iter() {
+                    GotoUtils::add_display_name_compute_methods_for_symbol(session, sources, class_sym, from_module);
                 }
             }
             StringResolution::Model(model_syms) => {
@@ -93,6 +105,33 @@ impl GotoUtils {
     }
 
 
+    /// Finds magic field names, that lead to a symbol that has the same range as its parent class
+    pub fn implicit_magic_field_name(session: &mut SessionInfo, sym: SymbolKey) -> Option<OYarn> {
+        let SymbolKey::Variable(variable_key) = sym else {
+            return None;
+        };
+        let name = session.st()[variable_key].name.clone();
+        if !MAGIC_FIELDS.contains(&name.as_str()) || !SymbolTable::is_field(session, sym) {
+            return None;
+        }
+        let SymbolKey::Class(class_key) = session.st().parent(sym)? else {
+            return None;
+        };
+        let st: &SymbolTable = session.st();
+        (st[variable_key].range == st[class_key].range).then_some(name)
+    }
+
+    /// Adds `_compute_display_name` definition(s) found on `class_sym` to `sources`.
+    fn add_display_name_compute_methods_for_symbol(session: &mut SessionInfo, sources: &mut Vec<GotoSource>, class_sym: SymbolKey, from_module: Option<ModuleKey>) {
+        let (symbols, _) = SymbolTable::get_member_symbol(session, class_sym, "_compute_display_name", from_module, false, false, true, true, false);
+        for symbol in symbols {
+            sources.push(GotoSource {
+                source: GotoSourceType::SymbolKey(symbol),
+                origin_selection_range: None,
+            });
+        }
+    }
+
     pub fn add_display_name_compute_methods(session: &mut SessionInfo, sources: &mut Vec<GotoSource>, expr: &ExprOrIdent, file_symbol: SourceFileKey, offset: usize) {
         // now we want `_compute_display_name` definition(s)
         // we need the symbol of the model/ then we run get member symbol
@@ -104,17 +143,11 @@ impl GotoUtils {
         let (analyse_ast_result, _range) = AstUtils::get_symbol_from_expr(session, file_symbol, &ExprOrIdent::Expr(&attr_expr.value), offset as u32);
         let eval_ptrs = analyse_ast_result.evaluations.iter().flat_map(|eval| SymbolTable::follow_ref(eval.symbol.get_symbol_ptr(), session, None, false, false, None, None)).collect::<Vec<_>>();
         let maybe_module = session.st().find_module(file_symbol);
-        let symbols = eval_ptrs.iter().flat_map(|eval_ptr| {
+        for eval_ptr in eval_ptrs.iter() {
             let Some(symbol) = eval_ptr.upgrade_weak(session.st()) else {
-                return  vec![];
+                continue;
             };
-            SymbolTable::get_member_symbol(session, symbol, "_compute_display_name", maybe_module, false, false, true, true, false).0
-        }).collect::<Vec<_>>();
-        for symbol in symbols {
-            sources.push(GotoSource {
-                source: GotoSourceType::SymbolKey(symbol),
-                origin_selection_range: None,
-            });
+            GotoUtils::add_display_name_compute_methods_for_symbol(session, sources, symbol, maybe_module);
         }
     }
 
@@ -137,25 +170,15 @@ impl GotoUtils {
         // Filter out magic fields
         let mut dislay_name_found = false;
         evaluations.retain(|eval| {
-            // Filter out, variables, whose parents are a class, whose name is one of the magic fields, and have the same range as their parent
             let eval_sym = eval.symbol.get_symbol(session, None, &mut vec![], None);
             let Some(eval_sym) = eval_sym.upgrade_weak(session.st()) else { return true; };
-            let SymbolKey::Variable(variable_key) = eval_sym else {
+            let Some(name) = GotoUtils::implicit_magic_field_name(session, eval_sym) else {
                 return true;
             };
-            let eval_sym_name = session.st()[variable_key].name.clone();
-            if !MAGIC_FIELDS.contains(&eval_sym_name.as_str()) || !SymbolTable::is_field(session, eval_sym) {
-                return true;
-            }
-            if eval_sym_name == "display_name" {
+            if name == "display_name" {
                 dislay_name_found = true;
             }
-            let Some(parent_sym) = session.st().parent(eval_sym) else { return true; };
-            let SymbolKey::Class(class_key) = parent_sym else {
-                return true;
-            };
-            let st: &SymbolTable = session.st();
-            st[variable_key].range != st[class_key].range
+            false
         });
         if let Some(expr) = expr && dislay_name_found {
             GotoUtils::add_display_name_compute_methods(session, &mut definition_sources, &expr, file_symbol, offset);
