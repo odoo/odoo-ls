@@ -20,6 +20,7 @@ This is the description of the module CSV
         'data/country_unquoted_lf/res.country.state.csv',
         'data/csv_field_mismatch/res.country.state.csv',
         'data/csv_invalid_xml_id/res.country.state.csv',
+        'data/csv_duplicate_column/res.country.state.csv',
     ],
     'installable': True,
     'application': True,

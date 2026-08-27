@@ -120,4 +120,8 @@
         <path></path> <!-- OLS05067 -->
     </asset>
     <record id="bike_translation_1" model="bikes.bike"><field name="name@nl_WV">Da's gin geldige taal, jonge.</field></record> <!-- West Flemish is not a valid language, unfortunately (OLS05068: unknown language code) -->
+    <record id="bike_duplicate_field" model="bikes.bike">
+        <field name="name">Overwritten by the declaration below</field> <!-- OLS05076 -->
+        <field name="name">Odoo keeps this one</field>
+    </record>
 </odoo>

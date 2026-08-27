@@ -1,0 +1,3 @@
+id,country_id:id,name,code,name
+state_dup_1,base.au,Overwritten,TS1,Odoo keeps this one
+state_dup_2,base.au,Overwritten too,TS2,Odoo keeps this one too

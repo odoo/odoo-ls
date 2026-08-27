@@ -108,7 +108,8 @@ pub fn get_diagnostics_for_paths(session: &mut SessionInfo, paths: &[String]) ->
                 let params: PublishDiagnosticsParams = serde_json::from_value(n.params).expect("Unable to parse PublishDiagnosticsParams");
                 let params_path = FileMgr::uri2pathname(params.uri.as_str());
                 if paths.contains(&params_path) {
-                    res.entry(params_path).or_insert_with(Vec::new).extend(params.diagnostics);
+                    // publishDiagnostics carries the whole file each time, so the last one wins
+                    res.insert(params_path, params.diagnostics);
                 }
             }
     }

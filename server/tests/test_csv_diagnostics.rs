@@ -10,7 +10,7 @@ use std::path::Path;
 mod setup;
 mod test_utils;
 
-fn csv_test_paths() -> (String, String, String) {
+fn csv_test_paths() -> (String, String, String, String) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("data")
@@ -22,15 +22,18 @@ fn csv_test_paths() -> (String, String, String) {
     let invalid_xml_id = test_addons_path
         .join("module_csv").join("data").join("csv_invalid_xml_id").join("res.country.state.csv")
         .sanitize();
+    let duplicate_column = test_addons_path
+        .join("module_csv").join("data").join("csv_duplicate_column").join("res.country.state.csv")
+        .sanitize();
     let valid_csv = test_addons_path
         .join("module_for_diagnostics").join("data").join("bike_parts.wheel.csv")
         .sanitize();
 
-    for path in [&field_mismatch, &invalid_xml_id, &valid_csv] {
+    for path in [&field_mismatch, &invalid_xml_id, &duplicate_column, &valid_csv] {
         assert!(Path::new(path).exists(), "Test file does not exist: {}", path);
     }
 
-    (field_mismatch, invalid_xml_id, valid_csv)
+    (field_mismatch, invalid_xml_id, duplicate_column, valid_csv)
 }
 
 fn collect_all_csv_diagnostics(session: &mut SessionInfo, paths: &[&str]) -> HashMap<String, Vec<Diagnostic>> {
@@ -54,16 +57,17 @@ fn test_csv_diagnostics() {
     let (mut odoo, config) = setup::setup::setup_server(true);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
-    let (field_mismatch, invalid_xml_id, valid_csv) = csv_test_paths();
+    let (field_mismatch, invalid_xml_id, duplicate_column, valid_csv) = csv_test_paths();
 
     // Collect all diagnostics in one pass (consuming the message queue once)
     let all_diags = collect_all_csv_diagnostics(
         &mut session,
-        &[&field_mismatch, &invalid_xml_id, &valid_csv],
+        &[&field_mismatch, &invalid_xml_id, &duplicate_column, &valid_csv],
     );
 
     test_field_count_mismatch(get_diags_for(&all_diags, &field_mismatch));
     test_xml_id_format(get_diags_for(&all_diags, &invalid_xml_id));
+    test_duplicate_column(get_diags_for(&all_diags, &duplicate_column));
     test_valid_file_no_errors(get_diags_for(&all_diags, &valid_csv));
 }
 
@@ -135,6 +139,38 @@ fn test_xml_id_format(diagnostics: &[Diagnostic]) {
             diag.range.start.line
         );
     }
+}
+
+/// OLS05076: "name" is declared by two columns, Odoo only uses the last one.
+/// Reported once on the header row.
+/// File: csv_duplicate_column/res.country.state.csv
+///   Line 0: id,country_id:id,name,code,name
+///   Line 1: state_dup_1,base.au,Overwritten,TS1,Odoo keeps this one
+///   Line 2: state_dup_2,base.au,Overwritten too,TS2,Odoo keeps this one too
+fn test_duplicate_column(diagnostics: &[Diagnostic]) {
+    let dup_diags: Vec<_> = diagnostics.iter().filter(|d| has_code(d, "OLS05076")).collect();
+    // Two data rows, so a per-record diagnostic would show up here as two
+    assert_eq!(
+        dup_diags.len(),
+        1,
+        "Expected a single OLS05076 on the header row, got: {:?}",
+        diagnostics
+    );
+
+    let diag = dup_diags[0];
+    assert_eq!(
+        diag.severity,
+        Some(lsp_types::DiagnosticSeverity::WARNING),
+        "OLS05076 should be a warning"
+    );
+    assert!(
+        diag.message.contains("name"),
+        "OLS05076 message should name the duplicated column, got: {}",
+        diag.message
+    );
+    // The overwritten column is the first "name", at characters 17..21 of the header
+    assert_eq!(diag.range.start, lsp_types::Position::new(0, 17));
+    assert_eq!(diag.range.end, lsp_types::Position::new(0, 21));
 }
 
 /// Well-formed CSV: no error-level diagnostics expected
