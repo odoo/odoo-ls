@@ -351,6 +351,36 @@ fn test_definition() {
     // check that one of the phone_code_locs is the same as the phone_code field
     let range = session.st().range(phone_code_field_sym);
     assert!(phone_code_locs.iter().any(|loc| loc.target_range == file_mgr.borrow().text_range_to_range(&mut session, &phone_code_file, range)), "Expected phone_code to be at the same location as the field");
+
+    // Go to definition on `display_name` in `related="partner_id.display_name"` is a magic field:
+    // it should skip the synthetic field and include `_compute_display_name` override(s) instead.
+    let display_name_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, &m1_tf_file_info, 77, 65);
+    assert!(!display_name_locs.is_empty(), "Expected at least one location for display_name");
+    let partner_class_sym = session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "base", "models", "res_partner"], &[partner_class_name]), u32::MAX);
+    assert_eq!(partner_class_sym.len(), 1, "Expected 1 symbol for the Partner class");
+    let partner_class_sym = partner_class_sym[0];
+    let partner_class_file = session.st().path(session.st().get_file(partner_class_sym).unwrap()).to_string();
+    let partner_class_text_range = session.st().range(partner_class_sym);
+    let partner_class_range = file_mgr.borrow().text_range_to_range(&mut session, &partner_class_file, partner_class_text_range);
+    assert!(
+        !display_name_locs.iter().any(|loc| loc.target_uri.to_file_path().unwrap().sanitize() == partner_class_file && loc.target_range == partner_class_range),
+        "Expected display_name to never point at the synthetic field's class-range location"
+    );
+    let compute_display_name_sym = session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "base", "models", "res_partner"], &[partner_class_name, "_compute_display_name"]), u32::MAX);
+    assert_eq!(compute_display_name_sym.len(), 1, "Expected 1 location for _compute_display_name defined directly on res.partner");
+    let compute_display_name_sym = compute_display_name_sym[0];
+    let compute_display_name_file = session.st().path(session.st().get_file(compute_display_name_sym).unwrap()).to_string();
+    let range = session.st().range(compute_display_name_sym);
+    let compute_display_name_range = file_mgr.borrow().text_range_to_range(&mut session, &compute_display_name_file, range);
+    assert!(
+        display_name_locs.iter().any(|loc| loc.target_uri.to_file_path().unwrap().sanitize() == compute_display_name_file && loc.target_range == compute_display_name_range),
+        "Expected display_name to jump to _compute_display_name in res_partner.py"
+    );
+
+    // Go to definition on `create_uid` in `related="partner_id.create_uid"` is also a magic field,
+    // but has no compute override: it should be filtered out entirely (no synthetic-field location).
+    let create_uid_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, &m1_tf_file_info, 78, 66);
+    assert!(create_uid_locs.is_empty(), "Expected no location for the synthetic create_uid magic field, got {:?}", create_uid_locs.iter().map(|l| &l.target_uri).collect::<Vec<_>>());
 }
 
 #[test]

@@ -69,3 +69,11 @@ def annotated_param_func(field_names: list | None = None) -> None:
     if field_names is None or 'a' in field_names or 'b' in field_names:
         return
     return field_names
+
+class DisplayNameRelatedModel(models.Model):
+    _name = "pygls.tests.display_name_related_model"
+    _description = "Display Name Related Model"
+
+    partner_id = fields.Many2one("res.partner")
+    partner_display_name = fields.Char(related="partner_id.display_name", store=True)
+    partner_create_uid = fields.Many2one(related="partner_id.create_uid", store=True)
