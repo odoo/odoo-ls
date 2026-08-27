@@ -819,7 +819,7 @@ impl FileInfo {
                 }
                 all_diagnostics.push(updated);
             }
-            session.send_notification::<PublishDiagnosticsParams>(PublishDiagnostics::METHOD, PublishDiagnosticsParams{
+            session.send_notification(PublishDiagnostics::METHOD, PublishDiagnosticsParams{
                 uri: FileMgr::pathname2uri(&self.uri),
                 diagnostics: all_diagnostics,
                 version: self.version,
