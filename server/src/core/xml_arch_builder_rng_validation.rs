@@ -509,9 +509,10 @@ impl XmlArchBuilder {
         for desc in node.descendants() {
             if !desc.is_element() { continue; }
             if let Some(attr) = desc.attribute_node("t-call") {
+                let r = attr.range_value();
                 result.push((
                     oyarn!("{}", attr.value()),
-                    TextRange::new(TextSize::new(attr.range().start as u32), TextSize::new(attr.range().end as u32))
+                    TextRange::new(TextSize::new(r.start as u32), TextSize::new(r.end as u32))
                 ));
             }
         }
