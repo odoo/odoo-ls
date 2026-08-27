@@ -703,6 +703,7 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
                     }
                 },
                 "inverse" | "search" | "compute" => Some(vec![ExpectedType::METHOD_NAME]),
+                "depends" => Some(vec![ExpectedType::NESTED_FIELD(None)]),
                 _ => None,
             }
         ) else {
@@ -1007,6 +1008,11 @@ fn complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, list_o
             ExpectedType::MODEL_NAME => { //In case of Model_name, transfer this expected type to items. It is used in _inherit = [""] for example, but can maybe be wrong elsewhere?
                 if let Some(expr) = list_or_tuple_elts.iter().find(|expr| offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize()) {
                     return complete_expr(expr, session, file, offset, is_param, &[ExpectedType::MODEL_NAME]);
+                }
+            }
+            ExpectedType::NESTED_FIELD(field_type) => {
+                if let Some(Expr::StringLiteral(expr_string_literal)) = list_or_tuple_elts.iter().find(|expr| offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize()) {
+                    return complete_string_literal(session, file, expr_string_literal, offset, is_param, &[ExpectedType::NESTED_FIELD(field_type.clone())]);
                 }
             }
             _ => {}
