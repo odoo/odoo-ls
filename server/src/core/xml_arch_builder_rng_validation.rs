@@ -504,6 +504,15 @@ impl XmlArchBuilder {
         true
     }
 
+    fn collect_t_name(node: &Node) -> Option<(OYarn, TextRange)> {
+        let t_name_attr = node.attribute_node("t-name")?;
+        let r = t_name_attr.range_value();
+        Some((
+            oyarn!("{}", t_name_attr.value()),
+            TextRange::new(TextSize::new(r.start as u32), TextSize::new(r.end as u32)),
+        ))
+    }
+
     fn collect_t_calls(node: &Node) -> Vec<(OYarn, TextRange)> {
         let mut result = vec![];
         for desc in node.descendants() {
@@ -529,8 +538,7 @@ impl XmlArchBuilder {
     }
 
     fn load_qweb_template(&mut self, session: &mut SessionInfo, node: &Node, found_id: Option<String>, for_web: bool, diagnostics: &mut Vec<Diagnostic>) -> bool {
-        let found_t_name_node = node.attribute_node("t-name");
-        let found_t_name = found_t_name_node.map(|n| n.value().to_string());
+        let found_t_name = Self::collect_t_name(node);
         let found_inherit = node.attribute("t-inherit").is_some();
         if found_id.is_none() && found_t_name.is_none() && !found_inherit {
             return false;
@@ -538,7 +546,7 @@ impl XmlArchBuilder {
         let data = session.st_mut().add_new_xml_template(
             self.xml_symbol,
             found_id.as_ref().map(|id| oyarn!("{}", id)),
-            found_t_name.as_ref().map(|t_name| oyarn!("{}", t_name)),
+            found_t_name.clone(),
             TextRange::new(TextSize::new(node.range().start as u32), TextSize::new(node.range().end as u32)),
             for_web
         );
@@ -550,16 +558,17 @@ impl XmlArchBuilder {
         if let Some(t_inherit) = Self::collect_t_inherit(node) {
             session.st_mut()[data].t_inherit = Some(t_inherit);
         }
-        if let Some(found_t_name_node) = found_t_name_node && let Some(found_t_name) = &found_t_name
-            && !found_t_name.contains(".")
+        if let Some((t_name, range)) = &found_t_name
+            && !t_name.contains(".")
             && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05071, &[])
         {
             diagnostics.push(Diagnostic {
-                range: Range { start: Position::new(found_t_name_node.range().start as u32, 0), end: Position::new(found_t_name_node.range().end as u32, 0) },
-                ..diagnostic.clone()
+                range: Range { start: Position::new(range.start().into(), 0), end: Position::new(range.end().into(), 0) },
+                ..diagnostic
             });
         }
-        self.on_operation_creation(session, found_id, found_t_name, node, data.into(), diagnostics);
+        let t_name_string = found_t_name.map(|(t_name, _)| t_name.to_string());
+        self.on_operation_creation(session, found_id, t_name_string, node, data.into(), diagnostics);
         true
     }
 
