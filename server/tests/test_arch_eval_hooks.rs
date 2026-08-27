@@ -151,14 +151,12 @@ fn test_ids_and_id_field_hooks() {
     let int_type = int_type[0];
 
     // `ids_res = self.ids` (line 32, 0-indexed 30)
-    //TODO list doesn't seem to be set to variable
     let resolved_ids = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, 31, 8);
     assert!(resolved_ids.len() == 1);
-    let ids = test_utils::resolve_symbol_types(&mut session, resolved_ids[0]); //follow ids function-property evaluation
     assert!(
-        ids.contains(&list_type),
+        resolved_ids.contains(&list_type),
         "`self.ids` should evaluate to a `list` (BaseModel.ids hook). Got: {:?}",
-        names(&session, &ids)
+        names(&session, &resolved_ids)
     );
 
     // `id_res = self.id` (line 31, 0-indexed 30)
