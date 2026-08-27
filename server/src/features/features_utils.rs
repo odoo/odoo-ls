@@ -365,8 +365,8 @@ impl FeaturesUtils {
         keyword: &Keyword,
         pick: SegmentPick,
     ) -> Vec<(SymbolKey, TextRange)> {
-        // We only process the `related` keyword argument
-        if keyword.arg.as_ref().filter(|kw_arg| kw_arg.id == "related").is_none(){
+        // We only process the `related` and `depends` keyword arguments
+        if keyword.arg.as_ref().filter(|kw_arg| ["related", "depends"].contains(&kw_arg.id.as_str())).is_none(){
             return vec![];
         }
         let mut arg_symbols = vec![];

@@ -77,3 +77,8 @@ class DisplayNameRelatedModel(models.Model):
     partner_id = fields.Many2one("res.partner")
     partner_display_name = fields.Char(related="partner_id.display_name", store=True)
     partner_create_uid = fields.Many2one(related="partner_id.create_uid", store=True)
+    partner_display_name_dep = fields.Char(compute="_compute_partner_display_name_dep", depends=["partner_id.disp", "partner_id.display_name", "partner_id.name"])
+
+    def _compute_partner_display_name_dep(self):
+        for record in self:
+            record.partner_display_name_dep = record.partner_id.display_name

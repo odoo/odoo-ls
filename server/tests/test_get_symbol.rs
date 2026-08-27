@@ -71,6 +71,24 @@ fn test_hover_on_model_field_and_method() {
         "Hover on field_name in related field name should show field name and field type"
     );
 
+    // Hover on field names in the `depends` kwarg of `fields.Char(depends=[...])`
+    // (as opposed to the `@api.depends(...)` decorator, already covered above).
+    let hover_partner_id_dep = test_utils::get_hover_markdown(&mut session, file_symbol, &file_info, 79, 122).unwrap_or_default();
+    assert!(
+        hover_partner_id_dep.contains(&format!("partner_id: {}", partner_class_name)),
+        "Hover on field_name in depends kwarg should show field name and field type"
+    );
+    let hover_display_name_dep = test_utils::get_hover_markdown(&mut session, file_symbol, &file_info, 79, 134).unwrap_or_default();
+    assert!(
+        hover_display_name_dep.contains("display_name") && hover_display_name_dep.contains("Char"),
+        "Hover on field_name in depends kwarg should show field name and field type, got: {:?}", hover_display_name_dep
+    );
+    let hover_name_dep = test_utils::get_hover_markdown(&mut session, file_symbol, &file_info, 79, 157).unwrap_or_default();
+    assert!(
+        hover_name_dep.contains("name: str"),
+        "Hover on field_name in depends kwarg should show field name and field type"
+    );
+
     // Hover on the method "get_test_int"
     let hover_method = test_utils::get_hover_markdown(&mut session, file_symbol, &file_info, 14, 8).unwrap_or_default();
     assert!(
@@ -381,6 +399,35 @@ fn test_definition() {
     // but has no compute override: it should be filtered out entirely (no synthetic-field location).
     let create_uid_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, &m1_tf_file_info, 78, 66);
     assert!(create_uid_locs.is_empty(), "Expected no location for the synthetic create_uid magic field, got {:?}", create_uid_locs.iter().map(|l| &l.target_uri).collect::<Vec<_>>());
+
+    // The same magic-field redirect must also work through the `depends` kwarg of
+    // `fields.Char(depends=["partner_id.disp", "partner_id.display_name", "partner_id.name"])`,
+    // not just `related`.
+    let depends_display_name_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, &m1_tf_file_info, 79, 134);
+    assert!(!depends_display_name_locs.is_empty(), "Expected at least one location for display_name via depends");
+    assert!(
+        !depends_display_name_locs.iter().any(|loc| loc.target_uri.to_file_path().unwrap().sanitize() == partner_class_file && loc.target_range == partner_class_range),
+        "Expected depends' display_name to never point at the synthetic field's class-range location"
+    );
+    assert!(
+        depends_display_name_locs.iter().any(|loc| loc.target_uri.to_file_path().unwrap().sanitize() == compute_display_name_file && loc.target_range == compute_display_name_range),
+        "Expected depends' display_name to jump to _compute_display_name in res_partner.py"
+    );
+
+    // A plain (non-magic) field referenced through `depends` should resolve directly to its
+    // own declaration, exactly like it already does through `related`.
+    let depends_name_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, &m1_tf_file_info, 79, 157);
+    let partner_name_field_sym = session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "base", "models", "res_partner"], &[partner_class_name, "name"]), u32::MAX);
+    assert_eq!(partner_name_field_sym.len(), 1, "Expected 1 location for res.partner's name field");
+    let partner_name_field_sym = partner_name_field_sym[0];
+    let partner_name_file = session.st().path(session.st().get_file(partner_name_field_sym).unwrap()).to_string();
+    let partner_name_text_range = session.st().range(partner_name_field_sym);
+    let partner_name_range = file_mgr.borrow().text_range_to_range(&mut session, &partner_name_file, partner_name_text_range);
+    assert!(
+        depends_name_locs.iter().any(|loc| loc.target_uri.to_file_path().unwrap().sanitize() == partner_name_file && loc.target_range == partner_name_range),
+        "Expected depends' name segment to jump to res.partner's name field, got {:?}",
+        depends_name_locs.iter().map(|l| (&l.target_uri, &l.target_range)).collect::<Vec<_>>()
+    );
 }
 
 #[test]
