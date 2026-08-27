@@ -7,7 +7,7 @@ use ruff_text_size::TextRange;
 
 use crate::{
     Sy, constants::{BuildStatus, BuildSteps, MissingDataSource, OYarn, PackageType, SymType}, core::{
-        build_scheduler::BuildScheduler, diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPoint, evaluation::{Evaluation, EvaluationSymbolPtr}, evaluation_context::{Context, ContextKey, ContextValue}, file_mgr::{FileMgr, NoqaInfo}, model::Model, odoo::SyncOdoo, python_arch_eval_hooks::get_base_model_symbol, symbols::{
+        build_scheduler::BuildScheduler, diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPoint, evaluation::{Evaluation, EvaluationSymbolPtr}, evaluation_context::{Context, ContextKey, ContextValue}, file_mgr::{FileInfo, FileMgr, NoqaInfo}, model::Model, odoo::SyncOdoo, python_arch_eval_hooks::get_base_model_symbol, symbols::{
             Buildable, Dependencies, ModuleSymbol, storage::{
                 FileContentParent, FileSystemSymbolParent, SymbolTable, buildable::ResettableBuildable as _, dependency_mgr::{DependenciesTable, DependentsTable}, xml::xml_field_symbol::XmlFieldName,
             }, symbol_keys::{
@@ -231,6 +231,51 @@ impl SymbolTable {
             SymbolKey::CsvFile(_) => panic!(),
             SymbolKey::JsFile(_) => panic!(),
         }
+    }
+
+    pub fn body_range(&self, target: SymbolKey) -> Option<TextRange> {
+        match target {
+            SymbolKey::Root(_) => None,
+            SymbolKey::DiskDir(_) => None,
+            SymbolKey::Namespace(_) => None,
+            SymbolKey::PythonPackage(_) => None,
+            SymbolKey::Module(_) => None,
+            SymbolKey::File(_) => None,
+            SymbolKey::Compiled(_) => None,
+            SymbolKey::Class(c) => Some(self[c].body_range),
+            SymbolKey::Function(f) => Some(self[f].body_range),
+            SymbolKey::Variable(_) => None,
+            SymbolKey::XmlFile(_) => None,
+            SymbolKey::XmlRecord(_) => None,
+            SymbolKey::XmlField(_) => None,
+            SymbolKey::XmlMenuItem(_) => None,
+            SymbolKey::XmlTemplate(_) => None,
+            SymbolKey::XmlAsset(_) => None,
+            SymbolKey::XmlDelete(_) => None,
+            SymbolKey::CsvFile(_) => None,
+            SymbolKey::JsFile(_) => None,
+        }
+    }
+
+    /* 
+    * Return the header range of a class or function, by substracting the body of the element from the full range.
+    * Require a fileInfo to use the lineIndex and get the line before the body, or a less precise end range will be returned
+    */
+    pub fn header_range(&self, target: SymbolKey, file_info: Option<Rc<RefCell<FileInfo>>>) -> Option<TextRange> {
+        let range = self.range(target);
+        if let Some(body_range) = self.body_range(target)
+        && body_range.start() > range.start() {
+            let end = match file_info {
+                Some(file_info)=> {
+                    file_info.borrow().prev_line_end(body_range.start())
+                        .filter(|&end| end > range.start())
+                        .unwrap_or(body_range.start())
+                },
+                None => body_range.start(),
+            };
+            return Some(TextRange::new(range.start(), end));
+        }
+        None
     }
 
     pub fn parent(&self, target: impl Into<SymbolKey>) -> Option<SymbolKey> {
