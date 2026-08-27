@@ -334,8 +334,6 @@ impl ReferenceFeature {
             let XmlDataParent::XmlFile(xml_file) = tmpl.parent() else { continue; };
             for (name, range) in tmpl.t_calls.iter() {
                 if name.as_str() == template_name {
-                    // `t_calls` stores the whole-attribute range, `t_inherit` the value-only
-                    // range; both are acceptable highlights.
                     xml_hits.push((xml_file, *range));
                 }
             }
