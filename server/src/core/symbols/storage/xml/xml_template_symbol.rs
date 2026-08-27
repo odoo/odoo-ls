@@ -5,7 +5,8 @@ use crate::{constants::OYarn, core::symbols::storage::XmlDataParent};
 #[derive(Debug)]
 pub struct XmlTemplateSymbol {
     pub xml_id: Option<OYarn>,
-    pub t_name: Option<OYarn>,
+    /// (template_name, value_range) of `t-name`, if any (quotes excluded).
+    pub t_name: Option<(OYarn, TextRange)>,
     pub is_web: bool,
     pub is_external: bool,
     pub range: TextRange,
@@ -19,7 +20,7 @@ pub struct XmlTemplateSymbol {
 }
 
 impl XmlTemplateSymbol {
-    pub fn new(xml_id: Option<OYarn>, t_name: Option<OYarn>, range: TextRange, parent: XmlDataParent, is_web: bool, is_external: bool) -> Self {
+    pub fn new(xml_id: Option<OYarn>, t_name: Option<(OYarn, TextRange)>, range: TextRange, parent: XmlDataParent, is_web: bool, is_external: bool) -> Self {
         Self { xml_id, t_name, range, t_calls: vec![], t_inherit: None, parent, is_web, is_external }
     }
 
