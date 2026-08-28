@@ -1,0 +1,11 @@
+<templates>
+    <t t-name="module_owl.Greeting">
+        <div class="o_greeting" t-on-click="() => this.onClick()">
+            <span t-out="this.title"/>
+            <span t-out="this.props.name"/>
+            <span t-out="this.separator"/>
+            <span t-out="this.punctuation"/>
+            <span t-out="this.shout(this.props.exclamations)"/>
+        </div>
+    </t>
+</templates>

@@ -201,7 +201,7 @@ impl SymbolTable {
         Ok(xml_field_key)
     }
 
-    pub fn add_new_xml_template(&mut self, parent: XmlFileKey, name: Option<OYarn>, t_name: Option<OYarn>, range: TextRange, is_web: bool) -> XmlTemplateKey {
+    pub fn add_new_xml_template(&mut self, parent: XmlFileKey, name: Option<OYarn>, t_name: Option<(OYarn, TextRange)>, range: TextRange, is_web: bool) -> XmlTemplateKey {
         let is_external = self.is_external(parent.into());
         let xml_template_sym = XmlTemplateSymbol::new(name, t_name, range, parent.into(), is_web, is_external);
         let xml_template_key = self.xml_templates.insert(xml_template_sym);

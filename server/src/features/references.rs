@@ -316,9 +316,9 @@ impl ReferenceFeature {
         after_start && before_end
     }
 
-    /// Collect every reference to an OWL/QWeb template *name*: JS `static template` sites,
-    /// XML `t-call` / `t-inherit` sites. Dynamic `t-call="{{…}}"` values never string-equal
-    /// a literal name; the `<t t-name>` declaration itself is the target, not a reference.
+    /// Collect every reference to an OWL/QWeb template *name*: the `<t t-name>` declaration,
+    /// JS `static template` sites, XML `t-call` / `t-inherit` sites. Dynamic `t-call="{{…}}"`
+    /// values never string-equal a literal name.
     fn collect_template_name_references(session: &mut SessionInfo, template_name: &str) -> Vec<Location> {
         let encoding = session.sync_odoo.encoding;
         let mut locations = Vec::new();
@@ -332,10 +332,11 @@ impl ReferenceFeature {
         // `iter_xml_templates` method and use the index here.
         for (_key, tmpl) in session.st().iter_xml_templates() {
             let XmlDataParent::XmlFile(xml_file) = tmpl.parent() else { continue; };
+            if let Some((name, range)) = tmpl.t_name.as_ref() && name == template_name {
+                xml_hits.push((xml_file, *range));
+            }
             for (name, range) in tmpl.t_calls.iter() {
                 if name.as_str() == template_name {
-                    // `t_calls` stores the whole-attribute range, `t_inherit` the value-only
-                    // range; both are acceptable highlights.
                     xml_hits.push((xml_file, *range));
                 }
             }

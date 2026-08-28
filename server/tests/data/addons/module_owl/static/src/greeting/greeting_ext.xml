@@ -1,0 +1,12 @@
+<templates>
+    <t t-name="module_owl.GreetingCall">
+        <div class="o_greeting_call">
+            <t t-call="module_owl.Greeting"/>
+        </div>
+    </t>
+    <t t-name="module_owl.GreetingExt" t-inherit="module_owl.Greeting" t-inherit-mode="primary">
+        <xpath expr="//span" position="after">
+            <span class="o_greeting_ext"/>
+        </xpath>
+    </t>
+</templates>

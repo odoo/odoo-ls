@@ -136,10 +136,11 @@ fn declaring_js_files(files: impl IntoIterator<Item = String>) -> Vec<String> {
     out
 }
 
-/// Build and stage (not commit) the virtual docs of every transitive subclass of a
-/// component defined in `anchor_files`, so a references query on the real member also sees
-/// inherited template uses. Anchoring at the *declaring* file reaches the cousin case
-/// (member in ancestor `A`, cursor in `B`, use in sibling subclass `C`'s template).
+/// Build and stage (not commit) the virtual docs of every component defined in `anchor_files`
+/// and of its transitive subclasses, so a references query on the real member also sees the
+/// declaring component's own template uses and the inherited ones. Anchoring at the
+/// *declaring* file reaches the cousin case (member in ancestor `A`, cursor in `B`, use in
+/// sibling subclass `C`'s template).
 fn stage_subclass_docs(session: &mut SessionInfo, anchor_files: &[String]) -> Vec<InheritedDoc> {
     let anchor_classes: Vec<String> = session
         .sync_odoo
@@ -154,8 +155,9 @@ fn stage_subclass_docs(session: &mut SessionInfo, anchor_files: &[String]) -> Ve
     let super_of = build_super_of(session);
     let subclasses = collect_subclasses(&super_of, &anchor_classes);
 
-    // Distinct `.js` files defining those subclasses (one file may define several).
-    let mut sub_paths: Vec<String> = vec![];
+    // The anchors' own templates plus the distinct `.js` files defining those subclasses (one
+    // file may define several).
+    let mut sub_paths: Vec<String> = anchor_files.to_vec();
     for class in &subclasses {
         if let Some(desc) = session.sync_odoo.component_descriptors.get(class)
             && !sub_paths.contains(&desc.file_path)
