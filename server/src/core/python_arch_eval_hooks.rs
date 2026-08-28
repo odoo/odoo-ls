@@ -87,6 +87,26 @@ static arch_eval_file_hooks: LazyLock<Vec<PythonArchEvalFileHook>> = LazyLock::n
         odoo.symbol_table.add_dependency(file_symbol, env_file, BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
+                        trees: vec![((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "_ids"])),
+                        ((18, 1), (999, 0), (&["odoo", "orm", "models"], &["BaseModel", "_ids"]))],
+                        if_exist_only: true,
+                        func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey| {
+        let values: Vec<ruff_python_ast::Expr> = Vec::new();
+        let range = odoo.symbol_table.range(symbol);
+        let evaluations = vec![Evaluation::new_list(odoo, Some(values), range)];
+        odoo.symbol_table.set_evaluations(symbol, evaluations);
+    }},
+    PythonArchEvalFileHook {odoo_entry: true,
+                        trees: vec![((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "_prefetch_ids"])),
+                        ((18, 1), (999, 0), (&["odoo", "orm", "models"], &["BaseModel", "_prefetch_ids"]))],
+                        if_exist_only: true,
+                        func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey| {
+        let values: Vec<ruff_python_ast::Expr> = Vec::new();
+        let range = odoo.symbol_table.range(symbol);
+        let evaluations = vec![Evaluation::new_list(odoo, Some(values), range)];
+        odoo.symbol_table.set_evaluations(symbol, evaluations);
+    }},
+    PythonArchEvalFileHook {odoo_entry: true,
                         trees: vec![((0, 0), (15, 3), (&["odoo", "http"], &["request"]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey| {
