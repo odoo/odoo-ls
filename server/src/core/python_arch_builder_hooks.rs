@@ -40,6 +40,24 @@ static arch_class_hooks: LazyLock<Vec<PythonArchClassHook>> = LazyLock::new(|| {
                 }
                 symbol_table.add_new_variable(symbol_key, "env", range);
             }
+            let ids = symbol_table.get_symbol(symbol_key, (&[], &["_ids"]), u32::MAX);
+            if ids.is_empty() {
+                let mut range = symbol_table[class].range;
+                let slots = symbol_table.get_symbol(symbol_key, (&[], &["__slots__"]), u32::MAX);
+                if slots.len() == 1 {
+                    range = symbol_table.range(slots[0]);
+                }
+                symbol_table.add_new_variable(symbol_key, "_ids", range);
+            }
+            let prefetch_ids = symbol_table.get_symbol(symbol_key, (&[], &["_prefetch_ids"]), u32::MAX);
+            if prefetch_ids.is_empty() {
+                let mut range = symbol_table[class].range;
+                let slots = symbol_table.get_symbol(symbol_key, (&[], &["__slots__"]), u32::MAX);
+                if slots.len() == 1 {
+                    range = symbol_table.range(slots[0]);
+                }
+                symbol_table.add_new_variable(symbol_key, "_prefetch_ids", range);
+            }
         }
     },
     PythonArchClassHook {
