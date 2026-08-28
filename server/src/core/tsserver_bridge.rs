@@ -1,7 +1,7 @@
 use lsp_types::{CompletionItemKind, CompletionList, CompletionTriggerKind, Diagnostic, DiagnosticSeverity, DocumentSymbol, Location, NumberOrString, Position, Range, SymbolKind};
 use serde_json::{Value, json};
 use crate::S;
-use crate::features::tsserver_completion::{TsCompletionDetails, entry_to_completion_item, response_to_completion_details};
+use crate::features::tsserver_completion::{TsCompletionDetails, entry_to_completion_item, is_aliasable_import, response_to_completion_details};
 use crate::utils::{HashMap, HashSet, PathSanitizer};
 use tracing::{debug, info, warn};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -735,6 +735,7 @@ impl TsServerBridge {
             is_incomplete: body.get("isIncomplete").and_then(Value::as_bool).unwrap_or(false),
             items: entries
                 .iter()
+                .filter(|entry| is_aliasable_import(entry, &self.project_paths))
                 .map(|entry| entry_to_completion_item(entry, file_path, line, character))
                 .collect(),
         }
