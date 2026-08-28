@@ -15,7 +15,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use lsp_types::{
-    CompletionItem, GotoDefinitionResponse, Hover, HoverContents, Location, MarkupContent,
+    CompletionList, CompletionTriggerKind, GotoDefinitionResponse, Hover, HoverContents, Location, MarkupContent,
     MarkupKind, Position, Range, SemanticTokens,
 };
 use ruff_source_file::{LineIndex, PositionEncoding};
@@ -399,23 +399,24 @@ pub fn completion_xml_owl(
     file_info: &Rc<RefCell<FileInfo>>,
     line: u32,
     character: u32,
-) -> Option<Vec<CompletionItem>> {
+    trigger_kind: CompletionTriggerKind,
+) -> Option<CompletionList> {
     let (doc, v_line, v_char) = open_doc_at_cursor(session, file_info, line, character)?;
-    let mut items = session
+    let mut list = session
         .sync_odoo
         .tsserver_bridge
         .as_mut()?
-        .completion_items_for_content(&doc.virtual_path, v_line, v_char);
+        .completion_list_for_content(&doc.virtual_path, v_line, v_char, trigger_kind);
 
     // Drop edit-bearing entries (their positions address the virtual `.js` the client never
     // saw). Resolve data survives: it points at the still-open virtual doc, and
     // `handle_completion_resolve` keeps only the signature/docs for such paths.
-    items.retain(|item| item.text_edit.is_none());
+    list.items.retain(|item| item.text_edit.is_none());
 
-    if items.is_empty() {
+    if list.items.is_empty() {
         return None;
     }
-    Some(items)
+    Some(list)
 }
 
 /// Go-to-definition for an OWL-template JS expression, delegated to tsserver and triaged by
