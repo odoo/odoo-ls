@@ -1762,22 +1762,25 @@ impl Odoo {
                 if schema != "untitled" && !file_info.borrow().file_info_ast.borrow().ast.is_built() {
                     file_info.borrow_mut().prepare_ast(session);
                 }
+                let trigger_kind = params.context.as_ref()
+                    .map_or(CompletionTriggerKind::INVOKED, |context| context.trigger_kind);
                 let ast_kind = file_info.borrow().file_info_ast.borrow().ast.kind();
                 match ast_kind {
                     AstKind::JsAst => {
                         if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
-                            let items = bridge.completion_items_for_content(
+                            let list = bridge.completion_list_for_content(
                                 &path,
                                 params.text_document_position.position.line,
                                 params.text_document_position.position.character,
+                                trigger_kind,
                             );
-                            return Ok(Some(CompletionResponse::Array(items)));
+                            return Ok(Some(CompletionResponse::List(list)));
                         }
                         return Ok(None);
                     },
                     AstKind::XmlAst => {
-                        if let Some(items) = owl_virtual::completion_xml_owl(session, &file_info, params.text_document_position.position.line, params.text_document_position.position.character) {
-                            return Ok(Some(CompletionResponse::Array(items)));
+                        if let Some(list) = owl_virtual::completion_xml_owl(session, &file_info, params.text_document_position.position.line, params.text_document_position.position.character, trigger_kind) {
+                            return Ok(Some(CompletionResponse::List(list)));
                         }
                     },
                     _ => {}

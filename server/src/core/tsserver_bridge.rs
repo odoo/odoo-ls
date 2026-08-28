@@ -1,4 +1,4 @@
-use lsp_types::{CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity, DocumentSymbol, Location, NumberOrString, Position, Range, SymbolKind};
+use lsp_types::{CompletionItemKind, CompletionList, CompletionTriggerKind, Diagnostic, DiagnosticSeverity, DocumentSymbol, Location, NumberOrString, Position, Range, SymbolKind};
 use serde_json::{Value, json};
 use crate::S;
 use crate::features::tsserver_completion::{TsCompletionDetails, entry_to_completion_item, response_to_completion_details};
@@ -237,6 +237,9 @@ impl TsServerBridge {
                 "preferences": {
                     "includeCompletionsForImportStatements": true,
                     "includeCompletionsWithInsertText": true,
+                    // Without it tsserver never resolves a module specifier outside an import
+                    // statement, so no entry carries the `sourceDisplay` shown beside the label.
+                    "allowIncompleteCompletions": true,
                 }
             }),
         ) else {
@@ -674,29 +677,32 @@ impl TsServerBridge {
     /// (import-statement completions) become a `text_edit`; every entry gets
     /// [`TsCompletionResolveData`] so `completionItem/resolve` can fetch its signature and
     /// docs — and, for auto-imports, the import edit.
-    pub fn completion_items_for_content(
+    pub fn completion_list_for_content(
         &mut self,
         file_path: &str,
         line: u32,
         character: u32,
-    ) -> Vec<CompletionItem> {
+        trigger_kind: CompletionTriggerKind,
+    ) -> CompletionList {
 
         let request_seq = match self.send_request(
-            "completions",
+            "completionInfo",
             json!({
                 "file": file_path,
                 "line": line + 1,
                 "offset": character + 1,
                 "includeExternalModuleExports": true,
                 "includeInsertTextCompletions": true,
+                // LSP and tsserver number these alike (no conversion needed)
+                "triggerKind": trigger_kind,
             }),
         ) {
             Ok(seq) => seq,
-            Err(_) => return vec![],
+            Err(_) => return CompletionList::default(),
         };
 
         let Some(response) = self.read_response_for_request(request_seq) else {
-            return vec![];
+            return CompletionList::default();
         };
 
         let success = response
@@ -704,26 +710,24 @@ impl TsServerBridge {
             .and_then(Value::as_bool)
             .unwrap_or(false);
         if !success {
-            return vec![];
+            return CompletionList::default();
         }
 
         let Some(body) = response.get("body") else {
-            return vec![];
+            return CompletionList::default();
         };
 
-        let entries = body
-            .get("entries")
-            .and_then(Value::as_array)
-            .or_else(|| body.as_array());
-
-        let Some(entries) = entries else {
-            return vec![];
+        let Some(entries) = body.get("entries").and_then(Value::as_array) else {
+            return CompletionList::default();
         };
 
-        entries
-            .iter()
-            .map(|entry| entry_to_completion_item(entry, file_path, line, character))
-            .collect()
+        CompletionList {
+            is_incomplete: body.get("isIncomplete").and_then(Value::as_bool).unwrap_or(false),
+            items: entries
+                .iter()
+                .map(|entry| entry_to_completion_item(entry, file_path, line, character))
+                .collect(),
+        }
     }
 
     /// Second half of any completion: the entry's signature and docs, plus — for auto-imports
