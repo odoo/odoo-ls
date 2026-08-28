@@ -73,6 +73,10 @@ OLS02001, DiagnosticSetting::Warning, "{0} not found",
 */
 OLS02002, DiagnosticSetting::Warning, "Failed to evaluate {0}",
 /**
+* Attribute not found
+*/
+OLS02003, DiagnosticSetting::Error, "Attribute not found - {0}",
+/**
 * With the Environment (often via self.env, or in @api.returns, you are trying to get a recordset of a model that is not defined in the current module or in the dependencies of the current module.
 * Even if it could work, this is strongly not recommended, as the model you are referring to could be not available on a live database.
 * Do not forget that even if your model is in an auto-installed module, it can be uninstalled by a user.
@@ -596,7 +600,7 @@ OLS05076, DiagnosticSetting::Warning, "Duplicate declaration of field '{0}'. Onl
 OLS06000, DiagnosticSetting::Error, "Template not found",
 /**
 * An `@module/...` import names a module that is not the file's own module, nor one of its
-* manifest dependencies. 
+* manifest dependencies.
 */
 OLS06001, DiagnosticSetting::Error, "'{0}' is not in the dependencies of module '{1}'",
 }
