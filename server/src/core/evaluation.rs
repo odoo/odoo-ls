@@ -1122,7 +1122,9 @@ impl Evaluation {
                                     }
                                     evals.push(eval);
                                 });
-                            } else if is_in_validation && module.is_some() {
+                            } else if is_in_validation {
+                                let mut found_through_inheritance = false;
+                                if module.is_some() {
                                     // Retry unfiltered: if it resolves at all, it's only reachable through
                                     // a module outside our dependencies ("indirect inheritance").
                                     let (indirect_syms, _) = SymbolTable::get_member_symbol(session, base_loc, &expr.attr, None, false, false, false, false, is_super);
@@ -1134,8 +1136,32 @@ impl Evaluation {
                                                 ..diagnostic
                                             });
                                         }
+                                        found_through_inheritance = true;
                                     }
                                 }
+                                if ! found_through_inheritance {
+                                    let typ = SymbolTable::follow_ref(ibase,
+                                        session, None, true, true, None, None);
+                                    let ok = typ.iter().any(|t| {
+                                        if let Some(t_class) = t.upgrade_weak(&session.sync_odoo.symbol_table) {
+                                            t_class.typ() == SymType::CLASS
+                                            && session.st()[t_class.unwrap_class_key()]._model.is_some()
+                                        } else {
+                                            false
+                                        }
+                                    });
+                                    if ok
+                                    && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS09000, &[expr.attr.as_str()]) {
+                                        diagnostics.push(
+                                            Diagnostic {
+                                                range: FileMgr::textRange_to_temporary_Range(&expr.range()),
+                                                tags: None,
+                                                ..diagnostic_base.clone()
+                                            }
+                                        );
+                                    }
+                                }
+                            }
                         }
                     }
                 }

@@ -594,4 +594,12 @@ OLS05076, DiagnosticSetting::Warning, "Duplicate declaration of field '{0}'. Onl
 * Template not found
 */
 OLS06000, DiagnosticSetting::Error, "Template not found",
+/**
+* Attribute not found - chong
+*/
+OLS09000, DiagnosticSetting::Error, "[CHONG] Attribute not found - {0}",
+/**
+* Template not found
+*/
+OLS09001, DiagnosticSetting::Error, "Useless module dependency",
 }
