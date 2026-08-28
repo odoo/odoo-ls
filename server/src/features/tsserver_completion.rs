@@ -4,6 +4,7 @@ use serde_json::Value;
 use tracing::debug;
 
 use crate::core::tsserver_bridge::ts_kind_to_lsp_kind;
+use crate::utils::HashMap;
 
 /// Round-trip payload stashed in `CompletionItem.data` of every entry, whose signature, docs
 /// and (for auto-imports) import statement only come back from a `completionEntryDetails`
@@ -90,6 +91,20 @@ pub fn entry_to_completion_item(entry: &Value, file_path: &str, line: u32, chara
         data,
         ..CompletionItem::default()
     }
+}
+
+/// Whether the import an entry would write is one Odoo can resolve. tsserver has no way to
+/// say "this symbol is unreachable": for a target no alias covers it falls back to a
+/// `baseUrl`-relative path (`home/odoo/src/…`), which Odoo's loader rejects. Entries backed by
+/// no file at all — locals, members, ambient modules — are always fine.
+pub fn is_aliasable_import(entry: &Value, paths: &HashMap<String, Vec<String>>) -> bool {
+    let Some(target) = entry.pointer("/data/fileName").and_then(Value::as_str) else {
+        return true;
+    };
+    paths.values().flatten().any(|pattern| match pattern.split_once('*') {
+        Some((prefix, suffix)) => target.starts_with(prefix) && target.ends_with(suffix),
+        None => target == pattern,
+    })
 }
 
 /// Parse a `completionEntryDetails` response into the fields an LSP
@@ -192,6 +207,8 @@ fn ts_filter_text(insert_text: Option<&str>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+
+    use crate::S;
 
     use super::*;
 
@@ -297,6 +314,33 @@ mod tests {
             item.label_details.and_then(|d| d.description).as_deref(),
             Some("@web/core/domain")
         );
+    }
+
+    #[test]
+    fn only_entries_odoo_can_import_are_offered() {
+        let paths: HashMap<String, Vec<String>> = [
+            (S!("@web/*"), vec![S!("/odoo/addons/web/static/src/*")]),
+            (S!("@web/../tests/*"), vec![S!("/odoo/addons/web/static/tests/*")]),
+            (S!("@odoo/hoot"), vec![S!("/odoo/addons/web/static/lib/hoot/hoot.js")]),
+        ].into_iter().collect();
+        let from = |file: &str| json!({ "name": "x", "data": { "fileName": file } });
+
+        assert!(is_aliasable_import(&from("/odoo/addons/web/static/src/core/domain.js"), &paths));
+        // Reached by climbing out of `static/src` with the alias: `@web/../tests/helpers`.
+        assert!(is_aliasable_import(&from("/odoo/addons/web/static/tests/helpers.js"), &paths));
+        // `static/lib` gets no glob, so only the exact key `add_lib_paths` built covers it.
+        assert!(is_aliasable_import(&from("/odoo/addons/web/static/lib/hoot/hoot.js"), &paths));
+        // A vendored lib with no `@odoo-module` header gets no key at all, so tsserver would
+        // write a `baseUrl`-relative path.
+        assert!(!is_aliasable_import(&from("/odoo/addons/web/static/lib/ace/ace.js"), &paths));
+        // A local or a member names no file and is always offerable.
+        assert!(is_aliasable_import(&json!({ "name": "rowCount" }), &paths));
+        // An export reached through a `declare module` is always offerable:
+        // tsserver names it `ambientModuleName`, not a file.
+        assert!(is_aliasable_import(
+            &json!({ "name": "Component", "data": { "ambientModuleName": "@odoo/owl" } }),
+            &paths,
+        ));
     }
 
     #[test]
