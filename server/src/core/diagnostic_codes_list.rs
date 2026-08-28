@@ -599,4 +599,12 @@ OLS06000, DiagnosticSetting::Error, "Template not found",
 * manifest dependencies. 
 */
 OLS06001, DiagnosticSetting::Error, "'{0}' is not in the dependencies of module '{1}'",
+/**
+* Attribute not found - chong
+*/
+OLS09000, DiagnosticSetting::Error, "[CHONG] Attribute not found - {0}",
+/**
+* Template not found
+*/
+OLS09001, DiagnosticSetting::Error, "Useless module dependency",
 }
