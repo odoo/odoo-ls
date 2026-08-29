@@ -43,7 +43,7 @@ pub struct TsServerBridge {
     /// Files the client has open, sent as `rootFiles` for the "openExternalProject command.
     /// Dropped on close.
     /// Disjoint from [`Self::transient_roots`].
-    /// May overlap [`Self::project_type_files`]; the payload dedups.
+    /// May overlap [`Self::permanent_roots`]; the payload dedups.
     opened_files: HashSet<String>,
     /// Evictable roots: reference-expansion files (never `open`ed — read from disk) and the
     /// OWL virtual docs. Dropped as a block once they outgrow the retention budget.
@@ -57,9 +57,10 @@ pub struct TsServerBridge {
     /// config), e.g. "@odoo/owl" as key and resolved paths matching it.
     /// see [`super::tsserver_paths::generate_paths_map`]
     project_paths: HashMap<String, Vec<String>>,
-    /// Odoo's ambient-declaration `.d.ts` roots, accumulated per opened module by
-    /// [`Self::stage_type_files`]. Permanent: never `open`ed, never evicted.
-    project_type_files: HashSet<String>,
+    /// Files needed to resolve types (ambient declarations in `.d.ts`) and find
+    /// import candidates, accumulated per opened module.
+    /// Permanent: never `open`ed, never evicted.
+    permanent_roots: HashSet<String>,
     project_open: bool,
     ts_check: bool,
 }
@@ -165,7 +166,7 @@ impl TsServerBridge {
             open_virtual_docs: HashSet::default(),
             staged_roots_dirty: false,
             project_paths: HashMap::default(),
-            project_type_files: HashSet::default(),
+            permanent_roots: HashSet::default(),
             project_open: false,
             ts_check,
         };
@@ -384,7 +385,8 @@ impl TsServerBridge {
     /// [`Self::commit_staged_roots`].
     pub fn stage_transient_roots(&mut self, paths: &[String]) {
         for path in paths {
-            if !self.opened_files.contains(path) {
+            // A path another set already carries needs no retention budget spent on it.
+            if !self.opened_files.contains(path) && !self.permanent_roots.contains(path) {
                 self.staged_roots_dirty |= self.transient_roots.insert(path.clone());
             }
         }
@@ -419,12 +421,16 @@ impl TsServerBridge {
         self.project_open = true;
     }
 
-    /// Register the ambient-declaration `.d.ts` roots an opened file needs; staged only, flushed by
-    /// [`Self::commit_staged_roots`]. Additive over every module opened so far, never subtracted
-    /// from — [`crate::core::js_module_scope`] explains why they are roots and why the union only grows.
-    pub fn stage_type_files(&mut self, paths: &[String]) {
+    /// Used to register:
+    ///   - ambient-declaration `.d.ts` roots an opened file needs
+    ///   - JS files an opened file's module may import
+    /// 
+    /// Additive over every module opened so far, never subtracted.
+    /// [`crate::core::js_module_scope`] explains why they are roots and why the union only grows.
+    /// Stages only, flushed by [`Self::commit_staged_roots`].
+    pub fn stage_permanent_roots(&mut self, paths: &[String]) {
         for path in paths {
-            self.staged_roots_dirty |= self.project_type_files.insert(path.clone());
+            self.staged_roots_dirty |= self.permanent_roots.insert(path.clone());
         }
     }
 
@@ -433,11 +439,11 @@ impl TsServerBridge {
     fn send_project_command(&mut self) {
         self.staged_roots_dirty = false;
         // Sorted so the payload — and hence tsserver's program construction — is reproducible.
-        // Deduped because `project_type_files` may name a path the client also has open.
+        // Deduped because the permanent sets may name a path the client also has open.
         let mut names: Vec<&String> = self.opened_files
             .iter()
             .chain(self.transient_roots.iter())
-            .chain(self.project_type_files.iter())
+            .chain(self.permanent_roots.iter())
             .collect();
         names.sort();
         names.dedup();
