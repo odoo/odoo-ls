@@ -435,7 +435,7 @@ impl SyncOdoo {
 
     /// Start tsserver and configure the external project's `paths` for Odoo's `@addons/*` layout.
     /// Runs on a worker thread (see the call site) so it overlaps the Python build; takes owned
-    /// config values because it cannot touch `session`. Ambient `@types`: `core::js_type_files`.
+    /// config values because it cannot touch `session`.
     fn setup_and_start_tsserver(
         tsserver_cmd: String,
         sender_to_main: crossbeam_channel::Sender<ThreadMessage>,
@@ -1891,10 +1891,13 @@ impl Odoo {
                         session.log_message(MessageType::INFO, format!("File opened: {}", sanitized_path));
                         let file_extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
                         if ["js", "ts"].contains(&file_extension) && session.sync_odoo.tsserver_bridge.is_some() {
-                            // Staged first, so the send below already carries the declarations.
+                            // Staged first, so the send below already carries the declarations
+                            // and the module's importable JS.
                             let type_files = js_module_scope::type_files_for(session, &sanitized_path);
+                            let importable_files = js_module_scope::importable_files_for(session, &sanitized_path);
                             if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
-                                bridge.stage_type_files(&type_files);
+                                bridge.stage_permanent_roots(&type_files);
+                                bridge.stage_permanent_roots(&importable_files);
                                 bridge.open_file(&sanitized_path, &params.text_document.text);
                                 // `open_file` only sends when the file is a new root; covers re-opens.
                                 bridge.commit_staged_roots();

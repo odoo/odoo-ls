@@ -130,6 +130,15 @@ pub struct ParsedJs {
     pub imports: Vec<String>,
     pub reexports: Vec<String>,
     pub diagnostics: Vec<Diagnostic>,
+    pub has_exports: bool,
+}
+
+impl ParsedJs {
+    /// default implies `has_exports: false`
+    /// It's not an odoo js module, nothing can import from it.
+    fn not_an_odoo_module() -> Self {
+        Self::default()
+    }
 }
 
 /// Stack size for JS parsing threads, sized for OXC recursive descent on minified libs.
@@ -162,7 +171,7 @@ pub fn parse_js(contents: &str, path: &str) -> ParsedJs {
 pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
     let is_lib = path.contains("/static/lib/");
     if is_lib && !js_utils::is_headed_odoo_module(contents) {
-        return ParsedJs::default();
+        return ParsedJs::not_an_odoo_module();
     }
     let os_path = std::path::Path::new(path);
     let source_type = SourceType::from_path(os_path).unwrap_or_default();
@@ -181,11 +190,14 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
     // Vendored libraries are kept out of workspace symbols for the same reason they
     // are kept out of OXC diagnostics: they are not the user's code, and many are minified.
     let decls = if is_lib { vec![] } else { decls };
+    let has_exports = !parser_module_record.local_export_entries.is_empty()
+        || !parser_module_record.indirect_export_entries.is_empty()
+        || !parser_module_record.star_export_entries.is_empty();
 
     // Semantic analysis and the linter exist only to produce diagnostics, and
     // a vendored lib's are dropped, so stop here for them.
     if is_lib {
-        return ParsedJs { template_refs, component_descriptors, decls, imports, reexports, diagnostics: vec![] };
+        return ParsedJs { template_refs, component_descriptors, decls, imports, reexports, has_exports, diagnostics: vec![] };
     }
 
     let semantic_ret = SemanticBuilder::new()
@@ -217,7 +229,7 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
     let diagnostics = diags.iter().flat_map(
         |d| js_utils::oxc_diagnostic_to_lsp_diagnostic(d, &uri)
     ).collect();
-    ParsedJs { template_refs, component_descriptors, decls, imports, reexports, diagnostics }
+    ParsedJs { template_refs, component_descriptors, decls, imports, reexports, has_exports, diagnostics }
 }
 
 #[derive(Debug, Clone)]
@@ -255,6 +267,8 @@ pub struct JsAst {
     /// The subset of [`Self::js_imports`] reached through a re-export — tracked apart as
     /// one of the two type-propagating edges of `core::js_import_graph`.
     pub js_reexports: Vec<String>,
+    /// Whether the file has anything importable
+    pub has_exports: bool,
 }
 
 impl Default for JsAst {
@@ -271,6 +285,7 @@ impl JsAst {
             js_decls: Vec::new(),
             js_imports: Vec::new(),
             js_reexports: Vec::new(),
+            has_exports: false,
         }
     }
 }
@@ -569,6 +584,7 @@ impl FileInfo {
             js_ast.js_decls = parsed.decls;
             js_ast.js_imports = parsed.imports;
             js_ast.js_reexports = parsed.reexports;
+            js_ast.has_exports = parsed.has_exports;
         }
         self.replace_diagnostics(DiagnosticSource::JS_OXC, parsed.diagnostics); //OXC will use SYNTAX. others are reserved to tsserver
     }
