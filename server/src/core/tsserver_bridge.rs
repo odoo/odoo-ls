@@ -53,7 +53,9 @@ pub struct TsServerBridge {
     open_virtual_docs: HashSet<String>,
     /// Whether the project payload changed since the last `openExternalProject`.
     transient_dirty: bool,
-    //contains all tsconfig paths registered for the project, such as "@odoo/owl" as key and resolved paths matching it
+    /// entries that map import identifiers to lookup locations (`paths` in the project
+    /// config), e.g. "@odoo/owl" as key and resolved paths matching it.
+    /// see [`super::tsserver_paths::generate_paths_map`]
     project_paths: HashMap<String, Vec<String>>,
     /// Odoo's ambient-declaration `.d.ts` roots, accumulated per opened module by
     /// [`Self::stage_type_files`]. Permanent: never `open`ed, never evicted.
