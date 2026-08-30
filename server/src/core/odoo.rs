@@ -13,6 +13,7 @@ use crate::core::symbols::storage::metrics::{log_slotmap_capacities, log_symbol_
 use crate::core::symbols::symbol_keys::{BuildableSymbolKey, FileSystemSymbolKey, FunctionKey, ModuleKey, NamespaceKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlTemplateKey};
 use crate::core::symbols::symbol_table_impl::CreateError;
 use crate::core::tsserver_bridge::{TsServerBridge};
+use crate::core::tsserver_paths::generate_paths_map;
 use crate::features::tsserver_completion::TsCompletionResolveData;
 use crate::features::owl_virtual;
 use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
@@ -450,44 +451,12 @@ impl SyncOdoo {
                 return None;
             }
         };
-        let mut paths: HashMap<String, Vec<String>> = HashMap::default();
         let mut addon_dirs: Vec<PathBuf> = vec![];
         if let Some(ref odoo_path) = odoo_path {
             addon_dirs.push(Path::new(odoo_path).join("addons"));
         }
-        for extra in addons_paths.iter() {
-            addon_dirs.push(Path::new(extra).to_path_buf());
-        }
-        for addon_dir in addon_dirs {
-            if let Ok(entries) = std::fs::read_dir(&addon_dir) {
-                for entry in entries.flatten() {
-                    if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                        let name = entry.file_name().to_string_lossy().to_string();
-                        let src = entry.path().join("static").join("src").join("*");
-                        paths.entry(format!("@{}/*", name))
-                            .or_default()
-                            .push(src.sanitize());
-                        if name == "spreadsheet" {
-                            let src = entry.path().join("static").join("src").join("index.js");
-                            paths.entry(S!("@spreadsheet"))
-                                .or_default()
-                                .push(src.sanitize());
-                            // `@odoo/o-spreadsheet` is deliberately NOT aliased: mirrors
-                            // jsconfig.json's exclude of o_spreadsheet.js (a 2.9 MB
-                            // minified bundle with no .d.ts that only bloats the program).
-                        } else if name == "web" {
-                            let path_entry = paths.entry(S!("@odoo/owl")).or_default();
-                            path_entry.push(entry.path().join("static").join("src").join("@types").join("owl.d.ts").sanitize());
-                            path_entry.push(entry.path().join("static").join("lib").join("owl").join("odoo_module.js").sanitize());
-                            let path_entry = paths.entry(S!("@odoo/hoot")).or_default();
-                            path_entry.push(entry.path().join("static").join("src").join("@types").join("hoot.d.ts").sanitize());
-                            let path_entry = paths.entry(S!("@odoo/hoot-dom")).or_default();
-                            path_entry.push(entry.path().join("static").join("lib").join("hoot-dom").join("hoot-dom.ts").sanitize());
-                        }
-                    }
-                }
-            }
-        }
+        addon_dirs.extend(addons_paths.into_iter().map(PathBuf::from));
+        let paths = generate_paths_map(&addon_dirs);
         bridge.open_external_project(paths);
         Some(bridge)
     }
