@@ -1903,18 +1903,19 @@ impl SymbolTable {
     }
 
 
-    pub fn is_field(session: &mut SessionInfo, target: SymbolKey) -> bool {
+    /// Resolves `target`'s evaluations (following refs) and returns whether any of the
+    /// resolved symbols satisfies `matches_key`.
+    pub fn is_eval_to(session: &mut SessionInfo, target: SymbolKey, matches_key: impl Fn(&SessionInfo, SymbolKey) -> bool) -> bool {
         let SymbolKey::Variable(v) = target else {
             return false;
         };
-        let var_symbol = &session.sync_odoo.symbol_table[v];
-        let evaluations = var_symbol.evaluations.clone();
-        for eval in evaluations {
-            let symbol = eval.symbol.get_symbol(session, None,  &mut vec![], None);
+        let evaluations = session.sync_odoo.symbol_table[v].evaluations.clone();
+        for eval in evaluations.iter() {
+            let symbol = eval.symbol.get_symbol(session, None, &mut vec![], None);
             let eval_weaks = Self::follow_ref(&symbol, session, None, true, false, None, None);
             for eval_weak in eval_weaks.iter() {
                 if let Some(key) = eval_weak.upgrade_weak(&session.sync_odoo.symbol_table)
-                    && Self::is_field_class(session, key) {
+                    && matches_key(session, key) {
                         return true;
                     }
             }
@@ -1922,27 +1923,14 @@ impl SymbolTable {
         false
     }
 
+    pub fn is_field(session: &mut SessionInfo, target: SymbolKey) -> bool {
+        Self::is_eval_to(session, target, Self::is_field_class)
+    }
+
 
     fn is_method(session: &mut SessionInfo, target: SymbolKey) -> bool {
-        if matches!(target, SymbolKey::Function(_)) {
-            return true;
-        }
-        let SymbolKey::Variable(v) = target else {
-            return false;
-        };
-        let var_symbol = &session.sync_odoo.symbol_table[v];
-        let evals = var_symbol.evaluations.clone();
-        for eval in evals.iter() {
-            let symbol = eval.symbol.get_symbol(session, None,  &mut vec![], None);
-            let eval_weaks = Self::follow_ref(&symbol, session, None, true, false, None, None);
-            for eval_weak in eval_weaks.iter() {
-                if let Some(key) = eval_weak.upgrade_weak(&session.sync_odoo.symbol_table)
-                    && matches!(key, SymbolKey::Function(_)) {
-                        return true;
-                    }
-            }
-        }
-        false
+        matches!(target, SymbolKey::Function(_))
+            || Self::is_eval_to(session, target, |_, key| matches!(key, SymbolKey::Function(_)))
     }
 
 
@@ -2036,21 +2024,7 @@ impl SymbolTable {
     }
 
     pub fn is_specific_field(session: &mut SessionInfo, target: SymbolKey, field_names: &[&str]) -> bool {
-        let SymbolKey::Variable(v) = target else {
-            return false;
-        };
-        let evaluations = session.st()[v].evaluations.clone();
-        for eval in evaluations.iter() {
-            let symbol = eval.symbol.get_symbol(session, None, &mut vec![], None);
-            let eval_weaks = Self::follow_ref(&symbol, session, None, true, false, None, None);
-            for eval_weak in eval_weaks.iter() {
-                if let Some(symbol) = eval_weak.upgrade_weak(session.st())
-                    && Self::is_specific_field_class(session, symbol, field_names){
-                        return true;
-                    }
-            }
-        }
-        false
+        Self::is_eval_to(session, target, |session, key| Self::is_specific_field_class(session, key, field_names))
     }
 
     pub fn all_fields(
