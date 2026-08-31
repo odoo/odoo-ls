@@ -472,6 +472,7 @@ impl TsServerBridge {
                     // Empty and present are both load-bearing: do not fill it, do not drop it.
                     // Why: `core::js_module_scope`.
                     "typeRoots": [],
+                    "disableSizeLimit": true,
                 },
                 // No Automatic Type Acquisition: tsserver would otherwise pull `@types/*`
                 // from its global cache into every file — huge type graphs checkJs fully
