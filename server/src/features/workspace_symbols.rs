@@ -35,8 +35,14 @@ impl WorkspaceSymbolFeature {
                         }
                     }
                 }
+        let mut visited_roots = std::collections::HashSet::new();
         for entry in ep_mgr.borrow().iter_all() {
             if entry.borrow().typ == EntryPointType::BUILTIN || entry.borrow().typ == EntryPointType::PUBLIC { //We don't want to search in builtins
+                continue;
+            }
+            // Several entry points (e.g. MAIN and its ADDON entry points) can share the same
+            // root symbol; only traverse each root once to avoid duplicate results.
+            if !visited_roots.insert(entry.borrow().root) {
                 continue;
             }
             if WorkspaceSymbolFeature::browse_symbol(session, entry.borrow().root.into(), &query, None, None, can_resolve_location_range, &mut symbols) {
