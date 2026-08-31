@@ -1242,62 +1242,6 @@ impl FileMgr {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn assert_roundtrips(folder_name: &str) {
-        let path = if cfg!(windows) {
-            format!("C:\\Users\\test\\{}\\file.py", folder_name)
-        } else {
-            format!("/home/test/{}/file.py", folder_name)
-        };
-        let uri = FileMgr::try_pathname2uri(&path)
-            .unwrap_or_else(|err| panic!("should convert path {:?} to a uri: {}", path, err));
-
-        let roundtrip = FileMgr::uri2pathname(uri.as_str());
-        let expected = if cfg!(windows) {
-            path.replace("C:", "c:").replace('\\', "/")
-        } else {
-            path
-        };
-        assert_eq!(roundtrip, expected, "roundtrip mismatch for uri {}", uri.as_str());
-    }
-
-    #[test]
-    fn test_pathname2uri_handles_special_characters_in_path() {
-        // Characters that are valid in filenames on Linux/Windows but that either aren't
-        // allowed raw in an RFC 3986 path segment (brackets, pipe, caret, braces, angle
-        // brackets, quote) or would otherwise be misparsed as URL structure by url::Url
-        // (query/fragment delimiters, a lone percent sign, a literal backslash).
-        for folder_name in [
-            "[a_folder]",
-            "a folder",
-            "a?query",
-            "a#frag",
-            "a%percent",
-            "pipe|char",
-            "caret^char",
-            "curly{brace}",
-            "backtick`char",
-            "quote\"char",
-            "lt<gt>char",
-            "café_émoji_😊",
-        ] {
-            assert_roundtrips(folder_name);
-        }
-    }
-
-    #[test]
-    #[cfg(not(windows))]
-    fn test_pathname2uri_handles_literal_backslash_in_path() {
-        // On Linux/macOS, unlike Windows, '\' is a valid filename character rather than a
-        // path separator, so it must be percent-encoded rather than treated as a segment
-        // boundary (url::Url on its own treats '\' as a separator even for non-Windows paths).
-        assert_roundtrips("back\\slash");
-    }
-}
-
 /// A file pre-loaded by a background [`crate::core::pre_parser`] worker thread,
 /// ready to be slotted into a [`FileInfo`] by the build thread without re-reading
 /// or re-parsing it from disk. See [`FileInfo::apply_preloaded`].
@@ -1362,4 +1306,61 @@ pub fn position_to_offset_with_line_index(
         character_offset: OneIndexed::from_zero_indexed(character as usize),
     };
     index.offset(position, text, encoding).into()
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_roundtrips(folder_name: &str) {
+        let path = if cfg!(windows) {
+            format!("C:\\Users\\test\\{}\\file.py", folder_name)
+        } else {
+            format!("/home/test/{}/file.py", folder_name)
+        };
+        let uri = FileMgr::try_pathname2uri(&path)
+            .unwrap_or_else(|err| panic!("should convert path {:?} to a uri: {}", path, err));
+
+        let roundtrip = FileMgr::uri2pathname(uri.as_str());
+        let expected = if cfg!(windows) {
+            path.replace("C:", "c:").replace('\\', "/")
+        } else {
+            path
+        };
+        assert_eq!(roundtrip, expected, "roundtrip mismatch for uri {}", uri.as_str());
+    }
+
+    #[test]
+    fn test_pathname2uri_handles_special_characters_in_path() {
+        // Characters that are valid in filenames on Linux/Windows but that either aren't
+        // allowed raw in an RFC 3986 path segment (brackets, pipe, caret, braces, angle
+        // brackets, quote) or would otherwise be misparsed as URL structure by url::Url
+        // (query/fragment delimiters, a lone percent sign, a literal backslash).
+        for folder_name in [
+            "[a_folder]",
+            "a folder",
+            "a?query",
+            "a#frag",
+            "a%percent",
+            "pipe|char",
+            "caret^char",
+            "curly{brace}",
+            "backtick`char",
+            "quote\"char",
+            "lt<gt>char",
+            "café_émoji_😊",
+        ] {
+            assert_roundtrips(folder_name);
+        }
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn test_pathname2uri_handles_literal_backslash_in_path() {
+        // On Linux/macOS, unlike Windows, '\' is a valid filename character rather than a
+        // path separator, so it must be percent-encoded rather than treated as a segment
+        // boundary (url::Url on its own treats '\' as a separator even for non-Windows paths).
+        assert_roundtrips("back\\slash");
+    }
 }
