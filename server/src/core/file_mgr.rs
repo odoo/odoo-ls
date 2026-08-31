@@ -308,8 +308,7 @@ impl Ast {
     pub fn is_built(&self) -> bool {
         match self {
             Ast::PythonAst(py_ast) => py_ast.indexed_module.is_some(),
-            Ast::JsAst(js_ast) => !js_ast.js_template_refs.is_empty() || !js_ast.js_component_descriptors.is_empty(),
-            Ast::XmlAst | Ast::CsvAst => true,
+            Ast::JsAst(_) | Ast::XmlAst | Ast::CsvAst => true,
         }
     }
 }
