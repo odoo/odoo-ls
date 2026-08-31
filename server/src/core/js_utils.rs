@@ -99,6 +99,11 @@ fn parse_module_header(head: &str) -> Option<ModuleHeader> {
     })
 }
 
+/// Whether a file has the "@odoo-module header", without "ignore".
+/// Useful for defining whether a file in `static/lib` is one of Odoo's JS modules.
+pub fn is_headed_odoo_module(contents: &str) -> bool {
+    parse_module_header(contents).is_some_and(|header| !header.ignore)
+}
 
 #[cfg(test)]
 mod tests {
@@ -127,5 +132,14 @@ mod tests {
             parse_module_header("// @odoo-module ignore alias=@web/nope"),
             Some(ModuleHeader { ignore: true, alias: Some(S!("@web/nope")) })
         );
+    }
+
+    #[test]
+    fn is_odoo_module_reads_whole_sources() {
+        assert!(is_headed_odoo_module("/** @odoo-module */\nexport const a = 1;\n"));
+        assert!(!is_headed_odoo_module("\"use strict\";\nvar owl = (() => {\n"));
+        assert!(!is_headed_odoo_module("// @odoo-module ignore\nexport const a = 1;\n"));
+        // A header may not start on a later line: `ODOO_MODULE_RE` is anchored.
+        assert!(!is_headed_odoo_module("const a = 1;\n/** @odoo-module */\n"));
     }
 }
