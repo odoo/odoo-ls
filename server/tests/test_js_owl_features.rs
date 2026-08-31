@@ -58,6 +58,7 @@ fn test_js_owl_features() {
     test_definition_in_subclass_template(&mut session, &fixtures);
     test_definition_for_template(&mut session, &fixtures);
     test_definition_for_template_jump_to_component(&mut session, &fixtures);
+    test_definition_in_js_without_component(&mut session, &fixtures);
 
     // Completion
     test_completion_in_js(&mut session, &fixtures);
@@ -149,6 +150,19 @@ fn test_definition_for_template(session: &mut SessionInfo, fixtures: &Fixtures) 
 fn test_definition_for_template_jump_to_component(session: &mut SessionInfo, fixtures: &Fixtures) {
     let Fixtures { js, xml , .. } = fixtures;
     assert_definition(session, xml, "<t t-name=\"|module_owl.Greeting\">", js, "export class |Greeting extends Component");
+}
+
+/// Definition should work in JS files that have no Component definitions
+fn test_definition_in_js_without_component(session: &mut SessionInfo, fixtures: &Fixtures) {
+    let Fixtures { js_utils, report_js, .. } = fixtures;
+    // definition location in same file
+    assert_definition(session,
+        js_utils, "if (answer < |half_answer)",
+        js_utils, "const |half_answer = 21" );
+    // definition location in imported file
+    assert_definition(session,
+        js_utils, "answer === final|_answer()",
+        report_js, "export function |final_answer()" );
 }
 
 /// Completion after `this.` and `this.props.` in the component's own `.js`.

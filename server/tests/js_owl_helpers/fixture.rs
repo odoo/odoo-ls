@@ -19,6 +19,8 @@ pub struct Fixtures {
     pub sub_js: FixtureFile,
     /// loud_greeting.xml, home of LoudGreeting template
     pub sub_xml: FixtureFile,
+    /// utils.js, no component, imports from report_js
+    pub js_utils: FixtureFile,
     
     // Unopened fixtures: the test never opens them, so they are never a tsserver root of their own.
     /// unopened: quiet_greeting.js, home of QuietGreeting component, which extends Greeting
@@ -35,10 +37,11 @@ impl Fixtures {
         let xml = FixtureFile::open(session, &["greeting", "greeting.xml"]);
         let sub_js = FixtureFile::open(session, &["greeting", "loud_greeting.js"]);
         let sub_xml = FixtureFile::open(session, &["greeting", "loud_greeting.xml"]);
+        let js_utils =  FixtureFile::open(session, &["greeting", "utils.js"]);
         let quiet_js = FixtureFile::unopened(&["greeting", "quiet_greeting.js"]);
         let report_js = FixtureFile::unopened(&["greeting", "greeting_report.js"]);
         let ext_xml = FixtureFile::unopened(&["greeting", "greeting_ext.xml"]);
-        Fixtures { js, xml, sub_js, sub_xml, quiet_js, report_js, ext_xml }
+        Fixtures { js, xml, sub_js, sub_xml, js_utils, quiet_js, report_js, ext_xml }
     }
 }
 
