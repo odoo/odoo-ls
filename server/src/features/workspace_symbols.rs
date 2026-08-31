@@ -2,7 +2,7 @@ use lsp_server::{ErrorCode, ResponseError};
 use lsp_types::{Location, SymbolKind, WorkspaceLocation, WorkspaceSymbol, WorkspaceSymbolResponse};
 use ruff_text_size::{TextRange, TextSize};
 
-use crate::{S, constants::SymType, core::{entry_point::EntryPointType, file_mgr::{Ast, FileMgr}, symbols::{storage::{SymbolTable, XmlDataParent}, symbol_keys::{SourceFileKey, SymbolKey, XmlTemplateKey}}}, threads::SessionInfo, utils::string_fuzzy_contains};
+use crate::{S, constants::SymType, core::{entry_point::EntryPointType, file_mgr::{Ast, FileMgr}, symbols::{storage::{SymbolTable, XmlDataParent}, symbol_keys::{SourceFileKey, SymbolKey, XmlTemplateKey}}}, threads::SessionInfo, utils::{HashSet, string_fuzzy_contains}};
 
 /// The prefix OWL template names are offered under, mirroring the `xmlid.` one already used for
 /// XML ids. It keeps a template distinguishable from the component class of the same name, and
@@ -35,8 +35,14 @@ impl WorkspaceSymbolFeature {
                         }
                     }
                 }
+        let mut visited_roots = HashSet::default();
         for entry in ep_mgr.borrow().iter_all() {
             if entry.borrow().typ == EntryPointType::BUILTIN || entry.borrow().typ == EntryPointType::PUBLIC { //We don't want to search in builtins
+                continue;
+            }
+            // Several entry points (e.g. MAIN and its ADDON entry points) can share the same
+            // root symbol; only traverse each root once to avoid duplicate results.
+            if !visited_roots.insert(entry.borrow().root) {
                 continue;
             }
             if WorkspaceSymbolFeature::browse_symbol(session, entry.borrow().root.into(), &query, None, None, can_resolve_location_range, &mut symbols) {
