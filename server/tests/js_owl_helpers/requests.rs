@@ -23,16 +23,19 @@ pub fn hover(session: &mut SessionInfo, file: &FixtureFile, snippet: &str) -> St
     }
 }
 
-/// Definition targets at the caret, as `(path, start line)`.
+/// Definition targets at the caret, as `(path, start line)`. Empty when the server answers
+/// nothing: an import that resolves to no module has no declaration to reach.
 pub fn definitions(session: &mut SessionInfo, file: &FixtureFile, snippet: &str) -> Vec<(String, u32)> {
     let params = GotoDefinitionParams {
         text_document_position_params: file.position_params(snippet),
         work_done_progress_params: Default::default(),
         partial_result_params: Default::default(),
     };
-    let response = Odoo::handle_goto_definition(session, params)
+    let Some(response) = Odoo::handle_goto_definition(session, params)
         .expect("definition request failed")
-        .unwrap_or_else(|| panic!("no definition at {snippet:?} in {}", file.path));
+    else {
+        return vec![];
+    };
     let targets = match response {
         GotoDefinitionResponse::Scalar(location) => vec![(location.uri, location.range)],
         GotoDefinitionResponse::Array(locations) => {

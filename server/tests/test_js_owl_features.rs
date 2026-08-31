@@ -73,6 +73,12 @@ fn test_js_owl_features() {
     test_references_with_unopened_files(&mut session, &fixtures);
     test_references_from_usage(&mut session, &fixtures);
     test_references_to_template(&mut session, &fixtures);
+    
+    // Import resolution
+    test_glob_module_paths(&mut session, &fixtures);
+    test_lib_module_paths(&mut session, &fixtures);
+    test_odoo_scoped_module_paths(&mut session, &fixtures);
+
 }
 
 /// Hover in the component's own `.js`: a class field, a member assigned in `setup()` (which only
@@ -300,4 +306,28 @@ fn test_references_to_template(session: &mut SessionInfo, fixtures: &Fixtures) {
     ];
     assert_references(session, js, "static template = \"|module_owl.Greeting\"", sites);
     assert_references(session, xml, "t-name=\"|module_owl.Greeting\"", sites);
+}
+
+/// `static/tests` is importable under `@module/../tests/*` 
+/// `static/src` is importable under `@module/*`
+fn test_glob_module_paths(session: &mut SessionInfo, fixtures: &Fixtures) {
+    let Fixtures { js_utils, tests_js, helpers_js, .. } = fixtures;
+    assert_import_resolves(session, tests_js, "@module_owl/../tests/helpers", helpers_js);
+    assert_import_resolves(session, tests_js, "@module_owl/greeting/utils", js_utils);
+}
+
+/// `alias=` gives a `static/lib` file a name of its own
+/// `ignore` takes that name away
+fn test_lib_module_paths(session: &mut SessionInfo, fixtures: &Fixtures) {
+    let Fixtures { lib_imports, aliased_js, .. } = fixtures;
+    assert_import_resolves(session, lib_imports, "@fixture/aliased", aliased_js);
+    assert_import_unresolved(session, lib_imports, "@fixture/opted_out");
+}
+
+/// `@odoo/owl` is named by the `.d.ts` that types it
+/// `@odoo/hoot-dom` is the `alias=` of a real `static/lib` file
+fn test_odoo_scoped_module_paths(session: &mut SessionInfo, fixtures: &Fixtures) {
+    let Fixtures { js, tests_js, .. } = fixtures;
+    assert_import_resolves_in(session, js, "@odoo/owl", "web/static/src/@types/owl.d.ts");
+    assert_import_resolves_in(session, tests_js, "@odoo/hoot-dom", "web/static/lib/hoot-dom/hoot-dom.js");
 }
