@@ -13,7 +13,7 @@ use crate::core::tsserver_bridge::ts_kind_to_lsp_kind;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TsCompletionResolveData {
     pub file: String,
-    /// 0-based, as originally sent to [`TsServerBridge::completion_items_for_content`].
+    /// 0-based, as originally sent to [`TsServerBridge::completion_list_for_content`].
     pub line: u32,
     pub character: u32,
     pub name: String,
@@ -68,7 +68,6 @@ pub fn entry_to_completion_item(entry: &Value, file_path: &str, line: u32, chara
 
     // Where an auto-import would pull the symbol from, shown next to the label.
     let label_details = join_ts_parts(entry.get("sourceDisplay"))
-        .or_else(|| source.map(str::to_string))
         .map(|description| CompletionItemLabelDetails {
             detail: None,
             description: Some(description),
@@ -220,9 +219,14 @@ mod tests {
             "kind": "class",
             "kindModifiers": "export",
             "sortText": "16",
-            "source": "/odoo/addons/web/static/src/core/domain",
+            "source": "@web/core/domain",
+            "sourceDisplay": [{ "text": "@web/core/domain", "kind": "text" }],
             "hasAction": true,
-            "data": { "exportName": "Domain", "fileName": "/odoo/addons/web/static/src/core/domain.js" }
+            "data": {
+                "exportName": "Domain",
+                "fileName": "/odoo/addons/web/static/src/core/domain.js",
+                "moduleSpecifier": "@web/core/domain"
+            }
         })
     }
 
@@ -283,14 +287,15 @@ mod tests {
         assert_eq!(resolve.file, "/a/b.js");
         assert_eq!((resolve.line, resolve.character), (23, 5));
         assert_eq!(resolve.name, "Domain");
-        assert_eq!(resolve.source.as_deref(), Some("/odoo/addons/web/static/src/core/domain"));
+        assert_eq!(resolve.source.as_deref(), Some("@web/core/domain"));
         // tsserver's opaque export-map handle must survive the trip through the client.
         assert_eq!(resolve.data.unwrap()["exportName"], "Domain");
 
-        // Without `sourceDisplay`, the raw `source` names the module in the list.
+        // The module the accepted item would import from, beside the label — the whole point of
+        // `allowIncompleteCompletions`, and it matches the specifier the edit will write.
         assert_eq!(
             item.label_details.and_then(|d| d.description).as_deref(),
-            Some("/odoo/addons/web/static/src/core/domain")
+            Some("@web/core/domain")
         );
     }
 
