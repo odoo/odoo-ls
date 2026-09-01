@@ -2,7 +2,7 @@ use lsp_types::Location;
 use lsp_types::request::GotoDeclarationResponse;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::core::file_mgr::{Ast, FileInfo};
+use crate::core::file_mgr::{AstKind, FileInfo};
 use crate::core::symbols::symbol_keys::SourceFileKey;
 use crate::core::tsserver_bridge;
 use crate::features::goto_utils::{GotoRequest, GotoUtils};
@@ -18,12 +18,12 @@ impl DeclarationFeature {
         line: u32,
         character: u32
     ) -> Option<GotoDeclarationResponse> {
-        let ast_type = file_info.borrow().file_info_ast.borrow().ast.clone();
-        let definitions_sources = match ast_type {
-            Ast::PythonAst(_) => GotoUtils::get_symbols(session, GotoRequest::Declaration, file_symbol, file_info, line, character),
-            Ast::XmlAst => GotoUtils::get_symbols_xml(session, file_symbol, file_info, line, character),
-            Ast::CsvAst => GotoUtils::get_symbols_csv(session, file_symbol, file_info, line, character),
-            Ast::JsAst(_) => {return Self::get_js_declaration(session, file_info, line, character);},
+        let ast_kind = file_info.borrow().file_info_ast.borrow().ast.kind();
+        let definitions_sources = match ast_kind {
+            AstKind::PythonAst => GotoUtils::get_symbols(session, GotoRequest::Declaration, file_symbol, file_info, line, character),
+            AstKind::XmlAst => GotoUtils::get_symbols_xml(session, file_symbol, file_info, line, character),
+            AstKind::CsvAst => GotoUtils::get_symbols_csv(session, file_symbol, file_info, line, character),
+            AstKind::JsAst => {return Self::get_js_declaration(session, file_info, line, character);},
         };
         let mut links = vec![];
         for def in definitions_sources.iter() {

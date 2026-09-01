@@ -2,7 +2,7 @@ use crate::constants::OYarn;
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
-use crate::core::file_mgr::{Ast, PreloadedFile};
+use crate::core::file_mgr::{AstKind, PreloadedFile};
 use crate::core::js_arch_builder::ComponentDescriptor;
 use crate::core::js_type_files;
 use crate::core::module_load_order::sort_by_load_order;
@@ -1530,14 +1530,14 @@ impl Odoo {
                 if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
                     file_info.borrow_mut().prepare_ast(session);
                 }
-                let ast_type = file_info.borrow().file_info_ast.borrow().ast.clone();
-                match ast_type {
-                    Ast::PythonAst(_) => {
+                let ast_kind = file_info.borrow().file_info_ast.borrow().ast.kind();
+                match ast_kind {
+                    AstKind::PythonAst => {
                         if file_info.borrow_mut().file_info_ast.borrow().ast.as_py_ast().indexed_module.is_some() {
                             return Ok(HoverFeature::hover_python(session, file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                         }
                     },
-                    Ast::XmlAst => {
+                    AstKind::XmlAst => {
                         let Position { line, character } = params.text_document_position_params.position;
                         // OWL-template JS expressions first; everything else → XML hover.
                         // @todo: check if not breaking python-related hover
@@ -1546,10 +1546,10 @@ impl Odoo {
                         }
                         return Ok(HoverFeature::hover_xml(session, file_symbol, &file_info, line, character));
                     },
-                    Ast::CsvAst => {
+                    AstKind::CsvAst => {
                         return Ok(HoverFeature::hover_csv(session, file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                     },
-                    Ast::JsAst(_) => {
+                    AstKind::JsAst => {
                         return Ok(HoverFeature::hover_js(session, &file_info.borrow().uri, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                     }
                 }
@@ -1588,9 +1588,9 @@ impl Odoo {
                 if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
                     file_info.borrow_mut().prepare_ast(session);
                 }
-                let ast_type = file_info.borrow().file_info_ast.borrow().ast.clone();
-                match ast_type {
-                    Ast::PythonAst(_) => {
+                let ast_kind = file_info.borrow().file_info_ast.borrow().ast.kind();
+                match ast_kind {
+                    AstKind::PythonAst => {
                         if session.sync_odoo.config.is_semantic_tokens_python_disabled() {
                             return Ok(None);
                         }
@@ -1599,7 +1599,7 @@ impl Odoo {
                             return Ok(Some(SemanticTokensResult::Tokens(tokens)));
                         }
                     },
-                    Ast::JsAst(_) => {
+                    AstKind::JsAst => {
                         if session.sync_odoo.config.is_semantic_tokens_javascript_disabled() {
                             return Ok(None);
                         }
@@ -1607,7 +1607,7 @@ impl Odoo {
                         let tokens = SemanticTokensFeature::tokens_javascript(session, &uri, &file_info);
                         return Ok(Some(SemanticTokensResult::Tokens(tokens)));
                     },
-                    Ast::XmlAst => {
+                    AstKind::XmlAst => {
                         if session.sync_odoo.config.is_semantic_tokens_xml_disabled() {
                             return Ok(None);
                         }
@@ -1762,9 +1762,9 @@ impl Odoo {
                 if schema != "untitled" && !file_info.borrow().file_info_ast.borrow().ast.is_built() {
                     file_info.borrow_mut().prepare_ast(session);
                 }
-                let ast_type = file_info.borrow().file_info_ast.borrow().ast.clone();
-                match ast_type {
-                    Ast::JsAst(_) => {
+                let ast_kind = file_info.borrow().file_info_ast.borrow().ast.kind();
+                match ast_kind {
+                    AstKind::JsAst => {
                         if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
                             let items = bridge.completion_items_for_content(
                                 &path,
@@ -1775,14 +1775,14 @@ impl Odoo {
                         }
                         return Ok(None);
                     },
-                    Ast::XmlAst => {
+                    AstKind::XmlAst => {
                         if let Some(items) = owl_virtual::completion_xml_owl(session, &file_info, params.text_document_position.position.line, params.text_document_position.position.character) {
                             return Ok(Some(CompletionResponse::Array(items)));
                         }
                     },
                     _ => {}
                 }
-                if matches!(file_info.borrow_mut().file_info_ast.borrow().ast, Ast::PythonAst(_)) && file_info.borrow_mut().file_info_ast.borrow().ast.as_py_ast().indexed_module.is_some() {
+                if ast_kind == AstKind::PythonAst && file_info.borrow_mut().file_info_ast.borrow().ast.as_py_ast().indexed_module.is_some() {
                     return Ok(CompletionFeature::autocomplete(session,
                         file_symbol,
                         &file_info,

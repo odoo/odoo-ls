@@ -312,6 +312,23 @@ impl Ast {
             Ast::XmlAst | Ast::CsvAst => true,
         }
     }
+    /// Read the AST kind for matching on type only without cloning
+    pub fn kind(&self) -> AstKind {
+        match self {
+            Ast::PythonAst(_) => AstKind::PythonAst,
+            Ast::XmlAst => AstKind::XmlAst,
+            Ast::CsvAst => AstKind::CsvAst,
+            Ast::JsAst(_) => AstKind::JsAst,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AstKind {
+    PythonAst,
+    XmlAst,
+    CsvAst,
+    JsAst,
 }
 
 /* Structure that hold ast and text_document for FileInfo. It allows Fileinfo to hold it with a Rc<RefCell<>> to allow mutability and build on-the-fly
