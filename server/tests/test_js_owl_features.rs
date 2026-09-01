@@ -44,6 +44,8 @@ fn test_js_owl_features() {
         session.sync_odoo.tsserver_bridge.is_some(),
         "tsserver did not start with TSSERVER={tsserver_command:?}"
     );
+    eprintln!("COMMUNITY_PATH={:?}", std::env::var("COMMUNITY_PATH").expect("setup_server checked it already"));
+    eprintln!("Odoo version={}", session.sync_odoo.version);
 
     let fixtures = Fixtures::init(&mut session);
 
@@ -64,6 +66,7 @@ fn test_js_owl_features() {
     test_completion_in_js(&mut session, &fixtures);
     test_completion_in_template(&mut session, &fixtures);
     test_completion_resolve(&mut session, &fixtures);
+    test_completion_entries_label_details(&mut session, &fixtures);
 
     // References
     test_references_from_declaration(&mut session, &fixtures);
@@ -215,6 +218,14 @@ fn test_completion_resolve(session: &mut SessionInfo, fixtures: &Fixtures) {
     assert!(shout.documentation.is_some(), "resolve should carry shout's JSDoc, got none");
     // Its edits would be in virtual-doc coordinates, which would corrupt the XML if applied.
     assert!(shout.additional_text_edits.is_none(), "a template completion must carry no edits");
+}
+
+fn test_completion_entries_label_details(session: &mut SessionInfo, fixtures: &Fixtures) {
+    let Fixtures { js_utils, .. } = fixtures;
+    assert_completions_label_details(session, js_utils, "const service = useS|", &[
+        ("useService", "@web/core/utils/hooks"),
+        ("useSpellCheck", "@web/core/utils/hooks"),
+    ]);
 }
 
 /// Find-references from a member's declaration

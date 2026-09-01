@@ -49,6 +49,23 @@ pub fn assert_completions(session: &mut SessionInfo, file: &FixtureFile, snippet
     }
 }
 
+/// Assert one completion request at the caret offers every `(label, label_details)`.
+pub fn assert_completions_label_details(session: &mut SessionInfo, file: &FixtureFile, snippet: &str, expected: &[(&str, &str)]) {
+    let items = completions(session, file, snippet);
+    for (label, label_details) in expected {
+        let item = items.iter().find(|item| item.label == *label).unwrap_or_else(|| panic!(
+            "no completion {label:?} at {snippet:?} in {}", file.path
+        ));
+        let item_label_details = item.label_details.as_ref()
+            .unwrap_or_else(|| panic!("no label detail for {label:?} at {snippet:?} in {}", file.path))
+            .description.as_ref()
+            .unwrap_or_else(|| panic!("no label detail description for {label:?} at {snippet:?} in {}", file.path));
+        assert_eq!(item_label_details.as_str(), *label_details,
+            "label details of completion {label:?} at {snippet:?}"
+        );
+    }
+}
+
 /// Assert the references at the caret are exactly `expected`, each given as a caret snippet in the
 /// fixture holding it.
 pub fn assert_references(session: &mut SessionInfo, file: &FixtureFile, snippet: &str, expected: &[(&FixtureFile, &str)]) {
