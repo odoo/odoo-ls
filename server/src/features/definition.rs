@@ -2,7 +2,7 @@ use lsp_types::{GotoDefinitionResponse, Location, LocationLink, Range};
 use std::{cell::RefCell, rc::Rc};
 use roxmltree;
 
-use crate::core::file_mgr::{Ast, FileInfo, FileMgr};
+use crate::core::file_mgr::{AstKind, FileInfo, FileMgr};
 use crate::core::tsserver_bridge;
 use crate::features::owl_component_utils;
 use crate::core::symbols::symbol_keys::SourceFileKey;
@@ -21,18 +21,18 @@ impl DefinitionFeature {
         line: u32,
         character: u32
     ) -> Option<GotoDefinitionResponse> {
-        let ast_type = file_info.borrow().file_info_ast.borrow().ast.clone();
-        let definitions_sources = match ast_type {
-            Ast::PythonAst(_) => GotoUtils::get_symbols(session, GotoRequest::Definition, file_symbol, file_info, line, character),
-            Ast::XmlAst => GotoUtils::get_symbols_xml(session, file_symbol, file_info, line, character),
-            Ast::CsvAst => GotoUtils::get_symbols_csv(session, file_symbol, file_info, line, character),
-            Ast::JsAst(_) => {return DefinitionFeature::get_js_definition(session, file_info, line, character);},
+        let ast_kind = file_info.borrow().file_info_ast.borrow().ast.kind();
+        let definitions_sources = match ast_kind {
+            AstKind::PythonAst => GotoUtils::get_symbols(session, GotoRequest::Definition, file_symbol, file_info, line, character),
+            AstKind::XmlAst => GotoUtils::get_symbols_xml(session, file_symbol, file_info, line, character),
+            AstKind::CsvAst => GotoUtils::get_symbols_csv(session, file_symbol, file_info, line, character),
+            AstKind::JsAst => {return DefinitionFeature::get_js_definition(session, file_info, line, character);},
         };
         let links: Vec<LocationLink> = definitions_sources
             .iter()
             .flat_map(|def| GotoUtils::goto_source_to_location(session, def))
             .collect();
-        if matches!(ast_type, Ast::XmlAst) && links.is_empty()
+        if ast_kind == AstKind::XmlAst && links.is_empty()
         && let Some(response) = Self::get_owl_js_definition(session, file_info, line, character) {
             return Some(response);
         }
