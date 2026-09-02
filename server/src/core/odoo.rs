@@ -1736,6 +1736,7 @@ impl Odoo {
                 let ast_kind = file_info.borrow().file_info_ast.borrow().ast.kind();
                 match ast_kind {
                     AstKind::JsAst => {
+                        let module_scope = js_module_scope::importable_module_prefixes(session, &path);
                         if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
                             let list = bridge.completion_list_for_content(
                                 &path,
@@ -1743,6 +1744,7 @@ impl Odoo {
                                 params.text_document_position.position.character,
                                 trigger_kind,
                                 true,
+                                module_scope.as_deref(),
                             );
                             return Ok(Some(CompletionResponse::List(list)));
                         }

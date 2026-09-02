@@ -408,7 +408,8 @@ pub fn completion_xml_owl(
         .as_mut()?
         // No auto-imports: a template expression cannot carry an import, and the edit that
         // would write one addresses the virtual doc, so every such entry is unusable here.
-        .completion_list_for_content(&doc.virtual_path, v_line, v_char, trigger_kind, false);
+        // Nothing left to scope by module either — what remains names no file.
+        .completion_list_for_content(&doc.virtual_path, v_line, v_char, trigger_kind, false, None);
 
     // Drop edit-bearing entries (their positions address the virtual `.js` the client never
     // saw). Resolve data survives: it points at the still-open virtual doc, and

@@ -1,7 +1,7 @@
 use lsp_types::{CompletionItemKind, CompletionList, CompletionTriggerKind, Diagnostic, DiagnosticSeverity, DocumentSymbol, Location, NumberOrString, Position, Range, SymbolKind};
 use serde_json::{Value, json};
 use crate::S;
-use crate::features::tsserver_completion::{TsCompletionDetails, entry_to_completion_item, is_aliasable_import, response_to_completion_details};
+use crate::features::tsserver_completion::{TsCompletionDetails, entry_to_completion_item, is_aliasable_import, is_in_dependency_scope, response_to_completion_details};
 use crate::utils::{HashMap, HashSet, PathSanitizer};
 use tracing::{debug, info, warn};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -686,6 +686,9 @@ impl TsServerBridge {
     /// (import-statement completions) become a `text_edit`; every entry gets
     /// [`TsCompletionResolveData`] so `completionItem/resolve` can fetch its signature and
     /// docs — and, for auto-imports, the import edit.
+    ///
+    /// `module_scope` bounds those exports to what `file_path` may import, see
+    /// [`is_in_dependency_scope`].
     pub fn completion_list_for_content(
         &mut self,
         file_path: &str,
@@ -693,6 +696,7 @@ impl TsServerBridge {
         character: u32,
         trigger_kind: CompletionTriggerKind,
         include_auto_imports: bool,
+        module_scope: Option<&[String]>,
     ) -> CompletionList {
 
         let request_seq = match self.send_request(
@@ -735,7 +739,7 @@ impl TsServerBridge {
             is_incomplete: body.get("isIncomplete").and_then(Value::as_bool).unwrap_or(false),
             items: entries
                 .iter()
-                .filter(|entry| is_aliasable_import(entry, &self.project_paths))
+                .filter(|entry| is_aliasable_import(entry, &self.project_paths) && is_in_dependency_scope(entry, module_scope))
                 .map(|entry| entry_to_completion_item(entry, file_path, line, character))
                 .collect(),
         }
