@@ -1,7 +1,7 @@
 {
     'name': 'Module Owl',
     'version': '1.0',
-    'depends': [],
+    'depends': ['module_dep'],
     'assets': {
         'web.assets_backend': [
             'module_owl/static/src/counter/counter.js',
