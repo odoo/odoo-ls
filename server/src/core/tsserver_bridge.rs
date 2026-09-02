@@ -421,7 +421,7 @@ impl TsServerBridge {
 
     /// Register the ambient-declaration `.d.ts` roots an opened file needs; staged only, flushed by
     /// [`Self::commit_staged_roots`]. Additive over every module opened so far, never subtracted
-    /// from — [`crate::core::js_type_files`] explains why they are roots and why the union only grows.
+    /// from — [`crate::core::js_module_scope`] explains why they are roots and why the union only grows.
     pub fn stage_type_files(&mut self, paths: &[String]) {
         for path in paths {
             self.staged_roots_dirty |= self.project_type_files.insert(path.clone());
@@ -464,7 +464,7 @@ impl TsServerBridge {
                     "baseUrl": "",
                     "paths": paths_value,
                     // Empty and present are both load-bearing: do not fill it, do not drop it.
-                    // Why: `core::js_type_files`.
+                    // Why: `core::js_module_scope`.
                     "typeRoots": [],
                 },
                 // No Automatic Type Acquisition: tsserver would otherwise pull `@types/*`
