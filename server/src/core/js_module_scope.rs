@@ -66,6 +66,20 @@ pub fn importable_files_for(session: &SessionInfo, path: &str) -> Vec<String> {
     files
 }
 
+/// The directory prefixes an import written in `path` may target: `path`'s own module and its
+/// dependency closure, e.g.: `["/path/to/addons/web/", "/path/to/addons/mail"]`.
+/// `None` when the file belongs to no module.
+pub fn importable_module_prefixes(session: &SessionInfo, path: &str) -> Option<Vec<String>> {
+    let module = module_of_path(session, path)?;
+    Some(
+        dependency_closure(session, module)
+            .into_iter()
+            // Trailing separator: `web` must not claim `web_editor`.
+            .map(|dep| format!("{}/", session.st()[dep].path))
+            .collect(),
+    )
+}
+
 /// `module` itself followed by its transitive manifest dependencies. Dependencies naming a module
 /// that is not loaded are dropped.
 fn dependency_closure(session: &SessionInfo, module: ModuleKey) -> Vec<ModuleKey> {
