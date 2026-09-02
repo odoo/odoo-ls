@@ -1742,6 +1742,7 @@ impl Odoo {
                                 params.text_document_position.position.line,
                                 params.text_document_position.position.character,
                                 trigger_kind,
+                                true,
                             );
                             return Ok(Some(CompletionResponse::List(list)));
                         }

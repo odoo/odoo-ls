@@ -406,7 +406,9 @@ pub fn completion_xml_owl(
         .sync_odoo
         .tsserver_bridge
         .as_mut()?
-        .completion_list_for_content(&doc.virtual_path, v_line, v_char, trigger_kind);
+        // No auto-imports: a template expression cannot carry an import, and the edit that
+        // would write one addresses the virtual doc, so every such entry is unusable here.
+        .completion_list_for_content(&doc.virtual_path, v_line, v_char, trigger_kind, false);
 
     // Drop edit-bearing entries (their positions address the virtual `.js` the client never
     // saw). Resolve data survives: it points at the still-open virtual doc, and
