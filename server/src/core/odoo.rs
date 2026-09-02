@@ -4,7 +4,7 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::{Ast, PreloadedFile};
 use crate::core::js_arch_builder::ComponentDescriptor;
-use crate::core::js_type_files;
+use crate::core::js_module_scope;
 use crate::core::module_load_order::sort_by_load_order;
 use crate::core::pre_parser::{PreParseCache, PreParser};
 use crate::core::symbols::ModuleSymbol;
@@ -1892,7 +1892,7 @@ impl Odoo {
                         let file_extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
                         if ["js", "ts"].contains(&file_extension) && session.sync_odoo.tsserver_bridge.is_some() {
                             // Staged first, so the send below already carries the declarations.
-                            let type_files = js_type_files::type_files_for(session, &sanitized_path);
+                            let type_files = js_module_scope::type_files_for(session, &sanitized_path);
                             if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
                                 bridge.stage_type_files(&type_files);
                                 bridge.open_file(&sanitized_path, &params.text_document.text);
