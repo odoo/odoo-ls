@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-use odoo_ls_server::core::js_type_files;
+use odoo_ls_server::core::js_module_scope;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
@@ -32,7 +32,7 @@ fn dts(module: &str, relative: &[&str]) -> String {
 /// need not exist.
 fn type_files_from(session: &SessionInfo, module: &str) -> Vec<String> {
     let probe = addons_path().join(module).join("static").join("src").join("probe.js").sanitize();
-    js_type_files::type_files_for(session, &probe)
+    js_module_scope::type_files_for(session, &probe)
 }
 
 #[test]
