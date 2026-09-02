@@ -107,6 +107,20 @@ pub fn is_aliasable_import(entry: &Value, paths: &HashMap<String, Vec<String>>) 
     })
 }
 
+/// Whether a completion entry's target is a module the editing file is allowed to import from.
+/// `prefixes` are the directories of the allowed modules (see [`crate::core::js_module_scope`]);
+/// `None` means the file belongs to no module and nothing is filtered.
+/// Entries backed by no file — locals, members, ambient modules — are always in scope.
+pub fn is_in_dependency_scope(entry: &Value, prefixes: Option<&[String]>) -> bool {
+    let Some(prefixes) = prefixes else {
+        return true;
+    };
+    let Some(file_name) = entry.pointer("/data/fileName").and_then(Value::as_str) else {
+        return true;
+    };
+    prefixes.iter().any(|prefix| file_name.starts_with(prefix))
+}
+
 /// Parse a `completionEntryDetails` response into the fields an LSP
 /// `completionItem/resolve` can return: the entry's signature (`detail`), its
 /// docs, and any auto-import edit. Each code action's description ("Add import
@@ -341,6 +355,24 @@ mod tests {
             &json!({ "name": "Component", "data": { "ambientModuleName": "@odoo/owl" } }),
             &paths,
         ));
+    }
+
+    #[test]
+    fn only_entries_from_the_dependency_closure_are_offered() {
+        // The closure of a file in `sale`, which depends on `web` but not on `mail`.
+        let prefixes = [S!("/odoo/addons/web/"), S!("/odoo/addons/sale/")];
+        let scope = Some(&prefixes[..]);
+        let from = |file: &str| json!({ "name": "x", "data": { "fileName": file } });
+
+        assert!(is_in_dependency_scope(&from("/odoo/addons/web/static/src/core/domain.js"), scope));
+        // In the program because some other open file imported it; not importable from here.
+        assert!(!is_in_dependency_scope(&from("/odoo/addons/mail/static/src/core/store.js"), scope));
+        // A prefix is a directory, so `sale` must not claim `sale_stock`.
+        assert!(!is_in_dependency_scope(&from("/odoo/addons/sale_stock/static/src/thing.js"), scope));
+        // Locals, members and ambient modules name no file and are always in scope.
+        assert!(is_in_dependency_scope(&json!({ "name": "rowCount" }), scope));
+        // A file belonging to no module has no closure to be filtered against.
+        assert!(is_in_dependency_scope(&from("/odoo/addons/mail/static/src/core/store.js"), None));
     }
 
     #[test]
