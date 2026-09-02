@@ -40,11 +40,11 @@ pub struct TsServerBridge {
     /// Notified by the reader thread every time a new response is inserted.
     response_notify: Arc<Condvar>,
     seq: u64,
-    /// Files the client has open. Dropped on close (see [`Self::close_file`]); a later
-    /// references query re-stages one as a transient root if it still needs it.
-    /// Disjoint from [`Self::transient_roots`] — a path is pinned here or evictable there,
-    /// never both. May overlap [`Self::project_type_files`]; the payload dedups.
-    root_files: HashSet<String>,
+    /// Files the client has open, sent as `rootFiles` for the "openExternalProject command.
+    /// Dropped on close.
+    /// Disjoint from [`Self::transient_roots`].
+    /// May overlap [`Self::project_type_files`]; the payload dedups.
+    opened_files: HashSet<String>,
     /// Evictable roots: reference-expansion files (never `open`ed — read from disk) and the
     /// OWL virtual docs. Dropped as a block once they outgrow the retention budget.
     transient_roots: HashSet<String>,
@@ -52,7 +52,7 @@ pub struct TsServerBridge {
     /// on eviction (see [`Self::evict_transient_roots`]).
     open_virtual_docs: HashSet<String>,
     /// Whether the project payload changed since the last `openExternalProject`.
-    transient_dirty: bool,
+    staged_roots_dirty: bool,
     /// entries that map import identifiers to lookup locations (`paths` in the project
     /// config), e.g. "@odoo/owl" as key and resolved paths matching it.
     /// see [`super::tsserver_paths::generate_paths_map`]
@@ -160,10 +160,10 @@ impl TsServerBridge {
             responses,
             response_notify,
             seq: 1,
-            root_files: HashSet::default(),
+            opened_files: HashSet::default(),
             transient_roots: HashSet::default(),
             open_virtual_docs: HashSet::default(),
-            transient_dirty: false,
+            staged_roots_dirty: false,
             project_paths: HashMap::default(),
             project_type_files: HashSet::default(),
             project_open: false,
@@ -336,7 +336,7 @@ impl TsServerBridge {
 
     pub fn open_file(&mut self, file_path: &str, file_content: &str) {
         // "open" is a fire-and-forget notification: tsserver never sends a response.
-        if self.root_files.insert(file_path.to_string()) {
+        if self.opened_files.insert(file_path.to_string()) {
             // A reference expansion may already have staged this path; it is pinned now, so
             // drop it there rather than list it twice in the project payload.
             self.transient_roots.remove(file_path);
@@ -357,7 +357,7 @@ impl TsServerBridge {
     }
 
     /// Send a virtual doc's content and register it as a transient root, **without**
-    /// rebuilding the project — call [`Self::commit_transient_roots`] once the batch is
+    /// rebuilding the project — call [`Self::commit_staged_roots`] once the batch is
     /// staged. No `geterr` (a virtual doc must never publish diagnostics); script kind JS
     /// (checkJs expando inference is JS-only); re-staging an open path refreshes its content.
     ///
@@ -368,7 +368,7 @@ impl TsServerBridge {
         let _ = self.send_request("open", Self::open_args(file_path, content, Some("JS")));
         if self.open_virtual_docs.insert(file_path.to_string()) {
             self.transient_roots.insert(file_path.to_string());
-            self.transient_dirty = true;
+            self.staged_roots_dirty = true;
         }
     }
 
@@ -381,11 +381,11 @@ impl TsServerBridge {
     /// Register files as project roots **without opening them** (tsserver reads them from
     /// disk — no diagnostics for files the user never opened), so a subsequent `references`
     /// request finds the callers living in them. Staged only, see
-    /// [`Self::commit_transient_roots`].
+    /// [`Self::commit_staged_roots`].
     pub fn stage_transient_roots(&mut self, paths: &[String]) {
         for path in paths {
-            if !self.root_files.contains(path) {
-                self.transient_dirty |= self.transient_roots.insert(path.clone());
+            if !self.opened_files.contains(path) {
+                self.staged_roots_dirty |= self.transient_roots.insert(path.clone());
             }
         }
     }
@@ -397,7 +397,7 @@ impl TsServerBridge {
         for path in std::mem::take(&mut self.open_virtual_docs) {
             self.close_file(&path);
         }
-        self.transient_dirty |= !self.transient_roots.is_empty();
+        self.staged_roots_dirty |= !self.transient_roots.is_empty();
         self.transient_roots.clear();
     }
 
@@ -405,8 +405,8 @@ impl TsServerBridge {
     /// when nothing changed (every re-send runs a synchronous whole-program rebuild — the
     /// reason staging exists). Before the project exists the staged roots stay pending; the
     /// first `open_external_project` sends the union anyway.
-    pub fn commit_transient_roots(&mut self) {
-        if self.transient_dirty && self.project_open {
+    pub fn commit_staged_roots(&mut self) {
+        if self.staged_roots_dirty && self.project_open {
             self.send_project_command();
         }
     }
@@ -420,21 +420,21 @@ impl TsServerBridge {
     }
 
     /// Register the ambient-declaration `.d.ts` roots an opened file needs; staged only, flushed by
-    /// [`Self::commit_transient_roots`]. Additive over every module opened so far, never subtracted
+    /// [`Self::commit_staged_roots`]. Additive over every module opened so far, never subtracted
     /// from — [`crate::core::js_type_files`] explains why they are roots and why the union only grows.
     pub fn stage_type_files(&mut self, paths: &[String]) {
         for path in paths {
-            self.transient_dirty |= self.project_type_files.insert(path.clone());
+            self.staged_roots_dirty |= self.project_type_files.insert(path.clone());
         }
     }
 
     /// Re-registers the external project with the current root set. The only place staged transient
     /// roots reach tsserver, hence the only place the dirty flag clears.
     fn send_project_command(&mut self) {
-        self.transient_dirty = false;
+        self.staged_roots_dirty = false;
         // Sorted so the payload — and hence tsserver's program construction — is reproducible.
         // Deduped because `project_type_files` may name a path the client also has open.
-        let mut names: Vec<&String> = self.root_files
+        let mut names: Vec<&String> = self.opened_files
             .iter()
             .chain(self.transient_roots.iter())
             .chain(self.project_type_files.iter())
@@ -638,7 +638,7 @@ impl TsServerBridge {
     /// `close` means), so its root set is a stale *superset*: nothing is ever missing from it.
     pub fn close_file(&mut self, file_path: &str) {
         let _ = self.send_request("close", json!({ "file": file_path }));
-        self.root_files.remove(file_path);
+        self.opened_files.remove(file_path);
     }
 
     /// Returns markdown hover text for the given position, or `None` if tsserver
