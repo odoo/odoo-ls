@@ -228,9 +228,9 @@ fn test_completion_resolve(session: &mut SessionInfo, fixtures: &Fixtures) {
 
 fn test_completion_entries_label_details(session: &mut SessionInfo, fixtures: &Fixtures) {
     let Fixtures { js_utils, .. } = fixtures;
-    assert_completions_label_details(session, js_utils, "const service = useS|", &[
-        ("useService", "@web/core/utils/hooks"),
-        ("useSpellCheck", "@web/core/utils/hooks"),
+    assert_completions_label_details(session, js_utils, "const service = useSpea|", &[
+        ("useSpeaker", "@module_dep/core/hooks"),
+        ("useSpeakerVolume", "@module_dep/core/hooks"),
     ]);
 }
 
