@@ -685,6 +685,7 @@ impl TsServerBridge {
         line: u32,
         character: u32,
         trigger_kind: CompletionTriggerKind,
+        include_auto_imports: bool,
     ) -> CompletionList {
 
         let request_seq = match self.send_request(
@@ -693,7 +694,7 @@ impl TsServerBridge {
                 "file": file_path,
                 "line": line + 1,
                 "offset": character + 1,
-                "includeExternalModuleExports": true,
+                "includeExternalModuleExports": include_auto_imports,
                 "includeInsertTextCompletions": true,
                 // LSP and tsserver number these alike (no conversion needed)
                 "triggerKind": trigger_kind,
