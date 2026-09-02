@@ -1897,7 +1897,7 @@ impl Odoo {
                                 bridge.stage_type_files(&type_files);
                                 bridge.open_file(&sanitized_path, &params.text_document.text);
                                 // `open_file` only sends when the file is a new root; covers re-opens.
-                                bridge.commit_transient_roots();
+                                bridge.commit_staged_roots();
                             }
                         }
                         let (valid, updated) = Odoo::update_file_cache(session, &sanitized_path, file_extension, Some(&[TextDocumentContentChangeEvent{

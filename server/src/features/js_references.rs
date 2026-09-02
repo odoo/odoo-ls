@@ -356,7 +356,7 @@ pub fn references_xml_owl_member(
     // The result drives root/subclass anchoring, hence the second commit further down.
     if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
         stage_doc_and_shim(bridge, &doc);
-        bridge.commit_transient_roots();
+        bridge.commit_staged_roots();
     }
 
     // Resolve the member's real declaration; the result is both the Query A anchors and —
