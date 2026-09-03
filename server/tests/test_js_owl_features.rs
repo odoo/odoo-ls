@@ -79,6 +79,12 @@ fn test_js_owl_features() {
     test_lib_module_paths(&mut session, &fixtures);
     test_odoo_scoped_module_paths(&mut session, &fixtures);
 
+    // Import completions
+    test_import_statement_completion(&mut session, &fixtures);
+    test_auto_import(&mut session, &fixtures);
+    test_auto_import_out_of_scope(&mut session, &fixtures);
+    test_auto_import_unregistered_module(&mut session, &fixtures);
+
 }
 
 /// Hover in the component's own `.js`: a class field, a member assigned in `setup()` (which only
@@ -228,7 +234,7 @@ fn test_completion_resolve(session: &mut SessionInfo, fixtures: &Fixtures) {
 
 fn test_completion_entries_label_details(session: &mut SessionInfo, fixtures: &Fixtures) {
     let Fixtures { js_utils, .. } = fixtures;
-    assert_completions_label_details(session, js_utils, "const service = useSpea|", &[
+    assert_completions_label_details(session, js_utils, "const service = useS|", &[
         ("useSpeaker", "@module_dep/core/hooks"),
         ("useSpeakerVolume", "@module_dep/core/hooks"),
     ]);
@@ -319,7 +325,8 @@ fn test_glob_module_paths(session: &mut SessionInfo, fixtures: &Fixtures) {
 /// `alias=` gives a `static/lib` file a name of its own
 /// `ignore` takes that name away
 fn test_lib_module_paths(session: &mut SessionInfo, fixtures: &Fixtures) {
-    let Fixtures { lib_imports, aliased_js, .. } = fixtures;
+    let Fixtures { lib_imports, aliased_js, mini_js, .. } = fixtures;
+    assert_import_resolves(session, lib_imports, "@module_owl/../lib/mini/mini", mini_js);
     assert_import_resolves(session, lib_imports, "@fixture/aliased", aliased_js);
     assert_import_unresolved(session, lib_imports, "@fixture/opted_out");
 }
@@ -330,4 +337,47 @@ fn test_odoo_scoped_module_paths(session: &mut SessionInfo, fixtures: &Fixtures)
     let Fixtures { js, tests_js, .. } = fixtures;
     assert_import_resolves_in(session, js, "@odoo/owl", "web/static/src/@types/owl.d.ts");
     assert_import_resolves_in(session, tests_js, "@odoo/hoot-dom", "web/static/lib/hoot-dom/hoot-dom.js");
+}
+
+/// In an unfinished import statement, the completion is the whole statement.
+fn test_import_statement_completion(session: &mut SessionInfo, fixtures: &Fixtures) {
+    let Fixtures { import_statements, .. } = fixtures;
+    assert_import_completion(session, import_statements, "import { useSpea|", "useSpeaker",
+        "import { useSpeaker } from \"@module_dep/core/hooks\";");
+}
+
+/// An export of `module_dep`, a declared dependency, is offered and written with its alias.
+fn test_auto_import(session: &mut SessionInfo, fixtures: &Fixtures) {
+    let Fixtures { js_utils, .. } = fixtures;
+    let caret = "const service = useS|";
+    assert_auto_import(session, js_utils, caret, "useSpeaker",
+        "import { useSpeaker } from \"@module_dep/core/hooks\";");
+    assert_auto_import(session, js_utils, caret, "useSpeakerVolume",
+        "import { useSpeakerVolume } from \"@module_dep/core/hooks\";");
+    // a `static/lib` file is named one file at a time, and only its header makes it importable
+    assert_auto_import(session, js_utils, "const thing = mini_th|", "mini_thing",
+        "import { mini_thing } from \"@module_owl/../lib/mini/mini\";");
+    // a near target is written relative, which Odoo's transpiler resolves to the same module
+    assert_auto_import(session, js_utils, "const sibling = Gree|", "Greeting",
+        "import { Greeting } from \"./greeting\";");
+}
+
+/// Auto-import candidates stop at the editing module's dependency closure.
+fn test_auto_import_out_of_scope(session: &mut SessionInfo, fixtures: &Fixtures) {
+    let Fixtures { import_completions, .. } = fixtures;
+    // Prevent false-negative: the specifier resolves, so its file is part of tsserver's program
+    assert_import_resolves_in(session, import_completions, "@module_unrelated/tools",
+        "module_unrelated/static/src/tools.js");
+    // But we don't offer auto-import completions for its exports, as it is no part of the editing module's dependencies
+    assert_no_completions(session, import_completions, "const helper = unrelatedH|", &["unrelatedHelper"]);
+}
+
+/// Odoo never registers a `static/lib` file with no header, so no name points at it.
+/// We don't offer auto-import from a path Odoo's loader rejects.
+fn test_auto_import_unregistered_module(session: &mut SessionInfo, fixtures: &Fixtures) {
+    let Fixtures { import_completions, bundle_js, .. } = fixtures;
+    // Prevent false-negative: the `@module_owl/*` glob still resolves the climbing name
+    assert_import_resolves(session, import_completions, "@module_owl/../lib/bundle/bundle", bundle_js);
+    // But we don't offer completion for an import odoo would not resolve at runtime
+    assert_no_completions(session, import_completions, "const thing = bundle_th|", &["bundle_thing"]);
 }

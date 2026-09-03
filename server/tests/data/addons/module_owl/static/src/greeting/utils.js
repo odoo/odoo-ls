@@ -10,6 +10,8 @@ export function answer_is_correct(answer) {
 
 export function useGreetingRefs() {
     const ref = useChildRef();
-    const service = useSpea;
-    return { ref, service };
+    const service = useS;
+    const thing = mini_th;
+    const sibling = Gree;
+    return { ref, service, thing, sibling };
 }

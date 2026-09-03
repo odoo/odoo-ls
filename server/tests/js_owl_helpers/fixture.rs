@@ -23,6 +23,10 @@ pub struct Fixtures {
     pub js_utils: FixtureFile,
     /// lib_imports.js, imports every `static/lib` case
     pub lib_imports: FixtureFile,
+    /// import_completions.js, imports `module_unrelated`, which `module_owl` does not depend on
+    pub import_completions: FixtureFile,
+    /// import_statements.js, ends on an unfinished `import {`
+    pub import_statements: FixtureFile,
     /// greeting_tests.js, in `static/tests`, imports helpers_js and js_utils
     pub tests_js: FixtureFile,
 
@@ -37,6 +41,10 @@ pub struct Fixtures {
     pub helpers_js: FixtureFile,
     /// unopened: lib/aliased/aliased.js, importable under its `alias=`
     pub aliased_js: FixtureFile,
+    /// unopened: lib/mini/mini.js, a `static/lib` file with a plain header
+    pub mini_js: FixtureFile,
+    /// unopened: lib/bundle/bundle.js, a `static/lib` file with no header
+    pub bundle_js: FixtureFile,
 }
 
 impl Fixtures {
@@ -47,15 +55,19 @@ impl Fixtures {
         let sub_xml = FixtureFile::open(session, &["src", "greeting", "loud_greeting.xml"]);
         let js_utils =  FixtureFile::open(session, &["src", "greeting", "utils.js"]);
         let lib_imports = FixtureFile::open(session, &["src", "imports", "lib_imports.js"]);
+        let import_completions = FixtureFile::open(session, &["src", "imports", "import_completions.js"]);
+        let import_statements = FixtureFile::open(session, &["src", "imports", "import_statements.js"]);
         let tests_js = FixtureFile::open(session, &["tests", "greeting_tests.js"]);
         let quiet_js = FixtureFile::unopened(&["src", "greeting", "quiet_greeting.js"]);
         let report_js = FixtureFile::unopened(&["src", "greeting", "greeting_report.js"]);
         let ext_xml = FixtureFile::unopened(&["src", "greeting", "greeting_ext.xml"]);
         let helpers_js = FixtureFile::unopened(&["tests", "helpers.js"]);
         let aliased_js = FixtureFile::unopened(&["lib", "aliased", "aliased.js"]);
+        let mini_js = FixtureFile::unopened(&["lib", "mini", "mini.js"]);
+        let bundle_js = FixtureFile::unopened(&["lib", "bundle", "bundle.js"]);
         Fixtures {
-            js, xml, sub_js, sub_xml, js_utils, lib_imports, tests_js,
-            quiet_js, report_js, ext_xml, helpers_js, aliased_js,
+            js, xml, sub_js, sub_xml, js_utils, lib_imports, import_completions, import_statements, tests_js,
+            quiet_js, report_js, ext_xml, helpers_js, aliased_js, mini_js, bundle_js,
         }
     }
 }
