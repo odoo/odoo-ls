@@ -19,6 +19,7 @@ impl DeclarationFeature {
     ) -> Option<GotoDeclarationResponse> {
         let ast_kind = session.file_mgr()[file_info].file_info_ast.borrow().ast.kind();
         let definitions_sources = match ast_kind {
+            AstKind::Pending => return None,
             AstKind::PythonAst => GotoUtils::get_symbols(session, GotoRequest::Declaration, file_symbol, file_info, line, character),
             AstKind::XmlAst => GotoUtils::get_symbols_xml(session, file_symbol, file_info, line, character),
             AstKind::CsvAst => GotoUtils::get_symbols_csv(session, file_symbol, file_info, line, character),
