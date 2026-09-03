@@ -8,6 +8,7 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointKey;
 use crate::core::evaluation_context::{ContextKey, ContextValue};
 use crate::core::file_mgr::FileInfoKey;
+use crate::core::file_mgr::Ast;
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::symbol_keys::{ClassKey, ModelSymbolKey, ModuleKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey};
@@ -80,7 +81,7 @@ impl PythonValidator {
                 }
                 let file_info_ast_rc = session.file_mgr()[file_info_key].file_info_ast.clone();
                 let file_info_ast = file_info_ast_rc.borrow();
-                if file_info_ast.ast.as_py_ast().indexed_module.is_some() {
+                if let Ast::PythonAst(_) = &file_info_ast.ast {
                     let old_noqa = session.current_noqa.clone();
                     session.current_noqa = session.st().get_noqas(symbol);
                     self.validate_body(session, file_info_ast.get_stmts().as_ref().unwrap());
@@ -116,7 +117,8 @@ impl PythonValidator {
                 }
                 let file_info_ast_rc = session.file_mgr()[file_info_key].file_info_ast.clone();
                 let file_info_ast = file_info_ast_rc.borrow();
-                if let Some(indexed_module) = &file_info_ast.ast.as_py_ast().indexed_module {
+                if let Ast::PythonAst(py_ast) = &file_info_ast.ast {
+                    let indexed_module = &py_ast.indexed_module;
                     let func_index = session.st()[f].node_index.load();
                     if func_index != NodeIndex::NONE {
                         let stmt = indexed_module.get_by_index(func_index);
@@ -165,17 +167,19 @@ impl PythonValidator {
                     if let Some(manifest_file) = session.file_mgr().get_file_info(&manifest_path.sanitize_cow())
                         && !session.file_mgr()[manifest_file].opened {
                             let manifest_file = &session.file_mgr()[manifest_file];
-                            manifest_file.file_info_ast.borrow_mut().ast.as_py_ast_mut().indexed_module = None;
-                            manifest_file.file_info_ast.borrow_mut().text_document = None;
-                            manifest_file.file_info_ast.borrow_mut().text_hash = 0;
+                            let mut fi_ast = manifest_file.file_info_ast.borrow_mut();
+                            fi_ast.ast = Ast::Pending;
+                            fi_ast.text_document = None;
+                            fi_ast.text_hash = 0;
                         }
                 }
                 if let Some(file) = self.file_info
                     && ! session.file_mgr()[file].opened {
                         let f = &session.file_mgr()[file];
-                        f.file_info_ast.borrow_mut().ast.as_py_ast_mut().indexed_module = None;
-                        f.file_info_ast.borrow_mut().text_document = None;
-                        f.file_info_ast.borrow_mut().text_hash = 0;
+                        let mut fi_ast = f.file_info_ast.borrow_mut();
+                        fi_ast.ast = Ast::Pending;
+                        fi_ast.text_document = None;
+                        fi_ast.text_hash = 0;
                     }
             }
         }

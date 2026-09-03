@@ -244,21 +244,7 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
 
 #[derive(Debug, Clone)]
 pub struct PythonAst {
-    pub indexed_module: Option<Arc<IndexedModule>>,
-}
-
-impl Default for PythonAst {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl PythonAst {
-    pub fn new() -> Self {
-        Self {
-            indexed_module: None,
-        }
-    }
+    pub indexed_module: Arc<IndexedModule>,
 }
 
 /// One module specifier as written by a JS file, and where it is written. A specifier
@@ -285,25 +271,9 @@ pub struct JsAst {
     pub has_exports: bool,
 }
 
-impl Default for JsAst {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl JsAst {
-    pub fn new() -> Self {
-        Self {
-            js_decls: Vec::new(),
-            js_imports: Vec::new(),
-            js_reexports: Vec::new(),
-            has_exports: false,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum Ast {
+    Pending,
     PythonAst(PythonAst),
     XmlAst,
     CsvAst,
@@ -317,33 +287,19 @@ impl Ast {
             _ => panic!("Expected PythonAst, found {:?}", self),
         }
     }
-    pub fn as_py_ast_mut(&mut self) -> &mut PythonAst {
-        match self {
-            Ast::PythonAst(py_ast) => py_ast,
-            _ => panic!("Expected PythonAst, found {:?}", self),
-        }
-    }
     pub fn as_js_ast(&self) -> &JsAst {
         match self {
             Ast::JsAst(js_ast) => js_ast,
             _ => panic!("Expected JsAst, found {:?}", self),
         }
     }
-    pub fn as_js_ast_mut(&mut self) -> &mut JsAst {
-        match self {
-            Ast::JsAst(js_ast) => js_ast,
-            _ => panic!("Expected JsAst, found {:?}", self),
-        }
-    }
     pub fn is_built(&self) -> bool {
-        match self {
-            Ast::PythonAst(py_ast) => py_ast.indexed_module.is_some(),
-            Ast::JsAst(_) | Ast::XmlAst | Ast::CsvAst => true,
-        }
+        !matches!(self, Ast::Pending)
     }
     /// Read the AST kind for matching on type only without cloning
     pub fn kind(&self) -> AstKind {
         match self {
+            Ast::Pending => AstKind::Pending,
             Ast::PythonAst(_) => AstKind::PythonAst,
             Ast::XmlAst => AstKind::XmlAst,
             Ast::CsvAst => AstKind::CsvAst,
@@ -354,6 +310,7 @@ impl Ast {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AstKind {
+    Pending,
     PythonAst,
     XmlAst,
     CsvAst,
@@ -373,7 +330,7 @@ impl FileInfoAst {
     pub fn get_stmts(&self) -> Option<&[Stmt]> {
         match &self.ast {
             Ast::PythonAst(python_ast) => {
-                python_ast.indexed_module.as_ref().map(|module| module.parsed.syntax().body.as_slice())
+                Some(python_ast.indexed_module.parsed.syntax().body.as_slice())
             },
             _ => None
         }
@@ -407,7 +364,7 @@ impl FileInfo {
             file_info_ast: Rc::new(RefCell::new(FileInfoAst {
                 text_hash: 0,
                 text_document: None,
-                ast: Ast::PythonAst(PythonAst::new()),
+                ast: Ast::Pending,
             })),
             diagnostics: HashMap::default(),
             noqas_blocs: HashMap::default(),
@@ -512,7 +469,6 @@ impl FileInfo {
                 session.file_mgr()[key].file_info_ast.borrow_mut().ast = Ast::CsvAst;
             }
             Some("js") | Some("ts") => {
-                session.file_mgr()[key].file_info_ast.borrow_mut().ast = Ast::JsAst(JsAst::new());
                 FileInfo::build_js_ast(session, key, is_external);
             }
             _ => {
@@ -536,7 +492,7 @@ impl FileInfo {
         }
         let (valid, diagnostics) = Self::syntax_diagnostics(session, &parsed.indexed_module.parsed);
         session.file_mgr_mut()[key].valid = valid;
-        session.file_mgr()[key].file_info_ast.borrow_mut().ast.as_py_ast_mut().indexed_module = Some(parsed.indexed_module);
+        session.file_mgr()[key].file_info_ast.borrow_mut().ast = Ast::PythonAst(PythonAst { indexed_module: parsed.indexed_module });
         session.file_mgr_mut()[key].replace_diagnostics(DiagnosticSource::PY_SYNTAX, diagnostics);
     }
 
@@ -582,7 +538,7 @@ impl FileInfo {
                     let mut fia = file.file_info_ast.borrow_mut();
                     fia.text_hash = text_hash;
                     fia.text_document = Some(text_document);
-                    fia.ast = Ast::PythonAst(PythonAst { indexed_module: Some(parsed.indexed_module) });
+                    fia.ast = Ast::PythonAst(PythonAst { indexed_module: parsed.indexed_module });
                 }
                 session.file_mgr_mut()[key].replace_diagnostics(DiagnosticSource::PY_SYNTAX, diagnostics);
             }
@@ -599,7 +555,6 @@ impl FileInfo {
                     let mut fia = file.file_info_ast.borrow_mut();
                     fia.text_hash = text_hash;
                     fia.text_document = Some(text_document);
-                    fia.ast = Ast::JsAst(JsAst::new());
                 }
                 FileInfo::apply_parsed_js(session, key, parsed);
             }
@@ -620,19 +575,14 @@ impl FileInfo {
     /// the file was parsed inline ([`Self::build_js_ast`]) or by a pre-parse worker
     /// ([`Self::apply_preloaded`]), so `js_arch_builder::build` keeps seeing files in
     /// build order either way.
-    ///
-    /// Expects [`Ast::JsAst`] to be in place already.
     fn apply_parsed_js(session: &mut SessionInfo, key: FileInfoKey, parsed: ParsedJs) {
         session.sync_odoo.component_mgr.index_file(&session.file_mgr()[key].uri.clone(), parsed.component_descriptors);
-        {
-            let file = &session.file_mgr()[key];
-            let mut fia = file.file_info_ast.borrow_mut();
-            let js_ast = fia.ast.as_js_ast_mut();
-            js_ast.js_decls = parsed.decls;
-            js_ast.js_imports = parsed.imports;
-            js_ast.js_reexports = parsed.reexports;
-            js_ast.has_exports = parsed.has_exports;
-        }
+        session.file_mgr()[key].file_info_ast.borrow_mut().ast = Ast::JsAst(JsAst {
+            js_decls: parsed.decls,
+            js_imports: parsed.imports,
+            js_reexports: parsed.reexports,
+            has_exports: parsed.has_exports,
+        });
         let uri = FileMgr::pathname2uri(&session.file_mgr()[key].uri);
         let to_lsp_diag = |diags: Vec<OxcDiagnostic>|
             diags.iter().flat_map(|d| js_utils::oxc_diagnostic_to_lsp_diagnostic(d, &uri)).collect();
