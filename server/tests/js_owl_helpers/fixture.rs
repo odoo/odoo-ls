@@ -21,7 +21,11 @@ pub struct Fixtures {
     pub sub_xml: FixtureFile,
     /// utils.js, no component, imports from report_js
     pub js_utils: FixtureFile,
-    
+    /// lib_imports.js, imports every `static/lib` case
+    pub lib_imports: FixtureFile,
+    /// greeting_tests.js, in `static/tests`, imports helpers_js and js_utils
+    pub tests_js: FixtureFile,
+
     // Unopened fixtures: the test never opens them, so they are never a tsserver root of their own.
     /// unopened: quiet_greeting.js, home of QuietGreeting component, which extends Greeting
     pub quiet_js: FixtureFile,
@@ -29,19 +33,30 @@ pub struct Fixtures {
     pub report_js: FixtureFile,
     /// unopened: greeting_ext.xml, templates that t-calls and t-inherits Greeting template
     pub ext_xml: FixtureFile,
+    /// unopened: helpers.js, the `static/tests` import target
+    pub helpers_js: FixtureFile,
+    /// unopened: lib/aliased/aliased.js, importable under its `alias=`
+    pub aliased_js: FixtureFile,
 }
 
 impl Fixtures {
     pub fn init(session: &mut SessionInfo) -> Self {
-        let js = FixtureFile::open(session, &["greeting", "greeting.js"]);
-        let xml = FixtureFile::open(session, &["greeting", "greeting.xml"]);
-        let sub_js = FixtureFile::open(session, &["greeting", "loud_greeting.js"]);
-        let sub_xml = FixtureFile::open(session, &["greeting", "loud_greeting.xml"]);
-        let js_utils =  FixtureFile::open(session, &["greeting", "utils.js"]);
-        let quiet_js = FixtureFile::unopened(&["greeting", "quiet_greeting.js"]);
-        let report_js = FixtureFile::unopened(&["greeting", "greeting_report.js"]);
-        let ext_xml = FixtureFile::unopened(&["greeting", "greeting_ext.xml"]);
-        Fixtures { js, xml, sub_js, sub_xml, js_utils, quiet_js, report_js, ext_xml }
+        let js = FixtureFile::open(session, &["src", "greeting", "greeting.js"]);
+        let xml = FixtureFile::open(session, &["src", "greeting", "greeting.xml"]);
+        let sub_js = FixtureFile::open(session, &["src", "greeting", "loud_greeting.js"]);
+        let sub_xml = FixtureFile::open(session, &["src", "greeting", "loud_greeting.xml"]);
+        let js_utils =  FixtureFile::open(session, &["src", "greeting", "utils.js"]);
+        let lib_imports = FixtureFile::open(session, &["src", "imports", "lib_imports.js"]);
+        let tests_js = FixtureFile::open(session, &["tests", "greeting_tests.js"]);
+        let quiet_js = FixtureFile::unopened(&["src", "greeting", "quiet_greeting.js"]);
+        let report_js = FixtureFile::unopened(&["src", "greeting", "greeting_report.js"]);
+        let ext_xml = FixtureFile::unopened(&["src", "greeting", "greeting_ext.xml"]);
+        let helpers_js = FixtureFile::unopened(&["tests", "helpers.js"]);
+        let aliased_js = FixtureFile::unopened(&["lib", "aliased", "aliased.js"]);
+        Fixtures {
+            js, xml, sub_js, sub_xml, js_utils, lib_imports, tests_js,
+            quiet_js, report_js, ext_xml, helpers_js, aliased_js,
+        }
     }
 }
 
@@ -74,7 +89,7 @@ impl FixtureFile {
     /// reference-root expansion can reach it.
     fn unopened(relative: &[&str]) -> Self {
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests").join("data").join("addons").join("module_owl").join("static").join("src");
+            .join("tests/data/addons/module_owl/static");
         for part in relative {
             path = path.join(part);
         }

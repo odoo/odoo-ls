@@ -36,6 +36,31 @@ pub fn assert_definition_in(session: &mut SessionInfo, file: &FixtureFile, snipp
     );
 }
 
+/// Assert the module `specifier` imported by `file` resolves to `target`. 
+pub fn assert_import_resolves(session: &mut SessionInfo, file: &FixtureFile, specifier: &str, target: &FixtureFile) {
+    assert_import_resolves_in(session, file, specifier, &target.path);
+}
+
+/// [`assert_import_resolves`] for a target that has no fixture, e.g. a community file.
+pub fn assert_import_resolves_in(session: &mut SessionInfo, file: &FixtureFile, specifier: &str, path_suffix: &str) {
+    let found = definitions(session, file, &format!("\"|{specifier}\""));
+    assert!(
+        found.iter().any(|(path, _)| path.ends_with(path_suffix)),
+        "import {specifier:?} in {} resolves to {found:?}, expected {path_suffix:?}",
+        file.path
+    );
+}
+
+/// Assert the module `specifier` imported by `file` names nothing: no `paths` entry covers it.
+pub fn assert_import_unresolved(session: &mut SessionInfo, file: &FixtureFile, specifier: &str) {
+    let found = definitions(session, file, &format!("\"|{specifier}\""));
+    assert!(
+        found.is_empty(),
+        "import {specifier:?} in {} resolves to {found:?}, expected nothing",
+        file.path
+    );
+}
+
 /// Assert one completion request at the caret offers every `(label, kind)`. The kind matters as
 /// much as the label: clients render `TEXT` as a plain word suggestion, so a symbol whose kind
 /// went unmapped looks like editor noise.

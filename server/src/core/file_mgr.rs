@@ -137,7 +137,8 @@ pub const JS_PARSE_STACK_SIZE: usize = 8 * 1024 * 1024;
 
 /// Parse `contents` as JS: OXC parse + semantic analysis + linter, plus the OWL
 /// template refs and component descriptors [`js_arch_builder::visit_file`] extracts.
-/// Vendored libs (`/static/lib/`) stop after the parse — see below.
+/// Vendored libs (`/static/lib/`) are cut short: one without an `@odoo-module` header is not
+/// parsed at all, one with a header stops after the parse (no diagnostics).
 /// Shared by the build thread ([`FileInfo::build_js_ast`]) and the pre-parse workers
 /// ([`crate::core::pre_parser`]).
 ///
@@ -159,6 +160,10 @@ pub fn parse_js(contents: &str, path: &str) -> ParsedJs {
 /// The body of [`parse_js`], without the stack-headroom thread. Only call from a
 /// thread that already has at least [`JS_PARSE_STACK_SIZE`] of stack.
 pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
+    let is_lib = path.contains("/static/lib/");
+    if is_lib && !js_utils::is_headed_odoo_module(contents) {
+        return ParsedJs::default();
+    }
     let os_path = std::path::Path::new(path);
     let source_type = SourceType::from_path(os_path).unwrap_or_default();
     let allocator = Allocator::default();
@@ -175,12 +180,10 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
     let (template_refs, component_descriptors, decls) = js_arch_builder::visit_file(program, path, &exports);
     // Vendored libraries are kept out of workspace symbols for the same reason they
     // are kept out of OXC diagnostics: they are not the user's code, and many are minified.
-    let is_lib = path.contains("/static/lib/");
     let decls = if is_lib { vec![] } else { decls };
 
     // Semantic analysis and the linter exist only to produce diagnostics, and
-    // a vendored lib's are dropped. They are also the biggest sources we parse,
-    // so stop here for them.
+    // a vendored lib's are dropped, so stop here for them.
     if is_lib {
         return ParsedJs { template_refs, component_descriptors, decls, imports, reexports, diagnostics: vec![] };
     }
@@ -1242,62 +1245,6 @@ impl FileMgr {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn assert_roundtrips(folder_name: &str) {
-        let path = if cfg!(windows) {
-            format!("C:\\Users\\test\\{}\\file.py", folder_name)
-        } else {
-            format!("/home/test/{}/file.py", folder_name)
-        };
-        let uri = FileMgr::try_pathname2uri(&path)
-            .unwrap_or_else(|err| panic!("should convert path {:?} to a uri: {}", path, err));
-
-        let roundtrip = FileMgr::uri2pathname(uri.as_str());
-        let expected = if cfg!(windows) {
-            path.replace("C:", "c:").replace('\\', "/")
-        } else {
-            path
-        };
-        assert_eq!(roundtrip, expected, "roundtrip mismatch for uri {}", uri.as_str());
-    }
-
-    #[test]
-    fn test_pathname2uri_handles_special_characters_in_path() {
-        // Characters that are valid in filenames on Linux/Windows but that either aren't
-        // allowed raw in an RFC 3986 path segment (brackets, pipe, caret, braces, angle
-        // brackets, quote) or would otherwise be misparsed as URL structure by url::Url
-        // (query/fragment delimiters, a lone percent sign, a literal backslash).
-        for folder_name in [
-            "[a_folder]",
-            "a folder",
-            "a?query",
-            "a#frag",
-            "a%percent",
-            "pipe|char",
-            "caret^char",
-            "curly{brace}",
-            "backtick`char",
-            "quote\"char",
-            "lt<gt>char",
-            "café_émoji_😊",
-        ] {
-            assert_roundtrips(folder_name);
-        }
-    }
-
-    #[test]
-    #[cfg(not(windows))]
-    fn test_pathname2uri_handles_literal_backslash_in_path() {
-        // On Linux/macOS, unlike Windows, '\' is a valid filename character rather than a
-        // path separator, so it must be percent-encoded rather than treated as a segment
-        // boundary (url::Url on its own treats '\' as a separator even for non-Windows paths).
-        assert_roundtrips("back\\slash");
-    }
-}
-
 /// A file pre-loaded by a background [`crate::core::pre_parser`] worker thread,
 /// ready to be slotted into a [`FileInfo`] by the build thread without re-reading
 /// or re-parsing it from disk. See [`FileInfo::apply_preloaded`].
@@ -1362,4 +1309,107 @@ pub fn position_to_offset_with_line_index(
         character_offset: OneIndexed::from_zero_indexed(character as usize),
     };
     index.offset(position, text, encoding).into()
+}
+
+
+#[cfg(test)]
+mod uri_path_tests {
+    use super::*;
+
+    fn assert_roundtrips(folder_name: &str) {
+        let path = if cfg!(windows) {
+            format!("C:\\Users\\test\\{}\\file.py", folder_name)
+        } else {
+            format!("/home/test/{}/file.py", folder_name)
+        };
+        let uri = FileMgr::try_pathname2uri(&path)
+            .unwrap_or_else(|err| panic!("should convert path {:?} to a uri: {}", path, err));
+
+        let roundtrip = FileMgr::uri2pathname(uri.as_str());
+        let expected = if cfg!(windows) {
+            path.replace("C:", "c:").replace('\\', "/")
+        } else {
+            path
+        };
+        assert_eq!(roundtrip, expected, "roundtrip mismatch for uri {}", uri.as_str());
+    }
+
+    #[test]
+    fn test_pathname2uri_handles_special_characters_in_path() {
+        // Characters that are valid in filenames on Linux/Windows but that either aren't
+        // allowed raw in an RFC 3986 path segment (brackets, pipe, caret, braces, angle
+        // brackets, quote) or would otherwise be misparsed as URL structure by url::Url
+        // (query/fragment delimiters, a lone percent sign, a literal backslash).
+        for folder_name in [
+            "[a_folder]",
+            "a folder",
+            "a?query",
+            "a#frag",
+            "a%percent",
+            "pipe|char",
+            "caret^char",
+            "curly{brace}",
+            "backtick`char",
+            "quote\"char",
+            "lt<gt>char",
+            "café_émoji_😊",
+        ] {
+            assert_roundtrips(folder_name);
+        }
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn test_pathname2uri_handles_literal_backslash_in_path() {
+        // On Linux/macOS, unlike Windows, '\' is a valid filename character rather than a
+        // path separator, so it must be percent-encoded rather than treated as a segment
+        // boundary (url::Url on its own treats '\' as a separator even for non-Windows paths).
+        assert_roundtrips("back\\slash");
+    }
+}
+
+#[cfg(test)]
+mod js_parse_tests {
+    use super::*;
+    /// Everything a JS parse can yield: an import, a component class, a template reference.
+    const COMPONENT: &str = r#"import { useState } from "./state";
+export class Counter extends Component {
+    static template = "mod.Counter";
+}
+"#;
+
+    fn assert_extracted(parsed: &ParsedJs) {
+        assert_eq!(parsed.imports, ["./state"]);
+        assert_eq!(parsed.component_descriptors.len(), 1);
+        assert_eq!(parsed.component_descriptors[0].class_name, "Counter");
+        assert_eq!(parsed.template_refs.len(), 1);
+        assert_eq!(parsed.template_refs[0].t_name, "mod.Counter");
+    }
+
+    /// Under `static/lib` the `@odoo-module` header is what makes a file a module, so a file
+    /// without one is not parsed at all
+    #[test]
+    fn only_static_lib_needs_a_header_to_be_parsed() {
+        let headered = format!("/** @odoo-module */\n{COMPONENT}");
+
+        let skipped = parse_js_inner(COMPONENT, "/mod/static/lib/x.js");
+        assert!(skipped.imports.is_empty());
+        assert!(skipped.component_descriptors.is_empty());
+        assert!(skipped.template_refs.is_empty());
+
+        assert_extracted(&parse_js_inner(&headered, "/mod/static/lib/x.js"));
+        // `static/src` and `static/tests` are modules unconditionally.
+        assert_extracted(&parse_js_inner(COMPONENT, "/mod/static/src/x.js"));
+        assert_extracted(&parse_js_inner(COMPONENT, "/mod/static/tests/x.js"));
+    }
+
+    /// A lib file that *is* a module is still not the user's code, so it stays
+    /// out of workspace symbols and out of the OXC diagnostics.
+    #[test]
+    fn a_lib_module_yields_no_decls_or_diagnostics() {
+        let parsed = parse_js_inner(&format!("/** @odoo-module */\n{COMPONENT}"), "/mod/static/lib/x.js");
+        assert!(parsed.decls.is_empty());
+        assert!(parsed.diagnostics.is_empty());
+        assert!(!parse_js_inner(COMPONENT, "/mod/static/src/x.js").decls.is_empty());
+    }
 }
