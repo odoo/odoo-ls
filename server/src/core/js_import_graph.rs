@@ -10,7 +10,7 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use crate::core::file_mgr::Ast;
+use crate::core::file_mgr::{Ast, JsImport};
 use crate::threads::SessionInfo;
 use crate::utils::{HashMap, HashSet, PathSanitizer};
 
@@ -26,7 +26,7 @@ struct ImportGraph {
 impl ImportGraph {
     /// Scan every parsed JS file and resolve its recorded specifiers against the workspace.
     fn build(session: &SessionInfo) -> Self {
-        let js_files: Vec<(String, Vec<String>, Vec<String>)> = session
+        let js_files: Vec<(String, Vec<JsImport>, Vec<String>)> = session
             .sync_odoo
             .get_file_mgr()
             .borrow()
@@ -49,7 +49,8 @@ impl ImportGraph {
         let mut reexporters: HashMap<String, HashSet<String>> = HashMap::default();
         for (path, imports, reexports) in js_files.iter() {
             let reexported: HashSet<&str> = reexports.iter().map(String::as_str).collect();
-            for specifier in imports {
+            for import in imports {
+                let specifier = &import.specifier;
                 let Some(target) = resolve_specifier(specifier, path, &module_src, &known) else {
                     continue; // npm package, `/static/lib/` file, or an alias we do not model
                 };

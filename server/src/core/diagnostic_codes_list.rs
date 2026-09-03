@@ -594,4 +594,9 @@ OLS05076, DiagnosticSetting::Warning, "Duplicate declaration of field '{0}'. Onl
 * Template not found
 */
 OLS06000, DiagnosticSetting::Error, "Template not found",
+/**
+* An `@module/...` import names a module that is not the file's own module, nor one of its
+* manifest dependencies. 
+*/
+OLS06001, DiagnosticSetting::Error, "'{0}' is not in the dependencies of module '{1}'",
 }

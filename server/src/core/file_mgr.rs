@@ -9,7 +9,7 @@ use ruff_source_file::{LineIndex, OneIndexed, PositionEncoding, SourceLocation};
 use rustc_hash::FxHasher;
 use tracing::{error, warn};
 use std::path::Path;
-use crate::core::js_arch_builder::{JsDeclaration, JsExportKind};
+use crate::core::js_arch_builder::{JsDeclaration, JsExportKind, span_to_range};
 use crate::core::js_arch_builder::{ComponentDescriptor, JsTemplateRef};
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
@@ -127,7 +127,7 @@ pub struct ParsedJs {
     pub component_descriptors: Vec<ComponentDescriptor>,
     /// Named declarations, for workspace symbols.
     pub decls: Vec<JsDeclaration>,
-    pub imports: Vec<String>,
+    pub imports: Vec<JsImport>,
     pub reexports: Vec<String>,
     pub syntax_diagnostics: Vec<OxcDiagnostic>,
     pub lint_diagnostics: Vec<OxcDiagnostic>,
@@ -253,6 +253,16 @@ impl PythonAst {
     }
 }
 
+/// One module specifier as written by a JS file, and where it is written. A specifier
+/// requested by several statements yields one entry per statement.
+#[derive(Debug, Clone)]
+pub struct JsImport {
+    /// The specifier verbatim, e.g. `@mail/core/store`, `./state` or `luxon`.
+    pub specifier: String,
+    /// Byte range of the specifier's string literal, quotes included.
+    pub range: TextRange,
+}
+
 #[derive(Debug, Clone)]
 pub struct JsAst {
     /// Positions of OWL `static template = "some.xml_id"` string literals found in this JS file.
@@ -264,9 +274,9 @@ pub struct JsAst {
     /// Named declarations of this JS file, for workspace symbols.
     pub js_decls: Vec<JsDeclaration>,
     /// Every module specifier this JS file imports from, verbatim as written (incl.
-    /// bare `import "x"` and `export … from`). Sorted and deduplicated.
-    pub js_imports: Vec<String>,
-    /// The subset of [`Self::js_imports`] reached through a re-export — tracked apart as
+    /// bare `import "x"` and `export … from`), in source order.
+    pub js_imports: Vec<JsImport>,
+    /// The specifiers of [`Self::js_imports`] reached through a re-export — tracked apart as
     /// one of the two type-propagating edges of `core::js_import_graph`.
     pub js_reexports: Vec<String>,
     /// Whether the file has anything importable
@@ -612,12 +622,16 @@ impl FileInfo {
         self.replace_diagnostics(DiagnosticSource::JS_OXC_LINT, to_lsp_diag(parsed.lint_diagnostics));
     }
 
-    fn collect_js_imports(parser_module_record: &oxc::syntax::module_record::ModuleRecord) -> (Vec<String>, Vec<String>, HashMap<String, JsExportKind>) {
-        let mut imports: Vec<String> = parser_module_record.requested_modules
-            .keys()
-            .map(|spec| spec.as_str().to_string())
+    fn collect_js_imports(parser_module_record: &oxc::syntax::module_record::ModuleRecord) -> (Vec<JsImport>, Vec<String>, HashMap<String, JsExportKind>) {
+        let mut imports: Vec<JsImport> = parser_module_record.requested_modules
+            .iter()
+            .flat_map(|(spec, requests)| requests.iter().map(|request| JsImport {
+                specifier: spec.into_string(),
+                range: span_to_range(request.span), 
+            }))
             .collect();
-        imports.sort();
+        // Sort by source order
+        imports.sort_by_key(|import| import.range.start());
         let mut reexports: Vec<String> = parser_module_record.indirect_export_entries
             .iter()
             .chain(parser_module_record.star_export_entries.iter())
@@ -1439,8 +1453,12 @@ export class Counter extends Component {
 }
 "#;
 
-    fn assert_extracted(parsed: &ParsedJs) {
-        assert_eq!(parsed.imports, ["./state"]);
+    fn assert_extracted(parsed: &ParsedJs, source: &str) {
+        assert_eq!(parsed.imports.len(), 1);
+        assert_eq!(parsed.imports[0].specifier, "./state");
+        // The range is the specifier's literal, quotes included, wherever the header pushed it.
+        let range = parsed.imports[0].range;
+        assert_eq!(&source[usize::from(range.start())..usize::from(range.end())], "\"./state\"");
         assert_eq!(parsed.component_descriptors.len(), 1);
         assert_eq!(parsed.component_descriptors[0].class_name, "Counter");
         assert_eq!(parsed.template_refs.len(), 1);
@@ -1458,10 +1476,10 @@ export class Counter extends Component {
         assert!(skipped.component_descriptors.is_empty());
         assert!(skipped.template_refs.is_empty());
 
-        assert_extracted(&parse_js_inner(&headered, "/mod/static/lib/x.js"));
+        assert_extracted(&parse_js_inner(&headered, "/mod/static/lib/x.js"), &headered);
         // `static/src` and `static/tests` are modules unconditionally.
-        assert_extracted(&parse_js_inner(COMPONENT, "/mod/static/src/x.js"));
-        assert_extracted(&parse_js_inner(COMPONENT, "/mod/static/tests/x.js"));
+        assert_extracted(&parse_js_inner(COMPONENT, "/mod/static/src/x.js"), COMPONENT);
+        assert_extracted(&parse_js_inner(COMPONENT, "/mod/static/tests/x.js"), COMPONENT);
     }
 
     /// A lib file that *is* a module is still not the user's code, so it stays
