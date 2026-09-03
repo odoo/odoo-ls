@@ -1,5 +1,5 @@
 use lsp_types::{
-    CompletionItem, CompletionItemKind,
+    CompletionItem, CompletionItemKind, CompletionTextEdit,
 };
 use odoo_ls_server::threads::SessionInfo;
 
@@ -36,12 +36,12 @@ pub fn assert_definition_in(session: &mut SessionInfo, file: &FixtureFile, snipp
     );
 }
 
-/// Assert the module `specifier` imported by `file` resolves to `target`. 
+/// Assert the module `specifier` imported by `file` resolves to `target` (a fixture). 
 pub fn assert_import_resolves(session: &mut SessionInfo, file: &FixtureFile, specifier: &str, target: &FixtureFile) {
     assert_import_resolves_in(session, file, specifier, &target.path);
 }
 
-/// [`assert_import_resolves`] for a target that has no fixture, e.g. a community file.
+/// Assert the module `specifier` imported by `file` resolves to a `target` whose path ends with `suffix`
 pub fn assert_import_resolves_in(session: &mut SessionInfo, file: &FixtureFile, specifier: &str, path_suffix: &str) {
     let found = definitions(session, file, &format!("\"|{specifier}\""));
     assert!(
@@ -72,6 +72,48 @@ pub fn assert_completions(session: &mut SessionInfo, file: &FixtureFile, snippet
         ));
         assert_eq!(item.kind, Some(*kind), "kind of completion {label:?} at {snippet:?}");
     }
+}
+
+/// Assert one completion request at the caret offers none of `unexpected`.
+pub fn assert_no_completions(session: &mut SessionInfo, file: &FixtureFile, snippet: &str, unexpected: &[&str]) {
+    let items = completions(session, file, snippet);
+    for label in unexpected {
+        assert!(
+            !items.iter().any(|item| item.label == *label),
+            "completion {label:?} is offered at {snippet:?} in {}", file.path
+        );
+    }
+}
+
+/// Assert accepting the completion `label` at the caret writes `import_statement`.
+/// The edit only exists after a `completionItem/resolve`.
+pub fn assert_auto_import(session: &mut SessionInfo, file: &FixtureFile, snippet: &str, label: &str, import_statement: &str) {
+    let item = resolved_completion(session, file, snippet, label);
+    let inserted = item.additional_text_edits.iter().flatten()
+        .map(|edit| edit.new_text.as_str())
+        .collect::<String>();
+    assert!(
+        inserted.contains(import_statement),
+        "accepting {label:?} at {snippet:?} in {} writes {inserted:?}, expected it to contain {import_statement:?}",
+        file.path
+    );
+}
+
+/// Assert the completion `label` at the caret replaces the unfinished import with
+/// `import_statement`. No need for `completionItem/resolve` round trip.
+pub fn assert_import_completion(session: &mut SessionInfo, file: &FixtureFile, snippet: &str, label: &str, import_statement: &str) {
+    let items = completions(session, file, snippet);
+    let item = items.iter().find(|item| item.label == label).unwrap_or_else(|| panic!(
+        "no completion {label:?} at {snippet:?} in {}", file.path
+    ));
+    let Some(CompletionTextEdit::Edit(edit)) = &item.text_edit else {
+        panic!("completion {label:?} at {snippet:?} carries no edit, got {:?}", item.text_edit)
+    };
+    assert!(
+        edit.new_text.contains(import_statement),
+        "accepting {label:?} at {snippet:?} in {} writes {:?}, expected it to contain {import_statement:?}",
+        file.path, edit.new_text
+    );
 }
 
 /// Assert one completion request at the caret offers every `(label, label_details)`.
