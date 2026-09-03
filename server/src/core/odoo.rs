@@ -1532,10 +1532,9 @@ impl Odoo {
                 }
                 let ast_type = file_info.borrow().file_info_ast.borrow().ast.clone();
                 match ast_type {
+                    Ast::Pending => return Ok(None),
                     Ast::PythonAst(_) => {
-                        if file_info.borrow_mut().file_info_ast.borrow().ast.as_py_ast().indexed_module.is_some() {
-                            return Ok(HoverFeature::hover_python(session, file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
-                        }
+                        return Ok(HoverFeature::hover_python(session, file_symbol, &file_info, params.text_document_position_params.position.line, params.text_document_position_params.position.character));
                     },
                     Ast::XmlAst => {
                         let Position { line, character } = params.text_document_position_params.position;
@@ -1594,10 +1593,8 @@ impl Odoo {
                         if session.sync_odoo.config.is_semantic_tokens_python_disabled() {
                             return Ok(None);
                         }
-                        if file_info.borrow().file_info_ast.borrow().ast.as_py_ast().indexed_module.is_some() {
-                            let tokens = SemanticTokensFeature::tokens_python(session, file_symbol, &file_info);
-                            return Ok(Some(SemanticTokensResult::Tokens(tokens)));
-                        }
+                        let tokens = SemanticTokensFeature::tokens_python(session, file_symbol, &file_info);
+                        return Ok(Some(SemanticTokensResult::Tokens(tokens)));
                     },
                     Ast::JsAst(_) => {
                         if session.sync_odoo.config.is_semantic_tokens_javascript_disabled() {
@@ -1672,9 +1669,6 @@ impl Odoo {
             if let Some(file_info) = file_info {
                 if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
                     file_info.borrow_mut().prepare_ast(session);
-                }
-                if !file_info.borrow().file_info_ast.borrow().ast.is_built() {
-                    return Ok(None);
                 }
                 return match is_declaration {
                     false => {
@@ -1780,16 +1774,16 @@ impl Odoo {
                             return Ok(Some(CompletionResponse::Array(items)));
                         }
                     },
+                    Ast::PythonAst(_) => {
+                        return Ok(CompletionFeature::autocomplete(session,
+                            file_symbol,
+                            &file_info,
+                            params.context,
+                            params.text_document_position.position.line,
+                            params.text_document_position.position.character
+                        ));
+                    },
                     _ => {}
-                }
-                if matches!(file_info.borrow_mut().file_info_ast.borrow().ast, Ast::PythonAst(_)) && file_info.borrow_mut().file_info_ast.borrow().ast.as_py_ast().indexed_module.is_some() {
-                    return Ok(CompletionFeature::autocomplete(session,
-                        file_symbol,
-                        &file_info,
-                        params.context,
-                        params.text_document_position.position.line,
-                        params.text_document_position.position.character
-                    ));
                 }
             }
         }

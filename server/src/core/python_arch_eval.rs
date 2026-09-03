@@ -1,5 +1,6 @@
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
+use crate::core::file_mgr::Ast;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::vec;
@@ -79,7 +80,7 @@ impl PythonArchEval {
             ModuleSymbol::load_data(m, session);
             ModuleSymbol::load_assets(m, session);
         }
-        if file_info_ast.borrow().ast.as_py_ast().indexed_module.is_some() {
+        if matches!(file_info_ast.borrow().ast, Ast::PythonAst(_)) {
             let file_info_ast_bw  = file_info_ast.borrow();
             //  If the file has been re-parsed since, those indexes address another tree.
             if file_info_ast_bw.text_hash != session.st().get_processed_text_hash(self.file) {
@@ -97,7 +98,7 @@ impl PythonArchEval {
                         // Function has no body or is dynamically created from a hook
                         (Default::default(), None) // essentially skip evaluation
                     } else {
-                        let func_stmt = file_info_ast_bw.ast.as_py_ast().indexed_module.as_ref().unwrap().get_by_index(fun_index);
+                        let func_stmt = file_info_ast_bw.ast.as_py_ast().indexed_module.get_by_index(fun_index);
                         match func_stmt {
                             AnyRootNodeRef::Stmt(Stmt::FunctionDef(func_stmt)) => {
                                 (func_stmt.body.as_slice(), Some(func_stmt))

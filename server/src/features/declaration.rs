@@ -20,6 +20,7 @@ impl DeclarationFeature {
     ) -> Option<GotoDeclarationResponse> {
         let ast_type = file_info.borrow().file_info_ast.borrow().ast.clone();
         let definitions_sources = match ast_type {
+            Ast::Pending => return None,
             Ast::PythonAst(_) => GotoUtils::get_symbols(session, GotoRequest::Declaration, file_symbol, file_info, line, character),
             Ast::XmlAst => GotoUtils::get_symbols_xml(session, file_symbol, file_info, line, character),
             Ast::CsvAst => GotoUtils::get_symbols_csv(session, file_symbol, file_info, line, character),
