@@ -1,7 +1,7 @@
 use crate::constants::{BuildSteps, PackageType};
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr};
-use crate::core::file_mgr::{Ast, FileInfoKey};
+use crate::core::file_mgr::{Ast, AstKind, FileInfoKey};
 use crate::core::symbols::Dependencies;
 use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::storage::XmlDataParent;
@@ -59,18 +59,19 @@ impl ReferenceFeature {
         }
         //We want to search for references of the definition, and not the current symbol. Let's use definition feature for that
         BuildScheduler::process_rebuilds(session, false);
-        let ast = session.file_mgr()[file_info].file_info_ast.borrow().ast.clone();
-        let def_sources = match ast {
-            Ast::PythonAst(_) => {
+        let ast_kind = session.file_mgr()[file_info].file_info_ast.borrow().ast.kind();
+        let def_sources = match ast_kind {
+            AstKind::Pending => return None,
+            AstKind::PythonAst => {
                 GotoUtils::get_symbols(session, GotoRequest::Definition, file_symbol, file_info, line, character)
             },
-            Ast::XmlAst => {
+            AstKind::XmlAst => {
                 GotoUtils::get_symbols_xml(session, file_symbol, file_info, line, character)
             },
-            Ast::CsvAst => {
+            AstKind::CsvAst => {
                 GotoUtils::get_symbols_csv(session, file_symbol, file_info, line, character)
             },
-            Ast::JsAst(_) => unreachable!(),
+            AstKind::JsAst => unreachable!(),
         };
 
 

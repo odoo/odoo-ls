@@ -17,7 +17,7 @@ impl ModuleSymbol {
             info!("ARCH       - MANIFEST: {}", manifest_path.sanitize_cow());
         }
         let (_, manifest_file_info) = FileMgr::update_file_info(session, &manifest_path.sanitize_cow(), None, None, false);
-        if session.file_mgr()[manifest_file_info].file_info_ast.borrow().ast.as_py_ast().indexed_module.is_none() {
+        if !session.file_mgr()[manifest_file_info].file_info_ast.borrow().ast.is_built() {
             return;
         }
         let diags = ModuleSymbol::load_manifest(session, module_key, manifest_file_info);
