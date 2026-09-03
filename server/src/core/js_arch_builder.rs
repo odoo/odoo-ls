@@ -71,7 +71,7 @@ pub struct JsDeclaration {
     pub container: Option<OYarn>,
 }
 
-fn span_to_range(span: Span) -> TextRange {
+pub fn span_to_range(span: Span) -> TextRange {
     TextRange::new(TextSize::new(span.start), TextSize::new(span.end))
 }
 
