@@ -1,9 +1,9 @@
-use std::{cell::RefCell, path::Path, rc::Rc, sync::atomic::Ordering};
+use std::{path::Path, sync::atomic::Ordering};
 
 use lsp_types::MessageType;
 use tracing::{error, info, trace};
 
-use crate::{S, constants::{BuildStatus, BuildSteps, DEBUG_REBUILD_NOW, DEBUG_STEPS, DEBUG_THREADS, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::{csv_validation::CsvValidator, entry_point::EntryPoint, import_resolver::ImportCache, js_validator::JsValidator, odoo::InitState, python_arch_builder::PythonArchBuilder, python_arch_eval::PythonArchEval, python_validator::PythonValidator, symbols::{SymbolTable, symbol_keys::{BuildableSymbolKey, SymbolKey}, symbol_table_impl::CreateError}, xml_validation::XmlValidator}, fifo_ptr_weak_hash_set::FifoWeakHashSet, progress_reporter::ProgressReporterRemaining, threads::SessionInfo, tree::Tree, utils::HashSet};
+use crate::{S, constants::{BuildStatus, BuildSteps, DEBUG_REBUILD_NOW, DEBUG_STEPS, DEBUG_THREADS, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::{csv_validation::CsvValidator, import_resolver::ImportCache, js_validator::JsValidator, odoo::InitState, python_arch_builder::PythonArchBuilder, python_arch_eval::PythonArchEval, python_validator::PythonValidator, symbols::{SymbolTable, symbol_keys::{BuildableSymbolKey, EntryPointKey, SymbolKey}, symbol_table_impl::CreateError}, xml_validation::XmlValidator}, fifo_ptr_weak_hash_set::FifoWeakHashSet, progress_reporter::ProgressReporterRemaining, threads::SessionInfo, tree::Tree, utils::HashSet};
 
 #[derive(Debug)]
 pub struct BuildScheduler {
@@ -35,23 +35,23 @@ impl BuildScheduler {
 
     /// Build one item from the build queues, preferably ARCH, then ARCH_EVAL, then VALIDATION if `validation` is `true`.
     /// Returns true if an item was built, false if all queues are empty.
-    pub fn build_one(session: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, validation: bool) -> bool {
+    pub fn build_one(session: &mut SessionInfo, entry: EntryPointKey, validation: bool) -> bool {
         while let Some(symbol) = bs!(session).rebuild_arch.pop_front_valid(&session.sync_odoo.symbol_table) {
-            if let Some(python_buildable) = symbol.as_python_buildable() 
-            && let Some(mut builder) = PythonArchBuilder::new(session.st(), entry.clone(), python_buildable) {
+            if let Some(python_buildable) = symbol.as_python_buildable()
+            && let Some(mut builder) = PythonArchBuilder::new(session.st(), entry, python_buildable) {
                 builder.load_arch(session);
                 return true;
             }
         }
         while let Some(symbol) = bs!(session).rebuild_arch_eval.pop_front_valid(&session.sync_odoo.symbol_table) {
-            if let Some(python_buildable) = symbol.as_python_buildable() 
-            && let Some(mut builder) = PythonArchEval::new(session.st(), entry.clone(), python_buildable) {
+            if let Some(python_buildable) = symbol.as_python_buildable()
+            && let Some(mut builder) = PythonArchEval::new(session.st(), entry, python_buildable) {
                 builder.eval_arch(session);
                 return true;
             }
         }
         if validation && let Some(symbol) = bs!(session).rebuild_validation.pop_front_valid(&session.sync_odoo.symbol_table) {
-            Self::validate(session, symbol.into(), entry.clone());
+            Self::validate(session, symbol.into(), entry);
             return true;
         }
         false
@@ -273,10 +273,10 @@ impl BuildScheduler {
         true
     }
 
-    fn validate(session: &mut SessionInfo, sym_key: SymbolKey, entry: Rc<RefCell<EntryPoint>>) {
+    fn validate(session: &mut SessionInfo, sym_key: SymbolKey, entry: EntryPointKey) {
         match sym_key {
             SymbolKey::XmlFile(xml) => {
-                let mut validator = XmlValidator::new(&entry, xml, session.st());
+                let mut validator = XmlValidator::new(entry, xml, session.st(), session.ep_mgr());
                 validator.validate(session);
             },
             SymbolKey::CsvFile(csv) => {

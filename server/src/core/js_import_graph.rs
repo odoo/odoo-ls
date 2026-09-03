@@ -26,14 +26,11 @@ struct ImportGraph {
 impl ImportGraph {
     /// Scan every parsed JS file and resolve its recorded specifiers against the workspace.
     fn build(session: &SessionInfo) -> Self {
-        let js_files: Vec<(String, Vec<String>, Vec<String>)> = session
-            .sync_odoo
-            .get_file_mgr()
-            .borrow()
+        let js_files: Vec<(String, Vec<String>, Vec<String>)> = session.file_mgr()
             .files
             .values()
             .filter_map(|file_info| {
-                let file_info = file_info.borrow();
+                let file_info = &session.file_mgr()[*file_info];
                 let ast = file_info.file_info_ast.borrow();
                 matches!(ast.ast, Ast::JsAst(_)).then(|| {
                     // TODO: review these expensive clones

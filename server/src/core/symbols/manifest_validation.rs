@@ -3,7 +3,7 @@ use std::{ffi::OsStr, path::Path};
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
 
-use crate::{Sy, constants::{BuildSteps, DEBUG_STEPS, DiagnosticSource, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, symbols::{ModuleSymbol, symbol_keys::ModuleKey}}, threads::SessionInfo, utils::PathSanitizer};
+use crate::{Sy, constants::{BuildSteps, DEBUG_STEPS, DiagnosticSource, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileInfo, symbols::{ModuleSymbol, symbol_keys::ModuleKey}}, threads::SessionInfo, utils::PathSanitizer};
 
 
 
@@ -27,8 +27,8 @@ impl ModuleSymbol {
             let Some(model_name) = path.file_stem().and_then(OsStr::to_str).map(|n| Sy!(n.to_string())) else {
                 continue;
             };
-            let maybe_model = session.sync_odoo.models.get(&model_name).cloned();
-            let model_exists = maybe_model.as_ref().map(|m| m.borrow_mut().has_symbols(session.st())).unwrap_or(false);
+            let maybe_model = session.model_mgr().get_model(&model_name);
+            let model_exists = maybe_model.map(|m| m.has_symbols(session.st())).unwrap_or(false);
             if !model_exists {
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[&model_name]) {
                     diagnostics.push(Diagnostic {
@@ -37,13 +37,13 @@ impl ModuleSymbol {
                     });
                 }
                 session.st_mut()[module_key].not_found_models.insert(model_name.clone(), BuildSteps::VALIDATION);
-                session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(module_key.into());
+                let main_entry = session.sync_odoo.get_main_entry();
+                session.ep_mgr_mut()[main_entry].not_found_symbols_for_models.insert(module_key.into());
             }
         }
         let manifest_path = Path::new(&root_path).join("__manifest__.py");
-        let manifest_file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize_cow()).expect("file not found in cache").clone();
-        let mut manifest_file_info = (*manifest_file_info).borrow_mut();
-        manifest_file_info.replace_diagnostics(DiagnosticSource::PY_VALIDATION, diagnostics);
-        manifest_file_info.publish_diagnostics(session);
+        let manifest_file_info = session.file_mgr().get_file_info(&manifest_path.sanitize_cow()).expect("file not found in cache");
+        session.file_mgr_mut()[manifest_file_info].replace_diagnostics(DiagnosticSource::PY_VALIDATION, diagnostics);
+        FileInfo::publish_diagnostics(session, manifest_file_info);
     }
 }

@@ -6,15 +6,13 @@ use ruff_python_ast::{Decorator, Expr, ExprCall, ExprStringLiteral, Parameter};
 use ruff_text_size::{Ranged, TextRange};
 
 use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr, ExprOrIdent};
-use crate::core::file_mgr::FileInfo;
+use crate::core::file_mgr::FileInfoKey;
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::symbol_keys::{SourceFileKey, SymbolKey};
 use crate::features::ast_utils::AstUtils;
 use crate::features::features_utils::{FeaturesUtils, SegmentPick, StringResolution};
 use crate::features::owl_component_utils::template_reference_resolves;
 use crate::threads::SessionInfo;
-use std::cell::RefCell;
-use std::rc::Rc;
 
 /// Single source of truth for token *type* indices. The order here MUST match the
 /// order of `legend().token_types` so the `u32` we send to the client lines up.
@@ -117,20 +115,21 @@ impl SemanticTokensFeature {
         }
     }
 
-    pub fn tokens_python(session: &mut SessionInfo, file_symbol: SourceFileKey, file_info: &Rc<RefCell<FileInfo>>) -> SemanticTokens {
+    pub fn tokens_python(session: &mut SessionInfo, file_symbol: SourceFileKey, file_info: FileInfoKey) -> SemanticTokens {
         // Raw, unsorted tokens: (range, token type index, modifier bitset). We
         // collect first, then sort by (line, char) and delta-encode at the end.
         let mut raw: Vec<(Range, u32, u32)> = vec![];
 
-        let file_info_ast = file_info.borrow().file_info_ast.clone();
+        let file_info_ast = session.file_mgr()[file_info].file_info_ast.clone();
         let file_info_ast_ref = file_info_ast.borrow();
         if let Some(stmts) = file_info_ast_ref.get_stmts() {
+            let file_path = session.file_mgr()[file_info].uri.clone();
             let mut visitor = SemanticTokenVisitor {
                 session,
                 file_symbol,
-                file_info,
+                file_info: &file_info,
                 raw: &mut raw,
-                file_path: file_info.borrow().uri.clone(),
+                file_path,
                 enclosing_call: None,
             };
             for stmt in stmts.iter() {
@@ -146,14 +145,14 @@ impl SemanticTokensFeature {
     /// tsserver) merged with tsserver's native classifier output — the legend mirrors
     /// tsserver's numbering, so the only work is converting its flat UTF-16 offsets into
     /// LSP positions. Mirrors `owl_virtual::semantic_tokens_xml` for the XML side.
-    pub fn tokens_javascript(session: &mut SessionInfo, file_path: &str, file_info: &Rc<RefCell<FileInfo>>) -> SemanticTokens {
+    pub fn tokens_javascript(session: &mut SessionInfo, file_path: &str, file_info: FileInfoKey) -> SemanticTokens {
         // 1. Template-name tokens. Independent of tsserver: the ranges come from our own AST pass.
         let mut raw: Vec<(Range, u32, u32)> = Self::template_ref_tokens(session, file_info);
 
         // Snapshot the content first: we need it to map offsets to positions, and we
         // must not hold the borrow across the `&mut session` bridge call below.
         let content = {
-            let fi = file_info.borrow();
+            let fi = &session.file_mgr()[file_info];
             let fia = fi.file_info_ast.borrow();
             fia.text_document.as_ref().map(|td| td.contents().to_string())
         };
@@ -173,7 +172,7 @@ impl SemanticTokensFeature {
             for (start, length, token_type, modifiers) in spans {
                 let b_start = conv.advance_to(start) as u32;
                 let b_end = conv.advance_to(start + length) as u32;
-                let fi = file_info.borrow();
+                let fi = &session.file_mgr()[file_info];
                 let range = Range {
                     start: fi.offset_to_position(b_start, encoding),
                     end: fi.offset_to_position(b_end, encoding),
@@ -188,14 +187,14 @@ impl SemanticTokensFeature {
     /// `type` tokens for `static template = "module.name"` strings. A template *reference*
     /// like `t-call` / `t-inherit`: no `declaration` modifier, and gated on resolving —
     /// highlighted exactly when Definition would navigate from it.
-    fn template_ref_tokens(session: &SessionInfo, file_info: &Rc<RefCell<FileInfo>>) -> Vec<(Range, u32, u32)> {
+    fn template_ref_tokens(session: &SessionInfo, file_info: FileInfoKey) -> Vec<(Range, u32, u32)> {
         let encoding = session.sync_odoo.encoding;
-        let template_refs = file_info.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
+        let template_refs = session.file_mgr()[file_info].file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
         template_refs
             .into_iter()
             .filter(|template_ref| template_reference_resolves(session, &template_ref.t_name))
             .map(|template_ref| {
-                let range = file_info.borrow().text_range_to_range(template_ref.range, encoding);
+                let range = session.file_mgr()[file_info].text_range_to_range(template_ref.range, encoding);
                 (range, TokType::Type as u32, 0)
             })
             .collect()
@@ -272,7 +271,7 @@ fn is_grammar_owned_self(name: &str) -> bool {
 struct SemanticTokenVisitor<'a, 'b, 's> {
     session: &'s mut SessionInfo<'b>,
     file_symbol: SourceFileKey,
-    file_info: &'a Rc<RefCell<FileInfo>>,
+    file_info: &'a FileInfoKey,
     raw: &'a mut Vec<(Range, u32, u32)>,
     file_path: String,
     /// Nearest enclosing call, so string args resolve to fields/methods.
@@ -291,13 +290,13 @@ impl<'a, 'b, 's> SemanticTokenVisitor<'a, 'b, 's> {
         let Some((token_type, modifiers)) = classify(self.session, key, origin) else {
             return;
         };
-        let range = self.file_info.borrow().text_range_to_range(segment_range, self.session.sync_odoo.encoding);
+        let range = self.session.file_mgr()[*self.file_info].text_range_to_range(segment_range, self.session.sync_odoo.encoding);
         self.raw.push((range, token_type, modifiers));
     }
 
     /// Convert `range` to LSP and push one raw token.
     fn push_raw(&mut self, range: TextRange, token_type: u32, modifiers: u32) {
-        let lsp_range = self.file_info.borrow().text_range_to_range(range, self.session.sync_odoo.encoding);
+        let lsp_range = self.session.file_mgr()[*self.file_info].text_range_to_range(range, self.session.sync_odoo.encoding);
         self.raw.push((lsp_range, token_type, modifiers));
     }
 
@@ -407,7 +406,7 @@ impl<'a, 'b, 's> Visitor<'a> for SemanticTokenVisitor<'a, 'b, 's> {
         let name = &parameter.name;
         // Tokenize parameter (name only), skip if `self` or `cls`.
         if !is_grammar_owned_self(name.as_str()) {
-            let range = self.file_info.borrow().text_range_to_range(name.range(), self.session.sync_odoo.encoding);
+            let range = self.session.file_mgr()[*self.file_info].text_range_to_range(name.range(), self.session.sync_odoo.encoding);
             self.raw.push((range, TokType::Parameter as u32, TokMod::Declaration.bit()));
         }
         // Keep descending so the annotation expr still gets its own token.

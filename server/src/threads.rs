@@ -8,7 +8,7 @@ use lsp_types::{CompletionItem, CompletionResponse, DocumentSymbolResponse, Goto
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tracing::{error, info, warn};
-use crate::{constants::{DiagnosticSource, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::{build_scheduler::BuildScheduler, symbols::storage::SymbolTable}, create_session, lsp_types_custom::{ConfigDiagnosticAction, ConfigDiagnosticMessage}};
+use crate::{constants::{DiagnosticSource, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::{build_scheduler::BuildScheduler, entry_point::EntryPointMgr, file_mgr::FileMgr, model::ModelMgr, symbols::storage::SymbolTable}, create_session, lsp_types_custom::{ConfigDiagnosticAction, ConfigDiagnosticMessage}};
 
 use crate::{core::{file_mgr::NoqaInfo, odoo::{Odoo, SyncOdoo}}, server::ServerError, utils::PathSanitizer, S};
 
@@ -197,6 +197,32 @@ impl <'a> SessionInfo<'a> {
     /// Get a mutable reference to the symbol table
     pub fn st_mut(&mut self) -> &mut SymbolTable {
         &mut self.sync_odoo.symbol_table
+    }
+
+    /// Get a immutable reference to the model manager
+    pub fn model_mgr(&self) -> &ModelMgr {
+        &self.sync_odoo.model_mgr
+    }
+
+    /// Get a mutable reference to the model manager
+    pub fn model_mgr_mut(&mut self) -> &mut ModelMgr {
+        &mut self.sync_odoo.model_mgr
+    }
+
+    pub fn file_mgr(&self) -> &FileMgr {
+        &self.sync_odoo.file_mgr
+    }
+
+    pub fn file_mgr_mut(&mut self) -> &mut FileMgr {
+        &mut self.sync_odoo.file_mgr
+    }
+
+    pub fn ep_mgr(&self) -> &EntryPointMgr {
+        &self.sync_odoo.entry_point_mgr
+    }
+
+    pub fn ep_mgr_mut(&mut self) -> &mut EntryPointMgr {
+        &mut self.sync_odoo.entry_point_mgr
     }
 
 }

@@ -82,10 +82,10 @@ impl VariableSymbol {
                         let Some(comodel) = eval_weak.get_weak().context.get(ContextKey::ComodelName) else {
                             continue;
                         };
-                        let Some(model) = session.sync_odoo.models.get(comodel.as_str()) else {
+                        let Some(model) = session.model_mgr().get_model(comodel.as_str()) else {
                             continue;
                         };
-                        return model.borrow().get_main_symbols(session, from_module).collect();
+                        return model.get_main_symbols(session, from_module).collect();
                     } else if let SymbolKey::Class(k) = symbol { // Already evaluated from descriptor in follow_ref
                         return vec![k.into()];
                     } else if let SymbolKey::XmlRecord(k) = symbol {

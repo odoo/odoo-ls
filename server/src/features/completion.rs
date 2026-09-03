@@ -5,7 +5,7 @@ use crate::core::evaluation::{
 };
 use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
-use crate::core::file_mgr::FileInfo;
+use crate::core::file_mgr::FileInfoKey;
 use crate::core::import_resolver;
 use crate::core::odoo::SyncOdoo;
 use crate::core::python_odoo_builder::ACCESS_OPERATOR_OPTIONS;
@@ -28,7 +28,6 @@ use ruff_python_ast::{
 };
 use ruff_text_size::{Ranged, TextSize};
 use crate::utils::HashSet;
-use std::{cell::RefCell, rc::Rc};
 
 
 #[allow(non_camel_case_types)]
@@ -55,13 +54,13 @@ impl CompletionFeature {
 
     pub fn autocomplete(session: &mut SessionInfo,
         file_symbol: SourceFileKey,
-        file_info: &Rc<RefCell<FileInfo>>,
+        file_info: FileInfoKey,
         completion_context: Option<CompletionContext>,
         line: u32,
         character: u32
     ) -> Option<CompletionResponse> {
-        let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
-        let file_info_ast = file_info.borrow().file_info_ast.clone();
+        let offset = session.file_mgr()[file_info].position_to_offset(line, character, session.sync_odoo.encoding);
+        let file_info_ast = session.file_mgr()[file_info].file_info_ast.clone();
         let file_info_ast = file_info_ast.borrow();
         let ast = file_info_ast.get_stmts().unwrap();
         let is_completion_invoked = completion_context.as_ref().is_none_or(|context| {
@@ -716,7 +715,6 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
 fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_string_literal: &ruff_python_ast::ExprStringLiteral, _offset: usize, _is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     let mut items = vec![];
     let current_module = session.st().find_module(file);
-    let models = session.sync_odoo.models.clone();
     for expected_type in expected_type.iter() {
         match expected_type {
             ExpectedType::MODEL_NAME => {
@@ -725,8 +723,8 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
                     Some(index) => &prefix[..=index],
                     None => "",
                 };
-                for (model_name, model) in models.iter() {
-                    if !model.borrow_mut().has_symbols(session.st()) {
+                for (model_name, &model) in session.model_mgr().iter_models() {
+                    if !session.model_mgr()[model].has_symbols(session.st()) {
                         continue;
                     }
                     if model_name.starts_with(prefix) && model_name != "_unknown" {
@@ -737,8 +735,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
 
 
                         if let Some(current_module) = current_module {
-                            let model_ref = model.borrow();
-                            let model_class_definitions = model_ref.get_main_symbols(session, None);
+                            let model_class_definitions = session.model_mgr()[model].get_main_symbols(session, None);
                             let modules = model_class_definitions.flat_map(|model_key|
                                 session.st().find_module(model_key));
                             let required_modules = modules.filter(|&module|
@@ -840,12 +837,12 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
                 }
             },
             ExpectedType::EXTERNAL_FIELD(model_name) => {
-                let Some(model) = session.sync_odoo.models.get(model_name).cloned() else {
+                let Some(model) = session.model_mgr().get_model_key(model_name) else {
                     break;
                 };
                 // Only python main symbols, because it is relation defining check
                 // Needs deploying Odoo and checking
-                let main_syms = model.borrow().get_main_symbols(session, current_module).collect::<Vec<_>>();
+                let main_syms = session.model_mgr()[model].get_main_symbols(session, current_module).collect::<Vec<_>>();
                 main_syms.iter().filter_map(|s| s.as_class_key()).for_each(|class_key| {
                     add_model_attributes(session, &mut items, current_module, class_key.into(), false, true, false, expr_string_literal.value.to_str(), &Some(Sy!("Many2one")))
                 });

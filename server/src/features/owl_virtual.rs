@@ -11,16 +11,13 @@
 //! bytes. The compiled expression is byte-aligned with the XML attribute value, so mapping
 //! between the two is a constant offset per expression.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use lsp_types::{
     CompletionItem, GotoDefinitionResponse, Hover, HoverContents, Location, MarkupContent,
     MarkupKind, Position, Range, SemanticTokens,
 };
 use ruff_source_file::{LineIndex, PositionEncoding};
 
-use crate::core::file_mgr::{FileInfo, FileMgr, offset_to_position_with_line_index, position_to_offset_with_line_index};
+use crate::core::file_mgr::{FileInfoKey, FileMgr, offset_to_position_with_line_index, position_to_offset_with_line_index};
 use crate::core::js_arch_builder::JsExportKind;
 use crate::features::owl_component_utils::{self, template_reference_resolves};
 use crate::core::tsserver_bridge::{ts_to_lsp_location, TsLocation, TsServerBridge};
@@ -239,13 +236,13 @@ pub(crate) fn shim_to_real(shim_path: &str) -> String {
 /// Semantic tokens for an XML OWL-template file: template-name tokens (in-house, works
 /// without tsserver) merged with JS-expression tokens (delegated to tsserver via the
 /// virtual docs). `None` when neither source produced a token.
-pub fn semantic_tokens_xml(session: &mut SessionInfo, file_info: &Rc<RefCell<FileInfo>>) -> Option<SemanticTokens> {
+pub fn semantic_tokens_xml(session: &mut SessionInfo, file_info: FileInfoKey) -> Option<SemanticTokens> {
     let encoding = session.sync_odoo.encoding;
     let mut raw_tokens: Vec<(Range, u32, u32)> = vec![];
 
     // 1. Template-name tokens. Independent of tsserver: we only need to parse the XML.
     let xml = {
-        let fi = file_info.borrow();
+        let fi = &session.file_mgr()[file_info];
         let fia = fi.file_info_ast.borrow();
         fia.text_document.as_ref().map(|td| td.contents().to_string())
     };
@@ -259,7 +256,7 @@ pub fn semantic_tokens_xml(session: &mut SessionInfo, file_info: &Rc<RefCell<Fil
             if !is_declaration && !template_reference_resolves(session, &xml[range.clone()]) {
                 continue;
             }
-            let lsp_range = file_info.borrow().std_range_to_range(&range, encoding);
+            let lsp_range = session.file_mgr()[file_info].std_range_to_range(&range, encoding);
             let modifiers = if is_declaration { TokMod::Declaration.bit() } else { 0 };
             raw_tokens.push((lsp_range, TokType::Type as u32, modifiers));
         }
@@ -278,7 +275,7 @@ pub fn semantic_tokens_xml(session: &mut SessionInfo, file_info: &Rc<RefCell<Fil
         for doc in &docs {
             let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() else { break };
             let spans = bridge.get_semantic_tokens(&doc.virtual_path);
-            remap_spans_to_xml(doc, spans, file_info, encoding, &mut raw_tokens);
+            remap_spans_to_xml(session, doc, spans, file_info, encoding, &mut raw_tokens);
         }
     }
 
@@ -313,13 +310,13 @@ fn collect_template_names(node: roxmltree::Node, out: &mut Vec<(std::ops::Range<
 /// the cursor is on no expression — the caller falls back.
 pub(crate) fn locate_doc_at_cursor(
     session: &mut SessionInfo,
-    file_info: &Rc<RefCell<FileInfo>>,
+    file_info: FileInfoKey,
     line: u32,
     character: u32,
 ) -> Option<(OwlVirtualDoc, usize)> {
     session.sync_odoo.tsserver_bridge.as_ref()?;
     let encoding = session.sync_odoo.encoding;
-    let xml_byte = file_info.borrow().position_to_offset(line, character, encoding);
+    let xml_byte = session.file_mgr()[file_info].position_to_offset(line, character, encoding);
 
     let mut docs = build_virtual_docs(session, file_info);
     let idx = docs.iter().position(|doc| doc.expr_at_cursor(xml_byte).is_some())?;
@@ -355,7 +352,7 @@ fn open_doc_with_shim(session: &mut SessionInfo, doc: &OwlVirtualDoc) -> Option<
 /// containing doc, ready to query at the returned `(line, character)` (0-based, UTF-16).
 fn open_doc_at_cursor(
     session: &mut SessionInfo,
-    file_info: &Rc<RefCell<FileInfo>>,
+    file_info: FileInfoKey,
     line: u32,
     character: u32,
 ) -> Option<(OwlVirtualDoc, u32, u32)> {
@@ -371,7 +368,7 @@ fn open_doc_at_cursor(
 /// expression, or tsserver has nothing to say.
 pub fn hover_xml_owl(
     session: &mut SessionInfo,
-    file_info: &Rc<RefCell<FileInfo>>,
+    file_info: FileInfoKey,
     line: u32,
     character: u32,
 ) -> Option<Hover> {
@@ -396,7 +393,7 @@ pub fn hover_xml_owl(
 /// expression. `None` when there is no tsserver, no expression at the cursor, or no items.
 pub fn completion_xml_owl(
     session: &mut SessionInfo,
-    file_info: &Rc<RefCell<FileInfo>>,
+    file_info: FileInfoKey,
     line: u32,
     character: u32,
 ) -> Option<Vec<CompletionItem>> {
@@ -423,7 +420,7 @@ pub fn completion_xml_owl(
 /// target.
 pub fn definition_xml_owl(
     session: &mut SessionInfo,
-    file_info: &Rc<RefCell<FileInfo>>,
+    file_info: FileInfoKey,
     line: u32,
     character: u32,
 ) -> Option<GotoDefinitionResponse> {
@@ -449,7 +446,7 @@ pub fn definition_xml_owl(
     let locations: Vec<Location> = raw
         .iter()
         .filter_map(|hit| {
-            match map_virtual_ref(&doc, file_info, encoding, hit)? {
+            match map_virtual_ref(session, &doc, file_info, encoding, hit)? {
                 MappedRef::Xml(loc) | MappedRef::RealJs(loc) => Some(loc),
             }
         })
@@ -474,8 +471,9 @@ pub(crate) enum MappedRef {
 /// artefacts are dropped (leak guard); a spliced expression maps onto the XML; a preamble
 /// `let` maps to its `t-set` / `t-as` declaration; anything else in the doc is dropped.
 pub(crate) fn map_virtual_ref(
+    session: &SessionInfo,
     doc: &OwlVirtualDoc,
-    xml_fi: &Rc<RefCell<FileInfo>>,
+    xml_fi: FileInfoKey,
     encoding: PositionEncoding,
     loc: &TsLocation,
 ) -> Option<MappedRef> {
@@ -506,9 +504,9 @@ pub(crate) fn map_virtual_ref(
         // Inside a template expression ⇒ map back onto the XML (byte-aligned with `compiled`).
         let xml_start = expr.xml_byte_start + (v_start - expr.v_byte_start);
         let xml_end = xml_start + v_end.saturating_sub(v_start);
-        let range = xml_fi.borrow().std_range_to_range(&(xml_start..xml_end), encoding);
+        let range = session.file_mgr()[xml_fi].std_range_to_range(&(xml_start..xml_end), encoding);
         return Some(MappedRef::Xml(Location {
-            uri: FileMgr::pathname2uri(&xml_fi.borrow().uri),
+            uri: FileMgr::pathname2uri(&session.file_mgr()[xml_fi].uri),
             range,
         }));
     }
@@ -519,9 +517,9 @@ pub(crate) fn map_virtual_ref(
     {
         // A preamble `let <name>` ⇒ a template-local; report its `t-set` / `t-as` in the XML.
         let xml_range = decl.xml_byte_start..decl.xml_byte_start + decl.xml_name_len;
-        let range = xml_fi.borrow().std_range_to_range(&xml_range, encoding);
+        let range = session.file_mgr()[xml_fi].std_range_to_range(&xml_range, encoding);
         return Some(MappedRef::Xml(Location {
-            uri: FileMgr::pathname2uri(&xml_fi.borrow().uri),
+            uri: FileMgr::pathname2uri(&session.file_mgr()[xml_fi].uri),
             range,
         }));
     }
@@ -532,10 +530,10 @@ pub(crate) fn map_virtual_ref(
 /// file: expressions collected and grouped by declaring class, then import line + one
 /// function each. No tsserver interaction — the result is fully owned. A non-exported
 /// component's doc imports its class from a per-file shim instead.
-pub(crate) fn build_virtual_docs(session: &mut SessionInfo, file_info: &Rc<RefCell<FileInfo>>) -> Vec<OwlVirtualDoc> {
+pub(crate) fn build_virtual_docs(session: &mut SessionInfo, file_info: FileInfoKey) -> Vec<OwlVirtualDoc> {
     // 1. XML content.
     let xml = {
-        let fi = file_info.borrow();
+        let fi = &session.file_mgr()[file_info];
         let fia = fi.file_info_ast.borrow();
         match fia.text_document.as_ref() {
             Some(td) => td.contents().to_string(),
@@ -858,9 +856,10 @@ fn build_virtual(import_line: &str, class_name: &str, exprs: Vec<CollectedExpr>)
 /// Map tsserver's semantic-token spans (flat ascending UTF-16 offsets into the virtual
 /// file) back onto the XML; spans outside every spliced expression are dropped.
 fn remap_spans_to_xml(
+    session: &SessionInfo,
     doc: &OwlVirtualDoc,
     spans: Vec<(u32, u32, u32, u32)>,
-    file_info: &Rc<RefCell<FileInfo>>,
+    file_info: FileInfoKey,
     encoding: PositionEncoding,
     out: &mut Vec<(Range, u32, u32)>,
 ) {
@@ -878,7 +877,7 @@ fn remap_spans_to_xml(
         };
         let xml_start = expr.xml_byte_start + (b_start - expr.v_byte_start);
         let xml_end = xml_start + (b_end - b_start);
-        let range = file_info.borrow().std_range_to_range(&(xml_start..xml_end), encoding);
+        let range = session.file_mgr()[file_info].std_range_to_range(&(xml_start..xml_end), encoding);
         out.push((range, token_type, modifiers));
     }
 }
@@ -912,9 +911,9 @@ fn shim_module_specifier(real_js_path: &str) -> String {
 /// Read the real component `.js`, preferring the in-memory buffer (the content the
 /// descriptors — and thus `class_name_byte` — were computed from) over disk.
 pub(crate) fn read_real_js(session: &mut SessionInfo, file_path: &str) -> Option<String> {
-    let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(file_path);
+    let file_info = session.file_mgr().get_file_info(file_path);
     if let Some(file_info) = file_info {
-        let fi = file_info.borrow();
+        let fi = &session.file_mgr()[file_info];
         let fia = fi.file_info_ast.borrow();
         if let Some(td) = fia.text_document.as_ref() {
             return Some(td.contents().to_string());

@@ -23,7 +23,6 @@ impl WorkspaceSymbolFeature {
 
     pub fn get_workspace_symbols(session: &mut SessionInfo<'_>, query: String) -> Result<Option<WorkspaceSymbolResponse>, ResponseError> {
         let mut symbols = vec![];
-        let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         let mut can_resolve_location_range = false;
         if let Some(cap_workspace) = session.sync_odoo.capabilities.workspace.as_ref()
             && let Some(workspace_symb) = cap_workspace.symbol.as_ref()
@@ -35,11 +34,13 @@ impl WorkspaceSymbolFeature {
                         }
                     }
                 }
-        for entry in ep_mgr.borrow().iter_all() {
-            if entry.borrow().typ == EntryPointType::BUILTIN || entry.borrow().typ == EntryPointType::PUBLIC { //We don't want to search in builtins
+        let entries = session.sync_odoo.entry_point_mgr.iter_all().collect::<Vec<_>>();
+        for entry in entries {
+            if session.ep_mgr()[entry].typ == EntryPointType::BUILTIN || session.ep_mgr()[entry].typ == EntryPointType::PUBLIC { //We don't want to search in builtins
                 continue;
             }
-            if WorkspaceSymbolFeature::browse_symbol(session, entry.borrow().root.into(), &query, None, None, can_resolve_location_range, &mut symbols) {
+            let root = session.ep_mgr()[entry].root;
+            if WorkspaceSymbolFeature::browse_symbol(session, root.into(), &query, None, None, can_resolve_location_range, &mut symbols) {
                 return Err(cancelled());
             }
         }
@@ -58,13 +59,12 @@ impl WorkspaceSymbolFeature {
      * Return true if the request has been cancelled and the cancellation should be propagated
      */
     fn browse_js_decls(session: &mut SessionInfo, query: &str, can_resolve_location_range: bool, results: &mut Vec<WorkspaceSymbol>) -> bool {
-        let file_mgr = session.sync_odoo.get_file_mgr();
+        let file_mgr = session.file_mgr();
         // Matches are collected first: `add_symbol_to_results` needs the session back.
         let mut matches = vec![];
         {
-            let file_mgr = file_mgr.borrow();
             for file_info in file_mgr.files.values() {
-                let file_info = file_info.borrow();
+                let file_info = &session.file_mgr()[*file_info];
                 let file_info_ast = file_info.file_info_ast.borrow();
                 let Ast::JsAst(js_ast) = &file_info_ast.ast else {
                     continue;
@@ -189,14 +189,14 @@ impl WorkspaceSymbolFeature {
                 uri: FileMgr::pathname2uri(path)
             })
         } else {
-            let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(path);
+            let file_info = session.file_mgr().get_file_info(path);
             let Some(range) = range else {
                 return;
             };
             if let Some(file_info) = file_info {
                 lsp_types::OneOf::Left(Location::new(
                     FileMgr::pathname2uri(path),
-                    file_info.borrow().text_range_to_range(range, session.sync_odoo.encoding)
+                    session.file_mgr()[file_info].text_range_to_range(range, session.sync_odoo.encoding)
                 ))
             } else {
                 return;
@@ -229,7 +229,7 @@ impl WorkspaceSymbolFeature {
         };
         if let Some(location) = location {
             let uri = FileMgr::uri2pathname(location.uri.as_str());
-            let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&uri);
+            let file_info = session.file_mgr().get_file_info(&uri);
             if let Some(file_info) = file_info {
                 if let Some(data) = symbol.data.as_ref() {
                     if data.is_array() {
@@ -237,7 +237,7 @@ impl WorkspaceSymbolFeature {
                         if arr.len() == 2 {
                             let start_u32 = arr[0].as_u64().unwrap() as u32;
                             let end_u32 = arr[1].as_u64().unwrap() as u32;
-                            let range = file_info.borrow().try_text_range_to_range(
+                            let range = session.file_mgr()[file_info].try_text_range_to_range(
                                 TextRange::new(TextSize::new(start_u32), TextSize::new(end_u32)),
                                 session.sync_odoo.encoding);
                             if let Some(range) = range {

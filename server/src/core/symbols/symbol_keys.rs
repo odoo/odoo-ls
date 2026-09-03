@@ -26,6 +26,7 @@ new_key_type! {
     pub struct XmlDeleteKey;
     pub struct CsvFileKey;
     pub struct JsFileKey;
+    pub struct EntryPointKey;
 }
 
 /// A class symbol paired with its origin module's `dir_name`, set only when the

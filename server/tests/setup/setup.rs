@@ -52,7 +52,7 @@ pub fn setup_server(with_odoo: bool) -> (SyncOdoo, ConfigEntry) {
 
     let mut config = ConfigEntry::new();
     config.set_string_list(ConfigKey::AddonsPaths, [test_addons_path.sanitize()]);
-    server.get_file_mgr().borrow_mut().add_workspace_folder(S!("test_addons_path"), FileMgr::pathname2uri(&test_addons_path.sanitize()));
+    server.file_mgr.add_workspace_folder(S!("test_addons_path"), FileMgr::pathname2uri(&test_addons_path.sanitize()));
     if let Some(odoo_path) = community_path.map(|x| Path::new(&x).sanitize()) {
         config.set_str(ConfigKey::OdooPath, odoo_path);
     }
@@ -81,7 +81,7 @@ pub fn prepare_custom_entry_point(session: &mut SessionInfo, path: &str){
         text}];
     let content = Some(event.as_slice());
     EntryPointMgr::create_new_custom_entry_for_path(session, &ep_path, &ep_path);
-    let (_file_updated, _file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, path, content, Some(1), false);
+    let (_file_updated, _file_info) = FileMgr::update_file_info(session, path, content, Some(1), false);
     BuildScheduler::process_rebuilds(session, false);
 }
 
@@ -117,9 +117,7 @@ pub fn get_diagnostics_for_paths(session: &mut SessionInfo, paths: &[String]) ->
 }
 
 pub fn get_diagnostics_test_comments(session: &mut SessionInfo, path: &str) -> Vec<(u32, Vec<String>)> {
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_mgr = file_mgr.borrow();
+    let file_mgr = session.file_mgr();
     let file_info = file_mgr.get_file_info(&S!(path)).expect("File info not found");
-    let file_info = file_info.borrow();
-    file_info.diag_test_comments.clone()
+    session.file_mgr()[file_info].diag_test_comments.clone()
 }

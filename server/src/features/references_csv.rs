@@ -27,15 +27,15 @@ impl CsvAstReferenceVisitor {
                 let header_elts = h.splitn(2, [':', '/']).collect::<Vec<_>>();
                 if let &ReferenceTarget::Symbol(target_sym) = target {
                     let Some(model_name) = model_name else {continue;};
-                    let Some(model) = session.sync_odoo.models.get(model_name).cloned() else {return vec![];};
-                    let Some(main_symbol) = model.borrow().get_main_symbols(session, module).next() else {return results;};
+                    let Some(model) = session.model_mgr().get_model_key(model_name) else {return vec![];};
+                    let Some(main_symbol) = session.model_mgr()[model].get_main_symbols(session, module).next() else {return results;};
                     let mut deep_field_walker = DeepFieldEvalWalker::new(main_symbol.into(), module);
                     let symbols =
                         deep_field_walker.get_model_fields(session, main_symbol.into(), header_elts[0]);
                     if symbols.contains(&target_sym) {
                         results.push(Location {
                             uri: uri.clone(),
-                            range: session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, &std::ops::Range {
+                            range: FileMgr::std_range_to_range(session, &path, &std::ops::Range {
                                 start,
                                 end,
                             }),
@@ -48,7 +48,7 @@ impl CsvAstReferenceVisitor {
                     if sub_symbols.contains(&target_sym) {
                         results.push(Location {
                             uri: uri.clone(),
-                            range: session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, &std::ops::Range {
+                            range: FileMgr::std_range_to_range(session, &path, &std::ops::Range {
                                 start,
                                 end,
                             }),
@@ -81,7 +81,7 @@ impl CsvAstReferenceVisitor {
                 if xml_id == *search_str {
                     locations.push(Location {
                         uri: uri.clone(),
-                        range: session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, path, &std::ops::Range {
+                        range: FileMgr::std_range_to_range(session, path, &std::ops::Range {
                             start,
                             end,
                         }),

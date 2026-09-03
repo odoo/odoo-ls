@@ -22,11 +22,11 @@ fn test_search_eval_hook() {
         panic!("Failed to get file symbol for {}", test_file);
     };
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let file_mgr = session.file_mgr();
+    let file_info = file_mgr.get_file_info(&test_file).unwrap();
 
     // Hover over closing parenthesis in call to `search` to verify its return type
-    let hover_text = test_utils::get_hover_markdown(&mut session, file_symbol, &file_info, 33, 60)
+    let hover_text = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 33, 60)
         .expect("Should get hover text for return type of search");
 
     assert!(

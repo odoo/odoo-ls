@@ -1,10 +1,8 @@
-use std::{cell::RefCell, rc::Rc};
-
 use lsp_types::{Diagnostic, Position, Range};
 use roxmltree::Node;
 use ruff_text_size::{TextRange, TextSize};
 
-use crate::{Sy, constants::OYarn, core::{diagnostics::{DiagnosticCode, create_diagnostic}, model::Model, odoo::SyncOdoo, symbols::{storage::{XmlFieldParent, xml::xml_field_symbol::XmlFieldName}, symbol_keys::{XmlFieldKey, XmlId, XmlRecordKey}}}, oyarn, threads::SessionInfo, utils};
+use crate::{Sy, constants::OYarn, core::{diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPoint, model::Model, odoo::SyncOdoo, symbols::{storage::{XmlFieldParent, xml::xml_field_symbol::XmlFieldName}, symbol_keys::{XmlFieldKey, XmlId, XmlRecordKey}}}, oyarn, threads::SessionInfo, utils};
 
 use super::xml_arch_builder::XmlArchBuilder;
 
@@ -785,18 +783,10 @@ impl XmlArchBuilder {
         else {
             return;
         };
-        let model = session
-            .sync_odoo
-            .models
-            .entry(model_name.clone())
-            .or_insert_with(|| Rc::new(RefCell::new(Model::new(model_name.clone()))))
-            .clone();
-        model.borrow_mut().add_symbol(session, record);
-        session
-            .sync_odoo
-            .get_main_entry()
-            .borrow_mut()
-            .search_rebuild_for_models(session, model_name);
+        let model = session.sync_odoo.model_mgr.add_or_get_model(&model_name);
+        Model::add_symbol(session, model, record);
+        let main_entry = session.sync_odoo.get_main_entry();
+        EntryPoint::search_rebuild_for_models(session, main_entry, model_name);
     }
 
     fn register_ir_model_fields_record(&self, session: &mut SessionInfo, record: XmlRecordKey) {
@@ -854,8 +844,8 @@ impl XmlArchBuilder {
         } else {
             return;
         };
-        if let Some(model) = session.sync_odoo.models.get(&model_name).cloned() {
-            model.borrow_mut().add_xml_field_symbol(session, record);
+        if let Some(model) = session.model_mgr().get_model_key(&model_name) {
+            Model::add_xml_field_symbol(session, model, record);
         }
     }
 }
