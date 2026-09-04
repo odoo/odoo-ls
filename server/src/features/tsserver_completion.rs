@@ -93,14 +93,27 @@ pub fn entry_to_completion_item(entry: &Value, file_path: &str, line: u32, chara
     }
 }
 
-/// Whether the import an entry would write is one Odoo can resolve. tsserver has no way to
-/// say "this symbol is unreachable": for a target no alias covers it falls back to a
-/// `baseUrl`-relative path (`home/odoo/src/…`), which Odoo's loader rejects. Entries backed by
-/// no file at all — locals, members, ambient modules — are always fine.
-pub fn is_aliasable_import(entry: &Value, paths: &HashMap<String, Vec<String>>) -> bool {
-    let Some(target) = entry.pointer("/data/fileName").and_then(Value::as_str) else {
+/// Entries with import must be both importable by Odoo and within `module_scope` (None disables filter)
+pub fn is_valid_completion_entry(entry: &Value, project_paths: &HashMap<String, Vec<String>>, module_scope: Option<&[String]>) -> bool {
+    let Some(file_name) = entry.pointer("/data/fileName").and_then(Value::as_str) else {
+        // Entries backed by no file — locals, members, ambient modules — are always valid.
         return true;
     };
+    // Is valid path for odoo module loader?
+    if !is_aliasable_import(file_name, project_paths) {
+        return false;
+    }
+    // Can the target be imported from this module?
+    if let Some(prefixes) = module_scope {
+        return is_in_dependency_scope(file_name, prefixes)
+    };
+    true
+}
+
+/// Whether the import an entry would write is one Odoo can resolve. tsserver has no way to
+/// say "this symbol is unreachable": for a target no alias covers it falls back to a
+/// `baseUrl`-relative path (`home/odoo/src/…`), which Odoo's loader rejects.
+fn is_aliasable_import(target: &str, paths: &HashMap<String, Vec<String>>) -> bool {
     paths.values().flatten().any(|pattern| match pattern.split_once('*') {
         Some((prefix, suffix)) => target.starts_with(prefix) && target.ends_with(suffix),
         None => target == pattern,
@@ -108,16 +121,8 @@ pub fn is_aliasable_import(entry: &Value, paths: &HashMap<String, Vec<String>>) 
 }
 
 /// Whether a completion entry's target is a module the editing file is allowed to import from.
-/// `prefixes` are the directories of the allowed modules (see [`crate::core::js_module_scope`]);
-/// `None` means the file belongs to no module and nothing is filtered.
-/// Entries backed by no file — locals, members, ambient modules — are always in scope.
-pub fn is_in_dependency_scope(entry: &Value, prefixes: Option<&[String]>) -> bool {
-    let Some(prefixes) = prefixes else {
-        return true;
-    };
-    let Some(file_name) = entry.pointer("/data/fileName").and_then(Value::as_str) else {
-        return true;
-    };
+/// `prefixes` are the directories of the allowed modules (see [`crate::core::js_module_scope`]).
+fn is_in_dependency_scope(file_name: &str, prefixes: &[String]) -> bool {
     prefixes.iter().any(|prefix| file_name.starts_with(prefix))
 }
 
@@ -330,49 +335,65 @@ mod tests {
         );
     }
 
-    #[test]
-    fn only_entries_odoo_can_import_are_offered() {
-        let paths: HashMap<String, Vec<String>> = [
+    /// The tsserver `paths` map
+    fn odoo_paths() -> HashMap<String, Vec<String>> {
+        [
             (S!("@web/*"), vec![S!("/odoo/addons/web/static/src/*")]),
             (S!("@web/../tests/*"), vec![S!("/odoo/addons/web/static/tests/*")]),
             (S!("@odoo/hoot"), vec![S!("/odoo/addons/web/static/lib/hoot/hoot.js")]),
-        ].into_iter().collect();
-        let from = |file: &str| json!({ "name": "x", "data": { "fileName": file } });
+        ].into_iter().collect()
+    }
 
-        assert!(is_aliasable_import(&from("/odoo/addons/web/static/src/core/domain.js"), &paths));
+    #[test]
+    fn only_entries_odoo_can_import_are_offered() {
+        let paths = odoo_paths();
+
+        assert!(is_aliasable_import("/odoo/addons/web/static/src/core/domain.js", &paths));
         // Reached by climbing out of `static/src` with the alias: `@web/../tests/helpers`.
-        assert!(is_aliasable_import(&from("/odoo/addons/web/static/tests/helpers.js"), &paths));
+        assert!(is_aliasable_import("/odoo/addons/web/static/tests/helpers.js", &paths));
         // `static/lib` gets no glob, so only the exact key `add_lib_paths` built covers it.
-        assert!(is_aliasable_import(&from("/odoo/addons/web/static/lib/hoot/hoot.js"), &paths));
+        assert!(is_aliasable_import("/odoo/addons/web/static/lib/hoot/hoot.js", &paths));
         // A vendored lib with no `@odoo-module` header gets no key at all, so tsserver would
         // write a `baseUrl`-relative path.
-        assert!(!is_aliasable_import(&from("/odoo/addons/web/static/lib/ace/ace.js"), &paths));
-        // A local or a member names no file and is always offerable.
-        assert!(is_aliasable_import(&json!({ "name": "rowCount" }), &paths));
-        // An export reached through a `declare module` is always offerable:
-        // tsserver names it `ambientModuleName`, not a file.
-        assert!(is_aliasable_import(
-            &json!({ "name": "Component", "data": { "ambientModuleName": "@odoo/owl" } }),
-            &paths,
-        ));
+        assert!(!is_aliasable_import("/odoo/addons/web/static/lib/ace/ace.js", &paths));
     }
 
     #[test]
     fn only_entries_from_the_dependency_closure_are_offered() {
         // The closure of a file in `sale`, which depends on `web` but not on `mail`.
         let prefixes = [S!("/odoo/addons/web/"), S!("/odoo/addons/sale/")];
+        let scope = &prefixes[..];
+
+        assert!(is_in_dependency_scope("/odoo/addons/web/static/src/core/domain.js", scope));
+        // In the program because some other open file imported it; not importable from here.
+        assert!(!is_in_dependency_scope("/odoo/addons/mail/static/src/core/store.js", scope));
+        // A prefix is a directory, so `sale` must not claim `sale_stock`.
+        assert!(!is_in_dependency_scope("/odoo/addons/sale_stock/static/src/thing.js", scope));
+    }
+
+    #[test]
+    fn an_entry_is_valid_only_if_it_passes_both_filters() {
+        let paths = odoo_paths();
+        let prefixes = [S!("/odoo/addons/web/")];
         let scope = Some(&prefixes[..]);
         let from = |file: &str| json!({ "name": "x", "data": { "fileName": file } });
 
-        assert!(is_in_dependency_scope(&from("/odoo/addons/web/static/src/core/domain.js"), scope));
-        // In the program because some other open file imported it; not importable from here.
-        assert!(!is_in_dependency_scope(&from("/odoo/addons/mail/static/src/core/store.js"), scope));
-        // A prefix is a directory, so `sale` must not claim `sale_stock`.
-        assert!(!is_in_dependency_scope(&from("/odoo/addons/sale_stock/static/src/thing.js"), scope));
-        // Locals, members and ambient modules name no file and are always in scope.
-        assert!(is_in_dependency_scope(&json!({ "name": "rowCount" }), scope));
+        assert!(is_valid_completion_entry(&from("/odoo/addons/web/static/src/core/domain.js"), &paths, scope));
+        // Aliasable, but outside the closure of the editing file.
+        assert!(!is_valid_completion_entry(&from("/odoo/addons/mail/static/src/core/store.js"), &paths, scope));
+        // In the closure, but tsserver would write a `baseUrl`-relative path for it.
+        assert!(!is_valid_completion_entry(&from("/odoo/addons/web/static/lib/ace/ace.js"), &paths, scope));
         // A file belonging to no module has no closure to be filtered against.
-        assert!(is_in_dependency_scope(&from("/odoo/addons/mail/static/src/core/store.js"), None));
+        assert!(is_valid_completion_entry(&from("/odoo/addons/mail/static/src/core/store.js"), &paths, None));
+        // A local or a member names no file and is always offerable.
+        assert!(is_valid_completion_entry(&json!({ "name": "rowCount" }), &paths, scope));
+        // An export reached through a `declare module` is always offerable:
+        // tsserver names it `ambientModuleName`, not a file.
+        assert!(is_valid_completion_entry(
+            &json!({ "name": "Component", "data": { "ambientModuleName": "@odoo/owl" } }),
+            &paths,
+            scope,
+        ));
     }
 
     #[test]
