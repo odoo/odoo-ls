@@ -14,8 +14,10 @@ pub struct DependenciesTable {
     pub(super) arch: [WeakSet<SourceFileKey>; 1],
     // ARCH_EVAL needs: [ARCH, ARCH_EVAL]
     pub(super) arch_eval: [WeakSet<SourceFileKey>; 2],
-    // VALIDATION needs: [ARCH, ARCH_EVAL, VALIDATION]
-    pub(super) validation: [WeakSet<SourceFileKey>; 3],
+    // FUNCTION_ARCH needs: [ARCH, ARCH_EVAL, FUNCTION_ARCH]
+    pub(super) function_arch: [WeakSet<SourceFileKey>; 3],
+    // VALIDATION needs: [ARCH, ARCH_EVAL, FUNCTION_ARCH, VALIDATION]
+    pub(super) validation: [WeakSet<SourceFileKey>; 4],
 }
 
 impl Index<usize> for DependenciesTable {
@@ -24,7 +26,8 @@ impl Index<usize> for DependenciesTable {
         match i {
             0 => &self.arch,
             1 => &self.arch_eval,
-            2 => &self.validation,
+            2 => &self.function_arch,
+            3 => &self.validation,
             _ => panic!("DependenciesTable: invalid step index {}", i),
         }
     }
@@ -35,7 +38,8 @@ impl IndexMut<usize> for DependenciesTable {
         match i {
             0 => &mut self.arch,
             1 => &mut self.arch_eval,
-            2 => &mut self.validation,
+            2 => &mut self.function_arch,
+            3 => &mut self.validation,
             _ => panic!("DependenciesTable: invalid step index {}", i),
         }
     }
@@ -45,10 +49,12 @@ impl IndexMut<usize> for DependenciesTable {
 /// `dependents[level][offset]` = set of files whose step `level + offset` depends on self reaching `level`.
 #[derive(Debug, Clone, Default)]
 pub struct DependentsTable {
-    // At ARCH: dependent steps are ARCH, ARCH_EVAL, VALIDATION (offsets 0, 1, 2)
-    pub(super) arch: [WeakSet<SourceFileKey>; 3],
-    // At ARCH_EVAL: dependent steps are ARCH_EVAL, VALIDATION (offsets 0, 1)
-    pub(super) arch_eval: [WeakSet<SourceFileKey>; 2],
+    // At ARCH: dependent steps are ARCH, ARCH_EVAL, FUNCTION_ARCH, VALIDATION (offsets 0, 1, 2, 3)
+    pub(super) arch: [WeakSet<SourceFileKey>; 4],
+    // At ARCH_EVAL: dependent steps are ARCH_EVAL, FUNCTION_ARCH, VALIDATION (offsets 0, 1, 2)
+    pub(super) arch_eval: [WeakSet<SourceFileKey>; 3],
+    // At FUNCTION_ARCH: dependent steps are FUNCTION_ARCH, VALIDATION (offsets 0, 1)
+    pub(super) function_arch: [WeakSet<SourceFileKey>; 2],
     // At VALIDATION: dependent step is VALIDATION (offset 0)
     pub(super) validation: [WeakSet<SourceFileKey>; 1],
 }
@@ -59,7 +65,8 @@ impl Index<usize> for DependentsTable {
         match i {
             0 => &self.arch,
             1 => &self.arch_eval,
-            2 => &self.validation,
+            2 => &self.function_arch,
+            3 => &self.validation,
             _ => panic!("DependentsTable: invalid level index {}", i),
         }
     }
@@ -70,7 +77,8 @@ impl IndexMut<usize> for DependentsTable {
         match i {
             0 => &mut self.arch,
             1 => &mut self.arch_eval,
-            2 => &mut self.validation,
+            2 => &mut self.function_arch,
+            3 => &mut self.validation,
             _ => panic!("DependentsTable: invalid level index {}", i),
         }
     }

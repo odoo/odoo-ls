@@ -1,6 +1,6 @@
 use ruff_python_ast::{Alias, AnyRootNodeRef, Expr, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtMatch, StmtRaise, StmtTry, StmtTypeAlias, StmtWith};
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use tracing::{trace, warn};
+use tracing::{info, trace, warn};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::path::Path;
@@ -68,7 +68,7 @@ impl PythonValidator {
             SymbolKey::File(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) => {
                 let source_file_key = symbol.as_source_file_key().unwrap();
                 if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !session.st().is_external(symbol)) {
-                    trace!("VALIDATION - PYTHON FILE {}", session.st().paths(symbol).first().unwrap_or(&S!("No path found")));
+                    info!("VALIDATION - PYTHON FILE {}", session.st().paths(symbol).first().unwrap_or(&S!("No path found")));
                 }
                 session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 file_info_rc.borrow_mut().replace_diagnostics(DiagnosticSource::PY_VALIDATION, vec![]);
@@ -86,7 +86,8 @@ impl PythonValidator {
                 if file_info_ast.ast.as_py_ast().indexed_module.is_some() {
                     let old_noqa = session.current_noqa.clone();
                     session.current_noqa = session.st().get_noqas(symbol);
-                    self.validate_body(session, file_info_ast.get_stmts().as_ref().unwrap());
+                    let stmts = file_info_ast.get_stmts().unwrap();
+                    self.validate_body(session, stmts);
                     session.current_noqa = old_noqa;
                 }
                 drop(file_info_ast);
@@ -98,7 +99,7 @@ impl PythonValidator {
                 file_info.replace_diagnostics(DiagnosticSource::PY_VALIDATION, self.diagnostics.clone());
             },
             SymbolKey::Function(f) => {
-                if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !session.st().is_external(symbol)) {
+                if DEBUG_STEPS && session.st().name(f) == "find_orders_for_user" && (!DEBUG_STEPS_ONLY_INTERNAL || !session.st().is_external(symbol)) {
                     trace!("VALIDATION - PYTHON FUNCTION: {}", session.st().name(symbol));
                 }
                 self.file_mode = false;
@@ -193,11 +194,15 @@ impl PythonValidator {
                 Stmt::FunctionDef(f) => {
                     let sym = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &f.name, &f.range);
                     if let Some(sym) = sym {
+                        //we rebuild to be sure, but with a process_rebuild, it should not be necessary. For a build_now however, it could be useful as sub-functions could have not been done
                         if session.st().ready_for_step(sym.unwrap_buildable_key(), BuildSteps::ARCH) {
                             BuildScheduler::build_now(session, sym.unwrap_buildable_key(), BuildSteps::ARCH);
                         }
                         if session.st().ready_for_step(sym.unwrap_buildable_key(), BuildSteps::ARCH_EVAL) {
                             BuildScheduler::build_now(session, sym.unwrap_buildable_key(), BuildSteps::ARCH_EVAL);
+                        }
+                        if session.st().ready_for_step(sym.unwrap_buildable_key(), BuildSteps::ODOO_FUNCTION_AE) {
+                            BuildScheduler::build_now(session, sym.unwrap_buildable_key(), BuildSteps::ODOO_FUNCTION_AE);
                         }
                         if session.st().ready_for_step(sym.unwrap_buildable_key(), BuildSteps::VALIDATION) {
                             if let Some(python_buildable) = sym.as_python_buildable() {

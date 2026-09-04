@@ -1021,7 +1021,7 @@ impl SymbolTable {
      */
     pub fn invalidate(session: &mut SessionInfo, symbol: SourceFileKey, step: BuildSteps) {
         if step == BuildSteps::VALIDATION {
-            SymbolTable::invalidate_sub_functions(session, symbol);
+            SymbolTable::invalidate_inner_function_to_func_ae(session, symbol);
         }
         session.st_mut().reset_build_status(symbol.into(), step, BuildStatus::PENDING);
         let mut vec_to_invalidate = VecDeque::from([symbol]);
@@ -1039,7 +1039,7 @@ impl SymbolTable {
                 }
                 for (index, sym) in build_queue {
                     if index == BuildSteps::VALIDATION as usize {
-                        SymbolTable::invalidate_sub_functions(session, sym);
+                        SymbolTable::invalidate_inner_function_to_func_ae(session, sym);
                     }
                     session.st_mut().reset_build_status(sym.into(), BuildSteps::from(index as i32), BuildStatus::PENDING);
                     BuildScheduler::queue(session, sym);
@@ -1060,7 +1060,7 @@ impl SymbolTable {
                         session.st_mut().reset_build_status(sym.into(), BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
                         BuildScheduler::queue(session, sym);
                     } else if index + 1 == BuildSteps::VALIDATION as usize {
-                        SymbolTable::invalidate_sub_functions(session, sym);
+                        SymbolTable::invalidate_inner_function_to_func_ae(session, sym);
                         session.st_mut().reset_build_status(sym.into(), BuildSteps::VALIDATION, BuildStatus::PENDING);
                         BuildScheduler::queue(session, sym);
                     }
@@ -1075,7 +1075,7 @@ impl SymbolTable {
                         .flat_map(|s| s.iter_valid(session.st()))
                         .collect::<Vec<_>>() {
                     if !session.st_mut().is_symbol_in_parents(sym.into(), ref_to_inv.into()) {
-                        SymbolTable::invalidate_sub_functions(session, sym);
+                        SymbolTable::invalidate_inner_function_to_func_ae(session, sym);
                         session.st_mut().reset_build_status(sym.into(), BuildSteps::VALIDATION, BuildStatus::PENDING);
                         BuildScheduler::queue(session, sym);
                     }
@@ -1105,7 +1105,7 @@ impl SymbolTable {
         }
     }
 
-    pub fn invalidate_sub_functions(session: &mut SessionInfo, target: SourceFileKey) {
+    pub fn invalidate_inner_function_to_func_ae(session: &mut SessionInfo, target: SourceFileKey) {
         if let Some(deferred) = &mut session.sync_odoo.deferred_subfunc_invalidation {
             deferred.insert(target);
             return;
@@ -1113,8 +1113,9 @@ impl SymbolTable {
         if matches!(target, SourceFileKey::File(_) | SourceFileKey::PythonPackage(_) | SourceFileKey::Module(_)) {
             for func_key in session.st().iter_inner_functions(target.into()) {
                 let func = &mut session.st_mut()[func_key];
+                
                 func.evaluations.clear();
-                func.reset_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
+                func.reset_build_status(BuildSteps::ODOO_FUNCTION_AE, BuildStatus::PENDING);
             }
         }
     }

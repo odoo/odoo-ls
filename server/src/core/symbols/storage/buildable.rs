@@ -104,8 +104,14 @@ impl ResettableBuildable for name {
     }
 }
 
+//arch - arch_eval - function_arch - validation
+#[duplicate_item(name; [FunctionSymbol];)]
+impl Buildable for name {
+    const STEPS: &'static [BuildSteps] = &[BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::ODOO_FUNCTION_AE, BuildSteps::VALIDATION];
+}
+
 //arch - arch_eval - validation
-#[duplicate_item(name; [ModuleSymbol]; [PythonPackageSymbol]; [FileSymbol]; [FunctionSymbol])]
+#[duplicate_item(name; [ModuleSymbol]; [PythonPackageSymbol]; [FileSymbol])]
 impl Buildable for name {
     const STEPS: &'static [BuildSteps] = &[BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::VALIDATION];
 }

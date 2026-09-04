@@ -93,7 +93,7 @@ fn test_stale_node_index_on_method_does_not_panic() {
     // Invalidation through a changed dependency: evaluations cleared and ARCH_EVAL back to
     // PENDING, while ARCH stays DONE. That is the state that makes the next call take the
     // function branch of eval_arch.
-    SymbolTable::invalidate_sub_functions(&mut session, file);
+    SymbolTable::invalidate_inner_function_to_func_ae(&mut session, file);
 
     // Without the guard, this panics with "Expected function definition".
     SyncOdoo::ensure_func_evaluations(&mut session, method);

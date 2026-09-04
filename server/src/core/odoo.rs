@@ -730,14 +730,17 @@ impl SyncOdoo {
         // Run deferred subfunction invalidations
         if let Some(mut files) = session.sync_odoo.deferred_subfunc_invalidation.take() {
             while let Some(file) = files.pop_front_valid(session.st()) {
-                SymbolTable::invalidate_sub_functions(session, file);
+                SymbolTable::invalidate_inner_function_to_func_ae(session, file);
             }
         }
         // Drain validation queue
-        let total_items = BuildScheduler::validation_queue_len(session) as u32;
+        let mut total_items = BuildScheduler::get_rebuild_queue_size(session) as u32;
         while BuildScheduler::build_one(session, &main_entry, true) {
             if session.sync_odoo.terminate_rebuild.load(Ordering::Relaxed) { return; }
-            let items_left = BuildScheduler::validation_queue_len(session) as u32;
+            let items_left = BuildScheduler::get_rebuild_queue_size(session) as u32;
+            if items_left > total_items {
+                total_items = items_left;
+            }
             // report progress (total_items > 0, otherwise loop wouldn't run)
             reporter.report_progress(BUILD_PHASE_WEIGHT + (total_items - items_left) * (VALIDATION_PHASE_WEIGHT) / total_items);
         }
@@ -832,6 +835,7 @@ impl SyncOdoo {
             BuildScheduler::build_now(session, func_file, BuildSteps::ARCH_EVAL);
             BuildScheduler::build_now(session, function_key, BuildSteps::ARCH);
             BuildScheduler::build_now(session, function_key, BuildSteps::ARCH_EVAL);
+            BuildScheduler::build_now(session, function_key, BuildSteps::ODOO_FUNCTION_AE);
         }
     }
 
