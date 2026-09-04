@@ -220,7 +220,7 @@ impl SymbolTable {
     }
 
     pub fn add_new_js_file(&mut self, parent: JsFileParent, name: &str, path: &str) -> Result<JsFileKey, NameTakenError> {
-        self.check_js_symbol_path_vacant(parent, name)?;
+        self.check_js_symbol_path_vacant(parent, path)?;
         let mut js_file_symbol = JsFileSymbol::new(name, path, parent, self.is_external(parent.into()));
         js_file_symbol.set_in_workspace(self.in_workspace(parent.into()));
         let js_file_key = self.js_files.insert(js_file_symbol);
@@ -277,8 +277,8 @@ impl SymbolTable {
         }
     }
  
-    fn check_js_symbol_path_vacant(&self, parent: JsFileParent, name: &str) -> Result<(), NameTakenError> {
-        match parent.js_symbols(self).get(name).copied() {
+    fn check_js_symbol_path_vacant(&self, parent: JsFileParent, path: &str) -> Result<(), NameTakenError> {
+        match parent.js_symbols(self).get(path).copied() {
             Some(existing) => Err(NameTakenError(existing.into())),
             None => Ok(())
         }
