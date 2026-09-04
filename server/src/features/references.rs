@@ -66,6 +66,7 @@ impl ReferenceFeature {
         //We want to search for references of the definition, and not the current symbol. Let's use definition feature for that
         BuildScheduler::process_rebuilds(session, false);
         let def_sources = match file_info.borrow().file_info_ast.borrow().ast {
+            Ast::Pending => return None,
             Ast::PythonAst(_) => {
                 GotoUtils::get_symbols(session, GotoRequest::Definition, file_symbol, file_info, line, character)
             },

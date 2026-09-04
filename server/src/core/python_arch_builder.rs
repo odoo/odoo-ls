@@ -15,6 +15,7 @@ use crate::constants::{
 };
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
+use crate::core::file_mgr::Ast;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 use crate::core::python_utils;
@@ -95,14 +96,15 @@ impl PythonArchBuilder {
         }
         let file_info = file_info_rc.borrow();
         let file_info_ast_rc = file_info.file_info_ast.clone();
-        let file_noqa =if self.file_mode {
+        let file_noqa = if self.file_mode {
              file_info.noqas_blocs.get(&0).cloned()
         } else {
             None
         };
         drop(file_info);
         let file_info_ast= file_info_ast_rc.borrow();
-        if let Some(indexed_module) = &file_info_ast.ast.as_py_ast().indexed_module {
+        if let Ast::PythonAst(py_ast) = &file_info_ast.ast {
+            let indexed_module = &py_ast.indexed_module;
             let ast = if self.file_mode {
                 file_info_ast.get_stmts().unwrap()
             } else {
