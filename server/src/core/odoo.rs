@@ -4,7 +4,7 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::{Ast, PreloadedFile};
 use crate::core::js_arch_builder::ComponentDescriptor;
-use crate::core::js_type_files;
+use crate::core::js_module_scope;
 use crate::core::module_load_order::sort_by_load_order;
 use crate::core::pre_parser::{PreParseCache, PreParser};
 use crate::core::symbols::ModuleSymbol;
@@ -435,7 +435,7 @@ impl SyncOdoo {
 
     /// Start tsserver and configure the external project's `paths` for Odoo's `@addons/*` layout.
     /// Runs on a worker thread (see the call site) so it overlaps the Python build; takes owned
-    /// config values because it cannot touch `session`. Ambient `@types`: `core::js_type_files`.
+    /// config values because it cannot touch `session`.
     fn setup_and_start_tsserver(
         tsserver_cmd: String,
         sender_to_main: crossbeam_channel::Sender<ThreadMessage>,
@@ -1736,12 +1736,15 @@ impl Odoo {
                     .map_or(CompletionTriggerKind::INVOKED, |context| context.trigger_kind);
                 match ast_type {
                     Ast::JsAst(_) => {
+                        let module_scope = js_module_scope::importable_module_prefixes(session, &path);
                         if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
                             let list = bridge.completion_list_for_content(
                                 &path,
                                 params.text_document_position.position.line,
                                 params.text_document_position.position.character,
                                 trigger_kind,
+                                true,
+                                module_scope.as_deref(),
                             );
                             return Ok(Some(CompletionResponse::List(list)));
                         }
@@ -1890,13 +1893,16 @@ impl Odoo {
                         session.log_message(MessageType::INFO, format!("File opened: {}", sanitized_path));
                         let file_extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
                         if ["js", "ts"].contains(&file_extension) && session.sync_odoo.tsserver_bridge.is_some() {
-                            // Staged first, so the send below already carries the declarations.
-                            let type_files = js_type_files::type_files_for(session, &sanitized_path);
+                            // Staged first, so the send below already carries the declarations
+                            // and the module's importable JS.
+                            let type_files = js_module_scope::type_files_for(session, &sanitized_path);
+                            let importable_files = js_module_scope::importable_files_for(session, &sanitized_path);
                             if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
-                                bridge.stage_type_files(&type_files);
+                                bridge.stage_permanent_roots(&type_files);
+                                bridge.stage_permanent_roots(&importable_files);
                                 bridge.open_file(&sanitized_path, &params.text_document.text);
                                 // `open_file` only sends when the file is a new root; covers re-opens.
-                                bridge.commit_transient_roots();
+                                bridge.commit_staged_roots();
                             }
                         }
                         let (valid, updated) = Odoo::update_file_cache(session, &sanitized_path, file_extension, Some(&[TextDocumentContentChangeEvent{

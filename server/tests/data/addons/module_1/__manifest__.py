@@ -13,6 +13,15 @@ This is the description of the module 1
     'category': 'Accounting/Accounting',
     'depends' : [],
     'data': ['records/test_records.xml'],
+    'assets': {
+        'web.assets_backend': [
+            'module_1/static/src/scoped/shared.js',
+            'module_1/static/src/scoped/side_effect.js',
+            'module_1/static/lib/vendor/bundle.js',
+            'module_1/static/lib/headed/headed.js',
+            'module_1/static/lib/opted_out/opted_out.js',
+        ],
+    },
     'installable': True,
     'application': True,
     'license': 'LGPL-3',

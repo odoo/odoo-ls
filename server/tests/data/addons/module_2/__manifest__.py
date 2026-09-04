@@ -12,6 +12,11 @@ This is the description of the module 2
     """,
     'category': 'Accounting/Accounting',
     'depends' : ["module_1"],
+    'assets': {
+        'web.assets_backend': [
+            'module_2/static/src/scoped/local.js',
+        ],
+    },
     'installable': True,
     'application': True,
     'license': 'LGPL-3',

@@ -338,7 +338,7 @@ pub(crate) fn stage_doc_and_shim(bridge: &mut TsServerBridge, doc: &OwlVirtualDo
 /// Commit everything staged since the last commit — one `openExternalProject` rebuild.
 pub(crate) fn commit_staged_roots(session: &mut SessionInfo) {
     if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
-        bridge.commit_transient_roots();
+        bridge.commit_staged_roots();
     }
 }
 
@@ -347,7 +347,7 @@ pub(crate) fn commit_staged_roots(session: &mut SessionInfo) {
 fn open_doc_with_shim(session: &mut SessionInfo, doc: &OwlVirtualDoc) -> Option<()> {
     let bridge = session.sync_odoo.tsserver_bridge.as_mut()?;
     stage_doc_and_shim(bridge, doc);
-    bridge.commit_transient_roots();
+    bridge.commit_staged_roots();
     Some(())
 }
 
@@ -406,7 +406,10 @@ pub fn completion_xml_owl(
         .sync_odoo
         .tsserver_bridge
         .as_mut()?
-        .completion_list_for_content(&doc.virtual_path, v_line, v_char, trigger_kind);
+        // No auto-imports: a template expression cannot carry an import, and the edit that
+        // would write one addresses the virtual doc, so every such entry is unusable here.
+        // Nothing left to scope by module either — what remains names no file.
+        .completion_list_for_content(&doc.virtual_path, v_line, v_char, trigger_kind, false, None);
 
     // Drop edit-bearing entries (their positions address the virtual `.js` the client never
     // saw). Resolve data survives: it points at the still-open virtual doc, and
