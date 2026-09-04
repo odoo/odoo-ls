@@ -3,12 +3,13 @@ use std::{cell::RefCell, path::Path, rc::Rc, sync::atomic::Ordering};
 use lsp_types::MessageType;
 use tracing::{error, info, trace};
 
-use crate::{S, constants::{BuildStatus, BuildSteps, DEBUG_REBUILD_NOW, DEBUG_STEPS, DEBUG_THREADS, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::{csv_validation::CsvValidator, entry_point::EntryPoint, import_resolver::ImportCache, js_validator::JsValidator, odoo::InitState, python_arch_builder::PythonArchBuilder, python_arch_eval::PythonArchEval, python_validator::PythonValidator, symbols::{SymbolTable, symbol_keys::{BuildableSymbolKey, SymbolKey}, symbol_table_impl::CreateError}, xml_validation::XmlValidator}, fifo_ptr_weak_hash_set::FifoWeakHashSet, progress_reporter::ProgressReporterRemaining, threads::SessionInfo, tree::Tree, utils::HashSet};
+use crate::{S, constants::{BuildStatus, BuildSteps, DEBUG_REBUILD_NOW, DEBUG_STEPS, DEBUG_THREADS, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::{csv_validation::CsvValidator, entry_point::EntryPoint, import_resolver::ImportCache, js_validator::JsValidator, odoo::InitState, python_arch_builder::PythonArchBuilder, python_arch_eval::PythonArchEval, python_function_arch::PythonOdooFunctionAE, python_validator::PythonValidator, symbols::{SymbolTable, symbol_keys::{BuildableSymbolKey, SymbolKey}, symbol_table_impl::CreateError}, xml_validation::XmlValidator}, fifo_ptr_weak_hash_set::FifoWeakHashSet, progress_reporter::ProgressReporterRemaining, threads::SessionInfo, tree::Tree, utils::HashSet};
 
 #[derive(Debug)]
 pub struct BuildScheduler {
     rebuild_arch: FifoWeakHashSet<BuildableSymbolKey>,
     rebuild_arch_eval: FifoWeakHashSet<BuildableSymbolKey>,
+    rebuild_odoo_function_ae: FifoWeakHashSet<BuildableSymbolKey>,
     rebuild_validation: FifoWeakHashSet<BuildableSymbolKey>,
 }
 
@@ -29,6 +30,7 @@ impl BuildScheduler {
         BuildScheduler {
             rebuild_arch: FifoWeakHashSet::new(),
             rebuild_arch_eval: FifoWeakHashSet::new(),
+            rebuild_odoo_function_ae: FifoWeakHashSet::new(),
             rebuild_validation: FifoWeakHashSet::new(),
         }
     }
@@ -45,8 +47,15 @@ impl BuildScheduler {
         }
         while let Some(symbol) = bs!(session).rebuild_arch_eval.pop_front_valid(&session.sync_odoo.symbol_table) {
             if let Some(python_buildable) = symbol.as_python_buildable() 
-            && let Some(mut builder) = PythonArchEval::new(session.st(), entry.clone(), python_buildable) {
+            && let Some(mut builder) = PythonArchEval::new(session.st(), entry.clone(), python_buildable, false) {
                 builder.eval_arch(session);
+                return true;
+            }
+        }
+        while let Some(symbol) = bs!(session).rebuild_odoo_function_ae.pop_front_valid(&session.sync_odoo.symbol_table) {
+            if let Some(python_buildable) = symbol.as_python_buildable() 
+            && let Some(mut builder) = PythonOdooFunctionAE::new(entry.clone(), python_buildable) {
+                builder.build_function_ae(session);
                 return true;
             }
         }
@@ -71,7 +80,13 @@ impl BuildScheduler {
         }
         match current_step {
             BuildSteps::ARCH => bs!(session).rebuild_arch.insert(symbol),
-            BuildSteps::ARCH_EVAL => bs!(session).rebuild_arch_eval.insert(symbol),
+            BuildSteps::ARCH_EVAL => {
+                if session.st().name(symbol) == "__class__" {
+                    error!("here");
+                }
+                bs!(session).rebuild_arch_eval.insert(symbol);
+            }
+            BuildSteps::ODOO_FUNCTION_AE => bs!(session).rebuild_odoo_function_ae.insert(symbol),
             BuildSteps::VALIDATION => bs!(session).rebuild_validation.insert(symbol)
         }
     }
@@ -79,6 +94,14 @@ impl BuildScheduler {
     pub fn get_rebuild_queue_size(session: &mut SessionInfo) -> usize {
         bs!(session).rebuild_arch.len() +
         bs!(session).rebuild_arch_eval.len() +
+        bs!(session).rebuild_odoo_function_ae.len() +
+        bs!(session).rebuild_validation.len()
+    }
+
+    pub fn get_expected_rebuild_queue_size(session: &mut SessionInfo) -> usize {
+        bs!(session).rebuild_arch.len() * 4 +
+        bs!(session).rebuild_arch_eval.len() * 3 +
+        bs!(session).rebuild_odoo_function_ae.len() * 2 +
         bs!(session).rebuild_validation.len()
     }
 
@@ -91,6 +114,7 @@ impl BuildScheduler {
         let set =  match step {
             BuildSteps::ARCH => &bs!(session).rebuild_arch,
             BuildSteps::ARCH_EVAL => &bs!(session).rebuild_arch_eval,
+            BuildSteps::ODOO_FUNCTION_AE => &bs!(session).rebuild_odoo_function_ae,
             BuildSteps::VALIDATION => &bs!(session).rebuild_validation,
         };
         let mut selected_sym: Option<BuildableSymbolKey> = None;
@@ -104,6 +128,7 @@ impl BuildScheduler {
                 let index_set =  match index {
                     x if x == BuildSteps::ARCH as usize => &bs!(session).rebuild_arch,
                     x if x == BuildSteps::ARCH_EVAL as usize => &bs!(session).rebuild_arch_eval,
+                    x if x == BuildSteps::ODOO_FUNCTION_AE as usize => &bs!(session).rebuild_odoo_function_ae,
                     x if x == BuildSteps::VALIDATION as usize => &bs!(session).rebuild_validation,
                     _ => continue,
                 };
@@ -120,9 +145,10 @@ impl BuildScheduler {
             }
         }
         let set =  match step {
+            BuildSteps::ARCH => &mut bs!(session).rebuild_arch,
             BuildSteps::ARCH_EVAL => &mut bs!(session).rebuild_arch_eval,
+            BuildSteps::ODOO_FUNCTION_AE => &mut bs!(session).rebuild_odoo_function_ae,
             BuildSteps::VALIDATION => &mut bs!(session).rebuild_validation,
-            _ => &mut bs!(session).rebuild_arch,
         };
         if selected_sym.is_none() {
             set.clear(); //remove any potential dead weak ref
@@ -182,16 +208,17 @@ impl BuildScheduler {
         session.sync_odoo.import_cache = Some(ImportCache::default());
         let mut already_arch_rebuilt: HashSet<Tree> = HashSet::default();
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::default();
+        let mut already_odoo_function_ae_rebuilt: HashSet<Tree> = HashSet::default();
 
         //workdone progress
-        let mut reporter = (!bs!(session).rebuild_arch.is_empty() || !bs!(session).rebuild_arch_eval.is_empty() || !bs!(session).rebuild_validation.is_empty())
+        let mut reporter = (!bs!(session).rebuild_arch.is_empty() || !bs!(session).rebuild_arch_eval.is_empty() || !bs!(session).rebuild_odoo_function_ae.is_empty() || !bs!(session).rebuild_validation.is_empty())
             .then(|| ProgressReporterRemaining::start(session, "Odoo: Indexing"));
-        trace!("Starting rebuild: {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), bs!(session).rebuild_validation.len());
-        while !session.sync_odoo.need_rebuild && (!bs!(session).rebuild_arch.is_empty() || !bs!(session).rebuild_arch_eval.is_empty() || !bs!(session).rebuild_validation.is_empty()) {
+        trace!("Starting rebuild: {:?} - {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), bs!(session).rebuild_odoo_function_ae.len(), bs!(session).rebuild_validation.len());
+        while !session.sync_odoo.need_rebuild && (!bs!(session).rebuild_arch.is_empty() || !bs!(session).rebuild_arch_eval.is_empty() || !bs!(session).rebuild_odoo_function_ae.is_empty() || !bs!(session).rebuild_validation.is_empty()) {
             if DEBUG_THREADS {
-                trace!("remains: {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), bs!(session).rebuild_validation.len());
+                trace!("remains: {:?} - {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), bs!(session).rebuild_odoo_function_ae.len(), bs!(session).rebuild_validation.len());
             }
-            let queue_size = bs!(session).rebuild_arch.len() * 3 + bs!(session).rebuild_arch_eval.len() * 2 + bs!(session).rebuild_validation.len();
+            let queue_size = BuildScheduler::get_expected_rebuild_queue_size(session);
             if let Some(reporter) = &mut reporter {
                 reporter.report_progress(queue_size);
             }
@@ -231,8 +258,25 @@ impl BuildScheduler {
                 }
                 already_arch_eval_rebuilt.insert(tree);
                 if let Some(python_buildable) = sym_key.as_python_buildable()
-                && let Some(mut builder) = PythonArchEval::new(session.st(), entry, python_buildable) {
+                && let Some(mut builder) = PythonArchEval::new(session.st(), entry, python_buildable, false) {
                     builder.eval_arch(session);
+                };
+                continue;
+            }
+            let sym = BuildScheduler::pop_item(session, BuildSteps::ODOO_FUNCTION_AE);
+            if let Some(sym_key) = sym {
+                if DEBUG_STEPS {
+                    trace!("PROCESSING FROM ODOO_FUNCTION_AE - {}", session.st().debug_path(sym_key.into()));
+                }
+                let (tree, entry) = session.st().get_tree_and_entry(sym_key.into());
+                if already_odoo_function_ae_rebuilt.contains(&tree) {
+                    info!("Already odoo function ae rebuilt, skipping");
+                    continue;
+                }
+                already_odoo_function_ae_rebuilt.insert(tree);
+                if let Some(python_buildable) = sym_key.as_python_buildable()
+                && let Some(mut builder) = PythonOdooFunctionAE::new(entry, python_buildable) {
+                    builder.build_function_ae(session);
                 };
                 continue;
             }
@@ -326,8 +370,12 @@ impl BuildScheduler {
                         builder.load_arch(session);
                     }
                 } else if step == BuildSteps::ARCH_EVAL {
-                    if let Some(mut builder) = PythonArchEval::new(session.st(), entry_point, python_buildable) {
+                    if let Some(mut builder) = PythonArchEval::new(session.st(), entry_point, python_buildable, false) {
                         builder.eval_arch(session);
+                    };
+                } else if step == BuildSteps::ODOO_FUNCTION_AE {
+                    if let Some(mut builder) = PythonOdooFunctionAE::new(entry_point, python_buildable) {
+                        builder.build_function_ae(session);
                     };
                 } else if step == BuildSteps::VALIDATION {
                     let mut validator = PythonValidator::new(session.st(), entry_point, python_buildable);

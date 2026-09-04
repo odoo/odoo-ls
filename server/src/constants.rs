@@ -85,9 +85,10 @@ impl fmt::Display for SymType {
 
 #[derive(Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Copy, Clone)]
 pub enum BuildSteps {
-    ARCH       = 0,
-    ARCH_EVAL  = 1,
-    VALIDATION = 2,
+    ARCH             = 0,
+    ARCH_EVAL        = 1,
+    ODOO_FUNCTION_AE = 2,
+    VALIDATION       = 3,
 }
 
 impl From<i32> for BuildSteps {
@@ -95,7 +96,8 @@ impl From<i32> for BuildSteps {
         match value {
             0 => BuildSteps::ARCH,
             1 => BuildSteps::ARCH_EVAL,
-            2 => BuildSteps::VALIDATION,
+            2 => BuildSteps::ODOO_FUNCTION_AE,
+            3 => BuildSteps::VALIDATION,
             _ => panic!("Invalid value for BuildSteps: {}", value),
         }
     }
@@ -106,17 +108,18 @@ pub enum DiagnosticSource {
     PY_SYNTAX              = 0,
     PY_ARCH                = 1,
     PY_ARCH_EVAL           = 2,
-    PY_VALIDATION          = 3,
-    XML_SYNTAX             = 4,
-    XML_ARCH               = 5,
-    XML_VALIDATION         = 6,
-    CSV_SYNTAX             = 7,
-    CSV_VALIDATION         = 8,
-    JS_OXC                 = 9,
-    JS_TSSERVER_SYNTAX     = 10,
-    JS_TSSERVER_SEMANTIC   = 11,
-    JS_TSSERVER_SUGGESTION = 12,
-    JS_VALIDATION          = 13,
+    PY_ODOO_FUNCTION_AE    = 3,
+    PY_VALIDATION          = 4,
+    XML_SYNTAX             = 5,
+    XML_ARCH               = 6,
+    XML_VALIDATION         = 7,
+    CSV_SYNTAX             = 8,
+    CSV_VALIDATION         = 9,
+    JS_OXC                 = 10,
+    JS_TSSERVER_SYNTAX     = 11,
+    JS_TSSERVER_SEMANTIC   = 12,
+    JS_TSSERVER_SUGGESTION = 13,
+    JS_VALIDATION          = 14,
 }
 
 impl From<BuildSteps> for DiagnosticSource {
@@ -124,6 +127,7 @@ impl From<BuildSteps> for DiagnosticSource {
         match value {
             BuildSteps::ARCH => DiagnosticSource::PY_ARCH,
             BuildSteps::ARCH_EVAL => DiagnosticSource::PY_ARCH_EVAL,
+            BuildSteps::ODOO_FUNCTION_AE => DiagnosticSource::PY_ODOO_FUNCTION_AE,
             BuildSteps::VALIDATION => DiagnosticSource::PY_VALIDATION,
         }
     }

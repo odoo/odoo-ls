@@ -8,10 +8,10 @@ use ruff_text_size::{Ranged, TextRange, TextSize};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::vec;
-use tracing::{trace, warn};
+use tracing::{info, warn};
 
 use crate::constants::{
-    BuildStatus, BuildSteps, DEBUG_STEPS, DEBUG_STEPS_ONLY_INTERNAL, DiagnosticSource, OYarn, SymType
+    BuildStatus, BuildSteps, DEBUG_STEPS, DEBUG_STEPS_ONLY_INTERNAL, DiagnosticSource, OYarn
 };
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
@@ -69,7 +69,7 @@ impl PythonArchBuilder {
             return;
         }
         if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !session.st().is_external(symbol)) {
-            trace!("ARCH       - PYTHON {} - {}", session.st().path(self.file), session.st().name(symbol));
+            info!("ARCH       - PYTHON {} - {}", session.st().path(self.file), session.st().name(symbol));
         }
         session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
         let path = session.st().file_path(self.file).to_string();
@@ -772,12 +772,13 @@ impl PythonArchBuilder {
         session.st_mut()[function_key].noqas = noqa.clone();
         session.current_noqa = noqa;
         //visit body
-        if !self.file_mode || session.st().get_in_parents(function_key.into(), &[SymType::CLASS], true).is_none() {
-            session.st_mut()[function_key].set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
+        session.st_mut()[function_key].set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
+        if !session.st().is_external(function_key.into()) || !self.file_mode || self.file_info.as_ref().unwrap().borrow().opened {
             self.sym_stack.push(function_key.into());
             self.visit_node(session, &func_def.body);
             self.sym_stack.pop();
             session.st_mut().set_build_status(function_key.into(), BuildSteps::ARCH, BuildStatus::DONE);
+            BuildScheduler::queue(session, function_key);
         }
         if add_noqa {
             session.noqas_stack.pop();
