@@ -930,7 +930,10 @@ impl PythonArchEvalHooks {
                 continue; // All the decorators we handle have at least one arg for now
             }
             let parent = session.st()[func_sym].parent();
-            let mut deps = vec![vec![], vec![], vec![]];
+            let mut deps = vec![vec![], vec![]];
+            if current_step == BuildSteps::ODOO_FUNCTION_AE {
+                deps.push(vec![]);
+            }
             let (dec_evals, diags) = Evaluation::eval_from_ast(session, decorator_base, parent, &func_stmt.range.start(), false, &mut deps);
             session.st_mut().insert_dependencies(file, &deps, current_step);
             diagnostics.extend(diags);
