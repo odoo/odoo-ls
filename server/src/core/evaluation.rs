@@ -1546,7 +1546,8 @@ impl Evaluation {
                     break;
                 }
                 if eval.symbol.sym.has_weak() && let Some(weak) = eval.symbol.sym.get_weak().weak.upgrade(session.st())
-                    && let Some(evaluation_search_sym) = evaluation_search.as_symbol() && weak == evaluation_search_sym {
+                    && let Some(evaluation_search_sym) = evaluation_search.as_symbol()
+                    && session.st().is_or_narrowed_from(weak, evaluation_search_sym) {
                         found_one_reference |= record_evaluation_hit(session, parent, ast.range());
                     }
                 if let Some(value) = eval.value.as_ref()
