@@ -625,6 +625,7 @@ impl SyncOdoo {
         if !BuildScheduler::process_rebuilds(session, false) {
             return false;
         }
+        return false;
         //search common odoo addons path
         let addon_symbols = session.sync_odoo.get_symbol(&odoo_path, (&["odoo", "addons"], &[]), u32::MAX);
         let addon_symbol = if let Some(&SymbolKey::Namespace(addon_ns)) = addon_symbols.first() {
