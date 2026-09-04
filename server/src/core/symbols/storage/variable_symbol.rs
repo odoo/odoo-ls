@@ -7,7 +7,7 @@ use crate::{
         evaluation_context::{Context, ContextKey, ContextValue},
         symbols::{
             storage::{SymbolTable, FileContentParent},
-            symbol_keys::{ModelSymbolKey, ModuleKey, SymbolKey, VariableKey},
+            symbol_keys::{ModelSymbolKey, ModuleKey, SymbolKey, VariableKey, Wk},
         },
     },
     oyarn,
@@ -23,6 +23,7 @@ pub struct VariableSymbol {
     pub is_parameter: bool,
     pub evaluations: Vec<Evaluation>, //Vec, because sometimes a single allocation can be ambiguous, like ''' a = "5" if X else 5 '''
     pub range: TextRange,
+    pub narrowed_from: Vec<Wk<SymbolKey>>,
 
     // parent symbol (no children)
     parent: FileContentParent,
@@ -40,6 +41,7 @@ impl VariableSymbol {
             is_import_variable: false,
             is_parameter: false,
             evaluations: vec![],
+            narrowed_from: vec![],
         }
     }
 
