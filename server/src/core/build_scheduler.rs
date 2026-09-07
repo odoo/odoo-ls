@@ -206,7 +206,7 @@ impl BuildScheduler {
         }
         BuildScheduler::add_from_self_reload(session);
         session.sync_odoo.import_cache = Some(ImportCache::default());
-        let mut already_arch_rebuilt: HashSet<Tree> = HashSet::default();
+        let mut already_arch_rebuilt: HashSet<SymbolKey> = HashSet::default();
         let mut already_arch_eval_rebuilt: HashSet<SymbolKey> = HashSet::default();
         let mut already_odoo_function_ae_rebuilt: HashSet<SymbolKey> = HashSet::default();
 
@@ -234,12 +234,12 @@ impl BuildScheduler {
                 if DEBUG_STEPS {
                     trace!("PROCESSING FROM ARCH - {}", session.st().debug_path(sym_key.into()));
                 }
-                let (tree, entry) = session.st().get_tree_and_entry(sym_key.into());
-                if already_arch_rebuilt.contains(&tree) {
+                let entry = session.st().get_entry(sym_key);
+                if already_arch_rebuilt.contains(&sym_key.into()) {
                     info!("Already arch rebuilt, skipping");
                     continue;
                 }
-                already_arch_rebuilt.insert(tree);
+                already_arch_rebuilt.insert(sym_key.into());
                 if let Some(python_buildable) = sym_key.as_python_buildable()
                 && let Some(mut builder) = PythonArchBuilder::new(session.st(), entry, python_buildable) {
                     builder.load_arch(session);
