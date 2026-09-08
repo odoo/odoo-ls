@@ -8,9 +8,9 @@
 //! * walks the module dir and pre-parses every `.py`/`.pyi` into an
 //!   [`IndexedModule`] (read + ruff parse + noqa scan),
 //! * reads each file listed in the manifest's `data` list, and
-//! * expands the manifest's `assets` globs, reading the XML files they match and
-//!   parsing the JS ones (read + OXC parse + semantic + lint). The expansion itself
-//!   is memoized for the build thread — see [`PreParseCache::resolve_assets`].
+//! * walks the module's `static/` asset folders, reading the XML files it finds and
+//!   parsing the JS ones (read + OXC parse + semantic + lint). The walk itself is
+//!   memoized for the build thread — see [`PreParseCache::resolve_assets`].
 //!
 //! Both results land in a shared [`PreParseCache`] as a [`PreloadedFile`] payload;
 //! when the build thread reaches a file it slots the payload in instead of
@@ -34,7 +34,7 @@ use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::symbol_keys::ModuleKey;
 use crate::core::text_document::TextDocument;
 use crate::threads::SessionInfo;
-use crate::utils::{HashMap, HashSet, PathSanitizer};
+use crate::utils::{HashMap, PathSanitizer};
 
 /// Max number of worker threads parsing files ahead of the build. Workers only have to
 /// stay *ahead* of the build thread; past that they merely compete with it for cores,
@@ -64,23 +64,13 @@ const SKIPPED_DIRS: &[&str] = &[
     "i18n", "views", "data", "security", "description", "doc", "docs",
 ];
 
-/// (owner module path, local url)
-/// local url contains globs, not expanded yet
-type AssetEntry = (String, String);
-/// The result of expanding an AssetEntry: the list of files it matches.
-type AssetPaths = Vec<PathBuf>;
-
 /// One unit of work submitted for the worker pool: a module at position
-/// `module_idx` in build order, its on-disk root, the explicit list of
-/// data files, and the manifest asset entries it declares
+/// `module_idx` in build order, its on-disk root, and the explicit list of data files.
+/// Its assets are whatever its `static/` folders hold, so the worker walks for them itself.
 struct Job {
     module_idx: usize,
     module_path: PathBuf,
     data_files: Vec<PathBuf>,
-    /// `(owner module path, local url)` per manifest asset entry, as produced by
-    /// [`ModuleSymbol::asset_entries`]. Still unexpanded: the glob walk happens in
-    /// the worker, off the build thread ([`PreParseCache::resolve_assets`]).
-    asset_entries: Vec<AssetEntry>,
 }
 
 #[derive(Debug, Default)]
@@ -97,11 +87,9 @@ struct IndexedStore {
 #[derive(Debug, Default)]
 pub struct PreParseCache {
     index: Mutex<IndexedStore>,
-    /// Memoized [`ModuleSymbol::assets_path_resolver`] results, keyed by its arguments.
+    /// Memoized [`ModuleSymbol::asset_paths`] results, keyed by module path.
     /// See [`Self::resolve_assets`].
-    resolved_assets: Mutex<HashMap<AssetEntry, Arc<AssetPaths>>>,
-    /// Asset files already taken by a worker. See [`Self::claim`].
-    claimed_assets: Mutex<HashSet<PathBuf>>,
+    resolved_assets: Mutex<HashMap<String, Arc<Vec<PathBuf>>>>,
     /// Counters for end-of-build instrumentation. Inert unless
     /// [`DEBUG_PRE_PARSER`] is set; see [`PreParseStats`].
     stats: PreParseStats,
@@ -115,40 +103,21 @@ impl PreParseCache {
         pre_loaded
     }
 
-    /// Expand one manifest asset entry to the files it matches, memoizing the result.
+    /// Walk one module's asset folders, memoizing the result.
     ///
     /// Called by the workers (ahead of the build) and by the build thread itself
-    /// (`ModuleSymbol::load_assets`). Both go through
-    /// [`ModuleSymbol::asset_entries`], so they always ask for the same keys and the
-    /// build thread's own resolve is a map lookup. Whichever thread misses first pays
-    /// for the walk; a module the workers skipped is resolved by the build thread and
-    /// memoized all the same.
-    pub fn resolve_assets(&self, module_path: &str, data_local_url: &str) -> Arc<Vec<PathBuf>> {
-        let key = (module_path.to_string(), data_local_url.to_string());
-        if let Some(resolved) = self.resolved_assets.lock().unwrap().get(&key) {
+    /// (`ModuleSymbol::load_assets`), so the build thread's own resolve is a map lookup.
+    /// Whichever thread misses first pays for the walk; a module the workers skipped is
+    /// resolved by the build thread and memoized all the same.
+    pub fn resolve_assets(&self, module_path: &str) -> Arc<Vec<PathBuf>> {
+        if let Some(resolved) = self.resolved_assets.lock().unwrap().get(module_path) {
             return resolved.clone();
         }
         // Walk the disk outside the lock: two threads racing on the same key just
         // resolve it twice, which is harmless.
-        let resolved = Arc::new(ModuleSymbol::assets_path_resolver(module_path, data_local_url));
-        self.resolved_assets.lock().unwrap().insert(key, resolved.clone());
+        let resolved = Arc::new(ModuleSymbol::asset_paths(module_path));
+        self.resolved_assets.lock().unwrap().insert(module_path.to_string(), resolved.clone());
         resolved
-    }
-
-    /// Take ownership of an asset file, returning `false` if another job got it first.
-    ///
-    /// Modules routinely list assets they do not own — the standalone webclient bundles
-    /// (`project`, `point_of_sale`, `portal`, …) each re-declare large parts of `web`'s
-    /// core, and the hottest files are claimed by ~10 modules. The build thread loads
-    /// such a file only once, for the first module that reaches it, so preparing it
-    /// twice buys nothing: the second payload is parsed, never consumed, then evicted.
-    /// Measured on community + enterprise, this drops ~24% of the JS parses and ~45%
-    /// of the bytes parsed.
-    ///
-    /// Claiming for a *later* module than the one that ends up consuming the file is
-    /// harmless: payloads are keyed by path, not by module.
-    fn claim(&self, path: &Path) -> bool {
-        self.claimed_assets.lock().unwrap().insert(path.to_path_buf())
     }
 
     /// Drop cached entries whose owning module is `module_idx`.
@@ -188,6 +157,7 @@ struct WorkerCtx {
     cache: Arc<PreParseCache>,
     encoding: PositionEncoding,
     test_mode: bool,
+    javascript_disabled: bool,
 }
 
 /// Owns the worker pool and the job queue. Dropping it joins the workers.
@@ -206,6 +176,7 @@ impl PreParser {
             cache: cache.clone(),
             encoding: session.sync_odoo.encoding,
             test_mode: session.sync_odoo.test_mode,
+            javascript_disabled: session.sync_odoo.config.is_javascript_disabled(),
         };
         let job_queue = Arc::new(Mutex::new(Self::create_job_queue(session, sorted_modules)));
         let n_workers = n_workers();
@@ -258,12 +229,7 @@ impl PreParser {
                 let data_files: Vec<PathBuf> = module.data().iter()
                     .map(|(url, _)| module_path.join(url))
                     .collect();
-                // The owning module of an asset is looked up here, on the build thread:
-                // workers never touch the symbol table.
-                let asset_entries = ModuleSymbol::asset_entries(session, module_key).into_iter()
-                    .map(|(_, owner_path, local_url)| (owner_path, local_url))
-                    .collect();
-                Job { module_idx, module_path, data_files, asset_entries }
+                Job { module_idx, module_path, data_files }
             })
             .collect()
     }
@@ -280,10 +246,10 @@ impl Drop for PreParser {
 }
 
 /// Process one module job: first read every file in its declared `data` list,
-/// then walk the module dir pre-parsing Python sources, then expand and read the
-/// manifest assets.
+/// then walk the module dir pre-parsing Python sources, then walk its `static/`
+/// asset folders.
 fn pre_parse_module(ctx: &WorkerCtx, job: Job) {
-    let Job { module_idx, module_path, data_files, asset_entries } = job;
+    let Job { module_idx, module_path, data_files } = job;
 
     // Pass 1: declared data files
     for path in &data_files {
@@ -295,7 +261,7 @@ fn pre_parse_module(ctx: &WorkerCtx, job: Job) {
     }
 
     // Pass 2: Python sources
-    let mut stack = vec![module_path];
+    let mut stack = vec![module_path.clone()];
     while let Some(dir) = stack.pop() {
         let Ok(entries) = fs::read_dir(&dir) else { continue };
         for entry in entries.flatten() {
@@ -314,32 +280,20 @@ fn pre_parse_module(ctx: &WorkerCtx, job: Job) {
         }
     }
 
-    // Pass 3: expand manifest assets. Expanding them here keeps the glob walk off the build
-    // thread, which finds the result memoized when it reaches this module.
-    // Bundles overlap heavily, both within a manifest and across modules, so each file is
-    // claimed before being prepared — see [`PreParseCache::claim`].
-    let mut xml_assets = vec![];
-    let mut js_assets = vec![];
-    for (owner_path, local_url) in &asset_entries {
-        for path in ctx.cache.resolve_assets(owner_path, local_url).iter() {
-            let extension = path.extension().and_then(|e| e.to_str());
-            if !matches!(extension, Some("xml") | Some("js")) || !ctx.cache.claim(path) {
-                continue;
-            }
-            match extension {
-                Some("xml") => xml_assets.push(path.clone()),
-                _ => js_assets.push(path.clone()),
-            }
-        }
+    // Pass 3: walk the module's asset folders. Walking here keeps it off the build thread,
+    // which finds the result memoized when it reaches this module. A module only ever owns
+    // the files under its own `static/`, so no two jobs prepare the same file.
+    if ctx.javascript_disabled {
+        return;
     }
-
+    let assets = ctx.cache.resolve_assets(&module_path.sanitize_cow());
     // Pass 4: read xml assets
-    for path in &xml_assets {
+    for path in assets.iter().filter(|path| path.extension().is_some_and(|ext| ext == "xml")) {
         pre_load_xml(ctx, module_idx, path);
     }
 
     // Pass 5: read and parse js assets
-    for path in &js_assets {
+    for path in assets.iter().filter(|path| path.extension().is_some_and(|ext| ext == "js")) {
         pre_parse_js(ctx, module_idx, path);
     }
 }

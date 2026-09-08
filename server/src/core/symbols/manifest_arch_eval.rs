@@ -5,8 +5,12 @@ use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
 
 use crate::core::build_scheduler::BuildScheduler;
+use crate::core::js_module_scope;
+use crate::core::js_utils::read_module_header;
 use crate::core::symbols::symbol_keys::JsFileKey;
-use crate::{constants::{BuildSteps, DEBUG_STEPS, DiagnosticSource}, core::{csv_arch_builder::CsvArchBuilder, data_hooks, diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileInfo, symbols::{ModuleSymbol, SymbolTable, XmlFileSymbol, symbol_keys::{ModuleKey, SourceFileKey, XmlFileKey}}, xml_arch_builder::XmlArchBuilder}, threads::SessionInfo, utils::PathSanitizer};
+use crate::{constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource}, core::{csv_arch_builder::CsvArchBuilder, data_hooks, diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileInfo, symbols::{ModuleSymbol, SymbolTable, XmlFileSymbol, symbol_keys::{BuildableSymbolKey, ModuleKey, SourceFileKey, XmlFileKey}}, xml_arch_builder::XmlArchBuilder}, threads::SessionInfo, utils::PathSanitizer};
+
+const ASSET_FOLDERS: [&str; 3] = ["src", "tests", "lib"];
 
 
 
@@ -105,49 +109,21 @@ impl ModuleSymbol {
         entry.borrow_mut().js_symbols.remove(path);
     }
 
-    /// The asset entries declared by this module's manifest, one per `assets` url,
-    /// as `(owner module, owner module path, local url)`.
-    ///
-    /// An asset url is `<module_name>/<local_url>` and is resolved against the module
-    /// it names, which is not necessarily the one declaring it. Entries naming an
-    /// unknown module are dropped.
-    ///
-    /// Shared by [`Self::load_assets`] and the pre-parse workers so that both feed
-    /// [`crate::core::pre_parser::PreParseCache::resolve_assets`] the exact same keys.
-    pub fn asset_entries(session: &SessionInfo, module: ModuleKey) -> Vec<(ModuleKey, String, String)> {
-        if session.sync_odoo.config.is_javascript_disabled() {
-            return Vec::new();
-        }
-        let mut entries = Vec::new();
-        for (data_url, _data_range) in session.st()[module].assets.iter() {
-            let mut data_url_splitted = data_url.splitn(2, '/');
-            let data_module_name = data_url_splitted.next().unwrap();
-            let Some(data_local_url) = data_url_splitted.next() else {
-                continue;
-            };
-            let Some(data_module) = session.sync_odoo.modules.get(data_module_name) else {
-                continue;
-            };
-            let Some(data_module) = data_module.upgrade(session.st()) else {
-                continue;
-            };
-            entries.push((data_module, session.st()[data_module].path.clone(), data_local_url.to_string()));
-        }
-        entries
-    }
-
     pub fn load_assets(module: ModuleKey, session: &mut SessionInfo) {
+        if session.sync_odoo.config.is_javascript_disabled() {
+            return;
+        }
+        let module_path = session.st()[module].path.clone();
         // Set for the duration of `build_modules` only: outside of it there are no
         // workers to share the walk with, and nothing to invalidate the memo.
         let cache = session.sync_odoo.pre_parse_cache().cloned();
-        for (data_module, module_path, data_local_url) in Self::asset_entries(session, module) {
-            let files_to_imports = match &cache {
-                Some(cache) => cache.resolve_assets(&module_path, &data_local_url),
-                None => Arc::new(ModuleSymbol::assets_path_resolver(&module_path, &data_local_url)),
-            };
-            //xml have to be loaded first
-            Self::load_xml_assets(session, data_module, &files_to_imports);
-            Self::load_js_assets(session, data_module, &files_to_imports);
+        let files_to_imports = match &cache {
+            Some(cache) => cache.resolve_assets(&module_path),
+            None => Arc::new(Self::asset_paths(&module_path)),
+        };
+        //xml have to be loaded first
+        Self::load_xml_assets(session, module, &files_to_imports);
+        Self::load_js_assets(session, module, &files_to_imports);
         }
     }
 
@@ -207,75 +183,69 @@ impl ModuleSymbol {
         }
     }
 
-    /// Recursively collects all descendants of a directory (files and subdirs).
-    /// The directory itself is included (** matches zero levels too).
-    fn collect_recursive(path: &Path, results: &mut Vec<PathBuf>) {
-        results.push(path.to_path_buf()); // ** can match zero segments
-        if let Ok(entries) = std::fs::read_dir(path) {
-            for entry in entries.flatten() {
-                let child = entry.path();
-                if child.is_dir() {
-                    Self::collect_recursive(&child, results); // recurse into subdirs
-                } else {
-                    results.push(child); // include files too
-                }
-            }
-        }
-    }
-
-    /// Expand one asset entry (see [`Self::asset_entries`]) to the files it matches.
+    /// Every asset of the module rooted at `module_path`.
+    ///
     /// Pure but disk-bound: memoized by
     /// [`crate::core::pre_parser::PreParseCache::resolve_assets`] for the duration of
     /// the module build, and called by the pre-parse workers.
-    pub(crate) fn assets_path_resolver(module_path: &str, data_local_url: &str) -> Vec<PathBuf> {
-        let mut results = vec![PathBuf::from(module_path)];
-
-        for component in Path::new(data_local_url).components() {
-            let std::path::Component::Normal(os_str) = component else { continue };
-            let segment = os_str.to_str().unwrap();
-            let mut new_results = vec![];
-
-            match segment {
-                // ** → expand every current path to itself + all descendants
-                "**" => {
-                    for path in &results {
-                        if path.is_dir() {
-                            ModuleSymbol::collect_recursive(path, &mut new_results);
-                        } else {
-                            new_results.push(path.clone());
-                        }
-                    }
-                }
-
-                // * or *.js etc. → list direct children and filter by pattern
-                pattern if pattern.contains('*') => {
-                    for path in &results {
-                        if let Ok(entries) = std::fs::read_dir(path) {
-                            for entry in entries.flatten() {
-                                let name = entry.file_name();
-                                let name_str = name.to_str().unwrap();
-                                if glob::Pattern::new(pattern).map(|p| p.matches(name_str)).unwrap_or(false) {
-                                    new_results.push(entry.path());
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Exact segment → just join and check existence
-                exact => {
-                    for path in &results {
-                        let candidate = path.join(exact);
-                        if candidate.exists() {
-                            new_results.push(candidate);
-                        }
-                    }
-                }
-            }
-
-            results = new_results;
+    pub(crate) fn asset_paths(module_path: &str) -> Vec<PathBuf> {
+        let static_dir = Path::new(module_path).join("static");
+        let mut results = vec![];
+        for folder in ASSET_FOLDERS {
+            collect_assets(&static_dir.join(folder), folder == "lib", &mut results);
         }
-
         results
+    }
+}
+
+/// The asset folder `path` sits in — either as a descendant of it or as the folder itself.
+fn asset_folder_of(module_path: &str, path: &str) -> Option<&'static str> {
+    let relative = path.strip_prefix(module_path)?.strip_prefix("/static/")?;
+    ASSET_FOLDERS.into_iter().find(|folder| {
+        relative == *folder || relative.strip_prefix(folder).is_some_and(|rest| rest.starts_with('/'))
+    })
+}
+
+fn collect_assets(dir: &Path, is_lib: bool, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if entry.file_type().is_ok_and(|typ| typ.is_dir()) {
+            if entry.file_name() != "node_modules" {
+                collect_assets(&path, is_lib, out);
+            }
+        } else if is_asset_file(&path, is_lib) {
+            out.push(path);
+        }
+    }
+}
+
+/// In `static/lib` the `@odoo-module` header is what makes a JS file a module, and no XML
+/// there is ever an asset.
+fn is_asset_file(path: &Path, is_lib: bool) -> bool {
+    match path.extension().and_then(|ext| ext.to_str()) {
+        Some("js") => !is_lib || read_module_header(path).is_some_and(|header| !header.ignore),
+        Some("xml") => !is_lib,
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_three_odoo_folders_hold_assets() {
+        let module = "/addons/mod";
+        assert_eq!(asset_folder_of(module, "/addons/mod/static/src/a.js"), Some("src"));
+        assert_eq!(asset_folder_of(module, "/addons/mod/static/tests/deep/a.js"), Some("tests"));
+        // A folder rename delivers the folder itself.
+        assert_eq!(asset_folder_of(module, "/addons/mod/static/lib"), Some("lib"));
+        // A prefix is not a segment.
+        assert_eq!(asset_folder_of(module, "/addons/mod/static/source/a.js"), None);
+        assert_eq!(asset_folder_of(module, "/addons/mod/static/description/icon.png"), None);
+        assert_eq!(asset_folder_of(module, "/addons/mod/tools/a.js"), None);
+        // `mod` must not claim `mod_extra`.
+        assert_eq!(asset_folder_of(module, "/addons/mod_extra/static/src/a.js"), None);
     }
 }
