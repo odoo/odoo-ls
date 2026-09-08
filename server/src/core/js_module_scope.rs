@@ -91,9 +91,9 @@ fn dependency_closure(session: &SessionInfo, module: ModuleKey) -> Vec<ModuleKey
         .collect()
 }
 
-/// The module owning `path`. JS lives at `<module>/static/…`
-fn module_of_path(session: &SessionInfo, path: &str) -> Option<ModuleKey> {
-    let mut dir = Path::new(path).parent()?;
+/// The module owning `path`, which may be a file or a directory. JS lives at `<module>/static/…`
+pub fn module_of_path(session: &SessionInfo, path: &str) -> Option<ModuleKey> {
+    let mut dir = Path::new(path);
     loop {
         if dir.file_name() == Some(OsStr::new("static"))
             && let Some(module) = dir.parent().and_then(|parent| module_at(session, parent))

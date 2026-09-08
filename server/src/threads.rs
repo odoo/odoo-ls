@@ -145,7 +145,7 @@ impl <'a> SessionInfo<'a> {
             return;
         }
         SyncOdoo::unload_path(session, path);
-        Odoo::search_symbols_to_rebuild(session, &path.sanitize_cow());
+        Odoo::on_new_path(session, &path.sanitize_cow());
         if (!forced_delay || session.delayed_process_sender.is_none()) && !session.sync_odoo.need_rebuild
             && BuildScheduler::get_rebuild_queue_size(session) < 10 {
                 BuildScheduler::process_rebuilds(session, false);

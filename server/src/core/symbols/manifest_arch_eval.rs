@@ -124,7 +124,39 @@ impl ModuleSymbol {
         //xml have to be loaded first
         Self::load_xml_assets(session, module, &files_to_imports);
         Self::load_js_assets(session, module, &files_to_imports);
+    }
+
+    /// The module owning `path` as an asset, and the files to load for it. `path` may be a
+    /// directory, which a folder rename delivers as a single event.
+    fn asset_owner(session: &SessionInfo, path: &Path) -> Option<(ModuleKey, Vec<PathBuf>)> {
+        if session.sync_odoo.config.is_javascript_disabled() {
+            return None;
         }
+        let path_str = path.sanitize_cow();
+        let module = js_module_scope::module_of_path(session, &path_str)?;
+        let is_lib = asset_folder_of(&session.st()[module].path, &path_str)? == "lib";
+        if path.is_dir() {
+            let mut files = vec![];
+            collect_assets(path, is_lib, &mut files);
+            return Some((module, files));
+        }
+        is_asset_file(path, is_lib).then(|| (module, vec![path.to_path_buf()]))
+    }
+
+    /// Load `path` as an asset of the module owning it. Returns whether a module owns it.
+    ///
+    /// Files already loaded are skipped, so this is safe to call for every watched event.
+    pub fn load_path_assets(session: &mut SessionInfo, path: &Path) -> bool {
+        let Some((module, files)) = Self::asset_owner(session, path) else {
+            return false;
+        };
+        // A module with pending ARCH_EVAL will load its assets via `load_assets`
+        if session.st().build_status(BuildableSymbolKey::Module(module), BuildSteps::ARCH_EVAL) != BuildStatus::DONE {
+            return true;
+        }
+        Self::load_xml_assets(session, module, &files);
+        Self::load_js_assets(session, module, &files);
+        true
     }
 
     fn load_xml_assets(session: &mut SessionInfo, module: ModuleKey, files_to_imports: &[PathBuf]) {
