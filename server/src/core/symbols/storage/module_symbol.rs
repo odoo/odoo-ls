@@ -28,7 +28,6 @@ pub struct ModuleSymbol {
     pub depends: Vec<(OYarn, TextRange)>,
     pub(in crate::core::symbols) all_depends: HashSet<OYarn>, //computed all depends to avoid too many recomputations
     pub(in crate::core::symbols) data: Vec<(String, TextRange)>,
-    pub(in crate::core::symbols) assets: Vec<(String, TextRange)>,
     pub xml_ids: HashMap<OYarn, WeakSet<XmlId>>, //Reference to xmlNode declaring xml_id. Can be from python or xml file.
     pub (super) current_build_step: BuildSteps,
     pub (super) build_status: BuildStatus,
@@ -82,7 +81,6 @@ impl ModuleSymbol {
             depends,
             all_depends: HashSet::default(),
             data: Vec::new(),
-            assets: Vec::new(),
             parent,
             fs_symbols: HashMap::default(),
             current_build_step: BuildSteps::ARCH,
