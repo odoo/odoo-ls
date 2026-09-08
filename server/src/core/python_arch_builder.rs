@@ -19,8 +19,9 @@ use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 use crate::core::python_utils;
 use crate::utils::HashSet;
+use crate::core::type_narrowing::{match_narrowing_checks, narrowing_anchor_after, narrowing_range, IsinstanceCheck};
 use crate::core::symbols::Buildable;
-use crate::core::symbols::symbol_keys::{FunctionKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey};
+use crate::core::symbols::symbol_keys::{FunctionKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey, Wk};
 use crate::core::symbols::storage::SymbolTable;
 use crate::threads::SessionInfo;
 use crate::{oyarn, S};
@@ -924,6 +925,40 @@ impl PythonArchBuilder {
         (true, false)
     }
 
+    /// Declares every narrowing `test` implies when it evaluated to `!want_negated`, in a section
+    /// of its own chained from `parent`. Returns that section to chain what follows from, or
+    /// `None` when there is nothing to narrow (the caller then keeps `parent`).
+    ///
+    /// `anchor` must be a position no real declaration can occupy - use the helpers in
+    /// `type_narrowing`, never a raw statement position.
+    fn declare_narrowing_at(&self, session: &mut SessionInfo, scope: SymbolKey, test: &Expr, anchor: TextSize, parent: Option<SectionIndex>, want_negated: bool) -> Option<SectionIndex> {
+        let checks = match_narrowing_checks(test, want_negated);
+        if checks.is_empty() {
+            return None;
+        }
+        let section = session.st_mut().as_mut_symbol_mgr(scope).add_section(anchor, parent).index;
+        for check in checks.iter() {
+            self.declare_narrowing_for_check(session, scope, check, test.range().start(), anchor);
+        }
+        Some(SectionIndex::INDEX(section))
+    }
+
+    fn declare_narrowing_for_check(&self, session: &mut SessionInfo, scope: SymbolKey, check: &IsinstanceCheck, test_start: TextSize, anchor: TextSize) {
+        // `narrowed_from` lets go-to-definition and find-references see the real declaration.
+        let shadowed = SymbolTable::infer_name(session.sync_odoo, scope, check.target_name, Some(test_start.to_u32()));
+        let narrowed_from: Vec<Wk<SymbolKey>> = shadowed.symbols.into_iter().map(Wk::from).collect();
+        let variable_key = session.st_mut().add_new_variable(scope, check.target_name, narrowing_range(anchor));
+        session.st_mut()[variable_key].narrowed_from = narrowed_from;
+        session.st_mut()[variable_key].narrowing_check_range = Some(check.target_range);
+    }
+
+    /// Whether `body` always ends the enclosing *function* - not exhaustive (e.g. a terminating
+    /// nested `if`/`else`), but covers the common early-exit guard. `break`/`continue` don't
+    /// count: they only leave the loop, and what they assigned still matters after it.
+    fn body_always_exits(body: &[Stmt]) -> bool {
+        matches!(body.last(), Some(Stmt::Return(_) | Stmt::Raise(_)))
+    }
+
     fn visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) {
         //TODO check platform condition (sys.version > 3.12, etc...)
         let scope = *self.sym_stack.last().unwrap();
@@ -934,15 +969,17 @@ impl PythonArchBuilder {
             None // Take preceding section (before if stmt)
         );
         let mut last_test_section = test_section.index;
+        let mut last_test: &Expr = if_stmt.test.as_ref();
 
         self.visit_expr(session, &if_stmt.test);
         let mut body_version_ok = false; //if true, it means we found a condition that is true and contained a version check. Used to avoid else clause
         let mut stmt_sections = if if_stmt.body.is_empty() {
             vec![]
         } else {
+            let narrow_section = self.declare_narrowing_at(session, scope, &if_stmt.test, if_stmt.body[0].range().start(), None, false);
             session.st_mut().as_mut_symbol_mgr(scope).add_section( // first body section
                 if_stmt.body[0].range().start(),
-                None // Take preceding section (if test)
+                narrow_section
             );
             let check_version = self._check_sys_version_condition(session, if_stmt.test.as_ref());
             if check_version.0 {
@@ -950,7 +987,11 @@ impl PythonArchBuilder {
                     body_version_ok = true;
                 }
                 self.visit_node(session, &if_stmt.body);
-                vec![ SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index())]
+                if Self::body_always_exits(&if_stmt.body) {
+                    vec![]
+                } else {
+                    vec![ SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index())]
+                }
             } else {
                 vec![]
             }
@@ -958,23 +999,36 @@ impl PythonArchBuilder {
 
         let mut else_clause_exists = false;
 
-        let stmt_clauses_iter = if_stmt.elif_else_clauses.iter().filter_map(|elif_else_clause|{
+        for elif_else_clause in if_stmt.elif_else_clauses.iter() {
             match elif_else_clause.test {
                 Some(ref test_clause) => {
+                    // Reaching this test means the previous one was false - narrow it here (not
+                    // just at the final fallthrough) so it propagates to everything after.
+                    let prev_section = SectionIndex::INDEX(last_test_section);
+                    let narrow_section = self.declare_narrowing_at(session, scope, last_test, test_clause.range().start(), Some(prev_section.clone()), true);
                     last_test_section = session.st_mut().as_mut_symbol_mgr(scope).add_section(
                         test_clause.range().start(),
-                        Some(SectionIndex::INDEX(last_test_section))
+                        Some(narrow_section.unwrap_or(prev_section))
                     ).index;
                     self.visit_expr(session, test_clause);
+                    last_test = test_clause;
                 },
                 None => else_clause_exists = true
             }
             if elif_else_clause.body.is_empty() {
-                return None;
+                continue;
             }
+            let clause_body_prev = SectionIndex::INDEX(last_test_section);
+            // An elif narrows its own (positive) check; `else` narrows the last test's
+            // negation, same as the implicit fallthrough when there's no `else` at all.
+            let body_anchor = elif_else_clause.body[0].range().start();
+            let narrow_section = match &elif_else_clause.test {
+                Some(test_clause) => self.declare_narrowing_at(session, scope, test_clause, body_anchor, Some(clause_body_prev.clone()), false),
+                None => self.declare_narrowing_at(session, scope, last_test, body_anchor, Some(clause_body_prev.clone()), true),
+            };
             session.st_mut().as_mut_symbol_mgr(scope).add_section(
                 elif_else_clause.body[0].range().start(),
-                Some(SectionIndex::INDEX(last_test_section))
+                Some(narrow_section.unwrap_or(clause_body_prev))
             );
             if let Some(test_clause) = &elif_else_clause.test {
                 let version_check = self._check_sys_version_condition(session, test_clause);
@@ -988,23 +1042,26 @@ impl PythonArchBuilder {
             else if !body_version_ok { //else clause
                 self.visit_node(session, &elif_else_clause.body);
             }
-            let clause_section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
-            Some(clause_section)
-        });
+            if !Self::body_always_exits(&elif_else_clause.body) {
+                stmt_sections.push(SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index()));
+            }
+        }
 
-        stmt_sections.extend(stmt_clauses_iter);
-
+        // The implicit-else narrowing below shares this position with the merge section: the
+        // merge is added last so it wins position lookups, the narrowing is reached via its `OR`.
+        let after_if = narrowing_anchor_after(if_stmt.range().end());
         if !else_clause_exists{
-            // If there is no else clause, the there is an implicit else clause
-            // Which bypasses directly to the last test section
-            stmt_sections.push(SectionIndex::INDEX(last_test_section));
+            // Implicit else: goes from the last test to out of the if-statement
+            let prev = SectionIndex::INDEX(last_test_section);
+            let narrow_section = self.declare_narrowing_at(session, scope, last_test, after_if, Some(prev.clone()), true);
+            stmt_sections.push(narrow_section.unwrap_or(prev));
         }
         if stmt_sections.is_empty(){
             // If there are no valid bodies or tests, point to the section before the if-stmt
             stmt_sections.push(SectionIndex::INDEX(prefix_section));
         }
         session.st_mut().as_mut_symbol_mgr(scope).add_section(
-            if_stmt.range().end() + TextSize::new(1),
+            after_if,
             Some(SectionIndex::OR(stmt_sections))
         );
     }

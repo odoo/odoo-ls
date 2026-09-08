@@ -21,6 +21,7 @@ use crate::core::evaluation::{Evaluation};
 use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
 use crate::core::python_utils;
 use crate::utils::HashSet;
+use crate::core::type_narrowing::{match_narrowing_checks, narrowing_anchor_after, narrowing_range, IsinstanceCheck};
 use crate::features::ast_utils::AstUtils;
 use crate::threads::SessionInfo;
 
@@ -793,11 +794,75 @@ impl PythonArchEval {
 
     fn _visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) {
         self.visit_expr(session, &if_stmt.test);
+        if let Some(first_stmt) = if_stmt.body.first() {
+            self.resolve_narrowing_at(session, &if_stmt.test, first_stmt.range().start(), false);
+        }
         self.visit_sub_stmts(session, &if_stmt.body);
-        if_stmt.elif_else_clauses.iter().for_each(|elif_clause| {
-            if let Some(test_clause) = elif_clause.test.as_ref() { self.visit_expr(session, test_clause) }
-            self.visit_sub_stmts(session, &elif_clause.body)
-        });
+        let mut last_test: &Expr = if_stmt.test.as_ref();
+        let mut else_clause_exists = false;
+        for elif_clause in if_stmt.elif_else_clauses.iter() {
+            if let Some(test_clause) = elif_clause.test.as_ref() {
+                self.resolve_narrowing_at(session, last_test, test_clause.range().start(), true);
+                self.visit_expr(session, test_clause);
+                if let Some(first_stmt) = elif_clause.body.first() {
+                    self.resolve_narrowing_at(session, test_clause, first_stmt.range().start(), false);
+                }
+                last_test = test_clause;
+            } else {
+                else_clause_exists = true;
+                if let Some(first_stmt) = elif_clause.body.first() {
+                    self.resolve_narrowing_at(session, last_test, first_stmt.range().start(), true);
+                }
+            }
+            self.visit_sub_stmts(session, &elif_clause.body);
+        }
+        if !else_clause_exists {
+            self.resolve_narrowing_at(session, last_test, narrowing_anchor_after(if_stmt.range().end()), true);
+        }
+    }
+
+    /// Fills in the narrowed type for the symbol `declare_narrowing_for_check` declared.
+    fn resolve_narrowing_for_check(&mut self, session: &mut SessionInfo, check: &IsinstanceCheck, body_start: TextSize) {
+        let scope = *self.sym_stack.last().unwrap();
+        let range = narrowing_range(body_start);
+        let Some(variable_key) = session.st().get_narrowed_variable(scope, check.target_name, &range, check.target_range) else { return };
+        let parent = session.st()[variable_key].parent();
+        let mut evaluations = vec![];
+        for type_expr in &check.type_exprs {
+            let mut deps = vec![vec![], vec![]];
+            if !self.file_mode {
+                deps.push(vec![]);
+            }
+            let (type_evals, diags) = Evaluation::eval_from_ast(session, type_expr, parent, &body_start, false, &mut deps);
+            session.st_mut().insert_dependencies(self.file, &deps, self.current_step);
+            self.diagnostics.extend(diags);
+            for type_eval in &type_evals {
+                let eval_symbol = type_eval.symbol.get_symbol(session, None, &mut self.diagnostics, None);
+                let ref_syms = SymbolTable::follow_ref(&eval_symbol, session, None, false, true, None, None);
+                for ref_sym in ref_syms {
+                    if let Some(sym_key) = ref_sym.upgrade_weak(session.st()) {
+                        evaluations.push(Evaluation::eval_from_symbol(session.st(), sym_key, Some(true)));
+                    }
+                }
+            }
+        }
+        if evaluations.is_empty() {
+            // The checked type didn't resolve (unimported, TYPE_CHECKING-only, a typo): point at
+            // the shadowed declarations, so the narrowing is a no-op instead of erasing the type.
+            let narrowed_from = session.st()[variable_key].narrowed_from.clone();
+            evaluations = narrowed_from.iter()
+                .filter_map(|shadowed| shadowed.upgrade(session.st()))
+                .map(|shadowed| Evaluation::eval_from_symbol(session.st(), shadowed, None))
+                .collect();
+        }
+        session.st_mut()[variable_key].evaluations = evaluations;
+    }
+
+    /// Counterpart of `declare_narrowing_at`: resolves what it declared at `anchor`.
+    fn resolve_narrowing_at(&mut self, session: &mut SessionInfo, test: &Expr, anchor: TextSize, want_negated: bool) {
+        for check in match_narrowing_checks(test, want_negated) {
+            self.resolve_narrowing_for_check(session, &check, anchor);
+        }
     }
 
     fn _visit_for(&mut self, session: &mut SessionInfo, for_stmt: &StmtFor) {
