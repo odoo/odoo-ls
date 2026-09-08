@@ -1272,8 +1272,7 @@ impl SymbolTable {
         }
     }
 
-    /// get a Symbol that has the same given range and name
-    pub fn get_positioned_symbol(&self, target: SymbolKey, name: &str, range: &TextRange) -> Option<SymbolKey> {
+    fn get_positioned_symbol_predicated(&self, target: SymbolKey, name: &str, predicate: impl Fn(SymbolKey) -> bool) -> Option<SymbolKey> {
         if let Some(symbols) = match target {
             SymbolKey::Class(c) => { self[c].symbols().get(name) },
             SymbolKey::File(f) => {self[f].symbols().get(name)},
@@ -1284,13 +1283,41 @@ impl SymbolTable {
         } {
             for sym_list in symbols.values() {
                 for &key in sym_list.iter() {
-                    if self.range(key).start() == range.start() {
+                    if predicate(key) {
                         return Some(key);
                     }
                 }
             }
         }
         None
+    }
+
+    /// get a Symbol that has the same given range and name. Type-narrowing symbols are skipped:
+    /// they share their position with the declaration they narrow, and are found through
+    /// `get_narrowed_variable` instead.
+    pub fn get_positioned_symbol(&self, target: SymbolKey, name: &str, range: &TextRange) -> Option<SymbolKey> {
+        self.get_positioned_symbol_predicated(target, name, |key| {
+            self.range(key).start() == range.start() && !self.is_narrowing_symbol(key)
+        })
+    }
+
+    /// Whether `key` is a synthetic type-narrowing re-declaration rather than a real one
+    pub fn is_narrowing_symbol(&self, key: SymbolKey) -> bool {
+        matches!(key, SymbolKey::Variable(v) if self[v].narrowing_check_range.is_some())
+    }
+
+    /// Like `get_positioned_symbol`, but variables only, with `IsinstanceCheck::target_range` as tie-breaker
+    pub fn get_narrowed_variable(&self, target: SymbolKey, name: &str, range: &TextRange, check_range: TextRange) -> Option<VariableKey> {
+        self.get_positioned_symbol_predicated(target, name, |key| {
+            if let SymbolKey::Variable(v) = key {
+                self.range(key).start() == range.start() && self[v].narrowing_check_range == Some(check_range)
+            } else {
+                false
+            }
+        }).and_then(|key| match key {
+            SymbolKey::Variable(v) => Some(v),
+            _ => None,
+        })
     }
 
     pub fn get_file(&self, target: SymbolKey) -> Option<SourceFileKey> {
