@@ -1,6 +1,6 @@
 use lsp_types::Diagnostic;
 use ruff_python_ast::{
-    Alias, AnyRootNodeRef, CmpOp, Expr, ExprNamed, ExprTuple, FStringPart, Identifier, Parameters,
+    Alias, AnyRootNodeRef, CmpOp, Expr, ExprBoolOp, ExprNamed, ExprTuple, FStringPart, Identifier, Parameters,
     Pattern, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf,
     StmtMatch, StmtTry, StmtWhile, StmtWith,
 };
@@ -342,34 +342,33 @@ impl PythonArchBuilder {
         }
     }
 
+    /// Short-circuiting means later operands can be skipped, and they may contain named
+    /// expressions: one section per operand, plus a trailing merge section for what follows.
+    fn visit_bool_op(&mut self, session: &mut SessionInfo, bool_op_expr: &ExprBoolOp) {
+        let scope = *self.sym_stack.last().unwrap();
+        let mut prev_section = session.st().as_symbol_mgr(scope).get_last_index();
+        let cond_sections = bool_op_expr.values.iter().map(|expr|{
+            session.st_mut().as_mut_symbol_mgr(scope).add_section(
+                expr.range().start(),
+                Some(SectionIndex::INDEX(prev_section))
+            );
+            self.visit_expr(session, expr);
+            prev_section = session.st().as_symbol_mgr(scope).get_last_index();
+            SectionIndex::INDEX(prev_section)
+        }).collect::<Vec<_>>();
+        session.st_mut().as_mut_symbol_mgr(scope).add_section(
+            bool_op_expr.range().end() + TextSize::new(1),
+            Some(SectionIndex::OR(cond_sections))
+        );
+    }
+
     fn visit_expr(&mut self, session: &mut SessionInfo, expr: &Expr){
         match expr {
             Expr::Named(named_expr) =>{
                 self.visit_named_expr(session, named_expr);
             },
             Expr::BoolOp(bool_op_expr) => {
-                // introduce sections here
-                // Due to short circuit behavior
-                // Further conditions can be skipped
-                // Which could have named expressions
-
-                // one section per value
-                // one succeeding section with all the value sections in OR
-                let scope = *self.sym_stack.last().unwrap();
-                let mut prev_section = session.st().as_symbol_mgr(scope).get_last_index();
-                let cond_sections = bool_op_expr.values.iter().map(|expr|{
-                    session.st_mut().as_mut_symbol_mgr(scope).add_section(
-                        expr.range().start(),
-                        Some(SectionIndex::INDEX(prev_section))
-                    );
-                    self.visit_expr(session, expr);
-                    prev_section = session.st().as_symbol_mgr(scope).get_last_index();
-                    SectionIndex::INDEX(prev_section)
-                }).collect::<Vec<_>>();
-                session.st_mut().as_mut_symbol_mgr(scope).add_section(
-                    bool_op_expr.range().end() + TextSize::new(1),
-                    Some(SectionIndex::OR(cond_sections))
-                );
+                self.visit_bool_op(session, bool_op_expr);
             },
             Expr::BinOp(bin_op_expr) => {
                 self.visit_expr(session, &bin_op_expr.left);
