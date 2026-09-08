@@ -860,44 +860,70 @@ impl SyncOdoo {
 
     /// Like `unload_path`, but only unloads a symbol when `should_unload` returns true. Returns whether anything was unloaded.
     pub fn unload_path_if(session: &mut SessionInfo, path: &Path, should_unload: impl Fn(&SymbolTable, SymbolKey) -> bool) -> bool {
+        // file/dir might no longer exist in file system, we can't stat it
         let mut unloaded_any = false;
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_all() {
-            let path_str = path.sanitize_cow();
-            let sym_in_data = entry.borrow().data_file_symbols.get(path_str.as_ref()).copied();
-            if let Some(sym) = sym_in_data {
-                if let Some(sym) = sym.upgrade(session.st())
-                    && should_unload(session.st(), sym.into()) {
-                        SymbolTable::unload(session, sym.into());
-                        unloaded_any = true;
-                    }
-                continue;
-            }
-            let sym_in_js = entry.borrow().js_symbols.get(path_str.as_ref()).cloned();
-            if let Some(sym) = sym_in_js {
-                if let Some(sym) = sym.upgrade(session.st())
-                    && should_unload(session.st(), sym.into()) {
-                        SymbolTable::unload(session, sym.into());
-                        unloaded_any = true;
-                    }
+            // try path as a data or asset file
+            if let Some(data_or_asset) = Self::find_data_or_asset_in_ep(entry, path) {
+                if let Some(sym) = data_or_asset.upgrade(session.st())
+                    && should_unload(session.st(), sym.into())
+                {
+                    SymbolTable::unload(session, sym);
+                    unloaded_any = true;
+                }
                 continue;
             }
             if entry.borrow().is_valid_for(path) {
                 let tree = entry.borrow().get_tree_for_entry(path);
                 let path_symbols = session.st().get_symbol(entry.borrow().root.into(), tree.as_slice(), u32::MAX);
-                let Some(&path_symbol) = path_symbols.first() else {
+                if let Some(&path_symbol) = path_symbols.first()
+                    && let Ok(file_or_dir) = FileSystemSymbolKey::try_from(path_symbol)
+                {
+                    if should_unload(session.st(), path_symbol) {
+                        SymbolTable::unload(session, file_or_dir);
+                        unloaded_any = true;
+                    }
                     continue;
-                };
-                let Ok(file_or_dir) = FileSystemSymbolKey::try_from(path_symbol) else {
-                    continue;
-                };
-                if should_unload(session.st(), path_symbol) {
-                    SymbolTable::unload(session, file_or_dir);
+                }
+            }
+            // try path as a dir holding data or assets
+            for data_or_asset in Self::find_nested_data_and_assets_in_ep(entry, path) {
+                if let Some(sym) = data_or_asset.upgrade(session.st())
+                    && should_unload(session.st(), sym.into())
+                {
+                    SymbolTable::unload(session, sym);
                     unloaded_any = true;
                 }
             }
         }
         unloaded_any
+    }
+
+    /// Finds a data or JS file for a given `path` under `entry`.
+    fn find_data_or_asset_in_ep(entry: &Rc<RefCell<EntryPoint>>, path: &Path) -> Option<Wk<FileSystemSymbolKey>> {
+        let entry_point = entry.borrow();
+        let path_str = path.sanitize_cow();
+        if let Some(&data_sym) = entry_point.data_file_symbols.get(path_str.as_ref()) {
+            return Some(data_sym.map_into());
+        }
+        if let Some(&js_sym) = entry_point.js_symbols.get(path_str.as_ref()) {
+            return Some(js_sym.map_into());
+        }
+        None
+    }
+
+    /// Finds all data and JS files under `entry` whose paths are prefixed with `dir_path`.
+    /// Useful for unloading data/assets under a dir.
+    fn find_nested_data_and_assets_in_ep(entry: &Rc<RefCell<EntryPoint>>, dir_path: &Path) -> Vec<Wk<FileSystemSymbolKey>> {
+        let entry_point = entry.borrow();
+        let data = entry_point.data_file_symbols.iter()
+            .filter(|(p, _)| Path::new(p).starts_with(dir_path))
+            .map(|(_, &sym)| sym.map_into());
+        let js = entry_point.js_symbols.iter()
+            .filter(|(p, _)| Path::new(p).starts_with(dir_path))
+            .map(|(_, &sym)| sym.map_into());
+        data.chain(js).collect()
     }
 
     /// Side effects of unloading a symbol
