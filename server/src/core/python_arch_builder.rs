@@ -319,6 +319,9 @@ impl PythonArchBuilder {
                 },
                 Stmt::Assert(assert_stmt) => {
                     self.visit_expr(session, &assert_stmt.test);
+                    // `assert isinstance(x, T)` narrows the rest of the current block
+                    let scope = *self.sym_stack.last().unwrap();
+                    self.declare_narrowing_at(session, scope, &assert_stmt.test, narrowing_anchor_after(assert_stmt.range().end()), None, false);
                 },
                 Stmt::AugAssign(aug_assign_stmt) => {
                     self.visit_expr(session, &aug_assign_stmt.target);
