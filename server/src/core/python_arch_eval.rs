@@ -188,6 +188,7 @@ impl PythonArchEval {
             },
             Stmt::Assert(assert_stmt) => {
                 self.visit_expr(session, &assert_stmt.test);
+                self.resolve_narrowing_at(session, &assert_stmt.test, narrowing_anchor_after(assert_stmt.range().end()), false);
             }
             Stmt::AugAssign(aug_assign_stmt) => {
                 self.visit_expr(session, &aug_assign_stmt.target);
