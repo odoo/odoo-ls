@@ -1,6 +1,6 @@
 use lsp_types::Diagnostic;
 use ruff_python_ast::{
-    Alias, AnyRootNodeRef, CmpOp, Expr, ExprBoolOp, ExprNamed, ExprTuple, FStringPart, Identifier, Parameters,
+    Alias, AnyRootNodeRef, BoolOp, CmpOp, Expr, ExprBoolOp, ExprNamed, ExprTuple, FStringPart, Identifier, Parameters,
     Pattern, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf,
     StmtMatch, StmtTry, StmtWhile, StmtWith,
 };
@@ -344,24 +344,36 @@ impl PythonArchBuilder {
         }
     }
 
-    /// Short-circuiting means later operands can be skipped, and they may contain named
-    /// expressions: one section per operand, plus a trailing merge section for what follows.
-    fn visit_bool_op(&mut self, session: &mut SessionInfo, bool_op_expr: &ExprBoolOp) {
+    /// One section per operand (each is a short-circuit boundary), an `and` operand's narrowing
+    /// applying to the next, plus a trailing merge section for whatever follows.
+    /// Returns an `and`-chain's last operand section, see `visit_condition`.
+    fn visit_bool_op(&mut self, session: &mut SessionInfo, bool_op_expr: &ExprBoolOp) -> Option<SectionIndex> {
         let scope = *self.sym_stack.last().unwrap();
         let mut prev_section = session.st().as_symbol_mgr(scope).get_last_index();
+        let mut prev_operand: Option<&Expr> = None;
+        let mut last_operand_section = None;
         let cond_sections = bool_op_expr.values.iter().map(|expr|{
+            // `A and B`: B only runs once A was true, so A's narrowing applies to it
+            let narrow_section = match (bool_op_expr.op, prev_operand) {
+                (BoolOp::And, Some(prev)) => self.declare_narrowing_at(session, scope, prev, expr.range().start(), Some(SectionIndex::INDEX(prev_section)), false),
+                _ => None,
+            };
             session.st_mut().as_mut_symbol_mgr(scope).add_section(
                 expr.range().start(),
-                Some(SectionIndex::INDEX(prev_section))
+                Some(narrow_section.unwrap_or(SectionIndex::INDEX(prev_section)))
             );
             self.visit_expr(session, expr);
             prev_section = session.st().as_symbol_mgr(scope).get_last_index();
-            SectionIndex::INDEX(prev_section)
+            prev_operand = Some(expr);
+            let section = SectionIndex::INDEX(prev_section);
+            last_operand_section = Some(section.clone());
+            section
         }).collect::<Vec<_>>();
         session.st_mut().as_mut_symbol_mgr(scope).add_section(
             bool_op_expr.range().end() + TextSize::new(1),
             Some(SectionIndex::OR(cond_sections))
         );
+        if matches!(bool_op_expr.op, BoolOp::And) { last_operand_section } else { None }
     }
 
     fn visit_expr(&mut self, session: &mut SessionInfo, expr: &Expr){
@@ -959,6 +971,19 @@ impl PythonArchBuilder {
         matches!(body.last(), Some(Stmt::Return(_) | Stmt::Raise(_)))
     }
 
+    /// `visit_expr` for a top-level condition, returning the section a body guarded by it should
+    /// chain from, or `None` for "whatever's current". Only an `and`-chain returns something: its
+    /// *last* operand's section. Its merge section would not do - that one also covers the
+    /// short-circuit exits, unioning the narrowing back with the pre-narrowing state.
+    fn visit_condition(&mut self, session: &mut SessionInfo, test: &Expr) -> Option<SectionIndex> {
+        if let Expr::BoolOp(bool_op_expr) = test {
+            self.visit_bool_op(session, bool_op_expr)
+        } else {
+            self.visit_expr(session, test);
+            None
+        }
+    }
+
     fn visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) {
         //TODO check platform condition (sys.version > 3.12, etc...)
         let scope = *self.sym_stack.last().unwrap();
@@ -971,15 +996,15 @@ impl PythonArchBuilder {
         let mut last_test_section = test_section.index;
         let mut last_test: &Expr = if_stmt.test.as_ref();
 
-        self.visit_expr(session, &if_stmt.test);
+        let body_prev = self.visit_condition(session, if_stmt.test.as_ref());
         let mut body_version_ok = false; //if true, it means we found a condition that is true and contained a version check. Used to avoid else clause
         let mut stmt_sections = if if_stmt.body.is_empty() {
             vec![]
         } else {
-            let narrow_section = self.declare_narrowing_at(session, scope, &if_stmt.test, if_stmt.body[0].range().start(), None, false);
+            let narrow_section = self.declare_narrowing_at(session, scope, &if_stmt.test, if_stmt.body[0].range().start(), body_prev.clone(), false);
             session.st_mut().as_mut_symbol_mgr(scope).add_section( // first body section
                 if_stmt.body[0].range().start(),
-                narrow_section
+                narrow_section.or(body_prev)
             );
             let check_version = self._check_sys_version_condition(session, if_stmt.test.as_ref());
             if check_version.0 {
@@ -1000,6 +1025,9 @@ impl PythonArchBuilder {
         let mut else_clause_exists = false;
 
         for elif_else_clause in if_stmt.elif_else_clauses.iter() {
+            // An `and`-chain test's last operand section, so the body sees what earlier operands
+            // bound (narrowing, or a plain walrus) - as `visit_condition` does for the main `if`.
+            let mut test_prev = None;
             match elif_else_clause.test {
                 Some(ref test_clause) => {
                     // Reaching this test means the previous one was false - narrow it here (not
@@ -1010,7 +1038,7 @@ impl PythonArchBuilder {
                         test_clause.range().start(),
                         Some(narrow_section.unwrap_or(prev_section))
                     ).index;
-                    self.visit_expr(session, test_clause);
+                    test_prev = self.visit_condition(session, test_clause);
                     last_test = test_clause;
                 },
                 None => else_clause_exists = true
@@ -1018,7 +1046,7 @@ impl PythonArchBuilder {
             if elif_else_clause.body.is_empty() {
                 continue;
             }
-            let clause_body_prev = SectionIndex::INDEX(last_test_section);
+            let clause_body_prev = test_prev.unwrap_or(SectionIndex::INDEX(last_test_section));
             // An elif narrows its own (positive) check; `else` narrows the last test's
             // negation, same as the implicit fallthrough when there's no `else` at all.
             let body_anchor = elif_else_clause.body[0].range().start();
