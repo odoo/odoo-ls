@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::vec;
 
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use ruff_python_ast::{Alias, AnyRootNodeRef, ExceptHandler, Expr, ExprNamed, FStringPart, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
+use ruff_python_ast::{Alias, AnyRootNodeRef, BoolOp, ExceptHandler, Expr, ExprNamed, FStringPart, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{debug, trace, warn};
 
@@ -218,8 +218,14 @@ impl PythonArchEval {
                 self.visit_named_expr(session, named_expr);
             },
             Expr::BoolOp(bool_op_expr) => {
+                let mut prev_operand: Option<&Expr> = None;
                 for expr in bool_op_expr.values.iter() {
+                    if matches!(bool_op_expr.op, BoolOp::And)
+                        && let Some(prev) = prev_operand {
+                            self.resolve_narrowing_at(session, prev, expr.range().start(), false);
+                        }
                     self.visit_expr(session, expr);
+                    prev_operand = Some(expr);
                 }
             },
             Expr::BinOp(bin_op_expr) => {
