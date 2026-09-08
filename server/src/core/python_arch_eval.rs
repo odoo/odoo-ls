@@ -21,7 +21,7 @@ use crate::core::evaluation::{Evaluation};
 use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
 use crate::core::python_utils;
 use crate::utils::HashSet;
-use crate::core::type_narrowing::{match_narrowing_checks, narrowing_anchor_after, narrowing_range, IsinstanceCheck};
+use crate::core::type_narrowing::{loop_exit_anchor, match_narrowing_checks, narrowing_anchor_after, narrowing_range, IsinstanceCheck};
 use crate::features::ast_utils::AstUtils;
 use crate::threads::SessionInfo;
 
@@ -1077,7 +1077,11 @@ impl PythonArchEval {
 
     fn visit_while(&mut self, session: &mut SessionInfo, while_stmt: &StmtWhile) {
         self.visit_expr(session, &while_stmt.test);
+        if let Some(first_stmt) = while_stmt.body.first() {
+            self.resolve_narrowing_at(session, &while_stmt.test, first_stmt.range().start(), false);
+        }
         self.visit_sub_stmts(session, &while_stmt.body);
+        self.resolve_narrowing_at(session, &while_stmt.test, loop_exit_anchor(&while_stmt.orelse, while_stmt.range().end()), true);
         self.visit_sub_stmts(session, &while_stmt.orelse);
     }
 
