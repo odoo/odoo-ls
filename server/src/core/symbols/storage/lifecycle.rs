@@ -480,12 +480,13 @@ mod tests {
 
     /// Parent-linking half of `add_new_module_package`. The other half,
     /// `load_manifest_content`, needs a `SessionInfo` and reads the manifest from disk.
-    fn add_module(st: &mut SymbolTable, parent: NamespaceKey, name: &str, path: &str) -> ModuleKey {
+    fn add_module(st: &mut SymbolTable, parent: NamespaceKey, name: &str, path: &str) -> Result<ModuleKey, NameTakenError> {
+        st.check_fs_symbol_name_vacant(parent.into(), name)?;
         let is_external = st.is_external(parent.into());
         let module = ModuleSymbol::new(name, Path::new(path), parent, is_external);
         let module_key = st.modules.insert(module);
         st.add_to_parent_fs_symbols(parent.into(), module_key.into(), name, path);
-        module_key
+        Ok(module_key)
     }
 
     /// One symbol of every kind used as a parent below. `NamespaceSymbol` files its children by
@@ -505,7 +506,7 @@ mod tests {
             let root = entry.borrow().root;
             let namespace = st.add_new_namespace(root.into(), "ns", "/root/ns").unwrap();
             let disk_dir = st.add_new_disk_dir(root.into(), "dd", "/root/dd").unwrap();
-            let module = add_module(&mut st, namespace, "mod", "/root/ns/mod");
+            let module = add_module(&mut st, namespace, "mod", "/root/ns/mod").unwrap();
             Self { st, root, namespace, disk_dir, module }
         }
 
@@ -522,7 +523,7 @@ mod tests {
         let in_root = f.st.add_new_file(f.root.into(), "in_root", "/root/in_root.py")?;
         let in_namespace = f.st.add_new_file(f.namespace.into(), "in_namespace", "/root/ns/in_namespace.py")?;
         let package = f.st.add_new_python_package(f.root.into(), "a_package", "/root/a_package", "")?;
-        let module = add_module(&mut f.st, f.namespace, "another_module", "/root/ns/another_module");
+        let module = add_module(&mut f.st, f.namespace, "another_module", "/root/ns/another_module")?;
         let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml")?;
         let csv_file = f.st.add_new_csv_file(f.module, "res.partner.csv", "/root/ns/mod/res.partner.csv")?;
         let js_in_module = f.st.add_new_js_file(JsFileParent::Module(f.module), "widget.js", "/root/ns/mod/static/src/widget.js")?;
@@ -658,5 +659,106 @@ mod tests {
             assert_eq!(f.st.parent(expected), Some(SymbolKey::from(f.module)));
         }
         assert_eq!(children.len(), 5, "the module reports children it was not given: {children:?}");
+    }
+
+    type AddNewFn = fn(&mut SymbolTable, RootKey, &str, &str) -> Result<SymbolKey, NameTakenError>;
+
+    #[test]
+    fn fs_symbols_collide_on_name_not_path() -> Result<(), NameTakenError> {
+        let add_new_funcs: Vec<(&str, AddNewFn)> = vec![
+            ("file", |st, p, name, path| Ok(st.add_new_file(p.into(), name, path)?.into())),
+            ("python_package", |st, p, name, path| Ok(st.add_new_python_package(p.into(), name, path, "")?.into())),
+            ("namespace", |st, p, name, path| Ok(st.add_new_namespace(p.into(), name, path)?.into())),
+            ("disk_dir", |st, p, name, path| Ok(st.add_new_disk_dir(p.into(), name, path)?.into())),
+            ("compiled", |st, p, name, path| Ok(st.add_new_compiled(p.into(), name, path)?.into())),
+        ];
+
+        for (kind, add_new_fn) in add_new_funcs {
+            let mut f = Fixture::new();
+            let first = add_new_fn(&mut f.st, f.root, "dup", "/root/dup_a")?;
+            let children_before = f.st.children(f.root.into()).len();
+
+            let err = add_new_fn(&mut f.st, f.root, "dup", "/root/dup_b").unwrap_err();
+            assert_eq!(err.0, first, "{kind}: the error does not name the symbol already there");
+            assert_eq!(f.st.children(f.root.into()).len(), children_before, "{kind}: the rejected insert left a child behind");
+
+            let same_path = add_new_fn(&mut f.st, f.root, "other", "/root/dup_a")?;
+            assert!(f.holds(f.root.into(), same_path), "{kind}: a second name on one path was rejected");
+            f.st.assert_no_orphans();
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_name_is_taken_whatever_kind_took_it() -> Result<(), NameTakenError> {
+        let mut f = Fixture::new();
+        let file = f.st.add_new_file(f.root.into(), "shared", "/root/shared.py")?;
+        let err = f.st.add_new_namespace(f.root.into(), "shared", "/root/shared").unwrap_err();
+        assert_eq!(err.0, SymbolKey::from(file));
+
+        let module = add_module(&mut f.st, f.namespace, "dup", "/root/ns/dup")?;
+        let err = add_module(&mut f.st, f.namespace, "dup", "/root/ns/dup_bis").unwrap_err();
+        assert_eq!(err.0, SymbolKey::from(module));
+        add_module(&mut f.st, f.namespace, "other", "/root/ns/dup")?;
+        f.st.assert_no_orphans();
+        Ok(())
+    }
+
+    #[test]
+    fn data_files_collide_on_path_not_name() -> Result<(), NameTakenError> {
+        let mut f = Fixture::new();
+        let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml")?;
+
+        let err = f.st.add_new_xml_file(f.module, "other.xml", "/root/ns/mod/data.xml").unwrap_err();
+        assert_eq!(err.0, SymbolKey::from(xml_file));
+        let err = f.st.add_new_csv_file(f.module, "data.csv", "/root/ns/mod/data.xml").unwrap_err();
+        assert_eq!(err.0, SymbolKey::from(xml_file), "xml and csv files share one map");
+
+        f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/sub/data.xml")?;
+        assert_eq!(f.st[f.module].data_file_symbols.len(), 2, "a second path under one name was rejected");
+        f.st.assert_no_orphans();
+        Ok(())
+    }
+
+    #[test]
+    fn js_files_collide_on_path_not_name() -> Result<(), NameTakenError> {
+        let mut f = Fixture::new();
+        for (parent, dir) in [
+            (JsFileParent::Module(f.module), "/root/ns/mod/static/src"),
+            (JsFileParent::DiskDir(f.disk_dir), "/root/dd"),
+        ] {
+            let first = f.st.add_new_js_file(parent, "widget.js", &format!("{dir}/widget.js"))?;
+
+            let err = f.st.add_new_js_file(parent, "other.js", &format!("{dir}/widget.js")).unwrap_err();
+            assert_eq!(err.0, SymbolKey::from(first), "{parent:?}: the error does not name the file already there");
+
+            f.st.add_new_js_file(parent, "widget.js", &format!("{dir}/sub/widget.js"))?;
+            assert_eq!(parent.js_symbols(&f.st).len(), 2, "{parent:?}: a second path under one name was rejected");
+        }
+
+        f.st.add_new_js_file(JsFileParent::DiskDir(f.disk_dir), "shared.js", "/root/shared.js")?;
+        f.st.add_new_js_file(JsFileParent::Module(f.module), "shared.js", "/root/shared.js")?;
+        f.st.assert_no_orphans();
+        Ok(())
+    }
+
+    #[test]
+    fn xml_fields_collide_on_name() -> Result<(), NameTakenError> {
+        let mut f = Fixture::new();
+        let xml_file = f.st.add_new_xml_file(f.module, "data.xml", "/root/ns/mod/data.xml")?;
+        let record = f.st.add_new_xml_record(XmlDataParent::XmlFile(xml_file), (oyarn!("res.partner"), 0..1), Some(oyarn!("a_partner")), range_at(0));
+        let asset = f.st.add_new_xml_asset(xml_file, Some(oyarn!("an_asset")), range_at(10));
+
+        for parent in [XmlFieldParent::XmlRecord(record), XmlFieldParent::XmlAsset(asset)] {
+            let first = f.st.add_new_xml_field(parent, "name", range_at(1), None, None, None)?;
+
+            let err = f.st.add_new_xml_field(parent, "name", range_at(2), None, None, None).unwrap_err();
+            assert_eq!(err.0, SymbolKey::from(first), "{parent:?}: the error does not name the field already there");
+
+            f.st.add_new_xml_field(parent, "other", range_at(3), None, None, None)?;
+            assert_eq!(parent.fields(&f.st).len(), 2, "{parent:?}: a second field name was rejected");
+        }
+        f.st.assert_no_orphans();
+        Ok(())
     }
 }
