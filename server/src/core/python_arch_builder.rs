@@ -19,7 +19,7 @@ use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 use crate::core::python_utils;
 use crate::utils::HashSet;
-use crate::core::type_narrowing::{match_narrowing_checks, narrowing_anchor_after, narrowing_range, IsinstanceCheck};
+use crate::core::type_narrowing::{loop_exit_anchor, match_narrowing_checks, narrowing_anchor_after, narrowing_range, IsinstanceCheck};
 use crate::core::symbols::Buildable;
 use crate::core::symbols::symbol_keys::{FunctionKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey, Wk};
 use crate::core::symbols::storage::SymbolTable;
@@ -1268,9 +1268,10 @@ impl PythonArchBuilder {
         let scope_as_sym_mgr = session.st_mut().as_mut_symbol_mgr(scope);
         let previous_section = SectionIndex::INDEX(scope_as_sym_mgr.get_last_index());
         if let Some(first_body_stmt) = while_stmt.body.first() {
-            scope_as_sym_mgr.add_section(
+            let narrow_section = self.declare_narrowing_at(session, scope, &while_stmt.test, first_body_stmt.range().start(), None, false);
+            session.st_mut().as_mut_symbol_mgr(scope).add_section(
                 first_body_stmt.range().start(),
-                None
+                narrow_section
             );
         }
         self.visit_expr(session, &while_stmt.test);
@@ -1278,15 +1279,22 @@ impl PythonArchBuilder {
         let scope_as_sym_mgr = session.st_mut().as_mut_symbol_mgr(scope);
         let body_section = SectionIndex::INDEX(scope_as_sym_mgr.get_last_index());
         let mut stmt_sections = vec![body_section];
+
+        // A normal (non-`break`) loop exit means the test was false - narrow it here too, same
+        // as `if`'s negative guard.
+        let false_branch_start = loop_exit_anchor(&while_stmt.orelse, while_stmt.range().end());
+        let narrow_section = self.declare_narrowing_at(session, scope, &while_stmt.test, false_branch_start, Some(previous_section.clone()), true);
+        let false_branch_section = narrow_section.unwrap_or(previous_section);
+
         if !while_stmt.orelse.is_empty(){
-            scope_as_sym_mgr.add_section(
+            session.st_mut().as_mut_symbol_mgr(scope).add_section(
                 while_stmt.orelse[0].range().start(),
-                Some(previous_section.clone())
+                Some(false_branch_section)
             );
             self.visit_node(session, &while_stmt.orelse);
             stmt_sections.push(SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index()));
         } else {
-            stmt_sections.push(previous_section.clone());
+            stmt_sections.push(false_branch_section);
         }
 
         session.st_mut().as_mut_symbol_mgr(scope).add_section(
