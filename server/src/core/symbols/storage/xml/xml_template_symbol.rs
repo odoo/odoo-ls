@@ -10,7 +10,7 @@ pub struct XmlTemplateSymbol {
     pub is_web: bool,
     pub is_external: bool,
     pub range: TextRange,
-    /// (template_name, value_range) for each t-call found in this template body (quotes exclued)
+    /// (template_name, value_range) for each t-call found in this template body (quotes excluded)
     pub t_calls: Vec<(OYarn, TextRange)>,
     /// (template_name, value_range) of the `t-inherit` this template extends, if any (quotes excluded).
     /// A template element carries at most one `t-inherit`.
