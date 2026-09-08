@@ -1272,8 +1272,7 @@ impl SymbolTable {
         }
     }
 
-    /// get a Symbol that has the same given range and name
-    pub fn get_positioned_symbol(&self, target: SymbolKey, name: &str, range: &TextRange) -> Option<SymbolKey> {
+    fn get_positioned_symbol_predicated(&self, target: SymbolKey, name: &str, predicate: impl Fn(SymbolKey) -> bool) -> Option<SymbolKey> {
         if let Some(symbols) = match target {
             SymbolKey::Class(c) => { self[c].symbols().get(name) },
             SymbolKey::File(f) => {self[f].symbols().get(name)},
@@ -1284,13 +1283,40 @@ impl SymbolTable {
         } {
             for sym_list in symbols.values() {
                 for &key in sym_list.iter() {
-                    if self.range(key).start() == range.start() {
+                    if predicate(key) {
                         return Some(key);
                     }
                 }
             }
         }
         None
+    }
+
+    /// get a Symbol that has the same given range and name. Narrowing symbols share their
+    /// position with what they narrow, so they are skipped; use `get_narrowed_variable`.
+    pub fn get_positioned_symbol(&self, target: SymbolKey, name: &str, range: &TextRange) -> Option<SymbolKey> {
+        self.get_positioned_symbol_predicated(target, name, |key| {
+            self.range(key).start() == range.start() && !self.is_narrowing_symbol(key)
+        })
+    }
+
+    /// Whether `key` is a synthetic type-narrowing re-declaration rather than a real one
+    pub fn is_narrowing_symbol(&self, key: SymbolKey) -> bool {
+        matches!(key, SymbolKey::Variable(v) if self[v].narrowing_check_range.is_some())
+    }
+
+    /// Like `get_positioned_symbol`, but variables only, with `IsinstanceCheck::target_range` as tie-breaker
+    pub fn get_narrowed_variable(&self, target: SymbolKey, name: &str, range: &TextRange, check_range: TextRange) -> Option<VariableKey> {
+        self.get_positioned_symbol_predicated(target, name, |key| {
+            if let SymbolKey::Variable(v) = key {
+                self.range(key).start() == range.start() && self[v].narrowing_check_range == Some(check_range)
+            } else {
+                false
+            }
+        }).and_then(|key| match key {
+            SymbolKey::Variable(v) => Some(v),
+            _ => None,
+        })
     }
 
     pub fn get_file(&self, target: SymbolKey) -> Option<SourceFileKey> {
@@ -1863,12 +1889,15 @@ impl SymbolTable {
     //infer a name, given a position
     pub fn infer_name(odoo: &SyncOdoo, on_symbol: SymbolKey, name: &str, position: Option<u32>) -> ContentSymbols {
         let symbol_table = &odoo.symbol_table;
-        let results = symbol_table.get_content_symbol(on_symbol, name, position.unwrap_or(u32::MAX));
-        if !results.symbols.is_empty() {
-            return results;
-        }
+        let mut results = symbol_table.get_content_symbol(on_symbol, name, position.unwrap_or(u32::MAX));
+        // A narrowing symbol re-types a name, it does not bind it, so a path reaching only
+        // narrowings has not defined the name here and the outer scope still supplies it.
+        if results.symbols.iter().any(|&sym| !symbol_table.is_narrowing_symbol(sym))
+            || (results.always_defined && !results.symbols.is_empty()) {
+                return results;
+            }
         let on_symbol_type = on_symbol.typ();
-        if !matches!(on_symbol_type, SymType::FILE | SymType::PACKAGE(_) | SymType::ROOT) {
+        let outer = if !matches!(on_symbol_type, SymType::FILE | SymType::PACKAGE(_) | SymType::ROOT) {
             let mut parent = symbol_table.parent(on_symbol).unwrap();
             while let SymbolKey::Class(c) = parent {
                 parent = symbol_table[c].parent().into();
@@ -1880,7 +1909,10 @@ impl SymbolTable {
             Self::infer_name(odoo, builtins, name, None)
         } else {
             ContentSymbols::default()
-        }
+        };
+        results.always_defined = outer.always_defined;
+        results.symbols.extend(outer.symbols);
+        results
     }
 
     /* Hook for get_member_symbol
