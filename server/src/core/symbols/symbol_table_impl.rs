@@ -11,7 +11,7 @@ use crate::{
         build_scheduler::BuildScheduler,
         diagnostics::{create_diagnostic, DiagnosticCode},
         entry_point::EntryPoint,
-        evaluation::{Evaluation, EvaluationSymbolPtr},
+        evaluation::{Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak},
         evaluation_context::{Context, ContextKey, ContextValue},
         file_mgr::{FileInfo, FileMgr, NoqaInfo},
         model::Model,
@@ -1660,11 +1660,48 @@ impl SymbolTable {
                 for eval in evaluations {
                     symbols.push_back(eval.symbol.get_symbol(session, context, &mut vec![], None));
                 }
+            } else if let SymbolKey::Variable(variable_key) = symbol && !session.st()[variable_key].narrowed_from.is_empty() {
+                // Jump over narrowing symbols, keeping the ptr's own data: the hop is transparent.
+                let narrowed_from = session.st()[variable_key].narrowed_from.clone();
+                for shadowed in narrowed_from {
+                    symbols.push_back(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak {
+                        weak: shadowed,
+                        context: w.context.clone(),
+                        instance: w.instance,
+                        is_super: w.is_super,
+                    }));
+                }
             } else {
                 res.push(current_sym);
             }
         }
         res
+    }
+
+    /// Whether `candidate` *is* `target`, or transitively narrows from it (nested narrowings chain)
+    pub fn is_or_narrowed_from(&self, candidate: SymbolKey, target: SymbolKey) -> bool {
+        if candidate == target {
+            return true; // common case, before allocating for the walk
+        }
+        let mut seen = HashSet::default();
+        let mut queue = VecDeque::new();
+        queue.push_back(candidate);
+        while let Some(current) = queue.pop_front() {
+            if current == target {
+                return true;
+            }
+            if !seen.insert(current) {
+                continue;
+            }
+            if let SymbolKey::Variable(variable_key) = current {
+                for shadowed in self[variable_key].narrowed_from.iter() {
+                    if let Some(upgraded) = shadowed.upgrade(self) {
+                        queue.push_back(upgraded);
+                    }
+                }
+            }
+        }
+        false
     }
 
     pub fn all_symbols(&self, target: SymbolKey) -> Vec<SymbolKey> {
