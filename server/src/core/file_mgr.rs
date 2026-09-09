@@ -783,24 +783,46 @@ impl FileInfo {
         }).cloned().collect::<Vec<_>>();
     }
 
+    fn js_diagnostics(&self) -> Vec<Diagnostic> {
+        // If there are syntax diagnostics, we only send the ones from OXC, to be less noisy
+        if let Some(syntax_diags) = self.diagnostics.get(&DiagnosticSource::JS_OXC_SYNTAX)
+            && !syntax_diags.is_empty()
+        {
+            return syntax_diags.clone();
+        }
+        let mut diagnostics = vec![];
+        diagnostics.extend(self.diagnostics.get(&DiagnosticSource::JS_OXC_LINT).cloned().unwrap_or_default());
+        diagnostics.extend(self.diagnostics.get(&DiagnosticSource::JS_VALIDATION).cloned().unwrap_or_default());
+        // Filter out tsserver diagnostics that are covered by oxc
+        for source in [
+            DiagnosticSource::JS_TSSERVER_SYNTAX,
+            DiagnosticSource::JS_TSSERVER_SEMANTIC,
+            DiagnosticSource::JS_TSSERVER_SUGGESTION,
+        ] {
+            let Some(source_diags) = self.diagnostics.get(&source) else { continue };
+            for diagnostic in source_diags {
+                let Some(NumberOrString::String(code)) = &diagnostic.code else { continue };
+                if TSSERVER_DIAGS_COVERED_BY_OXC.contains(&code.as_str()) { continue }
+                diagnostics.push(diagnostic.clone());
+            }
+        }
+        diagnostics
+    }
+
     pub fn publish_diagnostics(&mut self, session: &mut SessionInfo) {
         if self.need_push {
             let mut all_diagnostics = Vec::new();
 
-            let is_js = matches!(self.file_info_ast.borrow().ast, Ast::JsAst(_));
-            //We are checking ARCH as it contains Syntax diagnostics for tsserver
-            let syntax_diags = self.diagnostics.get(&DiagnosticSource::JS_OXC);
-            let has_syntax_diags = is_js && syntax_diags.map(|v| !v.is_empty()).unwrap_or(false);
-            let diag_iter: Box<dyn Iterator<Item = &Diagnostic>> = if has_syntax_diags {
-                // If there is syntax diagnostics, we only send the ones from OXC, to be less noisy
-                Box::new(self.diagnostics.get(&DiagnosticSource::JS_OXC).unwrap().iter())
+            let is_js = self.file_info_ast.borrow().ast.kind() == AstKind::JsAst;
+            let diagnostics = if is_js {
+                Self::js_diagnostics(self)
             } else {
-                Box::new(self.diagnostics.values().flatten())
+                self.diagnostics.values().flatten().cloned().collect()
             };
 
-            'diagnostics: for d in diag_iter {
+            'diagnostics: for d in diagnostics {
                 //check noqa lines
-                let updated = self.update_range(d.clone(), session.sync_odoo.encoding);
+                let updated = self.update_range(d, session.sync_odoo.encoding);
                 let updated_line = updated.range.start.line;
                 if let Some(noqa_line) = self.noqas_lines.get(&updated_line) {
                     match noqa_line {
