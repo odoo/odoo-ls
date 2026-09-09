@@ -199,9 +199,11 @@ impl PythonValidator {
                             BuildScheduler::build_now(session, sym.unwrap_buildable_key(), BuildSteps::ARCH);
                         }
                         if session.st().ready_for_step(sym.unwrap_buildable_key(), BuildSteps::ARCH_EVAL) {
+                            crate::core::perf_probe::LAZY_BUILD_NOW_ARCH_EVAL_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                             BuildScheduler::build_now(session, sym.unwrap_buildable_key(), BuildSteps::ARCH_EVAL);
                         }
                         if session.st().ready_for_step(sym.unwrap_buildable_key(), BuildSteps::ODOO_FUNCTION_AE) {
+                            crate::core::perf_probe::LAZY_BUILD_NOW_FUNCTION_AE_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                             BuildScheduler::build_now(session, sym.unwrap_buildable_key(), BuildSteps::ODOO_FUNCTION_AE);
                         }
                         if session.st().ready_for_step(sym.unwrap_buildable_key(), BuildSteps::VALIDATION) {
