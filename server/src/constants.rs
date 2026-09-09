@@ -16,22 +16,6 @@ pub const DEBUG_REBUILD_NOW: bool = false;
 pub const DEBUG_BORROW_GUARDS: bool = false;
 pub const DEBUG_SYMBOL_TABLE_METRICS: bool = false;
 pub const DEBUG_PRE_PARSER: bool = false;
-/// Perf experiment (see the ODOO_FUNCTION_AE / "add function arch step" work):
-/// when `true` (current behavior), every non-external (or opened) method's
-/// body is proactively visited during its class's ARCH pass and the method
-/// is individually queued through ARCH_EVAL/ODOO_FUNCTION_AE, guaranteeing
-/// every method's arch+arch_eval is done before any file starts VALIDATION -
-/// needed for the not-yet-implemented ext-symbols feature. When `false`,
-/// methods are skipped here (as before that work) and instead built lazily,
-/// on demand, only when `PythonValidator::validate_body` reaches them -
-/// which is far cheaper today since nothing yet relies on the global
-/// ordering guarantee. Toggle to measure/attribute the cost of that
-/// guarantee. Plain (non-method) functions are unaffected either way.
-pub const EAGER_METHOD_ARCH_BUILD: bool = true;
-/// Debug-only timing probes around individually-built `Function` symbols
-/// (see `EAGER_METHOD_ARCH_BUILD`). See `crate::core::perf_probe`.
-pub const DEBUG_PERF_PROBE: bool = false;
-pub const PERF_PROBE_AST_WALK_OUTPUT_PATH: &str = "ast_walk_records.json";
 
 //type DebugYarn = String;
 
@@ -101,10 +85,9 @@ impl fmt::Display for SymType {
 
 #[derive(Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Copy, Clone)]
 pub enum BuildSteps {
-    ARCH             = 0,
-    ARCH_EVAL        = 1,
-    ODOO_FUNCTION_AE = 2,
-    VALIDATION       = 3,
+    ARCH       = 0,
+    ARCH_EVAL  = 1,
+    VALIDATION = 2,
 }
 
 impl From<i32> for BuildSteps {
@@ -112,8 +95,7 @@ impl From<i32> for BuildSteps {
         match value {
             0 => BuildSteps::ARCH,
             1 => BuildSteps::ARCH_EVAL,
-            2 => BuildSteps::ODOO_FUNCTION_AE,
-            3 => BuildSteps::VALIDATION,
+            2 => BuildSteps::VALIDATION,
             _ => panic!("Invalid value for BuildSteps: {}", value),
         }
     }
@@ -124,18 +106,17 @@ pub enum DiagnosticSource {
     PY_SYNTAX              = 0,
     PY_ARCH                = 1,
     PY_ARCH_EVAL           = 2,
-    PY_ODOO_FUNCTION_AE    = 3,
-    PY_VALIDATION          = 4,
-    XML_SYNTAX             = 5,
-    XML_ARCH               = 6,
-    XML_VALIDATION         = 7,
-    CSV_SYNTAX             = 8,
-    CSV_VALIDATION         = 9,
-    JS_OXC                 = 10,
-    JS_TSSERVER_SYNTAX     = 11,
-    JS_TSSERVER_SEMANTIC   = 12,
-    JS_TSSERVER_SUGGESTION = 13,
-    JS_VALIDATION          = 14,
+    PY_VALIDATION          = 3,
+    XML_SYNTAX             = 4,
+    XML_ARCH               = 5,
+    XML_VALIDATION         = 6,
+    CSV_SYNTAX             = 7,
+    CSV_VALIDATION         = 8,
+    JS_OXC                 = 9,
+    JS_TSSERVER_SYNTAX     = 10,
+    JS_TSSERVER_SEMANTIC   = 11,
+    JS_TSSERVER_SUGGESTION = 12,
+    JS_VALIDATION          = 13,
 }
 
 impl From<BuildSteps> for DiagnosticSource {
@@ -143,7 +124,6 @@ impl From<BuildSteps> for DiagnosticSource {
         match value {
             BuildSteps::ARCH => DiagnosticSource::PY_ARCH,
             BuildSteps::ARCH_EVAL => DiagnosticSource::PY_ARCH_EVAL,
-            BuildSteps::ODOO_FUNCTION_AE => DiagnosticSource::PY_ODOO_FUNCTION_AE,
             BuildSteps::VALIDATION => DiagnosticSource::PY_VALIDATION,
         }
     }

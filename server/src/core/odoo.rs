@@ -715,11 +715,8 @@ impl SyncOdoo {
             if let Some(mut builder) = PythonArchBuilder::new(session.st(), main_entry.clone(), module.into()) {
                 builder.load_arch(session);
             }
-            // Drain ARCH/ARCH_EVAL only. ODOO_FUNCTION_AE is deferred until every
-            // module has run deferred_subfunc_invalidation below - draining it here,
-            // per module, would build a method now only to have a later module's
-            // Model::add_dependents_to_validation invalidate and rebuild it again.
-            while BuildScheduler::build_one(session, &main_entry, false, false) {
+            // Drain build queues, skip validation
+            while BuildScheduler::build_one(session, &main_entry, false) {
                 if session.sync_odoo.terminate_rebuild.load(Ordering::Relaxed) { return; }
             }
 
@@ -733,17 +730,14 @@ impl SyncOdoo {
         // Run deferred subfunction invalidations
         if let Some(mut files) = session.sync_odoo.deferred_subfunc_invalidation.take() {
             while let Some(file) = files.pop_front_valid(session.st()) {
-                SymbolTable::invalidate_inner_function_to_func_ae(session, file);
+                SymbolTable::invalidate_sub_functions(session, file);
             }
         }
-        // Drain ODOO_FUNCTION_AE (now that invalidations above have settled) + validation queue
-        let mut total_items = BuildScheduler::get_rebuild_queue_size(session) as u32;
-        while BuildScheduler::build_one(session, &main_entry, true, true) {
+        // Drain validation queue
+        let total_items = BuildScheduler::validation_queue_len(session) as u32;
+        while BuildScheduler::build_one(session, &main_entry, true) {
             if session.sync_odoo.terminate_rebuild.load(Ordering::Relaxed) { return; }
-            let items_left = BuildScheduler::get_rebuild_queue_size(session) as u32;
-            if items_left > total_items {
-                total_items = items_left;
-            }
+            let items_left = BuildScheduler::validation_queue_len(session) as u32;
             // report progress (total_items > 0, otherwise loop wouldn't run)
             reporter.report_progress(BUILD_PHASE_WEIGHT + (total_items - items_left) * (VALIDATION_PHASE_WEIGHT) / total_items);
         }
@@ -752,8 +746,6 @@ impl SyncOdoo {
         reporter.end();
         info!("End building modules. {} modules loaded", modules_count);
         session.log_message(MessageType::INFO, format!("End building modules. {} modules loaded", modules_count));
-        crate::core::perf_probe::log_summary();
-        crate::core::perf_probe::dump_ast_walk_records(PERF_PROBE_AST_WALK_OUTPUT_PATH);
         session.sync_odoo.state_init = InitState::ODOO_READY;
     }
 
@@ -840,7 +832,6 @@ impl SyncOdoo {
             BuildScheduler::build_now(session, func_file, BuildSteps::ARCH_EVAL);
             BuildScheduler::build_now(session, function_key, BuildSteps::ARCH);
             BuildScheduler::build_now(session, function_key, BuildSteps::ARCH_EVAL);
-            BuildScheduler::build_now(session, function_key, BuildSteps::ODOO_FUNCTION_AE);
         }
     }
 

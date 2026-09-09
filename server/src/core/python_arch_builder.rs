@@ -8,10 +8,10 @@ use ruff_text_size::{Ranged, TextRange, TextSize};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::vec;
-use tracing::{info, warn};
+use tracing::{trace, warn};
 
 use crate::constants::{
-    BuildStatus, BuildSteps, DEBUG_STEPS, DEBUG_STEPS_ONLY_INTERNAL, DiagnosticSource, EAGER_METHOD_ARCH_BUILD, OYarn, SymType
+    BuildStatus, BuildSteps, DEBUG_STEPS, DEBUG_STEPS_ONLY_INTERNAL, DiagnosticSource, OYarn, SymType
 };
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
@@ -69,7 +69,7 @@ impl PythonArchBuilder {
             return;
         }
         if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !session.st().is_external(symbol)) {
-            info!("ARCH       - PYTHON {} - {}", session.st().path(self.file), session.st().name(symbol));
+            trace!("ARCH       - PYTHON {} - {}", session.st().path(self.file), session.st().name(symbol));
         }
         session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
         let path = session.st().file_path(self.file).to_string();
@@ -772,38 +772,12 @@ impl PythonArchBuilder {
         session.st_mut()[function_key].noqas = noqa.clone();
         session.current_noqa = noqa;
         //visit body
-        // Methods (functions nested in a class) are, unless EAGER_METHOD_ARCH_BUILD is on,
-        // left PENDING here and built lazily on demand by PythonValidator::validate_body
-        // instead - see the constant's doc for why.
-        let is_method_in_file = self.file_mode
-            && session.st().get_in_parents(function_key.into(), &[SymType::CLASS], true).is_some();
-        // A nested closure/local helper (immediate parent is a Function, not a
-        // Class/File/Module/PythonPackage) never needs its *own* independent
-        // ARCH_EVAL/ODOO_FUNCTION_AE queue entry: whoever builds its enclosing
-        // function - now or later, eager or lazy - recurses into it inline via
-        // visit_sub_stmts regardless (see PythonArchEval::_visit_function_def),
-        // so scheduling it too is pure waste. Measured: 97% of the methods
-        // eagerly built but never touched by validation were nested closures,
-        // not real class methods - this is exactly that superset, filtered out
-        // at the root. Note this only suppresses the `queue()` below - the ARCH
-        // visit itself (building the closure's own symbol tree) still has to
-        // happen unconditionally here, since `self.file_mode` doesn't change
-        // as we recurse into an enclosing function's body within one pass, so
-        // this is the only place that walk would otherwise happen.
-        let is_nested_closure = matches!(session.st().parent(function_key), Some(SymbolKey::Function(_)));
-        if EAGER_METHOD_ARCH_BUILD || !is_method_in_file {
-            let _perf_timer = is_method_in_file.then(|| crate::core::perf_probe::ScopeTimer::new(
-                &crate::core::perf_probe::METHOD_ARCH_VISIT_NS, &crate::core::perf_probe::METHOD_ARCH_VISIT_CALLS));
+        if !self.file_mode || session.st().get_in_parents(function_key.into(), &[SymType::CLASS], true).is_none() {
             session.st_mut()[function_key].set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
-            if !session.st().is_external(function_key.into()) || !self.file_mode || self.file_info.as_ref().unwrap().borrow().opened {
-                self.sym_stack.push(function_key.into());
-                self.visit_node(session, &func_def.body);
-                self.sym_stack.pop();
-                session.st_mut().set_build_status(function_key.into(), BuildSteps::ARCH, BuildStatus::DONE);
-                if !is_nested_closure {
-                    BuildScheduler::queue(session, function_key);
-                }
-            }
+            self.sym_stack.push(function_key.into());
+            self.visit_node(session, &func_def.body);
+            self.sym_stack.pop();
+            session.st_mut().set_build_status(function_key.into(), BuildSteps::ARCH, BuildStatus::DONE);
         }
         if add_noqa {
             session.noqas_stack.pop();
