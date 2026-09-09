@@ -112,11 +112,12 @@ pub enum DiagnosticSource {
     XML_VALIDATION         = 6,
     CSV_SYNTAX             = 7,
     CSV_VALIDATION         = 8,
-    JS_OXC                 = 9,
-    JS_TSSERVER_SYNTAX     = 10,
-    JS_TSSERVER_SEMANTIC   = 11,
-    JS_TSSERVER_SUGGESTION = 12,
-    JS_VALIDATION          = 13,
+    JS_OXC_SYNTAX          = 9,
+    JS_OXC_LINT            = 10,
+    JS_TSSERVER_SYNTAX     = 11,
+    JS_TSSERVER_SEMANTIC   = 12,
+    JS_TSSERVER_SUGGESTION = 13,
+    JS_VALIDATION          = 14,
 }
 
 impl From<BuildSteps> for DiagnosticSource {
