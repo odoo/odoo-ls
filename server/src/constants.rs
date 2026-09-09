@@ -16,6 +16,22 @@ pub const DEBUG_REBUILD_NOW: bool = false;
 pub const DEBUG_BORROW_GUARDS: bool = false;
 pub const DEBUG_SYMBOL_TABLE_METRICS: bool = false;
 pub const DEBUG_PRE_PARSER: bool = false;
+/// Perf experiment (see the ODOO_FUNCTION_AE / "add function arch step" work):
+/// when `true` (current behavior), every non-external (or opened) method's
+/// body is proactively visited during its class's ARCH pass and the method
+/// is individually queued through ARCH_EVAL/ODOO_FUNCTION_AE, guaranteeing
+/// every method's arch+arch_eval is done before any file starts VALIDATION -
+/// needed for the not-yet-implemented ext-symbols feature. When `false`,
+/// methods are skipped here (as before that work) and instead built lazily,
+/// on demand, only when `PythonValidator::validate_body` reaches them -
+/// which is far cheaper today since nothing yet relies on the global
+/// ordering guarantee. Toggle to measure/attribute the cost of that
+/// guarantee. Plain (non-method) functions are unaffected either way.
+pub const EAGER_METHOD_ARCH_BUILD: bool = true;
+/// Debug-only timing probes around individually-built `Function` symbols
+/// (see `EAGER_METHOD_ARCH_BUILD`). See `crate::core::perf_probe`.
+pub const DEBUG_PERF_PROBE: bool = false;
+pub const PERF_PROBE_AST_WALK_OUTPUT_PATH: &str = "ast_walk_records.json";
 
 //type DebugYarn = String;
 

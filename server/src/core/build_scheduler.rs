@@ -35,28 +35,41 @@ impl BuildScheduler {
         }
     }
 
-    /// Build one item from the build queues, preferably ARCH, then ARCH_EVAL, then VALIDATION if `validation` is `true`.
+    /// Build one item from the build queues, preferably ARCH, then ARCH_EVAL,
+    /// then ODOO_FUNCTION_AE if `process_function_ae` is `true`, then
+    /// VALIDATION if `validation` is `true`.
     /// Returns true if an item was built, false if all queues are empty.
-    pub fn build_one(session: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, validation: bool) -> bool {
+    ///
+    /// `process_function_ae` lets a caller drain ARCH/ARCH_EVAL without
+    /// touching ODOO_FUNCTION_AE yet - see `SyncOdoo::build_modules`, which
+    /// defers the whole ODOO_FUNCTION_AE phase until after
+    /// `deferred_subfunc_invalidation` has run for every module. Draining it
+    /// per-module instead builds a method, has a later module's
+    /// `Model::add_dependents_to_validation` invalidate it back to PENDING,
+    /// then builds it again - a real, measured 66% duplicate-build rate on
+    /// class methods in a large Odoo + Enterprise checkout.
+    pub fn build_one(session: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, process_function_ae: bool, validation: bool) -> bool {
         while let Some(symbol) = bs!(session).rebuild_arch.pop_front_valid(&session.sync_odoo.symbol_table) {
-            if let Some(python_buildable) = symbol.as_python_buildable() 
+            if let Some(python_buildable) = symbol.as_python_buildable()
             && let Some(mut builder) = PythonArchBuilder::new(session.st(), entry.clone(), python_buildable) {
                 builder.load_arch(session);
                 return true;
             }
         }
         while let Some(symbol) = bs!(session).rebuild_arch_eval.pop_front_valid(&session.sync_odoo.symbol_table) {
-            if let Some(python_buildable) = symbol.as_python_buildable() 
+            if let Some(python_buildable) = symbol.as_python_buildable()
             && let Some(mut builder) = PythonArchEval::new(session.st(), entry.clone(), python_buildable, false) {
                 builder.eval_arch(session);
                 return true;
             }
         }
-        while let Some(symbol) = bs!(session).rebuild_odoo_function_ae.pop_front_valid(&session.sync_odoo.symbol_table) {
-            if let Some(python_buildable) = symbol.as_python_buildable() 
-            && let Some(mut builder) = PythonOdooFunctionAE::new(entry.clone(), python_buildable) {
-                builder.build_function_ae(session);
-                return true;
+        if process_function_ae {
+            while let Some(symbol) = bs!(session).rebuild_odoo_function_ae.pop_front_valid(&session.sync_odoo.symbol_table) {
+                if let Some(python_buildable) = symbol.as_python_buildable()
+                && let Some(mut builder) = PythonOdooFunctionAE::new(entry.clone(), python_buildable) {
+                    builder.build_function_ae(session);
+                    return true;
+                }
             }
         }
         if validation && let Some(symbol) = bs!(session).rebuild_validation.pop_front_valid(&session.sync_odoo.symbol_table) {

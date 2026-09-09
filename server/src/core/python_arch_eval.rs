@@ -1,6 +1,7 @@
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use crate::core::file_mgr::FileInfo;
+use crate::core::perf_probe;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::vec;
@@ -69,10 +70,16 @@ impl PythonArchEval {
         if !session.st().ready_for_step(buildable_key, self.current_step) {
             return;
         }
+        let _perf_timer = (!self.file_mode)
+            .then(|| perf_probe::ScopeTimer::new(&perf_probe::INDIVIDUAL_EVAL_ARCH_NS, &perf_probe::INDIVIDUAL_EVAL_ARCH_CALLS));
         if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !session.st().is_external(symbol)) {
             info!("{:?}  - PYTHON {} - {}", self.current_step, session.st().path(self.file), session.st().name(symbol));
         }
-        let (file_info_rc, _) = FileMgr::get_or_recreate_file_info(session, self.file);
+        let (file_info_rc, _) = {
+            let _t = (!self.file_mode)
+                .then(|| perf_probe::ScopeTimer::new(&perf_probe::FILE_INFO_FETCH_NS, &perf_probe::FILE_INFO_FETCH_CALLS));
+            FileMgr::get_or_recreate_file_info(session, self.file)
+        };
         if self.current_step == BuildSteps::ARCH_EVAL
         && session.st().get_in_parents(symbol, &[SymType::CLASS], true).is_some() {
             session.st_mut().set_build_status(buildable_key, self.current_step, BuildStatus::DONE);
@@ -118,7 +125,29 @@ impl PythonArchEval {
                     }
                 }
             };
-            self.visit_sub_stmts(session, ast);
+            {
+                let _t = (!self.file_mode)
+                    .then(|| perf_probe::ScopeTimer::new(&perf_probe::AST_WALK_NS, &perf_probe::AST_WALK_CALLS));
+                if !self.file_mode {
+                    let file_key: SymbolKey = self.file.into();
+                    let range = session.st().range(symbol);
+                    perf_probe::record_ast_walk(perf_probe::AstWalkRecord {
+                        step: format!("{:?}", self.current_step),
+                        symbol: format!(
+                            "{}::{}@{}-{}",
+                            session.st().debug_path(file_key),
+                            session.st().debug_path(symbol),
+                            range.start().to_u32(),
+                            range.end().to_u32(),
+                        ),
+                        function_is_external: session.st().is_external(symbol),
+                        file_is_external: session.st().is_external(file_key),
+                        file_in_workspace: session.st().in_workspace(file_key),
+                        file_opened: file_info_rc.borrow().opened,
+                    });
+                }
+                self.visit_sub_stmts(session, ast);
+            }
             if !self.file_mode && let Some(func_stmt) = maybe_func_stmt {
                 let f = symbol.unwrap_function_key();
                 self.diagnostics.extend(

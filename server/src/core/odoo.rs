@@ -715,8 +715,11 @@ impl SyncOdoo {
             if let Some(mut builder) = PythonArchBuilder::new(session.st(), main_entry.clone(), module.into()) {
                 builder.load_arch(session);
             }
-            // Drain build queues, skip validation
-            while BuildScheduler::build_one(session, &main_entry, false) {
+            // Drain ARCH/ARCH_EVAL only. ODOO_FUNCTION_AE is deferred until every
+            // module has run deferred_subfunc_invalidation below - draining it here,
+            // per module, would build a method now only to have a later module's
+            // Model::add_dependents_to_validation invalidate and rebuild it again.
+            while BuildScheduler::build_one(session, &main_entry, false, false) {
                 if session.sync_odoo.terminate_rebuild.load(Ordering::Relaxed) { return; }
             }
 
@@ -733,9 +736,9 @@ impl SyncOdoo {
                 SymbolTable::invalidate_inner_function_to_func_ae(session, file);
             }
         }
-        // Drain validation queue
+        // Drain ODOO_FUNCTION_AE (now that invalidations above have settled) + validation queue
         let mut total_items = BuildScheduler::get_rebuild_queue_size(session) as u32;
-        while BuildScheduler::build_one(session, &main_entry, true) {
+        while BuildScheduler::build_one(session, &main_entry, true, true) {
             if session.sync_odoo.terminate_rebuild.load(Ordering::Relaxed) { return; }
             let items_left = BuildScheduler::get_rebuild_queue_size(session) as u32;
             if items_left > total_items {
@@ -749,6 +752,8 @@ impl SyncOdoo {
         reporter.end();
         info!("End building modules. {} modules loaded", modules_count);
         session.log_message(MessageType::INFO, format!("End building modules. {} modules loaded", modules_count));
+        crate::core::perf_probe::log_summary();
+        crate::core::perf_probe::dump_ast_walk_records(PERF_PROBE_AST_WALK_OUTPUT_PATH);
         session.sync_odoo.state_init = InitState::ODOO_READY;
     }
 

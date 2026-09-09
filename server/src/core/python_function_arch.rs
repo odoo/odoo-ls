@@ -23,6 +23,8 @@ impl PythonOdooFunctionAE {
         })
     }
     pub fn build_function_ae(&mut self, session: &mut SessionInfo) {
+        let _perf_timer = crate::core::perf_probe::ScopeTimer::new(
+            &crate::core::perf_probe::FUNCTION_AE_NS, &crate::core::perf_probe::FUNCTION_AE_CALLS);
         let symbol = self.sym_stack[0];
         let file = session.st().get_file(symbol).unwrap();
         if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !session.st().is_external(symbol)) {

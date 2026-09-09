@@ -11,7 +11,7 @@ use std::vec;
 use tracing::{info, warn};
 
 use crate::constants::{
-    BuildStatus, BuildSteps, DEBUG_STEPS, DEBUG_STEPS_ONLY_INTERNAL, DiagnosticSource, OYarn
+    BuildStatus, BuildSteps, DEBUG_STEPS, DEBUG_STEPS_ONLY_INTERNAL, DiagnosticSource, EAGER_METHOD_ARCH_BUILD, OYarn, SymType
 };
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
@@ -772,13 +772,22 @@ impl PythonArchBuilder {
         session.st_mut()[function_key].noqas = noqa.clone();
         session.current_noqa = noqa;
         //visit body
-        session.st_mut()[function_key].set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
-        if !session.st().is_external(function_key.into()) || !self.file_mode || self.file_info.as_ref().unwrap().borrow().opened {
-            self.sym_stack.push(function_key.into());
-            self.visit_node(session, &func_def.body);
-            self.sym_stack.pop();
-            session.st_mut().set_build_status(function_key.into(), BuildSteps::ARCH, BuildStatus::DONE);
-            BuildScheduler::queue(session, function_key);
+        // Methods (functions nested in a class) are, unless EAGER_METHOD_ARCH_BUILD is on,
+        // left PENDING here and built lazily on demand by PythonValidator::validate_body
+        // instead - see the constant's doc for why.
+        let is_method_in_file = self.file_mode
+            && session.st().get_in_parents(function_key.into(), &[SymType::CLASS], true).is_some();
+        if EAGER_METHOD_ARCH_BUILD || !is_method_in_file {
+            let _perf_timer = is_method_in_file.then(|| crate::core::perf_probe::ScopeTimer::new(
+                &crate::core::perf_probe::METHOD_ARCH_VISIT_NS, &crate::core::perf_probe::METHOD_ARCH_VISIT_CALLS));
+            session.st_mut()[function_key].set_build_status(BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
+            if !session.st().is_external(function_key.into()) || !self.file_mode || self.file_info.as_ref().unwrap().borrow().opened {
+                self.sym_stack.push(function_key.into());
+                self.visit_node(session, &func_def.body);
+                self.sym_stack.pop();
+                session.st_mut().set_build_status(function_key.into(), BuildSteps::ARCH, BuildStatus::DONE);
+                BuildScheduler::queue(session, function_key);
+            }
         }
         if add_noqa {
             session.noqas_stack.pop();
