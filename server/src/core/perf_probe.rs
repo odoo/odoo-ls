@@ -23,6 +23,13 @@ pub struct AstWalkRecord {
     pub file_is_external: bool,
     pub file_in_workspace: bool,
     pub file_opened: bool,
+    /// "Class", "Function", "File"/"Module"/... - the kind of this
+    /// function's *immediate* parent. "Function" means this is a nested
+    /// closure/helper defined inside another function, not a direct class
+    /// method - such nested functions get re-visited inline whenever their
+    /// enclosing function is built anyway (eager or lazy), so eagerly
+    /// scheduling them as their own top-level queue item is redundant.
+    pub immediate_parent_kind: &'static str,
 }
 
 pub static AST_WALK_RECORDS: Mutex<Vec<AstWalkRecord>> = Mutex::new(Vec::new());
