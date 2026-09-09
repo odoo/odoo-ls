@@ -129,7 +129,8 @@ pub struct ParsedJs {
     pub decls: Vec<JsDeclaration>,
     pub imports: Vec<String>,
     pub reexports: Vec<String>,
-    pub diagnostics: Vec<Diagnostic>,
+    pub syntax_diagnostics: Vec<OxcDiagnostic>,
+    pub lint_diagnostics: Vec<OxcDiagnostic>,
     pub has_exports: bool,
 }
 
@@ -177,7 +178,7 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
     let source_type = SourceType::from_path(os_path).unwrap_or_default();
     let allocator = Allocator::default();
     let ret = Parser::new(&allocator, contents, source_type).parse();
-    let mut diags: Vec<OxcDiagnostic> = ret.errors;
+    let mut syntax_diagnostics: Vec<OxcDiagnostic> = ret.errors;
     let parser_module_record = ret.module_record;
 
     let (imports, reexports, exports) = FileInfo::collect_js_imports(&parser_module_record);
@@ -196,17 +197,22 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
 
     // Semantic analysis and the linter exist only to produce diagnostics, and
     // a vendored lib's are dropped, so stop here for them.
-    if is_lib {
-        return ParsedJs { template_refs, component_descriptors, decls, imports, reexports, has_exports, diagnostics: vec![] };
+    if is_lib || !syntax_diagnostics.is_empty() {
+        return ParsedJs { template_refs, component_descriptors, decls, imports, reexports, has_exports, syntax_diagnostics, lint_diagnostics: vec![] };
     }
 
+    // Look for more synxtax errors
     let semantic_ret = SemanticBuilder::new()
         .with_cfg(true)
         .with_check_syntax_error(true)
         .build(program);
-    diags.extend(semantic_ret.errors);
-    let semantic = semantic_ret.semantic;
+    syntax_diagnostics.extend(semantic_ret.errors);
 
+    if !syntax_diagnostics.is_empty() {
+        return ParsedJs { template_refs, component_descriptors, decls, imports, reexports, has_exports, syntax_diagnostics, lint_diagnostics: vec![] };
+    }
+    // Look for semantic errors
+    let semantic = semantic_ret.semantic;
     // Build the linter module record and context
     let module_record = Arc::new(ModuleRecord::new(os_path, &parser_module_record, &semantic));
     let context_sub_host = ContextSubHost::new(semantic, module_record, 0);
@@ -223,13 +229,9 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
     );
     let linter = oxc_linter::Linter::new(LintOptions::default(), config_store, None);
     let messages = linter.run(os_path, vec![context_sub_host], &allocator);
-    diags.extend(messages.into_iter().map(|m| m.error));
+    let lint_diagnostics = messages.into_iter().map(|m| m.error).collect();
 
-    let uri = FileMgr::pathname2uri(path);
-    let diagnostics = diags.iter().flat_map(
-        |d| js_utils::oxc_diagnostic_to_lsp_diagnostic(d, &uri)
-    ).collect();
-    ParsedJs { template_refs, component_descriptors, decls, imports, reexports, has_exports, diagnostics }
+    ParsedJs { template_refs, component_descriptors, decls, imports, reexports, has_exports, syntax_diagnostics, lint_diagnostics }
 }
 
 #[derive(Debug, Clone)]
@@ -603,7 +605,11 @@ impl FileInfo {
             js_ast.js_reexports = parsed.reexports;
             js_ast.has_exports = parsed.has_exports;
         }
-        self.replace_diagnostics(DiagnosticSource::JS_OXC, parsed.diagnostics); //OXC will use SYNTAX. others are reserved to tsserver
+        let uri = FileMgr::pathname2uri(&self.uri);
+        let to_lsp_diag = |diags: Vec<OxcDiagnostic>|
+            diags.iter().flat_map(|d| js_utils::oxc_diagnostic_to_lsp_diagnostic(d, &uri)).collect();
+        self.replace_diagnostics(DiagnosticSource::JS_OXC_SYNTAX, to_lsp_diag(parsed.syntax_diagnostics));
+        self.replace_diagnostics(DiagnosticSource::JS_OXC_LINT, to_lsp_diag(parsed.lint_diagnostics));
     }
 
     fn collect_js_imports(parser_module_record: &oxc::syntax::module_record::ModuleRecord) -> (Vec<String>, Vec<String>, HashMap<String, JsExportKind>) {
@@ -1442,7 +1448,8 @@ export class Counter extends Component {
     fn a_lib_module_yields_no_decls_or_diagnostics() {
         let parsed = parse_js_inner(&format!("/** @odoo-module */\n{COMPONENT}"), "/mod/static/lib/x.js");
         assert!(parsed.decls.is_empty());
-        assert!(parsed.diagnostics.is_empty());
+        assert!(parsed.syntax_diagnostics.is_empty());
+        assert!(parsed.lint_diagnostics.is_empty());
         assert!(!parse_js_inner(COMPONENT, "/mod/static/src/x.js").decls.is_empty());
     }
 }
