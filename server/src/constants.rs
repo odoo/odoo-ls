@@ -197,3 +197,20 @@ pub static mut ODOOLS_DEBUG_SYMBOL_TABLE: *const SymbolTable = std::ptr::null();
 pub fn install_debug_ptr(table: &SymbolTable) {
     unsafe { ODOOLS_DEBUG_SYMBOL_TABLE = table as *const SymbolTable; }
 }
+
+/// tsserver diags to drop: the oxc rule named next to each already catches it
+pub const TSSERVER_DIAGS_COVERED_BY_OXC: &[&str] = &[
+    "tsserver_1117",  // oxc_eslint(no-dupe-keys)
+    "tsserver_2377",  // oxc_eslint(constructor-super)
+    "tsserver_2408",  // oxc_eslint(no-setter-return)
+    "tsserver_2588",  // oxc_eslint(no-const-assign)
+    "tsserver_2629",  // oxc_eslint(no-class-assign)
+    "tsserver_2630",  // oxc_eslint(no-func-assign)
+    "tsserver_2632",  // oxc_eslint(no-import-assign)
+    "tsserver_6133",  // oxc_eslint(no-unused-vars), oxc_eslint(no-unused-private-class-members)
+    "tsserver_6192",  // oxc_eslint(no-unused-vars)
+    "tsserver_6198",  // oxc_eslint(no-unused-vars)
+    "tsserver_6199",  // oxc_eslint(no-unused-vars)
+    "tsserver_7028",  // oxc_eslint(no-unused-labels)
+    "tsserver_17009", // oxc_eslint(no-this-before-super)
+];
