@@ -131,6 +131,15 @@ impl PythonArchEval {
                 if !self.file_mode {
                     let file_key: SymbolKey = self.file.into();
                     let range = session.st().range(symbol);
+                    let immediate_parent_kind = match session.st().parent(symbol) {
+                        Some(SymbolKey::Class(_)) => "Class",
+                        Some(SymbolKey::Function(_)) => "Function",
+                        Some(SymbolKey::File(_)) => "File",
+                        Some(SymbolKey::Module(_)) => "Module",
+                        Some(SymbolKey::PythonPackage(_)) => "PythonPackage",
+                        Some(_) => "Other",
+                        None => "None",
+                    };
                     perf_probe::record_ast_walk(perf_probe::AstWalkRecord {
                         step: format!("{:?}", self.current_step),
                         symbol: format!(
@@ -144,6 +153,7 @@ impl PythonArchEval {
                         file_is_external: session.st().is_external(file_key),
                         file_in_workspace: session.st().in_workspace(file_key),
                         file_opened: file_info_rc.borrow().opened,
+                        immediate_parent_kind,
                     });
                 }
                 self.visit_sub_stmts(session, ast);
