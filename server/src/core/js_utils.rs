@@ -35,6 +35,11 @@ pub fn oxc_diagnostic_to_lsp_diagnostic(diag: &OxcDiagnostic, uri: &lsp_types::U
         Some(label) => format!("{} - {}", diag.message.clone(), label),
         None => diag.message.clone().to_string(),
     };
+    let code = if diag.code.is_some() {
+        format!("oxc_{}", diag.code)
+    } else {
+        "oxc_syntax".to_string()
+    };
     Some(lsp_types::Diagnostic {
         range,
         severity: Some(match diag.severity {
@@ -42,7 +47,7 @@ pub fn oxc_diagnostic_to_lsp_diagnostic(diag: &OxcDiagnostic, uri: &lsp_types::U
             oxc::diagnostics::Severity::Warning => lsp_types::DiagnosticSeverity::WARNING,
             oxc::diagnostics::Severity::Advice => lsp_types::DiagnosticSeverity::INFORMATION,
         }),
-        code: Some(lsp_types::NumberOrString::String(format!("oxc_{}", diag.code))),
+        code: Some(lsp_types::NumberOrString::String(code)),
         code_description: None,
         source: Some(S!(EXTENSION_NAME)),
         message,
@@ -108,6 +113,8 @@ pub fn is_headed_odoo_module(contents: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use crate::S;
+    use oxc::span::Span;
+    use std::str::FromStr;
 
     use super::*;
 
@@ -141,5 +148,27 @@ mod tests {
         assert!(!is_headed_odoo_module("// @odoo-module ignore\nexport const a = 1;\n"));
         // A header may not start on a later line: `ODOO_MODULE_RE` is anchored.
         assert!(!is_headed_odoo_module("const a = 1;\n/** @odoo-module */\n"));
+    }
+
+    fn lsp_code_of(diag: OxcDiagnostic) -> Option<lsp_types::NumberOrString> {
+        let uri = lsp_types::Uri::from_str("/a/b/c.js").unwrap();
+        oxc_diagnostic_to_lsp_diagnostic(&diag, &uri).unwrap().code
+    }
+
+    #[test]
+    fn oxc_diagnostics_always_carry_a_prefixed_code() {
+        // Parser diags have an empty `OxcCode`, which would render as the bare `oxc_`.
+        // So we call them "oxc_syntax"
+        let syntax = OxcDiagnostic::error("Unexpected token").with_label(Span::new(0, 3));
+        assert_eq!(lsp_code_of(syntax), Some(lsp_types::NumberOrString::String(S!("oxc_syntax"))));
+
+        // Lint diags keep `scope(number)`.
+        let lint = OxcDiagnostic::warn("`a` is never reassigned")
+            .with_error_code("eslint", "no-const-assign")
+            .with_label(Span::new(0, 3));
+        assert_eq!(
+            lsp_code_of(lint),
+            Some(lsp_types::NumberOrString::String(S!("oxc_eslint(no-const-assign)")))
+        );
     }
 }
