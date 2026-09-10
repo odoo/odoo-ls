@@ -20,6 +20,7 @@ use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation::{Evaluation};
 use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
 use crate::core::python_utils;
+use crate::utils::HashSet;
 use crate::features::ast_utils::AstUtils;
 use crate::threads::SessionInfo;
 
@@ -445,10 +446,12 @@ impl PythonArchEval {
     }
 
     fn handle_assigns(&mut self, session: &mut SessionInfo, assigns: Vec<Assign>, range: &TextRange){
+        let mut visited_values = HashSet::default();
         for assign in assigns.iter() {
-            if let Some(ref expr) = assign.value {
-                self.visit_expr(session, expr);
-            }
+            if let Some(ref expr) = assign.value
+                && visited_values.insert(expr.range()) {
+                    self.visit_expr(session, expr);
+                }
             match assign.target {
                 AssignTargetType::Name(ref name_expr) => {
                     let variable = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &name_expr.id, &name_expr.range);
