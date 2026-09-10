@@ -74,6 +74,12 @@ impl SymbolMgr for name {
 
     /* Add a section at the END of the sections */
     fn add_section(&mut self, range_start: TextSize, maybe_previous_indexes: Option<SectionIndex>) -> SectionRange{
+        debug_assert!(
+            self.sections.last().is_none_or(|last| last.start <= range_start.to_u32()),
+            "sections must be added in non-decreasing start order, else `get_section_for`'s \
+             reverse scan finds the wrong one: adding at {}, last is at {}",
+            range_start.to_u32(), self.sections.last().unwrap().start
+        );
         let previous_indexes = maybe_previous_indexes.unwrap_or_else(|| {
             let last_index = self.get_last_index();
             SectionIndex::INDEX(last_index)
