@@ -46,6 +46,8 @@ pub struct PythonArchBuilder {
     __all_symbols_to_add: Vec<(String, TextRange)>,
     diagnostics: Vec<Diagnostic>,
     file_info: Option<Rc<RefCell<FileInfo>>>,
+    /// Per enclosing loop, its scope and the sections a `break` leaves it from
+    break_sections: Vec<(SymbolKey, Vec<SectionIndex>)>,
 }
 
 impl PythonArchBuilder {
@@ -62,6 +64,7 @@ impl PythonArchBuilder {
             __all_symbols_to_add: Vec::new(),
             diagnostics: vec![],
             file_info: None,
+            break_sections: vec![],
         })
     }
 
@@ -339,7 +342,16 @@ impl PythonArchBuilder {
                 },
                 Stmt::Global(_stmt_global) => {},
                 Stmt::Nonlocal(_stmt_nonlocal) => {},
-                Stmt::Break(_) => {},
+                Stmt::Break(_) => {
+                    // A `break` in a nested scope is invalid Python, and its sections would not
+                    // be the loop's to merge
+                    let scope = *self.sym_stack.last().unwrap();
+                    let section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
+                    if let Some((loop_scope, breaks)) = self.break_sections.last_mut()
+                        && *loop_scope == scope {
+                            breaks.push(section);
+                        }
+                },
                 Stmt::Continue(_) => {},
                 Stmt::Pass(_) => {},
                 Stmt::IpyEscapeCommand(_) => {},
@@ -972,6 +984,14 @@ impl PythonArchBuilder {
         session.st_mut()[variable_key].narrowing_check_range = Some(check.target_range);
     }
 
+    /// Collects the sections any `break` in `body` leaves from, so the code after the loop can
+    /// continue from them as well as from the normal exit.
+    fn visit_loop_body(&mut self, session: &mut SessionInfo, body: &[Stmt]) -> Vec<SectionIndex> {
+        self.break_sections.push((*self.sym_stack.last().unwrap(), vec![]));
+        self.visit_node(session, body);
+        self.break_sections.pop().unwrap().1
+    }
+
     /// Whether `body` always ends the enclosing *function*. Not exhaustive. `break`/`continue`
     /// don't count: they only leave the loop, and what they assigned still matters after it.
     fn body_always_exits(body: &[Stmt]) -> bool {
@@ -1098,7 +1118,6 @@ impl PythonArchBuilder {
     }
 
     fn visit_for(&mut self, session: &mut SessionInfo, for_stmt: &StmtFor) {
-        // TODO: Handle breaks for sections
         let scope = *self.sym_stack.last().unwrap();
         let unpacked = python_utils::unpack_assign(&[*for_stmt.target.clone()], None, None);
         for assign in unpacked {
@@ -1122,18 +1141,21 @@ impl PythonArchBuilder {
             );
         }
 
-        self.visit_node(session, &for_stmt.body);
-        let mut stmt_sections = vec![SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index())];
+        let breaks = self.visit_loop_body(session, &for_stmt.body);
+        let body_section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
+        // Only a `break` reaches the code after the loop without the iterable running out
+        let mut stmt_sections = breaks;
 
         if !for_stmt.orelse.is_empty(){
+            // The iterable runs out immediately or after some iterations, as in `while`
             session.st_mut().as_mut_symbol_mgr(scope).add_section(
                 for_stmt.orelse[0].range().start(),
-                Some(previous_section.clone())
+                Some(SectionIndex::OR(vec![previous_section.clone(), body_section]))
             );
             self.visit_node(session, &for_stmt.orelse);
             stmt_sections.push(SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index()));
         } else {
-            stmt_sections.push(previous_section.clone());
+            stmt_sections.push(SectionIndex::OR(vec![previous_section.clone(), body_section]));
         }
 
         session.st_mut().as_mut_symbol_mgr(scope).add_section(
@@ -1246,7 +1268,6 @@ impl PythonArchBuilder {
         let previous_section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
         let mut stmt_sections = vec![previous_section.clone()];
         for case in match_stmt.cases.iter() {
-            if let Some(test_clause) = case.guard.as_ref() { self.visit_expr(session, test_clause) }
             if matches!(&case.pattern, ruff_python_ast::Pattern::MatchAs(_)){
                 stmt_sections.remove(0); // When we have a wildcard pattern, previous section is shadowed
             }
@@ -1254,7 +1275,9 @@ impl PythonArchBuilder {
                 case.range().start(),
                 Some(previous_section.clone())
             );
+            // Pattern first: the guard can read what it bound, and starts after the case
             traverse_match(&case.pattern, session.st_mut(), scope);
+            if let Some(test_clause) = case.guard.as_ref() { self.visit_expr(session, test_clause) }
             self.visit_node(session, &case.body);
             stmt_sections.push(SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index()));
         }
@@ -1265,10 +1288,11 @@ impl PythonArchBuilder {
     }
 
     fn visit_while(&mut self, session: &mut SessionInfo, while_stmt: &StmtWhile) {
-        // TODO: Handle breaks for sections
         let scope = *self.sym_stack.last().unwrap();
         let scope_as_sym_mgr = session.st_mut().as_mut_symbol_mgr(scope);
         let previous_section = SectionIndex::INDEX(scope_as_sym_mgr.get_last_index());
+        // The test runs before the body and its sections start earlier, so visit it first
+        self.visit_expr(session, &while_stmt.test);
         if let Some(first_body_stmt) = while_stmt.body.first() {
             let narrow_section = self.declare_narrowing_at(session, scope, &while_stmt.test, first_body_stmt.range().start(), None, false);
             session.st_mut().as_mut_symbol_mgr(scope).add_section(
@@ -1276,17 +1300,21 @@ impl PythonArchBuilder {
                 narrow_section
             );
         }
-        self.visit_expr(session, &while_stmt.test);
-        self.visit_node(session, &while_stmt.body);
+        let breaks = self.visit_loop_body(session, &while_stmt.body);
         let scope_as_sym_mgr = session.st_mut().as_mut_symbol_mgr(scope);
         let body_section = SectionIndex::INDEX(scope_as_sym_mgr.get_last_index());
-        let mut stmt_sections = vec![body_section];
+        // Only a `break` reaches the code after the loop without the test having failed
+        let mut stmt_sections = breaks;
 
-        // A normal (non-`break`) loop exit means the test was false - narrow it here too, same
-        // as `if`'s negative guard.
+        // The test fails before the first iteration or after some, so the exit continues from
+        // both - otherwise what the body bound is invisible in `orelse`.
+        let exit_prev = SectionIndex::OR(vec![previous_section, body_section]);
+        // A normal (non-`break`) exit means the test was false. The narrowing sits between
+        // `orelse` and the merge on purpose: it re-declares the checked name, shadowing the
+        // body's binding of it, while other names still arrive through the merge.
         let false_branch_start = loop_exit_anchor(&while_stmt.orelse, while_stmt.range().end());
-        let narrow_section = self.declare_narrowing_at(session, scope, &while_stmt.test, false_branch_start, Some(previous_section.clone()), true);
-        let false_branch_section = narrow_section.unwrap_or(previous_section);
+        let narrow_section = self.declare_narrowing_at(session, scope, &while_stmt.test, false_branch_start, Some(exit_prev.clone()), true);
+        let false_branch_section = narrow_section.unwrap_or(exit_prev);
 
         if !while_stmt.orelse.is_empty(){
             session.st_mut().as_mut_symbol_mgr(scope).add_section(
