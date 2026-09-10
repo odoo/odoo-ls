@@ -57,7 +57,7 @@ fn test_type_files_are_scoped_to_manifest_depends(session: &SessionInfo) {
 
     // module_2 depends on module_1, so both modules' declarations have to reach the same program
     // for TypeScript to merge them into one interface.
-    let from_module_2 = type_files_for(&session, "module_2");
+    let from_module_2 = type_files_for(session, "module_2");
     assert!(
         from_module_2.contains(&module_1_services),
         "a dependency's declarations must be in scope, got {from_module_2:?}"
@@ -67,7 +67,7 @@ fn test_type_files_are_scoped_to_manifest_depends(session: &SessionInfo) {
         "@types nested below static/src must be found, got {from_module_2:?}"
     );
 
-    let from_module_1 = type_files_for(&session, "module_1");
+    let from_module_1 = type_files_for(session, "module_1");
     assert!(
         from_module_1.contains(&module_1_services),
         "a module's own declarations must be in scope, got {from_module_1:?}"
@@ -95,7 +95,7 @@ fn test_importable_files_are_scoped_to_manifest_depends(session: &SessionInfo) {
     let module_1_shared = abs_path("module_1", &["src", "scoped", "shared.js"]);
     let module_2_local = abs_path("module_2", &["src", "scoped", "local.js"]);
 
-    let from_module_2 = importable_files_for(&session, "module_2");
+    let from_module_2 = importable_files_for(session, "module_2");
     assert!(
         from_module_2.contains(&module_2_local),
         "a module's own bundled JS must be a root, got {from_module_2:?}"
@@ -106,7 +106,7 @@ fn test_importable_files_are_scoped_to_manifest_depends(session: &SessionInfo) {
         from_module_2.contains(&module_1_shared),
         "a dependency's bundled JS must be a root, got {from_module_2:?}"
     );
-    let from_module_1 = importable_files_for(&session, "module_1");
+    let from_module_1 = importable_files_for(session, "module_1");
     assert!(from_module_1.contains(&module_1_shared));
     assert!(
         !from_module_1.contains(&module_2_local),
@@ -153,19 +153,19 @@ fn test_importable_prefixes_cover_the_same_closure(session: &SessionInfo) {
     let module_1_dir = format!("{}/", addons_path().join("module_1").sanitize());
     let module_2_dir = format!("{}/", addons_path().join("module_2").sanitize());
 
-    let from_module_2 = js_module_scope::importable_module_prefixes(&session, &probe("module_2"))
+    let from_module_2 = js_module_scope::importable_module_prefixes(session, &probe("module_2"))
         .expect("a file under a module's static/ belongs to that module");
     assert!(from_module_2.contains(&module_1_dir), "got {from_module_2:?}");
     assert!(from_module_2.contains(&module_2_dir), "got {from_module_2:?}");
 
     // The program is global: module_2's files reach it, so its exports are offered everywhere
     // unless this filter says otherwise.
-    let from_module_1 = js_module_scope::importable_module_prefixes(&session, &probe("module_1"))
+    let from_module_1 = js_module_scope::importable_module_prefixes(session, &probe("module_1"))
         .expect("a file under a module's static/ belongs to that module");
     assert!(from_module_1.contains(&module_1_dir), "got {from_module_1:?}");
     assert!(!from_module_1.contains(&module_2_dir), "got {from_module_1:?}");
 
     // A file outside every module has no closure to be filtered against.
     let outside = addons_path().join("not_a_module").join("elsewhere.js").sanitize();
-    assert!(js_module_scope::importable_module_prefixes(&session, &outside).is_none());
+    assert!(js_module_scope::importable_module_prefixes(session, &outside).is_none());
 }
