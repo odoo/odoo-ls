@@ -18,6 +18,7 @@ use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 use crate::core::python_utils;
+use crate::utils::HashSet;
 use crate::core::symbols::Buildable;
 use crate::core::symbols::symbol_keys::{FunctionKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey};
 use crate::core::symbols::storage::SymbolTable;
@@ -559,10 +560,12 @@ impl PythonArchBuilder {
 
     fn _visit_assign(&mut self, session: &mut SessionInfo, assign_stmt: &StmtAssign) {
         let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
+        let mut visited_values = HashSet::default();
         for assign in assigns.iter() {
-            if let Some(ref expr) = assign.value {
-                self.visit_expr(session, expr);
-            }
+            if let Some(ref expr) = assign.value
+                && visited_values.insert(expr.range()) {
+                    self.visit_expr(session, expr);
+                }
             match assign.target {
                 AssignTargetType::Name(ref name_expr) => {
                     let variable_key = session.st_mut().add_new_variable(*self.sym_stack.last().unwrap(), &name_expr.id, name_expr.range);
