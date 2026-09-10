@@ -275,7 +275,7 @@ impl ReferenceFeature {
         // *template name*: resolved in-house (complete over t-call/t-inherit/component
         // sites, and no tsserver string-literal noise).
         let encoding = session.sync_odoo.encoding;
-        let template_refs = file_info.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
+        let template_refs: Vec<_> = file_info.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs().cloned().collect();
         for template_ref in &template_refs {
             let range = file_info.borrow().text_range_to_range(template_ref.range, encoding);
             if Self::position_in_lsp_range(line, character, &range) {
@@ -361,7 +361,7 @@ impl ReferenceFeature {
             .collect();
         for path in js_paths {
             let Some(fi) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path) else { continue };
-            let refs = fi.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
+            let refs: Vec<_> = fi.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs().cloned().collect();
             for template_ref in refs {
                 if template_ref.t_name == template_name {
                     let range = fi.borrow().text_range_to_range(template_ref.range, encoding);

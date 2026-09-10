@@ -1,7 +1,7 @@
 use crate::utils::HashMap;
 
 use crate::threads::SessionInfo;
-use oxc::ast::ast::{ArrowFunctionExpression, BindingPattern, Class, Expression, Function, FunctionType, MethodDefinition, MethodDefinitionKind, Program, PropertyDefinition, PropertyKey, VariableDeclarator};
+use oxc::ast::ast::{ArrowFunctionExpression, BindingPattern, Class, ClassElement, Expression, Function, FunctionType, MethodDefinition, MethodDefinitionKind, Program, PropertyKey, VariableDeclarator};
 use crate::Sy;
 use crate::constants::OYarn;
 use lsp_types::SymbolKind;
@@ -34,8 +34,6 @@ pub struct JsTemplateRef {
     pub range: TextRange,
     /// The template name string value (e.g. `"sale.form_view"`).
     pub t_name: String,
-    /// The name of the enclosing class, if any.
-    pub class_name: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -51,6 +49,7 @@ pub struct ComponentDescriptor {
     pub super_class_name: Option<String>,
     /// How this class is exported — direct import vs shim for the OWL virtual doc.
     pub export_kind: JsExportKind,
+    pub template: Option<JsTemplateRef>,
 }
 
 /// A named declaration worth offering in workspace symbols: a class, a top-level function or a
@@ -83,15 +82,13 @@ fn get_key_name(key: &PropertyKey<'_>) -> Option<String> {
     }
 }
 
-/// Walks an OXC AST and collects every OWL `template` string assignment, a
-/// [`ComponentDescriptor`] per named class, and every [`JsDecl`].
+/// Walks an OXC AST and collects every [`ComponentDescriptor`] per named class,
+/// and every [`JsDecl`].
 ///
 /// Detected patterns:
 /// - `static template = "module.name"` (class property definition)
 struct JSArchBuilderVisitor<'e> {
     file_path: String,
-    pub refs: Vec<JsTemplateRef>,
-    class_stack: Vec<String>,
     pub descriptors: Vec<ComponentDescriptor>,
     /// Local class name → how the module exports it. Missing ⇒ [`JsExportKind::None`].
     exports: &'e HashMap<String, JsExportKind>,
@@ -107,8 +104,6 @@ impl<'e> JSArchBuilderVisitor<'e> {
     fn new(file_path: String, exports: &'e HashMap<String, JsExportKind>) -> Self {
         Self {
             file_path,
-            refs: vec![],
-            class_stack: vec![],
             descriptors: vec![],
             exports,
             decls: vec![],
@@ -129,7 +124,6 @@ impl<'a, 'e> Visit<'a> for JSArchBuilderVisitor<'e> {
         if let Some(id) = it.id.as_ref() {
             let name = id.name.to_string();
             let export_kind = self.exports.get(name.as_str()).copied().unwrap_or(JsExportKind::None);
-            self.class_stack.push(name.clone());
             // Declared before the class becomes the container, so it is not its own container.
             let interned = Sy!(name.clone());
             self.push_decl(interned.clone(), SymbolKind::CLASS, id.span);
@@ -142,12 +136,12 @@ impl<'a, 'e> Visit<'a> for JSArchBuilderVisitor<'e> {
                     Some(Expression::Identifier(sid)) => Some(sid.name.to_string()),
                     _ => None,
                 },
+                template: class_template(it),
                 export_kind,
             });
         }
         walk::walk_class(self, it);
         if it.id.is_some() {
-            self.class_stack.pop();
             self.container_stack.pop();
         }
     }
@@ -209,43 +203,43 @@ impl<'a, 'e> Visit<'a> for JSArchBuilderVisitor<'e> {
             self.container_stack.pop();
         }
     }
+}
 
-    /// Catch `static template = "..."` inside a class body.
-    fn visit_property_definition(&mut self, it: &PropertyDefinition<'a>) {
-        if it.r#static {
-            let key_name = get_key_name(&it.key);
-            if key_name.as_deref() == Some("template")
-            && let Some(Expression::StringLiteral(lit)) = &it.value {
-                let content_start = lit.span.start + 1;
-                let content_end = lit.span.end.saturating_sub(1);
-                self.refs.push(JsTemplateRef {
-                    range: TextRange::new(
-                        TextSize::new(content_start),
-                        TextSize::new(content_end),
-                    ),
-                    t_name: lit.value.to_string(),
-                    class_name: self.class_stack.last().cloned(),
-                });
-                return; // no need to recurse into value
-            }
+/// Find `static template = "..."` inside the class body.
+fn class_template(class: &Class) -> Option<JsTemplateRef> {
+    for element in &class.body.body {
+        let ClassElement::PropertyDefinition(prop) = element else {
+            continue;
+        }; 
+        if !prop.r#static || get_key_name(&prop.key).as_deref() != Some("template") {
+            continue;
         }
-        walk::walk_property_definition(self, it);
+        let Some(Expression::StringLiteral(lit)) = &prop.value else {
+            continue;
+        };
+        return Some(JsTemplateRef {
+            range: TextRange::new(
+                TextSize::new(lit.span.start + 1),
+                TextSize::new(lit.span.end.saturating_sub(1)),
+            ),
+            t_name: lit.value.to_string(),
+        });
     }
+    None 
 }
 
 pub fn visit_file(
     program: &Program<'_>,
     file_path: &str,
     exports: &HashMap<String, JsExportKind>,
-) -> (Vec<JsTemplateRef>, Vec<ComponentDescriptor>, Vec<JsDeclaration>) {
+) -> (Vec<ComponentDescriptor>, Vec<JsDeclaration>) {
     let mut visitor = JSArchBuilderVisitor::new(file_path.to_string(), exports);
     visitor.visit_program(program);
-    (visitor.refs, visitor.descriptors, visitor.decls)
+    (visitor.descriptors, visitor.decls)
 }
 
 pub fn build(
     session: &mut SessionInfo,
-    template_refs: &[JsTemplateRef],
     component_descriptors: &[ComponentDescriptor],
 ) {
     for descriptor in component_descriptors {
@@ -254,8 +248,9 @@ pub fn build(
 
     // Template→declaring classes. Which one wins is decided at query time, by
     // `component_for_template`: a super-chain can cross files not built yet.
-    for template_ref in template_refs {
-        let Some(class_name) = &template_ref.class_name else { continue };
+    for component in component_descriptors {
+        let Some(template_ref) = &component.template else { continue };
+        let class_name = &component.class_name;
         let classes = session.sync_odoo.js_component_by_template
             .entry(template_ref.t_name.clone())
             .or_default();
@@ -271,7 +266,7 @@ mod tests {
     use oxc::parser::Parser;
     use oxc::span::SourceType;
 
-    fn visit(src: &str, exports: &[(&str, JsExportKind)]) -> (Vec<JsTemplateRef>, Vec<ComponentDescriptor>, Vec<JsDeclaration>) {
+    fn visit(src: &str, exports: &[(&str, JsExportKind)]) -> (Vec<ComponentDescriptor>, Vec<JsDeclaration>) {
         let allocator = Allocator::default();
         let source_type = SourceType::from_path(std::path::Path::new("/mod/foo.js")).unwrap_or_default();
         let ret = Parser::new(&allocator, src, source_type).parse();
@@ -281,11 +276,11 @@ mod tests {
     }
 
     fn descriptors_of(src: &str, exports: &[(&str, JsExportKind)]) -> Vec<ComponentDescriptor> {
-        visit(src, exports).1
+        visit(src, exports).0
     }
 
     fn decls_of(src: &str) -> Vec<JsDeclaration> {
-        visit(src, &[]).2
+        visit(src, &[]).1
     }
 
     /// (name, kind, container) — the triple a workspace-symbol result is built from.

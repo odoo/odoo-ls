@@ -447,8 +447,7 @@ fn xml_files_backing_js(
         .borrow()
         .ast
         .as_js_ast()
-        .js_template_refs
-        .iter()
+        .js_template_refs()
         .map(|template_ref| template_ref.t_name.clone())
         .collect();
 

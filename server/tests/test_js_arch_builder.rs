@@ -1,13 +1,13 @@
 use oxc::{allocator::Allocator, parser::Parser, span::SourceType};
 
-use odoo_ls_server::{core::js_arch_builder::{ComponentDescriptor, JsTemplateRef, visit_file}, utils::HashMap};
+use odoo_ls_server::{core::js_arch_builder::{ComponentDescriptor, visit_file}, utils::HashMap};
 
 /// Parse `source` as a `.js` file and run the OWL arch-builder visitor on it,
 /// mirroring what `FileInfo::build_js_ast` does before semantic analysis.
 ///
 /// Each template ref carries a byte `range` covering only the string content
 /// (surrounding quotes excluded), the xml_id, and the enclosing class name.
-fn visit(source: &str) -> (Vec<JsTemplateRef>, Vec<ComponentDescriptor>) {
+fn visit(source: &str) -> Vec<ComponentDescriptor> {
     let path = "owl_component.js";
     let source_type = SourceType::from_path(path).unwrap_or_default();
     let allocator = Allocator::default();
@@ -15,8 +15,8 @@ fn visit(source: &str) -> (Vec<JsTemplateRef>, Vec<ComponentDescriptor>) {
     assert!(ret.errors.is_empty(), "unexpected parse errors: {:?}", ret.errors);
     let program = allocator.alloc(ret.program);
     // No exported-symbol map needed here: these tests only assert template/class detection.
-    let (refs, descriptors, _decls) = visit_file(program, path, &HashMap::default());
-    (refs, descriptors)
+    let (descriptors, _decls) = visit_file(program, path, &HashMap::default());
+    descriptors
 }
 
 
@@ -25,10 +25,12 @@ fn visit(source: &str) -> (Vec<JsTemplateRef>, Vec<ComponentDescriptor>) {
 #[test]
 fn test_static_template_is_detected() {
     let source = "export class Counter extends Component {\n    static template = \"module_owl.Counter\";\n}\n";
-    let (refs, _) = visit(source);
+    let components = visit(source);
+    let refs = components.iter().filter_map(|d| d.template.as_ref()).collect::<Vec<_>>();
+    assert_eq!(components.len(), 1, "expected exactly one component, got {:?}", components);
     assert_eq!(refs.len(), 1, "expected exactly one template ref, got {:?}", refs);
     assert_eq!(refs[0].t_name, "module_owl.Counter");
-    assert_eq!(refs[0].class_name, Some("Counter".to_string()));
+    assert_eq!(components[0].class_name, "Counter");
     // range should exclude the surrounding quotes
     let start: usize = refs[0].range.start().to_usize();
     let end: usize = refs[0].range.end().to_usize();
@@ -39,7 +41,8 @@ fn test_static_template_is_detected() {
 #[test]
 fn test_static_template_single_quotes() {
     let source = "export class Counter extends Component {\n    static template = 'module_owl.Counter';\n}\n";
-    let (refs, _) = visit(source);
+    let components = visit(source);
+    let refs = components.iter().filter_map(|d| d.template.as_ref()).collect::<Vec<_>>();
     assert_eq!(refs.len(), 1);
     assert_eq!(refs[0].t_name, "module_owl.Counter");
 }
@@ -49,12 +52,13 @@ fn test_static_template_single_quotes() {
 #[test]
 fn test_non_static_or_non_literal_template_is_ignored() {
     let source = "export class Counter extends Component {\n    template = \"not.static\";\n    static template = someHelper();\n}\n";
-    let (refs, _) = visit(source);
+    let components = visit(source);
+    assert_eq!(components.len(), 1, "expected exactly one component, got {:?}", components);
+    let refs = components.iter().filter_map(|d| d.template.as_ref()).collect::<Vec<_>>();
     assert!(refs.is_empty(), "expected no template refs, got {:?}", refs);
 }
 
-/// Multiple OWL components in the same file should each produce their own template ref,
-/// correctly attributed to their enclosing class.
+/// Multiple OWL components in the same file should each produce their own template ref
 #[test]
 fn test_multiple_components_in_one_file() {
     let source = concat!(
@@ -65,13 +69,26 @@ fn test_multiple_components_in_one_file() {
         "    static template = \"module_owl.Display\";\n",
         "}\n",
     );
-    let (refs, descriptors) = visit(source);
-    assert_eq!(refs.len(), 2);
-    assert_eq!(refs[0].t_name, "module_owl.Counter");
-    assert_eq!(refs[0].class_name, Some("Counter".to_string()));
-    assert_eq!(refs[1].t_name, "module_owl.Display");
-    assert_eq!(refs[1].class_name, Some("Display".to_string()));
-    let names: Vec<_> = descriptors.iter().map(|d| d.class_name.clone()).collect();
-    assert!(names.contains(&"Counter".to_string()));
-    assert!(names.contains(&"Display".to_string()));
+    let components = visit(source);
+    assert_eq!(components.len(), 2);
+    assert_eq!(components[0].class_name, "Counter");
+    assert_eq!(components[0].template.as_ref().unwrap().t_name, "module_owl.Counter");
+    assert_eq!(components[1].class_name, "Display");
+    assert_eq!(components[1].template.as_ref().unwrap().t_name, "module_owl.Display");
+}
+
+/// A nested anonymous class is not a member of its enclosing class, so it must not
+/// contribute that class's template.
+#[test]
+fn test_nested_anonymous_class_template_does_not_leak_outward() {
+    let source = concat!(
+        "class Counter extends Component {\n",
+        "    static template = \"module_owl.Counter\";\n",
+        "    make() { return class extends Component { static template = \"module_owl.Inner\"; }; }\n",
+        "}\n",
+    );
+    let components = visit(source);
+    assert_eq!(components.len(), 1);
+    assert_eq!(components[0].class_name, "Counter");
+    assert_eq!(components[0].template.as_ref().unwrap().t_name, "module_owl.Counter");
 }
