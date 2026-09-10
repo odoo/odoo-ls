@@ -218,12 +218,12 @@ impl PythonArchEval {
                 self.visit_named_expr(session, named_expr);
             },
             Expr::BoolOp(bool_op_expr) => {
+                let operand_negated = matches!(bool_op_expr.op, BoolOp::Or);
                 let mut prev_operand: Option<&Expr> = None;
                 for expr in bool_op_expr.values.iter() {
-                    if matches!(bool_op_expr.op, BoolOp::And)
-                        && let Some(prev) = prev_operand {
-                            self.resolve_narrowing_at(session, prev, expr.range().start(), false);
-                        }
+                    if let Some(prev) = prev_operand {
+                        self.resolve_narrowing_at(session, prev, expr.range().start(), operand_negated);
+                    }
                     self.visit_expr(session, expr);
                     prev_operand = Some(expr);
                 }

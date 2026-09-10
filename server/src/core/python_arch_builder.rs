@@ -344,20 +344,21 @@ impl PythonArchBuilder {
         }
     }
 
-    /// One section per operand (each is a short-circuit boundary), an `and` operand's narrowing
-    /// applying to the next, plus a trailing merge section for whatever follows.
+    /// One section per operand (each is a short-circuit boundary), an operand's narrowing applying
+    /// to the next, plus a trailing merge section for whatever follows.
     /// Returns an `and`-chain's last operand section, see `visit_condition`.
     fn visit_bool_op(&mut self, session: &mut SessionInfo, bool_op_expr: &ExprBoolOp) -> Option<SectionIndex> {
         let scope = *self.sym_stack.last().unwrap();
         let mut prev_section = session.st().as_symbol_mgr(scope).get_last_index();
         let mut prev_operand: Option<&Expr> = None;
         let mut last_operand_section = None;
+        let operand_negated = matches!(bool_op_expr.op, BoolOp::Or);
         let cond_sections = bool_op_expr.values.iter().map(|expr|{
-            // `A and B`: B only runs once A was true, so A's narrowing applies to it
-            let narrow_section = match (bool_op_expr.op, prev_operand) {
-                (BoolOp::And, Some(prev)) => self.declare_narrowing_at(session, scope, prev, expr.range().start(), Some(SectionIndex::INDEX(prev_section)), false),
-                _ => None,
-            };
+            // `A and B` only reaches B once A was true, `A or B` only once A was false: either
+            // way A's outcome is known there, so what it implies applies to B.
+            let narrow_section = prev_operand.and_then(|prev|
+                self.declare_narrowing_at(session, scope, prev, expr.range().start(), Some(SectionIndex::INDEX(prev_section)), operand_negated)
+            );
             session.st_mut().as_mut_symbol_mgr(scope).add_section(
                 expr.range().start(),
                 Some(narrow_section.unwrap_or(SectionIndex::INDEX(prev_section)))
