@@ -190,7 +190,7 @@ impl SemanticTokensFeature {
     /// highlighted exactly when Definition would navigate from it.
     fn template_ref_tokens(session: &SessionInfo, file_info: &Rc<RefCell<FileInfo>>) -> Vec<(Range, u32, u32)> {
         let encoding = session.sync_odoo.encoding;
-        let template_refs = file_info.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
+        let template_refs: Vec<_> = file_info.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs().cloned().collect();
         template_refs
             .into_iter()
             .filter(|template_ref| template_reference_resolves(session, &template_ref.t_name))
