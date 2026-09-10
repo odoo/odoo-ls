@@ -1,11 +1,9 @@
 use std::env;
 use std::path::Path;
-use std::cell::RefCell;
-use std::rc::Rc;
 
+use odoo_ls_server::core::file_mgr::FileInfoKey;
 use odoo_ls_server::core::odoo::SyncOdoo;
-use odoo_ls_server::core::file_mgr::FileInfo;
-use odoo_ls_server::core::symbols::symbol_keys::SourceFileKey;
+use odoo_ls_server::core::symbols::symbol_keys::{SourceFileKey};
 use odoo_ls_server::utils::PathSanitizer;
 use odoo_ls_server::threads::SessionInfo;
 
@@ -27,12 +25,12 @@ fn test_controller() {
         panic!("Failed to get file symbol for {}", test_file);
     };
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let file_mgr = session.file_mgr();
+    let file_info = file_mgr.get_file_info(&test_file).unwrap();
 
-    test_request_type_hover(&mut session, file_symbol, &file_info);
-    test_request_env_definition(&mut session, file_symbol, &file_info);
-    test_request_env_subscript(&mut session, file_symbol, &file_info);
+    test_request_type_hover(&mut session, file_symbol, file_info);
+    test_request_env_definition(&mut session, file_symbol, file_info);
+    test_request_env_subscript(&mut session, file_symbol, file_info);
 }
 
 /// Test that hovering over 'request' shows Request class
@@ -40,7 +38,7 @@ fn test_controller() {
 fn test_request_type_hover(
     session: &mut SessionInfo,
     file_symbol: SourceFileKey,
-    file_info: &Rc<RefCell<FileInfo>>
+    file_info: FileInfoKey
 ) {
     // Test 1: Hover over 'request' variable (line 11: req = request)
     // Should show Request class
@@ -74,7 +72,7 @@ fn test_request_type_hover(
 fn test_request_env_definition(
     session: &mut SessionInfo,
     file_symbol: SourceFileKey,
-    file_info: &Rc<RefCell<FileInfo>>
+    file_info: FileInfoKey
 ) {
     // Test 1: Go-to-definition on 'request' import (line 3: from odoo.http import request)
     // Should navigate to request variable in odoo.http
@@ -105,7 +103,7 @@ fn test_request_env_definition(
 fn test_request_env_subscript(
     session: &mut SessionInfo,
     file_symbol: SourceFileKey,
-    file_info: &Rc<RefCell<FileInfo>>
+    file_info: FileInfoKey
 ) {
     let partner_class = test_utils::PARTNER_CLASS_NAME(session.sync_odoo.version);
 

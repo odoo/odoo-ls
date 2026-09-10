@@ -53,13 +53,12 @@ pub fn importable_files_for(session: &SessionInfo, path: &str) -> Vec<String> {
     };
     let mut files = vec![];
     let deps = dependency_closure(session, module);
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_mgr = file_mgr.borrow();
+    let file_mgr = session.file_mgr();
     for dep in deps {
         files.extend(
             session.st()[dep].js_symbols().keys()
                 // skipping files that have nothing to import from helps us keep the program small
-                .filter(|path| js_has_exports(&file_mgr, path).unwrap_or(true))
+                .filter(|path| js_has_exports(file_mgr, path).unwrap_or(true))
                 .cloned(),
         );
     }
@@ -132,7 +131,7 @@ fn collect_type_files(dir: &Path, out: &mut Vec<String>) {
 /// `None` when the file is not cached, or is not JS.
 fn js_has_exports(file_mgr: &FileMgr, path: &str) -> Option<bool> {
     let file_info = file_mgr.get_file_info(path)?;
-    match &file_info.borrow().file_info_ast.borrow().ast {
+    match &file_mgr[file_info].file_info_ast.borrow().ast {
         Ast::JsAst(js_ast) => Some(js_ast.has_exports),
         _ => None,
     }

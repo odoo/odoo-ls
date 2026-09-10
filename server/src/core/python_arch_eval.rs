@@ -1,7 +1,5 @@
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
-use std::rc::Rc;
-use std::cell::RefCell;
 use std::vec;
 
 use ruff_text_size::{Ranged, TextRange, TextSize};
@@ -13,7 +11,7 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::symbols::{ModuleSymbol, SymbolMgr};
 use crate::core::symbols::storage::SymbolTable;
-use crate::core::symbols::symbol_keys::{BuildableSymbolKey, ClassKey, FunctionKey, ModuleKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey, VariableKey};
+use crate::core::symbols::symbol_keys::{BuildableSymbolKey, ClassKey, EntryPointKey, FunctionKey, ModuleKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey, VariableKey};
 use crate::{constants::*, oyarn};
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::odoo::SyncOdoo;
@@ -24,9 +22,8 @@ use crate::features::ast_utils::AstUtils;
 use crate::threads::SessionInfo;
 
 use super::config::DiagMissingImportsMode;
-use super::entry_point::EntryPoint;
 use super::evaluation::{EvaluationSymbolPtr, EvaluationSymbolWeak};
-use super::file_mgr::FileMgr;
+use super::file_mgr::{FileInfo, FileMgr};
 use super::import_resolver::ImportResult;
 use super::python_arch_eval_hooks::PythonArchEvalHooks;
 use super::python_odoo_builder::PythonOdooBuilder;
@@ -35,7 +32,7 @@ use super::symbols::function_symbol::FunctionSymbol;
 
 #[derive(Debug, Clone)]
 pub struct PythonArchEval {
-    entry_point: Rc<RefCell<EntryPoint>>,
+    entry_point: EntryPointKey,
     file: SourceFileKey,
     file_mode: bool,
     current_step: BuildSteps,
@@ -45,7 +42,7 @@ pub struct PythonArchEval {
 }
 
 impl PythonArchEval {
-    pub fn new(symbol_table: &SymbolTable, entry_point: Rc<RefCell<EntryPoint>>, symbol: PythonBuildableSymbolKey) -> Option<Self> {
+    pub fn new(symbol_table: &SymbolTable, entry_point: EntryPointKey, symbol: PythonBuildableSymbolKey) -> Option<Self> {
         let file = symbol_table.get_file(symbol.into()).unwrap();
         let file_mode = SymbolKey::from(symbol) == SymbolKey::from(file);
         Some(PythonArchEval {
@@ -68,13 +65,11 @@ impl PythonArchEval {
             trace!("ARCH_EVAL  - PYTHON {} - {}", session.st().path(self.file), session.st().name(symbol));
         }
         session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::ARCH_EVAL, BuildStatus::IN_PROGRESS);
-        let (file_info_rc, _) = FileMgr::get_or_recreate_file_info(session, self.file);
-        if !file_info_rc.borrow().file_info_ast.borrow().ast.is_built() {
-            file_info_rc.borrow_mut().prepare_ast(session);
+        let (file_info_key, _) = FileMgr::get_or_recreate_file_info(session, self.file);
+        if !session.file_mgr()[file_info_key].file_info_ast.borrow().ast.is_built() {
+            FileInfo::prepare_ast(session, file_info_key);
         }
-        let file_info = (*file_info_rc).borrow();
-        let file_info_ast = file_info.file_info_ast.clone();
-        drop(file_info);
+        let file_info_ast = session.file_mgr()[file_info_key].file_info_ast.clone();
         if let SymbolKey::Module(m) = symbol  {
             ModuleSymbol::load_data(m, session);
             ModuleSymbol::load_assets(m, session);
@@ -119,16 +114,16 @@ impl PythonArchEval {
             session.current_noqa = old_noqa;
         }
         if self.file_mode {
-            file_info_rc.borrow_mut().replace_diagnostics(DiagnosticSource::PY_ARCH_EVAL, self.diagnostics.clone());
-            PythonArchEvalHooks::on_file_eval(session, &self.entry_point, self.file);
+            session.file_mgr_mut()[file_info_key].replace_diagnostics(DiagnosticSource::PY_ARCH_EVAL, self.diagnostics.clone());
+            PythonArchEvalHooks::on_file_eval(session, self.entry_point, self.file);
         } else {
             //then Symbol must be a function
             let f = symbol.unwrap_function_key();
             session.st_mut()[f].replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
-            PythonArchEvalHooks::on_function_eval(session, &self.entry_point, f);
+            PythonArchEvalHooks::on_function_eval(session, self.entry_point, f);
         }
         session.st_mut().set_build_status(self.sym_stack[0].unwrap_buildable_key(), BuildSteps::ARCH_EVAL, BuildStatus::DONE);
-        if session.st().is_external(self.sym_stack[0]) && (!self.file_mode  || !file_info_rc.borrow().opened) {
+        if session.st().is_external(self.sym_stack[0]) && (!self.file_mode  || !session.file_mgr()[file_info_key].opened) {
             if self.file_mode {
                 let file_path = session.st().file_path(self.file).to_string();
                 FileMgr::delete_file_path(session, &file_path);
@@ -410,7 +405,7 @@ impl PythonArchEval {
                         let mut file_tree = import_result.file_tree.clone();
                         file_tree.extend(import_result.name.split(".").map(|s| oyarn!("{}", s)));
                         session.st_mut().not_found_paths_mut(self.file).push((self.current_step, file_tree.clone()));
-                        self.entry_point.borrow_mut().not_found_symbols.insert(self.file);
+                        session.ep_mgr_mut()[self.entry_point].not_found_symbols.insert(self.file);
                         if self._match_diag_config(session.sync_odoo, import_sym)
                             && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS02002, &[&file_tree.clone().join(".")]) {
                                 self.diagnostics.push(Diagnostic {
@@ -429,7 +424,7 @@ impl PythonArchEval {
                 }
                 if !self.safe_import.last().unwrap() {
                     session.st_mut().not_found_paths_mut(self.file).push((self.current_step, file_tree.clone()));
-                    self.entry_point.borrow_mut().not_found_symbols.insert(self.file);
+                    session.ep_mgr_mut()[self.entry_point].not_found_symbols.insert(self.file);
                     for &import_sym in import_result.symbols.iter() {
                         if self._match_diag_config(session.sync_odoo, import_sym)
                             && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS02001, &[&file_tree.clone().join(".")]) {
@@ -541,12 +536,12 @@ impl PythonArchEval {
                     let Some(model_data) = session.st()[c]._model.as_ref() else {
                         continue;
                     };
-                    let Some(model) = session.sync_odoo.models.get(&model_data.name).cloned() else {
+                    let Some(model) = session.model_mgr().get_model_key(&model_data.name) else {
                         continue;
                     };
                     let fn_name = session.st().name(self.sym_stack[0]).clone();
                     let module = session.st().find_module(parent_class);
-                    let allowed_fields = model.borrow().get_method_computed_field_names(session, module, &fn_name);
+                    let allowed_fields = session.model_mgr()[model].get_method_computed_field_names(session, module, &fn_name);
                     if allowed_fields.is_empty() {
                         continue;
                     }
@@ -690,7 +685,7 @@ impl PythonArchEval {
         self.sym_stack.push(class_key);
         self.visit_sub_stmts(session, &class_stmt.body);
         self.sym_stack.pop();
-        if !session.st().is_external(self.sym_stack[0]) && session.st().get_entry(self.sym_stack[0]).borrow().typ == EntryPointType::MAIN {
+        if !session.st().is_external(self.sym_stack[0]) && session.ep_mgr()[session.st().get_entry(self.sym_stack[0])].typ == EntryPointType::MAIN {
             if session.st().get_in_parents(class_key, &[SymType::FUNCTION], true).is_some() {
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03024, &[]) {
                     self.diagnostics.push(Diagnostic {

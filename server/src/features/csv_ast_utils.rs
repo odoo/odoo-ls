@@ -121,15 +121,15 @@ impl CsvAstUtils {
     ) -> Vec<GotoSource> {
         let mut results = vec![];
         let module = session.st().find_module(file_symbol);
-        let Some(model) = session.sync_odoo.models.get(model_name).cloned() else {return vec![];};
-        let Some(main_symbol) = model.borrow().get_main_symbols(session, module).next() else {
+        let Some(model) = session.model_mgr().get_model_key(model_name) else {return vec![];};
+        let Some(main_symbol) = session.model_mgr()[model].get_main_symbols(session, module).next() else {
             return results;
         };
         let mut headers = vec![];
         if !csv_reader.has_headers() {
             return results;
         }
-        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(session.st().file_path(file_symbol.into())).unwrap();
+        let file_info = session.file_mgr().get_file_info(session.st().file_path(file_symbol.into())).unwrap();
         let Ok(header) = csv_reader.headers() else { return results;};
         for (h_start, end, h) in CsvFieldIter::new(header, content).unwrap() {
             headers.push(oyarn!("{}", h));
@@ -151,11 +151,9 @@ impl CsvAstUtils {
                         results.push(GotoSource {
                             source: GotoSourceType::SymbolKey(sym),
                             origin_selection_range: Some(Range {
-                                start: file_info
-                                    .borrow()
+                                start: session.file_mgr()[file_info]
                                     .offset_to_position(h_start as u32, session.sync_odoo.encoding),
-                                end: file_info
-                                    .borrow()
+                                end: session.file_mgr()[file_info]
                                     .offset_to_position(substring_end, session.sync_odoo.encoding),
                             }),
                         })
@@ -178,12 +176,11 @@ impl CsvAstUtils {
                         results.push(GotoSource {
                             source: GotoSourceType::SymbolKey(sym),
                             origin_selection_range: Some(Range {
-                                start: file_info.borrow().offset_to_position(
+                                start: session.file_mgr()[file_info].offset_to_position(
                                     substring_start,
                                     session.sync_odoo.encoding,
                                 ),
-                                end: file_info
-                                    .borrow()
+                                end: session.file_mgr()[file_info]
                                     .offset_to_position(end as u32, session.sync_odoo.encoding),
                             }),
                         })

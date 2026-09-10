@@ -140,10 +140,10 @@ impl FeaturesUtils {
                 };
             model_name
         };
-        let Some(model) = session.sync_odoo.models.get(model_name).cloned() else {
+        let Some(model) = session.model_mgr().get_model_key(model_name) else {
             return vec![];
         };
-        let main_syms = model.borrow().get_main_symbols(session, from_module).collect::<Vec<_>>();
+        let main_syms = session.model_mgr()[model].get_main_symbols(session, from_module).collect::<Vec<_>>();
         main_syms.iter().flat_map(|&main_sym| SymbolTable::get_member_symbol(session, main_sym.into(), field_value, from_module, false, true, false, true, false).0).collect()
     }
 
@@ -479,8 +479,8 @@ impl FeaturesUtils {
                 return Some(StringResolution::Module(module));
             }
         }
-        if let Some(model) = session.sync_odoo.models.get(string_val).cloned() {
-            let model_syms: Vec<_> = model.borrow().get_model_symbols(session.st(), from_module).collect();
+        if let Some(model) = session.model_mgr().get_model_key(string_val) {
+            let model_syms: Vec<_> = session.model_mgr()[model].get_model_symbols(session.st(), from_module).collect();
             if !model_syms.is_empty() {
                 return Some(StringResolution::Model(model_syms));
             }
@@ -554,9 +554,8 @@ impl FeaturesUtils {
                     }
                 }
                 let mut string_handled = false;
-                if let Some(model) = session.sync_odoo.models.get(str).cloned() {
-                    let model_ref = model.borrow();
-                    let model_main_syms = model_ref.get_main_symbols(session, from_module);
+                if let Some(model) = session.model_mgr().get_model_key(str) {
+                    let model_main_syms = session.model_mgr()[model].get_main_symbols(session, from_module);
                     let mut block = S!("");
                     for model_main_sym in model_main_syms {
                         match model_main_sym {
@@ -569,7 +568,7 @@ impl FeaturesUtils {
                                         block = block + "  \n***  \n" + doc_string;
                                     }
                                     block += "  \n***  \n";
-                                    block += &model_ref.all_model_classes_dependencies(session, from_module)
+                                    block += &session.model_mgr()[model].all_model_classes_dependencies(session, from_module)
                                         .filter_map(|(sym, needed_module)| {
                                             if model_sym == sym {
                                                 None // Skip main_class

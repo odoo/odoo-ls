@@ -1,23 +1,21 @@
 use ruff_python_ast::{Alias, AnyRootNodeRef, Expr, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtMatch, StmtRaise, StmtTry, StmtTypeAlias, StmtWith};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::{trace, warn};
-use std::rc::Rc;
-use std::cell::RefCell;
 use std::path::Path;
 use lsp_types::{Diagnostic, Position, Range};
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation_context::{ContextKey, ContextValue};
+use crate::core::file_mgr::FileInfoKey;
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
-use crate::core::symbols::symbol_keys::{ClassKey, ModelSymbolKey, ModuleKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey};
+use crate::core::symbols::symbol_keys::{ClassKey, EntryPointKey, ModelSymbolKey, ModuleKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey};
 use crate::{constants::*, oyarn};
 use crate::core::symbols::{ModuleSymbol};
 use crate::threads::SessionInfo;
 use crate::utils::{PathSanitizer as _};
 use crate::S;
 
-use super::entry_point::EntryPoint;
 use super::evaluation::{Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak, EvaluationValue};
 use super::file_mgr::{FileInfo, FileMgr};
 use super::import_resolver::manual_import;
@@ -25,21 +23,21 @@ use super::python_arch_eval::PythonArchEval;
 
 #[derive(Debug)]
 pub struct PythonValidator {
-    entry_point: Rc<RefCell<EntryPoint>>,
+    entry_point: EntryPointKey,
     file: SourceFileKey,
     file_mode: bool,
     sym_stack: Vec<SymbolKey>,
     pub diagnostics: Vec<Diagnostic>, //collect diagnostic from arch and arch_eval too from inner functions, but put everything at Validation level
     safe_imports: Vec<bool>,
     current_module: Option<ModuleKey>,
-    file_info: Option<Rc<RefCell<FileInfo>>>,
+    file_info: Option<FileInfoKey>,
 }
 
 /* PythonValidator operate on a single Symbol. Unlike other steps, it can be done on symbol containing code (file and functions only. Not class, variable, namespace).
 It will validate this node and run a validator on all subsymbol and dependencies.
 It will try to inference the return type of functions if it is not annotated; */
 impl PythonValidator {
-    pub fn new(symbol_table: &SymbolTable, entry_point: Rc<RefCell<EntryPoint>>, symbol: PythonBuildableSymbolKey) -> Self {
+    pub fn new(symbol_table: &SymbolTable, entry_point: EntryPointKey, symbol: PythonBuildableSymbolKey) -> Self {
         Self {
             entry_point,
             file: symbol_table.get_file(symbol.into()).unwrap(),
@@ -58,12 +56,12 @@ impl PythonValidator {
         if !session.st().ready_for_step(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION) {
             return;
         }
-        let (file_info_rc, loaded) = FileMgr::get_or_recreate_file_info(session, self.file);
+        let (file_info_key, loaded) = FileMgr::get_or_recreate_file_info(session, self.file);
         if !loaded {
             session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION, BuildStatus::INVALID);
             return;
         }
-        self.file_info = Some(file_info_rc.clone());
+        self.file_info = Some(file_info_key);
         match symbol {
             SymbolKey::File(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_) => {
                 let source_file_key = symbol.as_source_file_key().unwrap();
@@ -71,18 +69,16 @@ impl PythonValidator {
                     trace!("VALIDATION - PYTHON FILE {}", session.st().paths(symbol).first().unwrap_or(&S!("No path found")));
                 }
                 session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
-                file_info_rc.borrow_mut().replace_diagnostics(DiagnosticSource::PY_VALIDATION, vec![]);
-                if !file_info_rc.borrow().file_info_ast.borrow().ast.is_built() {
-                    file_info_rc.borrow_mut().prepare_ast(session);
+                session.file_mgr_mut()[file_info_key].replace_diagnostics(DiagnosticSource::PY_VALIDATION, vec![]);
+                if !session.file_mgr()[file_info_key].file_info_ast.borrow().ast.is_built() {
+                    FileInfo::prepare_ast(session, file_info_key);
                 }
-                let file_info = file_info_rc.borrow();
-                if file_info_rc.borrow().file_info_ast.borrow().text_hash != session.st().get_processed_text_hash(source_file_key) {
+                if session.file_mgr()[file_info_key].file_info_ast.borrow().text_hash != session.st().get_processed_text_hash(source_file_key) {
                     session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION, BuildStatus::INVALID);
                     return;
                 }
-                let file_info_ast_rc = file_info.file_info_ast.clone();
+                let file_info_ast_rc = session.file_mgr()[file_info_key].file_info_ast.clone();
                 let file_info_ast = file_info_ast_rc.borrow();
-                drop(file_info);
                 if file_info_ast.ast.as_py_ast().indexed_module.is_some() {
                     let old_noqa = session.current_noqa.clone();
                     session.current_noqa = session.st().get_noqas(symbol);
@@ -94,8 +90,7 @@ impl PythonValidator {
                 if let SymbolKey::Module(m) = symbol {
                     ModuleSymbol::validate_manifest(m, session);
                 }
-                let mut file_info = file_info_rc.borrow_mut();
-                file_info.replace_diagnostics(DiagnosticSource::PY_VALIDATION, self.diagnostics.clone());
+                session.file_mgr_mut()[file_info_key].replace_diagnostics(DiagnosticSource::PY_VALIDATION, self.diagnostics.clone());
             },
             SymbolKey::Function(f) => {
                 if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !session.st().is_external(symbol)) {
@@ -105,7 +100,8 @@ impl PythonValidator {
                 let Some(parent_file) = session.st().get_file(symbol) else {
                     panic!("Parent file not found on validating function")
                 };
-                if file_info_rc.borrow().file_info_ast.borrow().text_hash != session.st_mut().get_processed_text_hash(parent_file) {
+                let text_hash = session.file_mgr()[file_info_key].file_info_ast.borrow().text_hash;
+                if text_hash != session.st_mut().get_processed_text_hash(parent_file) {
                     session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION, BuildStatus::INVALID);
                     return;
                 }
@@ -114,13 +110,11 @@ impl PythonValidator {
                 }
                 self.diagnostics = vec![];
                 session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
-                if !file_info_rc.borrow().file_info_ast.borrow().ast.is_built() {
-                    file_info_rc.borrow_mut().prepare_ast(session);
+                if !session.file_mgr()[file_info_key].file_info_ast.borrow().ast.is_built() {
+                    FileInfo::prepare_ast(session, file_info_key);
                 }
-                let file_info = file_info_rc.borrow();
-                let file_info_ast_rc = file_info.file_info_ast.clone();
+                let file_info_ast_rc = session.file_mgr()[file_info_key].file_info_ast.clone();
                 let file_info_ast = file_info_ast_rc.borrow();
-                drop(file_info);
                 if let Some(indexed_module) = &file_info_ast.ast.as_py_ast().indexed_module {
                     let func_index = session.st()[f].node_index.load();
                     if func_index != NodeIndex::NONE {
@@ -156,29 +150,29 @@ impl PythonValidator {
                 if !session.st().is_external(symbol) {
                     return;
                 }
-                let file_info = self.file_info.as_ref().unwrap();
-                if !file_info.borrow().opened { // Never delete opened files
+                let &file_info = self.file_info.as_ref().unwrap();
+                if !session.file_mgr()[file_info].opened { // Never delete opened files
                     let file = symbol.as_source_file_key().unwrap();
                     let file_path = session.sync_odoo.symbol_table.file_path(file).to_string();
                     FileMgr::delete_file_path(session, &file_path);
                 }
             } else {
-                self.file_info.as_ref().unwrap().borrow_mut().publish_diagnostics(session);
+                FileInfo::publish_diagnostics(session, self.file_info.unwrap());
             }
             if !session.sync_odoo.config.file_cache() {
                 if let SymbolKey::Module(m) = symbol {
                     let manifest_path = Path::new(&session.st()[m].path).join("__manifest__.py");
-                    if let Some(manifest_file) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&manifest_path.sanitize_cow())
-                        && !manifest_file.borrow().opened {
-                            let manifest_file = manifest_file.borrow();
+                    if let Some(manifest_file) = session.file_mgr().get_file_info(&manifest_path.sanitize_cow())
+                        && !session.file_mgr()[manifest_file].opened {
+                            let manifest_file = &session.file_mgr()[manifest_file];
                             manifest_file.file_info_ast.borrow_mut().ast.as_py_ast_mut().indexed_module = None;
                             manifest_file.file_info_ast.borrow_mut().text_document = None;
                             manifest_file.file_info_ast.borrow_mut().text_hash = 0;
                         }
                 }
-                if let Some(file) = self.file_info.as_ref()
-                    && ! file.borrow().opened {
-                        let f = file.borrow();
+                if let Some(file) = self.file_info
+                    && ! session.file_mgr()[file].opened {
+                        let f = &session.file_mgr()[file];
                         f.file_info_ast.borrow_mut().ast.as_py_ast_mut().indexed_module = None;
                         f.file_info_ast.borrow_mut().text_document = None;
                         f.file_info_ast.borrow_mut().text_hash = 0;
@@ -201,7 +195,7 @@ impl PythonValidator {
                         }
                         if session.st().ready_for_step(sym.unwrap_buildable_key(), BuildSteps::VALIDATION) {
                             if let Some(python_buildable) = sym.as_python_buildable() {
-                                let mut v = PythonValidator::new(session.st(), self.entry_point.clone(), python_buildable);
+                                let mut v = PythonValidator::new(session.st(), self.entry_point, python_buildable);
                                 v.validate(session);
                             }
                         } else if session.st().build_status(sym.unwrap_buildable_key(), BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS {
@@ -460,12 +454,12 @@ impl PythonValidator {
                             let Some(file_symbol) = session.st().get_file(class.into()) else {
                                 break 'comodel_check;
                             };
-                            let maybe_model = session.sync_odoo.models.get(comodel_field_name);
-                            if maybe_model.map(|m| m.borrow_mut().has_symbols(session.st())).unwrap_or(false) {
-                                let model = maybe_model.unwrap().clone();
-                                session.st_mut().add_model_dependencies(file_symbol, &model);
+                            if let Some(model_key) = session.model_mgr().get_model_key(comodel_field_name)
+                                && session.model_mgr()[model_key].has_symbols(session.st())
+                            {
+                                session.model_mgr_mut()[model_key].add_dependent(file_symbol);
                                 let Some(from_module) = maybe_from_module else {break 'comodel_check;};
-                                if !model.clone().borrow().model_in_deps(session, from_module) {
+                                if !session.model_mgr()[model_key].model_in_deps(session, from_module) {
                                     if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03015, &[comodel_field_name]) {
                                         self.diagnostics.push(Diagnostic {
                                             range: Range::new(Position::new(special_arg_range.start().to_u32(), 0), Position::new(special_arg_range.end().to_u32(), 0)),
@@ -485,7 +479,7 @@ impl PythonValidator {
                             }
                             let file_key = file_symbol.unwrap_file_key();
                             session.st_mut()[file_key].not_found_models.insert(oyarn!("{comodel_field_name}"), BuildSteps::ARCH_EVAL);
-                            session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(file_symbol);
+                            { let main_entry = session.sync_odoo.get_main_entry(); session.ep_mgr_mut()[main_entry].not_found_symbols_for_models.insert(file_symbol); }
                         }
                     }
                     for (special_fn_field_name, special_fn_field_arg_range) in [
@@ -526,14 +520,13 @@ impl PythonValidator {
                         let Some(comodel_name) = eval_weak.get_weak().context.get(ContextKey::ComodelName).map(ContextValue::as_str) else {
                             continue;
                         };
-                        let Some(model) = session.sync_odoo.models.get(comodel_name).cloned() else {
+                        let Some(model) = session.model_mgr().get_model_key(comodel_name) else {
                             continue;
                         };
                         let Some(module) = maybe_from_module else {
                             continue;
                         };
-                        let main_syms = model
-                            .borrow()
+                        let main_syms = session.model_mgr()[model]
                             .get_main_symbols(session, Some(module))
                             .filter_map(|k| k.as_class_key())
                             .collect::<Vec<_>>();
@@ -543,8 +536,7 @@ impl PythonValidator {
                         let valid_xml_field_found = {
                             // Look for XML field that has name, ttype, and relation set
                             // Whose name matches the inverse name, is many2one and has the relation set to the current model
-                            model
-                                .borrow()
+                            session.model_mgr()[model]
                                 .get_xml_model_field_symbols(session.st(), Some(module))
                                 .any(|rec_key| {
                                     let name = session.st()[rec_key]
@@ -676,14 +668,13 @@ impl PythonValidator {
             }
         }
         // Check name for shadowing warning
-        let Some(model) = session.sync_odoo.models.get(&model_name).cloned() else {
+        let Some(model) = session.model_mgr().get_model_key(&model_name) else {
             return;
         };
         let inherited_model_names = session.st()[class]._model.as_ref().unwrap().inherit.clone();
         if !inherited_model_names.contains(&model_name)
             // Defining it here because it is an expensive call
-            && let conflicting_symbols = model
-                .borrow()
+            && let conflicting_symbols = session.model_mgr()[model]
                 .get_main_symbols(session, maybe_from_module)
                 .filter(|&main_sym| main_sym != class.into())
                 .collect::<Vec<_>>()
@@ -744,15 +735,14 @@ impl PythonValidator {
         let Some(from) = self.current_module else {
             return; //TODO do we want to raise something?
         };
-        let model = session.sync_odoo.models.get(model_name);
-        if model.map(|m| m.borrow_mut().has_symbols(session.st())).unwrap_or(false) {
-            let model = model.unwrap().clone();
+        if let Some(model_key) = session.model_mgr().get_model_key(model_name)
+            && session.model_mgr()[model_key].has_symbols(session.st())
+        {
             let file = session.st().get_file(class_key.into()).unwrap();
-            session.st_mut().add_model_dependencies(file, &model);
-            let borrowed_model = model.borrow();
+            session.model_mgr_mut()[model_key].add_dependent(file);
             let mut main_modules = vec![];
             let mut found_one = false;
-            for main_sym in borrowed_model.get_main_symbols(session, None).filter_map(|sym| sym.as_class_key()) {
+            for main_sym in session.model_mgr()[model_key].get_main_symbols(session, None).filter_map(|sym| sym.as_class_key()) {
                 let main_sym_module = session.st().find_module(main_sym);
                 if let Some(main_sym_module) = main_sym_module {
                     let module_name = &session.st()[main_sym_module].dir_name;
@@ -792,7 +782,7 @@ impl PythonValidator {
             };
             let file_key = SymbolKey::from(file_symbol).unwrap_file_key();
             session.st_mut()[file_key].not_found_models.insert(oyarn!("{}", model_name), BuildSteps::ARCH_EVAL);
-            session.sync_odoo.get_main_entry().borrow_mut().not_found_symbols_for_models.insert(file_symbol);
+            { let main_entry = session.sync_odoo.get_main_entry(); session.ep_mgr_mut()[main_entry].not_found_symbols_for_models.insert(file_symbol); }
         }
     }
 

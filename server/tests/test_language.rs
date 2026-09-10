@@ -3,7 +3,7 @@ use std::path::Path;
 
 use lsp_types::{NumberOrString, TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier};
 use odoo_ls_server::core::config::{ConfigView, ConfigKey};
-use odoo_ls_server::core::file_mgr::FileMgr;
+use odoo_ls_server::core::file_mgr::{FileInfo, FileMgr};
 use odoo_ls_server::core::odoo::Odoo;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
@@ -277,13 +277,12 @@ fn test_config_additional_languages_updates_diagnostics() {
         .join("tests/data/addons/module_lang_test/data/lang_test_items.xml")
         .sanitize();
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&items_xml_path).unwrap();
+    let file_mgr = session.file_mgr();
+    let file_info = file_mgr.get_file_info(&items_xml_path).unwrap();
     let force_republish_diagnostic = |session: &mut SessionInfo| {
-        let mut file_info_borrow = file_info.borrow_mut();
         // This does not rebuild validation steps. It just sets need_push to true.
-        file_info_borrow.update_validation_diagnostics(HashMap::default());
-        file_info_borrow.publish_diagnostics(session);
+        session.file_mgr_mut()[file_info].update_validation_diagnostics(HashMap::default());
+        FileInfo::publish_diagnostics(session, file_info);
     };
 
     // Verify OLS05068 is present initially (nl_WV is unknown)
