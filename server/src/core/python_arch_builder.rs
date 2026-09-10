@@ -1124,12 +1124,15 @@ impl PythonArchBuilder {
         }
 
         self.visit_node(session, &for_stmt.body);
-        let mut stmt_sections = vec![SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index())];
+        let body_section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
+        let mut stmt_sections = vec![body_section.clone()];
 
         if !for_stmt.orelse.is_empty(){
+            // Same as `while`: the iterable runs out either immediately or after some
+            // iterations, so `orelse` continues from both.
             session.st_mut().as_mut_symbol_mgr(scope).add_section(
                 for_stmt.orelse[0].range().start(),
-                Some(previous_section.clone())
+                Some(SectionIndex::OR(vec![previous_section.clone(), body_section]))
             );
             self.visit_node(session, &for_stmt.orelse);
             stmt_sections.push(SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index()));
@@ -1247,7 +1250,6 @@ impl PythonArchBuilder {
         let previous_section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
         let mut stmt_sections = vec![previous_section.clone()];
         for case in match_stmt.cases.iter() {
-            if let Some(test_clause) = case.guard.as_ref() { self.visit_expr(session, test_clause) }
             if matches!(&case.pattern, ruff_python_ast::Pattern::MatchAs(_)){
                 stmt_sections.remove(0); // When we have a wildcard pattern, previous section is shadowed
             }
@@ -1255,7 +1257,10 @@ impl PythonArchBuilder {
                 case.range().start(),
                 Some(previous_section.clone())
             );
+            // Pattern first, then the guard: the guard can read what the pattern bound, and its
+            // own sections start after the case's.
             traverse_match(&case.pattern, session.st_mut(), scope);
+            if let Some(test_clause) = case.guard.as_ref() { self.visit_expr(session, test_clause) }
             self.visit_node(session, &case.body);
             stmt_sections.push(SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index()));
         }
@@ -1270,6 +1275,9 @@ impl PythonArchBuilder {
         let scope = *self.sym_stack.last().unwrap();
         let scope_as_sym_mgr = session.st_mut().as_mut_symbol_mgr(scope);
         let previous_section = SectionIndex::INDEX(scope_as_sym_mgr.get_last_index());
+        // The test is visited first: it runs before the body, and its own sections start earlier,
+        // which sections must respect.
+        self.visit_expr(session, &while_stmt.test);
         if let Some(first_body_stmt) = while_stmt.body.first() {
             let narrow_section = self.declare_narrowing_at(session, scope, &while_stmt.test, first_body_stmt.range().start(), None, false);
             session.st_mut().as_mut_symbol_mgr(scope).add_section(
@@ -1277,17 +1285,21 @@ impl PythonArchBuilder {
                 narrow_section
             );
         }
-        self.visit_expr(session, &while_stmt.test);
         self.visit_node(session, &while_stmt.body);
         let scope_as_sym_mgr = session.st_mut().as_mut_symbol_mgr(scope);
         let body_section = SectionIndex::INDEX(scope_as_sym_mgr.get_last_index());
-        let mut stmt_sections = vec![body_section];
+        let mut stmt_sections = vec![body_section.clone()];
 
+        // The test fails either before the first iteration or after some, so the exit path
+        // continues from both - otherwise whatever the body bound is invisible in `orelse`.
+        let exit_prev = SectionIndex::OR(vec![previous_section, body_section]);
         // A normal (non-`break`) loop exit means the test was false - narrow it here too, same
-        // as `if`'s negative guard.
+        // as `if`'s negative guard. The narrowing sits between `orelse` and the merge above on
+        // purpose: it re-declares the checked name, shadowing the body's own binding of it,
+        // while every other name still reaches `orelse` through the merge.
         let false_branch_start = loop_exit_anchor(&while_stmt.orelse, while_stmt.range().end());
-        let narrow_section = self.declare_narrowing_at(session, scope, &while_stmt.test, false_branch_start, Some(previous_section.clone()), true);
-        let false_branch_section = narrow_section.unwrap_or(previous_section);
+        let narrow_section = self.declare_narrowing_at(session, scope, &while_stmt.test, false_branch_start, Some(exit_prev.clone()), true);
+        let false_branch_section = narrow_section.unwrap_or(exit_prev);
 
         if !while_stmt.orelse.is_empty(){
             session.st_mut().as_mut_symbol_mgr(scope).add_section(
