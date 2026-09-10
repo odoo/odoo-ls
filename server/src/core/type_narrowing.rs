@@ -1,7 +1,7 @@
 //! Shared vocabulary for the two build phases: ARCH declares the synthetic narrowing symbols,
 //! ARCH_EVAL finds them again *by position*, so every anchor must be derived identically by both.
 
-use ruff_python_ast::{BoolOp, Expr, Operator, Stmt, UnaryOp};
+use ruff_python_ast::{BoolOp, Expr, ExprBoolOp, Operator, Stmt, UnaryOp};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 
 /// An `isinstance` check on a plain name. Attribute targets (`self.x`) aren't recognized yet.
@@ -26,8 +26,7 @@ pub fn loop_exit_anchor(orelse: &[Stmt], loop_end: TextSize) -> TextSize {
     orelse.first().map_or_else(|| narrowing_anchor_after(loop_end), |stmt| stmt.range().start())
 }
 
-/// The checks that hold when `test` evaluated to `!want_negated`. A true `and`-chain means every
-/// operand held, so each contributes; a false one tells us nothing - hence no recursion then.
+/// The checks that hold when `test` evaluated to `!want_negated`.
 pub fn match_narrowing_checks(test: &Expr, want_negated: bool) -> Vec<IsinstanceCheck<'_>> {
     let mut checks = Vec::new();
     collect_narrowing_checks(test, want_negated, &mut checks);
@@ -43,18 +42,45 @@ pub fn match_narrowing_checks(test: &Expr, want_negated: bool) -> Vec<Isinstance
 }
 
 fn collect_narrowing_checks<'a>(test: &'a Expr, want_negated: bool, out: &mut Vec<IsinstanceCheck<'a>>) {
-    if !want_negated
-        && let Expr::BoolOp(bool_op) = test
-        && matches!(bool_op.op, BoolOp::And) {
+    if let Expr::BoolOp(bool_op) = test {
+        if matches!(bool_op.op, BoolOp::And) == !want_negated {
+            // A true `and` or a false `or`: every operand's outcome is known.
             for value in bool_op.values.iter() {
                 collect_narrowing_checks(value, want_negated, out);
             }
-            return;
+        } else {
+            intersect_operand_checks(bool_op, want_negated, out);
         }
+        return;
+    }
     if let Some((negated, check)) = match_isinstance_check(test)
         && negated == want_negated {
             out.push(check);
         }
+}
+
+/// A true `or` or a false `and` says only that *some* operand decided it. Any of them could
+/// have, so a name is narrowed only if every operand narrows it, to the union of what they allow:
+/// `isinstance(a, Dog) or isinstance(a, Cat)` gives `Dog | Cat`, `or flag` gives nothing.
+fn intersect_operand_checks<'a>(bool_op: &'a ExprBoolOp, want_negated: bool, out: &mut Vec<IsinstanceCheck<'a>>) {
+    let per_operand: Vec<Vec<IsinstanceCheck<'a>>> = bool_op.values.iter().map(|value| {
+        let mut checks = Vec::new();
+        collect_narrowing_checks(value, want_negated, &mut checks);
+        checks
+    }).collect();
+    let Some((first, rest)) = per_operand.split_first() else { return };
+    for check in first.iter() {
+        let Some(same_name) = rest.iter()
+            .map(|operand| operand.iter().find(|other| other.target_name == check.target_name))
+            .collect::<Option<Vec<_>>>() else { continue };
+        out.push(IsinstanceCheck {
+            target_name: check.target_name,
+            target_range: check.target_range,
+            type_exprs: check.type_exprs.iter()
+                .chain(same_name.iter().flat_map(|other| other.type_exprs.iter()))
+                .copied().collect(),
+        });
+    }
 }
 
 /// `(negated, check)`
