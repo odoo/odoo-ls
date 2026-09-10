@@ -42,7 +42,7 @@ impl DefinitionFeature {
     fn get_js_definition(session: &mut SessionInfo, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<GotoDefinitionResponse> {
         // Check if cursor is over a template reference (e.g. `static template = "module.xml_id"`)
         let encoding = session.sync_odoo.encoding;
-        let template_refs = file_info.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
+        let template_refs: Vec<_> = file_info.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs().cloned().collect();
         for template_ref in &template_refs {
             // @todo: this is a change from the previous (fda's) call. Check if equivalent, and why it changed.
             let range = file_info.borrow().text_range_to_range(template_ref.range, encoding);

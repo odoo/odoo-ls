@@ -78,6 +78,7 @@ mod tests {
             class_name_byte: 0,
             super_class_name: super_class.map(str::to_string),
             export_kind: JsExportKind::Named,
+            template: None,
         }
     }
 

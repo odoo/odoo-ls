@@ -123,7 +123,6 @@ pub fn parse_python(
 /// specifiers it imports, and its OXC diagnostics, already in LSP form. See [`parse_js`].
 #[derive(Debug, Default)]
 pub struct ParsedJs {
-    pub template_refs: Vec<JsTemplateRef>,
     pub component_descriptors: Vec<ComponentDescriptor>,
     /// Named declarations, for workspace symbols.
     pub decls: Vec<JsDeclaration>,
@@ -187,7 +186,7 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
 
     // Collect template references, component descriptors and declarations before
     // semantic analysis
-    let (template_refs, component_descriptors, decls) = js_arch_builder::visit_file(program, path, &exports);
+    let (component_descriptors, decls) = js_arch_builder::visit_file(program, path, &exports);
     // Vendored libraries are kept out of workspace symbols for the same reason they
     // are kept out of OXC diagnostics: they are not the user's code, and many are minified.
     let decls = if is_lib { vec![] } else { decls };
@@ -198,7 +197,7 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
     // Semantic analysis and the linter exist only to produce diagnostics, and
     // a vendored lib's are dropped, so stop here for them.
     if is_lib || !syntax_diagnostics.is_empty() {
-        return ParsedJs { template_refs, component_descriptors, decls, imports, reexports, has_exports, syntax_diagnostics, lint_diagnostics: vec![] };
+        return ParsedJs { component_descriptors, decls, imports, reexports, has_exports, syntax_diagnostics, lint_diagnostics: vec![] };
     }
 
     // Look for more synxtax errors
@@ -209,7 +208,7 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
     syntax_diagnostics.extend(semantic_ret.errors);
 
     if !syntax_diagnostics.is_empty() {
-        return ParsedJs { template_refs, component_descriptors, decls, imports, reexports, has_exports, syntax_diagnostics, lint_diagnostics: vec![] };
+        return ParsedJs { component_descriptors, decls, imports, reexports, has_exports, syntax_diagnostics, lint_diagnostics: vec![] };
     }
     // Look for semantic errors
     let semantic = semantic_ret.semantic;
@@ -231,7 +230,7 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
     let messages = linter.run(os_path, vec![context_sub_host], &allocator);
     let lint_diagnostics = messages.into_iter().map(|m| m.error).collect();
 
-    ParsedJs { template_refs, component_descriptors, decls, imports, reexports, has_exports, syntax_diagnostics, lint_diagnostics }
+    ParsedJs { component_descriptors, decls, imports, reexports, has_exports, syntax_diagnostics, lint_diagnostics }
 }
 
 #[derive(Debug, Clone)]
@@ -265,10 +264,6 @@ pub struct JsImport {
 
 #[derive(Debug, Clone)]
 pub struct JsAst {
-    /// Positions of OWL `static template = "some.xml_id"` string literals found in this JS file.
-    /// Each entry is (byte range of the string content, xml_id value, enclosing class name).
-    /// The range is converted to LSP coordinates by consumers.
-    pub js_template_refs: Vec<JsTemplateRef>,
     /// Component descriptors extracted from OXC analysis of this JS file.
     pub js_component_descriptors: Vec<ComponentDescriptor>,
     /// Named declarations of this JS file, for workspace symbols.
@@ -292,13 +287,16 @@ impl Default for JsAst {
 impl JsAst {
     pub fn new() -> Self {
         Self {
-            js_template_refs: Vec::new(),
             js_component_descriptors: Vec::new(),
             js_decls: Vec::new(),
             js_imports: Vec::new(),
             js_reexports: Vec::new(),
             has_exports: false,
         }
+    }
+
+    pub fn js_template_refs(&self) -> impl Iterator<Item=&JsTemplateRef> {
+        self.js_component_descriptors.iter().filter_map(|c| c.template.as_ref())
     }
 }
 
@@ -604,11 +602,10 @@ impl FileInfo {
     ///
     /// Expects [`Ast::JsAst`] to be in place already.
     fn apply_parsed_js(&mut self, session: &mut SessionInfo, parsed: ParsedJs) {
-        js_arch_builder::build(session, &parsed.template_refs, &parsed.component_descriptors);
+        js_arch_builder::build(session, &parsed.component_descriptors);
         {
             let mut fia = self.file_info_ast.borrow_mut();
             let js_ast = fia.ast.as_js_ast_mut();
-            js_ast.js_template_refs = parsed.template_refs;
             js_ast.js_component_descriptors = parsed.component_descriptors;
             js_ast.js_decls = parsed.decls;
             js_ast.js_imports = parsed.imports;
@@ -1461,8 +1458,8 @@ export class Counter extends Component {
         assert_eq!(&source[usize::from(range.start())..usize::from(range.end())], "\"./state\"");
         assert_eq!(parsed.component_descriptors.len(), 1);
         assert_eq!(parsed.component_descriptors[0].class_name, "Counter");
-        assert_eq!(parsed.template_refs.len(), 1);
-        assert_eq!(parsed.template_refs[0].t_name, "mod.Counter");
+        assert!(parsed.component_descriptors[0].template.is_some());
+        assert_eq!(parsed.component_descriptors[0].template.as_ref().unwrap().t_name, "mod.Counter");
     }
 
     /// Under `static/lib` the `@odoo-module` header is what makes a file a module, so a file
@@ -1474,7 +1471,6 @@ export class Counter extends Component {
         let skipped = parse_js_inner(COMPONENT, "/mod/static/lib/x.js");
         assert!(skipped.imports.is_empty());
         assert!(skipped.component_descriptors.is_empty());
-        assert!(skipped.template_refs.is_empty());
 
         assert_extracted(&parse_js_inner(&headered, "/mod/static/lib/x.js"), &headered);
         // `static/src` and `static/tests` are modules unconditionally.
