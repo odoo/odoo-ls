@@ -266,6 +266,52 @@ impl CliBackend {
             }
         }
     }
+
+    pub fn run_list_python_dependencies(self) {
+        let ws_folders = match self.setup() {
+            Some(folders) => folders,
+            None => return,
+        };
+
+        let mut server = SyncOdoo::new();
+        let (s, r) = crossbeam_channel::unbounded();
+        let mut session = SessionInfo::new_from_custom_channel(s.clone(), r.clone(), None, &mut server);
+        session.sync_odoo.load_odoo_addons = false;
+
+        for (id, tf) in &ws_folders {
+            let uri = match FileMgr::try_pathname2uri(tf) {
+                Ok(uri) => uri,
+                Err(e) => {
+                    error!("Unable to resolve tracked folder: {}, error: {}", tf, e);
+                    continue;
+                }
+            };
+            session
+                .sync_odoo
+                .get_file_mgr()
+                .borrow_mut()
+                .add_workspace_folder(id.clone(), uri);
+        }
+
+        let mut config = match self.read_config_file(&mut session) {
+            Some(config) => config,
+            None => return,
+        };
+        self.reconcile_args_and_config_file(&mut config);
+
+        SyncOdoo::init(&mut session, config);
+
+        let report = crate::core::dependency_report::generate_report(&mut session);
+        let output_path = self.cli.output.clone().unwrap_or(S!("module_dependencies.json"));
+        match File::create(output_path.clone()) {
+            Ok(mut file) => {
+                if let Err(e) = file.write_all(serde_json::to_string_pretty(&report).unwrap().as_bytes()) {
+                    error!("Unable to write to {}: {}", output_path, e)
+                }
+            },
+            Err(e) => error!("Unable to create {}: {}", output_path, e),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -280,6 +326,7 @@ mod tests {
     fn default_cli() -> Cli {
         Cli {
             parse: true,
+            list_python_dependencies: false,
             addons: None,
             community_path: None,
             tracked_folders: None,

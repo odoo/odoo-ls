@@ -8,6 +8,11 @@ pub struct Cli {
     #[arg(short, long)]
     pub parse: bool,
 
+    /// Do not run the server, but analyze every odoo module's imports and write a
+    /// module_dependencies.json report (see --output), then stop.
+    #[arg(long)]
+    pub list_python_dependencies: bool,
+
     /// Addon paths you want to parse (parse mode required)
     #[arg(short, long)]
     pub addons: Option<Vec<String>>,

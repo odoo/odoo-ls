@@ -72,7 +72,7 @@ fn main() {
         .with_ansi(false)
         .with_writer(file_writer)
         .finish();
-    if cli.parse || use_debug {
+    if cli.parse || cli.list_python_dependencies || use_debug {
         let stdout_subscriber = fmt::layer().with_writer(std::io::stdout).with_ansi(true);
         tracing::subscriber::set_global_default(subscriber.with(stdout_subscriber)).expect("Unable to set default tracing subscriber");
     } else {
@@ -98,6 +98,10 @@ fn main() {
         info!("starting server (single parse mode)");
         let backend = CliBackend::new(cli);
         backend.run();
+    } else if cli.list_python_dependencies {
+        info!("starting server (list python dependencies mode)");
+        let backend = CliBackend::new(cli);
+        backend.run_list_python_dependencies();
     } else {
         let mut serv = if use_debug {
             info!(tag = "test", "starting server (debug mode)");
