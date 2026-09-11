@@ -87,7 +87,8 @@ impl FeaturesUtils {
             if arg_id.as_str() == "inverse_name" {
                 return FeaturesUtils::find_inverse_name_field_symbol(session, from_module, field_value, call_expr);
             }
-            if !["compute", "inverse", "search"].contains(&arg_id.as_str()){
+            if !(["compute", "inverse", "search"].contains(&arg_id.as_str())
+                || (arg_id.as_str() == "compute_sql" && session.sync_odoo.version >= (19, 1))){
                 return vec![];
             }
         } else {
