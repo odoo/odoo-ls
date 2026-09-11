@@ -1,22 +1,28 @@
-//! Tests for public functions in js_module_scope
+//! Tests for
+//! - public functions in js_module_scope
+//! - OLS06001 diagnostic (imported module not in dependencies)
+//! 
 //! No tsserver here: the scope is a pure function of the module graph and the asset bundles.
 
 use std::path::PathBuf;
+use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString};
 use odoo_ls_server::core::js_module_scope;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
-use crate::setup::setup::{create_init_session, setup_server};
+use crate::setup::setup::{create_init_session, get_diagnostics_for_path, setup_server};
 mod setup;
 
+/// `test_out_of_scope_import_is_flagged` drains the session channel, so it runs last.
 #[test]
 fn test_js_module_scope() {
     let (mut odoo, config) = setup_server(true);
-    let session = create_init_session(&mut odoo, config);
-    
+    let mut session = create_init_session(&mut odoo, config);
+
     test_type_files_are_scoped_to_manifest_depends(&session);
     test_importable_files_are_scoped_to_manifest_depends(&session);
     test_only_importable_files_are_roots(&session);
     test_importable_prefixes_cover_the_same_closure(&session);
+    test_out_of_scope_import_is_flagged(&mut session);
 }
 
 // Shared helpers
@@ -168,4 +174,23 @@ fn test_importable_prefixes_cover_the_same_closure(session: &SessionInfo) {
     // A file outside every module has no closure to be filtered against.
     let outside = addons_path().join("not_a_module").join("elsewhere.js").sanitize();
     assert!(js_module_scope::importable_module_prefixes(session, &outside).is_none());
+}
+
+/// The same closure, enforced on what the user already wrote: OLS06001 flags an `@module/...`
+/// import naming a module outside the file's own. A module's assets are validated during the
+/// build, so nothing has to be opened.
+fn test_out_of_scope_import_is_flagged(session: &mut SessionInfo) {
+    let path = abs_path("module_1", &["src", "scoped", "out_of_scope.js"]);
+    let diagnostics = get_diagnostics_for_path(session, &path);
+    let out_of_scope = diagnostics.iter().filter(|diagnostic| {
+        matches!(&diagnostic.code, Some(NumberOrString::String(code)) if code == "OLS06001")
+    }).collect::<Vec<&Diagnostic>>();
+
+    assert_eq!(
+        out_of_scope.len(), 1,
+        "line 1 imports module_2, which module_1 does not depend on, and it is the only import out \
+         of scope: line 0 names module_1 itself. Got {diagnostics:?}"
+    );
+    assert_eq!(out_of_scope[0].range.start.line, 1, "got {:?}", out_of_scope[0]);
+    assert_eq!(out_of_scope[0].severity, Some(DiagnosticSeverity::ERROR));
 }
