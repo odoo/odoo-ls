@@ -860,44 +860,70 @@ impl SyncOdoo {
 
     /// Like `unload_path`, but only unloads a symbol when `should_unload` returns true. Returns whether anything was unloaded.
     pub fn unload_path_if(session: &mut SessionInfo, path: &Path, should_unload: impl Fn(&SymbolTable, SymbolKey) -> bool) -> bool {
+        // file/dir might no longer exist in file system, we can't stat it
         let mut unloaded_any = false;
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_all() {
-            let path_str = path.sanitize_cow();
-            let sym_in_data = entry.borrow().data_file_symbols.get(path_str.as_ref()).copied();
-            if let Some(sym) = sym_in_data {
-                if let Some(sym) = sym.upgrade(session.st())
-                    && should_unload(session.st(), sym.into()) {
-                        SymbolTable::unload(session, sym.into());
-                        unloaded_any = true;
-                    }
-                continue;
-            }
-            let sym_in_js = entry.borrow().js_symbols.get(path_str.as_ref()).cloned();
-            if let Some(sym) = sym_in_js {
-                if let Some(sym) = sym.upgrade(session.st())
-                    && should_unload(session.st(), sym.into()) {
-                        SymbolTable::unload(session, sym.into());
-                        unloaded_any = true;
-                    }
+            // try path as a data or asset file
+            if let Some(data_or_asset) = Self::find_data_or_asset_in_ep(entry, path) {
+                if let Some(sym) = data_or_asset.upgrade(session.st())
+                    && should_unload(session.st(), sym.into())
+                {
+                    SymbolTable::unload(session, sym);
+                    unloaded_any = true;
+                }
                 continue;
             }
             if entry.borrow().is_valid_for(path) {
                 let tree = entry.borrow().get_tree_for_entry(path);
                 let path_symbols = session.st().get_symbol(entry.borrow().root.into(), tree.as_slice(), u32::MAX);
-                let Some(&path_symbol) = path_symbols.first() else {
+                if let Some(&path_symbol) = path_symbols.first()
+                    && let Ok(file_or_dir) = FileSystemSymbolKey::try_from(path_symbol)
+                {
+                    if should_unload(session.st(), path_symbol) {
+                        SymbolTable::unload(session, file_or_dir);
+                        unloaded_any = true;
+                    }
                     continue;
-                };
-                let Ok(file_or_dir) = FileSystemSymbolKey::try_from(path_symbol) else {
-                    continue;
-                };
-                if should_unload(session.st(), path_symbol) {
-                    SymbolTable::unload(session, file_or_dir);
-                    unloaded_any = true;
+                }
+                // try path as a dir holding data or assets
+                for data_or_asset in Self::find_nested_data_and_assets_in_ep(entry, path) {
+                    if let Some(sym) = data_or_asset.upgrade(session.st())
+                        && should_unload(session.st(), sym.into())
+                    {
+                        SymbolTable::unload(session, sym);
+                        unloaded_any = true;
+                    }
                 }
             }
         }
         unloaded_any
+    }
+
+    /// Finds a data or JS file for a given `path` under `entry`.
+    fn find_data_or_asset_in_ep(entry: &Rc<RefCell<EntryPoint>>, path: &Path) -> Option<Wk<FileSystemSymbolKey>> {
+        let entry_point = entry.borrow();
+        let path_str = path.sanitize_cow();
+        if let Some(&data_sym) = entry_point.data_file_symbols.get(path_str.as_ref()) {
+            return Some(data_sym.map_into());
+        }
+        if let Some(&js_sym) = entry_point.js_symbols.get(path_str.as_ref()) {
+            return Some(js_sym.map_into());
+        }
+        None
+    }
+
+    /// Finds all data and JS files under `entry` whose paths are prefixed with `dir_path`.
+    /// Useful for unloading data/assets under a dir.
+    fn find_nested_data_and_assets_in_ep(entry: &Rc<RefCell<EntryPoint>>, dir_path: &Path) -> Vec<Wk<FileSystemSymbolKey>> {
+        let entry_point = entry.borrow();
+        let data = entry_point.data_file_symbols.iter()
+            .filter(|(p, _)| Path::new(p).starts_with(dir_path))
+            .map(|(_, &sym)| sym.map_into());
+        let js = entry_point.js_symbols.iter()
+            .filter(|(p, _)| Path::new(p).starts_with(dir_path))
+            .map(|(_, &sym)| sym.map_into());
+        data.chain(js).collect()
     }
 
     /// Side effects of unloading a symbol
@@ -1961,6 +1987,12 @@ impl Odoo {
                             && !session.sync_odoo.get_main_entry().borrow().data_file_symbols.contains_key(sanitized_path.as_ref())
                             && !session.sync_odoo.get_main_entry().borrow().js_symbols.contains_key(sanitized_path.as_ref()))
                             {
+                                // A didOpen can arrive before didCreate. If path is a new asset,
+                                // load it here so it doesn't become a custom entry point
+                                if ModuleSymbol::load_path_assets(session, &path) {
+                                    BuildScheduler::process_rebuilds(session, false);
+                                    return;
+                                }
                                 //main entry doesn't handle this file. Let's test customs entries, or create a new one
                                 let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
                                 for custom_entry in ep_mgr.borrow().custom_entry_points.iter() {
@@ -2063,8 +2095,13 @@ impl Odoo {
         }
     }
 
-    pub fn search_symbols_to_rebuild(session: &mut SessionInfo, path: &str) {
-        let path_for_tree = Path::new(path).to_tree_path();
+    pub fn on_new_path(session: &mut SessionInfo, path: &str) {
+        ModuleSymbol::load_path_assets(session, Path::new(path));
+        Self::search_symbols_to_rebuild(session, path);
+        Self::create_module_if_in_addons(session, path);
+    }
+
+    fn search_symbols_to_rebuild(session: &mut SessionInfo, path: &str) {
         //search if the path does match a missing file path somewhere
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         let tree = session.sync_odoo.path_to_main_entry_tree(Path::new(path));
@@ -2078,6 +2115,11 @@ impl Odoo {
                 entry.borrow_mut().search_symbols_to_rebuild(session, path, tree);
             }
         }
+    }
+
+    fn create_module_if_in_addons(session: &mut SessionInfo, path: &str) {
+        let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
+        let path_for_tree = Path::new(path).to_tree_path();
         // test if the new path is a new module under odoo/addons namespace.
         let Some(parent_path) = path_for_tree.parent().map(|parent| parent.sanitize_cow().into_owned()) else {
             return;
@@ -2103,7 +2145,7 @@ impl Odoo {
             BuildScheduler::queue(session, BuildableSymbolKey::Module(module_symbol));
         }
     }
-
+ 
     /// Create the module at `path` under `addons`, or replace non-module symbol that already holds
     /// the name - e.g. namespace or a package before `__manifest__.py` existed.
     fn create_or_replace_module(session: &mut SessionInfo, path: &Path, addons: NamespaceKey) -> Option<ModuleKey> {
@@ -2148,7 +2190,7 @@ impl Odoo {
             //2 - create new document
             let new_path_buf = Path::new(&new_path);
             let new_path_updated = new_path_buf.to_tree_path().sanitize();
-            Odoo::search_symbols_to_rebuild(session, &new_path_updated);
+            Odoo::on_new_path(session, &new_path_updated);
             BuildScheduler::process_rebuilds(session, false);
         }
     }
@@ -2161,7 +2203,7 @@ impl Odoo {
             let path = FileMgr::uri2pathname(&f.uri);
             let path_updated = Path::new(&path).to_tree_path().to_str().unwrap().to_string();
             session.log_message(MessageType::INFO, format!("Creating {}", path.clone()));
-            Odoo::search_symbols_to_rebuild(session, &path_updated);
+            Odoo::on_new_path(session, &path_updated);
             session.sync_odoo.entry_point_mgr.borrow_mut().clean_entries(&mut session.sync_odoo.symbol_table);
         }
         BuildScheduler::process_rebuilds(session, false);

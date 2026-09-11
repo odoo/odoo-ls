@@ -70,7 +70,7 @@ impl ModuleSymbol {
                             } else if key_str == "data" {
                                 ModuleSymbol::load_manifest_data(session, module_key, &mut res, key_literal, value);
                             } else if key_str == "assets" {
-                                ModuleSymbol::load_manifest_assets(session, module_key, &mut res, key_literal, value);
+                                ModuleSymbol::load_manifest_assets(session, &mut res, key_literal, value);
                             } else if key_str == "active"
                                 && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03302, &[]) {
                                     res.push(Diagnostic {
@@ -178,7 +178,7 @@ impl ModuleSymbol {
         }
     }
 
-    fn load_manifest_assets(session: &mut SessionInfo, module_key: ModuleKey, diagnostics: &mut Vec<Diagnostic>, key_literal: &ExprStringLiteral, value: &Expr) {
+    fn load_manifest_assets(session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>, key_literal: &ExprStringLiteral, value: &Expr) {
         if !value.is_dict_expr() {
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04013, &[]) {
                 diagnostics.push(Diagnostic {
@@ -213,11 +213,9 @@ impl ModuleSymbol {
                     }
                     continue;
                 }
+                // Nothing is kept: asset discovery is a `static/` walk. Only the shape is checked.
                 for item in data.value.as_list_expr().unwrap().iter() {
-                    let module = &mut session.st_mut()[module_key];
-                    if item.is_string_literal_expr() {
-                        module.assets.push((item.as_string_literal_expr().unwrap().value.to_string(), item.range()));
-                    } else if item.is_tuple_expr() {
+                    if item.is_tuple_expr() {
                         if item.as_tuple_expr().unwrap().elts.is_empty() {
                             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04018, &[]) {
                                 diagnostics.push(Diagnostic {
@@ -293,14 +291,13 @@ impl ModuleSymbol {
                                 continue;
                             }
                         }
-                    } else {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04017, &[]) {
+                    } else if !item.is_string_literal_expr()
+                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04017, &[]) {
                             diagnostics.push(Diagnostic {
                                 range: Range::new(Position::new(item.range().start().to_u32(), 0), Position::new(item.range().end().to_u32(), 0)),
                                 ..diagnostic
                             });
                         }
-                    }
                 }
             }
         }
