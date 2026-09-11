@@ -872,7 +872,7 @@ fn complete_attribut(session: &mut SessionInfo, file: SourceFileKey, attr: &Expr
     if offset > attr.value.range().start().to_usize() && offset <= attr.value.range().end().to_usize() {
         return complete_expr( &attr.value, session, file, offset, is_param, expected_type);
     } else {
-        let parent = Evaluation::eval_from_ast(session, &attr.value, scope, &attr.range().start(), false, &mut vec![]).0;
+        let parent = Evaluation::eval_from_ast(session, &attr.value, scope, &attr.value.range().end(), false, &mut vec![]).0;
 
         let from_module = session.st().find_module(file);
         for parent_eval in parent.iter() {

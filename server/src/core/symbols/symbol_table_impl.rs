@@ -11,7 +11,7 @@ use crate::{
         build_scheduler::BuildScheduler,
         diagnostics::{create_diagnostic, DiagnosticCode},
         entry_point::EntryPoint,
-        evaluation::{Evaluation, EvaluationSymbolPtr},
+        evaluation::{Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak},
         evaluation_context::{Context, ContextKey, ContextValue},
         file_mgr::{FileInfo, FileMgr, NoqaInfo},
         model::Model,
@@ -1272,8 +1272,7 @@ impl SymbolTable {
         }
     }
 
-    /// get a Symbol that has the same given range and name
-    pub fn get_positioned_symbol(&self, target: SymbolKey, name: &str, range: &TextRange) -> Option<SymbolKey> {
+    fn get_positioned_symbol_predicated(&self, target: SymbolKey, name: &str, predicate: impl Fn(SymbolKey) -> bool) -> Option<SymbolKey> {
         if let Some(symbols) = match target {
             SymbolKey::Class(c) => { self[c].symbols().get(name) },
             SymbolKey::File(f) => {self[f].symbols().get(name)},
@@ -1284,13 +1283,41 @@ impl SymbolTable {
         } {
             for sym_list in symbols.values() {
                 for &key in sym_list.iter() {
-                    if self.range(key).start() == range.start() {
+                    if predicate(key) {
                         return Some(key);
                     }
                 }
             }
         }
         None
+    }
+
+    /// get a Symbol that has the same given range and name. Type-narrowing symbols are skipped:
+    /// they share their position with the declaration they narrow, and are found through
+    /// `get_narrowed_variable` instead.
+    pub fn get_positioned_symbol(&self, target: SymbolKey, name: &str, range: &TextRange) -> Option<SymbolKey> {
+        self.get_positioned_symbol_predicated(target, name, |key| {
+            self.range(key).start() == range.start() && !self.is_narrowing_symbol(key)
+        })
+    }
+
+    /// Whether `key` is a synthetic type-narrowing re-declaration rather than a real one
+    pub fn is_narrowing_symbol(&self, key: SymbolKey) -> bool {
+        matches!(key, SymbolKey::Variable(v) if self[v].narrowing_check_range.is_some())
+    }
+
+    /// Like `get_positioned_symbol`, but variables only, with `IsinstanceCheck::target_range` as tie-breaker
+    pub fn get_narrowed_variable(&self, target: SymbolKey, name: &str, range: &TextRange, check_range: TextRange) -> Option<VariableKey> {
+        self.get_positioned_symbol_predicated(target, name, |key| {
+            if let SymbolKey::Variable(v) = key {
+                self.range(key).start() == range.start() && self[v].narrowing_check_range == Some(check_range)
+            } else {
+                false
+            }
+        }).and_then(|key| match key {
+            SymbolKey::Variable(v) => Some(v),
+            _ => None,
+        })
     }
 
     pub fn get_file(&self, target: SymbolKey) -> Option<SourceFileKey> {
@@ -1633,11 +1660,48 @@ impl SymbolTable {
                 for eval in evaluations {
                     symbols.push_back(eval.symbol.get_symbol(session, context, &mut vec![], None));
                 }
+            } else if let SymbolKey::Variable(variable_key) = symbol && !session.st()[variable_key].narrowed_from.is_empty() {
+                // Jump over narrowing symbols, keeping the ptr's own data: the hop is transparent.
+                let narrowed_from = session.st()[variable_key].narrowed_from.clone();
+                for shadowed in narrowed_from {
+                    symbols.push_back(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak {
+                        weak: shadowed,
+                        context: w.context.clone(),
+                        instance: w.instance,
+                        is_super: w.is_super,
+                    }));
+                }
             } else {
                 res.push(current_sym);
             }
         }
         res
+    }
+
+    /// Whether `candidate` *is* `target`, or transitively narrows from it (nested narrowings chain)
+    pub fn is_or_narrowed_from(&self, candidate: SymbolKey, target: SymbolKey) -> bool {
+        if candidate == target {
+            return true; // common case, before allocating for the walk
+        }
+        let mut seen = HashSet::default();
+        let mut queue = VecDeque::new();
+        queue.push_back(candidate);
+        while let Some(current) = queue.pop_front() {
+            if current == target {
+                return true;
+            }
+            if !seen.insert(current) {
+                continue;
+            }
+            if let SymbolKey::Variable(variable_key) = current {
+                for shadowed in self[variable_key].narrowed_from.iter() {
+                    if let Some(upgraded) = shadowed.upgrade(self) {
+                        queue.push_back(upgraded);
+                    }
+                }
+            }
+        }
+        false
     }
 
     pub fn all_symbols(&self, target: SymbolKey) -> Vec<SymbolKey> {

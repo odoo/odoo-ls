@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::vec;
 
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use ruff_python_ast::{Alias, AnyRootNodeRef, ExceptHandler, Expr, ExprNamed, FStringPart, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
+use ruff_python_ast::{Alias, AnyRootNodeRef, BoolOp, ExceptHandler, Expr, ExprNamed, FStringPart, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{debug, trace, warn};
 
@@ -20,6 +20,8 @@ use crate::core::odoo::SyncOdoo;
 use crate::core::evaluation::{Evaluation};
 use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
 use crate::core::python_utils;
+use crate::utils::HashSet;
+use crate::core::type_narrowing::{loop_exit_anchor, match_narrowing_checks, narrowing_anchor_after, narrowing_range, IsinstanceCheck};
 use crate::features::ast_utils::AstUtils;
 use crate::threads::SessionInfo;
 
@@ -186,6 +188,7 @@ impl PythonArchEval {
             },
             Stmt::Assert(assert_stmt) => {
                 self.visit_expr(session, &assert_stmt.test);
+                self.resolve_narrowing_at(session, &assert_stmt.test, narrowing_anchor_after(assert_stmt.range().end()), false);
             }
             Stmt::AugAssign(aug_assign_stmt) => {
                 self.visit_expr(session, &aug_assign_stmt.target);
@@ -216,8 +219,14 @@ impl PythonArchEval {
                 self.visit_named_expr(session, named_expr);
             },
             Expr::BoolOp(bool_op_expr) => {
+                let operand_negated = matches!(bool_op_expr.op, BoolOp::Or);
+                let mut prev_operand: Option<&Expr> = None;
                 for expr in bool_op_expr.values.iter() {
+                    if let Some(prev) = prev_operand {
+                        self.resolve_narrowing_at(session, prev, expr.range().start(), operand_negated);
+                    }
                     self.visit_expr(session, expr);
+                    prev_operand = Some(expr);
                 }
             },
             Expr::BinOp(bin_op_expr) => {
@@ -445,10 +454,12 @@ impl PythonArchEval {
     }
 
     fn handle_assigns(&mut self, session: &mut SessionInfo, assigns: Vec<Assign>, range: &TextRange){
+        let mut visited_values = HashSet::default();
         for assign in assigns.iter() {
-            if let Some(ref expr) = assign.value {
-                self.visit_expr(session, expr);
-            }
+            if let Some(ref expr) = assign.value
+                && visited_values.insert(expr.range()) {
+                    self.visit_expr(session, expr);
+                }
             match assign.target {
                 AssignTargetType::Name(ref name_expr) => {
                     let variable = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &name_expr.id, &name_expr.range);
@@ -790,11 +801,75 @@ impl PythonArchEval {
 
     fn _visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) {
         self.visit_expr(session, &if_stmt.test);
+        if let Some(first_stmt) = if_stmt.body.first() {
+            self.resolve_narrowing_at(session, &if_stmt.test, first_stmt.range().start(), false);
+        }
         self.visit_sub_stmts(session, &if_stmt.body);
-        if_stmt.elif_else_clauses.iter().for_each(|elif_clause| {
-            if let Some(test_clause) = elif_clause.test.as_ref() { self.visit_expr(session, test_clause) }
-            self.visit_sub_stmts(session, &elif_clause.body)
-        });
+        let mut last_test: &Expr = if_stmt.test.as_ref();
+        let mut else_clause_exists = false;
+        for elif_clause in if_stmt.elif_else_clauses.iter() {
+            if let Some(test_clause) = elif_clause.test.as_ref() {
+                self.resolve_narrowing_at(session, last_test, test_clause.range().start(), true);
+                self.visit_expr(session, test_clause);
+                if let Some(first_stmt) = elif_clause.body.first() {
+                    self.resolve_narrowing_at(session, test_clause, first_stmt.range().start(), false);
+                }
+                last_test = test_clause;
+            } else {
+                else_clause_exists = true;
+                if let Some(first_stmt) = elif_clause.body.first() {
+                    self.resolve_narrowing_at(session, last_test, first_stmt.range().start(), true);
+                }
+            }
+            self.visit_sub_stmts(session, &elif_clause.body);
+        }
+        if !else_clause_exists {
+            self.resolve_narrowing_at(session, last_test, narrowing_anchor_after(if_stmt.range().end()), true);
+        }
+    }
+
+    /// Fills in the narrowed type for the symbol `declare_narrowing_for_check` declared.
+    fn resolve_narrowing_for_check(&mut self, session: &mut SessionInfo, check: &IsinstanceCheck, body_start: TextSize) {
+        let scope = *self.sym_stack.last().unwrap();
+        let range = narrowing_range(body_start);
+        let Some(variable_key) = session.st().get_narrowed_variable(scope, check.target_name, &range, check.target_range) else { return };
+        let parent = session.st()[variable_key].parent();
+        let mut evaluations = vec![];
+        for type_expr in &check.type_exprs {
+            let mut deps = vec![vec![], vec![]];
+            if !self.file_mode {
+                deps.push(vec![]);
+            }
+            let (type_evals, diags) = Evaluation::eval_from_ast(session, type_expr, parent, &body_start, false, &mut deps);
+            session.st_mut().insert_dependencies(self.file, &deps, self.current_step);
+            self.diagnostics.extend(diags);
+            for type_eval in &type_evals {
+                let eval_symbol = type_eval.symbol.get_symbol(session, None, &mut self.diagnostics, None);
+                let ref_syms = SymbolTable::follow_ref(&eval_symbol, session, None, false, true, None, None);
+                for ref_sym in ref_syms {
+                    if let Some(sym_key) = ref_sym.upgrade_weak(session.st()) {
+                        evaluations.push(Evaluation::eval_from_symbol(session.st(), sym_key, Some(true)));
+                    }
+                }
+            }
+        }
+        if evaluations.is_empty() {
+            // The checked type didn't resolve (unimported, TYPE_CHECKING-only, a typo): point at
+            // the shadowed declarations, so the narrowing is a no-op instead of erasing the type.
+            let narrowed_from = session.st()[variable_key].narrowed_from.clone();
+            evaluations = narrowed_from.iter()
+                .filter_map(|shadowed| shadowed.upgrade(session.st()))
+                .map(|shadowed| Evaluation::eval_from_symbol(session.st(), shadowed, None))
+                .collect();
+        }
+        session.st_mut()[variable_key].evaluations = evaluations;
+    }
+
+    /// Counterpart of `declare_narrowing_at`: resolves what it declared at `anchor`.
+    fn resolve_narrowing_at(&mut self, session: &mut SessionInfo, test: &Expr, anchor: TextSize, want_negated: bool) {
+        for check in match_narrowing_checks(test, want_negated) {
+            self.resolve_narrowing_for_check(session, &check, anchor);
+        }
     }
 
     fn _visit_for(&mut self, session: &mut SessionInfo, for_stmt: &StmtFor) {
@@ -1003,7 +1078,11 @@ impl PythonArchEval {
 
     fn visit_while(&mut self, session: &mut SessionInfo, while_stmt: &StmtWhile) {
         self.visit_expr(session, &while_stmt.test);
+        if let Some(first_stmt) = while_stmt.body.first() {
+            self.resolve_narrowing_at(session, &while_stmt.test, first_stmt.range().start(), false);
+        }
         self.visit_sub_stmts(session, &while_stmt.body);
+        self.resolve_narrowing_at(session, &while_stmt.test, loop_exit_anchor(&while_stmt.orelse, while_stmt.range().end()), true);
         self.visit_sub_stmts(session, &while_stmt.orelse);
     }
 

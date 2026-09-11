@@ -1,6 +1,6 @@
 use lsp_types::Diagnostic;
 use ruff_python_ast::{
-    Alias, AnyRootNodeRef, CmpOp, Expr, ExprNamed, ExprTuple, FStringPart, Identifier, Parameters,
+    Alias, AnyRootNodeRef, BoolOp, CmpOp, Expr, ExprBoolOp, ExprNamed, ExprTuple, FStringPart, Identifier, Parameters,
     Pattern, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf,
     StmtMatch, StmtTry, StmtWhile, StmtWith,
 };
@@ -18,8 +18,10 @@ use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 use crate::core::python_utils;
+use crate::utils::HashSet;
+use crate::core::type_narrowing::{loop_exit_anchor, match_narrowing_checks, narrowing_anchor_after, narrowing_range, IsinstanceCheck};
 use crate::core::symbols::Buildable;
-use crate::core::symbols::symbol_keys::{FunctionKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey};
+use crate::core::symbols::symbol_keys::{FunctionKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey, Wk};
 use crate::core::symbols::storage::SymbolTable;
 use crate::threads::SessionInfo;
 use crate::{oyarn, S};
@@ -317,6 +319,9 @@ impl PythonArchBuilder {
                 },
                 Stmt::Assert(assert_stmt) => {
                     self.visit_expr(session, &assert_stmt.test);
+                    // `assert isinstance(x, T)` narrows the rest of the current block
+                    let scope = *self.sym_stack.last().unwrap();
+                    self.declare_narrowing_at(session, scope, &assert_stmt.test, narrowing_anchor_after(assert_stmt.range().end()), None, false);
                 },
                 Stmt::AugAssign(aug_assign_stmt) => {
                     self.visit_expr(session, &aug_assign_stmt.target);
@@ -342,34 +347,46 @@ impl PythonArchBuilder {
         }
     }
 
+    /// One section per operand (each is a short-circuit boundary), an operand's narrowing applying
+    /// to the next, plus a trailing merge section for whatever follows.
+    /// Returns an `and`-chain's last operand section, see `visit_condition`.
+    fn visit_bool_op(&mut self, session: &mut SessionInfo, bool_op_expr: &ExprBoolOp) -> Option<SectionIndex> {
+        let scope = *self.sym_stack.last().unwrap();
+        let mut prev_section = session.st().as_symbol_mgr(scope).get_last_index();
+        let mut prev_operand: Option<&Expr> = None;
+        let mut last_operand_section = None;
+        let operand_negated = matches!(bool_op_expr.op, BoolOp::Or);
+        let cond_sections = bool_op_expr.values.iter().map(|expr|{
+            // `A and B` only reaches B once A was true, `A or B` only once A was false: either
+            // way A's outcome is known there, so what it implies applies to B.
+            let narrow_section = prev_operand.and_then(|prev|
+                self.declare_narrowing_at(session, scope, prev, expr.range().start(), Some(SectionIndex::INDEX(prev_section)), operand_negated)
+            );
+            session.st_mut().as_mut_symbol_mgr(scope).add_section(
+                expr.range().start(),
+                Some(narrow_section.unwrap_or(SectionIndex::INDEX(prev_section)))
+            );
+            self.visit_expr(session, expr);
+            prev_section = session.st().as_symbol_mgr(scope).get_last_index();
+            prev_operand = Some(expr);
+            let section = SectionIndex::INDEX(prev_section);
+            last_operand_section = Some(section.clone());
+            section
+        }).collect::<Vec<_>>();
+        session.st_mut().as_mut_symbol_mgr(scope).add_section(
+            bool_op_expr.range().end() + TextSize::new(1),
+            Some(SectionIndex::OR(cond_sections))
+        );
+        if matches!(bool_op_expr.op, BoolOp::And) { last_operand_section } else { None }
+    }
+
     fn visit_expr(&mut self, session: &mut SessionInfo, expr: &Expr){
         match expr {
             Expr::Named(named_expr) =>{
                 self.visit_named_expr(session, named_expr);
             },
             Expr::BoolOp(bool_op_expr) => {
-                // introduce sections here
-                // Due to short circuit behavior
-                // Further conditions can be skipped
-                // Which could have named expressions
-
-                // one section per value
-                // one succeeding section with all the value sections in OR
-                let scope = *self.sym_stack.last().unwrap();
-                let mut prev_section = session.st().as_symbol_mgr(scope).get_last_index();
-                let cond_sections = bool_op_expr.values.iter().map(|expr|{
-                    session.st_mut().as_mut_symbol_mgr(scope).add_section(
-                        expr.range().start(),
-                        Some(SectionIndex::INDEX(prev_section))
-                    );
-                    self.visit_expr(session, expr);
-                    prev_section = session.st().as_symbol_mgr(scope).get_last_index();
-                    SectionIndex::INDEX(prev_section)
-                }).collect::<Vec<_>>();
-                session.st_mut().as_mut_symbol_mgr(scope).add_section(
-                    bool_op_expr.range().end() + TextSize::new(1),
-                    Some(SectionIndex::OR(cond_sections))
-                );
+                self.visit_bool_op(session, bool_op_expr);
             },
             Expr::BinOp(bin_op_expr) => {
                 self.visit_expr(session, &bin_op_expr.left);
@@ -560,10 +577,12 @@ impl PythonArchBuilder {
 
     fn _visit_assign(&mut self, session: &mut SessionInfo, assign_stmt: &StmtAssign) {
         let assigns = python_utils::unpack_assign(&assign_stmt.targets, None, Some(&assign_stmt.value));
+        let mut visited_values = HashSet::default();
         for assign in assigns.iter() {
-            if let Some(ref expr) = assign.value {
-                self.visit_expr(session, expr);
-            }
+            if let Some(ref expr) = assign.value
+                && visited_values.insert(expr.range()) {
+                    self.visit_expr(session, expr);
+                }
             match assign.target {
                 AssignTargetType::Name(ref name_expr) => {
                     let variable_key = session.st_mut().add_new_variable(*self.sym_stack.last().unwrap(), &name_expr.id, name_expr.range);
@@ -922,6 +941,53 @@ impl PythonArchBuilder {
         (true, false)
     }
 
+    /// Declares every narrowing `test` implies when it evaluated to `!want_negated`, in a section
+    /// of its own chained from `parent`. Returns that section to chain what follows from, or
+    /// `None` when there is nothing to narrow (the caller then keeps `parent`).
+    ///
+    /// `anchor` must be a position no real declaration can occupy - use the helpers in
+    /// `type_narrowing`, never a raw statement position.
+    fn declare_narrowing_at(&self, session: &mut SessionInfo, scope: SymbolKey, test: &Expr, anchor: TextSize, parent: Option<SectionIndex>, want_negated: bool) -> Option<SectionIndex> {
+        let checks = match_narrowing_checks(test, want_negated);
+        if checks.is_empty() {
+            return None;
+        }
+        let section = session.st_mut().as_mut_symbol_mgr(scope).add_section(anchor, parent).index;
+        for check in checks.iter() {
+            self.declare_narrowing_for_check(session, scope, check, test.range().start(), anchor);
+        }
+        Some(SectionIndex::INDEX(section))
+    }
+
+    fn declare_narrowing_for_check(&self, session: &mut SessionInfo, scope: SymbolKey, check: &IsinstanceCheck, test_start: TextSize, anchor: TextSize) {
+        // `narrowed_from` lets go-to-definition and find-references see the real declaration.
+        let shadowed = SymbolTable::infer_name(session.sync_odoo, scope, check.target_name, Some(test_start.to_u32()));
+        let narrowed_from: Vec<Wk<SymbolKey>> = shadowed.symbols.into_iter().map(Wk::from).collect();
+        let variable_key = session.st_mut().add_new_variable(scope, check.target_name, narrowing_range(anchor));
+        session.st_mut()[variable_key].narrowed_from = narrowed_from;
+        session.st_mut()[variable_key].narrowing_check_range = Some(check.target_range);
+    }
+
+    /// Whether `body` always ends the enclosing *function* - not exhaustive (e.g. a terminating
+    /// nested `if`/`else`), but covers the common early-exit guard. `break`/`continue` don't
+    /// count: they only leave the loop, and what they assigned still matters after it.
+    fn body_always_exits(body: &[Stmt]) -> bool {
+        matches!(body.last(), Some(Stmt::Return(_) | Stmt::Raise(_)))
+    }
+
+    /// `visit_expr` for a top-level condition, returning the section a body guarded by it should
+    /// chain from, or `None` for "whatever's current". Only an `and`-chain returns something: its
+    /// *last* operand's section. Its merge section would not do - that one also covers the
+    /// short-circuit exits, unioning the narrowing back with the pre-narrowing state.
+    fn visit_condition(&mut self, session: &mut SessionInfo, test: &Expr) -> Option<SectionIndex> {
+        if let Expr::BoolOp(bool_op_expr) = test {
+            self.visit_bool_op(session, bool_op_expr)
+        } else {
+            self.visit_expr(session, test);
+            None
+        }
+    }
+
     fn visit_if(&mut self, session: &mut SessionInfo, if_stmt: &StmtIf) {
         //TODO check platform condition (sys.version > 3.12, etc...)
         let scope = *self.sym_stack.last().unwrap();
@@ -932,15 +998,17 @@ impl PythonArchBuilder {
             None // Take preceding section (before if stmt)
         );
         let mut last_test_section = test_section.index;
+        let mut last_test: &Expr = if_stmt.test.as_ref();
 
-        self.visit_expr(session, &if_stmt.test);
+        let body_prev = self.visit_condition(session, if_stmt.test.as_ref());
         let mut body_version_ok = false; //if true, it means we found a condition that is true and contained a version check. Used to avoid else clause
         let mut stmt_sections = if if_stmt.body.is_empty() {
             vec![]
         } else {
+            let narrow_section = self.declare_narrowing_at(session, scope, &if_stmt.test, if_stmt.body[0].range().start(), body_prev.clone(), false);
             session.st_mut().as_mut_symbol_mgr(scope).add_section( // first body section
                 if_stmt.body[0].range().start(),
-                None // Take preceding section (if test)
+                narrow_section.or(body_prev)
             );
             let check_version = self._check_sys_version_condition(session, if_stmt.test.as_ref());
             if check_version.0 {
@@ -948,7 +1016,11 @@ impl PythonArchBuilder {
                     body_version_ok = true;
                 }
                 self.visit_node(session, &if_stmt.body);
-                vec![ SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index())]
+                if Self::body_always_exits(&if_stmt.body) {
+                    vec![]
+                } else {
+                    vec![ SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index())]
+                }
             } else {
                 vec![]
             }
@@ -956,23 +1028,39 @@ impl PythonArchBuilder {
 
         let mut else_clause_exists = false;
 
-        let stmt_clauses_iter = if_stmt.elif_else_clauses.iter().filter_map(|elif_else_clause|{
+        for elif_else_clause in if_stmt.elif_else_clauses.iter() {
+            // An `and`-chain test's last operand section, so the body sees what earlier operands
+            // bound (narrowing, or a plain walrus) - as `visit_condition` does for the main `if`.
+            let mut test_prev = None;
             match elif_else_clause.test {
                 Some(ref test_clause) => {
+                    // Reaching this test means the previous one was false - narrow it here (not
+                    // just at the final fallthrough) so it propagates to everything after.
+                    let prev_section = SectionIndex::INDEX(last_test_section);
+                    let narrow_section = self.declare_narrowing_at(session, scope, last_test, test_clause.range().start(), Some(prev_section.clone()), true);
                     last_test_section = session.st_mut().as_mut_symbol_mgr(scope).add_section(
                         test_clause.range().start(),
-                        Some(SectionIndex::INDEX(last_test_section))
+                        Some(narrow_section.unwrap_or(prev_section))
                     ).index;
-                    self.visit_expr(session, test_clause);
+                    test_prev = self.visit_condition(session, test_clause);
+                    last_test = test_clause;
                 },
                 None => else_clause_exists = true
             }
             if elif_else_clause.body.is_empty() {
-                return None;
+                continue;
             }
+            let clause_body_prev = test_prev.unwrap_or(SectionIndex::INDEX(last_test_section));
+            // An elif narrows its own (positive) check; `else` narrows the last test's
+            // negation, same as the implicit fallthrough when there's no `else` at all.
+            let body_anchor = elif_else_clause.body[0].range().start();
+            let narrow_section = match &elif_else_clause.test {
+                Some(test_clause) => self.declare_narrowing_at(session, scope, test_clause, body_anchor, Some(clause_body_prev.clone()), false),
+                None => self.declare_narrowing_at(session, scope, last_test, body_anchor, Some(clause_body_prev.clone()), true),
+            };
             session.st_mut().as_mut_symbol_mgr(scope).add_section(
                 elif_else_clause.body[0].range().start(),
-                Some(SectionIndex::INDEX(last_test_section))
+                Some(narrow_section.unwrap_or(clause_body_prev))
             );
             if let Some(test_clause) = &elif_else_clause.test {
                 let version_check = self._check_sys_version_condition(session, test_clause);
@@ -986,23 +1074,26 @@ impl PythonArchBuilder {
             else if !body_version_ok { //else clause
                 self.visit_node(session, &elif_else_clause.body);
             }
-            let clause_section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
-            Some(clause_section)
-        });
+            if !Self::body_always_exits(&elif_else_clause.body) {
+                stmt_sections.push(SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index()));
+            }
+        }
 
-        stmt_sections.extend(stmt_clauses_iter);
-
+        // The implicit-else narrowing below shares this position with the merge section: the
+        // merge is added last so it wins position lookups, the narrowing is reached via its `OR`.
+        let after_if = narrowing_anchor_after(if_stmt.range().end());
         if !else_clause_exists{
-            // If there is no else clause, the there is an implicit else clause
-            // Which bypasses directly to the last test section
-            stmt_sections.push(SectionIndex::INDEX(last_test_section));
+            // Implicit else: goes from the last test to out of the if-statement
+            let prev = SectionIndex::INDEX(last_test_section);
+            let narrow_section = self.declare_narrowing_at(session, scope, last_test, after_if, Some(prev.clone()), true);
+            stmt_sections.push(narrow_section.unwrap_or(prev));
         }
         if stmt_sections.is_empty(){
             // If there are no valid bodies or tests, point to the section before the if-stmt
             stmt_sections.push(SectionIndex::INDEX(prefix_section));
         }
         session.st_mut().as_mut_symbol_mgr(scope).add_section(
-            if_stmt.range().end() + TextSize::new(1),
+            after_if,
             Some(SectionIndex::OR(stmt_sections))
         );
     }
@@ -1033,12 +1124,15 @@ impl PythonArchBuilder {
         }
 
         self.visit_node(session, &for_stmt.body);
-        let mut stmt_sections = vec![SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index())];
+        let body_section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
+        let mut stmt_sections = vec![body_section.clone()];
 
         if !for_stmt.orelse.is_empty(){
+            // Same as `while`: the iterable runs out either immediately or after some
+            // iterations, so `orelse` continues from both.
             session.st_mut().as_mut_symbol_mgr(scope).add_section(
                 for_stmt.orelse[0].range().start(),
-                Some(previous_section.clone())
+                Some(SectionIndex::OR(vec![previous_section.clone(), body_section]))
             );
             self.visit_node(session, &for_stmt.orelse);
             stmt_sections.push(SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index()));
@@ -1156,7 +1250,6 @@ impl PythonArchBuilder {
         let previous_section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
         let mut stmt_sections = vec![previous_section.clone()];
         for case in match_stmt.cases.iter() {
-            if let Some(test_clause) = case.guard.as_ref() { self.visit_expr(session, test_clause) }
             if matches!(&case.pattern, ruff_python_ast::Pattern::MatchAs(_)){
                 stmt_sections.remove(0); // When we have a wildcard pattern, previous section is shadowed
             }
@@ -1164,7 +1257,10 @@ impl PythonArchBuilder {
                 case.range().start(),
                 Some(previous_section.clone())
             );
+            // Pattern first, then the guard: the guard can read what the pattern bound, and its
+            // own sections start after the case's.
             traverse_match(&case.pattern, session.st_mut(), scope);
+            if let Some(test_clause) = case.guard.as_ref() { self.visit_expr(session, test_clause) }
             self.visit_node(session, &case.body);
             stmt_sections.push(SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index()));
         }
@@ -1179,26 +1275,41 @@ impl PythonArchBuilder {
         let scope = *self.sym_stack.last().unwrap();
         let scope_as_sym_mgr = session.st_mut().as_mut_symbol_mgr(scope);
         let previous_section = SectionIndex::INDEX(scope_as_sym_mgr.get_last_index());
+        // The test is visited first: it runs before the body, and its own sections start earlier,
+        // which sections must respect.
+        self.visit_expr(session, &while_stmt.test);
         if let Some(first_body_stmt) = while_stmt.body.first() {
-            scope_as_sym_mgr.add_section(
+            let narrow_section = self.declare_narrowing_at(session, scope, &while_stmt.test, first_body_stmt.range().start(), None, false);
+            session.st_mut().as_mut_symbol_mgr(scope).add_section(
                 first_body_stmt.range().start(),
-                None
+                narrow_section
             );
         }
-        self.visit_expr(session, &while_stmt.test);
         self.visit_node(session, &while_stmt.body);
         let scope_as_sym_mgr = session.st_mut().as_mut_symbol_mgr(scope);
         let body_section = SectionIndex::INDEX(scope_as_sym_mgr.get_last_index());
-        let mut stmt_sections = vec![body_section];
+        let mut stmt_sections = vec![body_section.clone()];
+
+        // The test fails either before the first iteration or after some, so the exit path
+        // continues from both - otherwise whatever the body bound is invisible in `orelse`.
+        let exit_prev = SectionIndex::OR(vec![previous_section, body_section]);
+        // A normal (non-`break`) loop exit means the test was false - narrow it here too, same
+        // as `if`'s negative guard. The narrowing sits between `orelse` and the merge above on
+        // purpose: it re-declares the checked name, shadowing the body's own binding of it,
+        // while every other name still reaches `orelse` through the merge.
+        let false_branch_start = loop_exit_anchor(&while_stmt.orelse, while_stmt.range().end());
+        let narrow_section = self.declare_narrowing_at(session, scope, &while_stmt.test, false_branch_start, Some(exit_prev.clone()), true);
+        let false_branch_section = narrow_section.unwrap_or(exit_prev);
+
         if !while_stmt.orelse.is_empty(){
-            scope_as_sym_mgr.add_section(
+            session.st_mut().as_mut_symbol_mgr(scope).add_section(
                 while_stmt.orelse[0].range().start(),
-                Some(previous_section.clone())
+                Some(false_branch_section)
             );
             self.visit_node(session, &while_stmt.orelse);
             stmt_sections.push(SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index()));
         } else {
-            stmt_sections.push(previous_section.clone());
+            stmt_sections.push(false_branch_section);
         }
 
         session.st_mut().as_mut_symbol_mgr(scope).add_section(
