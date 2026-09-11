@@ -382,7 +382,7 @@ impl SymbolTable {
         }
     }
 
-    fn children(&self, key:SymbolKey) -> Vec<SymbolKey> {
+    pub(crate) fn children(&self, key:SymbolKey) -> Vec<SymbolKey> {
         let mut result = vec![];
         if let Ok(parent) =  <FileContentParent>::try_from(key){
             result.extend(parent.children(self));

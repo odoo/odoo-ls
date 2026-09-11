@@ -51,6 +51,9 @@ csv = "1.4.0"
 slotmap = "1.1.1"
 rustc-hash = "2.1"
 duplicate = "2.0.1"
+rustpython-vm = { version = "0.5.0", features = ["importlib", "encodings", "freeze-stdlib"], optional = true }
+rustpython-stdlib = { version = "0.5.0", optional = true }
+rustpython-pylib = { version = "0.5.0", features = ["freeze-stdlib"], optional = true }
 # ittapi = "0.3" # profiling with VTune profiler
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 nix = { version = "0.29.0", features = ["process"] }
@@ -68,6 +71,7 @@ assert_fs = "1.1"
 [features]
 default = []
 debug_yarn = []  # use a readable structure instead of Yarn for debug purpose
+python-cli = ["dep:rustpython-vm", "dep:rustpython-stdlib", "dep:rustpython-pylib"]
 
 [profile.profiling]
 inherits = "release"

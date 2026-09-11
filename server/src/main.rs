@@ -72,17 +72,22 @@ fn main() {
         .with_ansi(false)
         .with_writer(file_writer)
         .finish();
-    if cli.parse || use_debug {
+    if cli.parse || cli.interactive || use_debug {
         let stdout_subscriber = fmt::layer().with_writer(std::io::stdout).with_ansi(true);
         tracing::subscriber::set_global_default(subscriber.with(stdout_subscriber)).expect("Unable to set default tracing subscriber");
     } else {
         tracing::subscriber::set_global_default(subscriber).expect("Unable to set default tracing subscriber");
     }
-    ctrlc::set_handler(move || {
-        info!("Received ctrl-c signal");
-        std::process::exit(0);
-    })
-    .expect("Error setting Ctrl-C handler");
+    if !cli.interactive {
+        // Skipped in --interactive mode: RustPython doesn't register its own SIGINT handler,
+        // so this would just kill the console on the first Ctrl-C with no way to interrupt a
+        // single statement instead. Leaving the OS default in place is the lesser evil for now.
+        ctrlc::set_handler(move || {
+            info!("Received ctrl-c signal");
+            std::process::exit(0);
+        })
+        .expect("Error setting Ctrl-C handler");
+    }
 
     info!(">>>>>>>>>>>>>>>>>> New Session <<<<<<<<<<<<<<<<<<");
     info!("Server version: {}", EXTENSION_VERSION);
@@ -98,6 +103,18 @@ fn main() {
         info!("starting server (single parse mode)");
         let backend = CliBackend::new(cli);
         backend.run();
+    } else if cli.interactive {
+        #[cfg(feature = "python-cli")]
+        {
+            info!("starting server (interactive mode)");
+            let backend = odoo_ls_server::cli_interactive::InteractiveBackend::new(cli);
+            backend.run();
+        }
+        #[cfg(not(feature = "python-cli"))]
+        {
+            eprintln!("This build was not compiled with Python CLI support (rebuild with --features python-cli).");
+            process::exit(1);
+        }
     } else {
         let mut serv = if use_debug {
             info!(tag = "test", "starting server (debug mode)");

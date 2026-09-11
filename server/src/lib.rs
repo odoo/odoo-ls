@@ -1,8 +1,12 @@
 pub mod allocator;
 pub mod args;
 pub mod cli_backend;
+#[cfg(feature = "python-cli")]
+pub mod cli_interactive;
 pub mod constants;
 pub mod core;
+#[cfg(feature = "python-cli")]
+pub mod python_api;
 pub mod threads;
 pub mod features;
 pub mod fifo_ptr_weak_hash_set;

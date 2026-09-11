@@ -1,3 +1,4 @@
+use crossbeam_channel::{Receiver, Sender};
 use lsp_server::Message;
 use lsp_types::notification::{LogMessage, Notification, PublishDiagnostics};
 use lsp_types::{LogMessageParams, PublishDiagnosticsParams};
@@ -45,6 +46,44 @@ fn canonicalize_and_validate(
             None
         }
     }
+}
+
+/// Builds workspace folders + config, then runs the one-time full parse (`SyncOdoo::init`),
+/// exactly as `CliBackend::run` does for `--parse` mode. Shared with the `--interactive` backend
+/// (`cli_interactive.rs`), which needs the resulting `SyncOdoo` kept alive across many commands
+/// instead of being dropped after a single diagnostics dump.
+pub(crate) fn build_and_init_odoo(cli: &Cli) -> Option<(SyncOdoo, Sender<Message>, Receiver<Message>)> {
+    let backend = CliBackend::new(cli.clone());
+    let ws_folders = backend.setup()?;
+
+    let mut server = SyncOdoo::new();
+    let (s, r) = crossbeam_channel::unbounded();
+    {
+        let mut session = SessionInfo::new_from_custom_channel(s.clone(), r.clone(), None, &mut server);
+        session.sync_odoo.load_odoo_addons = false;
+
+        for (id, tf) in &ws_folders {
+            let uri = match FileMgr::try_pathname2uri(tf) {
+                Ok(uri) => uri,
+                Err(e) => {
+                    error!("Unable to resolve tracked folder: {}, error: {}", tf, e);
+                    continue;
+                }
+            };
+            session
+                .sync_odoo
+                .get_file_mgr()
+                .borrow_mut()
+                .add_workspace_folder(id.clone(), uri);
+        }
+
+        let mut config = backend.read_config_file(&mut session)?;
+        backend.reconcile_args_and_config_file(&mut config);
+
+        SyncOdoo::init(&mut session, config);
+    }
+
+    Some((server, s, r))
 }
 
 /// Basic backend that is used for a single parse execution
@@ -180,40 +219,9 @@ impl CliBackend {
     }
 
     pub fn run(self) {
-        let ws_folders = match self.setup() {
-            Some(folders) => folders,
-            None => return,
+        let Some((_server, _s, r)) = build_and_init_odoo(&self.cli) else {
+            return;
         };
-
-        let mut server = SyncOdoo::new();
-        let (s, r) = crossbeam_channel::unbounded();
-        let mut session = SessionInfo::new_from_custom_channel(s.clone(), r.clone(), None, &mut server);
-        session.sync_odoo.load_odoo_addons = false;
-
-        // Add workspace folders once
-        for (id, tf) in &ws_folders {
-            let uri = match FileMgr::try_pathname2uri(tf) {
-                Ok(uri) => uri,
-                Err(e) => {
-                    error!("Unable to resolve tracked folder: {}, error: {}", tf, e);
-                    continue;
-                }
-            };
-            session
-                .sync_odoo
-                .get_file_mgr()
-                .borrow_mut()
-                .add_workspace_folder(id.clone(), uri);
-        }
-
-        // Load and reconcile configuration
-        let mut config = match self.read_config_file(&mut session) {
-            Some(config) => config,
-            None => return,
-        };
-        self.reconcile_args_and_config_file(&mut config);
-
-        SyncOdoo::init(&mut session, config);
 
         let output_path = self.cli.output.clone().unwrap_or(S!("output.json"));
         let file = File::create(output_path.clone());
@@ -280,6 +288,9 @@ mod tests {
     fn default_cli() -> Cli {
         Cli {
             parse: true,
+            interactive: false,
+            script: None,
+            script_output: None,
             addons: None,
             community_path: None,
             tracked_folders: None,

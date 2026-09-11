@@ -1,12 +1,24 @@
 use clap::{Parser, ValueEnum};
 
-#[derive(Parser)]
+#[derive(Parser, Clone)]
 #[command(version, about, long_about = None)]
 #[allow(non_snake_case)]
 pub struct Cli {
     /// Do not run the server, but only extract diagnostics from the codebase, then stop.
-    #[arg(short, long)]
+    #[arg(short, long, conflicts_with = "interactive")]
     pub parse: bool,
+
+    /// Build the knowledge database, then open a Python console (or run --script) to query it.
+    #[arg(short, long)]
+    pub interactive: bool,
+
+    /// Path to a Python file to execute non-interactively (interactive mode required). If omitted, a live console is started instead.
+    #[arg(long)]
+    pub script: Option<String>,
+
+    /// Where to write the script's stdout (interactive mode + --script only). Defaults to this process's stdout.
+    #[arg(long)]
+    pub script_output: Option<String>,
 
     /// Addon paths you want to parse (parse mode required)
     #[arg(short, long)]
