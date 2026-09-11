@@ -861,12 +861,11 @@ impl SyncOdoo {
     /// Like `unload_path`, but only unloads a symbol when `should_unload` returns true. Returns whether anything was unloaded.
     pub fn unload_path_if(session: &mut SessionInfo, path: &Path, should_unload: impl Fn(&SymbolTable, SymbolKey) -> bool) -> bool {
         // file/dir might no longer exist in file system, we can't stat it
-        let is_dir = path.extension().is_none();
         let mut unloaded_any = false;
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_all() {
-            // try path as a data or asset file (js, xml, csv)
-            if !is_dir && let Some(data_or_asset) = Self::find_data_or_asset_in_ep(entry, path) {
+            // try path as a data or asset file
+            if let Some(data_or_asset) = Self::find_data_or_asset_in_ep(entry, path) {
                 if let Some(sym) = data_or_asset.upgrade(session.st())
                     && should_unload(session.st(), sym.into())
                 {
@@ -887,8 +886,6 @@ impl SyncOdoo {
                     }
                     continue;
                 }
-            }
-            if is_dir {
                 // try path as a dir holding data or assets
                 for data_or_asset in Self::find_nested_data_and_assets_in_ep(entry, path) {
                     if let Some(sym) = data_or_asset.upgrade(session.st())
