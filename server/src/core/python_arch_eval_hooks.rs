@@ -1295,7 +1295,7 @@ impl PythonArchEvalHooks {
         }
 
         // Keyword Arguments for fields that we would like to keep in the context
-        let context_arguments = [
+        let mut context_arguments = vec![
             ("comodel_name", "str", ContextKey::ComodelName, ContextKey::ComodelNameArgRange),
             ("related", "str", ContextKey::Related, ContextKey::RelatedArgRange),
             ("compute", "str", ContextKey::Compute, ContextKey::ComputeArgRange),
@@ -1306,6 +1306,10 @@ impl PythonArchEvalHooks {
             ("required", "bool", ContextKey::Required, ContextKey::EMPTY),
             ("default", "bool", ContextKey::Default, ContextKey::EMPTY),
         ];
+        // fields only accept compute_sql from 19.1 on
+        if session.sync_odoo.version >= (19, 1) {
+            context_arguments.push(("compute_sql", "str", ContextKey::ComputeSql, ContextKey::ComputeSqlArgRange));
+        }
         contexts_to_add.extend(
             context_arguments.into_iter()
             .filter_map(|(arg_name_str, only_str, arg_name_key, arg_range_key)|
