@@ -28,6 +28,8 @@ pub enum ContextKey {
     BaseIsSelf,
     Compute,
     ComputeArgRange,
+    ComputeSql,
+    ComputeSqlArgRange,
     ComodelName,
     ComodelNameArgRange,
     ConstructingClass,
@@ -65,6 +67,7 @@ impl ContextKey {
             | ContextKey::BaseCall
             | ContextKey::BaseIsSelf
             | ContextKey::Compute
+            | ContextKey::ComputeSql
             | ContextKey::ComodelName
             | ContextKey::ConstructingClass
             | ContextKey::Default
@@ -85,6 +88,7 @@ impl ContextKey {
             | ContextKey::ComodelNameArgRange
             | ContextKey::RelatedArgRange
             | ContextKey::ComputeArgRange
+            | ContextKey::ComputeSqlArgRange
             | ContextKey::InverseArgRange
             | ContextKey::InverseNameArgRange
             | ContextKey::SearchArgRange

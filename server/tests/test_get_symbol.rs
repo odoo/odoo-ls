@@ -1,6 +1,7 @@
 ﻿// Test the hover feature by calling get_hover on various symbols in the test addons.
 
 use odoo_ls_server::core::odoo::SyncOdoo;
+use odoo_ls_server::odoo_version::OdooVersion;
 use odoo_ls_server::utils::{PathSanitizer, ToFilePath};
 use odoo_ls_server::Sy;
 use odoo_ls_server::constants::OYarn;
@@ -433,6 +434,17 @@ fn test_definition() {
         "Expected depends' name segment to jump to res.partner's name field, got {:?}",
         depends_name_locs.iter().map(|l| (&l.target_uri, &l.target_range)).collect::<Vec<_>>()
     );
+
+    // compute_sql names a method the same way compute does, but only from 19.1 on
+    session.sync_odoo.version = OdooVersion::new(19, 1, 0);
+    let compute_sql_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, &m1_tf_file_info, 8, 80);
+    assert_eq!(compute_sql_locs.len(), 1, "Expected 1 location for compute_sql method '_compute_something'");
+    let range = session.st().header_range(sym_compute_something[0], Some(m1_tf_file_info.clone())).unwrap();
+    let range = file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, range);
+    assert_eq!(range, compute_sql_locs[0].target_range, "Expected _compute_something to be at the same location as the compute_sql argument");
+    session.sync_odoo.version = OdooVersion::new(19, 0, 0);
+    let compute_sql_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, &m1_tf_file_info, 8, 80);
+    assert!(compute_sql_locs.is_empty(), "Expected no location for compute_sql before 19.1, got {:?}", compute_sql_locs.iter().map(|l| &l.target_uri).collect::<Vec<_>>());
 }
 
 #[test]
