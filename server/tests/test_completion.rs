@@ -4,6 +4,7 @@ use std::path::Path;
 use lsp_types::CompletionResponse;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::features::completion::CompletionFeature;
+use odoo_ls_server::odoo_version::OdooVersion;
 use odoo_ls_server::utils::PathSanitizer;
 
 mod setup;
@@ -40,4 +41,27 @@ fn test_depends_kwarg_nested_field_completion() {
     assert!(labels.iter().any(|l| l == "display_name"), "Expected display_name to be suggested for the 'disp' prefix, got: {:?}", labels);
     assert!(!labels.iter().any(|l| l == "create_uid"), "create_uid does not match the 'disp' prefix, got: {:?}", labels);
     assert!(!labels.iter().any(|l| l == "id"), "id does not match the 'disp' prefix, got: {:?}", labels);
+}
+
+/// `fields.Integer(compute_sql="...")`: the kwarg offers method completion, but only from 19.1 on
+#[test]
+fn test_compute_sql_kwarg_method_completion() {
+    let (mut odoo, config) = setup::setup::setup_server(true);
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
+
+    let file_mgr = session.sync_odoo.get_file_mgr();
+    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    // Cursor inside the compute_sql value of `test_int = fields.Integer(..., compute_sql="...")`
+    session.sync_odoo.version = OdooVersion::new(19, 1, 0);
+    let gated_in = labels(CompletionFeature::autocomplete(&mut session, file_symbol, &file_info, None, 8, 80));
+    assert!(gated_in.iter().any(|l| l == "_compute_something"), "Expected _compute_something to be suggested for compute_sql, got: {:?}", gated_in);
+    session.sync_odoo.version = OdooVersion::new(19, 0, 0);
+    let gated_out = labels(CompletionFeature::autocomplete(&mut session, file_symbol, &file_info, None, 8, 80));
+    assert!(!gated_out.iter().any(|l| l == "_compute_something"), "Expected no method completion for compute_sql before 19.1, got: {:?}", gated_out);
 }

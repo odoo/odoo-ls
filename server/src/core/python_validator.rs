@@ -490,6 +490,7 @@ impl PythonValidator {
                     }
                     for (special_fn_field_name, special_fn_field_arg_range) in [
                         (ContextKey::Compute, ContextKey::ComputeArgRange),
+                        (ContextKey::ComputeSql, ContextKey::ComputeSqlArgRange),
                         (ContextKey::Inverse, ContextKey::InverseArgRange),
                         (ContextKey::Search, ContextKey::SearchArgRange),
                     ]{

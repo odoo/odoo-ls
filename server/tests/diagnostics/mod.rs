@@ -14,6 +14,7 @@ pub mod ols01011;
 pub mod ols02001;
 pub mod ols02002;
 pub mod ols03000_1_to_23;
+pub mod ols03018_compute_sql;
 pub mod ols03025_to_27;
 pub mod ols03028;
 pub mod ols03301;

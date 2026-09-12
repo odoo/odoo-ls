@@ -703,6 +703,7 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
                     }
                 },
                 "inverse" | "search" | "compute" => Some(vec![ExpectedType::METHOD_NAME]),
+                "compute_sql" if session.sync_odoo.version >= (19, 1) => Some(vec![ExpectedType::METHOD_NAME]),
                 "depends" => Some(vec![ExpectedType::NESTED_FIELD(None)]),
                 _ => None,
             }
