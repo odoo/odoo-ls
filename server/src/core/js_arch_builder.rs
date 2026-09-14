@@ -1,6 +1,5 @@
 use crate::utils::HashMap;
 
-use crate::threads::SessionInfo;
 use oxc::ast::ast::{ArrowFunctionExpression, BindingPattern, Class, ClassElement, Expression, Function, FunctionType, MethodDefinition, MethodDefinitionKind, Program, PropertyKey, VariableDeclarator};
 use crate::Sy;
 use crate::constants::OYarn;
@@ -13,7 +12,7 @@ use ruff_text_size::{TextRange, TextSize};
 /// How an OWL component class is exported from its module — decides how the OWL virtual
 /// doc can name it. Computed from the module's export entries (not the class-declaration
 /// prefix, which misses `class Foo {}` … `export { Foo };`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JsExportKind {
     /// Exported under its own name ⇒ `import { Foo } from "./stem"`.
     Named,
@@ -41,6 +40,12 @@ pub struct ImportSource {
     pub kind: JsImportKind,
 }
 
+#[derive(Debug, Clone)]
+pub enum SuperClassRef {
+    Local(String), //same file
+    Imported(ImportSource)
+}
+
 /// A byte span (surrounding quotes excluded) plus the template name string value found in a
 /// `static template = "..."` assignment. `range` is in **byte offsets** over the JS source;
 /// consumers turn it into an LSP range with the encoding-aware
@@ -60,10 +65,8 @@ pub struct ComponentDescriptor {
     /// Byte offset of the class-name identifier — the go-to-definition target when
     /// navigating from a template back to its component.
     pub class_name_byte: u32,
-    /// Name of the class this one `extends`, when it is a plain identifier. Matched by
-    /// name against other descriptors to build the subclass graph for inheritance-aware
-    /// find-references; aliased imports are not resolved.
-    pub super_class_name: Option<String>,
+    /// The class this one `extends`
+    pub super_class: Option<SuperClassRef>,
     /// How this class is exported — direct import vs shim for the OWL virtual doc.
     pub export_kind: JsExportKind,
     pub template: Option<JsTemplateRef>,
@@ -136,6 +139,21 @@ impl<'e> JSArchBuilderVisitor<'e> {
         let container = self.container_stack.last().cloned();
         self.decls.push(JsDeclaration { name, kind, range: span_to_range(span), container });
     }
+
+    fn super_class(&self, class: &Class) -> Option<SuperClassRef> {
+        let Some(Expression::Identifier(id)) = &class.super_class else {
+            return None
+        };
+        let local_name = id.name.to_string();
+        // Simple heuristics:
+        // if we find an import for local_name, we assume it's the imported one (shadowing not handled).
+        // If we don't find an import, super class is in the same file (local).
+        let class_ref = match self.import_bindings.get(&local_name) {
+            None => SuperClassRef::Local(local_name),
+            Some(imported) => SuperClassRef::Imported(imported.clone())
+        };
+        Some(class_ref)
+    }
 }
 
 impl<'a, 'e> Visit<'a> for JSArchBuilderVisitor<'e> {
@@ -152,10 +170,7 @@ impl<'a, 'e> Visit<'a> for JSArchBuilderVisitor<'e> {
                 class_name: name,
                 file_path: self.file_path.clone(),
                 class_name_byte: id.span.start,
-                super_class_name: match it.super_class.as_ref() {
-                    Some(Expression::Identifier(sid)) => Some(sid.name.to_string()),
-                    _ => None,
-                },
+                super_class: self.super_class(it),
                 template: class_template(it),
                 export_kind,
             });
@@ -259,27 +274,6 @@ pub fn visit_file(
     (visitor.descriptors, visitor.decls)
 }
 
-pub fn build(
-    session: &mut SessionInfo,
-    component_descriptors: &[ComponentDescriptor],
-) {
-    for descriptor in component_descriptors {
-        session.sync_odoo.component_descriptors.insert(descriptor.class_name.clone(), descriptor.clone());
-    }
-
-    // Template→declaring classes. Which one wins is decided at query time, by
-    // `component_for_template`: a super-chain can cross files not built yet.
-    for component in component_descriptors {
-        let Some(template_ref) = &component.template else { continue };
-        let class_name = &component.class_name;
-        let classes = session.sync_odoo.js_component_by_template
-            .entry(template_ref.t_name.clone())
-            .or_default();
-        if !classes.contains(class_name) {
-            classes.push(class_name.clone());
-        }
-    }
-}
 #[cfg(test)]
 mod tests {
     use super::*;

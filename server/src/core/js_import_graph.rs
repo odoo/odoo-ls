@@ -141,11 +141,10 @@ fn resolve_specifier(
 /// File → files declaring a direct subclass of one of its classes. Same-file subclasses are
 /// skipped: they add no root.
 fn subclass_file_edges(session: &SessionInfo) -> HashMap<String, HashSet<String>> {
-    let descriptors = &session.sync_odoo.component_descriptors;
+    let component_mgr = &session.sync_odoo.component_mgr;
     let mut edges: HashMap<String, HashSet<String>> = HashMap::default();
-    for descriptor in descriptors.values() {
-        let Some(super_name) = descriptor.super_class_name.as_ref() else { continue };
-        let Some(super_descriptor) = descriptors.get(super_name) else { continue };
+    for descriptor in component_mgr.components() {
+        let Some(super_descriptor) = component_mgr.get_super(session, descriptor) else { continue };
         if super_descriptor.file_path != descriptor.file_path {
             edges
                 .entry(super_descriptor.file_path.clone())

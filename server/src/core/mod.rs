@@ -1,4 +1,5 @@
 pub mod build_scheduler;
+pub mod component_mgr;
 pub mod config;
 pub mod csv_arch_builder;
 pub mod csv_validation;
