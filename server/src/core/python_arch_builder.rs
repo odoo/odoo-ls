@@ -1,6 +1,6 @@
 use lsp_types::Diagnostic;
 use ruff_python_ast::{
-    Alias, AnyRootNodeRef, BoolOp, CmpOp, Expr, ExprBoolOp, ExprNamed, ExprTuple, FStringPart, Identifier, Parameters,
+    Alias, AnyRootNodeRef, BoolOp, CmpOp, Expr, ExprBoolOp, ExprIf, ExprNamed, ExprTuple, FStringPart, Identifier, Parameters,
     Pattern, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf,
     StmtMatch, StmtTry, StmtWhile, StmtWith,
 };
@@ -390,6 +390,31 @@ impl PythonArchBuilder {
         if matches!(bool_op_expr.op, BoolOp::And) { last_operand_section } else { None }
     }
 
+    /// `A if C else B` evaluates C first, then one of A/B - but reads A, C, B in that order, and
+    /// sections have to be added in source order. So the test's section is chained from before
+    /// the ternary rather than from the body that happens to precede it in the text.
+    fn visit_ternary(&mut self, session: &mut SessionInfo, if_expr: &ExprIf) {
+        let scope = *self.sym_stack.last().unwrap();
+        let prefix_section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
+
+        session.st_mut().as_mut_symbol_mgr(scope).add_section(if_expr.body.range().start(), None);
+        self.visit_expr(session, &if_expr.body);
+        let body_section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
+
+        session.st_mut().as_mut_symbol_mgr(scope).add_section(if_expr.test.range().start(), Some(prefix_section));
+        self.visit_expr(session, &if_expr.test);
+
+        // `None`: the orelse only runs once the test was evaluated, so it continues from it
+        session.st_mut().as_mut_symbol_mgr(scope).add_section(if_expr.orelse.range().start(), None);
+        self.visit_expr(session, &if_expr.orelse);
+        let orelse_section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
+
+        session.st_mut().as_mut_symbol_mgr(scope).add_section(
+            if_expr.range().end() + TextSize::new(1),
+            Some(SectionIndex::OR(vec![body_section, orelse_section]))
+        );
+    }
+
     fn visit_expr(&mut self, session: &mut SessionInfo, expr: &Expr){
         match expr {
             Expr::Named(named_expr) =>{
@@ -405,9 +430,8 @@ impl PythonArchBuilder {
             Expr::UnaryOp(unary_op_expr) => {
                 self.visit_expr(session, &unary_op_expr.operand);
             },
-            Expr::If(_todo_if_expr) => {
-                // TODO:
-                // This needs complex handling of sections
+            Expr::If(if_expr) => {
+                self.visit_ternary(session, if_expr);
             },
             Expr::Dict(dict_expr) => {
                 dict_expr.iter().for_each(

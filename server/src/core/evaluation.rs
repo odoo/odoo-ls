@@ -1303,9 +1303,11 @@ impl Evaluation {
             ExprOrIdent::Expr(Expr::If(if_expr)) => {
                 let (_, diags) = Evaluation::eval_from_ast(session, &if_expr.test, parent, max_infer, false, required_dependencies);
                 diagnostics.extend(diags);
-                let (body_evals, diags) = Evaluation::eval_from_ast(session, &if_expr.body, parent, max_infer, false, required_dependencies);
+                // Each branch is evaluated where it stands, not where the whole ternary does, so
+                // that it sees what its own scope holds there
+                let (body_evals, diags) = Evaluation::eval_from_ast(session, &if_expr.body, parent, &if_expr.body.range().end(), false, required_dependencies);
                 diagnostics.extend(diags);
-                let (orelse_evals, diags) = Evaluation::eval_from_ast(session, &if_expr.orelse, parent, max_infer, false, required_dependencies);
+                let (orelse_evals, diags) = Evaluation::eval_from_ast(session, &if_expr.orelse, parent, &if_expr.orelse.range().end(), false, required_dependencies);
                 diagnostics.extend(diags);
                 evals.extend(body_evals.into_iter().chain(orelse_evals));
             },
