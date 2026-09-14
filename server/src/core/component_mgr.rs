@@ -13,6 +13,17 @@ use crate::{
 
 new_key_type! { struct ComponentKey; }
 
+// Makes private functions unit-testable without needing to take session
+trait ImportResolver {
+    fn resolve(&self, specifier: &str, importer: &str) -> Option<String>;
+}
+
+impl ImportResolver for SessionInfo<'_> {
+    fn resolve(&self, specifier: &str, importer: &str) -> Option<String> {
+        resolve_import_specifier(self, specifier, importer)
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct ComponentMgr {
     // storage
@@ -92,5 +103,39 @@ impl ComponentMgr {
             .copied()
             .find(|&key| self.descriptors[key].class_name == name)
     }
+
+    pub fn get_super(&self, session: &SessionInfo, descriptor: &ComponentDescriptor) -> Option<&ComponentDescriptor> {
+        self.super_key(descriptor, session).map(|key| &self.descriptors[key])
+    }
+
+    fn super_key(
+        &self,
+        descriptor: &ComponentDescriptor,
+        import_resolver: &impl ImportResolver
+    ) -> Option<ComponentKey> {
+        let super_class = descriptor.super_class.as_ref()?;
+        let path = &descriptor.file_path;
+        match super_class {
+            SuperClassRef::Local(name) => self.key_by_file_and_name(path, name),
+            SuperClassRef::Imported(import) => {
+                let imported_path = import_resolver.resolve(&import.specifier, path)?;
+                self.key_by_import(&imported_path, &import.kind)
+            }
+        }
+    }
+    
+    fn key_by_import(&self, path: &str, import: &JsImportKind) -> Option<ComponentKey> {
+        self.by_file.get(path)?
+            .iter()
+            .copied()
+            .find(|&key| {
+                let ComponentDescriptor { class_name, export_kind, ..} = &self.descriptors[key];
+                match import {
+                    JsImportKind::Named(name) => *export_kind == JsExportKind::Named && class_name == name,
+                    JsImportKind::Default => *export_kind == JsExportKind::Default,
+                }
+            })
+    }
+
 
 }
