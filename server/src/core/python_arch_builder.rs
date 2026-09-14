@@ -390,22 +390,22 @@ impl PythonArchBuilder {
         if matches!(bool_op_expr.op, BoolOp::And) { last_operand_section } else { None }
     }
 
-    /// `A if C else B` evaluates C first, then one of A/B - but reads A, C, B in that order, and
-    /// sections have to be added in source order. So the test's section is chained from before
-    /// the ternary rather than from the body that happens to precede it in the text.
+    /// `A if C else B` evaluates C first but reads A, C, B, and sections go in source order. So
+    /// the test chains from before the ternary, not from the body that precedes it in the text.
     fn visit_ternary(&mut self, session: &mut SessionInfo, if_expr: &ExprIf) {
         let scope = *self.sym_stack.last().unwrap();
         let prefix_section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
 
-        session.st_mut().as_mut_symbol_mgr(scope).add_section(if_expr.body.range().start(), None);
+        let narrow_body = self.declare_narrowing_at(session, scope, &if_expr.test, if_expr.body.range().start(), Some(prefix_section.clone()), false);
+        session.st_mut().as_mut_symbol_mgr(scope).add_section(if_expr.body.range().start(), narrow_body);
         self.visit_expr(session, &if_expr.body);
         let body_section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
 
         session.st_mut().as_mut_symbol_mgr(scope).add_section(if_expr.test.range().start(), Some(prefix_section));
         self.visit_expr(session, &if_expr.test);
 
-        // `None`: the orelse only runs once the test was evaluated, so it continues from it
-        session.st_mut().as_mut_symbol_mgr(scope).add_section(if_expr.orelse.range().start(), None);
+        let narrow_orelse = self.declare_narrowing_at(session, scope, &if_expr.test, if_expr.orelse.range().start(), None, true);
+        session.st_mut().as_mut_symbol_mgr(scope).add_section(if_expr.orelse.range().start(), narrow_orelse);
         self.visit_expr(session, &if_expr.orelse);
         let orelse_section = SectionIndex::INDEX(session.st().as_symbol_mgr(scope).get_last_index());
 

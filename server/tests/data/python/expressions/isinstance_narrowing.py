@@ -335,3 +335,165 @@ def ternary_test_walrus(flag: bool):
 def ternary_union(animal: Animal, flag: bool):
     x = animal if flag else get_cat()
     x
+
+
+def ternary_orelse_of_negated(animal: Animal):
+    x = None if not isinstance(animal, Dog) else animal
+    x
+
+
+def ternary_orelse_of_positive(animal: Animal):
+    x = get_cat() if isinstance(animal, Dog) else animal
+    x
+
+
+def ternary_and_chain(animal: Animal, flag: bool):
+    x = animal if flag and isinstance(animal, Dog) else None
+    x
+
+
+def nested_ternary_orelse(animal: Animal, flag: bool):
+    x = 1 if flag else (animal if isinstance(animal, Dog) else 2)
+    x
+
+
+def nested_ternary_body(animal: Animal, flag: bool):
+    x = (animal if isinstance(animal, Dog) else 2) if flag else 3
+    x
+
+
+def ternary_in_comprehension(animal: Animal, flag: bool):
+    x = [animal if isinstance(animal, Dog) else 0 for i in [1, 2]]
+    x
+
+
+GLOBAL_ANIMAL: Animal = get_animal()
+
+
+def narrow_global():
+    if isinstance(GLOBAL_ANIMAL, Dog):
+        GLOBAL_ANIMAL
+    GLOBAL_ANIMAL
+
+
+def closure_sees_narrowing(animal: Animal):
+    if isinstance(animal, Dog):
+        def inner():
+            return animal
+        animal
+
+
+def narrow_in_try(animal: Animal):
+    try:
+        if isinstance(animal, Dog):
+            animal
+    except Exception:
+        animal
+
+
+def narrow_in_loop_body(animal: Animal):
+    for i in [1, 2]:
+        if isinstance(animal, Dog):
+            animal
+    animal
+
+
+
+def while_break_reaches_after_loop(animal: Animal, flag: bool):
+    while not isinstance(animal, Dog):
+        if flag:
+            break
+    animal
+
+
+def pep604_union(animal: Animal):
+    if isinstance(animal, Dog | Cat):
+        animal
+
+
+def pep604_nested_in_tuple(animal: Animal):
+    if isinstance(animal, (Dog, Cat | Other)):
+        animal
+
+
+def pep604_union_negated(animal: Animal, flag: bool):
+    if not isinstance(animal, Dog | Cat):
+        return
+    animal
+
+
+def break_in_nested_def():
+    for i in [1, 2]:
+        def inner(c):
+            if c: pass
+            if c: pass
+            if c: pass
+            if c: pass
+            if c: pass
+            break
+        found = get_animal()
+    found
+
+
+def empty_tuple_check(animal: Animal):
+    if isinstance(animal, ()):
+        animal
+
+
+def break_in_try(animal: Animal, flag: bool):
+    while not isinstance(animal, Dog):
+        try:
+            if flag:
+                break
+        except Exception:
+            pass
+    animal
+
+
+def for_target_narrowing(animals: Animal):
+    for x in [get_animal()]:
+        if isinstance(x, Dog):
+            x
+        x
+
+
+def break_in_match_arm(animal: Animal, other: int):
+    while not isinstance(animal, Dog):
+        match other:
+            case 1:
+                break
+            case _:
+                pass
+    animal
+
+
+def walrus_target_not_narrowed(flag: bool):
+    if isinstance(w := get_animal(), Dog):
+        w
+    w
+
+
+
+class ClassBodyNarrowing:
+    attr: Animal = get_animal()
+    if isinstance(attr, Dog):
+        attr
+    attr
+
+
+def possibly_unbound_narrowing(flag: bool):
+    if flag:
+        maybe = get_animal()
+    if isinstance(maybe, Dog):
+        maybe
+    maybe
+
+
+def elif_else_inherits_negations(animal: Animal, other: Animal):
+    if not isinstance(animal, Dog):
+        pass
+    elif not isinstance(other, Cat):
+        pass
+    else:
+        animal
+        other

@@ -69,9 +69,8 @@ fn sorted_resolved_names(
     names
 }
 
-/// Spec suite for `isinstance()`-based type narrowing. Two known-unimplemented cases
-/// (attribute narrowing, ternary narrowing) live in their own `#[ignore]`d tests below
-/// instead of here, so this suite stays green and a real regression isn't lost in noise.
+/// Spec suite for `isinstance()`-based type narrowing. Attribute narrowing is not implemented
+/// and lives in its own `#[ignore]`d test below, so this suite stays green.
 #[test]
 fn test_isinstance_narrowing() {
     with_fixture(|session, file_info, file_symbol| {
@@ -164,6 +163,35 @@ fn test_isinstance_narrowing() {
             ("or_on_different_names", (291, 8), vec![animal]),
             ("while_else_then_after: in else", (305, 8), vec![dog]),
             ("while_else_then_after: after", (306, 4), vec![dog]),
+            // A `break` does reach the code after the loop without the test having failed.
+            ("while_break_reaches_after_loop", (405, 4), vec![animal, dog]),
+            // PEP 604 unions are accepted wherever a tuple is, and nest the same way.
+            ("pep604_union", (410, 8), vec![dog, cat]),
+            ("pep604_nested_in_tuple", (415, 8), vec![dog, cat, other]),
+            ("pep604_union_negated", (421, 4), vec![dog, cat]),
+            // A `break` in a nested scope is invalid Python but still parses; its sections are
+            // not the loop's, and merging them used to index out of that scope's section list.
+            ("break_in_nested_def", (434, 4), vec![animal]),
+            // An empty type tuple matches nothing, so it narrows nothing.
+            ("empty_tuple_check", (439, 8), vec![animal]),
+            // A `break` nested in other blocks still reaches the code after the loop.
+            ("break_in_try", (449, 4), vec![animal, dog]),
+            // A `for` target narrows like any other local.
+            ("for_target_narrowing: in body", (455, 12), vec![dog]),
+            ("for_target_narrowing: after if", (456, 8), vec![animal, dog]),
+            ("break_in_match_arm", (466, 4), vec![animal, dog]),
+            // The target has to be a plain name, so a walrus there narrows nothing.
+            ("walrus_target_not_narrowed: in body", (471, 8), vec![animal]),
+            ("walrus_target_not_narrowed: after", (472, 4), vec![animal]),
+            // A class body is a scope like any other.
+            ("ClassBodyNarrowing: in body", (479, 8), vec![dog]),
+            ("ClassBodyNarrowing: after if", (480, 4), vec![animal, dog]),
+            ("possibly_unbound_narrowing: in body", (487, 8), vec![dog]),
+            ("possibly_unbound_narrowing: after", (488, 4), vec![animal, dog]),
+            // Reaching the `else` means every test failed, so it inherits each one's negation
+            // through the chain, not just the last.
+            ("elif_else_inherits_negations: 1st test", (497, 8), vec![dog]),
+            ("elif_else_inherits_negations: 2nd test", (498, 8), vec![cat]),
             // A loop's `else` runs after zero or more iterations, so it must see what the body
             // bound. Without this it fell through to the module-level `found` decoy.
             ("while_else_sees_body_binding: `found`", (313, 8), vec![animal]),
@@ -177,6 +205,28 @@ fn test_isinstance_narrowing() {
             ("ternary_test_walrus", (331, 4), vec![animal]),
             // Both branches contribute to the result, each evaluated where it stands.
             ("ternary_union", (336, 4), vec![animal, cat]),
+            // The body of a ternary is narrowed by its test, the orelse by the test's negation.
+            ("ternary_expression", (147, 8), vec![dog]),
+            ("ternary_orelse_of_negated", (340, 49), vec![dog]),
+            // A *positive* check being false names no type, so the orelse stays unnarrowed.
+            ("ternary_orelse_of_positive", (345, 50), vec![animal]),
+            // An `and`-chain test narrows the body, as it does for a statement `if`.
+            ("ternary_and_chain", (350, 8), vec![dog]),
+            // A global narrows like a local, and widens again after the block: the un-narrowed
+            // path binds nothing here, so the lookup keeps going out to the module.
+            ("narrow_global: in body", (374, 8), vec![dog]),
+            ("narrow_global: after if", (375, 4), vec![animal, dog]),
+            // A closure reads the enclosing narrowing through the merge, so it is not narrowed.
+            ("closure_sees_narrowing", (382, 8), vec![dog]),
+            // Narrowing works inside try and loop bodies, and widens again at their merges.
+            ("narrow_in_try: in body", (388, 12), vec![dog]),
+            ("narrow_in_try: in except", (390, 8), vec![animal, dog]),
+            ("narrow_in_loop_body: in body", (396, 12), vec![dog]),
+            ("narrow_in_loop_body: after loop", (397, 4), vec![animal, dog]),
+            // Nesting and comprehensions fall out of the recursion, in either branch position.
+            ("nested_ternary_orelse", (355, 24), vec![dog]),
+            ("nested_ternary_body", (360, 9), vec![dog]),
+            ("ternary_in_comprehension", (365, 9), vec![dog]),
             // The mirror case: a false `and` of negated checks means at least one of them held.
             ("and_of_negated_checks_else", (298, 8), vec![dog, cat]),
         ];
@@ -221,17 +271,6 @@ fn test_completion_after_one_liner_assert() {
     });
 }
 
-#[test]
-#[ignore = "ternary narrowing not implemented - Expr::If is a no-op in both ARCH passes"]
-fn test_ternary_expression() {
-    with_fixture(|session, file_info, file_symbol| {
-        let dog = session.st().get_sub_symbol(file_symbol.into(), "Dog", u32::MAX).symbols[0];
-
-        let resolved = get_resolved_symbols_at_position(session, file_symbol, file_info, 147, 8);
-        let resolved_names: Vec<String> = resolved.iter().map(|&s| session.st().name(s).to_string()).collect();
-        assert_eq!(resolved_names, vec![session.st().name(dog).to_string()]);
-    });
-}
 
 /// The synthetic re-declaration must be transparent to go-to-definition: a narrowed read lands
 /// on the real declaration (the `animal` parameter), not on the synthetic node's made-up position.
@@ -293,6 +332,10 @@ fn narrowing_applies_on_first_body_statement() {
         );
     });
 }
+
+
+
+
 
 #[test]
 fn break_does_not_erase_variable_after_loop() {
