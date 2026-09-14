@@ -146,7 +146,7 @@ impl ComponentMgr {
 
 
     /// The component descriptor backing `template_name`. `None` when nothing declares it.
-    /// The base-most class in case of multiple classes.
+    /// The base-most class in case of multiple classes. None if the classes are unrelated.
     pub fn component_for_template(&self, session: &SessionInfo, template_name: &str) -> Option<&ComponentDescriptor> {
         self.component_key_for_template(template_name, session)
             .map(|key| &self.descriptors[key])
@@ -157,18 +157,12 @@ impl ComponentMgr {
         template_name: &str,
         import_resolver: &impl ImportResolver,
     ) -> Option<ComponentKey> {
-        let mut candidates = self.by_template.get(template_name)?.clone();
-        // deterministic when no ancestry relates the declaring classes
-        candidates.sort_by(|&a, &b| {
-            let (a, b) = (&self.descriptors[a], &self.descriptors[b]);
-            a.class_name.cmp(&b.class_name).then_with(|| a.file_path.cmp(&b.file_path))
-        });
-        let base = candidates.iter().position(|&candidate| {
+        let candidates = self.by_template.get(template_name)?;
+        candidates.iter().copied().find(|&candidate| {
             candidates.iter().all(|&other| {
                 other == candidate || self.is_ancestor(candidate, other, import_resolver)
             })
-        });
-        candidates.get(base.unwrap_or(0)).copied()
+        })
     }
  
     /// Whether `ancestor` appears on `descendant`'s superclass chain.
@@ -401,16 +395,25 @@ mod tests {
     }
 
     #[test]
-    fn component_for_template_falls_back_to_the_name_not_the_build_order() {
-        // Two unrelated classes declaring one template: nothing to prefer, so the winner is the
-        // alphabetically first — not whichever file happened to be indexed first.
+    fn component_for_template_refuses_to_guess_between_unrelated_classes() {
         let entries: [(&str, Option<&str>, Option<&str>); 2] =
             [("Other", None, Some("mod.T")), ("Base", None, Some("mod.T"))];
-        assert_eq!(base_of(&indexed(&entries), "mod.T"), Some("Base"));
+        assert_eq!(base_of(&indexed(&entries), "mod.T"), None);
 
         let mut reversed = entries;
         reversed.reverse();
-        assert_eq!(base_of(&indexed(&reversed), "mod.T"), Some("Base"));
+        assert_eq!(base_of(&indexed(&reversed), "mod.T"), None);
+    }
+
+    #[test]
+    fn component_for_template_refuses_to_guess_between_siblings() {
+        // web_studio's AvatarHook/ButtonHook: a shared base is no reason to prefer either.
+        let mgr = indexed(&[
+            ("Base", None, None),
+            ("Avatar", Some("Base"), Some("mod.T")),
+            ("Button", Some("Base"), Some("mod.T")),
+        ]);
+        assert_eq!(base_of(&mgr, "mod.T"), None);
     }
 
     #[test]
