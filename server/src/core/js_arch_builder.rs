@@ -41,6 +41,12 @@ pub struct ImportSource {
     pub kind: JsImportKind,
 }
 
+#[derive(Debug, Clone)]
+pub enum SuperClassRef {
+    Local(String), //same file
+    Imported(ImportSource)
+}
+
 /// A byte span (surrounding quotes excluded) plus the template name string value found in a
 /// `static template = "..."` assignment. `range` is in **byte offsets** over the JS source;
 /// consumers turn it into an LSP range with the encoding-aware
@@ -60,10 +66,8 @@ pub struct ComponentDescriptor {
     /// Byte offset of the class-name identifier — the go-to-definition target when
     /// navigating from a template back to its component.
     pub class_name_byte: u32,
-    /// Name of the class this one `extends`, when it is a plain identifier. Matched by
-    /// name against other descriptors to build the subclass graph for inheritance-aware
-    /// find-references; aliased imports are not resolved.
-    pub super_class_name: Option<String>,
+    /// The class this one `extends`
+    pub super_class: Option<SuperClassRef>,
     /// How this class is exported — direct import vs shim for the OWL virtual doc.
     pub export_kind: JsExportKind,
     pub template: Option<JsTemplateRef>,
@@ -136,6 +140,18 @@ impl<'e> JSArchBuilderVisitor<'e> {
         let container = self.container_stack.last().cloned();
         self.decls.push(JsDeclaration { name, kind, range: span_to_range(span), container });
     }
+
+    fn super_class(&self, class: &Class) -> Option<SuperClassRef> {
+        let Some(Expression::Identifier(id)) = &class.super_class else {
+            return None
+        };
+        let local_name = id.name.to_string();
+        let class_ref = match self.import_bindings.get(&local_name) {
+            None => SuperClassRef::Local(local_name),
+            Some(imported) => SuperClassRef::Imported(imported.clone())
+        };
+        Some(class_ref)
+    }
 }
 
 impl<'a, 'e> Visit<'a> for JSArchBuilderVisitor<'e> {
@@ -152,10 +168,7 @@ impl<'a, 'e> Visit<'a> for JSArchBuilderVisitor<'e> {
                 class_name: name,
                 file_path: self.file_path.clone(),
                 class_name_byte: id.span.start,
-                super_class_name: match it.super_class.as_ref() {
-                    Some(Expression::Identifier(sid)) => Some(sid.name.to_string()),
-                    _ => None,
-                },
+                super_class: self.super_class(it),
                 template: class_template(it),
                 export_kind,
             });
