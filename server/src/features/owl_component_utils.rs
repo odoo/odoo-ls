@@ -1,19 +1,4 @@
-//! The workspace-global OWL component index: `SyncOdoo::component_descriptors` and
-//! `SyncOdoo::js_component_by_template`. Written during ARCH (one file at a time, by
-//! [`index_file`]), read at query time (by [`component_for_template`]).
-
-use crate::core::js_arch_builder::ComponentDescriptor;
 use crate::threads::SessionInfo;
-use crate::utils::{HashMap, HashSet};
-
-
-/// The class backing `template_name`. `None` when nothing declares it.
-pub fn component_for_template(session: &SessionInfo, template_name: &str) -> Option<String> {
-    resolve_component(
-        session.sync_odoo.js_component_by_template.get(template_name)?,
-        &session.sync_odoo.component_descriptors,
-    )
-}
 
 /// Whether a template *reference* (a `t-call` / `t-inherit` value, or a JS `static
 /// template` string) resolves to at least one declared template — the same `js_templates`
@@ -29,40 +14,6 @@ pub fn template_reference_resolves(session: &SessionInfo, name: &str) -> bool {
         .js_templates
         .get(name)
         .is_some_and(|templates| !templates.is_empty(&session.sync_odoo.symbol_table))
-}
-
-/// The base-most of the classes declaring one template, skipping any whose descriptor is gone.
-/// Runs at query time, when every file is built and the super-chains are therefore complete.
-fn resolve_component(
-    classes: &[String],
-    descriptors: &HashMap<String, ComponentDescriptor>,
-) -> Option<String> {
-    let mut candidates: Vec<&String> = classes.iter().collect();
-    debug_assert!(candidates.iter().all(|class_name| descriptors.contains_key(*class_name)));
-    candidates.sort(); // deterministic when no ancestry relates the declaring classes
-    let base = candidates.iter().position(|candidate| {
-        candidates.iter().all(|other| other == candidate || is_ancestor(candidate, other, descriptors))
-    });
-    candidates.get(base.unwrap_or(0)).map(|class_name| (*class_name).clone())
-}
-
-/// Whether `ancestor` appears on `descendant`'s superclass chain (via `super_class_name`).
-/// `false` when the chain runs out or loops back on itself (cycle-guarded by `seen`).
-fn is_ancestor(
-    ancestor: &str,
-    descendant: &str,
-    descriptors: &HashMap<String, ComponentDescriptor>,
-) -> bool {
-    let mut current = descendant.to_string();
-    let mut seen = HashSet::default();
-    while seen.insert(current.clone()) {
-        match descriptors.get(&current).and_then(|d| d.super_class_name.as_deref()) {
-            Some(sup) if sup == ancestor => return true,
-            Some(sup) => current = sup.to_string(),
-            None => return false,
-        }
-    }
-    false // cycle
 }
 
 #[cfg(test)]

@@ -138,4 +138,52 @@ impl ComponentMgr {
     }
 
 
+    /// The component descriptor backing `template_name`. `None` when nothing declares it.
+    /// The base-most class in case of multiple classes.
+    pub fn component_for_template(&self, session: &SessionInfo, template_name: &str) -> Option<&ComponentDescriptor> {
+        self.component_key_for_template(template_name, session)
+            .map(|key| &self.descriptors[key])
+    }
+ 
+    fn component_key_for_template(
+        &self,
+        template_name: &str,
+        import_resolver: &impl ImportResolver,
+    ) -> Option<ComponentKey> {
+        let mut candidates = self.by_template.get(template_name)?.clone();
+        // deterministic when no ancestry relates the declaring classes
+        candidates.sort_by(|&a, &b| {
+            let (a, b) = (&self.descriptors[a], &self.descriptors[b]);
+            a.class_name.cmp(&b.class_name).then_with(|| a.file_path.cmp(&b.file_path))
+        });
+        let base = candidates.iter().position(|&candidate| {
+            candidates.iter().all(|&other| {
+                other == candidate || self.is_ancestor(candidate, other, import_resolver)
+            })
+        });
+        candidates.get(base.unwrap_or(0)).copied()
+    }
+ 
+    /// Whether `ancestor` appears on `descendant`'s superclass chain.
+    /// `false` when the chain runs out or loops back on itself (cycle-guarded by `seen`).
+    fn is_ancestor(
+        &self,
+        ancestor: ComponentKey,
+        descendant: ComponentKey,
+        import_resolver: &impl ImportResolver,
+    ) -> bool {
+        let mut current = descendant;
+        let mut seen = HashSet::default();
+        while seen.insert(current) {
+            let Some(sup) = self.super_key(&self.descriptors[current], import_resolver) else {
+                return false;
+            };
+            if sup == ancestor {
+                return true;
+            }
+            current = sup;
+        }
+        false // cycle
+    }
+    
 }
