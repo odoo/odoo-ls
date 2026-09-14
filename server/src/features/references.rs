@@ -352,22 +352,12 @@ impl ReferenceFeature {
         }
 
         // JS sites
-        let js_paths: HashSet<String> = session.sync_odoo.js_component_by_template
-            .get(template_name)
-            .into_iter()
-            .flatten()
-            .filter_map(|class| session.sync_odoo.component_descriptors.get(class))
-            .map(|desc| desc.file_path.clone())
-            .collect();
-        for path in js_paths {
-            let Some(fi) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path) else { continue };
-            let refs: Vec<_> = fi.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs().cloned().collect();
-            for template_ref in refs {
-                if template_ref.t_name == template_name {
-                    let range = fi.borrow().text_range_to_range(template_ref.range, encoding);
-                    locations.push(Location { uri: FileMgr::pathname2uri(&path), range });
-                }
-            }
+        for descriptor in session.sync_odoo.component_mgr.components_by_template(template_name) {
+            let Some(template_ref) = &descriptor.template else { continue };
+            let path = &descriptor.file_path;
+            let Some(fi) = session.sync_odoo.get_file_mgr().borrow().get_file_info(path) else { continue };
+            let range = fi.borrow().text_range_to_range(template_ref.range, encoding);
+            locations.push(Location { uri: FileMgr::pathname2uri(path), range });
         }
 
         locations

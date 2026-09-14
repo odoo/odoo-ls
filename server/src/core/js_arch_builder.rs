@@ -1,6 +1,5 @@
 use crate::utils::HashMap;
 
-use crate::threads::SessionInfo;
 use oxc::ast::ast::{ArrowFunctionExpression, BindingPattern, Class, ClassElement, Expression, Function, FunctionType, MethodDefinition, MethodDefinitionKind, Program, PropertyKey, VariableDeclarator};
 use crate::Sy;
 use crate::constants::OYarn;
@@ -13,7 +12,7 @@ use ruff_text_size::{TextRange, TextSize};
 /// How an OWL component class is exported from its module — decides how the OWL virtual
 /// doc can name it. Computed from the module's export entries (not the class-declaration
 /// prefix, which misses `class Foo {}` … `export { Foo };`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JsExportKind {
     /// Exported under its own name ⇒ `import { Foo } from "./stem"`.
     Named,
@@ -272,27 +271,6 @@ pub fn visit_file(
     (visitor.descriptors, visitor.decls)
 }
 
-pub fn build(
-    session: &mut SessionInfo,
-    component_descriptors: &[ComponentDescriptor],
-) {
-    for descriptor in component_descriptors {
-        session.sync_odoo.component_descriptors.insert(descriptor.class_name.clone(), descriptor.clone());
-    }
-
-    // Template→declaring classes. Which one wins is decided at query time, by
-    // `component_for_template`: a super-chain can cross files not built yet.
-    for component in component_descriptors {
-        let Some(template_ref) = &component.template else { continue };
-        let class_name = &component.class_name;
-        let classes = session.sync_odoo.js_component_by_template
-            .entry(template_ref.t_name.clone())
-            .or_default();
-        if !classes.contains(class_name) {
-            classes.push(class_name.clone());
-        }
-    }
-}
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -610,7 +610,7 @@ impl FileInfo {
     ///
     /// Expects [`Ast::JsAst`] to be in place already.
     fn apply_parsed_js(&mut self, session: &mut SessionInfo, parsed: ParsedJs) {
-        js_arch_builder::build(session, &parsed.component_descriptors);
+        session.sync_odoo.component_mgr.index_file(&self.uri, parsed.component_descriptors);
         {
             let mut fia = self.file_info_ast.borrow_mut();
             let js_ast = fia.ast.as_js_ast_mut();
@@ -1191,6 +1191,7 @@ impl FileMgr {
                 return;
             }
         let to_del = session.sync_odoo.get_file_mgr().borrow_mut().files.remove(key);
+        session.sync_odoo.component_mgr.forget_file(key);
         if let Some(to_del) = to_del
             && SyncOdoo::is_in_workspace_or_entry(session, uri) {
                 let mut to_del = (*to_del).borrow_mut();

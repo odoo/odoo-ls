@@ -1,9 +1,9 @@
 use crate::constants::OYarn;
 use crate::core::build_scheduler::BuildScheduler;
+use crate::core::component_mgr::ComponentMgr;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointType;
 use crate::core::file_mgr::{AstKind, PreloadedFile};
-use crate::core::js_arch_builder::ComponentDescriptor;
 use crate::core::js_module_scope;
 use crate::core::module_load_order::sort_by_load_order;
 use crate::core::pre_parser::{PreParseCache, PreParser};
@@ -207,10 +207,7 @@ pub struct SyncOdoo {
 
     pub tsserver_bridge: Option<TsServerBridge>,
     pub js_templates: HashMap<String, WeakSet<XmlTemplateKey>>,
-    pub component_descriptors: HashMap<String, ComponentDescriptor>,
-    /// Template name → every class declaring it. Resolve with
-    /// [`js_component_index::component_for_template`].
-    pub js_component_by_template: HashMap<String, Vec<String>>,
+    pub component_mgr: ComponentMgr,
 }
 
 unsafe impl Send for SyncOdoo {}
@@ -270,8 +267,7 @@ impl SyncOdoo {
             test_mode: false,
             tsserver_bridge: None,
             js_templates: HashMap::default(),
-            component_descriptors: HashMap::default(),
-            js_component_by_template: HashMap::default(),
+            component_mgr: ComponentMgr::default(),
         }
     }
 
@@ -295,6 +291,7 @@ impl SyncOdoo {
         session.sync_odoo.tsserver_bridge = None;
         //drop all entries, except entries of opened files
         session.sync_odoo.entry_point_mgr.borrow_mut().reset_entry_points(&mut session.sync_odoo.symbol_table, false);
+        session.sync_odoo.component_mgr = ComponentMgr::default();
         SyncOdoo::init(session, config);
     }
 

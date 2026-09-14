@@ -4,7 +4,6 @@ use roxmltree;
 
 use crate::core::file_mgr::{AstKind, FileInfo, FileMgr};
 use crate::core::tsserver_bridge;
-use crate::features::owl_component_utils;
 use crate::core::symbols::symbol_keys::SourceFileKey;
 use crate::features::goto_utils::{GotoRequest, GotoSource, GotoSourceType, GotoUtils};
 use crate::features::owl_virtual;
@@ -148,15 +147,12 @@ impl DefinitionFeature {
         value_range: std::ops::Range<usize>,
     ) -> Option<GotoDefinitionResponse> {
         let encoding = session.sync_odoo.encoding;
-        let class_name = owl_component_utils::component_for_template(session, template_name)?;
-        let (file_path, name_byte, name_len) = {
-            let descriptor = session.sync_odoo.component_descriptors.get(&class_name)?;
-            (
-                descriptor.file_path.clone(),
-                descriptor.class_name_byte as usize,
-                descriptor.class_name.len(),
-            )
-        };
+        let descriptor = session.sync_odoo.component_mgr.component_for_template(session, template_name)?;
+        let (file_path, name_byte, name_len) =  (
+            descriptor.file_path.clone(),
+            descriptor.class_name_byte as usize,
+            descriptor.class_name.len(),
+        );
 
         // The component's `FileInfo` may not have a text document loaded; read the source
         // directly (falls back to disk) and convert byte offsets ourselves.
