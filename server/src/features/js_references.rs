@@ -20,7 +20,6 @@ use crate::features::owl_virtual::{
     stage_doc_and_shim,
 };
 use crate::threads::SessionInfo;
-use crate::utils::{HashMap, HashSet};
 
 /// Append `loc` unless an equal `Location` is already present (the two query halves can
 /// overlap on same-file uses; reference sets are small, linear de-dup is enough).
@@ -35,44 +34,6 @@ fn push_unique(locations: &mut Vec<Location>, loc: Location) {
 struct InheritedDoc {
     doc: OwlVirtualDoc,
     xml_fi: Rc<RefCell<FileInfo>>,
-}
-
-/// `class_name -> super_class_name` over every known component whose superclass is a plain
-/// identifier — the edge set of the component inheritance graph.
-fn build_super_of(session: &SessionInfo) -> HashMap<String, String> {
-    session
-        .sync_odoo
-        .component_descriptors
-        .values()
-        .filter_map(|d| {
-            d.super_class_name
-                .clone()
-                .map(|s| (d.class_name.clone(), s))
-        })
-        .collect()
-}
-
-/// Transitive subclasses of `roots` given a `class -> superclass` edge map. Excludes the roots
-/// themselves and is robust against cycles (each class is added at most once).
-fn collect_subclasses(super_of: &HashMap<String, String>, roots: &[String]) -> Vec<String> {
-    let root_set: HashSet<&str> = roots.iter().map(String::as_str).collect();
-    let mut result: Vec<String> = vec![];
-    let mut frontier: HashSet<String> = roots.iter().cloned().collect();
-    while !frontier.is_empty() {
-        let mut next: HashSet<String> = HashSet::default();
-        for (child, parent) in super_of {
-            if frontier.contains(parent)
-                && !root_set.contains(child.as_str())
-                && !result.iter().any(|r| r == child)
-                && !next.contains(child)
-            {
-                next.insert(child.clone());
-            }
-        }
-        result.extend(next.iter().cloned());
-        frontier = next;
-    }
-    result
 }
 
 /// Ceiling on the transient roots *retained* between queries (expansion roots + open docs).
@@ -142,30 +103,16 @@ fn declaring_js_files(files: impl IntoIterator<Item = String>) -> Vec<String> {
 /// *declaring* file reaches the cousin case (member in ancestor `A`, cursor in `B`, use in
 /// sibling subclass `C`'s template).
 fn stage_subclass_docs(session: &mut SessionInfo, anchor_files: &[String]) -> Vec<InheritedDoc> {
-    let anchor_classes: Vec<String> = session
-        .sync_odoo
-        .component_descriptors
-        .values()
-        .filter(|d| anchor_files.contains(&d.file_path))
-        .map(|d| d.class_name.clone())
-        .collect();
-    if anchor_classes.is_empty() {
-        return vec![];
-    }
-    let super_of = build_super_of(session);
-    let subclasses = collect_subclasses(&super_of, &anchor_classes);
+    let subclasses = session.sync_odoo.component_mgr.subclasses_of_files(session, anchor_files);
 
     // The anchors' own templates plus the distinct `.js` files defining those subclasses (one
     // file may define several).
     let mut sub_paths: Vec<String> = anchor_files.to_vec();
-    for class in &subclasses {
-        if let Some(desc) = session.sync_odoo.component_descriptors.get(class)
-            && !sub_paths.contains(&desc.file_path)
-        {
+    for desc in subclasses {
+        if !sub_paths.contains(&desc.file_path) {
             sub_paths.push(desc.file_path.clone());
         }
     }
-
     let mut docs: Vec<InheritedDoc> = vec![];
     for sub_path in sub_paths {
         let Some(sub_fi) = session

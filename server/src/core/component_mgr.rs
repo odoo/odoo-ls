@@ -186,4 +186,59 @@ impl ComponentMgr {
         false // cycle
     }
     
+    /// The subclasses of the components in `file_paths`
+    pub fn subclasses_of_files(&self, session: &SessionInfo, file_paths: &[String]) -> Vec<&ComponentDescriptor> {
+        let subclasses = self.subclass_keys_of_files(file_paths, session);
+        subclasses.into_iter().map(|key| &self.descriptors[key]).collect()
+    }
+    
+    fn subclass_keys_of_files(
+        &self,
+        file_paths: &[String],
+        import_resolver: &impl ImportResolver
+    ) -> Vec<ComponentKey> {
+        let anchor_classes: Vec<_> = file_paths
+            .iter()
+            .filter_map(|path| self.by_file.get(path))
+            .flatten()
+            .copied()
+            .collect();
+        if anchor_classes.is_empty() {
+            return vec![];
+        }
+        let super_of = self.build_super_of(import_resolver);
+        Self::collect_subclasses(&super_of, &anchor_classes)
+    }
+ 
+    /// `class -> super_class` over every known component — the edge set of the component inheritance graph.
+    fn build_super_of(&self, import_resolver: &impl ImportResolver) -> HashMap<ComponentKey, ComponentKey> {
+        self.descriptors.iter()
+            .filter_map(|(key, descriptor)|
+                self.super_key(descriptor, import_resolver).map(|parent| (key, parent))
+            )
+            .collect()
+    }
+
+    /// Transitive subclasses of `roots` given a `class -> superclass` edge map. Excludes the roots
+    /// themselves and is robust against cycles (each class is added at most once).
+    fn collect_subclasses(super_of: &HashMap<ComponentKey, ComponentKey>, roots: &[ComponentKey]) -> Vec<ComponentKey> {
+        let root_set: HashSet<ComponentKey> = roots.iter().copied().collect();
+        let mut result = vec![];
+        let mut frontier: HashSet<ComponentKey> = root_set.clone();
+        while !frontier.is_empty() {
+            let mut next: HashSet<_> = HashSet::default();
+            for (child, parent) in super_of {
+                if frontier.contains(parent)
+                    && !root_set.contains(child)
+                    && !result.iter().any(|r| r == child)
+                    && !next.contains(child)
+                {
+                    next.insert(*child);
+                }
+            }
+            result.extend(next.iter().copied());
+            frontier = next;
+        }
+        result
+    }
 }
