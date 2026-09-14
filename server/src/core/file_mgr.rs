@@ -1,6 +1,6 @@
 use oxc::{allocator::Allocator, diagnostics::OxcDiagnostic, parser::Parser, semantic::SemanticBuilder, span::SourceType};
 use oxc_linter::{ConfigStore, ConfigStoreBuilder, ContextSubHost, ExternalPluginStore, LintOptions, ModuleRecord};
-use oxc::syntax::module_record::ExportExportName;
+use oxc::syntax::module_record::{ExportExportName, ImportImportName};
 use ruff_python_ast::{ModModule, PySourceType, Stmt, token::{Token, TokenKind}};
 use ruff_python_parser::Parsed;
 use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent, Uri};
@@ -9,8 +9,8 @@ use ruff_source_file::{LineIndex, OneIndexed, PositionEncoding, SourceLocation};
 use rustc_hash::FxHasher;
 use tracing::{error, warn};
 use std::path::Path;
-use crate::core::js_arch_builder::{JsDeclaration, JsExportKind, span_to_range};
 use crate::core::js_arch_builder::{ComponentDescriptor, JsTemplateRef};
+use crate::core::js_arch_builder::{ImportSource, JsImportKind, JsDeclaration, JsExportKind, span_to_range};
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, OnceLock};
@@ -141,6 +141,13 @@ impl ParsedJs {
     }
 }
 
+struct ParsedJsImports {
+    imports: Vec<JsImport>, 
+    reexports: Vec<String>,
+    exports: HashMap<String, JsExportKind>,
+    import_bindings: HashMap<String, ImportSource>,
+}
+
 /// Stack size for JS parsing threads, sized for OXC recursive descent on minified libs.
 pub const JS_PARSE_STACK_SIZE: usize = 8 * 1024 * 1024;
 
@@ -180,13 +187,14 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
     let mut syntax_diagnostics: Vec<OxcDiagnostic> = ret.errors;
     let parser_module_record = ret.module_record;
 
-    let (imports, reexports, exports) = FileInfo::collect_js_imports(&parser_module_record);
+    let ParsedJsImports { imports, reexports, exports, import_bindings } =
+        FileInfo::collect_js_imports(&parser_module_record);
 
     let program = allocator.alloc(ret.program);
 
     // Collect template references, component descriptors and declarations before
     // semantic analysis
-    let (component_descriptors, decls) = js_arch_builder::visit_file(program, path, &exports);
+    let (component_descriptors, decls) = js_arch_builder::visit_file(program, path, &exports, &import_bindings);
     // Vendored libraries are kept out of workspace symbols for the same reason they
     // are kept out of OXC diagnostics: they are not the user's code, and many are minified.
     let decls = if is_lib { vec![] } else { decls };
@@ -619,7 +627,7 @@ impl FileInfo {
         self.replace_diagnostics(DiagnosticSource::JS_OXC_LINT, to_lsp_diag(parsed.lint_diagnostics));
     }
 
-    fn collect_js_imports(parser_module_record: &oxc::syntax::module_record::ModuleRecord) -> (Vec<JsImport>, Vec<String>, HashMap<String, JsExportKind>) {
+    fn collect_js_imports(parser_module_record: &oxc::syntax::module_record::ModuleRecord) -> ParsedJsImports {
         let mut imports: Vec<JsImport> = parser_module_record.requested_modules
             .iter()
             .flat_map(|(spec, requests)| requests.iter().map(|request| JsImport {
@@ -652,7 +660,27 @@ impl FileInfo {
             };
             exports.insert(local.as_str().to_string(), kind);
         }
-        (imports, reexports, exports)
+
+        // Local binding name -> what it points at. `import_name` matches the source,
+        // `local_name` is the alias. (`import { cat as tiger } from "specifier"`).
+        let mut import_bindings: HashMap<String, ImportSource> = HashMap::default();
+        for entry in parser_module_record.import_entries.iter() {
+            if entry.is_type {
+                continue;
+            }
+            let kind = match &entry.import_name {
+                ImportImportName::Name(n) => JsImportKind::Named(n.name.as_str().to_string()),
+                ImportImportName::Default(_) => JsImportKind::Default,
+                // not needed for our only use case: resolving an `extends imported_name`
+                ImportImportName::NamespaceObject => continue,
+            };
+            import_bindings.insert(
+                entry.local_name.name.as_str().to_string(),
+                ImportSource { specifier: entry.module_request.name.as_str().to_string(), kind },
+            );
+        }
+
+        ParsedJsImports { imports, reexports, exports, import_bindings }
     }
 
     /* if ast has been set to none to lower memory usage, try to reload it */
