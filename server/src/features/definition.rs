@@ -4,7 +4,6 @@ use roxmltree;
 
 use crate::core::file_mgr::{AstKind, FileInfo, FileMgr};
 use crate::core::tsserver_bridge;
-use crate::features::owl_component_utils;
 use crate::core::symbols::symbol_keys::SourceFileKey;
 use crate::features::goto_utils::{GotoRequest, GotoSource, GotoSourceType, GotoUtils};
 use crate::features::owl_virtual;
@@ -42,7 +41,7 @@ impl DefinitionFeature {
     fn get_js_definition(session: &mut SessionInfo, file_info: &Rc<RefCell<FileInfo>>, line: u32, character: u32) -> Option<GotoDefinitionResponse> {
         // Check if cursor is over a template reference (e.g. `static template = "module.xml_id"`)
         let encoding = session.sync_odoo.encoding;
-        let template_refs: Vec<_> = file_info.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs().cloned().collect();
+        let template_refs: Vec<_> = session.sync_odoo.component_mgr.template_refs_by_file(&file_info.borrow().uri).cloned().collect();
         for template_ref in &template_refs {
             // @todo: this is a change from the previous (fda's) call. Check if equivalent, and why it changed.
             let range = file_info.borrow().text_range_to_range(template_ref.range, encoding);
@@ -148,15 +147,12 @@ impl DefinitionFeature {
         value_range: std::ops::Range<usize>,
     ) -> Option<GotoDefinitionResponse> {
         let encoding = session.sync_odoo.encoding;
-        let class_name = owl_component_utils::component_for_template(session, template_name)?;
-        let (file_path, name_byte, name_len) = {
-            let descriptor = session.sync_odoo.component_descriptors.get(&class_name)?;
-            (
-                descriptor.file_path.clone(),
-                descriptor.class_name_byte as usize,
-                descriptor.class_name.len(),
-            )
-        };
+        let descriptor = session.sync_odoo.component_mgr.component_for_template(session, template_name)?;
+        let (file_path, name_byte, name_len) =  (
+            descriptor.file_path.clone(),
+            descriptor.class_name_byte as usize,
+            descriptor.class_name.len(),
+        );
 
         // The component's `FileInfo` may not have a text document loaded; read the source
         // directly (falls back to disk) and convert byte offsets ourselves.

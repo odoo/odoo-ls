@@ -12,6 +12,7 @@
 //! between the two is a constant offset per expression.
 
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use lsp_types::{
@@ -22,13 +23,12 @@ use ruff_source_file::{LineIndex, PositionEncoding};
 
 use crate::core::file_mgr::{FileInfo, FileMgr, offset_to_position_with_line_index, position_to_offset_with_line_index};
 use crate::core::js_arch_builder::JsExportKind;
-use crate::features::owl_component_utils::{self, template_reference_resolves};
+use crate::features::owl_component_utils::{template_reference_resolves};
 use crate::core::tsserver_bridge::{ts_to_lsp_location, TsLocation, TsServerBridge};
 use crate::features::owl_expr::{compile_owl_expr, interp_chunk_ranges, this_token_at};
 use crate::features::owl_xml_utils::{TEMPLATE_NAME_ATTRS, component_tag_name_range, is_owl_expression_attr, is_owl_interpolation_attr, is_prop_expr_attr, tag_is_component};
 use crate::features::semantic_tokens::{SemanticTokensFeature, TokMod, TokType, U16ToByte};
 use crate::threads::SessionInfo;
-use crate::utils::HashMap;
 
 /// A template-local in scope for an expression (`t-set` or `t-foreach`/`t-as`), emitted
 /// into the function preamble as a `let` so tsserver types bare identifiers. `decl_offset`
@@ -557,26 +557,23 @@ pub(crate) fn build_virtual_docs(session: &mut SessionInfo, file_info: &Rc<RefCe
         return vec![];
     }
 
-    // 3. Group expressions by declaring component class — one doc per component.
-    let mut by_class: HashMap<String, Vec<CollectedExpr>> = HashMap::default();
+    // 3. Group expressions by template name
+    // BTreeMap for stable iteration order - reproducible output
+    let mut by_template: BTreeMap<String, Vec<CollectedExpr>> = BTreeMap::default();
     for expr in collected {
-        let Some(class_name) = owl_component_utils::component_for_template(session, &expr.template_name) else {
-            continue;
-        };
-        by_class.entry(class_name).or_default().push(expr);
+        by_template.entry(expr.template_name.clone()).or_default().push(expr);
     }
-
-    // 4. Per component: resolve its descriptor, form the import line, and splice the functions.
+ 
+    // 4. Per template: resolve its declaring component, form the import line, and splice the functions.
+    // One doc per component.
     let mut docs = vec![];
-    for (class_name, exprs) in by_class {
-        let Some((file_path, export_kind)) = session
-            .sync_odoo
-            .component_descriptors
-            .get(&class_name)
-            .map(|d| (d.file_path.clone(), d.export_kind))
-        else {
+    for (template_name, exprs) in by_template {
+        let Some(component) = session.sync_odoo.component_mgr.component_for_template(session, &template_name) else {
             continue;
         };
+        let (file_path, class_name, export_kind) =
+            (component.file_path.clone(), component.class_name.clone(), component.export_kind);
+
         let Some(real) = read_real_js(session, &file_path) else {
             continue;
         };
@@ -622,9 +619,9 @@ pub(crate) fn build_virtual_docs(session: &mut SessionInfo, file_info: &Rc<RefCe
 fn build_shim_for_file(session: &SessionInfo, real: &str, file_path: &str) -> Option<ShimDoc> {
     let mut names: Vec<String> = session
         .sync_odoo
-        .component_descriptors
-        .values()
-        .filter(|d| d.file_path == file_path && d.export_kind == JsExportKind::None)
+        .component_mgr
+        .components_in_file(file_path)
+        .filter(|d| d.export_kind == JsExportKind::None)
         .map(|d| d.class_name.clone())
         .collect();
     if names.is_empty() {
