@@ -481,31 +481,4 @@ mod tests {
         push_unique(&mut v, loc("/b.xml", 1)); // different uri — kept
         assert_eq!(v.len(), 3);
     }
-
-    #[test]
-    fn collect_subclasses_walks_transitively_and_excludes_roots() {
-        // A ← B ← C, A ← D, plus an unrelated E ← F.
-        let mut super_of: HashMap<String, String> = HashMap::default();
-        super_of.insert("B".into(), "A".into());
-        super_of.insert("C".into(), "B".into());
-        super_of.insert("D".into(), "A".into());
-        super_of.insert("F".into(), "E".into());
-        let mut subs = collect_subclasses(&super_of, &["A".to_string()]);
-        subs.sort();
-        assert_eq!(
-            subs,
-            vec!["B".to_string(), "C".to_string(), "D".to_string()]
-        );
-        assert!(!subs.contains(&"A".to_string())); // root excluded
-        assert!(!subs.contains(&"F".to_string())); // unrelated branch excluded
-
-        // A cycle must terminate (each class added at most once).
-        let mut cyc: HashMap<String, String> = HashMap::default();
-        cyc.insert("X".into(), "Y".into());
-        cyc.insert("Y".into(), "X".into());
-        assert_eq!(
-            collect_subclasses(&cyc, &["X".to_string()]),
-            vec!["Y".to_string()]
-        );
-    }
 }

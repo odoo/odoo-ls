@@ -248,4 +248,253 @@ impl ComponentMgr {
         }
         result
     }
+    
+}
+
+#[cfg(test)]
+mod tests {
+    use ruff_text_size::TextRange;
+    use crate::core::js_arch_builder::{ImportSource, JsExportKind, JsTemplateRef};
+    use super::*;
+
+    /// Resolves the `./{Class}` specifiers built by [`desc`] back to `{Class}.js`.
+    struct TestResolver;
+
+    impl ImportResolver for TestResolver {
+        fn resolve(&self, specifier: &str, _importer: &str) -> Option<String> {
+            Some(format!("{}.js", specifier.trim_start_matches("./")))
+        }
+    }
+
+    fn desc(
+        file_path: &str,
+        class: &str,
+        super_class: Option<&str>,
+        template: Option<&str>,
+    ) -> ComponentDescriptor {
+        ComponentDescriptor {
+            class_name: class.to_string(),
+            file_path: file_path.to_string(),
+            class_name_byte: 0,
+            super_class: super_class.map(|name| SuperClassRef::Imported(ImportSource {
+                specifier: format!("./{name}"),
+                kind: JsImportKind::Named(name.to_string()),
+            })),
+            export_kind: JsExportKind::Named,
+            template: template.map(|t_name| JsTemplateRef {
+                range: TextRange::default(),
+                t_name: t_name.to_string(),
+            }),
+        }
+    }
+
+    /// One class per file (`{class}.js`), indexed in the order given — the build order.
+    fn indexed(entries: &[(&str, Option<&str>, Option<&str>)]) -> ComponentMgr {
+        let mut result = ComponentMgr::default();
+        for &(class, super_class, template) in entries {
+            let path = format!("{class}.js");
+            result.index_file(&path, vec![desc(&path, class, super_class, template)]);
+        }
+        result
+    }
+
+    #[test]
+    fn a_default_import_super_resolves_to_the_default_export() {
+        let mut default_export = desc("base.js", "Base", None, None);
+        default_export.export_kind = JsExportKind::Default;
+
+        let mut mgr = ComponentMgr::default();
+        // the named class is indexed first: the pick must be by export kind, not by position
+        mgr.index_file("base.js", vec![desc("base.js", "Helper", None, None), default_export]);
+        mgr.index_file("plain.js", vec![desc("plain.js", "Plain", None, None)]);
+
+        let leaf = default_import_desc("leaf.js", "Leaf", "./base");
+        assert_eq!(super_name(&mgr, &leaf).as_deref(), Some("Base"));
+
+        // `plain.js` declares no default export
+        let stray = default_import_desc("stray.js", "Stray", "./plain");
+        assert_eq!(super_name(&mgr, &stray), None);
+
+        let missing = default_import_desc("missing.js", "Missing", "./nowhere");
+        assert_eq!(super_name(&mgr, &missing), None);
+    }
+
+    #[test]
+    fn is_ancestor_walks_the_super_chain() {
+        // Base <- Middle <- Leaf, plus an Orphan whose superclass is not indexed.
+        let mgr = indexed(&[
+            ("Base", None, None),
+            ("Middle", Some("Base"), None),
+            ("Leaf", Some("Middle"), None),
+            ("Orphan", Some("NotIndexed"), None),
+        ]);
+        let k = |class: &str| key(&mgr, class);
+        assert!(mgr.is_ancestor(k("Base"), k("Leaf"), &TestResolver)); // transitive
+        assert!(mgr.is_ancestor(k("Middle"), k("Leaf"), &TestResolver)); // direct
+        assert!(!mgr.is_ancestor(k("Leaf"), k("Base"), &TestResolver)); // wrong direction
+        assert!(!mgr.is_ancestor(k("Leaf"), k("Leaf"), &TestResolver)); // not its own ancestor
+        assert!(!mgr.is_ancestor(k("Base"), k("Orphan"), &TestResolver)); // unresolvable super
+    }
+
+    #[test]
+    fn is_ancestor_survives_a_cyclic_chain() {
+        // A extends B extends A — must terminate, not loop forever.
+        let mgr = indexed(&[("A", Some("B"), None), ("B", Some("A"), None), ("Other", None, None)]);
+        let k = |class: &str| key(&mgr, class);
+        assert!(mgr.is_ancestor(k("B"), k("A"), &TestResolver));
+        assert!(!mgr.is_ancestor(k("Other"), k("A"), &TestResolver));
+    }
+
+    #[test]
+    fn subclasses_of_files_walks_transitively_and_excludes_the_roots() {
+        // A <- B <- C, A <- D, plus an unrelated E <- F.
+        let mgr = indexed(&[
+            ("A", None, None),
+            ("B", Some("A"), None),
+            ("C", Some("B"), None),
+            ("D", Some("A"), None),
+            ("E", None, None),
+            ("F", Some("E"), None),
+        ]);
+        assert_eq!(subclass_names(&mgr, &["A.js"]), ["B", "C", "D"]);
+        assert!(subclass_names(&mgr, &["C.js"]).is_empty()); // a leaf has none
+    }
+
+    #[test]
+    fn subclasses_of_files_unions_every_root_file() {
+        let mgr = indexed(&[
+            ("A", None, None),
+            ("B", Some("A"), None),
+            ("E", None, None),
+            ("F", Some("E"), None),
+        ]);
+        assert_eq!(subclass_names(&mgr, &["A.js", "E.js"]), ["B", "F"]);
+    }
+
+    #[test]
+    fn subclasses_of_files_survives_a_cycle() {
+        let mgr = indexed(&[("X", Some("Y"), None), ("Y", Some("X"), None)]);
+        assert_eq!(subclass_names(&mgr, &["X.js"]), ["Y"]);
+    }
+
+    #[test]
+    fn subclasses_of_files_is_empty_when_the_files_declare_no_component() {
+        let mgr = indexed(&[("A", None, None), ("B", Some("A"), None)]);
+        assert!(subclass_names(&mgr, &["nothing.js"]).is_empty());
+    }
+
+    #[test]
+    fn component_for_template_keeps_the_base_whatever_the_build_order() {
+        // Base <- Middle <- Leaf, with Base and Leaf declaring the template and Middle declaring
+        // nothing: the super-chain walk has to reach outside the declaring set to find the base.
+        let entries: [(&str, Option<&str>, Option<&str>); 3] = [
+            ("Base", None, Some("mod.T")),
+            ("Middle", Some("Base"), None),
+            ("Leaf", Some("Middle"), Some("mod.T")),
+        ];
+        let forward = indexed(&entries);
+        assert_eq!(base_of(&forward, "mod.T"), Some("Base"));
+
+        let mut reversed = entries;
+        reversed.reverse();
+        assert_eq!(base_of(&indexed(&reversed), "mod.T"), Some("Base"));
+    }
+
+    #[test]
+    fn component_for_template_falls_back_to_the_name_not_the_build_order() {
+        // Two unrelated classes declaring one template: nothing to prefer, so the winner is the
+        // alphabetically first — not whichever file happened to be indexed first.
+        let entries: [(&str, Option<&str>, Option<&str>); 2] =
+            [("Other", None, Some("mod.T")), ("Base", None, Some("mod.T"))];
+        assert_eq!(base_of(&indexed(&entries), "mod.T"), Some("Base"));
+
+        let mut reversed = entries;
+        reversed.reverse();
+        assert_eq!(base_of(&indexed(&reversed), "mod.T"), Some("Base"));
+    }
+
+    #[test]
+    fn component_for_template_handles_the_ordinary_and_degenerate_cases() {
+        let mgr = indexed(&[("Base", None, None), ("Leaf", Some("Base"), Some("mod.T"))]);
+        assert_eq!(base_of(&mgr, "mod.T"), Some("Leaf"));
+        assert_eq!(base_of(&mgr, "mod.Unknown"), None);
+    }
+
+    #[test]
+    fn forgetting_a_file_drops_its_classes_from_every_lookup() {
+        let mut mgr = indexed(&[("Base", None, Some("mod.T")), ("Leaf", Some("Base"), Some("mod.T"))]);
+        mgr.forget_file("Leaf.js");
+
+        assert!(mgr.get_component("Leaf.js", "Leaf").is_none());
+        assert_eq!(mgr.components_in_file("Leaf.js").count(), 0);
+        assert_eq!(mgr.components().count(), 1);
+        // A dead key still sitting in `by_template` must not be a candidate.
+        assert_eq!(base_of(&mgr, "mod.T"), Some("Base"));
+
+        mgr.forget_file("Base.js");
+        assert_eq!(base_of(&mgr, "mod.T"), None);
+    }
+
+    #[test]
+    fn reindexing_a_file_drops_its_old_class_names() {
+        // The rename-while-typing case: a half-typed name must not outlive the next build.
+        let mut mgr = ComponentMgr::default();
+        mgr.index_file("widget.js", vec![desc("widget.js", "MyWidget", None, Some("mod.T"))]);
+        mgr.index_file("widget.js", vec![desc("widget.js", "MyPanel", None, Some("mod.T"))]);
+
+        assert!(mgr.get_component("widget.js", "MyWidget").is_none());
+        assert_eq!(mgr.components().count(), 1);
+        assert_eq!(base_of(&mgr, "mod.T"), Some("MyPanel"));
+    }
+
+    #[test]
+    fn two_files_declaring_the_same_class_name_both_survive() {
+        let mut mgr = ComponentMgr::default();
+        mgr.index_file("b.js", vec![desc("b.js", "SearchBar", None, None)]);
+        mgr.index_file("a.js", vec![desc("a.js", "SearchBar", None, None)]);
+
+        assert_eq!(mgr.components().count(), 2);
+        assert!(mgr.get_component("a.js", "SearchBar").is_some());
+        assert!(mgr.get_component("b.js", "SearchBar").is_some());
+
+        // Forgetting one file leaves the other file's class of the same name alone.
+        mgr.forget_file("a.js");
+        assert!(mgr.get_component("a.js", "SearchBar").is_none());
+        assert!(mgr.get_component("b.js", "SearchBar").is_some());
+    }
+
+    fn base_of<'a>(mgr: &'a ComponentMgr, template_name: &str) -> Option<&'a str> {
+        mgr.component_key_for_template(template_name, &TestResolver)
+            .map(|key| mgr.descriptors[key].class_name.as_str())
+    }
+
+    fn default_import_desc(file_path: &str, class: &str, specifier: &str) -> ComponentDescriptor {
+        let mut result = desc(file_path, class, None, None);
+        result.super_class = Some(SuperClassRef::Imported(ImportSource {
+            specifier: specifier.to_string(),
+            kind: JsImportKind::Default,
+        }));
+        result
+    }
+
+    fn super_name(mgr: &ComponentMgr, descriptor: &ComponentDescriptor) -> Option<String> {
+        mgr.super_key(descriptor, &TestResolver)
+            .map(|key| mgr.descriptors[key].class_name.clone())
+    }
+
+    fn key(mgr: &ComponentMgr, class: &str) -> ComponentKey {
+        mgr.key_by_file_and_name(&format!("{class}.js"), class)
+            .unwrap_or_else(|| panic!("{class} should be indexed"))
+    }
+
+    fn subclass_names(mgr: &ComponentMgr, file_paths: &[&str]) -> Vec<String> {
+        let file_paths: Vec<String> = file_paths.iter().map(|p| p.to_string()).collect();
+        let mut names: Vec<String> = mgr
+            .subclass_keys_of_files(&file_paths, &TestResolver)
+            .into_iter()
+            .map(|key| mgr.descriptors[key].class_name.clone())
+            .collect();
+        names.sort();
+        names
+    }
 }
