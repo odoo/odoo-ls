@@ -275,8 +275,9 @@ impl ReferenceFeature {
         // *template name*: resolved in-house (complete over t-call/t-inherit/component
         // sites, and no tsserver string-literal noise).
         let encoding = session.sync_odoo.encoding;
-        let template_refs: Vec<_> = file_info.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs().cloned().collect();
-        for template_ref in &template_refs {
+        let file_path = file_info.borrow().uri.clone();
+        let template_refs = session.sync_odoo.component_mgr.template_refs_by_file(&file_path);
+        for template_ref in template_refs {
             let range = file_info.borrow().text_range_to_range(template_ref.range, encoding);
             if Self::position_in_lsp_range(line, character, &range) {
                 let refs = Self::collect_template_name_references(session, &template_ref.t_name);
@@ -319,7 +320,7 @@ impl ReferenceFeature {
     /// Collect every reference to an OWL/QWeb template *name*: the `<t t-name>` declaration,
     /// JS `static template` sites, XML `t-call` / `t-inherit` sites. Dynamic `t-call="{{…}}"`
     /// values never string-equal a literal name.
-    fn collect_template_name_references(session: &mut SessionInfo, template_name: &str) -> Vec<Location> {
+    fn collect_template_name_references(session: &SessionInfo, template_name: &str) -> Vec<Location> {
         let encoding = session.sync_odoo.encoding;
         let mut locations = Vec::new();
 

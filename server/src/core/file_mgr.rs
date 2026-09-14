@@ -9,8 +9,8 @@ use ruff_source_file::{LineIndex, OneIndexed, PositionEncoding, SourceLocation};
 use rustc_hash::FxHasher;
 use tracing::{error, warn};
 use std::path::Path;
-use crate::core::js_arch_builder::{ComponentDescriptor, JsTemplateRef};
 use crate::core::js_arch_builder::{ImportSource, JsImportKind, JsDeclaration, JsExportKind, span_to_range};
+use crate::core::js_arch_builder::ComponentDescriptor;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, OnceLock};
@@ -272,8 +272,6 @@ pub struct JsImport {
 
 #[derive(Debug, Clone)]
 pub struct JsAst {
-    /// Component descriptors extracted from OXC analysis of this JS file.
-    pub js_component_descriptors: Vec<ComponentDescriptor>,
     /// Named declarations of this JS file, for workspace symbols.
     pub js_decls: Vec<JsDeclaration>,
     /// Every module specifier this JS file imports from, verbatim as written (incl.
@@ -295,16 +293,11 @@ impl Default for JsAst {
 impl JsAst {
     pub fn new() -> Self {
         Self {
-            js_component_descriptors: Vec::new(),
             js_decls: Vec::new(),
             js_imports: Vec::new(),
             js_reexports: Vec::new(),
             has_exports: false,
         }
-    }
-
-    pub fn js_template_refs(&self) -> impl Iterator<Item=&JsTemplateRef> {
-        self.js_component_descriptors.iter().filter_map(|c| c.template.as_ref())
     }
 }
 
@@ -614,7 +607,6 @@ impl FileInfo {
         {
             let mut fia = self.file_info_ast.borrow_mut();
             let js_ast = fia.ast.as_js_ast_mut();
-            js_ast.js_component_descriptors = parsed.component_descriptors;
             js_ast.js_decls = parsed.decls;
             js_ast.js_imports = parsed.imports;
             js_ast.js_reexports = parsed.reexports;

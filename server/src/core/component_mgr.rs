@@ -104,6 +104,13 @@ impl ComponentMgr {
             .find(|&key| self.descriptors[key].class_name == name)
     }
 
+    pub fn template_refs_by_file(&self, path: &str) -> impl Iterator<Item=&JsTemplateRef> {
+        self.by_file.get(path)
+            .into_iter()
+            .flatten()
+            .filter_map(|&key| self.descriptors[key].template.as_ref())
+    }
+
     pub fn get_super(&self, session: &SessionInfo, descriptor: &ComponentDescriptor) -> Option<&ComponentDescriptor> {
         self.super_key(descriptor, session).map(|key| &self.descriptors[key])
     }

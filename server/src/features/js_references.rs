@@ -147,7 +147,7 @@ fn virtual_docs_for_js(
 ) -> Vec<InheritedDoc> {
     let js_path = js_fi.borrow().uri.clone();
     let mut out = vec![];
-    for xml_path in xml_files_backing_js(session, js_fi) {
+    for xml_path in xml_files_backing_js(session, &js_path) {
         let Some(xml_fi) = session
             .sync_odoo
             .get_file_mgr()
@@ -386,15 +386,9 @@ pub fn references_xml_owl_member(
 /// of this `.js` file: `static template` refs → `js_templates` → each symbol's parent file.
 fn xml_files_backing_js(
     session: &mut SessionInfo,
-    file_info: &Rc<RefCell<FileInfo>>,
+    js_path: &str,
 ) -> Vec<String> {
-    let template_names: Vec<String> = file_info
-        .borrow()
-        .file_info_ast
-        .borrow()
-        .ast
-        .as_js_ast()
-        .js_template_refs()
+    let template_names: Vec<String> = session.sync_odoo.component_mgr.template_refs_by_file(js_path)
         .map(|template_ref| template_ref.t_name.clone())
         .collect();
 
