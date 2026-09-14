@@ -171,6 +171,12 @@ fn test_isinstance_narrowing() {
             // it, shadowing the body's own binding.
             ("while_else_sees_body_binding: `animal`", (314, 8), vec![dog]),
             ("for_else_sees_body_binding: `found`", (321, 8), vec![animal]),
+            // A ternary's sub-expressions are visited, so a walrus in either the body or the
+            // test is declared - both were unresolvable while `Expr::If` was a no-op.
+            ("ternary_body_walrus", (326, 4), vec![animal]),
+            ("ternary_test_walrus", (331, 4), vec![animal]),
+            // Both branches contribute to the result, each evaluated where it stands.
+            ("ternary_union", (336, 4), vec![animal, cat]),
             // The mirror case: a false `and` of negated checks means at least one of them held.
             ("and_of_negated_checks_else", (298, 8), vec![dog, cat]),
         ];

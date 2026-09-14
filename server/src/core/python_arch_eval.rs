@@ -236,9 +236,11 @@ impl PythonArchEval {
             Expr::UnaryOp(unary_op_expr) => {
                 self.visit_expr(session, &unary_op_expr.operand);
             },
-            Expr::If(_todo_if_expr) => {
-                // TODO:
-                // This needs complex handling of sections
+            Expr::If(if_expr) => {
+                // Same order as `visit_ternary` in the ARCH phase
+                self.visit_expr(session, &if_expr.body);
+                self.visit_expr(session, &if_expr.test);
+                self.visit_expr(session, &if_expr.orelse);
             },
             Expr::Dict(dict_expr) => {
                 dict_expr.iter().for_each(

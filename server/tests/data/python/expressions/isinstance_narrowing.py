@@ -320,3 +320,18 @@ def for_else_sees_body_binding():
         found = get_animal()
     else:
         found
+
+
+def ternary_body_walrus(flag: bool):
+    y = (m := get_animal()) if flag else None
+    m
+
+
+def ternary_test_walrus(flag: bool):
+    y = 1 if (n := get_animal()) else 2
+    n
+
+
+def ternary_union(animal: Animal, flag: bool):
+    x = animal if flag else get_cat()
+    x
