@@ -24,6 +24,23 @@ pub enum JsExportKind {
     None,
 }
 
+/// Named import: `import { cat } from "wild"` (cat is one of the named exports of wild)
+/// Default import: `import tiger from "zoo"` (binds the name tiger to the default export of zoo)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JsImportKind {
+    Named(String),
+    Default,
+}
+
+/// For `import { cat as tiger } from "@mod/file"`:
+/// - specifier: "@mod/file"
+/// - kind: JsImportKind::Named("cat")
+#[derive(Debug, Clone)]
+pub struct ImportSource {
+    pub specifier: String,
+    pub kind: JsImportKind,
+}
+
 /// A byte span (surrounding quotes excluded) plus the template name string value found in a
 /// `static template = "..."` assignment. `range` is in **byte offsets** over the JS source;
 /// consumers turn it into an LSP range with the encoding-aware
@@ -98,10 +115,12 @@ struct JSArchBuilderVisitor<'e> {
     container_stack: Vec<OYarn>,
     /// How many function/arrow bodies enclose the node being visited. Only 0 is module scope.
     fn_depth: usize,
+    /// local name -> imported(name + source)
+    import_bindings: &'e HashMap<String, ImportSource>,
 }
 
 impl<'e> JSArchBuilderVisitor<'e> {
-    fn new(file_path: String, exports: &'e HashMap<String, JsExportKind>) -> Self {
+    fn new(file_path: String, exports: &'e HashMap<String, JsExportKind>, import_bindings: &'e HashMap<String, ImportSource>) -> Self {
         Self {
             file_path,
             descriptors: vec![],
@@ -109,6 +128,7 @@ impl<'e> JSArchBuilderVisitor<'e> {
             decls: vec![],
             container_stack: vec![],
             fn_depth: 0,
+            import_bindings,
         }
     }
 
@@ -232,8 +252,9 @@ pub fn visit_file(
     program: &Program<'_>,
     file_path: &str,
     exports: &HashMap<String, JsExportKind>,
+    import_bindings: &HashMap<String, ImportSource>,
 ) -> (Vec<ComponentDescriptor>, Vec<JsDeclaration>) {
-    let mut visitor = JSArchBuilderVisitor::new(file_path.to_string(), exports);
+    let mut visitor = JSArchBuilderVisitor::new(file_path.to_string(), exports, import_bindings);
     visitor.visit_program(program);
     (visitor.descriptors, visitor.decls)
 }
@@ -272,7 +293,7 @@ mod tests {
         let ret = Parser::new(&allocator, src, source_type).parse();
         let program = allocator.alloc(ret.program);
         let map: HashMap<String, JsExportKind> = exports.iter().map(|(n, k)| (n.to_string(), *k)).collect();
-        visit_file(program, "/mod/foo.js", &map)
+        visit_file(program, "/mod/foo.js", &map, &HashMap::default())
     }
 
     fn descriptors_of(src: &str, exports: &[(&str, JsExportKind)]) -> Vec<ComponentDescriptor> {
