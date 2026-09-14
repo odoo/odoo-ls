@@ -238,8 +238,10 @@ impl PythonArchEval {
             },
             Expr::If(if_expr) => {
                 // Same order as `visit_ternary` in the ARCH phase
+                self.resolve_narrowing_at(session, &if_expr.test, if_expr.body.range().start(), false);
                 self.visit_expr(session, &if_expr.body);
                 self.visit_expr(session, &if_expr.test);
+                self.resolve_narrowing_at(session, &if_expr.test, if_expr.orelse.range().start(), true);
                 self.visit_expr(session, &if_expr.orelse);
             },
             Expr::Dict(dict_expr) => {
