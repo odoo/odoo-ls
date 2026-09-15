@@ -1,6 +1,6 @@
 use oxc::{allocator::Allocator, parser::Parser, span::SourceType};
 
-use odoo_ls_server::{core::js_arch_builder::{ComponentDescriptor, visit_file}, utils::HashMap};
+use odoo_ls_server::{core::file_mgr::parse_js, core::js_arch_builder::{ComponentDescriptor, JsImportKind, SuperClassRef, visit_file}, utils::HashMap};
 
 /// Parse `source` as a `.js` file and run the OWL arch-builder visitor on it,
 /// mirroring what `FileInfo::build_js_ast` does before semantic analysis.
@@ -75,6 +75,54 @@ fn test_multiple_components_in_one_file() {
     assert_eq!(components[0].template.as_ref().unwrap().t_name, "module_owl.Counter");
     assert_eq!(components[1].class_name, "Display");
     assert_eq!(components[1].template.as_ref().unwrap().t_name, "module_owl.Display");
+}
+
+/// `{class} -> none`, `{class} -> local {name}`, `{class} -> named {name} from {specifier}`
+/// or `{class} -> default from {specifier}`, in source order. Goes through the real parse, so
+/// the import bindings come from OXC's module record, not from a hand-written map.
+fn super_refs(source: &str) -> Vec<String> {
+    let parsed = parse_js(source, "owl_component.js");
+    assert!(parsed.syntax_diagnostics.is_empty(), "unexpected parse errors: {:?}", parsed.syntax_diagnostics);
+    parsed.component_descriptors
+        .iter()
+        .map(|descriptor| {
+            let super_class = match &descriptor.super_class {
+                None => "none".to_string(),
+                Some(SuperClassRef::Local(name)) => format!("local {name}"),
+                Some(SuperClassRef::Imported(import)) => match &import.kind {
+                    JsImportKind::Named(name) => format!("named {name} from {}", import.specifier),
+                    JsImportKind::Default => format!("default from {}", import.specifier),
+                },
+            };
+            format!("{} -> {super_class}", descriptor.class_name)
+        })
+        .collect()
+}
+
+/// `extends X` must record where `X` comes from, not just its local spelling: an alias binds a
+/// name that no file declares, and two modules may export the same name.
+#[test]
+fn test_super_class_records_where_the_name_comes_from() {
+    let source = concat!(
+        "import { Base } from \"@web/base\";\n",
+        "import { Hook as Alias } from \"./hooks\";\n",
+        "import Owl from \"@odoo/owl\";\n",
+        "import * as ns from \"./ns\";\n",
+        "class Plain {}\n",
+        "class FromNamed extends Base {}\n",
+        "class FromAlias extends Alias {}\n",
+        "class FromDefault extends Owl {}\n",
+        "class FromNamespace extends ns.Thing {}\n",
+        "class FromLocal extends Plain {}\n",
+    );
+    assert_eq!(super_refs(source), [
+        "Plain -> none",
+        "FromNamed -> named Base from @web/base",
+        "FromAlias -> named Hook from ./hooks",
+        "FromDefault -> default from @odoo/owl",
+        "FromNamespace -> none",
+        "FromLocal -> local Plain",
+    ]);
 }
 
 /// A nested anonymous class is not a member of its enclosing class, so it must not
