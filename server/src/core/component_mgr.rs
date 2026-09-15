@@ -314,6 +314,72 @@ mod tests {
     }
 
     #[test]
+    fn a_named_import_super_needs_a_matching_named_export() {
+        let mut mgr = ComponentMgr::default();
+        mgr.index_file("Ok.js", vec![desc("Ok.js", "Ok", None, None)]);
+
+        let mut not_exported = desc("Hidden.js", "Hidden", None, None);
+        not_exported.export_kind = JsExportKind::None;
+        mgr.index_file("Hidden.js", vec![not_exported]);
+
+        let mut default_only = desc("Other.js", "Other", None, None);
+        default_only.export_kind = JsExportKind::Default;
+        mgr.index_file("Other.js", vec![default_only]);
+
+        let named_import_of = |class: &str| super_name(&mgr, &desc("leaf.js", "Leaf", Some(class), None));
+        assert_eq!(named_import_of("Ok").as_deref(), Some("Ok"));
+        assert_eq!(named_import_of("Hidden"), None);
+        // `import { Other }` does not reach a default export
+        assert_eq!(named_import_of("Other"), None);
+    }
+
+    #[test]
+    fn a_named_import_super_picks_the_file_not_the_name() {
+        // Two files declare `Base`: only the specifier tells them apart.
+        let mut mgr = ComponentMgr::default();
+        mgr.index_file("a.js", vec![desc("a.js", "Base", None, None)]);
+        mgr.index_file("b.js", vec![desc("b.js", "Base", None, None)]);
+
+        let from_b = named_import_desc("leaf.js", "Leaf", "./b", "Base");
+        assert_eq!(super_file(&mgr, &from_b).as_deref(), Some("b.js"));
+
+        let from_a = named_import_desc("leaf.js", "Leaf", "./a", "Base");
+        assert_eq!(super_file(&mgr, &from_a).as_deref(), Some("a.js"));
+
+        // The name is matched in the resolved file only, never across the index.
+        let elsewhere = named_import_desc("leaf.js", "Leaf", "./c", "Base");
+        assert_eq!(super_file(&mgr, &elsewhere), None);
+    }
+
+    #[test]
+    fn a_local_super_resolves_inside_its_own_file() {
+        let mut mgr = ComponentMgr::default();
+        mgr.index_file("dialog.js", vec![
+            desc("dialog.js", "Base", None, None),
+            local_super_desc("dialog.js", "Leaf", "Base", None),
+        ]);
+        // A class of the same name in another file must not win.
+        mgr.index_file("other.js", vec![desc("other.js", "Base", None, None)]);
+
+        let leaf = mgr.get_component("dialog.js", "Leaf").expect("Leaf should be indexed");
+        assert_eq!(super_file(&mgr, leaf).as_deref(), Some("dialog.js"));
+
+        // `extends Component` when no class in the file declares it: a global, or a typo.
+        let stray = local_super_desc("dialog.js", "Stray", "Component", None);
+        assert_eq!(super_name(&mgr, &stray), None);
+    }
+
+    #[test]
+    fn component_for_template_walks_a_same_file_super_chain() {
+        let mut mgr = ComponentMgr::default();
+        mgr.index_file("dialog.js", vec![
+            local_super_desc("dialog.js", "Leaf", "Base", Some("mod.T")),
+            desc("dialog.js", "Base", None, Some("mod.T")),
+        ]);
+        assert_eq!(base_of(&mgr, "mod.T"), Some("Base"));
+    }
+
+    #[test]
     fn is_ancestor_walks_the_super_chain() {
         // Base <- Middle <- Leaf, plus an Orphan whose superclass is not indexed.
         let mgr = indexed(&[
@@ -451,6 +517,19 @@ mod tests {
     }
 
     #[test]
+    fn reindexing_a_file_with_no_class_clears_it() {
+        // The class is deleted: the file still parses, it just declares nothing any more.
+        let mut mgr = ComponentMgr::default();
+        mgr.index_file("widget.js", vec![desc("widget.js", "MyWidget", None, Some("mod.T"))]);
+        mgr.index_file("widget.js", vec![]);
+
+        assert!(mgr.get_component("widget.js", "MyWidget").is_none());
+        assert_eq!(mgr.components_in_file("widget.js").count(), 0);
+        assert_eq!(mgr.components().count(), 0);
+        assert_eq!(base_of(&mgr, "mod.T"), None);
+    }
+
+    #[test]
     fn two_files_declaring_the_same_class_name_both_survive() {
         let mut mgr = ComponentMgr::default();
         mgr.index_file("b.js", vec![desc("b.js", "SearchBar", None, None)]);
@@ -464,6 +543,49 @@ mod tests {
         mgr.forget_file("a.js");
         assert!(mgr.get_component("a.js", "SearchBar").is_none());
         assert!(mgr.get_component("b.js", "SearchBar").is_some());
+    }
+
+    #[test]
+    fn every_indexed_key_stays_live_through_the_file_lifecycle() {
+        let mut mgr = ComponentMgr::default();
+        assert_keys_are_live(&mgr);
+
+        // Two classes in one file, and a template shared with a second file.
+        mgr.index_file("widget.js", vec![
+            desc("widget.js", "Base", None, Some("mod.T")),
+            local_super_desc("widget.js", "Leaf", "Base", Some("mod.T")),
+        ]);
+        mgr.index_file("other.js", vec![desc("other.js", "Other", None, Some("mod.T"))]);
+        assert_keys_are_live(&mgr);
+
+        mgr.index_file("widget.js", vec![desc("widget.js", "Renamed", None, Some("mod.T"))]);
+        assert_keys_are_live(&mgr);
+
+        mgr.index_file("widget.js", vec![]);
+        assert_keys_are_live(&mgr);
+
+        mgr.forget_file("other.js");
+        assert_keys_are_live(&mgr);
+
+        mgr.forget_file("other.js");
+        mgr.forget_file("never_indexed.js");
+        assert_keys_are_live(&mgr);
+
+        // Consistent is not enough: nothing may be left behind at all.
+        assert_eq!(mgr.components().count(), 0);
+        assert!(mgr.by_file.is_empty() && mgr.by_template.is_empty());
+    }
+
+    /// The two halves of what makes `descriptors[key]` panic-free: no accessory map may name a
+    /// dead key, and no descriptor may outlive the `by_file` entry that owns it.
+    fn assert_keys_are_live(mgr: &ComponentMgr) {
+        let by_file_keys: Vec<ComponentKey> = mgr.by_file.values().flatten().copied().collect();
+        for key in by_file_keys.iter().copied().chain(mgr.by_template.values().flatten().copied()) {
+            assert!(mgr.descriptors.contains_key(key), "dangling key {key:?}");
+        }
+        assert_eq!(by_file_keys.len(), mgr.descriptors.len(), "a descriptor outlived its by_file entry");
+        assert!(mgr.by_file.values().all(|keys| !keys.is_empty()), "empty by_file entry");
+        assert!(mgr.by_template.values().all(|keys| !keys.is_empty()), "empty by_template entry");
     }
 
     fn base_of<'a>(mgr: &'a ComponentMgr, template_name: &str) -> Option<&'a str> {
@@ -480,9 +602,31 @@ mod tests {
         result
     }
 
+    fn named_import_desc(file_path: &str, class: &str, specifier: &str, imported: &str) -> ComponentDescriptor {
+        let mut result = desc(file_path, class, None, None);
+        result.super_class = Some(SuperClassRef::Imported(ImportSource {
+            specifier: specifier.to_string(),
+            kind: JsImportKind::Named(imported.to_string()),
+        }));
+        result
+    }
+
+    fn local_super_desc(file_path: &str, class: &str, super_class: &str, template: Option<&str>) -> ComponentDescriptor {
+        let mut result = desc(file_path, class, None, template);
+        result.super_class = Some(SuperClassRef::Local(super_class.to_string()));
+        result
+    }
+
+    fn super_of<'a>(mgr: &'a ComponentMgr, descriptor: &ComponentDescriptor) -> Option<&'a ComponentDescriptor> {
+        mgr.super_key(descriptor, &TestResolver).map(|key| &mgr.descriptors[key])
+    }
+
     fn super_name(mgr: &ComponentMgr, descriptor: &ComponentDescriptor) -> Option<String> {
-        mgr.super_key(descriptor, &TestResolver)
-            .map(|key| mgr.descriptors[key].class_name.clone())
+        super_of(mgr, descriptor).map(|descriptor| descriptor.class_name.clone())
+    }
+
+    fn super_file(mgr: &ComponentMgr, descriptor: &ComponentDescriptor) -> Option<String> {
+        super_of(mgr, descriptor).map(|descriptor| descriptor.file_path.clone())
     }
 
     fn key(mgr: &ComponentMgr, class: &str) -> ComponentKey {
