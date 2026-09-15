@@ -33,6 +33,8 @@ pub struct Fixtures {
     // Unopened fixtures: the test never opens them, so they are never a tsserver root of their own.
     /// unopened: quiet_greeting.js, home of QuietGreeting component, which extends Greeting
     pub quiet_js: FixtureFile,
+    /// unopened: shouty_greeting.js, extends Greeting and declares the Greeting template too
+    pub shouty_js: FixtureFile,
     /// unopened: greeting_report.js, no component, imports Greeting
     pub report_js: FixtureFile,
     /// unopened: greeting_ext.xml, templates that t-calls and t-inherits Greeting template
@@ -59,6 +61,7 @@ impl Fixtures {
         let import_statements = FixtureFile::open(session, &["src", "imports", "import_statements.js"]);
         let tests_js = FixtureFile::open(session, &["tests", "greeting_tests.js"]);
         let quiet_js = FixtureFile::unopened(&["src", "greeting", "quiet_greeting.js"]);
+        let shouty_js = FixtureFile::unopened(&["src", "greeting", "shouty_greeting.js"]);
         let report_js = FixtureFile::unopened(&["src", "greeting", "greeting_report.js"]);
         let ext_xml = FixtureFile::unopened(&["src", "greeting", "greeting_ext.xml"]);
         let helpers_js = FixtureFile::unopened(&["tests", "helpers.js"]);
@@ -67,7 +70,7 @@ impl Fixtures {
         let bundle_js = FixtureFile::unopened(&["lib", "bundle", "bundle.js"]);
         Fixtures {
             js, xml, sub_js, sub_xml, js_utils, lib_imports, import_completions, import_statements, tests_js,
-            quiet_js, report_js, ext_xml, helpers_js, aliased_js, mini_js, bundle_js,
+            quiet_js, shouty_js, report_js, ext_xml, helpers_js, aliased_js, mini_js, bundle_js,
         }
     }
 }
