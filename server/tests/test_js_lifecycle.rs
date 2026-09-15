@@ -263,11 +263,14 @@ fn test_component_index_lifecycle(session: &mut SessionInfo, fixture: &TempDir) 
     assert_eq!(components_for_template(session, template), 0, "the old template name must not outlive the edit");
 
     Odoo::handle_did_close(session, make_js_close_params(uri));
-    let still_cached = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).is_some();
+    assert!(
+        session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).is_some(),
+        "a workspace file stays in the cache when it is closed",
+    );
     assert_eq!(
-        !template_names(session, &path).is_empty(),
-        still_cached,
-        "an entry lives exactly as long as the file cache it was parsed from",
+        template_names(session, &path),
+        [renamed_template],
+        "closing does not reparse, so the index keeps what the last edit built",
     );
 
     fs::remove_file(&path).expect("failed to delete the component file");
