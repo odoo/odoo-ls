@@ -306,7 +306,7 @@ impl PythonArchEval {
             },
             // Expressions that cannot contained a named expressions are not traversed
             Expr::Lambda(lambda_expr) => {
-                let Some(lambda_sym) = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), "<lambda>", &lambda_expr.range) else {
+                let Some(lambda_sym) = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), LAMBDA_NAME, &lambda_expr.range) else {
                     return; // can be not found if AST is incomplete
                 };
                 let function_key = lambda_sym.unwrap_function_key();

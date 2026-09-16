@@ -11,7 +11,7 @@ use std::vec;
 use tracing::{trace, warn};
 
 use crate::constants::{
-    BuildStatus, BuildSteps, DEBUG_STEPS, DEBUG_STEPS_ONLY_INTERNAL, DiagnosticSource, OYarn, SymType
+    BuildStatus, BuildSteps, DEBUG_STEPS, DEBUG_STEPS_ONLY_INTERNAL, DiagnosticSource, LAMBDA_NAME, OYarn, SymType
 };
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
@@ -22,7 +22,7 @@ use crate::core::symbols::Buildable;
 use crate::core::symbols::symbol_keys::{FunctionKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::threads::SessionInfo;
-use crate::{oyarn, S};
+use crate::oyarn;
 
 use super::entry_point::EntryPoint;
 use super::evaluation::{EvaluationSymbolPtr, EvaluationSymbolWeak};
@@ -458,7 +458,7 @@ impl PythonArchBuilder {
             // Expressions that cannot contained a named expressions are not traversed
             Expr::Lambda(lambda_expr) => {
                 let function_key = session.st_mut().add_new_function(
-                    *self.sym_stack.last().unwrap(), &S!("<lambda>"), lambda_expr.range, lambda_expr.body.range().start()
+                    *self.sym_stack.last().unwrap(), LAMBDA_NAME, lambda_expr.range, lambda_expr.body.range().start()
                 );
                 //arch is considered done on the fly
                 session.st_mut().set_build_status(function_key.into(), BuildSteps::ARCH, BuildStatus::DONE);
