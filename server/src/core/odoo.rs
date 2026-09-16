@@ -855,22 +855,13 @@ impl SyncOdoo {
     }
 
     pub fn unload_path(session: &mut SessionInfo, path: &Path) {
-        Self::unload_path_if(session, path, |_, _| true);
-    }
-
-    /// Like `unload_path`, but only unloads a symbol when `should_unload` returns true. Returns whether anything was unloaded.
-    pub fn unload_path_if(session: &mut SessionInfo, path: &Path, should_unload: impl Fn(&SymbolTable, SymbolKey) -> bool) -> bool {
         // file/dir might no longer exist in file system, we can't stat it
-        let mut unloaded_any = false;
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_all() {
             // try path as a data or asset file
             if let Some(data_or_asset) = Self::find_data_or_asset_in_ep(entry, path) {
-                if let Some(sym) = data_or_asset.upgrade(session.st())
-                    && should_unload(session.st(), sym.into())
-                {
+                if let Some(sym) = data_or_asset.upgrade(session.st()) {
                     SymbolTable::unload(session, sym);
-                    unloaded_any = true;
                 }
                 continue;
             }
@@ -880,24 +871,31 @@ impl SyncOdoo {
                 if let Some(&path_symbol) = path_symbols.first()
                     && let Ok(file_or_dir) = FileSystemSymbolKey::try_from(path_symbol)
                 {
-                    if should_unload(session.st(), path_symbol) {
-                        SymbolTable::unload(session, file_or_dir);
-                        unloaded_any = true;
-                    }
+                    SymbolTable::unload(session, file_or_dir);
                     continue;
                 }
             }
             // try path as a dir holding data or assets
             for data_or_asset in Self::find_nested_data_and_assets_in_ep(entry, path) {
-                if let Some(sym) = data_or_asset.upgrade(session.st())
-                    && should_unload(session.st(), sym.into())
-                {
+                if let Some(sym) = data_or_asset.upgrade(session.st()) {
                     SymbolTable::unload(session, sym);
-                    unloaded_any = true;
                 }
             }
         }
-        unloaded_any
+    }
+
+    /// Whether `path` resolves to at least one symbol, and every one of them is external.
+    pub fn is_external_path(&self, path: &Path) -> bool {
+        let ep_mgr = self.entry_point_mgr.borrow();
+        let symbols: Vec<SymbolKey> = ep_mgr.iter_all().filter_map(|entry| {
+            let entry = entry.borrow();
+            if !entry.is_valid_for(path) {
+                return None;
+            }
+            let tree = entry.get_tree_for_entry(path);
+            self.symbol_table.get_symbol(entry.root.into(), tree.as_slice(), u32::MAX).first().copied()
+        }).collect();
+        !symbols.is_empty() && symbols.iter().all(|&symbol| self.symbol_table.is_external(symbol))
     }
 
     /// Finds a data or JS file for a given `path` under `entry`.
@@ -2082,15 +2080,11 @@ impl Odoo {
             file_info.version = None;
         }
         session.sync_odoo.entry_point_mgr.borrow_mut().remove_entries_with_path(&mut session.sync_odoo.symbol_table, &Path::new(&path).to_tree_path().sanitize_cow());
-        // Clear it now if deleted from disk or external
         let path_exists = !FileMgr::is_untitled(&path) && Path::new(&path).exists();
-        let cleared = if !path_exists {
+        if !path_exists {
             SyncOdoo::unload_path(session, Path::new(&path));
-            true
-        } else {
-            SyncOdoo::unload_path_if(session, Path::new(&path), |st, sym| st.is_external(sym))
-        };
-        if cleared {
+            FileMgr::delete_file_path(session, &path);
+        } else if session.sync_odoo.is_external_path(Path::new(&path)) {
             FileMgr::delete_file_path(session, &path);
         }
     }
