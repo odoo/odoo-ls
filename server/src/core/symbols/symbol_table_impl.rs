@@ -6,7 +6,7 @@ use lsp_types::{Diagnostic, DiagnosticTag, Range, SymbolKind};
 use ruff_text_size::TextRange;
 
 use crate::{
-    constants::{BuildStatus, BuildSteps, MissingDataSource, OYarn, PackageType, SymType},
+    constants::{BuildStatus, BuildSteps, MissingDataSource, OYarn, PackageType, SymType, LAMBDA_NAME},
     core::{
         build_scheduler::BuildScheduler,
         diagnostics::{create_diagnostic, DiagnosticCode},
@@ -1705,6 +1705,8 @@ impl SymbolTable {
         }
         acc.insert(symbol_key);
         let mut append_result = |name: OYarn, symbol: SymbolKey| {
+            // lambda functions are not real call members
+            if name == LAMBDA_NAME { return; }
             if let Some(vec) = result.get_mut(&name) {
                 vec.push(symbol);
             } else {

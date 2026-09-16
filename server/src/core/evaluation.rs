@@ -1435,7 +1435,7 @@ impl Evaluation {
                 }
             },
             ExprOrIdent::Expr(Expr::Lambda(lambda_expr)) => {
-                let lambda_sym = session.st().get_positioned_symbol(parent, "<lambda>", &lambda_expr.range);
+                let lambda_sym = session.st().get_positioned_symbol(parent, LAMBDA_NAME, &lambda_expr.range);
                 if let Some(lambda_sym) = lambda_sym {
                     if is_in_validation || session.sync_odoo.evaluation_search.is_some() {
                         let mut is_validating_steps = false;

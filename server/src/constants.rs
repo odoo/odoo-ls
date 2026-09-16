@@ -196,3 +196,5 @@ pub static mut ODOOLS_DEBUG_SYMBOL_TABLE: *const SymbolTable = std::ptr::null();
 pub fn install_debug_ptr(table: &SymbolTable) {
     unsafe { ODOOLS_DEBUG_SYMBOL_TABLE = table as *const SymbolTable; }
 }
+
+pub const LAMBDA_NAME: &str = "<lambda>";
