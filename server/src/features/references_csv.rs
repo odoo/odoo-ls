@@ -24,6 +24,7 @@ impl CsvAstReferenceVisitor {
         {
             for (start, end, h) in CsvFieldIter::new(header, content).unwrap() {
                 headers.push(oyarn!("{}", h));
+                if h.is_empty() { continue; }
                 let header_elts = h.splitn(2, [':', '/']).collect::<Vec<_>>();
                 if let &ReferenceTarget::Symbol(target_sym) = target {
                     let Some(model_name) = model_name else {continue;};
@@ -44,7 +45,8 @@ impl CsvAstReferenceVisitor {
                     let Some(next_base) = deep_field_walker.get_model_symbol(session) else {
                         continue;
                     };
-                    let sub_symbols = deep_field_walker.get_model_fields(session, next_base, header_elts[1]);
+                    let Some(&sub_name) = header_elts.get(1) else { continue };
+                    let sub_symbols = deep_field_walker.get_model_fields(session, next_base, sub_name);
                     if sub_symbols.contains(&target_sym) {
                         results.push(Location {
                             uri: uri.clone(),

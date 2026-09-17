@@ -175,8 +175,8 @@ fn test_duplicate_column(diagnostics: &[Diagnostic]) {
 
 /// Well-formed CSV: no error-level diagnostics expected
 /// File: bike_parts.wheel.csv
-///   Line 0: id,name,price
-///   Line 1: bike_wheel_6,Road Bike Wheel2,200.0
+///   Line 0: id,name,price,bike_id
+///   Line 1: bike_wheel_6,Road Bike Wheel2,200.0,City Bike
 fn test_valid_file_no_errors(diagnostics: &[Diagnostic]) {
     let errors: Vec<_> = diagnostics
         .iter()

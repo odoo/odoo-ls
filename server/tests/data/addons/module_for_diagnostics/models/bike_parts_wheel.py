@@ -9,6 +9,7 @@ class BikePartsWheel(models.Model):
     price = fields.Float(string='Price', required=True)
     available = fields.Boolean(string='Available', default=True)
     description = fields.Text(string='Description')
+    bike_id = fields.Many2one('bikes.bike', string='Bike')
 
     def action_set_available(self):
         self.available = True
