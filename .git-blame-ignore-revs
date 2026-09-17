@@ -12,6 +12,7 @@
 
 # [IMP] clippy: add clippy.toml and .git-blame-ignore-revs
 5646708a08a09530ab966a1524943ddd2a4d01f1
+46ce08b51db2fcb34257a5d5545b58b406b9231f
 # [IMP] fix clippy in new code 
 5d203922bbe9b210c09737f9452b2ba3cc7b6cc5
 # [IMP] Use Path instead of PathBuf whenever possible

@@ -131,11 +131,16 @@ fn test_references() {
     assert_in_result(&mut references, "module_for_diagnostics/data/buttons.xml", 10, 29);
 
     //references on a Python method invoked by <button name="..." type="object"/> inside arch
-    let mut references = get_references(&mut session, &bike_wheel_py, Position::new(12, 8));
+    let mut references = get_references(&mut session, &bike_wheel_py, Position::new(13, 8));
     // declaration of the method (reported at the `def` keyword position)
-    assert_in_result(&mut references, "module_for_diagnostics/models/bike_parts_wheel.py", 12, 4);
+    assert_in_result(&mut references, "module_for_diagnostics/models/bike_parts_wheel.py", 13, 4);
     // button name="action_set_available" inside the arch
     assert_in_result(&mut references, "module_for_diagnostics/data/buttons.xml", 11, 30);
+
+    //references on a relational field whose CSV column has no ":" or "/" sub-field
+    let mut references = get_references(&mut session, &bike_wheel_py, Position::new(11, 4));
+    assert_in_result(&mut references, "module_for_diagnostics/models/bike_parts_wheel.py", 11, 4);
+    assert_in_result(&mut references, "module_for_diagnostics/data/bike_parts.wheel.csv", 0, 14);
 
     // for r in references.iter() {
     //     error!("Reference found at {}:{}:{}", r.uri.as_str(), r.range.start.line, r.range.start.character);
