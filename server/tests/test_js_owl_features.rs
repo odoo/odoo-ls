@@ -215,6 +215,15 @@ fn test_completion_in_template(session: &mut SessionInfo, fixtures: &Fixtures) {
         ("title", CompletionItemKind::PROPERTY),
         ("shout", CompletionItemKind::METHOD),
     ]);
+    assert_completions(session, xml, "this.shout(|this.props.exclamations)", &[
+        ("Math", CompletionItemKind::VARIABLE)]
+    );
+    assert_no_completions(session, xml, "this.shout(|this.props.exclamations)", &[
+        // virtual doc artifacts
+        "__ols_m0",  // fake function for expression evaluation inside it 
+        "Greeting", // the class imported for typing `this`
+        "arguments" // we see this binding because we evaluation template expression inside fake functions
+    ]);
 }
 
 /// Assert the signature and docs of a completion, which reach the client only through a
