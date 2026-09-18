@@ -163,7 +163,9 @@ fn test_definition_for_template(session: &mut SessionInfo, fixtures: &Fixtures) 
 /// Non-LSP behavior: asking for definition of a template at its definition site
 /// leads to the matching component
 fn test_definition_for_template_jump_to_component(session: &mut SessionInfo, fixtures: &Fixtures) {
-    let Fixtures { js, xml , .. } = fixtures;
+    let Fixtures { js, xml, sub_js, sub_xml, .. } = fixtures;
+    assert_definition(session, sub_xml, "<t t-name=\"|module_owl.LoudGreeting\">", sub_js, "export class |LoudGreeting extends Greeting");
+    // Greeting and ShoutyGreeting both declare this template: the jump takes the base class.
     assert_definition(session, xml, "<t t-name=\"|module_owl.Greeting\">", js, "export class |Greeting extends Component");
 }
 
@@ -303,10 +305,11 @@ fn test_references_from_usage(session: &mut SessionInfo, fixtures: &Fixtures) {
 /// References to a template name.
 /// The file carrying the two latter sites is never opened.
 fn test_references_to_template(session: &mut SessionInfo, fixtures: &Fixtures) {
-    let Fixtures { js, xml, ext_xml, .. } = fixtures;
+    let Fixtures { js, xml, ext_xml, shouty_js, .. } = fixtures;
     let sites: &[(&FixtureFile, &str)] = &[
         (xml, "t-name=\"|module_owl.Greeting\""), // definition site
         (js, "static template = \"|module_owl.Greeting\""),
+        (shouty_js, "static template = \"|module_owl.Greeting\""),
         (ext_xml, "t-call=\"|module_owl.Greeting\""),
         (ext_xml, "t-inherit=\"|module_owl.Greeting\""),
     ];

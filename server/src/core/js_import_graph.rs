@@ -44,6 +44,8 @@ impl ImportGraph {
 
         let known: HashSet<String> = js_files.iter().map(|(path, _, _)| path.clone()).collect();
         let module_src = module_src_dirs(session);
+        let get_module_src = |module_name: &str| module_src.get(module_name).cloned();
+        let is_known = |path: &str| known.contains(path);
 
         let mut importers: HashMap<String, HashSet<String>> = HashMap::default();
         let mut reexporters: HashMap<String, HashSet<String>> = HashMap::default();
@@ -51,7 +53,7 @@ impl ImportGraph {
             let reexported: HashSet<&str> = reexports.iter().map(String::as_str).collect();
             for import in imports {
                 let specifier = &import.specifier;
-                let Some(target) = resolve_specifier(specifier, path, &module_src, &known) else {
+                let Some(target) = resolve_specifier(specifier, path, get_module_src, is_known) else {
                     continue; // npm package, `/static/lib/` file, or an alias we do not model
                 };
                 if reexported.contains(specifier.as_str()) {
@@ -98,18 +100,28 @@ fn normalize(path: PathBuf) -> PathBuf {
 }
 
 /// Resolve a module specifier as written in `importer` to an absolute JS file path: the
-/// `@{module}/…` alias or a relative path (bare specifiers are npm packages → `None`).
+/// `@{module}/…` alias or a relative path.
 /// Candidate order mirrors tsserver's; both forms normalize, since Odoo climbs out of
-/// `static/src` through the alias (`@web/../lib/…`) and tsserver resolves that.
+/// `static/src` through the alias (`@web/../lib/…`) and tsserver resolves that
+pub fn resolve_import_specifier(session: &SessionInfo, specifier: &str, importer: &str) -> Option<String> {
+    let module_src = |module_name: &str| -> Option<String> {
+        let module = session.sync_odoo.modules.get(module_name)?.upgrade(session.st())?;
+        let src = PathBuf::from(&session.st()[module].path).join("static").join("src");
+        Some(src.sanitize())
+    };
+    let is_known = |path: &str| session.sync_odoo.get_file_mgr().borrow().files.contains_key(path);
+    resolve_specifier(specifier, importer, module_src,  is_known)
+}
+
 fn resolve_specifier(
     specifier: &str,
     importer: &str,
-    module_src: &HashMap<String, String>,
-    known: &HashSet<String>,
+    get_module_src: impl Fn(&str) -> Option<String>,
+    is_known: impl Fn(&str) -> bool,
 ) -> Option<String> {
     let base = if let Some(rest) = specifier.strip_prefix('@') {
         let (module, sub_path) = rest.split_once('/')?;
-        PathBuf::from(module_src.get(module)?).join(sub_path)
+        PathBuf::from(get_module_src(module)?).join(sub_path)
     } else if specifier.starts_with('.') {
         Path::new(importer).parent()?.join(specifier)
     } else {
@@ -123,17 +135,16 @@ fn resolve_specifier(
         format!("{base}/index.js"),
     ]
     .into_iter()
-    .find(|candidate| known.contains(candidate))
+    .find(|candidate| is_known(candidate))
 }
 
 /// File → files declaring a direct subclass of one of its classes. Same-file subclasses are
 /// skipped: they add no root.
 fn subclass_file_edges(session: &SessionInfo) -> HashMap<String, HashSet<String>> {
-    let descriptors = &session.sync_odoo.component_descriptors;
+    let component_mgr = &session.sync_odoo.component_mgr;
     let mut edges: HashMap<String, HashSet<String>> = HashMap::default();
-    for descriptor in descriptors.values() {
-        let Some(super_name) = descriptor.super_class_name.as_ref() else { continue };
-        let Some(super_descriptor) = descriptors.get(super_name) else { continue };
+    for descriptor in component_mgr.components() {
+        let Some(super_descriptor) = component_mgr.get_super(session, descriptor) else { continue };
         if super_descriptor.file_path != descriptor.file_path {
             edges
                 .entry(super_descriptor.file_path.clone())
@@ -218,7 +229,7 @@ mod tests {
 
     #[test]
     fn resolve_specifier_handles_aliases_relatives_and_bare_packages() {
-        let module_src = [("web".to_string(), "/odoo/addons/web/static/src".to_string())]
+        let module_src: HashMap<String, String> = [("web".to_string(), "/odoo/addons/web/static/src".to_string())]
             .into_iter()
             .collect();
         let known = set(&[
@@ -228,34 +239,36 @@ mod tests {
             "/odoo/addons/web/static/src/views/helpers.ts",
             "/odoo/addons/web/static/lib/hoot-dom/helpers/events.js",
         ]);
+        let get_module_src = |module_name: &str| module_src.get(module_name).cloned();
+        let is_known = |path: &str| known.contains(path);
         let importer = "/odoo/addons/web/static/src/views/list/list_renderer.js";
 
         // `@module/*` alias, with the `.js` extension implied.
         assert_eq!(
-            resolve_specifier("@web/core/utils/hooks", importer, &module_src, &known).as_deref(),
+            resolve_specifier("@web/core/utils/hooks", importer, get_module_src, is_known).as_deref(),
             Some("/odoo/addons/web/static/src/core/utils/hooks.js")
         );
         // A directory resolves through its `index.js`.
         assert_eq!(
-            resolve_specifier("@web/views", importer, &module_src, &known).as_deref(),
+            resolve_specifier("@web/views", importer, get_module_src, is_known).as_deref(),
             Some("/odoo/addons/web/static/src/views/index.js")
         );
         // Relative specifiers normalize against the importer's directory, and `.ts` is a candidate.
         assert_eq!(
-            resolve_specifier("../helpers", importer, &module_src, &known).as_deref(),
+            resolve_specifier("../helpers", importer, get_module_src, is_known).as_deref(),
             Some("/odoo/addons/web/static/src/views/helpers.ts")
         );
         // Odoo climbs out of `static/src` through the alias; tsserver resolves it, so must we.
         assert_eq!(
-            resolve_specifier("@web/../lib/hoot-dom/helpers/events", importer, &module_src, &known)
+            resolve_specifier("@web/../lib/hoot-dom/helpers/events", importer, get_module_src, is_known)
                 .as_deref(),
             Some("/odoo/addons/web/static/lib/hoot-dom/helpers/events.js")
         );
         // Bare packages, unknown modules and unresolvable paths are simply not edges.
-        assert_eq!(resolve_specifier("@odoo/owl", importer, &module_src, &known), None);
-        assert_eq!(resolve_specifier("luxon", importer, &module_src, &known), None);
-        assert_eq!(resolve_specifier("@sale/thing", importer, &module_src, &known), None);
-        assert_eq!(resolve_specifier("./missing", importer, &module_src, &known), None);
+        assert_eq!(resolve_specifier("@odoo/owl", importer, get_module_src, is_known), None);
+        assert_eq!(resolve_specifier("luxon", importer, get_module_src, is_known), None);
+        assert_eq!(resolve_specifier("@sale/thing", importer, get_module_src, is_known), None);
+        assert_eq!(resolve_specifier("./missing", importer, get_module_src, is_known), None);
     }
 
     #[test]

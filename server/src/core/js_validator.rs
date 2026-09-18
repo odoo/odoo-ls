@@ -49,7 +49,7 @@ impl JsValidator {
         }
         let mut file_info = file_info.borrow_mut();
         let file_info_ast = file_info.file_info_ast.borrow();
-        let template_refs = file_info_ast.ast.as_js_ast().js_template_refs.clone();
+        let template_refs: Vec<_> = session.sync_odoo.component_mgr.template_refs_by_file(&file_info.uri).cloned().collect();
         let js_imports = file_info_ast.ast.as_js_ast().js_imports.clone();
         drop(file_info_ast);
 

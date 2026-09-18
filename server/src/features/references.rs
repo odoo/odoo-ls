@@ -275,8 +275,9 @@ impl ReferenceFeature {
         // *template name*: resolved in-house (complete over t-call/t-inherit/component
         // sites, and no tsserver string-literal noise).
         let encoding = session.sync_odoo.encoding;
-        let template_refs = file_info.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
-        for template_ref in &template_refs {
+        let file_path = file_info.borrow().uri.clone();
+        let template_refs = session.sync_odoo.component_mgr.template_refs_by_file(&file_path);
+        for template_ref in template_refs {
             let range = file_info.borrow().text_range_to_range(template_ref.range, encoding);
             if Self::position_in_lsp_range(line, character, &range) {
                 let refs = Self::collect_template_name_references(session, &template_ref.t_name);
@@ -319,7 +320,7 @@ impl ReferenceFeature {
     /// Collect every reference to an OWL/QWeb template *name*: the `<t t-name>` declaration,
     /// JS `static template` sites, XML `t-call` / `t-inherit` sites. Dynamic `t-call="{{…}}"`
     /// values never string-equal a literal name.
-    fn collect_template_name_references(session: &mut SessionInfo, template_name: &str) -> Vec<Location> {
+    fn collect_template_name_references(session: &SessionInfo, template_name: &str) -> Vec<Location> {
         let encoding = session.sync_odoo.encoding;
         let mut locations = Vec::new();
 
@@ -352,22 +353,12 @@ impl ReferenceFeature {
         }
 
         // JS sites
-        let js_paths: HashSet<String> = session.sync_odoo.js_component_by_template
-            .get(template_name)
-            .into_iter()
-            .flatten()
-            .filter_map(|class| session.sync_odoo.component_descriptors.get(class))
-            .map(|desc| desc.file_path.clone())
-            .collect();
-        for path in js_paths {
-            let Some(fi) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path) else { continue };
-            let refs = fi.borrow().file_info_ast.borrow().ast.as_js_ast().js_template_refs.clone();
-            for template_ref in refs {
-                if template_ref.t_name == template_name {
-                    let range = fi.borrow().text_range_to_range(template_ref.range, encoding);
-                    locations.push(Location { uri: FileMgr::pathname2uri(&path), range });
-                }
-            }
+        for descriptor in session.sync_odoo.component_mgr.components_by_template(template_name) {
+            let Some(template_ref) = &descriptor.template else { continue };
+            let path = &descriptor.file_path;
+            let Some(fi) = session.sync_odoo.get_file_mgr().borrow().get_file_info(path) else { continue };
+            let range = fi.borrow().text_range_to_range(template_ref.range, encoding);
+            locations.push(Location { uri: FileMgr::pathname2uri(path), range });
         }
 
         locations

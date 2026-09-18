@@ -1,6 +1,6 @@
 use oxc::{allocator::Allocator, diagnostics::OxcDiagnostic, parser::Parser, semantic::SemanticBuilder, span::SourceType};
 use oxc_linter::{ConfigStore, ConfigStoreBuilder, ContextSubHost, ExternalPluginStore, LintOptions, ModuleRecord};
-use oxc::syntax::module_record::ExportExportName;
+use oxc::syntax::module_record::{ExportExportName, ImportImportName};
 use ruff_python_ast::{ModModule, PySourceType, Stmt, token::{Token, TokenKind}};
 use ruff_python_parser::Parsed;
 use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent, Uri};
@@ -9,8 +9,8 @@ use ruff_source_file::{LineIndex, OneIndexed, PositionEncoding, SourceLocation};
 use rustc_hash::FxHasher;
 use tracing::{error, warn};
 use std::path::Path;
-use crate::core::js_arch_builder::{JsDeclaration, JsExportKind, span_to_range};
-use crate::core::js_arch_builder::{ComponentDescriptor, JsTemplateRef};
+use crate::core::js_arch_builder::{ImportSource, JsImportKind, JsDeclaration, JsExportKind, span_to_range};
+use crate::core::js_arch_builder::ComponentDescriptor;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, OnceLock};
@@ -123,7 +123,6 @@ pub fn parse_python(
 /// specifiers it imports, and its OXC diagnostics, already in LSP form. See [`parse_js`].
 #[derive(Debug, Default)]
 pub struct ParsedJs {
-    pub template_refs: Vec<JsTemplateRef>,
     pub component_descriptors: Vec<ComponentDescriptor>,
     /// Named declarations, for workspace symbols.
     pub decls: Vec<JsDeclaration>,
@@ -140,6 +139,13 @@ impl ParsedJs {
     fn not_an_odoo_module() -> Self {
         Self::default()
     }
+}
+
+struct ParsedJsImports {
+    imports: Vec<JsImport>, 
+    reexports: Vec<String>,
+    exports: HashMap<String, JsExportKind>,
+    import_bindings: HashMap<String, ImportSource>,
 }
 
 /// Stack size for JS parsing threads, sized for OXC recursive descent on minified libs.
@@ -181,13 +187,14 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
     let mut syntax_diagnostics: Vec<OxcDiagnostic> = ret.errors;
     let parser_module_record = ret.module_record;
 
-    let (imports, reexports, exports) = FileInfo::collect_js_imports(&parser_module_record);
+    let ParsedJsImports { imports, reexports, exports, import_bindings } =
+        FileInfo::collect_js_imports(&parser_module_record);
 
     let program = allocator.alloc(ret.program);
 
     // Collect template references, component descriptors and declarations before
     // semantic analysis
-    let (template_refs, component_descriptors, decls) = js_arch_builder::visit_file(program, path, &exports);
+    let (component_descriptors, decls) = js_arch_builder::visit_file(program, path, &exports, &import_bindings);
     // Vendored libraries are kept out of workspace symbols for the same reason they
     // are kept out of OXC diagnostics: they are not the user's code, and many are minified.
     let decls = if is_lib { vec![] } else { decls };
@@ -198,7 +205,7 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
     // Semantic analysis and the linter exist only to produce diagnostics, and
     // a vendored lib's are dropped, so stop here for them.
     if is_lib || !syntax_diagnostics.is_empty() {
-        return ParsedJs { template_refs, component_descriptors, decls, imports, reexports, has_exports, syntax_diagnostics, lint_diagnostics: vec![] };
+        return ParsedJs { component_descriptors, decls, imports, reexports, has_exports, syntax_diagnostics, lint_diagnostics: vec![] };
     }
 
     // Look for more synxtax errors
@@ -209,7 +216,7 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
     syntax_diagnostics.extend(semantic_ret.errors);
 
     if !syntax_diagnostics.is_empty() {
-        return ParsedJs { template_refs, component_descriptors, decls, imports, reexports, has_exports, syntax_diagnostics, lint_diagnostics: vec![] };
+        return ParsedJs { component_descriptors, decls, imports, reexports, has_exports, syntax_diagnostics, lint_diagnostics: vec![] };
     }
     // Look for semantic errors
     let semantic = semantic_ret.semantic;
@@ -231,7 +238,7 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
     let messages = linter.run(os_path, vec![context_sub_host], &allocator);
     let lint_diagnostics = messages.into_iter().map(|m| m.error).collect();
 
-    ParsedJs { template_refs, component_descriptors, decls, imports, reexports, has_exports, syntax_diagnostics, lint_diagnostics }
+    ParsedJs { component_descriptors, decls, imports, reexports, has_exports, syntax_diagnostics, lint_diagnostics }
 }
 
 #[derive(Debug, Clone)]
@@ -265,12 +272,6 @@ pub struct JsImport {
 
 #[derive(Debug, Clone)]
 pub struct JsAst {
-    /// Positions of OWL `static template = "some.xml_id"` string literals found in this JS file.
-    /// Each entry is (byte range of the string content, xml_id value, enclosing class name).
-    /// The range is converted to LSP coordinates by consumers.
-    pub js_template_refs: Vec<JsTemplateRef>,
-    /// Component descriptors extracted from OXC analysis of this JS file.
-    pub js_component_descriptors: Vec<ComponentDescriptor>,
     /// Named declarations of this JS file, for workspace symbols.
     pub js_decls: Vec<JsDeclaration>,
     /// Every module specifier this JS file imports from, verbatim as written (incl.
@@ -292,8 +293,6 @@ impl Default for JsAst {
 impl JsAst {
     pub fn new() -> Self {
         Self {
-            js_template_refs: Vec::new(),
-            js_component_descriptors: Vec::new(),
             js_decls: Vec::new(),
             js_imports: Vec::new(),
             js_reexports: Vec::new(),
@@ -604,12 +603,10 @@ impl FileInfo {
     ///
     /// Expects [`Ast::JsAst`] to be in place already.
     fn apply_parsed_js(&mut self, session: &mut SessionInfo, parsed: ParsedJs) {
-        js_arch_builder::build(session, &parsed.template_refs, &parsed.component_descriptors);
+        session.sync_odoo.component_mgr.index_file(&self.uri, parsed.component_descriptors);
         {
             let mut fia = self.file_info_ast.borrow_mut();
             let js_ast = fia.ast.as_js_ast_mut();
-            js_ast.js_template_refs = parsed.template_refs;
-            js_ast.js_component_descriptors = parsed.component_descriptors;
             js_ast.js_decls = parsed.decls;
             js_ast.js_imports = parsed.imports;
             js_ast.js_reexports = parsed.reexports;
@@ -622,7 +619,7 @@ impl FileInfo {
         self.replace_diagnostics(DiagnosticSource::JS_OXC_LINT, to_lsp_diag(parsed.lint_diagnostics));
     }
 
-    fn collect_js_imports(parser_module_record: &oxc::syntax::module_record::ModuleRecord) -> (Vec<JsImport>, Vec<String>, HashMap<String, JsExportKind>) {
+    fn collect_js_imports(parser_module_record: &oxc::syntax::module_record::ModuleRecord) -> ParsedJsImports {
         let mut imports: Vec<JsImport> = parser_module_record.requested_modules
             .iter()
             .flat_map(|(spec, requests)| requests.iter().map(|request| JsImport {
@@ -655,7 +652,27 @@ impl FileInfo {
             };
             exports.insert(local.as_str().to_string(), kind);
         }
-        (imports, reexports, exports)
+
+        // Local binding name -> what it points at. `import_name` matches the source,
+        // `local_name` is the alias. (`import { cat as tiger } from "specifier"`).
+        let mut import_bindings: HashMap<String, ImportSource> = HashMap::default();
+        for entry in parser_module_record.import_entries.iter() {
+            if entry.is_type {
+                continue;
+            }
+            let kind = match &entry.import_name {
+                ImportImportName::Name(n) => JsImportKind::Named(n.name.as_str().to_string()),
+                ImportImportName::Default(_) => JsImportKind::Default,
+                // not needed for our only use case: resolving an `extends imported_name`
+                ImportImportName::NamespaceObject => continue,
+            };
+            import_bindings.insert(
+                entry.local_name.name.as_str().to_string(),
+                ImportSource { specifier: entry.module_request.name.as_str().to_string(), kind },
+            );
+        }
+
+        ParsedJsImports { imports, reexports, exports, import_bindings }
     }
 
     /* if ast has been set to none to lower memory usage, try to reload it */
@@ -1166,6 +1183,7 @@ impl FileMgr {
                 return;
             }
         let to_del = session.sync_odoo.get_file_mgr().borrow_mut().files.remove(key);
+        session.sync_odoo.component_mgr.forget_file(key);
         if let Some(to_del) = to_del
             && SyncOdoo::is_in_workspace_or_entry(session, uri) {
                 let mut to_del = (*to_del).borrow_mut();
@@ -1461,8 +1479,8 @@ export class Counter extends Component {
         assert_eq!(&source[usize::from(range.start())..usize::from(range.end())], "\"./state\"");
         assert_eq!(parsed.component_descriptors.len(), 1);
         assert_eq!(parsed.component_descriptors[0].class_name, "Counter");
-        assert_eq!(parsed.template_refs.len(), 1);
-        assert_eq!(parsed.template_refs[0].t_name, "mod.Counter");
+        assert!(parsed.component_descriptors[0].template.is_some());
+        assert_eq!(parsed.component_descriptors[0].template.as_ref().unwrap().t_name, "mod.Counter");
     }
 
     /// Under `static/lib` the `@odoo-module` header is what makes a file a module, so a file
@@ -1474,7 +1492,6 @@ export class Counter extends Component {
         let skipped = parse_js_inner(COMPONENT, "/mod/static/lib/x.js");
         assert!(skipped.imports.is_empty());
         assert!(skipped.component_descriptors.is_empty());
-        assert!(skipped.template_refs.is_empty());
 
         assert_extracted(&parse_js_inner(&headered, "/mod/static/lib/x.js"), &headered);
         // `static/src` and `static/tests` are modules unconditionally.

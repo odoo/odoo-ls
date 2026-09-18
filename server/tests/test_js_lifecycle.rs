@@ -34,6 +34,7 @@ fn test_js_lifecycle() {
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
     test_asset_events(&mut session, &fixture);
+    test_component_index_lifecycle(&mut session, &fixture);
     test_js_file_lifecycle_with_odoo(&mut session);
     test_js_lib_file_no_oxc_diagnostics(&mut session);
 }
@@ -135,6 +136,20 @@ fn did_delete(session: &mut SessionInfo, path: &str) {
     });
 }
 
+fn template_names(session: &SessionInfo, path: &str) -> Vec<String> {
+    session.sync_odoo.component_mgr.template_refs_by_file(path)
+        .map(|template_ref| template_ref.t_name.clone())
+        .collect()
+}
+
+fn components_for_template(session: &SessionInfo, template_name: &str) -> usize {
+    session.sync_odoo.component_mgr.components_by_template(template_name).count()
+}
+
+fn widget_source(template: &str, body: &str) -> String {
+    format!("/** @odoo-module */\nexport class Widget {{\n    static template = \"{template}\";\n{body}}}\n")
+}
+
 /// Assets are discovered by walking `static/{src,tests,lib}`, never from the manifest — the
 /// fixture module declares no `assets` at all. These bodies drive the watched-file events that
 /// have to keep that walk up to date.
@@ -220,6 +235,48 @@ fn test_asset_events(session: &mut SessionInfo, fixture: &TempDir) {
     did_delete(session, &renamed_sub_dir.sanitize());
     assert!(!has_js_symbol(session, &moved_js), "a folder delete must drop the JS files under it");
     assert!(!has_data_symbol(session, &moved_xml), "a folder delete must drop the XML files under it");
+}
+
+/// The component index follows the parse, not the JS symbol: every rebuild unloads the symbol,
+/// and only a delete may drop the index.
+fn test_component_index_lifecycle(session: &mut SessionInfo, fixture: &TempDir) {
+    let module = fixture.child(FIXTURE);
+    let template = "module_asset_events.Widget";
+    let renamed_template = "module_asset_events.Renamed";
+
+    let path = write_asset(&module, "static/src/widget.js", &widget_source(template, ""));
+    let uri = FileMgr::pathname2uri(&path);
+    did_create(session, &path);
+    assert!(has_js_symbol(session, &path), "the component file must load as a module asset");
+    assert_eq!(template_names(session, &path), [template], "the parse must fill the component index");
+
+    Odoo::handle_did_open(session, make_js_open_params(uri.clone(), &widget_source(template, "")));
+    Odoo::handle_did_change(session, make_js_change_params(uri.clone(), 2, &widget_source(template, "    setup() {}\n")));
+    assert_eq!(
+        template_names(session, &path),
+        [template],
+        "an edit unloads the JS symbol without reparsing the file, so the index has to survive it",
+    );
+
+    Odoo::handle_did_change(session, make_js_change_params(uri.clone(), 3, &widget_source(renamed_template, "    setup() {}\n")));
+    assert_eq!(template_names(session, &path), [renamed_template], "a reparse must replace the file's entry");
+    assert_eq!(components_for_template(session, template), 0, "the old template name must not outlive the edit");
+
+    Odoo::handle_did_close(session, make_js_close_params(uri));
+    assert!(
+        session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).is_some(),
+        "a workspace file stays in the cache when it is closed",
+    );
+    assert_eq!(
+        template_names(session, &path),
+        [renamed_template],
+        "closing does not reparse, so the index keeps what the last edit built",
+    );
+
+    fs::remove_file(&path).expect("failed to delete the component file");
+    did_delete(session, &path);
+    assert!(template_names(session, &path).is_empty(), "a delete must drop the file's entry");
+    assert_eq!(components_for_template(session, renamed_template), 0, "a delete must drop the template lookup too");
 }
 
 /// Full JS file lifecycle: open → edit → close → rename → reopen.
