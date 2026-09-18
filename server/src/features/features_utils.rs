@@ -87,8 +87,9 @@ impl FeaturesUtils {
             if arg_id.as_str() == "inverse_name" {
                 return FeaturesUtils::find_inverse_name_field_symbol(session, from_module, field_value, call_expr);
             }
-            if !(["compute", "inverse", "search"].contains(&arg_id.as_str())
-                || (arg_id.as_str() == "compute_sql" && session.sync_odoo.version >= (19, 1))){
+            if !(["compute", "group_expand", "inverse", "search", "selection"].contains(&arg_id.as_str())
+                || (arg_id.as_str() == "compute_sql" && session.sync_odoo.version >= (19, 1))
+                || (arg_id.as_str() == "init_storage" && session.sync_odoo.version >= (20, 0))){
                 return vec![];
             }
         } else {
@@ -339,6 +340,16 @@ impl FeaturesUtils {
                 };
                 arg_symbols.extend(
                     FeaturesUtils::find_inverse_name_field_symbol(session, from_module, &value, call_expr)
+                    .into_iter().map(|res| (res, arg_expr.range()))
+                );
+                continue;
+            }
+            if session.st()[func_arg_sym].name == "selection"
+                && callable_sym.typ() == SymType::CLASS
+                && SymbolTable::is_field_class(session, callable_sym)
+                && let Some(SymbolKey::Class(parent_class)) = session.st().get_in_parents(scope, &[SymType::CLASS], true) {
+                arg_symbols.extend(
+                    SymbolTable::get_member_symbol(session, parent_class.into(), field_name, from_module, false, false, true, true, false).0
                     .into_iter().map(|res| (res, arg_expr.range()))
                 );
                 continue;
