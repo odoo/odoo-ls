@@ -16,8 +16,9 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use lsp_types::{
-    CompletionList, CompletionTriggerKind, GotoDefinitionResponse, Hover, HoverContents, Location, MarkupContent,
-    MarkupKind, Position, Range, SemanticTokens,
+    CompletionItem, CompletionItemKind, CompletionList, CompletionTriggerKind,
+    GotoDefinitionResponse, Hover, HoverContents, Location, MarkupContent, MarkupKind, Position,
+    Range, SemanticTokens,
 };
 use ruff_source_file::{LineIndex, PositionEncoding};
 
@@ -29,6 +30,8 @@ use crate::features::owl_expr::{compile_owl_expr, interp_chunk_ranges, this_toke
 use crate::features::owl_xml_utils::{TEMPLATE_NAME_ATTRS, component_tag_name_range, is_owl_expression_attr, is_owl_interpolation_attr, is_prop_expr_attr, tag_is_component};
 use crate::features::semantic_tokens::{SemanticTokensFeature, TokMod, TokType, U16ToByte};
 use crate::threads::SessionInfo;
+
+const SYNTHETIC_FN_PREFIX: &str = "__ols_m";
 
 /// A template-local in scope for an expression (`t-set` or `t-foreach`/`t-as`), emitted
 /// into the function preamble as a `let` so tsserver types bare identifiers. `decl_offset`
@@ -175,6 +178,8 @@ pub(crate) struct OwlVirtualDoc {
     index: LineIndex,
     /// Line index of `real_content`, for encoding real-`.js` result positions.
     real_index: LineIndex,
+    /// The component name this doc is built for
+    class_name: String,
 }
 
 impl OwlVirtualDoc {
@@ -206,6 +211,26 @@ impl OwlVirtualDoc {
         let expr = self.expr_at_cursor(xml_byte)?;
         Some(self.v_byte_to_ts_pos(expr.v_byte_start + (xml_byte - expr.xml_byte_start)))
     }
+    
+    /// Whether a completion item points to an artifact of the virtual doc - one that
+    /// does not really exist in OWL's evaluation context
+    fn is_vdoc_artifact(&self, item: &CompletionItem) -> bool {
+        let Some(kind) = item.kind else { return false };
+        match kind {
+            CompletionItemKind::FUNCTION => {
+                // artificial functions we build: function __ols_m0() {...}
+                item.label.starts_with(SYNTHETIC_FN_PREFIX)
+            },
+            CompletionItemKind::VARIABLE => {
+                // The component name, which is imported to type `this` 
+                item.label == self.class_name
+                // `arguments` shows up because we're evaluating the JS expression inside a function
+                || item.label == "arguments"
+            },
+            _ => false,
+        }
+    }
+
 }
 
 /// Filename suffix of an OWL virtual **doc** (`<stem>.<Class>.__ols_owl__.js`).
@@ -414,7 +439,7 @@ pub fn completion_xml_owl(
     // Drop edit-bearing entries (their positions address the virtual `.js` the client never
     // saw). Resolve data survives: it points at the still-open virtual doc, and
     // `handle_completion_resolve` keeps only the signature/docs for such paths.
-    list.items.retain(|item| item.text_edit.is_none());
+    list.items.retain(|item| item.text_edit.is_none() && !doc.is_vdoc_artifact(item));
 
     if list.items.is_empty() {
         return None;
@@ -608,6 +633,7 @@ pub(crate) fn build_virtual_docs(session: &mut SessionInfo, file_info: &Rc<RefCe
             local_decls,
             index,
             real_index,
+            class_name,
         });
     }
     docs
@@ -819,7 +845,7 @@ fn build_virtual(import_line: &str, class_name: &str, exprs: Vec<CollectedExpr>)
     let mut local_decls: Vec<LocalDecl> = vec![];
 
     for (idx, expr) in exprs.into_iter().enumerate() {
-        content.push_str(&format!("\n/** @this {{{class_name}}} */ function __ols_m{idx}() {{ "));
+        content.push_str(&format!("\n/** @this {{{class_name}}} */ function {SYNTHETIC_FN_PREFIX}{idx}() {{ "));
         let (preamble, pre_decls) = emit_preamble(&expr.locals);
         for pd in pre_decls {
             let v_byte_start = content.len() + pd.rel_offset;
