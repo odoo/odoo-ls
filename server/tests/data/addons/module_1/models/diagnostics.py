@@ -29,6 +29,10 @@ class ModelWithDiagnostics(models.Model):
     test_method_search_4 = fields.Integer(compute="_compute_2") # OLS03018
     test_method_search_5 = fields.Integer(inverse="_inverse_1")
     test_method_search_6 = fields.Integer(inverse="_inverse_2") # OLS03018
+    test_method_search_7 = fields.Selection("_selection_2") # OLS03018
+    test_method_search_8 = fields.Selection(selection="_selection_2") # OLS03018
+    test_method_search_9 = fields.Selection([], group_expand="_group_expand_2") # OLS03018
+    test_method_search_10 = fields.Char("_selection_2")
 
     date = fields.Date()
 

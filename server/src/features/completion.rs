@@ -596,11 +596,17 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
             if ![SymType::FUNCTION, SymType::CLASS].contains(&callable_sym.typ()){
                 continue;
             }
-            // Relational fields first argument is a model name.
             if callable_sym.typ() == SymType::CLASS
-            && arg_index == 0
-            && SymbolTable::is_specific_field_class(session, callable_sym, &["Many2one", "One2many", "Many2many"]) {
+                && arg_index == 0
+            {
+                // Relational fields first argument is a model name.
+                if SymbolTable::is_specific_field_class(session, callable_sym, &["Many2one", "One2many", "Many2many"]) {
                     return complete_expr(arg, session, file, offset, is_param, &[ExpectedType::MODEL_NAME]);
+                }
+                // Selection and Reference fields first argument is a method name.
+                if SymbolTable::is_specific_field_class(session, callable_sym, &["Selection", "Reference"]) {
+                    return complete_expr(arg, session, file, offset, is_param, &[ExpectedType::METHOD_NAME]);
+                }
             }
             // if class get __init__ method, we need to get the argument from there
             let func_key = if callable_sym.typ() == SymType::CLASS {
@@ -702,8 +708,9 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
                         })
                     }
                 },
-                "inverse" | "search" | "compute" => Some(vec![ExpectedType::METHOD_NAME]),
+                "inverse" | "search" | "compute" | "group_expand" | "selection" => Some(vec![ExpectedType::METHOD_NAME]),
                 "compute_sql" if session.sync_odoo.version >= (19, 1) => Some(vec![ExpectedType::METHOD_NAME]),
+                "init_storage" if session.sync_odoo.version >= (20, 0) => Some(vec![ExpectedType::METHOD_NAME]),
                 "depends" => Some(vec![ExpectedType::NESTED_FIELD(None)]),
                 _ => None,
             }

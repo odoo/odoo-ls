@@ -36,6 +36,10 @@ pub enum ContextKey {
     Default,
     Delegate,
     FieldParent,
+    GroupExpand,
+    GroupExpandArgRange,
+    InitStorage,
+    InitStorageArgRange,
     IsAttrOfInstance,
     IsInValidation,
     Inverse,
@@ -52,6 +56,8 @@ pub enum ContextKey {
     Required,
     Search,
     SearchArgRange,
+    Selection,
+    SelectionArgRange,
     // placeholder after removal (tombstone) - should not be used as key
     EMPTY,
 }
@@ -73,6 +79,8 @@ impl ContextKey {
             | ContextKey::Default
             | ContextKey::Delegate
             | ContextKey::FieldParent
+            | ContextKey::GroupExpand
+            | ContextKey::InitStorage
             | ContextKey::IsAttrOfInstance
             | ContextKey::IsInValidation
             | ContextKey::Inverse
@@ -83,15 +91,19 @@ impl ContextKey {
             | ContextKey::ParentInstance
             | ContextKey::Related
             | ContextKey::Required
-            | ContextKey::Search => true,
+            | ContextKey::Search
+            | ContextKey::Selection => true,
             ContextKey::Range
             | ContextKey::ComodelNameArgRange
             | ContextKey::RelatedArgRange
             | ContextKey::ComputeArgRange
             | ContextKey::ComputeSqlArgRange
+            | ContextKey::GroupExpandArgRange
+            | ContextKey::InitStorageArgRange
             | ContextKey::InverseArgRange
             | ContextKey::InverseNameArgRange
             | ContextKey::SearchArgRange
+            | ContextKey::SelectionArgRange
             | ContextKey::EMPTY => false,
         }
     }

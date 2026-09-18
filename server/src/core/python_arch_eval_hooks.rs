@@ -1293,6 +1293,11 @@ impl PythonArchEvalHooks {
                     contexts_to_add.insert(ContextKey::InverseName, (second_param, second_param.range(), "str", ContextKey::InverseNameArgRange));
                 }
         }
+        let selection_field = evaluation_sym.get_weak().weak.upgrade(session.st())
+            .is_some_and(|class| SymbolTable::is_specific_field_class(session, class, &["Selection", "Reference"]));
+        if selection_field && let Some(first_param) = parameters.args.first() {
+            contexts_to_add.insert(ContextKey::Selection, (first_param, first_param.range(), "str", ContextKey::SelectionArgRange));
+        }
 
         // Keyword Arguments for fields that we would like to keep in the context
         let mut context_arguments = vec![
@@ -1301,6 +1306,8 @@ impl PythonArchEvalHooks {
             ("compute", "str", ContextKey::Compute, ContextKey::ComputeArgRange),
             ("inverse", "str", ContextKey::Inverse, ContextKey::InverseArgRange),
             ("search", "str", ContextKey::Search, ContextKey::SearchArgRange),
+            ("group_expand", "str", ContextKey::GroupExpand, ContextKey::GroupExpandArgRange),
+            ("selection", "str", ContextKey::Selection, ContextKey::SelectionArgRange),
             ("inverse_name", "str", ContextKey::InverseName, ContextKey::InverseNameArgRange),
             ("delegate", "bool", ContextKey::Delegate, ContextKey::EMPTY), // No arg range
             ("required", "bool", ContextKey::Required, ContextKey::EMPTY),
@@ -1309,6 +1316,10 @@ impl PythonArchEvalHooks {
         // fields only accept compute_sql from 19.1 on
         if session.sync_odoo.version >= (19, 1) {
             context_arguments.push(("compute_sql", "str", ContextKey::ComputeSql, ContextKey::ComputeSqlArgRange));
+        }
+        // fields only accept init_storage from 20.0 on
+        if session.sync_odoo.version >= (20, 0) {
+            context_arguments.push(("init_storage", "str", ContextKey::InitStorage, ContextKey::InitStorageArgRange));
         }
         contexts_to_add.extend(
             context_arguments.into_iter()
