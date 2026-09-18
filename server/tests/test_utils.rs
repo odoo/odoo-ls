@@ -2,17 +2,11 @@
 use lsp_types::{Diagnostic, NumberOrString};
 use odoo_ls_server::{
     S, core::{
-        evaluation::Evaluation,
-        file_mgr::FileInfo,
-        symbols::{storage::SymbolTable, symbol_keys::{SourceFileKey, SymbolKey}},
+        evaluation::Evaluation, file_mgr::FileInfoKey, symbols::{storage::SymbolTable, symbol_keys::{SourceFileKey, SymbolKey}},
     }, features::ast_utils::AstUtils, odoo_version::OdooVersion, threads::SessionInfo
 };
 use std::sync::LazyLock;
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-    rc::Rc,
-};
+use std::collections::{HashMap, HashSet};
 
 
 /// Returns the correct class name for Partner/ResPartner depending on Odoo version
@@ -40,7 +34,7 @@ pub static COUNTRY_CLASS_NAME: LazyLock<fn(OdooVersion) -> &'static str> = LazyL
 type HoverCallable = fn(
     &mut SessionInfo,
     SourceFileKey,
-    &Rc<RefCell<FileInfo>>,
+    FileInfoKey,
     u32,
     u32,
 ) -> Option<lsp_types::Hover>;
@@ -48,7 +42,7 @@ type HoverCallable = fn(
 fn get_hover(
     session: &mut SessionInfo,
     file_symbol: SourceFileKey,
-    file_info: &Rc<RefCell<FileInfo>>,
+    file_info: FileInfoKey,
     line: u32,
     character: u32,
     callable: HoverCallable,
@@ -65,7 +59,7 @@ fn get_hover(
 pub fn get_hover_markdown(
     session: &mut SessionInfo,
     file_symbol: SourceFileKey,
-    file_info: &Rc<RefCell<FileInfo>>,
+    file_info: FileInfoKey,
     line: u32,
     character: u32,
 ) -> Option<String> {
@@ -83,7 +77,7 @@ pub fn get_hover_markdown(
 pub fn get_hover_xml_markdown(
     session: &mut SessionInfo,
     file_symbol: SourceFileKey,
-    file_info: &Rc<RefCell<FileInfo>>,
+    file_info: FileInfoKey,
     line: u32,
     character: u32,
 ) -> Option<String> {
@@ -101,7 +95,7 @@ pub fn get_hover_xml_markdown(
 pub fn get_definition_locs(
     session: &mut SessionInfo,
     f_sym: SourceFileKey,
-    f_info: &Rc<RefCell<FileInfo>>,
+    f_info: FileInfoKey,
     line: u32,
     character: u32,
 ) -> Vec<lsp_types::LocationLink> {
@@ -221,15 +215,14 @@ pub fn resolve_symbol_types(session: &mut SessionInfo, symbol: SymbolKey) -> Vec
 pub fn get_resolved_symbols_at_position(
     session: &mut SessionInfo,
     file_symbol: SourceFileKey,
-    file_info: &Rc<RefCell<FileInfo>>,
+    file_info: FileInfoKey,
     line: u32,
     character: u32,
 ) -> Vec<SymbolKey> {
     // Get evaluations at the given position
-    let offset = file_info
-        .borrow()
+    let offset = session.file_mgr()[file_info]
         .position_to_offset(line, character, session.sync_odoo.encoding);
-    let file_info_ast_clone = file_info.borrow().file_info_ast.clone();
+    let file_info_ast_clone = session.file_mgr()[file_info].file_info_ast.clone();
     let file_info_ast_ref = file_info_ast_clone.borrow();
     let (analyse_ast_result, _, _, _) =
         AstUtils::get_symbols(session, &file_info_ast_ref, file_symbol, offset as u32);

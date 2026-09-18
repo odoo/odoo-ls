@@ -1,22 +1,20 @@
 mod setup;
 mod test_utils;
 
-use odoo_ls_server::core::file_mgr::FileInfo;
+use odoo_ls_server::core::file_mgr::FileInfoKey;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::core::symbols::symbol_keys::{SourceFileKey, SymbolKey};
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
-use std::cell::RefCell;
 use std::env;
 use std::path::Path;
-use std::rc::Rc;
 use test_utils::get_resolved_symbols_at_position;
 
 /// Sets up a session with `type_hints.py` loaded and resolves `MyClass`, then calls `f` with
 /// the session, file info, file symbol, and `MyClass` symbol.
 fn with_type_hints_fixture<F>(f: F)
 where
-    F: FnOnce(&mut SessionInfo, &Rc<RefCell<FileInfo>>, SourceFileKey, SymbolKey),
+    F: FnOnce(&mut SessionInfo, FileInfoKey, SourceFileKey, SymbolKey),
 {
     let (mut odoo, config) = setup::setup::setup_server(false);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
@@ -26,8 +24,8 @@ where
         .sanitize();
     setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&path).unwrap();
+    let file_mgr = session.file_mgr();
+    let file_info = file_mgr.get_file_info(&path).unwrap();
     let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&path))
         .expect("Failed to get file symbol");
 
@@ -35,7 +33,7 @@ where
     assert!(!my_class.is_empty(), "MyClass should be found in the test file");
     let my_class = my_class[0];
 
-    f(&mut session, &file_info, file_symbol, my_class);
+    f(&mut session, file_info, file_symbol, my_class);
 }
 
 /// Test that a function with a return type hint and `pass` body is recognized as returning

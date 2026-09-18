@@ -1,12 +1,12 @@
 use itertools::Itertools;
 use lsp_types::MessageType;
-use std::cell::RefCell;
+use slotmap::SlotMap;
+use slotmap::new_key_type;
 use crate::constants::BuildSteps;
 use crate::core::build_scheduler::BuildScheduler;
 use crate::utils::HashMap;
 use crate::utils::HashSet;
 use std::collections::VecDeque;
-use std::rc::Rc;
 
 use crate::constants::OYarn;
 use crate::core::symbols::symbol_keys::ModelSymbolKey;
@@ -19,6 +19,77 @@ use crate::threads::SessionInfo;
 use crate::weak_collections::WeakSet;
 
 use super::symbols::ModuleSymbol;
+new_key_type! {
+    pub struct ModelKey;
+}
+
+#[derive(Debug)]
+pub struct ModelMgr {
+    models_index: HashMap<OYarn, ModelKey>,
+    models_arena: SlotMap<ModelKey, Model>,
+}
+
+impl Default for ModelMgr {
+    fn default() -> Self {
+        Self {
+            models_index: HashMap::default(),
+            models_arena: SlotMap::with_key(),
+        }
+    }
+}
+
+impl ModelMgr {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    // Adds a new model, if it already exists, returns the existing one
+    pub fn add_or_get_model(&mut self, model_name: &OYarn) -> ModelKey {
+        if let Some(&key) = self.models_index.get(model_name) {
+            return key;
+        }
+        let model = Model::new(model_name.clone());
+        let key = self.models_arena.insert(model);
+        self.models_index.insert(model_name.clone(), key);
+        key
+    }
+
+    /// Drops every `Model`. Must be called alongside clearing `SyncOdoo.models`
+    /// (the name index) on a full reset, since the slotmap otherwise outlives it.
+    pub fn clear_models(&mut self) {
+        self.models_arena.clear();
+        self.models_index.clear();
+    }
+
+    pub fn iter_models(&self) -> impl Iterator<Item = (&OYarn, &ModelKey)> {
+        self.models_index.iter()
+    }
+
+    pub fn get_model_key(&self, name: &str) -> Option<ModelKey> {
+        self.models_index.get(name).copied()
+    }
+
+    pub fn get_model(&self, name: &str) -> Option<&Model> {
+        self.models_index.get(name).map(|key| &self[*key])
+    }
+
+}
+
+impl std::ops::Index<ModelKey> for ModelMgr {
+    type Output = Model;
+    // This is safe for two reasons:
+    // 1. Models are never removed
+    // 2. We call it usually after `get_model_key` but that is not very trustworthy
+    fn index(&self, k: ModelKey) -> &Model {
+        &self.models_arena[k]
+    }
+}
+
+impl std::ops::IndexMut<ModelKey> for ModelMgr {
+    fn index_mut(&mut self, k: ModelKey) -> &mut Model {
+        &mut self.models_arena[k]
+    }
+}
 
 #[derive(Debug)]
 pub struct ModelData {
@@ -101,17 +172,21 @@ impl Model {
         &self.name
     }
 
-    pub fn add_symbol(&mut self, session: &mut SessionInfo, symbol: impl Into<ModelSymbolKey>) {
+    pub fn add_symbol(session: &mut SessionInfo, model_key: ModelKey, symbol: impl Into<ModelSymbolKey>) {
         let key = symbol.into();
-        if self.symbols.contains(&key) {
-            return;
+        {
+            let model = &mut session.model_mgr_mut()[model_key];
+            if model.symbols.contains(&key) {
+                return;
+            }
+            model.symbols.insert(key);
         }
-        self.symbols.insert(key);
         let from_module = session.sync_odoo.symbol_table.find_module(key);
-        self.add_dependents_to_validation(session, from_module);
+        Self::add_dependents_to_validation(session, model_key, from_module);
 
         if let ModelSymbolKey::XmlRecord(xml_key) = key {
-            session.st_mut().set_declared_model(xml_key, self.name.clone());
+            let model_name = session.model_mgr()[model_key].name.clone();
+            session.st_mut().set_declared_model(xml_key, model_name);
         }
     }
 
@@ -122,27 +197,29 @@ impl Model {
     }
 
     pub fn add_xml_field_symbol(
-        &mut self,
         session: &mut SessionInfo,
+        model_key: ModelKey,
         xml_field_symbol: XmlRecordKey,
     ) {
-        if self.xml_field_symbols.contains(&xml_field_symbol) {
+        let model = &mut session.model_mgr_mut()[model_key];
+        if model.xml_field_symbols.contains(&xml_field_symbol) {
             return;
         }
-        self.xml_field_symbols.insert(xml_field_symbol);
+        model.xml_field_symbols.insert(xml_field_symbol);
         let from_module = session.sync_odoo.symbol_table.find_module(xml_field_symbol);
-        self.add_dependents_to_validation(session, from_module);
+        Self::add_dependents_to_validation(session, model_key, from_module);
     }
 
     pub fn remove_symbol(
-        &mut self,
         session: &mut SessionInfo,
+        model_key: ModelKey,
         symbol: impl Into<ModelSymbolKey>,
         from_module: Option<ModuleKey>,
     ) {
         let key = symbol.into();
-        self.symbols.remove(&key);
-        self.add_dependents_to_validation(session, from_module);
+        let model = &mut session.model_mgr_mut()[model_key];
+        model.symbols.remove(&key);
+        Self::add_dependents_to_validation(session, model_key, from_module);
     }
 
     /// Returns all XML defined fields' symbols
@@ -216,21 +293,22 @@ impl Model {
     }
 
     /// Gets all class symbols of current model and its inherited models
-    pub fn get_full_model_classes(model_rc: Rc<RefCell<Model>>, session: &SessionInfo, from_module: Option<ModuleKey>) -> HashSet<ClassKey> {
+    pub fn get_full_model_classes(model_key: ModelKey, session: &SessionInfo, from_module: Option<ModuleKey>) -> HashSet<ClassKey> {
         let st = &session.sync_odoo.symbol_table;
+        let model_mgr = &session.sync_odoo.model_mgr;
         let mut symbol_set  = HashSet::default();
         let mut already_in = HashSet::default();
-        let mut queue = VecDeque::from([model_rc]);
-        while let Some(current_model_rc) = queue.pop_front() {
-            let current_model = current_model_rc.borrow();
-            let symbols: HashSet<_> = Self::filter_by_module(current_model.get_python_symbols(st), st, from_module).collect();
+        let mut queue = VecDeque::from([model_key]);
+        while let Some(current_model_key) = queue.pop_front() {
+            let current_model_ref = &model_mgr[current_model_key];
+            let symbols: HashSet<_> = Self::filter_by_module(current_model_ref.get_python_symbols(st), st, from_module).collect();
             for &key in symbols.iter() {
                 let Some(model_data) = &st[key]._model else {continue};
                 for inherit in model_data.inherit.iter() {
-                    if let Some(model) = session.sync_odoo.models.get(inherit).cloned()
-                        && !already_in.contains(&model.borrow().name) {
-                            already_in.insert(model.borrow().name.clone());
-                            queue.push_back(model.clone());
+                    if let Some(model_key) = session.model_mgr().get_model_key(inherit)
+                        && !already_in.contains(&model_key) {
+                            already_in.insert(model_key);
+                            queue.push_back(model_key);
                         }
                 }
             }
@@ -240,7 +318,7 @@ impl Model {
     }
 
     /// Gets recursively all models that are inherited using "inherits" mechanism.
-    pub fn get_inherits_models(&self, session: &mut SessionInfo, from_module: Option<ModuleKey>) -> Vec<Rc<RefCell<Model>>> {
+    pub fn get_inherits_models(&self, session: &SessionInfo, from_module: Option<ModuleKey>) -> Vec<ModelKey> {
         let st = &session.sync_odoo.symbol_table;
         let mut res = vec![];
         let mut already_in = HashSet::default();
@@ -250,10 +328,10 @@ impl Model {
                 continue;
             };
             for (model_name, _field) in model_data.inherits.iter() {
-                if let Some(model) = session.sync_odoo.models.get(model_name).cloned()
-                    && !already_in.contains(&model.borrow().name) {
-                        res.push(model.clone());
-                        already_in.insert(model.borrow().name.clone());
+                if let Some(model_key) = session.model_mgr().get_model_key(model_name)
+                    && !already_in.contains(&model_key) {
+                        res.push(model_key);
+                        already_in.insert(model_key);
                     }
             }
         }
@@ -360,15 +438,15 @@ impl Model {
             // Only inherits in the tree that are not already visited will be processed in the next iteration
             let model_data = st[class_key]._model.as_ref().unwrap();
             for inherited_model in &model_data.inherit {
-                if let Some(model) = session.sync_odoo.models.get(inherited_model).cloned() {
-                    let (main_result, inherits_result) = model.borrow().all_inherits_helper(session, from_module, visited_models);
+                if let Some(model_key) = session.model_mgr().get_model_key(inherited_model) {
+                    let (main_result, inherits_result) = session.model_mgr()[model_key].all_inherits_helper(session, from_module, visited_models);
                     symbols.extend(main_result);
                     inherits_symbols.extend(inherits_result);
                 }
             }
             for (inherits_model, _) in &model_data.inherits {
-                if let Some(model) = session.sync_odoo.models.get(inherits_model).cloned() {
-                    let (main_result, inherits_result) = model.borrow().all_inherits_helper(session, from_module, visited_models);
+                if let Some(model_key) = session.model_mgr().get_model_key(inherits_model) {
+                    let (main_result, inherits_result) = session.model_mgr()[model_key].all_inherits_helper(session, from_module, visited_models);
                     // Everything that is in inherits should be added to inherits_symbols, regardless of whether
                     // it was in inherit or inherits. Since we need that distinction to later only get fields
                     inherits_symbols.extend(main_result);
@@ -383,8 +461,8 @@ impl Model {
         self.dependents.insert(symbol);
     }
 
-    pub fn add_dependents_to_validation(&self, session: &mut SessionInfo, module_change: Option<ModuleKey>) {
-        for dep in self.dependents.iter_valid(session.st()) {
+    pub fn add_dependents_to_validation(session: &mut SessionInfo, model_key: ModelKey, module_change: Option<ModuleKey>) {
+        for dep in session.model_mgr()[model_key].dependents.iter_valid(session.st()) {
             SymbolTable::invalidate_sub_functions(session, dep);
             let st = session.st_mut();
             let module = st.find_module(dep);
@@ -396,8 +474,8 @@ impl Model {
     }
 
     // Checks inherits, only needs **python classes**
-    pub fn inherits_from(&self, session: &SessionInfo, base: &Rc<RefCell<Model>>) -> bool {
-        fn inner(this: &Model, session: &SessionInfo, base: &Rc<RefCell<Model>>, checked: &mut HashSet<OYarn>) -> bool {
+    pub fn inherits_from(&self, session: &SessionInfo, base: ModelKey) -> bool {
+        fn inner(this: &Model, session: &SessionInfo, base: ModelKey, checked: &mut HashSet<OYarn>) -> bool {
             if checked.contains(&this.name) {
                 return false;
             }
@@ -407,11 +485,11 @@ impl Model {
                 let ModelSymbolKey::Class(class_key) = symbol else { continue };
                 let Some(model_data) = &symbol_table[class_key]._model else {continue};
                 for inherit in model_data.inherit.iter() {
-                    if inherit == &base.borrow().name {
+                    if inherit == &session.model_mgr()[base].name {
                         return true;
                     }
-                    if let Some(model) = session.sync_odoo.models.get(inherit).cloned()
-                        && inner(&model.borrow(), session, base, checked) {
+                    if let Some(model_key) = session.model_mgr().get_model_key(inherit)
+                        && inner(&session.model_mgr()[model_key], session, base, checked) {
                             return true;
                         }
                 }
