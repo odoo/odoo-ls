@@ -7,7 +7,7 @@ use crate::{
         evaluation_context::{Context, ContextKey, ContextValue},
         symbols::{
             storage::{SymbolTable, FileContentParent},
-            symbol_keys::{ModelSymbolKey, ModuleKey, SymbolKey, VariableKey},
+            symbol_keys::{ModelSymbolKey, ModuleKey, SymbolKey, VariableKey, Wk},
         },
     },
     oyarn,
@@ -23,6 +23,11 @@ pub struct VariableSymbol {
     pub is_parameter: bool,
     pub evaluations: Vec<Evaluation>, //Vec, because sometimes a single allocation can be ambiguous, like ''' a = "5" if X else 5 '''
     pub range: TextRange,
+    /// What this name resolved to before a type-narrowing re-declaration shadowed it, so that
+    /// go-to-definition and find-references still reach the real declaration.
+    pub narrowed_from: Vec<Wk<SymbolKey>>,
+    /// The target expression range if the variable is a type-narrowing one
+    pub narrowing_check_range: Option<TextRange>,
 
     // parent symbol (no children)
     parent: FileContentParent,
@@ -40,6 +45,8 @@ impl VariableSymbol {
             is_import_variable: false,
             is_parameter: false,
             evaluations: vec![],
+            narrowed_from: vec![],
+            narrowing_check_range: None,
         }
     }
 
