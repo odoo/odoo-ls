@@ -82,3 +82,16 @@ class DisplayNameRelatedModel(models.Model):
     def _compute_partner_display_name_dep(self):
         for record in self:
             record.partner_display_name_dep = record.partner_id.display_name
+
+    state = fields.Selection("_selection_state", group_expand="_expand_states")
+    kind = fields.Selection(selection="_selection_state", init_storage="_init_column_kind")
+    label = fields.Char("_selection_state")
+
+    def _selection_state(self):
+        return []
+
+    def _expand_states(self, states, domain):
+        return states
+
+    def _init_column_kind(self):
+        pass
