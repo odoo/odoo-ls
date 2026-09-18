@@ -345,6 +345,20 @@ fn test_definition() {
     let range_m2 = file_mgr.borrow().text_range_to_range(&mut session, &module2_test_file, range_m2);
     assert!(compute_kwarg_locs.iter().any(|loc| range_m2 == loc.target_range), "Expected _compute_something to be at the same location as the compute keyword argument in module_2");
 
+    // group_expand, selection and the first positional argument of a Selection name a method
+    for (line, column, method) in [(85, 34, "_selection_state"), (85, 67, "_expand_states"), (86, 43, "_selection_state")] {
+        let locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, &m1_tf_file_info, line, column);
+        assert_eq!(locs.len(), 1, "Expected 1 location for method '{method}' at {line}:{column}");
+        let sym = session.st().get_symbol(m1_tf_file_symbol.into(), (&[], &["DisplayNameRelatedModel", method]), u32::MAX);
+        assert_eq!(sym.len(), 1, "Expected 1 symbol for {method}");
+        let range = session.st().header_range(sym[0], Some(m1_tf_file_info.clone())).unwrap();
+        let range = file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, range);
+        assert_eq!(range, locs[0].target_range, "Expected {method} to be at the location of the argument at {line}:{column}");
+    }
+    // The first positional argument of a Char is its label, not a method name
+    let label_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, &m1_tf_file_info, 87, 29);
+    assert!(label_locs.is_empty(), "Expected no location for the label of a Char field, got: {:?}", label_locs);
+
     // Now test go to def of `partner_id.country_id.phone_code` on each field.
     let partner_id_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, &m1_tf_file_info, 33, 25);
     assert_eq!(partner_id_locs.len(), 1, "Expected 1 location for partner_id");
@@ -445,6 +459,19 @@ fn test_definition() {
     session.sync_odoo.version = OdooVersion::new(19, 0, 0);
     let compute_sql_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, &m1_tf_file_info, 8, 80);
     assert!(compute_sql_locs.is_empty(), "Expected no location for compute_sql before 19.1, got {:?}", compute_sql_locs.iter().map(|l| &l.target_uri).collect::<Vec<_>>());
+
+    // init_storage names a method the same way, but only from 20.0 on
+    let sym_init_column_kind = session.st().get_symbol(m1_tf_file_symbol.into(), (&[], &["DisplayNameRelatedModel", "_init_column_kind"]), u32::MAX);
+    assert_eq!(sym_init_column_kind.len(), 1, "Expected 1 symbol for _init_column_kind");
+    session.sync_odoo.version = OdooVersion::new(20, 0, 0);
+    let init_storage_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, &m1_tf_file_info, 86, 76);
+    assert_eq!(init_storage_locs.len(), 1, "Expected 1 location for init_storage method '_init_column_kind'");
+    let range = session.st().header_range(sym_init_column_kind[0], Some(m1_tf_file_info.clone())).unwrap();
+    let range = file_mgr.borrow().text_range_to_range(&mut session, &module1_test_file, range);
+    assert_eq!(range, init_storage_locs[0].target_range, "Expected _init_column_kind to be at the same location as the init_storage argument");
+    session.sync_odoo.version = OdooVersion::new(19, 4, 0);
+    let init_storage_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, &m1_tf_file_info, 86, 76);
+    assert!(init_storage_locs.is_empty(), "Expected no location for init_storage before 20.0, got {:?}", init_storage_locs.iter().map(|l| &l.target_uri).collect::<Vec<_>>());
 }
 
 #[test]

@@ -493,6 +493,9 @@ impl PythonValidator {
                         (ContextKey::ComputeSql, ContextKey::ComputeSqlArgRange),
                         (ContextKey::Inverse, ContextKey::InverseArgRange),
                         (ContextKey::Search, ContextKey::SearchArgRange),
+                        (ContextKey::GroupExpand, ContextKey::GroupExpandArgRange),
+                        (ContextKey::InitStorage, ContextKey::InitStorageArgRange),
+                        (ContextKey::Selection, ContextKey::SelectionArgRange),
                     ]{
                         let Some(method_name) = eval_weak.get_weak().context.get(special_fn_field_name).map(ContextValue::as_str) else {
                             continue;
