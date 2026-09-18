@@ -9,7 +9,7 @@ use ruff_source_file::{LineIndex, OneIndexed, PositionEncoding, SourceLocation};
 use rustc_hash::FxHasher;
 use tracing::{error, warn};
 use std::path::Path;
-use crate::core::js_arch_builder::{JsDeclaration, JsExportKind};
+use crate::core::js_arch_builder::{JsDeclaration, JsExportKind, span_to_range};
 use crate::core::js_arch_builder::{ComponentDescriptor, JsTemplateRef};
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
@@ -127,9 +127,10 @@ pub struct ParsedJs {
     pub component_descriptors: Vec<ComponentDescriptor>,
     /// Named declarations, for workspace symbols.
     pub decls: Vec<JsDeclaration>,
-    pub imports: Vec<String>,
+    pub imports: Vec<JsImport>,
     pub reexports: Vec<String>,
-    pub diagnostics: Vec<Diagnostic>,
+    pub syntax_diagnostics: Vec<OxcDiagnostic>,
+    pub lint_diagnostics: Vec<OxcDiagnostic>,
     pub has_exports: bool,
 }
 
@@ -177,7 +178,7 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
     let source_type = SourceType::from_path(os_path).unwrap_or_default();
     let allocator = Allocator::default();
     let ret = Parser::new(&allocator, contents, source_type).parse();
-    let mut diags: Vec<OxcDiagnostic> = ret.errors;
+    let mut syntax_diagnostics: Vec<OxcDiagnostic> = ret.errors;
     let parser_module_record = ret.module_record;
 
     let (imports, reexports, exports) = FileInfo::collect_js_imports(&parser_module_record);
@@ -196,17 +197,22 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
 
     // Semantic analysis and the linter exist only to produce diagnostics, and
     // a vendored lib's are dropped, so stop here for them.
-    if is_lib {
-        return ParsedJs { template_refs, component_descriptors, decls, imports, reexports, has_exports, diagnostics: vec![] };
+    if is_lib || !syntax_diagnostics.is_empty() {
+        return ParsedJs { template_refs, component_descriptors, decls, imports, reexports, has_exports, syntax_diagnostics, lint_diagnostics: vec![] };
     }
 
+    // Look for more synxtax errors
     let semantic_ret = SemanticBuilder::new()
         .with_cfg(true)
         .with_check_syntax_error(true)
         .build(program);
-    diags.extend(semantic_ret.errors);
-    let semantic = semantic_ret.semantic;
+    syntax_diagnostics.extend(semantic_ret.errors);
 
+    if !syntax_diagnostics.is_empty() {
+        return ParsedJs { template_refs, component_descriptors, decls, imports, reexports, has_exports, syntax_diagnostics, lint_diagnostics: vec![] };
+    }
+    // Look for semantic errors
+    let semantic = semantic_ret.semantic;
     // Build the linter module record and context
     let module_record = Arc::new(ModuleRecord::new(os_path, &parser_module_record, &semantic));
     let context_sub_host = ContextSubHost::new(semantic, module_record, 0);
@@ -223,13 +229,9 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
     );
     let linter = oxc_linter::Linter::new(LintOptions::default(), config_store, None);
     let messages = linter.run(os_path, vec![context_sub_host], &allocator);
-    diags.extend(messages.into_iter().map(|m| m.error));
+    let lint_diagnostics = messages.into_iter().map(|m| m.error).collect();
 
-    let uri = FileMgr::pathname2uri(path);
-    let diagnostics = diags.iter().flat_map(
-        |d| js_utils::oxc_diagnostic_to_lsp_diagnostic(d, &uri)
-    ).collect();
-    ParsedJs { template_refs, component_descriptors, decls, imports, reexports, has_exports, diagnostics }
+    ParsedJs { template_refs, component_descriptors, decls, imports, reexports, has_exports, syntax_diagnostics, lint_diagnostics }
 }
 
 #[derive(Debug, Clone)]
@@ -251,6 +253,16 @@ impl PythonAst {
     }
 }
 
+/// One module specifier as written by a JS file, and where it is written. A specifier
+/// requested by several statements yields one entry per statement.
+#[derive(Debug, Clone)]
+pub struct JsImport {
+    /// The specifier verbatim, e.g. `@mail/core/store`, `./state` or `luxon`.
+    pub specifier: String,
+    /// Byte range of the specifier's string literal, quotes included.
+    pub range: TextRange,
+}
+
 #[derive(Debug, Clone)]
 pub struct JsAst {
     /// Positions of OWL `static template = "some.xml_id"` string literals found in this JS file.
@@ -262,9 +274,9 @@ pub struct JsAst {
     /// Named declarations of this JS file, for workspace symbols.
     pub js_decls: Vec<JsDeclaration>,
     /// Every module specifier this JS file imports from, verbatim as written (incl.
-    /// bare `import "x"` and `export … from`). Sorted and deduplicated.
-    pub js_imports: Vec<String>,
-    /// The subset of [`Self::js_imports`] reached through a re-export — tracked apart as
+    /// bare `import "x"` and `export … from`), in source order.
+    pub js_imports: Vec<JsImport>,
+    /// The specifiers of [`Self::js_imports`] reached through a re-export — tracked apart as
     /// one of the two type-propagating edges of `core::js_import_graph`.
     pub js_reexports: Vec<String>,
     /// Whether the file has anything importable
@@ -603,15 +615,23 @@ impl FileInfo {
             js_ast.js_reexports = parsed.reexports;
             js_ast.has_exports = parsed.has_exports;
         }
-        self.replace_diagnostics(DiagnosticSource::JS_OXC, parsed.diagnostics); //OXC will use SYNTAX. others are reserved to tsserver
+        let uri = FileMgr::pathname2uri(&self.uri);
+        let to_lsp_diag = |diags: Vec<OxcDiagnostic>|
+            diags.iter().flat_map(|d| js_utils::oxc_diagnostic_to_lsp_diagnostic(d, &uri)).collect();
+        self.replace_diagnostics(DiagnosticSource::JS_OXC_SYNTAX, to_lsp_diag(parsed.syntax_diagnostics));
+        self.replace_diagnostics(DiagnosticSource::JS_OXC_LINT, to_lsp_diag(parsed.lint_diagnostics));
     }
 
-    fn collect_js_imports(parser_module_record: &oxc::syntax::module_record::ModuleRecord) -> (Vec<String>, Vec<String>, HashMap<String, JsExportKind>) {
-        let mut imports: Vec<String> = parser_module_record.requested_modules
-            .keys()
-            .map(|spec| spec.as_str().to_string())
+    fn collect_js_imports(parser_module_record: &oxc::syntax::module_record::ModuleRecord) -> (Vec<JsImport>, Vec<String>, HashMap<String, JsExportKind>) {
+        let mut imports: Vec<JsImport> = parser_module_record.requested_modules
+            .iter()
+            .flat_map(|(spec, requests)| requests.iter().map(|request| JsImport {
+                specifier: spec.into_string(),
+                range: span_to_range(request.span), 
+            }))
             .collect();
-        imports.sort();
+        // Sort by source order
+        imports.sort_by_key(|import| import.range.start());
         let mut reexports: Vec<String> = parser_module_record.indirect_export_entries
             .iter()
             .chain(parser_module_record.star_export_entries.iter())
@@ -777,24 +797,46 @@ impl FileInfo {
         }).cloned().collect::<Vec<_>>();
     }
 
+    fn js_diagnostics(&self) -> Vec<Diagnostic> {
+        // If there are syntax diagnostics, we only send the ones from OXC, to be less noisy
+        if let Some(syntax_diags) = self.diagnostics.get(&DiagnosticSource::JS_OXC_SYNTAX)
+            && !syntax_diags.is_empty()
+        {
+            return syntax_diags.clone();
+        }
+        let mut diagnostics = vec![];
+        diagnostics.extend(self.diagnostics.get(&DiagnosticSource::JS_OXC_LINT).cloned().unwrap_or_default());
+        diagnostics.extend(self.diagnostics.get(&DiagnosticSource::JS_VALIDATION).cloned().unwrap_or_default());
+        // Filter out tsserver diagnostics that are covered by oxc
+        for source in [
+            DiagnosticSource::JS_TSSERVER_SYNTAX,
+            DiagnosticSource::JS_TSSERVER_SEMANTIC,
+            DiagnosticSource::JS_TSSERVER_SUGGESTION,
+        ] {
+            let Some(source_diags) = self.diagnostics.get(&source) else { continue };
+            for diagnostic in source_diags {
+                let Some(NumberOrString::String(code)) = &diagnostic.code else { continue };
+                if TSSERVER_DIAGS_COVERED_BY_OXC.contains(&code.as_str()) { continue }
+                diagnostics.push(diagnostic.clone());
+            }
+        }
+        diagnostics
+    }
+
     pub fn publish_diagnostics(&mut self, session: &mut SessionInfo) {
         if self.need_push {
             let mut all_diagnostics = Vec::new();
 
-            let is_js = matches!(self.file_info_ast.borrow().ast, Ast::JsAst(_));
-            //We are checking ARCH as it contains Syntax diagnostics for tsserver
-            let syntax_diags = self.diagnostics.get(&DiagnosticSource::JS_OXC);
-            let has_syntax_diags = is_js && syntax_diags.map(|v| !v.is_empty()).unwrap_or(false);
-            let diag_iter: Box<dyn Iterator<Item = &Diagnostic>> = if has_syntax_diags {
-                // If there is syntax diagnostics, we only send the ones from OXC, to be less noisy
-                Box::new(self.diagnostics.get(&DiagnosticSource::JS_OXC).unwrap().iter())
+            let is_js = self.file_info_ast.borrow().ast.kind() == AstKind::JsAst;
+            let diagnostics = if is_js {
+                Self::js_diagnostics(self)
             } else {
-                Box::new(self.diagnostics.values().flatten())
+                self.diagnostics.values().flatten().cloned().collect()
             };
 
-            'diagnostics: for d in diag_iter {
+            'diagnostics: for d in diagnostics {
                 //check noqa lines
-                let updated = self.update_range(d.clone(), session.sync_odoo.encoding);
+                let updated = self.update_range(d, session.sync_odoo.encoding);
                 let updated_line = updated.range.start.line;
                 if let Some(noqa_line) = self.noqas_lines.get(&updated_line) {
                     match noqa_line {
@@ -1411,8 +1453,12 @@ export class Counter extends Component {
 }
 "#;
 
-    fn assert_extracted(parsed: &ParsedJs) {
-        assert_eq!(parsed.imports, ["./state"]);
+    fn assert_extracted(parsed: &ParsedJs, source: &str) {
+        assert_eq!(parsed.imports.len(), 1);
+        assert_eq!(parsed.imports[0].specifier, "./state");
+        // The range is the specifier's literal, quotes included, wherever the header pushed it.
+        let range = parsed.imports[0].range;
+        assert_eq!(&source[usize::from(range.start())..usize::from(range.end())], "\"./state\"");
         assert_eq!(parsed.component_descriptors.len(), 1);
         assert_eq!(parsed.component_descriptors[0].class_name, "Counter");
         assert_eq!(parsed.template_refs.len(), 1);
@@ -1430,10 +1476,10 @@ export class Counter extends Component {
         assert!(skipped.component_descriptors.is_empty());
         assert!(skipped.template_refs.is_empty());
 
-        assert_extracted(&parse_js_inner(&headered, "/mod/static/lib/x.js"));
+        assert_extracted(&parse_js_inner(&headered, "/mod/static/lib/x.js"), &headered);
         // `static/src` and `static/tests` are modules unconditionally.
-        assert_extracted(&parse_js_inner(COMPONENT, "/mod/static/src/x.js"));
-        assert_extracted(&parse_js_inner(COMPONENT, "/mod/static/tests/x.js"));
+        assert_extracted(&parse_js_inner(COMPONENT, "/mod/static/src/x.js"), COMPONENT);
+        assert_extracted(&parse_js_inner(COMPONENT, "/mod/static/tests/x.js"), COMPONENT);
     }
 
     /// A lib file that *is* a module is still not the user's code, so it stays
@@ -1442,7 +1488,8 @@ export class Counter extends Component {
     fn a_lib_module_yields_no_decls_or_diagnostics() {
         let parsed = parse_js_inner(&format!("/** @odoo-module */\n{COMPONENT}"), "/mod/static/lib/x.js");
         assert!(parsed.decls.is_empty());
-        assert!(parsed.diagnostics.is_empty());
+        assert!(parsed.syntax_diagnostics.is_empty());
+        assert!(parsed.lint_diagnostics.is_empty());
         assert!(!parse_js_inner(COMPONENT, "/mod/static/src/x.js").decls.is_empty());
     }
 }

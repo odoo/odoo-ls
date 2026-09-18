@@ -1,11 +1,11 @@
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::trace;
 
-use crate::{Sy, constants::{BuildStatus, DiagnosticSource, MissingDataSource}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileMgr}, features::xml_ast_utils::XmlAstUtils};
+use crate::{Sy, constants::{BuildStatus, DiagnosticSource, MissingDataSource}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::{FileMgr, JsImport}}, features::xml_ast_utils::XmlAstUtils};
 use crate::{
     constants::{BuildSteps, OYarn, DEBUG_STEPS},
     core::{
-        symbols::symbol_keys::JsFileKey,
+        symbols::{ModuleSymbol, symbol_keys::JsFileKey},
     },
     threads::SessionInfo,
 };
@@ -50,6 +50,7 @@ impl JsValidator {
         let mut file_info = file_info.borrow_mut();
         let file_info_ast = file_info.file_info_ast.borrow();
         let template_refs = file_info_ast.ast.as_js_ast().js_template_refs.clone();
+        let js_imports = file_info_ast.ast.as_js_ast().js_imports.clone();
         drop(file_info_ast);
 
         if session.sync_odoo.symbol_table.get_entry(self.js_symbol).borrow().is_main() {
@@ -71,8 +72,43 @@ impl JsValidator {
                 }
             }
         }
+        self.validate_import_scope(session, &js_imports, &mut diagnostics);
         file_info.replace_diagnostics(DiagnosticSource::JS_VALIDATION, diagnostics);
         file_info.publish_diagnostics(session);
         session.st_mut().set_build_status(self.js_symbol.into(), BuildSteps::VALIDATION, BuildStatus::DONE);
+    }
+
+    /// Whether `mod` in "import from @mod/some/path" is part of the current module's dependencies
+    fn validate_import_scope(&self, session: &SessionInfo, imports: &[JsImport], diagnostics: &mut Vec<Diagnostic>) {
+        let Some(module) = session.st().find_module(self.js_symbol) else {
+            return;
+        };
+        for import in imports.iter() {
+            // `@mail/core/store` -> `mail`.
+            let target = import.specifier.strip_prefix('@')
+                .and_then(|rest| rest.split_once('/'))
+                .and_then(|(name, _sub_path)| session.sync_odoo.modules.get(name))
+                .and_then(|module| module.upgrade(session.st()));
+            let Some(target) = target else {
+                continue;
+            };
+            let target_name = session.st()[target].dir_name.clone();
+            if ModuleSymbol::is_in_deps(session.st(), module, &target_name) {
+                continue;
+            }
+            if let Some(diagnostic) = create_diagnostic(
+                session,
+                DiagnosticCode::OLS06001,
+                &[&target_name, &session.st()[module].dir_name],
+            ) {
+                diagnostics.push(Diagnostic {
+                    range: Range {
+                        start: Position::new(import.range.start().into(), 0),
+                        end: Position::new(import.range.end().into(), 0),
+                    },
+                    ..diagnostic
+                });
+            }
+        }
     }
 }
