@@ -4,6 +4,7 @@ use serde_json::Value;
 use tracing::debug;
 
 use crate::core::tsserver_bridge::ts_kind_to_lsp_kind;
+use crate::features::owl_virtual::is_owl_artifact_path;
 use crate::utils::HashMap;
 
 /// Round-trip payload stashed in `CompletionItem.data` of every entry, whose signature, docs
@@ -99,6 +100,10 @@ pub fn is_valid_completion_entry(entry: &Value, project_paths: &HashMap<String, 
         // Entries backed by no file — locals, members, ambient modules — are always valid.
         return true;
     };
+    // Is path a real file? (not a owl shim like cat.__ols_shim__.js)
+    if is_owl_artifact_path(file_name) {
+        return false;
+    }
     // Is valid path for odoo module loader?
     if !is_aliasable_import(file_name, project_paths) {
         return false;
@@ -373,7 +378,7 @@ mod tests {
     }
 
     #[test]
-    fn an_entry_is_valid_only_if_it_passes_both_filters() {
+    fn an_entry_is_valid_only_if_it_passes_all_filters() {
         let paths = odoo_paths();
         let prefixes = [S!("/odoo/addons/web/")];
         let scope = Some(&prefixes[..]);
@@ -395,6 +400,8 @@ mod tests {
             &paths,
             scope,
         ));
+        // Covered by the `@web/*` glob and in scope: only the shim check refuses it.
+        assert!(!is_valid_completion_entry(&from("/odoo/addons/web/static/src/core/domain.__ols_shim__.js"), &paths, scope));
     }
 
     #[test]
