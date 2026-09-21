@@ -125,12 +125,14 @@ impl SemanticTokensFeature {
         let file_info_ast = file_info.borrow().file_info_ast.clone();
         let file_info_ast_ref = file_info_ast.borrow();
         if let Some(stmts) = file_info_ast_ref.get_stmts() {
+            let uri = file_info.borrow().uri.clone();
             let mut visitor = SemanticTokenVisitor {
                 session,
                 file_symbol,
                 file_info,
                 raw: &mut raw,
-                file_path: file_info.borrow().uri.clone(),
+                in_manifest: uri.ends_with("__manifest__.py"),
+                file_path: uri,
                 enclosing_call: None,
             };
             for stmt in stmts.iter() {
@@ -275,6 +277,7 @@ struct SemanticTokenVisitor<'a, 'b, 's> {
     file_info: &'a Rc<RefCell<FileInfo>>,
     raw: &'a mut Vec<(Range, u32, u32)>,
     file_path: String,
+    in_manifest: bool,
     /// Nearest enclosing call, so string args resolve to fields/methods.
     enclosing_call: Option<&'a ExprCall>,
 }
@@ -395,6 +398,13 @@ impl<'a, 'b, 's> Visitor<'a> for SemanticTokenVisitor<'a, 'b, 's> {
                 let prev = self.enclosing_call.replace(call);
                 walk_expr(self, expr);
                 self.enclosing_call = prev;
+                return;
+            }
+            Expr::Dict(dict) if self.in_manifest => {
+                // Skip dictionary keys in manifest, only visit values
+                for value in dict.iter_values() {
+                    self.visit_expr(value);
+                }
                 return;
             }
             _ => {}
