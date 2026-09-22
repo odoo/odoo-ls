@@ -245,14 +245,14 @@ impl PythonArchBuilderHooks {
                 }
             }
         } else if name == "urls"
-            && session.st().get_local_tree(symbol.into()) == (&["werkzeug", "urls"], &[]) {
+            && SymbolTable::get_local_tree(session, symbol.into()) == (&["werkzeug", "urls"], &[]) {
                 //manually load patch, as a manual dependency
                 let full_path_monkeypatches = S!("odoo._monkeypatches");
                 let mut main_odoo_symbol = None;
-                if let Some(main_ep) = session.sync_odoo.entry_point_mgr.borrow().main_entry_point.as_ref() {
+                if let Some(main_ep) = session.sync_odoo.entry_point_mgr.main_entry_point {
                     //To import from main entry point, we have to import 'from' a symbol coming from main entry point.
                     //We then use the main symbol of the main entry point to achieve that, instead of the werkzeug symbol
-                    main_odoo_symbol = main_ep.borrow().get_symbol(session.st());
+                    main_odoo_symbol = session.ep_mgr()[main_ep].get_symbol(session.st());
                 }
                 if let Some(main_odoo_symbol) = main_odoo_symbol {
                     let werkzeug_patch = manual_import(session, main_odoo_symbol, Some(full_path_monkeypatches), "werkzeug", None, 0, &mut None);

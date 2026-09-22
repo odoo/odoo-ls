@@ -49,8 +49,8 @@ fn test_untitled_file_lifecycle() {
     // Get file symbol
     let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, std::path::Path::new(&untitled_uri)).expect("Untitled file symbol");
     // Hover on foo()
-    let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&untitled_uri).unwrap();
-    let hover = HoverFeature::hover_python(&mut session, file_symbol, &file_info, 2, 0);
+    let file_info = session.file_mgr().get_file_info(&untitled_uri).unwrap();
+    let hover = HoverFeature::hover_python(&mut session, file_symbol, file_info, 2, 0);
     assert!(hover.is_some(), "Hover result should be Some");
     let hover_content = match hover {
         Some(lsp_types::Hover { contents, .. }) => {
@@ -70,7 +70,7 @@ fn test_untitled_file_lifecycle() {
     assert!(hover_content.contains("def foo()"), "Hover should show function signature, got: {}", hover_content);
 
     // Completion at return
-    let completion = CompletionFeature::autocomplete(&mut session, file_symbol, &file_info, None, 1, 11);
+    let completion = CompletionFeature::autocomplete(&mut session, file_symbol, file_info, None, 1, 11);
     assert!(completion.is_some(), "Completion result should be Some");
     let completion_items = match completion.unwrap() {
         lsp_types::CompletionResponse::Array(items) => items,
@@ -81,7 +81,7 @@ fn test_untitled_file_lifecycle() {
     assert!(labels.iter().any(|l| l.contains("foo")), "Completion should contain 'foo', got: {:?}", labels);
 
     // Definition for foo
-    let definition = DefinitionFeature::get_location(&mut session, file_symbol, &file_info, 0, 4);
+    let definition = DefinitionFeature::get_location(&mut session, file_symbol, file_info, 0, 4);
     assert!(definition.is_some(), "Definition result should be Some");
     let def_locs = match definition.unwrap() {
         lsp_types::GotoDefinitionResponse::Scalar(loc) => vec![loc],
