@@ -267,6 +267,19 @@ fn user_config_overrides_auto_detection() {
     assert_eq!(cfg.default().odoo_path().as_ref(), Some(&canonicalized(user_odoo.path())));
 }
 
+/// Ambiguous inferred odoo_path: config still loads, odoo_path is unset and
+/// every candidate is reported.
+fn assert_odoo_path_conflict(cfg: &Cfg) {
+    assert!(cfg.default().odoo_path().is_none());
+    let conflicts = cfg
+        .view()
+        .diagnostic_messages()
+        .iter()
+        .filter(|v| v["message"].as_str().unwrap().contains("more than one workspace folder"))
+        .count();
+    assert_eq!(conflicts, 2);
+}
+
 #[test]
 fn conflict_two_children_both_odoo_path() {
     let mut cfg = Cfg::new();
@@ -279,7 +292,7 @@ fn conflict_two_children_both_odoo_path() {
     odoo2.create_dir_all().unwrap();
     make_odoo(&odoo2);
 
-    assert!(cfg.err().contains("More than one workspace folder or subfolder is a valid odoo_path"));
+    assert_odoo_path_conflict(&cfg);
 }
 
 #[test]
@@ -1254,7 +1267,7 @@ fn provenance_json_serialization() {
 // Cross-workspace merge, extra config file & list merge/override
 // ===========================================================================
 
-/// Two workspace folders that are both valid odoo paths produce an ambiguity error.
+/// Two workspace folders that are both valid odoo paths are rejected, not fatal.
 #[test]
 fn conflict_two_workspace_folders_both_odoo_path() {
     let mut c = Cfg::new();
@@ -1263,7 +1276,7 @@ fn conflict_two_workspace_folders_both_odoo_path() {
     make_odoo(&ws1);
     make_odoo(&ws2);
 
-    assert!(c.err().contains("More than one workspace folder or subfolder is a valid odoo_path"));
+    assert_odoo_path_conflict(&c);
 }
 
 /// Two workspaces setting different values for a scalar (file_cache) conflict.
