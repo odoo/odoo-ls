@@ -1515,7 +1515,10 @@ impl Odoo {
         };
         let result = session.send_request::<RegistrationParams, ()>(RegisterCapability::METHOD, params);
         if let Err(e) = result {
-            panic!("Capabilities registration went wrong: {:?}", e);
+            // Some clients (e.g. Claude Code) do not support dynamic registration.
+            // Static capabilities from the initialize response still apply, so keep running.
+            warn!("Capabilities registration went wrong: {:?}", e);
+            return;
         }
         info!("Registered Capabilities");
     }
