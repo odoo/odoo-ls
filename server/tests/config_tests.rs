@@ -1651,6 +1651,39 @@ fn all_list_entries_rejected_keeps_empty_list() {
     assert!(c.message("'additional_stubs' entries must be strings").contains("no valid entries remain"));
 }
 
+/// Two workspace folders giving a profile different parents is a warning, not
+/// an error: each workspace applies its own parent, and the values are merged.
+#[test]
+fn extends_conflict_across_workspaces_is_a_warning() {
+    let mut c = Cfg::new();
+    let ws1 = c.ws("ws1");
+    let ws2 = c.ws("ws2");
+    write_odools(&ws1, r#"
+        [[config]]
+        name = "a"
+        auto_refresh_delay = 1234
+
+        [[config]]
+        name = "x"
+        extends = "a"
+    "#);
+    write_odools(&ws2, r#"
+        [[config]]
+        name = "b"
+        file_cache = false
+
+        [[config]]
+        name = "x"
+        extends = "b"
+    "#);
+
+    let x = c.entry("x");
+    assert_eq!(x.auto_refresh_delay(), 1234, "value from parent 'a' is kept");
+    assert!(!x.file_cache(), "value from parent 'b' is kept");
+    let msg = c.message("conflicting 'extends'");
+    assert!(msg.contains("'x'") && msg.contains("'a'") && msg.contains("'b'"), "unexpected message: {msg}");
+}
+
 /// A field-type error is rejected without failing the config, and the message
 /// names the offending file and profile.
 #[test]
