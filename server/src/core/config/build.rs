@@ -229,6 +229,9 @@ fn merge_child_wins(child: &Profile, parent: &Profile) -> Profile {
         .chain(parent.warnings.iter())
         .cloned()
         .collect();
+    for (key, items) in child.rejected.iter().chain(parent.rejected.iter()) {
+        result.rejected.entry(*key).or_default().extend(items.iter().cloned());
+    }
     for key in keys_union(child, parent) {
         if let Some(value) = merge_value(key, child.get(key), parent.get(key), child) {
             result.values.insert(key, value);
