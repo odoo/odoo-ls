@@ -393,14 +393,14 @@ fn apply_extends(set: &mut ProfileSet) -> Result<(), String> {
 
 fn merge_ws_profile(a: &Profile, b: &Profile, name: &str) -> Result<Profile, String> {
     let mut result = Profile::new(name);
-    result.extends = match (a.extends.clone(), b.extends.clone()) {
-        (Some(x), Some(y)) if x != y => {
-            return Err(format!(
-                "Conflict in 'extends' for profile '{name}': '{x}' vs '{y}'"
-            ));
-        }
-        (x, y) => y.or(x),
+    // `extends` is already applied per source, so a conflict only affects display.
+    let extends_conflict = match (&a.extends, &b.extends) {
+        (Some(x), Some(y)) if x != y => Some(format!(
+            "conflicting 'extends' across workspace folders: '{x}' vs '{y}'; values from both parents are merged"
+        )),
+        _ => None,
     };
+    result.extends = b.extends.clone().or_else(|| a.extends.clone());
     result.abstract_ = a.abstract_ || b.abstract_;
     // Workspaces under the same parent `odools.toml` report the same warnings and
     // rejections: keep one copy.
@@ -412,6 +412,7 @@ fn merge_ws_profile(a: &Profile, b: &Profile, name: &str) -> Result<Profile, Str
         .filter(|w| seen_warnings.insert(*w))
         .cloned()
         .collect();
+    result.warnings.extend(extends_conflict);
     for key in keys_union(a, b) {
         let merged = match (a.get(key), b.get(key)) {
             (Some(x), Some(y)) => merge_ws_value(key, x, y, name)?,
