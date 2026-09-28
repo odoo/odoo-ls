@@ -1,10 +1,7 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use lsp_types::{CompletionContext, CompletionResponse, CompletionTriggerKind};
-use odoo_ls_server::core::file_mgr::{FileInfo, FileMgr};
+use odoo_ls_server::core::file_mgr::{FileInfoKey, FileMgr};
 use odoo_ls_server::core::odoo::{Odoo, SyncOdoo};
-use odoo_ls_server::core::symbols::symbol_keys::SourceFileKey;
+use odoo_ls_server::core::symbols::symbol_keys::{SourceFileKey};
 use odoo_ls_server::features::completion::CompletionFeature;
 use odoo_ls_server::threads::SessionInfo;
 
@@ -14,7 +11,7 @@ mod setup;
 /// Open an untitled python buffer and return its file symbol + info.
 /// Untitled buffers don't need an Odoo install, which keeps these tests
 /// focused on the trigger-kind gate and runnable without COMMUNITY_PATH.
-fn open_untitled(session: &mut SessionInfo, uri: &str, text: &str) -> (SourceFileKey, Rc<RefCell<FileInfo>>) {
+fn open_untitled(session: &mut SessionInfo, uri: &str, text: &str) -> (SourceFileKey, FileInfoKey) {
     let did_open_params = lsp_types::DidOpenTextDocumentParams {
         text_document: lsp_types::TextDocumentItem {
             uri: FileMgr::pathname2uri(uri),
@@ -26,7 +23,7 @@ fn open_untitled(session: &mut SessionInfo, uri: &str, text: &str) -> (SourceFil
     Odoo::handle_did_open(session, did_open_params);
     let file_symbol = SyncOdoo::get_symbol_of_opened_file(session, std::path::Path::new(uri))
         .expect("Untitled file symbol");
-    let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(uri).unwrap();
+    let file_info = session.file_mgr().get_file_info(uri).unwrap();
     (file_symbol, file_info)
 }
 
@@ -58,7 +55,7 @@ fn test_comma_trigger_char_returns_nothing() {
     let (fsym, finfo) = open_untitled(&mut session, "untitled:completion-comma", "foo([('a', 'b')], )\n");
 
     let response = CompletionFeature::autocomplete(
-        &mut session, fsym, &finfo,
+        &mut session, fsym, finfo,
         Some(ctx(CompletionTriggerKind::TRIGGER_CHARACTER, Some(","))),
         0, 18,
     );
@@ -75,7 +72,7 @@ fn test_comma_position_invoked_still_completes() {
 
     // `foo(spam, )` on line 1: foo(=4, spam=8, `,`=9, ` `=10 -> cursor at 11 (before `)`).
     let response = CompletionFeature::autocomplete(
-        &mut session, fsym, &finfo,
+        &mut session, fsym, finfo,
         Some(ctx(CompletionTriggerKind::INVOKED, None)),
         1, 11,
     );
@@ -92,7 +89,7 @@ fn test_missing_context_behaves_like_invoked() {
     let mut session = create_init_session(&mut odoo, config);
     let (fsym, finfo) = open_untitled(&mut session, "untitled:completion-noctx", "spam = 1\nfoo(spam, )\n");
 
-    let response = CompletionFeature::autocomplete(&mut session, fsym, &finfo, None, 1, 11);
+    let response = CompletionFeature::autocomplete(&mut session, fsym, finfo, None, 1, 11);
     let labels = labels(response);
     assert!(labels.iter().any(|l| l == "spam"),
         "Missing context should fall back to name completion, got: {:?}", labels);
@@ -109,7 +106,7 @@ fn test_dot_trigger_char_still_completes() {
     let (fsym, finfo) = open_untitled(&mut session, "untitled:completion-dot", "spam = 1\nspam.\n");
 
     let response = CompletionFeature::autocomplete(
-        &mut session, fsym, &finfo,
+        &mut session, fsym, finfo,
         Some(ctx(CompletionTriggerKind::TRIGGER_CHARACTER, Some("."))),
         1, 5,
     );

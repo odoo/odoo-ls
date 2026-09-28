@@ -16,7 +16,7 @@ fn test_no_main_entry() {
     let _ = setup::setup::create_init_session(&mut odoo, config);
     assert!(!odoo.has_main_entry);
     assert!(!odoo.has_odoo_main_entry);
-    assert!(odoo.entry_point_mgr.borrow().main_entry_point.is_none());
+    assert!(odoo.entry_point_mgr.main_entry_point.is_none());
     assert!(odoo.has_valid_python);
 }
 
@@ -26,7 +26,7 @@ fn test_custom_entry_point() {
     let mut session = setup::setup::create_init_session(&mut odoo, config);
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/assign.py");
     setup::setup::prepare_custom_entry_point(&mut session, path.sanitize().as_str());
-    assert!(odoo.entry_point_mgr.borrow().custom_entry_points.len() == 1);
+    assert!(odoo.entry_point_mgr.custom_entry_points.len() == 1);
 }
 
 
@@ -36,7 +36,7 @@ fn test_assigns() {
     let mut session = setup::setup::create_init_session(&mut odoo, config);
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/assign.py").sanitize();
     setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
-    assert!(session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.len() == 1);
+    assert!(session.sync_odoo.entry_point_mgr.custom_entry_points.len() == 1);
     let st = &session.sync_odoo.symbol_table;
     let int_type = session.sync_odoo.get_symbol("", (&["builtins"], &["int"]), u32::MAX)[0];
     let str_type = session.sync_odoo.get_symbol("", (&["builtins"], &["str"]), u32::MAX)[0];
@@ -282,7 +282,7 @@ fn test_ann_assign_invalid_target() {
     let mut session = setup::setup::create_init_session(&mut odoo, config);
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/ann_assign_invalid_target.py").sanitize();
     setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
-    assert!(session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.len() == 1);
+    assert!(session.sync_odoo.entry_point_mgr.custom_entry_points.len() == 1);
     let int_type = session.sync_odoo.get_symbol("", (&["builtins"], &["int"]), u32::MAX)[0];
     let st = &session.sync_odoo.symbol_table;
 
@@ -316,7 +316,7 @@ fn test_sections() {
     let mut session = setup::setup::create_init_session(&mut odoo, config);
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/sections.py").sanitize();
     setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
-    assert!(session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.len() == 1);
+    assert!(session.sync_odoo.entry_point_mgr.custom_entry_points.len() == 1);
     let st = &session.sync_odoo.symbol_table;
 
     let assert_get_int_eval_values = |var_name: &str, values: HashSet<i32>|{

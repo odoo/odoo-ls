@@ -24,8 +24,8 @@ fn make_py_close_params(uri: lsp_types::Uri) -> lsp_types::DidCloseTextDocumentP
 }
 
 fn has_custom_entry(session: &odoo_ls_server::threads::SessionInfo, needle: &str) -> bool {
-    session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter()
-        .any(|ep| ep.borrow().path.contains(needle))
+    session.sync_odoo.entry_point_mgr.custom_entry_points.iter()
+        .any(|&ep| session.ep_mgr()[ep].path.contains(needle))
 }
 
 /// Standalone (non-module) Python file: `did_create` must not eagerly build it;
@@ -65,10 +65,10 @@ fn test_standalone_python_create_open_close_lifecycle() {
         has_custom_entry(&session, "standalone_script"),
         "did_open should create the custom entry point"
     );
-    let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&py_path)
+    let file_info = session.file_mgr().get_file_info(&py_path)
         .expect("FileInfo should exist after open");
     assert!(
-        file_info.borrow().file_info_ast.borrow().ast.is_built(),
+        session.file_mgr()[file_info].file_info_ast.borrow().ast.is_built(),
         "ast should be built after open"
     );
 
@@ -184,10 +184,10 @@ fn test_hover_on_unopened_standalone_file_builds_lazily() {
         has_custom_entry(&session, "never_opened"),
         "hover should lazily create the custom entry point on demand"
     );
-    let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&py_path)
+    let file_info = session.file_mgr().get_file_info(&py_path)
         .expect("FileInfo should exist after hover");
     assert!(
-        file_info.borrow().file_info_ast.borrow().ast.is_built(),
+        session.file_mgr()[file_info].file_info_ast.borrow().ast.is_built(),
         "ast should be built lazily by the hover request"
     );
 

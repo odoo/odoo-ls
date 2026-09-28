@@ -29,7 +29,7 @@ fn test_js_lifecycle() {
 
     let (mut odoo, mut config) = setup::setup::setup_server(true);
     config.set_string_list(ConfigKey::AddonsPaths, [addons_path().sanitize(), fixture_path.clone()]);
-    odoo.get_file_mgr().borrow_mut()
+    odoo.file_mgr
         .add_workspace_folder(S!("asset_events_addons"), FileMgr::pathname2uri(&fixture_path));
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
@@ -104,8 +104,8 @@ fn has_data_symbol(session: &SessionInfo, path: &str) -> bool {
 }
 
 fn has_custom_entry(session: &SessionInfo, path: &str) -> bool {
-    session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter()
-        .any(|ep| ep.borrow().path == path)
+    session.sync_odoo.entry_point_mgr.custom_entry_points.iter()
+        .any(|&ep| session.ep_mgr()[ep].path == path)
 }
 
 /// Writes `relative` under the fixture module and gives back the path the symbol maps are keyed by.
@@ -264,7 +264,7 @@ fn test_component_index_lifecycle(session: &mut SessionInfo, fixture: &TempDir) 
 
     Odoo::handle_did_close(session, make_js_close_params(uri));
     assert!(
-        session.sync_odoo.get_file_mgr().borrow().get_file_info(&path).is_some(),
+        session.file_mgr().get_file_info(&path).is_some(),
         "a workspace file stays in the cache when it is closed",
     );
     assert_eq!(
@@ -298,11 +298,11 @@ fn test_js_file_lifecycle_with_odoo(session: &mut SessionInfo) {
         "JS file should be in opened_files after didOpen"
     );
     assert!(
-        session.sync_odoo.get_file_mgr().borrow().get_file_info(&js_path).is_some(),
+        session.file_mgr().get_file_info(&js_path).is_some(),
         "FileInfo should exist after didOpen"
     );
-    let has_entry = session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter()
-        .any(|ep| ep.borrow().path.contains("test_component"));
+    let has_entry = session.sync_odoo.entry_point_mgr.custom_entry_points.iter()
+        .any(|&ep| session.ep_mgr()[ep].path.contains("test_component"));
     assert!(has_entry, "Custom entry point should be created for the JS file");
 
     // — edit —
@@ -314,11 +314,10 @@ fn test_js_file_lifecycle_with_odoo(session: &mut SessionInfo) {
         "JS file should still be in opened_files after didChange"
     );
     {
-        let file_mgr = session.sync_odoo.get_file_mgr();
-        let file_mgr = file_mgr.borrow();
+        let file_mgr = session.file_mgr();
         let file_info = file_mgr.get_file_info(&js_path).expect("FileInfo must exist after edit");
         assert_eq!(
-            file_info.borrow().version,
+            session.file_mgr()[file_info].version,
             Some(2),
             "File version should be updated to 2 after didChange"
         );
@@ -331,8 +330,8 @@ fn test_js_file_lifecycle_with_odoo(session: &mut SessionInfo) {
         !session.sync_odoo.opened_files.contains(&js_path),
         "JS file should be removed from opened_files after didClose"
     );
-    let entry_after_close = session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter()
-        .any(|ep| ep.borrow().path.contains("test_component") && !ep.borrow().path.contains("renamed"));
+    let entry_after_close = session.sync_odoo.entry_point_mgr.custom_entry_points.iter()
+        .any(|&ep| session.ep_mgr()[ep].path.contains("test_component") && !session.ep_mgr()[ep].path.contains("renamed"));
     assert!(!entry_after_close, "Custom entry for original JS file should be removed after didClose");
 
     // — rename on disk —
@@ -362,22 +361,21 @@ fn test_js_file_lifecycle_with_odoo(session: &mut SessionInfo) {
         "Renamed JS file should be in opened_files after re-open"
     );
     assert!(
-        session.sync_odoo.get_file_mgr().borrow().get_file_info(&new_js_path).is_some(),
+        session.file_mgr().get_file_info(&new_js_path).is_some(),
         "FileInfo should exist for renamed JS file"
     );
-    let has_renamed_entry = session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter()
-        .any(|ep| ep.borrow().path.contains("test_component_renamed"));
+    let has_renamed_entry = session.sync_odoo.entry_point_mgr.custom_entry_points.iter()
+        .any(|&ep| session.ep_mgr()[ep].path.contains("test_component_renamed"));
     assert!(has_renamed_entry, "Custom entry point should exist for renamed JS file");
 
     // — edit renamed file —
     let final_content = "/** @odoo-module */\nexport class TestComponent { setup() {} destroy() {} }\n";
     Odoo::handle_did_change(session, make_js_change_params(new_js_uri.clone(), 2, final_content));
     {
-        let file_mgr = session.sync_odoo.get_file_mgr();
-        let file_mgr = file_mgr.borrow();
+        let file_mgr = session.file_mgr();
         let file_info = file_mgr.get_file_info(&new_js_path).expect("FileInfo must exist after edit of renamed file");
         assert_eq!(
-            file_info.borrow().version,
+            session.file_mgr()[file_info].version,
             Some(2),
             "Renamed file version should be 2 after edit"
         );

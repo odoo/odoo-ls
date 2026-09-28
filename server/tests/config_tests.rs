@@ -103,8 +103,7 @@ impl Cfg {
 fn mock_session(workspaces: &[(String, String)]) -> SessionInfo<'static> {
     let sync_odoo = Box::leak(Box::new(SyncOdoo::new()));
     {
-        let file_mgr = sync_odoo.get_file_mgr();
-        let mut file_mgr = file_mgr.borrow_mut();
+        let file_mgr = &mut sync_odoo.file_mgr;
         for (name, path) in workspaces {
             file_mgr.add_workspace_folder(name.clone(), Uri::from_str(path).unwrap());
         }
