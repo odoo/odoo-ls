@@ -402,7 +402,16 @@ fn merge_ws_profile(a: &Profile, b: &Profile, name: &str) -> Result<Profile, Str
         (x, y) => y.or(x),
     };
     result.abstract_ = a.abstract_ || b.abstract_;
-    result.warnings = a.warnings.iter().chain(b.warnings.iter()).cloned().collect();
+    // Workspaces under the same parent `odools.toml` report the same warnings and
+    // rejections: keep one copy.
+    let mut seen_warnings: HashSet<&String> = HashSet::default();
+    result.warnings = a
+        .warnings
+        .iter()
+        .chain(b.warnings.iter())
+        .filter(|w| seen_warnings.insert(*w))
+        .cloned()
+        .collect();
     for key in keys_union(a, b) {
         let merged = match (a.get(key), b.get(key)) {
             (Some(x), Some(y)) => merge_ws_value(key, x, y, name)?,
@@ -414,12 +423,15 @@ fn merge_ws_profile(a: &Profile, b: &Profile, name: &str) -> Result<Profile, Str
     // Carry rejected settings from both workspaces, even when the key ends up
     // with a valid value: the panel shows the effective value and notes the
     // rejected one, so the failure is never hidden.
+    let mut seen_rejected = HashSet::default();
     for (key, items) in a.rejected.iter().chain(b.rejected.iter()) {
-        result
-            .rejected
-            .entry(*key)
-            .or_default()
-            .extend(items.iter().cloned());
+        for item in items {
+            let mut sources: Vec<&String> = item.sources.iter().collect();
+            sources.sort();
+            if seen_rejected.insert((*key, &item.value, &item.info, sources)) {
+                result.rejected.entry(*key).or_default().push(item.clone());
+            }
+        }
     }
     Ok(result)
 }
