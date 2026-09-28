@@ -75,18 +75,24 @@ fn parse_entry(entry: &toml::Value, source: &str) -> Result<Profile, String> {
             profile.warnings.push(msg);
             continue;
         };
-        match parse_value(key, value, source) {
+        let mut rejected_entries = Vec::new();
+        match parse_value(key, value, source, &mut rejected_entries) {
             Ok(Some(parsed)) => {
                 profile.values.insert(key, parsed);
             }
             Ok(None) => {}
-            Err(e) => {
-                let raw = value.as_str().map_or_else(|| value.to_string(), str::to_string);
-                profile.add_rejected(key, raw, HashSet::from_iter([source.to_string()]), e);
-            }
+            Err(e) => rejected_entries.push((raw_text(value), e)),
+        }
+        for (raw, reason) in rejected_entries {
+            profile.add_rejected(key, raw, HashSet::from_iter([source.to_string()]), reason);
         }
     }
     Ok(profile)
+}
+
+/// A TOML value as shown in a rejection: strings unquoted, others as TOML.
+fn raw_text(value: &toml::Value) -> String {
+    value.as_str().map_or_else(|| value.to_string(), str::to_string)
 }
 
 fn scalar(value: Scalar, source: &str) -> ConfigValue {
@@ -101,10 +107,13 @@ fn as_str_field<'a>(value: &'a toml::Value, name: &str) -> Result<&'a str, Strin
 }
 
 /// Parse a single value according to its key's `ConfigFieldSpecKind`.
+/// Invalid list entries are pushed to `rejected` as `(raw, reason)` and skipped;
+/// `Err` rejects the whole value.
 fn parse_value(
     key: ConfigKey,
     value: &toml::Value,
     source: &str,
+    rejected: &mut Vec<(String, String)>,
 ) -> Result<Option<ConfigValue>, String> {
     let name = key.as_str();
     match key.kind() {
@@ -146,10 +155,10 @@ fn parse_value(
                 .ok_or_else(|| format!("'{name}' must be an array"))?;
             let mut items = Vec::with_capacity(arr.len());
             for el in arr {
-                let s = el
-                    .as_str()
-                    .ok_or_else(|| format!("'{name}' entries must be strings"))?;
-                items.push(Sourced::new(s.to_string(), source));
+                match el.as_str() {
+                    Some(s) => items.push(Sourced::new(s.to_string(), source)),
+                    None => rejected.push((raw_text(el), format!("'{name}' entries must be strings"))),
+                }
             }
             Ok(Some(ConfigValue::List(items)))
         }
@@ -165,15 +174,17 @@ fn parse_value(
             Ok(Some(ConfigValue::DiagSettings(sourced)))
         }
         ConfigFieldSpecKind::DiagFilters => {
-            let filters: Vec<DiagnosticFilter> = value
-                .clone()
-                .try_into()
-                .map_err(|e: toml::de::Error| e.to_string())?;
-            let sourced = filters
-                .into_iter()
-                .map(|f| Sourced::new(f, source))
-                .collect();
-            Ok(Some(ConfigValue::DiagFilters(sourced)))
+            let arr = value
+                .as_array()
+                .ok_or_else(|| format!("'{name}' must be an array"))?;
+            let mut filters = Vec::with_capacity(arr.len());
+            for el in arr {
+                match el.clone().try_into::<DiagnosticFilter>() {
+                    Ok(f) => filters.push(Sourced::new(f, source)),
+                    Err(e) => rejected.push((raw_text(el), e.to_string())),
+                }
+            }
+            Ok(Some(ConfigValue::DiagFilters(filters)))
         }
     }
 }
