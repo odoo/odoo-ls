@@ -75,10 +75,15 @@ fn parse_entry(entry: &toml::Value, source: &str) -> Result<Profile, String> {
             profile.warnings.push(msg);
             continue;
         };
-        let parsed = parse_value(key, value, source)
-            .map_err(|e| format!("{source}: profile '{}': {e}", profile.name))?;
-        if let Some(parsed) = parsed {
-            profile.values.insert(key, parsed);
+        match parse_value(key, value, source) {
+            Ok(Some(parsed)) => {
+                profile.values.insert(key, parsed);
+            }
+            Ok(None) => {}
+            Err(e) => {
+                let raw = value.as_str().map_or_else(|| value.to_string(), str::to_string);
+                profile.add_rejected(key, raw, HashSet::from_iter([source.to_string()]), e);
+            }
         }
     }
     Ok(profile)
