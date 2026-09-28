@@ -93,6 +93,23 @@ impl Cfg {
             .cloned()
             .unwrap_or_else(|| panic!("no profile view '{name}'"))
     }
+    /// Config diagnostic messages (warnings and rejections) across all profiles.
+    fn messages(&self) -> Vec<String> {
+        self.view()
+            .diagnostic_messages()
+            .iter()
+            .map(|v| v["message"].as_str().unwrap().to_string())
+            .collect()
+    }
+    /// The first diagnostic message containing `needle` (panics if none).
+    fn message(&self, needle: &str) -> String {
+        let messages = self.messages();
+        messages
+            .iter()
+            .find(|m| m.contains(needle))
+            .cloned()
+            .unwrap_or_else(|| panic!("no message containing '{needle}' in {messages:?}"))
+    }
     /// Resolve, expecting an error; returns the message.
     fn err(&self) -> String {
         self.resolve().expect_err("config resolution should fail")
@@ -272,10 +289,9 @@ fn user_config_overrides_auto_detection() {
 fn assert_odoo_path_conflict(cfg: &Cfg) {
     assert!(cfg.default().odoo_path().is_none());
     let conflicts = cfg
-        .view()
-        .diagnostic_messages()
+        .messages()
         .iter()
-        .filter(|v| v["message"].as_str().unwrap().contains("more than one workspace folder"))
+        .filter(|m| m.contains("more than one workspace folder"))
         .count();
     assert_eq!(conflicts, 2);
 }
@@ -1547,30 +1563,62 @@ fn additional_stubs_merge_override_vs_merge() {
     assert!(stubs.contains(&canonicalized(parent_stub.path())), "merge: parent stub present");
 }
 
-/// An invalid merge-method value is rejected at parse time with a clear error.
+/// An invalid merge-method value is rejected at parse time with a clear message.
 #[test]
-fn invalid_merge_method_value_errors() {
+fn invalid_merge_method_value_rejected() {
     let mut c = Cfg::new();
     let ws = c.ws("ws1");
     write_odools(&ws, "[[config]]\nname = \"default\"\naddons_merge = \"concat\"\n");
 
-    let err = c.err();
-    assert!(err.contains("invalid value 'concat'") && err.contains("addons_merge"),
-        "unexpected error: {err}");
+    c.message("invalid value 'concat' for 'addons_merge'");
 }
 
-/// A field-type error names the offending file and profile, not just the field,
-/// so the user can find the mistake without guessing.
+/// A bad value in one profile does not make the other profiles unusable.
 #[test]
-fn field_type_error_names_file_and_profile() {
+fn parse_error_in_one_profile_keeps_others_usable() {
+    let mut c = Cfg::new();
+    let ws = c.ws("ws1");
+    write_odools(&ws, r#"
+        [[config]]
+        name = "broken"
+        file_cache = "yes"
+
+        [[config]]
+        name = "ok"
+        auto_refresh_delay = 1234
+    "#);
+
+    assert_eq!(c.entry("ok").auto_refresh_delay(), 1234);
+    let msg = c.message("'file_cache' must be a boolean");
+    assert!(msg.contains("'broken'"), "message should name the profile: {msg}");
+}
+
+/// A value rejected in a child config file falls back to the parent file's value,
+/// and the rejection survives the file-hierarchy merge.
+#[test]
+fn parse_rejection_falls_back_to_parent_file_value() {
+    let mut c = Cfg::new();
+    let ws = c.ws("ws1");
+    write_odools(&c.temp, "[[config]]\nname = \"default\"\nauto_refresh_delay = 4321\n");
+    write_odools(&ws, "[[config]]\nname = \"default\"\nauto_refresh_delay = -1\n");
+
+    assert_eq!(c.default().auto_refresh_delay(), 4321);
+    let msg = c.message("'auto_refresh_delay' must be a non-negative integer");
+    assert!(msg.contains("using '4321' instead"), "unexpected message: {msg}");
+}
+
+/// A field-type error is rejected without failing the config, and the message
+/// names the offending file and profile.
+#[test]
+fn field_type_error_rejected_names_file_and_profile() {
     let mut c = Cfg::new();
     let ws = c.ws("ws1");
     write_odools(&ws, "[[config]]\nname = \"myprofile\"\npython_path = 123\n");
 
-    let err = c.err();
-    assert!(err.contains("odools.toml"), "error should name the config file: {err}");
-    assert!(err.contains("myprofile"), "error should name the profile: {err}");
-    assert!(err.contains("python_path"), "unexpected error: {err}");
+    let msg = c.message("'python_path' must be a string");
+    assert!(msg.contains("odools.toml"), "message should name the config file: {msg}");
+    assert!(msg.contains("myprofile"), "message should name the profile: {msg}");
+    assert!(c.entry("myprofile").python_path() != "123");
 }
 
 /// `name` must be a string — a non-string `name` (e.g. an integer) must not be
@@ -1976,8 +2024,7 @@ $version = "18.0"
     assert!(c.resolve().is_err(), "unquoted $version should fail TOML parsing");
 }
 
-/// `"$version"` must be a string, not a TOML float — `"$version" = 18.0` fails to
-/// deserialize.
+/// `"$version"` must be a string, not a TOML float — `"$version" = 18.0` is rejected.
 #[test]
 fn version_must_be_string_not_float() {
     let mut c = Cfg::new();
@@ -1986,7 +2033,7 @@ fn version_must_be_string_not_float() {
 name = "default"
 "$version" = 18.0
 "#);
-    assert!(c.resolve().is_err(), "$version as a float should fail deserialization");
+    c.message("'$version' must be a string");
 }
 
 /// Restart contract: a change in `$version` between two resolved configs must
@@ -2098,8 +2145,9 @@ codes = ["OLS.*"]
 "#,
     );
 
-    // `paths` is required: the error must name the missing field, not just fail.
-    assert!(cfg.err().contains("paths"), "error should mention the missing 'paths' field");
+    // `paths` is required: the rejection must name the missing field.
+    cfg.message("paths");
+    assert!(cfg.default().diagnostic_filters().is_empty());
 }
 
 #[test]
@@ -2309,14 +2357,11 @@ types = ["Disabled"]
 "#,
     );
 
-    assert!(
-        cfg.err().contains("Disabled"),
-        "error should explain that 'Disabled' is not an allowed filter type"
-    );
+    cfg.message("Disabled");
 }
 
 #[test]
-fn diagnostic_filter_invalid_regex_error() {
+fn diagnostic_filter_invalid_regex_rejected() {
     let mut cfg = Cfg::new();
     let ws = cfg.ws("ws");
     write_odools(
@@ -2330,10 +2375,7 @@ codes = ["[invalid regex"]
 "#,
     );
 
-    assert!(
-        cfg.err().to_lowercase().contains("regex"),
-        "error should point at the invalid regex"
-    );
+    cfg.message("regex");
 }
 
 #[test]
