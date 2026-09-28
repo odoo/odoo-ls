@@ -1607,6 +1607,21 @@ fn parse_rejection_falls_back_to_parent_file_value() {
     assert!(msg.contains("using '4321' instead"), "unexpected message: {msg}");
 }
 
+/// Two workspace folders under the same parent `odools.toml` report its
+/// warnings and rejections once, not once per workspace.
+#[test]
+fn shared_parent_file_messages_not_duplicated() {
+    let mut c = Cfg::new();
+    c.ws("ws1");
+    c.ws("ws2");
+    write_odools(&c.temp, "[[config]]\nname = \"default\"\nfile_cache = \"yes\"\nunknown_key = 1\n");
+
+    let messages = c.messages();
+    let count = |needle: &str| messages.iter().filter(|m| m.contains(needle)).count();
+    assert_eq!(count("'file_cache' must be a boolean"), 1, "{messages:?}");
+    assert_eq!(count("unknown config key 'unknown_key'"), 1, "{messages:?}");
+}
+
 /// A field-type error is rejected without failing the config, and the message
 /// names the offending file and profile.
 #[test]
