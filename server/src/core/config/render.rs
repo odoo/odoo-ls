@@ -75,7 +75,7 @@ impl ProfileView {
             let (level, outcome) = match effective {
                 // A list can survive the rejection with zero valid entries left —
                 // as bad as the key being absent, so treat it the same way.
-                Some(ConfigValue::List(items)) if items.is_empty() => {
+                Some(v) if entry_count(v) == Some(0) => {
                     (2, "no valid entries remain for it".to_string())
                 }
                 Some(v) => (1, format!("using {} instead", describe_value(v))),
@@ -178,14 +178,23 @@ fn sources_note(sources: &HashSet<String>) -> String {
 
 /// Short human description of a config value, for "using X instead" notes.
 fn describe_value(value: &ConfigValue) -> String {
+    if let ConfigValue::Scalar(s) = value {
+        return format!("'{}'", scalar_display(s.value()));
+    }
+    match entry_count(value) {
+        Some(0) => "an empty list".to_string(),
+        Some(1) => "the 1 remaining valid entry".to_string(),
+        Some(n) => format!("the {n} remaining valid entries"),
+        None => "the existing value".to_string(),
+    }
+}
+
+/// Number of entries of a list-like value (`None` for other kinds).
+fn entry_count(value: &ConfigValue) -> Option<usize> {
     match value {
-        ConfigValue::Scalar(s) => format!("'{}'", scalar_display(s.value())),
-        ConfigValue::List(items) => match items.len() {
-            0 => "an empty list".to_string(),
-            1 => "the 1 remaining valid entry".to_string(),
-            n => format!("the {n} remaining valid entries"),
-        },
-        _ => "the existing value".to_string(),
+        ConfigValue::List(items) => Some(items.len()),
+        ConfigValue::DiagFilters(items) => Some(items.len()),
+        _ => None,
     }
 }
 

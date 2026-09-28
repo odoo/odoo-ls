@@ -1622,6 +1622,35 @@ fn shared_parent_file_messages_not_duplicated() {
     assert_eq!(count("unknown config key 'unknown_key'"), 1, "{messages:?}");
 }
 
+/// A non-string list entry is rejected on its own; the valid entries are kept.
+#[test]
+fn list_entry_rejected_keeps_other_entries() {
+    let mut c = Cfg::new();
+    let ws = c.ws("ws1");
+    write_odools(&ws, "[[config]]\nname = \"default\"\nadditional_languages = [\"fr\", 1]\n");
+
+    assert!(c.default().additional_languages().contains("fr"));
+    let msg = c.message("'additional_languages' entries must be strings");
+    assert!(msg.contains("= '1'"), "message should show the rejected entry: {msg}");
+}
+
+/// When every entry is rejected, an empty list is kept: with `override` it
+/// still overrides the parent's list.
+#[test]
+fn all_list_entries_rejected_keeps_empty_list() {
+    let mut c = Cfg::new();
+    let ws = c.ws("ws");
+    let parent_stub = c.dir("parent_stub");
+    write_odools(&c.temp, &format!(
+        "[[config]]\nname = \"default\"\nadditional_stubs = [\"{}\"]\n",
+        canonicalized(parent_stub.path())
+    ));
+    write_odools(&ws, "[[config]]\nname = \"default\"\nadditional_stubs = [1]\nadditional_stubs_merge = \"override\"\n");
+
+    assert!(c.default().additional_stubs().is_empty(), "override with an empty list drops the parent stub");
+    assert!(c.message("'additional_stubs' entries must be strings").contains("no valid entries remain"));
+}
+
 /// A field-type error is rejected without failing the config, and the message
 /// names the offending file and profile.
 #[test]
@@ -2157,12 +2186,15 @@ name = "default"
 
 [[config.diagnostic_filters]]
 codes = ["OLS.*"]
+
+[[config.diagnostic_filters]]
+paths = ["good/**"]
 "#,
     );
 
     // `paths` is required: the rejection must name the missing field.
     cfg.message("paths");
-    assert!(cfg.default().diagnostic_filters().is_empty());
+    assert_eq!(cfg.default().diagnostic_filters().len(), 1, "the valid filter is kept");
 }
 
 #[test]
@@ -2369,10 +2401,14 @@ name = "default"
 [[config.diagnostic_filters]]
 paths = ["**/*"]
 types = ["Disabled"]
+
+[[config.diagnostic_filters]]
+paths = ["good/**"]
 "#,
     );
 
     cfg.message("Disabled");
+    assert_eq!(cfg.default().diagnostic_filters().len(), 1, "the valid filter is kept");
 }
 
 #[test]
@@ -2387,10 +2423,15 @@ name = "default"
 [[config.diagnostic_filters]]
 paths = ["**/*"]
 codes = ["[invalid regex"]
+
+[[config.diagnostic_filters]]
+paths = ["good/**"]
 "#,
     );
 
-    cfg.message("regex");
+    let msg = cfg.message("regex");
+    assert!(msg.contains("using the 1 remaining valid entry instead"), "unexpected message: {msg}");
+    assert_eq!(cfg.default().diagnostic_filters().len(), 1, "the valid filter is kept");
 }
 
 #[test]
