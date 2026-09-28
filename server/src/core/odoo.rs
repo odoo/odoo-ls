@@ -1471,51 +1471,80 @@ impl Odoo {
     }
 
     pub fn register_capabilities(session: &mut SessionInfo) {
-        let options = DidChangeWatchedFilesRegistrationOptions {
-            watchers: vec![
-                FileSystemWatcher {
-                    glob_pattern: GlobPattern::String("**/*.{py,pyi,xml,csv,js,ts}".to_string()),
-                    kind: Some(WatchKind::Change | WatchKind::Create | WatchKind::Delete),
-                },
-            ],
-        };
-        let text_document_change_registration_options = TextDocumentChangeRegistrationOptions {
-            document_selector: None,
-            sync_kind: TextDocumentSyncKind::INCREMENTAL
-        };
-        let registrations = vec![
-            Registration {
+        // Only register what the client opted in to via `dynamicRegistration` (LSP spec).
+        let capabilities = &session.sync_odoo.capabilities;
+        let workspace_capabilities = capabilities.workspace.as_ref();
+        let watched_files_dynamic = workspace_capabilities
+            .and_then(|workspace| workspace.did_change_watched_files.as_ref())
+            .and_then(|watched_files| watched_files.dynamic_registration)
+            .unwrap_or(false);
+        let configuration_dynamic = workspace_capabilities
+            .and_then(|workspace| workspace.did_change_configuration.as_ref())
+            .and_then(|configuration| configuration.dynamic_registration)
+            .unwrap_or(false);
+        let synchronization_dynamic = capabilities.text_document.as_ref()
+            .and_then(|text_document| text_document.synchronization.as_ref())
+            .and_then(|synchronization| synchronization.dynamic_registration)
+            .unwrap_or(false);
+        let mut registrations = vec![];
+        if watched_files_dynamic {
+            let options = DidChangeWatchedFilesRegistrationOptions {
+                watchers: vec![
+                    FileSystemWatcher {
+                        glob_pattern: GlobPattern::String("**/*.{py,pyi,xml,csv,js,ts}".to_string()),
+                        kind: Some(WatchKind::Change | WatchKind::Create | WatchKind::Delete),
+                    },
+                ],
+            };
+            registrations.push(Registration {
                 id: "workspace/didChangeWatchedFiles".to_string(),
                 method: "workspace/didChangeWatchedFiles".to_string(),
                 register_options: Some(serde_json::to_value(options).unwrap()),
-            },
-            Registration {
+            });
+        } else {
+            warn!("Client does not support dynamic registration of workspace/didChangeWatchedFiles: files changed outside of the client will not be detected");
+        }
+        if configuration_dynamic {
+            registrations.push(Registration {
                 id: "workspace/didChangeConfiguration".to_string(),
                 method: "workspace/didChangeConfiguration".to_string(),
                 register_options: None,
-            },
-            Registration {
+            });
+        }
+        if synchronization_dynamic {
+            let text_document_change_registration_options = TextDocumentChangeRegistrationOptions {
+                document_selector: None,
+                sync_kind: TextDocumentSyncKind::INCREMENTAL
+            };
+            registrations.push(Registration {
                 id: "textDocument/didOpen".to_string(),
                 method: "textDocument/didOpen".to_string(),
                 register_options: None,
-            },
-            Registration {
+            });
+            registrations.push(Registration {
                 id: "textDocument/didChange".to_string(),
                 method: "textDocument/didChange".to_string(),
                 register_options: Some(serde_json::to_value(text_document_change_registration_options).unwrap()),
-            },
-            Registration {
+            });
+            registrations.push(Registration {
                 id: "textDocument/didClose".to_string(),
                 method: "textDocument/didClose".to_string(),
                 register_options: None,
-            }
-        ];
+            });
+        }
+        if registrations.is_empty() {
+            info!("Client does not support dynamic registration, relying on static capabilities");
+            return;
+        }
         let params = RegistrationParams{
             registrations
         };
         let result = session.send_request::<RegistrationParams, ()>(RegisterCapability::METHOD, params);
         if let Err(e) = result {
-            panic!("Capabilities registration went wrong: {:?}", e);
+            // The client may still reject the registration. Static capabilities from the
+            // initialize response still apply, so keep running.
+            warn!("Capabilities registration went wrong: {:?}", e);
+            return;
         }
         info!("Registered Capabilities");
     }
