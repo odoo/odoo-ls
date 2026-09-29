@@ -116,6 +116,9 @@ impl ProfileView {
             json!(self.extends.clone().unwrap_or_default()),
         );
         obj.insert("abstract".to_string(), json!(self.abstract_));
+        if !self.warnings.is_empty() {
+            obj.insert("warnings".to_string(), json!(self.warnings));
+        }
         for &key in ConfigKey::all() {
             let value = self.values.get(&key);
             let rejected = self.rejected.get(&key).filter(|v| !v.is_empty());
@@ -383,7 +386,18 @@ impl ConfigRenderer {
 
     fn render_entry(&self, entry_val: &serde_json::Value) -> String {
         let mut html = String::new();
-        html.push_str("<div class=\"toml-row\"><div class=\"toml-left\"><b>[[config]]</b></div><div class=\"toml-right\"></div></div>\n");
+        // Profile-level warnings (not tied to a field) go on the header row.
+        let warnings = entry_val["warnings"]
+            .as_array()
+            .map(|ws| {
+                ws.iter()
+                    .filter_map(Value::as_str)
+                    .map(|w| format!("<span class=\"toml-info\">⚠ {}</span>", esc(w)))
+                    .collect::<Vec<_>>()
+                    .join("<br>")
+            })
+            .unwrap_or_default();
+        html.push_str(&Self::row("<b>[[config]]</b>", &warnings));
         if let serde_json::Value::Object(map) = entry_val {
             for key in display_order() {
                 if let Some(val) = map.get(key) {
