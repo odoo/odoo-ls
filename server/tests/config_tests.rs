@@ -844,7 +844,7 @@ fn extends_rootless_cycle_errors() {
 }
 
 #[test]
-fn extends_nonexistent_profile_errors() {
+fn extends_nonexistent_profile_rejected() {
     let mut c = Cfg::new();
     let ws = c.ws("ws1");
     write_odools(&ws, r#"
@@ -854,7 +854,14 @@ fn extends_nonexistent_profile_errors() {
         file_cache = false
     "#);
 
-    assert!(c.err().to_lowercase().contains("extends non-existing profile"));
+    assert!(!c.default().file_cache(), "the profile keeps its own values");
+    c.message("extends non-existing profile 'doesnotexist', ignoring it");
+
+    // Panel: shown as a profile warning, extends is not set.
+    let json = serde_json::to_value(c.view()).unwrap();
+    let root = json["config"].as_array().unwrap().iter().find(|p| p["name"] == "default").unwrap();
+    assert_eq!(root["extends"], "");
+    assert!(root["warnings"][0].as_str().unwrap().contains("doesnotexist"));
 }
 // ===========================================================================
 // Template variables, relative paths & provenance
@@ -1753,18 +1760,25 @@ fn non_string_name_uses_raw_text_with_warning() {
     assert!(html.contains("⚠ &#39;name&#39; must be a string"), "warning missing from panel");
 }
 
-/// `extends` must be a string — a non-string `extends` must not be silently
-/// dropped (which would leave the profile un-extended with no explanation).
+/// A non-string `extends` is rejected and not applied, even when a profile
+/// with that raw name exists; the config still loads.
 #[test]
-fn non_string_extends_errors() {
+fn non_string_extends_rejected() {
     let mut c = Cfg::new();
     let ws = c.ws("ws1");
-    write_odools(&ws, "[[config]]\nname = \"default\"\nextends = 123\n");
+    write_odools(&ws, r#"
+        [[config]]
+        name = 123
+        auto_refresh_delay = 4321
 
-    let err = c.err();
-    assert!(err.contains("odools.toml"), "error should name the config file: {err}");
-    assert!(err.contains("default"), "error should name the profile: {err}");
-    assert!(err.contains("'extends' must be a string"), "unexpected error: {err}");
+        [[config]]
+        name = "default"
+        extends = 123
+    "#);
+
+    assert_ne!(c.default().auto_refresh_delay(), 4321, "extends is not applied");
+    let msg = c.message("'extends' must be a string");
+    assert!(msg.contains("odools.toml") && msg.contains("ignoring '123'"), "unexpected message: {msg}");
 }
 
 /// A TOML syntax error names the offending file, not just the parser's

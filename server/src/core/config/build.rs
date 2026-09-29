@@ -353,16 +353,15 @@ fn apply_extends(set: &mut ProfileSet) -> Result<(), String> {
     // children. Walk each chain with a local visited set to detect cycles —
     // including a rootless cycle (A→B→A) that a root-seeded DFS would miss.
     let mut depth: HashMap<String, usize> = HashMap::default();
+    let mut missing: Vec<(String, String)> = Vec::new();
     for key in &keys {
         let mut seen: HashSet<String> = HashSet::from_iter([key.clone()]);
         let mut current = key.clone();
         let mut chain_len = 0;
         while let Some(parent) = set.get(&current).and_then(|p| p.extends.clone()) {
             if !set.contains_key(&parent) {
-                return Err(format!(
-                    "Profile '{}' extends non-existing profile '{}'",
-                    current, parent
-                ));
+                missing.push((current, parent));
+                break;
             }
             if !seen.insert(parent.clone()) {
                 return Err("Circular dependency detected in profile extensions!".to_string());
@@ -371,6 +370,14 @@ fn apply_extends(set: &mut ProfileSet) -> Result<(), String> {
             current = parent;
         }
         depth.insert(key.clone(), chain_len);
+    }
+    // A missing parent is not applied, with a warning; the profile keeps its own values.
+    for (name, parent) in missing {
+        if let Some(p) = set.get_mut(&name)
+            && p.extends.take().is_some()
+        {
+            p.warnings.push(format!("extends non-existing profile '{parent}', ignoring it"));
+        }
     }
 
     let mut ordered = keys;
