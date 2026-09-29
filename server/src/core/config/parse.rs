@@ -165,15 +165,28 @@ fn parse_value(
             Ok(Some(ConfigValue::List(items)))
         }
         ConfigFieldSpecKind::DiagSettings => {
-            let map: HashMap<DiagnosticCode, DiagnosticSetting> = value
-                .clone()
-                .try_into()
-                .map_err(|e: toml::de::Error| e.to_string())?;
-            let sourced = map
-                .into_iter()
-                .map(|(k, v)| (k, Sourced::new(v, source)))
-                .collect();
-            Ok(Some(ConfigValue::DiagSettings(sourced)))
+            let table = value
+                .as_table()
+                .ok_or_else(|| format!("'{name}' must be a table"))?;
+            let mut settings = HashMap::default();
+            for (code, setting) in table {
+                let parsed = DiagnosticCode::from_str(code)
+                    .map_err(|_| format!("unknown diagnostic code '{code}'"))
+                    .and_then(|c| {
+                        let s: DiagnosticSetting = setting
+                            .clone()
+                            .try_into()
+                            .map_err(|e: toml::de::Error| e.to_string())?;
+                        Ok((c, s))
+                    });
+                match parsed {
+                    Ok((c, s)) => {
+                        settings.insert(c, Sourced::new(s, source));
+                    }
+                    Err(e) => rejected.push((format!("{code} = {}", raw_text(setting)), e)),
+                }
+            }
+            Ok(Some(ConfigValue::DiagSettings(settings)))
         }
         ConfigFieldSpecKind::DiagFilters => {
             let arr = value

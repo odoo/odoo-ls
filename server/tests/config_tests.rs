@@ -2379,6 +2379,73 @@ diagnostic_settings = { "OLS03001" = "Disabled", "OLS02001" = "Warning" }
     assert_eq!(format!("{:?}", ols02001.unwrap().1), "Warning");
 }
 
+/// An unknown code or an invalid level rejects only that entry; the rejected
+/// entries are listed in the config panel with their notes.
+#[test]
+fn diagnostic_settings_entry_rejected_keeps_others() {
+    let mut cfg = Cfg::new();
+    let ws = cfg.ws("ws");
+    write_odools(&ws, r#"[[config]]
+name = "default"
+
+[config.diagnostic_settings]
+OLS03001 = "Error"
+NOT_A_CODE = "Error"
+OLS02001 = "Loud"
+"#);
+
+    let settings = cfg.default().diagnostic_settings();
+    assert_eq!(settings.len(), 1);
+    assert!(settings.iter().any(|(c, _)| c.to_string() == "OLS03001"));
+    cfg.message("unknown diagnostic code 'NOT_A_CODE'");
+    let msg = cfg.message("OLS02001 = Loud");
+    assert!(msg.contains("using the 1 remaining valid entry instead"), "unexpected message: {msg}");
+
+    let json = serde_json::to_value(cfg.view()).unwrap();
+    let root = json["config"].as_array().unwrap().iter().find(|c| c["name"] == "default").unwrap();
+    let panel = &root["diagnostic_settings"];
+    assert_eq!(panel["OLS03001"]["value"], "Error");
+    assert_eq!(panel["OLS02001"]["value"], "Loud");
+    assert!(!panel["OLS02001"]["info"].as_str().unwrap().is_empty());
+    assert!(panel["NOT_A_CODE"]["info"].as_str().unwrap().contains("unknown diagnostic code"));
+}
+
+/// A rejected level for a code the parent file sets: the parent's level is used,
+/// and the panel notes the ignored one on that code's row.
+#[test]
+fn diagnostic_settings_rejected_entry_noted_on_parent_value() {
+    let mut cfg = Cfg::new();
+    let ws = cfg.ws("ws");
+    write_odools(&cfg.temp, "[[config]]\nname = \"default\"\ndiagnostic_settings = { OLS03001 = \"Warning\" }\n");
+    write_odools(&ws, "[[config]]\nname = \"default\"\ndiagnostic_settings = { OLS03001 = \"Loud\" }\n");
+
+    let settings = cfg.default().diagnostic_settings();
+    assert_eq!(settings.iter().find(|(c, _)| c.to_string() == "OLS03001").map(|(_, s)| format!("{s:?}")), Some(S!("Warning")));
+
+    let json = serde_json::to_value(cfg.view()).unwrap();
+    let root = json["config"].as_array().unwrap().iter().find(|c| c["name"] == "default").unwrap();
+    let row = &root["diagnostic_settings"]["OLS03001"];
+    assert_eq!(row["value"], "Warning");
+    assert!(row["info"].as_str().unwrap().contains("ignored 'Loud'"), "{row}");
+}
+
+/// A whole `diagnostic_settings` value rejected (not a table) while a parent
+/// file supplies valid settings: the panel lists it under a `(rejected)` row.
+#[test]
+fn diagnostic_settings_whole_value_rejected_shown_in_view() {
+    let mut cfg = Cfg::new();
+    let ws = cfg.ws("ws");
+    write_odools(&cfg.temp, "[[config]]\nname = \"default\"\ndiagnostic_settings = { OLS03001 = \"Warning\" }\n");
+    write_odools(&ws, "[[config]]\nname = \"default\"\ndiagnostic_settings = \"Error\"\n");
+
+    let json = serde_json::to_value(cfg.view()).unwrap();
+    let root = json["config"].as_array().unwrap().iter().find(|c| c["name"] == "default").unwrap();
+    let row = &root["diagnostic_settings"]["(rejected)"];
+    assert_eq!(row["value"], "Error");
+    assert!(row["info"].as_str().unwrap().contains("must be a table"), "{row}");
+    assert!(root["diagnostic_settings"].get("Error").is_none());
+}
+
 #[test]
 fn diagnostic_settings_all_values() {
     let mut cfg = Cfg::new();
