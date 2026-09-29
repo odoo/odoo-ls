@@ -334,7 +334,7 @@ pub(super) enum ConfigValue {
 }
 
 impl ConfigValue {
-    fn as_scalar(&self) -> Option<&Sourced<Scalar>> {
+    pub(crate) fn as_scalar(&self) -> Option<&Sourced<Scalar>> {
         match self {
             ConfigValue::Scalar(s) => Some(s),
             _ => None,
@@ -414,6 +414,9 @@ pub(crate) struct Profile {
     /// Non-fatal parse-time notes not tied to a single field (e.g. an unknown
     /// `[[config]]` key) — surfaced to the user via `ConfigView::diagnostic_messages`.
     pub warnings: Vec<String>,
+    /// Scalar keys with conflicting values across workspace folders: dropped, and
+    /// any value a later workspace brings for them is rejected too.
+    pub conflicted: HashSet<ConfigKey>,
 }
 
 impl Profile {
