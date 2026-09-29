@@ -151,8 +151,32 @@ impl ProfileView {
                     items.extend(rej.iter().map(sourced_string_json));
                     Value::Array(items)
                 }
-                // Diagnostic settings: a rejection is only listed in the diagnostics.
-                (Some(v), Some(_)) => value_to_json(v),
+                // Diagnostic settings: a rejected `CODE = level` is its own row, or a
+                // note on that code's row when a valid level is set for it.
+                (Some(v @ ConfigValue::DiagSettings(_)), Some(rej)) => {
+                    let mut json = value_to_json(v);
+                    if let Some(map) = json.as_object_mut() {
+                        for r in rej {
+                            // A whole-value rejection (not a table) has no code.
+                            let (code, level) = r.value().split_once(" = ").unwrap_or(("(rejected)", r.value()));
+                            match map.get_mut(code) {
+                                Some(Value::Object(row)) => {
+                                    let info = row.get("info").and_then(Value::as_str).unwrap_or_default();
+                                    let sep = if info.is_empty() { "" } else { "; " };
+                                    let note = format!("{info}{sep}ignored '{level}' ({})", r.info);
+                                    row.insert("info".to_string(), json!(note));
+                                }
+                                _ => {
+                                    map.insert(
+                                        code.to_string(),
+                                        json!({"value": level, "sources": sources_json(r.sources()), "info": r.info}),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    json
+                }
                 // No valid value survived: surface the rejected value(s) with notes.
                 (None, Some(rej)) if rej.len() == 1 => sourced_string_json(&rej[0]),
                 (None, Some(rej)) => Value::Array(rej.iter().map(sourced_string_json).collect()),
@@ -200,6 +224,7 @@ fn entry_count(value: &ConfigValue) -> Option<usize> {
     match value {
         ConfigValue::List(items) => Some(items.len()),
         ConfigValue::DiagFilters(items) => Some(items.len()),
+        ConfigValue::DiagSettings(items) => Some(items.len()),
         _ => None,
     }
 }
