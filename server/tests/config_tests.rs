@@ -1732,17 +1732,18 @@ fn field_type_error_rejected_names_file_and_profile() {
     assert!(c.entry("myprofile").python_path() != "123");
 }
 
-/// `name` must be a string — a non-string `name` (e.g. an integer) must not be
-/// silently swallowed into the "default" profile.
+/// A non-string `name` (e.g. an integer) is used as its raw text with a warning:
+/// the config still loads, and the entry is not swallowed into "default".
 #[test]
-fn non_string_name_errors() {
+fn non_string_name_uses_raw_text_with_warning() {
     let mut c = Cfg::new();
     let ws = c.ws("ws1");
-    write_odools(&ws, "[[config]]\nname = 123\n");
+    write_odools(&ws, "[[config]]\nname = 123\nauto_refresh_delay = 4321\n");
 
-    let err = c.err();
-    assert!(err.contains("odools.toml"), "error should name the config file: {err}");
-    assert!(err.contains("'name' must be a string"), "unexpected error: {err}");
+    assert_eq!(c.entry("123").auto_refresh_delay(), 4321);
+    assert_ne!(c.default().auto_refresh_delay(), 4321, "not merged into default");
+    let msg = c.message("'name' must be a string");
+    assert!(msg.contains("odools.toml") && msg.contains("using '123'"), "unexpected message: {msg}");
 }
 
 /// `extends` must be a string — a non-string `extends` must not be silently
