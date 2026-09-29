@@ -879,10 +879,14 @@ impl SymbolTable {
         } else {
             ContentSymbols::default()
         };
-        let ext_sym = self.get_ext_symbol(target, name);
-        if ext_sym.len() > 1 {
-            content.symbols.extend(ext_sym.into_iter().map(SymbolKey::from));
-            content.always_defined = true;
+        // ext symbols of a class are instance attributes, not names of its body: they are handled by get_member_symbol.
+        // Functions are not modules either: their ext symbols are attributes of the function object (see get_sub_symbol)
+        if matches!(target, SymbolKey::File(_) | SymbolKey::Module(_) | SymbolKey::PythonPackage(_)) {
+            let ext_sym = self.get_ext_symbol(target, name);
+            if !ext_sym.is_empty() {
+                content.symbols.extend(ext_sym.into_iter().map(SymbolKey::from));
+                content.always_defined = true;
+            }
         }
         content
     }
@@ -905,6 +909,12 @@ impl SymbolTable {
 
             if !content.symbols.is_empty() {
                 result.insert(name.clone(), content.symbols);
+            }
+        }
+        // only ext symbols injected into a file are names of its body (see get_content_symbol)
+        if matches!(target, SymbolKey::File(_)) {
+            for (name, ext_symbols) in self.get_all_ext_symbols(target, name_prefix) {
+                result.entry(name).or_default().extend(ext_symbols.into_iter().map(SymbolKey::from));
             }
         }
         result
@@ -1798,6 +1808,12 @@ impl SymbolTable {
                 )
             }
         }
+        // symbols injected into this symbol from elsewhere (only variables, so never fields nor methods)
+        if !only_fields && !only_methods && !(is_super && matches!(symbol_key, SymbolKey::Class(_))) {
+            for (name, ext_symbols) in session.st().get_all_ext_symbols(symbol_key, "") {
+                result.entry(name).or_default().extend(ext_symbols.into_iter().map(SymbolKey::from));
+            }
+        }
     }
 
     /* return the Symbol (class, function or file) the closest to the given offset */
@@ -2244,6 +2260,12 @@ impl SymbolTable {
                     }
                 }
             }
+        }
+        // Instance attributes injected by the methods (`self.x = ...`) are only a fallback, so that they
+        // never hide nor pollute a declared member, a field (`self.field = value` in a model) or a member of a base.
+        if !is_super && !only_fields && !only_methods && result.is_empty() {
+            let ext_symbols = session.st().get_ext_symbol(target, name).into_iter().map(SymbolKey::from).collect();
+            extend_result(ext_symbols, &mut result, &mut visited_symbols);
         }
         (result, diagnostics)
     }

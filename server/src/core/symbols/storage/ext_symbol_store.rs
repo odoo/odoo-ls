@@ -1,4 +1,8 @@
-use crate::core::symbols::symbol_keys::{SymbolKey, VariableKey};
+use ruff_python_ast::Expr;
+use ruff_text_size::TextRange;
+
+use crate::core::symbols::function_symbol::ArgumentType;
+use crate::core::symbols::symbol_keys::{ClassKey, SymbolKey, VariableKey};
 use crate::oyarn;
 use crate::{
     constants::OYarn, core::symbols::storage::SymbolTable, weak_collections::WeakSet,
@@ -102,6 +106,54 @@ impl SymbolTable {
         if let Some(owners) = ext_symbols.get(name) {
             for owner in owners.iter_valid(self) {
                 result.extend(self.ext_symbols.get(owner, target, name));
+            }
+        }
+        result
+    }
+
+    /// Returns the ext symbol `name` that `owner` injected into `target` at `range`
+    pub fn get_owned_ext_symbol(&self, owner: SymbolKey, target: SymbolKey, name: &str, range: TextRange) -> Option<VariableKey> {
+        self.ext_symbols.get(owner, target, name).into_iter().find(|&v| self[v].range == range)
+    }
+
+    /// If `expr` is the first parameter of the method `function` (`self`, or `cls` for a
+    /// classmethod), returns the class of the method: an attribute assigned on `expr` is
+    /// injected into that class.
+    pub fn get_self_target_class(&self, function: SymbolKey, expr: &Expr) -> Option<ClassKey> {
+        let SymbolKey::Function(function) = function else {
+            return None;
+        };
+        let Expr::Name(name_expr) = expr else {
+            return None;
+        };
+        let function_sym = &self[function];
+        if function_sym.is_static {
+            return None;
+        }
+        let SymbolKey::Class(class) = SymbolKey::from(function_sym.parent()) else {
+            return None;
+        };
+        let first_arg = function_sym.args.first()
+            .filter(|arg| matches!(arg.arg_type, ArgumentType::POS_ONLY | ArgumentType::ARG))
+            .and_then(|arg| arg.symbol.upgrade(self))?;
+        (self.name(first_arg) == name_expr.id.as_str()).then_some(class)
+    }
+
+    /// Returns all the ext symbols injected into `target` whose name starts with `name_prefix`, grouped by name
+    pub fn get_all_ext_symbols(&self, target: SymbolKey, name_prefix: &str) -> HashMap<OYarn, Vec<VariableKey>> {
+        let mut result: HashMap<OYarn, Vec<VariableKey>> = HashMap::default();
+        let Some(ext_symbols) = self.ext_symbols.owners_by_target.get(&target) else {
+            return result;
+        };
+        for (name, owners) in ext_symbols.iter() {
+            if !name.starts_with(name_prefix) {
+                continue;
+            }
+            let symbols: Vec<VariableKey> = owners.iter_valid(self)
+                .flat_map(|owner| self.ext_symbols.get(owner, target, name))
+                .collect();
+            if !symbols.is_empty() {
+                result.entry(name.clone()).or_default().extend(symbols);
             }
         }
         result

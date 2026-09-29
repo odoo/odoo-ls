@@ -1,6 +1,6 @@
 use lsp_types::Diagnostic;
 use ruff_python_ast::{
-    Alias, AnyRootNodeRef, CmpOp, Expr, ExprNamed, ExprTuple, FStringPart, Identifier, Parameters,
+    Alias, AnyRootNodeRef, CmpOp, Expr, ExprAttribute, ExprNamed, ExprTuple, FStringPart, Identifier, Parameters,
     Pattern, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf,
     StmtMatch, StmtTry, StmtWhile, StmtWith,
 };
@@ -552,7 +552,8 @@ impl PythonArchBuilder {
                 AssignTargetType::Name(ref name_expr) => {
                     session.sync_odoo.symbol_table.add_new_variable(*self.sym_stack.last().unwrap(), &name_expr.id, name_expr.range);
                 },
-                AssignTargetType::Attribute(ref _attr_expr) => {
+                AssignTargetType::Attribute(ref attr_expr) => {
+                    self.add_attribute_ext_symbol(session, attr_expr);
                 }
             }
         }
@@ -592,61 +593,22 @@ impl PythonArchBuilder {
                             }
                     }
                 },
-                AssignTargetType::Attribute(ref _attr_expr) => {
-                    //take base evals
-                    // let mut required_dependencies = if self.file_mode {
-                    //     vec![vec![], vec![]] //arch level and eval level
-                    // } else {
-                    //     vec![vec![]] //only arch level
-                    // };
-                    // let (base_evals, diags) = Evaluation::eval_from_ast(session, &attr_expr.value, parent.clone(), &attr_expr.range.start(), &mut required_dependencies);
-                    // if base_evals.len() == 1 {
-                    //     //check that the attribute doesn't already exists
-                    //     let base_ref = base_eval.symbol.get_symbol(session, context, &mut diagnostics, Some(parent.clone()));
-                    //     if base_ref.is_expired_if_weak() {
-                    //         return AnalyzeAstResult::from_only_diagnostics(diagnostics);
-                    //     }
-                    //     let bases = Symbol::follow_ref(&base_ref, session, context, false, false, None, &mut diagnostics);
-                    //     for ibase in bases.iter() {
-                    //         let base_loc = ibase.upgrade_weak();
-                    //         if let Some(base_loc) = base_loc {
-                    //             let file = base_loc.borrow().get_file().clone();
-                    //             if let Some(base_loc_file) = file {
-                    //                 let base_loc_file = base_loc_file.upgrade().unwrap();
-                    //                 SyncOdoo::build_now(session, &base_loc_file, BuildSteps::ARCH_EVAL);
-                    //                 if base_loc_file.borrow().in_workspace() {
-                    //                     if required_dependencies.len() == 2 {
-                    //                         required_dependencies[1].push(base_loc_file.clone());
-                    //                     } else if required_dependencies.len() == 3 {
-                    //                         required_dependencies[2].push(base_loc_file.clone());
-                    //                     }
-                    //                 }
-                    //             }
-                    //             let is_super = ibase.is_weak() && ibase.as_weak().is_super;
-                    //             let (attributes, mut attributes_diagnostics) = base_loc.borrow().get_member_symbol(session, &expr.attr.to_string(), module.clone(), false, false, true, is_super);
-                    //             for diagnostic in attributes_diagnostics.iter_mut(){
-                    //                 diagnostic.range = FileMgr::textRange_to_temporary_Range(&expr.range())
-                    //             }
-                    //             diagnostics.extend(attributes_diagnostics);
-                    //             if !attributes.is_empty() {
-                    //                 let is_instance = ibase.as_weak().instance.unwrap_or(false);
-                    //                 attributes.iter().for_each(|attribute|{
-                    //                     let mut eval = Evaluation::eval_from_symbol(&Rc::downgrade(attribute), None);
-                    //                     match eval.symbol.sym {
-                    //                         EvaluationSymbolPtr::WEAK(ref mut weak) => {
-                    //                             weak.context.insert(S!("base_attr"), ContextValue::SYMBOL(Rc::downgrade(&base_loc)));
-                    //                             weak.context.insert(S!("is_attr_of_instance"), ContextValue::BOOLEAN(is_instance));
-                    //                         },
-                    //                         _ => {}
-                    //                     }
-                    //                     evals.push(eval);
-                    //                 });
-                    //             }
-                    //         }
-                    //     }
-                    // }
+                AssignTargetType::Attribute(ref attr_expr) => {
+                    self.add_attribute_ext_symbol(session, attr_expr);
                 }
             }
+        }
+    }
+
+    /// `self.x = ...` in a method body (function mode only): inject `x` into the class of the method,
+    /// as an ext symbol owned by the method. It is evaluated in the function ARCH_EVAL.
+    fn add_attribute_ext_symbol(&mut self, session: &mut SessionInfo, attr_expr: &ExprAttribute) {
+        if self.file_mode {
+            return;
+        }
+        let scope = *self.sym_stack.last().unwrap();
+        if let Some(class) = session.st().get_self_target_class(scope, &attr_expr.value) {
+            session.st_mut().add_new_ext_symbol(class.into(), &attr_expr.attr.id, attr_expr.attr.range, scope);
         }
     }
 

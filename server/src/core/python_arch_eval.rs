@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::vec;
 
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use ruff_python_ast::{Alias, AnyRootNodeRef, ExceptHandler, Expr, ExprNamed, FStringPart, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
+use ruff_python_ast::{Alias, AnyRootNodeRef, ExceptHandler, Expr, ExprAttribute, ExprNamed, FStringPart, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{debug, trace, warn};
 
@@ -531,6 +531,7 @@ impl PythonArchEval {
                     if self.file_mode {
                         continue;
                     }
+                    self.eval_attribute_ext_symbol(session, assign, attr_expr, range);
                     // Checks if we are in a class method, and if the attribute is a field of the model
                     let Some(parent_class) = session.st().get_in_parents(self.sym_stack[0], &[SymType::CLASS], true) else {
                         continue;
@@ -587,6 +588,35 @@ impl PythonArchEval {
                 }
             }
         }
+    }
+
+    /// Evaluate the ext symbol created by `PythonArchBuilder` for `self.x = ...` in a method body
+    fn eval_attribute_ext_symbol(&mut self, session: &mut SessionInfo, assign: &Assign, attr_expr: &ExprAttribute, range: &TextRange) {
+        let scope = *self.sym_stack.last().unwrap();
+        let Some(class) = session.st().get_self_target_class(scope, &attr_expr.value) else {
+            return;
+        };
+        let Some(variable_key) = session.st().get_owned_ext_symbol(scope, class.into(), &attr_expr.attr.id, attr_expr.attr.range) else {
+            return;
+        };
+        if assign.index.is_some() { //the value is the indexed element of an iterable, so its evaluation would be wrong
+            return;
+        }
+        let mut deps = vec![vec![], vec![], vec![]];
+        let (mut evaluations, diags) = if let Some(annotation) = assign.annotation.as_ref() {
+            Evaluation::eval_from_ast(session, annotation, scope, &range.start(), true, &mut deps)
+        } else if let Some(value) = assign.value.as_ref() {
+            Evaluation::eval_from_ast(session, value, scope, &range.start(), false, &mut deps)
+        } else {
+            return;
+        };
+        session.st_mut().insert_dependencies(self.file, &deps, self.current_step);
+        self.diagnostics.extend(diags);
+        // `self.x = self.x + 1` would evaluate to itself
+        evaluations.retain(|evaluation|
+            evaluation.symbol.get_symbol_as_weak(session, None, &mut vec![], None).weak.upgrade(session.st()) != Some(variable_key.into())
+        );
+        session.st_mut()[variable_key].evaluations = evaluations;
     }
 
     fn  _visit_ann_assign(&mut self, session: &mut SessionInfo, ann_assign_stmt: &StmtAnnAssign) {
