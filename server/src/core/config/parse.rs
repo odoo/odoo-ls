@@ -60,14 +60,15 @@ fn parse_entry(entry: &toml::Value, source: &str) -> Result<Profile, String> {
     };
     let mut profile = Profile::new(name);
     profile.warnings.extend(name_warning);
-    profile.extends = match table.get("extends") {
-        Some(v) => Some(
-            as_str_field(v, "extends")
-                .map_err(|e| format!("{source}: profile '{}': {e}", profile.name))?
-                .to_string(),
-        ),
-        None => None,
-    };
+    // A non-string `extends` is not applied, with a warning.
+    match table.get("extends") {
+        Some(v) if v.is_str() => profile.extends = v.as_str().map(str::to_string),
+        Some(v) => profile.warnings.push(format!(
+            "'extends' must be a string in {source}, ignoring '{}'",
+            raw_text(v)
+        )),
+        None => {}
+    }
 
     for (raw_key, value) in table {
         if raw_key == "name" || raw_key == "extends" {
