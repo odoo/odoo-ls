@@ -6,6 +6,7 @@
 
 use std::path::Path;
 
+use crate::S;
 use crate::core::config::{ConfigKey, ConfigMap};
 use crate::threads::SessionInfo;
 use crate::utils::{HashMap, HashSet};
@@ -413,13 +414,29 @@ fn merge_ws_profile(a: &Profile, b: &Profile, name: &str) -> Result<Profile, Str
         .cloned()
         .collect();
     result.warnings.extend(extends_conflict);
+    result.conflicted = a.conflicted.union(&b.conflicted).copied().collect();
     for key in keys_union(a, b) {
         let merged = match (a.get(key), b.get(key)) {
-            (Some(x), Some(y)) => merge_ws_value(key, x, y, name)?,
-            (Some(v), None) | (None, Some(v)) => v.clone(),
+            (Some(x), Some(y)) => merge_ws_value(key, x, y),
+            (Some(v), None) | (None, Some(v)) => Some(v.clone()),
             (None, None) => continue,
         };
-        result.values.insert(key, merged);
+        match merged {
+            Some(v) if !result.conflicted.contains(&key) => {
+                result.values.insert(key, v);
+            }
+            _ => {
+                result.conflicted.insert(key);
+                for s in [a.get(key), b.get(key)].into_iter().flatten().filter_map(ConfigValue::as_scalar) {
+                    result.add_rejected(
+                        key,
+                        s.value().to_string(),
+                        s.sources().clone(),
+                        S!("conflicting values across workspace folders"),
+                    );
+                }
+            }
+        }
     }
     // Carry rejected settings from both workspaces, even when the key ends up
     // with a valid value: the panel shows the effective value and notes the
@@ -437,40 +454,31 @@ fn merge_ws_profile(a: &Profile, b: &Profile, name: &str) -> Result<Profile, Str
     Ok(result)
 }
 
-fn merge_ws_value(
-    key: ConfigKey,
-    a: &ConfigValue,
-    b: &ConfigValue,
-    profile: &str,
-) -> Result<ConfigValue, String> {
+/// Merge one key's values from two workspaces; `None` on a scalar conflict.
+fn merge_ws_value(key: ConfigKey, a: &ConfigValue, b: &ConfigValue) -> Option<ConfigValue> {
     // Local keys do not cause workspace conflicts
     let local = registry().get(&key).map(|s| s.local).unwrap_or(false);
     match (a, b) {
         (ConfigValue::Scalar(sa), ConfigValue::Scalar(sb)) => {
             if !local && sa.value() != sb.value() {
-                return Err(format!(
-                    "Conflict detected in '{profile}' for key '{}': {} vs {}",
-                    key.as_str(),
-                    sa.value(),
-                    sb.value()
-                ));
+                return None;
             }
             let sources: HashSet<String> = sa.sources().union(sb.sources()).cloned().collect();
-            Ok(ConfigValue::scalar(sa.value().clone(), sources))
+            Some(ConfigValue::scalar(sa.value().clone(), sources))
         }
         // Lists union across workspaces (never conflict).
         (ConfigValue::List(la), ConfigValue::List(lb)) => {
             let all = la.iter().chain(lb).cloned();
-            Ok(ConfigValue::List(group_sourced_iters(all).collect()))
+            Some(ConfigValue::List(group_sourced_iters(all).collect()))
         }
         // Diagnostic settings merge (per-key), filters concatenate.
-        (ConfigValue::DiagSettings(sa), ConfigValue::DiagSettings(sb)) => Ok(
+        (ConfigValue::DiagSettings(sa), ConfigValue::DiagSettings(sb)) => Some(
             ConfigValue::DiagSettings(merge_sourced_diagnostic_setting_map(sa, sb)),
         ),
-        (ConfigValue::DiagFilters(fa), ConfigValue::DiagFilters(fb)) => Ok(
+        (ConfigValue::DiagFilters(fa), ConfigValue::DiagFilters(fb)) => Some(
             ConfigValue::DiagFilters(fa.iter().chain(fb).cloned().collect()),
         ),
-        _ => Ok(a.clone()),
+        _ => Some(a.clone()),
     }
 }
 

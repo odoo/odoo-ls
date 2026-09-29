@@ -1295,16 +1295,41 @@ fn conflict_two_workspace_folders_both_odoo_path() {
     assert_odoo_path_conflict(&c);
 }
 
-/// Two workspaces setting different values for a scalar (file_cache) conflict.
+/// Two workspaces setting different values for a scalar (auto_refresh_delay):
+/// both are rejected and the default is used.
 #[test]
 fn conflict_two_workspaces_scalar_field() {
     let mut c = Cfg::new();
     let ws1 = c.ws("ws1");
     let ws2 = c.ws("ws2");
-    write_odools(&ws1, "[[config]]\nname = \"default\"\nfile_cache = true\n");
-    write_odools(&ws2, "[[config]]\nname = \"default\"\nfile_cache = false\n");
+    write_odools(&ws1, "[[config]]\nname = \"default\"\nauto_refresh_delay = 1111\n");
+    write_odools(&ws2, "[[config]]\nname = \"default\"\nauto_refresh_delay = 2222\n");
 
-    assert!(c.err().contains("Conflict detected"));
+    let default = ConfigEntry::new().auto_refresh_delay();
+    assert_eq!(c.default().auto_refresh_delay(), default);
+    let conflicts: Vec<String> = c
+        .messages()
+        .into_iter()
+        .filter(|m| m.contains("conflicting values across workspace folders"))
+        .collect();
+    assert_eq!(conflicts.len(), 2, "{conflicts:?}");
+    assert!(conflicts.iter().any(|m| m.contains("'1111'")) && conflicts.iter().any(|m| m.contains("'2222'")));
+    assert!(conflicts[0].contains(&format!("using '{default}' instead")), "{}", conflicts[0]);
+}
+
+/// A key already in conflict stays dropped when a third workspace sets it, and
+/// that value is rejected too.
+#[test]
+fn conflict_scalar_field_stays_dropped_with_third_workspace() {
+    let mut c = Cfg::new();
+    for (name, delay) in [("ws1", 1111), ("ws2", 2222), ("ws3", 1111)] {
+        let ws = c.ws(name);
+        write_odools(&ws, &format!("[[config]]\nname = \"default\"\nauto_refresh_delay = {delay}\n"));
+    }
+
+    assert_eq!(c.default().auto_refresh_delay(), ConfigEntry::new().auto_refresh_delay());
+    let count = c.messages().iter().filter(|m| m.contains("conflicting values")).count();
+    assert_eq!(count, 3);
 }
 
 /// No conflict when both workspace configs explicitly set odoo_path to the same path.
