@@ -145,7 +145,13 @@ impl ProfileView {
                     }
                     json!({"value": scalar_json(s.value()), "sources": sources_json(s.sources()), "info": info})
                 }
-                // Other kinds never record rejections; render as-is.
+                // Same for filters: valid filters, then the rejected ones.
+                (Some(v @ ConfigValue::DiagFilters(_)), Some(rej)) => {
+                    let mut items = value_to_json(v).as_array().cloned().unwrap_or_default();
+                    items.extend(rej.iter().map(sourced_string_json));
+                    Value::Array(items)
+                }
+                // Diagnostic settings: a rejection is only listed in the diagnostics.
                 (Some(v), Some(_)) => value_to_json(v),
                 // No valid value survived: surface the rejected value(s) with notes.
                 (None, Some(rej)) if rej.len() == 1 => sourced_string_json(&rej[0]),
