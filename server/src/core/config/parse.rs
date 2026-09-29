@@ -45,13 +45,21 @@ fn parse_entry(entry: &toml::Value, source: &str) -> Result<Profile, String> {
         .as_table()
         .ok_or_else(|| format!("{source}: a [[config]] entry must be a table"))?;
 
-    let name = match table.get("name") {
-        Some(v) => as_str_field(v, "name")
-            .map_err(|e| format!("{source}: {e}"))?
-            .to_string(),
-        None => DEFAULT_PROFILE_NAME.to_string(),
+    // A non-string `name` is used as its raw text, with a warning, rather than
+    // failing the config or being merged into "default".
+    let (name, name_warning) = match table.get("name") {
+        Some(v) => match v.as_str() {
+            Some(s) => (s.to_string(), None),
+            None => {
+                let raw = raw_text(v);
+                let msg = format!("'name' must be a string in {source}, using '{raw}'");
+                (raw, Some(msg))
+            }
+        },
+        None => (DEFAULT_PROFILE_NAME.to_string(), None),
     };
     let mut profile = Profile::new(name);
+    profile.warnings.extend(name_warning);
     profile.extends = match table.get("extends") {
         Some(v) => Some(
             as_str_field(v, "extends")
