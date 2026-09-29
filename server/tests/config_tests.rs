@@ -1744,6 +1744,13 @@ fn non_string_name_uses_raw_text_with_warning() {
     assert_ne!(c.default().auto_refresh_delay(), 4321, "not merged into default");
     let msg = c.message("'name' must be a string");
     assert!(msg.contains("odools.toml") && msg.contains("using '123'"), "unexpected message: {msg}");
+
+    // Also shown on the profile in the config panel.
+    let json = serde_json::to_value(c.view()).unwrap();
+    let root = json["config"].as_array().unwrap().iter().find(|p| p["name"] == "123").unwrap();
+    assert!(root["warnings"][0].as_str().unwrap().contains("'name' must be a string"));
+    let html = c.view().to_html_string();
+    assert!(html.contains("⚠ &#39;name&#39; must be a string"), "warning missing from panel");
 }
 
 /// `extends` must be a string — a non-string `extends` must not be silently
