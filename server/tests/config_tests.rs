@@ -2054,7 +2054,7 @@ fn base_and_detect_version_resolve_for_subpaths() {
         }
     }
 
-    // $base as an absolute (non-existent) path → error.
+    // $base as an absolute (non-existent) path → rejected.
     let mut c_abs = Cfg::new();
     let v = c_abs.dir("17.0");
     v.create_dir_all().unwrap();
@@ -2066,9 +2066,10 @@ fn base_and_detect_version_resolve_for_subpaths() {
         addons_paths = [ "${base}/addon-path" ]
     "#).unwrap();
     c_abs.workspaces.push((S!("ws_abs"), canonicalized(v.path())));
-    assert!(c_abs.resolve().is_err(), "absolute $base should error");
+    assert!(c_abs.message("$base").contains("Failed to canonicalize base path"));
+    assert!(c_abs.default().odoo_path().is_none(), "paths using ${{base}} are rejected");
 
-    // $base that is not a valid path → error.
+    // $base that is not a valid path → rejected.
     let mut c_inv = Cfg::new();
     let v = c_inv.dir("17.0");
     v.create_dir_all().unwrap();
@@ -2080,7 +2081,33 @@ fn base_and_detect_version_resolve_for_subpaths() {
         addons_paths = [ "${base}/addon-path" ]
     "#).unwrap();
     c_inv.workspaces.push((S!("ws_invalid"), canonicalized(v.path())));
-    assert!(c_inv.resolve().is_err(), "invalid $base should error");
+    c_inv.message("$base");
+    assert!(c_inv.default().odoo_path().is_none(), "paths using ${{base}} are rejected");
+}
+
+/// A `${detectVersion}` base that matches one workspace but not another: the
+/// config still loads, using the base detected from the matching workspace.
+#[test]
+fn detect_version_mismatch_in_one_workspace_is_rejected() {
+    let mut c = Cfg::new();
+    let base = c.dir("versions");
+    let v17 = base.child("17.0");
+    v17.create_dir_all().unwrap();
+    make_odoo(&v17.child("odoo"));
+    let other = c.dir("other");
+    let odools = format!(r#"
+        [[config]]
+        name = "default"
+        "$base" = "{}/${{detectVersion}}"
+        odoo_path = "${{base}}/odoo"
+    "#, canonicalized(base.path()));
+    write_odools(&v17, &odools);
+    write_odools(&other, &odools);
+    c.workspaces.push((S!("v17"), canonicalized(v17.path())));
+    c.workspaces.push((S!("other"), canonicalized(other.path())));
+
+    assert_eq!(c.default().odoo_path(), Some(canonicalized(v17.child("odoo").path())));
+    c.message("\"$base\" does not match the current workspace folder");
 }
 
 /// When both `${detectVersion}` (via `$base`) and `${splitVersion}` (via `$version`)
