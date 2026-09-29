@@ -1328,8 +1328,17 @@ fn conflict_scalar_field_stays_dropped_with_third_workspace() {
     }
 
     assert_eq!(c.default().auto_refresh_delay(), ConfigEntry::new().auto_refresh_delay());
-    let count = c.messages().iter().filter(|m| m.contains("conflicting values")).count();
-    assert_eq!(count, 3);
+    // Workspace merge order varies: equal values may merge into one rejection
+    // first, so check every workspace's file is reported rather than a count.
+    let conflicts: Vec<String> = c
+        .messages()
+        .into_iter()
+        .filter(|m| m.contains("conflicting values"))
+        .collect();
+    for ws in ["ws1", "ws2", "ws3"] {
+        let file = format!("{ws}/odools.toml");
+        assert!(conflicts.iter().any(|m| m.contains(&file)), "{ws} not reported: {conflicts:?}");
+    }
 }
 
 /// No conflict when both workspace configs explicitly set odoo_path to the same path.
@@ -2496,6 +2505,25 @@ paths = ["good/**"]
     assert_eq!(cfg.default().diagnostic_filters().len(), 1, "the valid filter is kept");
 }
 
+/// The config panel lists a rejected filter (with its note) next to the valid
+/// ones, even when none survived.
+#[test]
+fn rejected_diagnostic_filter_shown_in_view() {
+    let mut cfg = Cfg::new();
+    let ws = cfg.ws("ws");
+    write_odools(&ws, r#"[[config]]
+name = "default"
+diagnostic_filters = [ { codes = ["[invalid regex"], paths = ["**/*"] } ]
+"#);
+
+    let json = serde_json::to_value(cfg.view()).unwrap();
+    let root = json["config"].as_array().unwrap().iter().find(|c| c["name"] == "default").unwrap();
+    let filters = root["diagnostic_filters"].as_array().unwrap();
+    assert_eq!(filters.len(), 1, "{filters:?}");
+    assert!(filters[0]["value"].as_str().unwrap().contains("[invalid regex"));
+    assert!(filters[0]["info"].as_str().unwrap().contains("regex"));
+}
+
 #[test]
 fn diagnostic_filter_invalid_regex_rejected() {
     let mut cfg = Cfg::new();
@@ -2514,7 +2542,8 @@ paths = ["good/**"]
 "#,
     );
 
-    let msg = cfg.message("regex");
+    let msg = cfg.message("invalid regex '[invalid regex': unclosed character class");
+    assert!(!msg.contains('\n'), "message should be one line: {msg:?}");
     assert!(msg.contains("using the 1 remaining valid entry instead"), "unexpected message: {msg}");
     assert_eq!(cfg.default().diagnostic_filters().len(), 1, "the valid filter is kept");
 }

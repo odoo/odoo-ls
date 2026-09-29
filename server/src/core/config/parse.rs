@@ -84,6 +84,8 @@ fn parse_entry(entry: &toml::Value, source: &str) -> Result<Profile, String> {
             Err(e) => rejected_entries.push((raw_text(value), e)),
         }
         for (raw, reason) in rejected_entries {
+            // toml errors end with a newline.
+            let reason = reason.trim_end().to_string();
             profile.add_rejected(key, raw, HashSet::from_iter([source.to_string()]), reason);
         }
     }
