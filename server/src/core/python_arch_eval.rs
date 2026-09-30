@@ -602,16 +602,7 @@ impl PythonArchEval {
             deps.push(vec![]);
         }
         let (base_evaluations, _) = Evaluation::eval_from_ast(session, &attr_expr.value, scope, &attr_expr.range.start(), false, &mut deps);
-        let mut classes = vec![];
-        for evaluation in base_evaluations.iter() {
-            let symbol = evaluation.symbol.get_symbol(session, None, &mut vec![], None);
-            for followed in SymbolTable::follow_ref(&symbol, session, None, false, false, None, None) {
-                if let Some(class @ SymbolKey::Class(_)) = followed.upgrade_weak(session.st())
-                    && !classes.contains(&class) {
-                        classes.push(class);
-                    }
-            }
-        }
+        let classes = SymbolTable::evaluated_classes(session, &base_evaluations);
         if classes.is_empty() {
             return;
         }
@@ -631,7 +622,7 @@ impl PythonArchEval {
         };
         session.st_mut().insert_dependencies(self.file, &deps, self.current_step);
         for class in classes {
-            let variable = session.st_mut().add_new_eval_ext_symbol(class, &attr_expr.attr.id, attr_expr.attr.range, owner);
+            let variable = session.st_mut().add_new_eval_ext_symbol(class.into(), &attr_expr.attr.id, attr_expr.attr.range, owner);
             session.st_mut()[variable].evaluations = evaluations.clone();
         }
     }

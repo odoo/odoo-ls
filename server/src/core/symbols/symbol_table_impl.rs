@@ -2270,6 +2270,64 @@ impl SymbolTable {
         (result, diagnostics)
     }
 
+    /// The classes (or class instances) that `evaluations` evaluate to
+    pub fn evaluated_classes(session: &mut SessionInfo, evaluations: &[Evaluation]) -> Vec<ClassKey> {
+        let mut classes = vec![];
+        for evaluation in evaluations.iter() {
+            let symbol = evaluation.symbol.get_symbol(session, None, &mut vec![], None);
+            for followed in SymbolTable::follow_ref(&symbol, session, None, false, false, None, None) {
+                if let Some(SymbolKey::Class(class)) = followed.upgrade_weak(session.st())
+                    && !classes.contains(&class) {
+                        classes.push(class);
+                    }
+            }
+        }
+        classes
+    }
+
+    /// The instance attributes of a class are injected by the ARCH_EVAL of the methods assigning them,
+    /// that is lazy: evaluate the methods of `class`, of its bases and of the other classes of its model,
+    /// that were not yet (not for external files, as `ensure_func_evaluations`). Returns whether a method was evaluated.
+    /// Not to be used while building: the evaluated methods could need the same thing, recursively.
+    pub fn ensure_instance_attributes_evaluated(session: &mut SessionInfo, class: ClassKey) -> bool {
+        let mut visited = HashSet::default();
+        let mut to_visit = vec![class];
+        let mut evaluated = false;
+        while let Some(class) = to_visit.pop() {
+            if !visited.insert(class) {
+                continue;
+            }
+            evaluated |= SymbolTable::ensure_methods_evaluated(session, class);
+            to_visit.extend(session.st()[class].bases.iter().filter_map(|base| base.upgrade(session.st())));
+            let model = session.st()[class]._model.as_ref().and_then(|model_data| session.sync_odoo.models.get(&model_data.name).cloned());
+            if let Some(model) = model {
+                to_visit.extend(Model::get_full_model_classes(model, session, None));
+            }
+        }
+        evaluated
+    }
+
+    fn ensure_methods_evaluated(session: &mut SessionInfo, class: ClassKey) -> bool {
+        let Some(file) = session.st().get_file(class.into()) else {
+            return false;
+        };
+        if session.st().is_external(file.into()) {
+            return false;
+        }
+        let methods: Vec<FunctionKey> = session.st().iter_inner_functions(class.into()).into_iter()
+            .filter(|&f| session.st().build_status(f.into(), BuildSteps::ARCH_EVAL) == BuildStatus::PENDING)
+            .collect();
+        if methods.is_empty() {
+            return false;
+        }
+        BuildScheduler::build_now(session, file, BuildSteps::ARCH_EVAL);
+        for method in methods {
+            BuildScheduler::build_now(session, method, BuildSteps::ARCH);
+            BuildScheduler::build_now(session, method, BuildSteps::ARCH_EVAL);
+        }
+        true
+    }
+
     /**
      * Only browse file content, do not use on namespace or packages to browse disk
      * return a list of functions under Class symbol
