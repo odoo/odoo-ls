@@ -1483,39 +1483,65 @@ impl Odoo {
             document_selector: None,
             sync_kind: TextDocumentSyncKind::INCREMENTAL
         };
-        let registrations = vec![
-            Registration {
+        let capabilities = &session.sync_odoo.capabilities;
+        let workspace = capabilities.workspace.as_ref();
+        let watched_files_dynamic = workspace
+            .and_then(|w| w.did_change_watched_files.as_ref())
+            .and_then(|c| c.dynamic_registration)
+            .unwrap_or(false);
+        let configuration_dynamic = workspace
+            .and_then(|w| w.did_change_configuration.as_ref())
+            .and_then(|c| c.dynamic_registration)
+            .unwrap_or(false);
+        let synchronization_dynamic = capabilities.text_document.as_ref()
+            .and_then(|t| t.synchronization.as_ref())
+            .and_then(|c| c.dynamic_registration)
+            .unwrap_or(false);
+        let mut registrations = vec![];
+        if watched_files_dynamic {
+            registrations.push(Registration {
                 id: "workspace/didChangeWatchedFiles".to_string(),
                 method: "workspace/didChangeWatchedFiles".to_string(),
                 register_options: Some(serde_json::to_value(options).unwrap()),
-            },
-            Registration {
+            });
+        }
+        if configuration_dynamic {
+            registrations.push(Registration {
                 id: "workspace/didChangeConfiguration".to_string(),
                 method: "workspace/didChangeConfiguration".to_string(),
                 register_options: None,
-            },
-            Registration {
-                id: "textDocument/didOpen".to_string(),
-                method: "textDocument/didOpen".to_string(),
-                register_options: None,
-            },
-            Registration {
-                id: "textDocument/didChange".to_string(),
-                method: "textDocument/didChange".to_string(),
-                register_options: Some(serde_json::to_value(text_document_change_registration_options).unwrap()),
-            },
-            Registration {
-                id: "textDocument/didClose".to_string(),
-                method: "textDocument/didClose".to_string(),
-                register_options: None,
-            }
-        ];
+            });
+        }
+        if synchronization_dynamic {
+            registrations.extend([
+                Registration {
+                    id: "textDocument/didOpen".to_string(),
+                    method: "textDocument/didOpen".to_string(),
+                    register_options: None,
+                },
+                Registration {
+                    id: "textDocument/didChange".to_string(),
+                    method: "textDocument/didChange".to_string(),
+                    register_options: Some(serde_json::to_value(text_document_change_registration_options).unwrap()),
+                },
+                Registration {
+                    id: "textDocument/didClose".to_string(),
+                    method: "textDocument/didClose".to_string(),
+                    register_options: None,
+                },
+            ]);
+        }
+        if registrations.is_empty() {
+            info!("Client does not support dynamic registration, no capability registered");
+            return;
+        }
         let params = RegistrationParams{
             registrations
         };
         let result = session.send_request::<RegistrationParams, ()>(RegisterCapability::METHOD, params);
         if let Err(e) = result {
-            panic!("Capabilities registration went wrong: {:?}", e);
+            warn!("Capabilities registration went wrong: {:?}", e);
+            return;
         }
         info!("Registered Capabilities");
     }
