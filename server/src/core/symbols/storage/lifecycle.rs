@@ -236,6 +236,39 @@ impl SymbolTable {
         range: TextRange,
         owner: SymbolKey,
     ) -> VariableKey {
+        let (section, variable_key) = self.create_ext_variable(target, name, range, owner);
+        self.ext_symbols.add(target, owner, name, section, variable_key);
+        variable_key
+    }
+
+    /// Same as `add_new_ext_symbol`, for a symbol injected during the ARCH_EVAL of `owner`: it is
+    /// removed by `remove_eval_ext_symbols` when `owner` is evaluated again.
+    pub fn add_new_eval_ext_symbol(
+        &mut self,
+        target: SymbolKey,
+        name: &str,
+        range: TextRange,
+        owner: SymbolKey,
+    ) -> VariableKey {
+        let (section, variable_key) = self.create_ext_variable(target, name, range, owner);
+        self.ext_symbols.add_eval(target, owner, name, section, variable_key);
+        variable_key
+    }
+
+    /// Remove the symbols injected by the previous ARCH_EVAL of `owner`
+    pub fn remove_eval_ext_symbols(&mut self, owner: SymbolKey) {
+        for variable in self.ext_symbols.remove_eval(owner) {
+            self.remove(variable.into());
+        }
+    }
+
+    fn create_ext_variable(
+        &mut self,
+        target: SymbolKey,
+        name: &str,
+        range: TextRange,
+        owner: SymbolKey,
+    ) -> (u32, VariableKey) {
         // validate target can host an external symbol
         if !matches!(target.typ(),
             SymType::FILE | SymType::PACKAGE(PackageType::MODULE)
@@ -253,9 +286,7 @@ impl SymbolTable {
         );
         let variable_key = self.variables.insert(variable_symbol);
         let section = parent.as_symbol_mgr(self).get_section_for(range.start().to_u32()).index;
-
-        self.ext_symbols.add(target, owner, name, section, variable_key);
-        variable_key
+        (section, variable_key)
     }
 
     // ====== Helpers for symbol creation ======
@@ -638,6 +669,26 @@ mod tests {
         assert!(!f.st.is_key_valid(f.module), "the module survived its own removal");
         assert!(!f.st.is_key_valid(injected), "the ext symbol outlived its owner");
         assert!(f.st.is_key_valid(host), "removing the module took the injection target down");
+        f.st.assert_no_orphans();
+        Ok(())
+    }
+
+    /// Ext symbols injected by an ARCH_EVAL are dropped when the owner is evaluated again, but not
+    /// the ones injected by the ARCH (hooks) of the same owner.
+    #[test]
+    fn eval_ext_symbols_are_removed_on_reevaluation() -> Result<(), NameTakenError> {
+        let mut f = Fixture::new();
+        let file = f.st.add_new_file(f.module.into(), "models", "/root/ns/mod/models.py")?;
+        let class = f.st.add_new_class(file.into(), "AClass", range_at(0), TextSize::new(0));
+        let from_arch = f.st.add_new_ext_symbol(class.into(), "from_arch", range_at(10), file.into());
+        let from_eval = f.st.add_new_eval_ext_symbol(class.into(), "from_eval", range_at(20), file.into());
+        assert_eq!(f.st.get_ext_symbol(class.into(), "from_eval"), vec![from_eval]);
+
+        f.st.remove_eval_ext_symbols(file.into());
+
+        assert!(!f.st.is_key_valid(from_eval), "the eval ext symbol survived the re-evaluation");
+        assert!(f.st.get_ext_symbol(class.into(), "from_eval").is_empty());
+        assert_eq!(f.st.get_ext_symbol(class.into(), "from_arch"), vec![from_arch]);
         f.st.assert_no_orphans();
         Ok(())
     }
