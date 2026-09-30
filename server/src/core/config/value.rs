@@ -128,7 +128,12 @@ impl<'de> serde::Deserialize<'de> for DiagnosticFilter {
         }
         let mut code_regexes = Vec::with_capacity(helper.codes.len());
         for code in &helper.codes {
-            let regex = Regex::new(code).map_err(serde::de::Error::custom)?;
+            // Regex syntax errors span several lines (pattern, caret, reason): keep the reason.
+            let regex = Regex::new(code).map_err(|e| {
+                let msg = e.to_string();
+                let reason = msg.lines().last().unwrap_or_default().trim_start_matches("error: ");
+                serde::de::Error::custom(format!("invalid regex '{code}': {reason}"))
+            })?;
             code_regexes.push(regex);
         }
         for t in &helper.types {
@@ -334,7 +339,7 @@ pub(super) enum ConfigValue {
 }
 
 impl ConfigValue {
-    fn as_scalar(&self) -> Option<&Sourced<Scalar>> {
+    pub(crate) fn as_scalar(&self) -> Option<&Sourced<Scalar>> {
         match self {
             ConfigValue::Scalar(s) => Some(s),
             _ => None,
@@ -414,6 +419,9 @@ pub(crate) struct Profile {
     /// Non-fatal parse-time notes not tied to a single field (e.g. an unknown
     /// `[[config]]` key) — surfaced to the user via `ConfigView::diagnostic_messages`.
     pub warnings: Vec<String>,
+    /// Scalar keys with conflicting values across workspace folders: dropped, and
+    /// any value a later workspace brings for them is rejected too.
+    pub conflicted: HashSet<ConfigKey>,
 }
 
 impl Profile {

@@ -93,6 +93,23 @@ impl Cfg {
             .cloned()
             .unwrap_or_else(|| panic!("no profile view '{name}'"))
     }
+    /// Config diagnostic messages (warnings and rejections) across all profiles.
+    fn messages(&self) -> Vec<String> {
+        self.view()
+            .diagnostic_messages()
+            .iter()
+            .map(|v| v["message"].as_str().unwrap().to_string())
+            .collect()
+    }
+    /// The first diagnostic message containing `needle` (panics if none).
+    fn message(&self, needle: &str) -> String {
+        let messages = self.messages();
+        messages
+            .iter()
+            .find(|m| m.contains(needle))
+            .cloned()
+            .unwrap_or_else(|| panic!("no message containing '{needle}' in {messages:?}"))
+    }
     /// Resolve, expecting an error; returns the message.
     fn err(&self) -> String {
         self.resolve().expect_err("config resolution should fail")
@@ -267,6 +284,18 @@ fn user_config_overrides_auto_detection() {
     assert_eq!(cfg.default().odoo_path().as_ref(), Some(&canonicalized(user_odoo.path())));
 }
 
+/// Ambiguous inferred odoo_path: config still loads, odoo_path is unset and
+/// every candidate is reported.
+fn assert_odoo_path_conflict(cfg: &Cfg) {
+    assert!(cfg.default().odoo_path().is_none());
+    let conflicts = cfg
+        .messages()
+        .iter()
+        .filter(|m| m.contains("more than one workspace folder"))
+        .count();
+    assert_eq!(conflicts, 2);
+}
+
 #[test]
 fn conflict_two_children_both_odoo_path() {
     let mut cfg = Cfg::new();
@@ -279,7 +308,7 @@ fn conflict_two_children_both_odoo_path() {
     odoo2.create_dir_all().unwrap();
     make_odoo(&odoo2);
 
-    assert!(cfg.err().contains("More than one workspace folder or subfolder is a valid odoo_path"));
+    assert_odoo_path_conflict(&cfg);
 }
 
 #[test]
@@ -815,7 +844,7 @@ fn extends_rootless_cycle_errors() {
 }
 
 #[test]
-fn extends_nonexistent_profile_errors() {
+fn extends_nonexistent_profile_rejected() {
     let mut c = Cfg::new();
     let ws = c.ws("ws1");
     write_odools(&ws, r#"
@@ -825,7 +854,14 @@ fn extends_nonexistent_profile_errors() {
         file_cache = false
     "#);
 
-    assert!(c.err().to_lowercase().contains("extends non-existing profile"));
+    assert!(!c.default().file_cache(), "the profile keeps its own values");
+    c.message("extends non-existing profile 'doesnotexist', ignoring it");
+
+    // Panel: shown as a profile warning, extends is not set.
+    let json = serde_json::to_value(c.view()).unwrap();
+    let root = json["config"].as_array().unwrap().iter().find(|p| p["name"] == "default").unwrap();
+    assert_eq!(root["extends"], "");
+    assert!(root["warnings"][0].as_str().unwrap().contains("doesnotexist"));
 }
 // ===========================================================================
 // Template variables, relative paths & provenance
@@ -1254,7 +1290,7 @@ fn provenance_json_serialization() {
 // Cross-workspace merge, extra config file & list merge/override
 // ===========================================================================
 
-/// Two workspace folders that are both valid odoo paths produce an ambiguity error.
+/// Two workspace folders that are both valid odoo paths are rejected, not fatal.
 #[test]
 fn conflict_two_workspace_folders_both_odoo_path() {
     let mut c = Cfg::new();
@@ -1263,19 +1299,53 @@ fn conflict_two_workspace_folders_both_odoo_path() {
     make_odoo(&ws1);
     make_odoo(&ws2);
 
-    assert!(c.err().contains("More than one workspace folder or subfolder is a valid odoo_path"));
+    assert_odoo_path_conflict(&c);
 }
 
-/// Two workspaces setting different values for a scalar (file_cache) conflict.
+/// Two workspaces setting different values for a scalar (auto_refresh_delay):
+/// both are rejected and the default is used.
 #[test]
 fn conflict_two_workspaces_scalar_field() {
     let mut c = Cfg::new();
     let ws1 = c.ws("ws1");
     let ws2 = c.ws("ws2");
-    write_odools(&ws1, "[[config]]\nname = \"default\"\nfile_cache = true\n");
-    write_odools(&ws2, "[[config]]\nname = \"default\"\nfile_cache = false\n");
+    write_odools(&ws1, "[[config]]\nname = \"default\"\nauto_refresh_delay = 1111\n");
+    write_odools(&ws2, "[[config]]\nname = \"default\"\nauto_refresh_delay = 2222\n");
 
-    assert!(c.err().contains("Conflict detected"));
+    let default = ConfigEntry::new().auto_refresh_delay();
+    assert_eq!(c.default().auto_refresh_delay(), default);
+    let conflicts: Vec<String> = c
+        .messages()
+        .into_iter()
+        .filter(|m| m.contains("conflicting values across workspace folders"))
+        .collect();
+    assert_eq!(conflicts.len(), 2, "{conflicts:?}");
+    assert!(conflicts.iter().any(|m| m.contains("'1111'")) && conflicts.iter().any(|m| m.contains("'2222'")));
+    assert!(conflicts[0].contains(&format!("using '{default}' instead")), "{}", conflicts[0]);
+}
+
+/// A key already in conflict stays dropped when a third workspace sets it, and
+/// that value is rejected too.
+#[test]
+fn conflict_scalar_field_stays_dropped_with_third_workspace() {
+    let mut c = Cfg::new();
+    for (name, delay) in [("ws1", 1111), ("ws2", 2222), ("ws3", 1111)] {
+        let ws = c.ws(name);
+        write_odools(&ws, &format!("[[config]]\nname = \"default\"\nauto_refresh_delay = {delay}\n"));
+    }
+
+    assert_eq!(c.default().auto_refresh_delay(), ConfigEntry::new().auto_refresh_delay());
+    // Workspace merge order varies: equal values may merge into one rejection
+    // first, so check every workspace's file is reported rather than a count.
+    let conflicts: Vec<String> = c
+        .messages()
+        .into_iter()
+        .filter(|m| m.contains("conflicting values"))
+        .collect();
+    for ws in ["ws1", "ws2", "ws3"] {
+        let file = format!("{ws}/odools.toml");
+        assert!(conflicts.iter().any(|m| m.contains(&file)), "{ws} not reported: {conflicts:?}");
+    }
 }
 
 /// No conflict when both workspace configs explicitly set odoo_path to the same path.
@@ -1534,57 +1604,181 @@ fn additional_stubs_merge_override_vs_merge() {
     assert!(stubs.contains(&canonicalized(parent_stub.path())), "merge: parent stub present");
 }
 
-/// An invalid merge-method value is rejected at parse time with a clear error.
+/// An invalid merge-method value is rejected at parse time with a clear message.
 #[test]
-fn invalid_merge_method_value_errors() {
+fn invalid_merge_method_value_rejected() {
     let mut c = Cfg::new();
     let ws = c.ws("ws1");
     write_odools(&ws, "[[config]]\nname = \"default\"\naddons_merge = \"concat\"\n");
 
-    let err = c.err();
-    assert!(err.contains("invalid value 'concat'") && err.contains("addons_merge"),
-        "unexpected error: {err}");
+    c.message("invalid value 'concat' for 'addons_merge'");
 }
 
-/// A field-type error names the offending file and profile, not just the field,
-/// so the user can find the mistake without guessing.
+/// A bad value in one profile does not make the other profiles unusable.
 #[test]
-fn field_type_error_names_file_and_profile() {
+fn parse_error_in_one_profile_keeps_others_usable() {
+    let mut c = Cfg::new();
+    let ws = c.ws("ws1");
+    write_odools(&ws, r#"
+        [[config]]
+        name = "broken"
+        file_cache = "yes"
+
+        [[config]]
+        name = "ok"
+        auto_refresh_delay = 1234
+    "#);
+
+    assert_eq!(c.entry("ok").auto_refresh_delay(), 1234);
+    let msg = c.message("'file_cache' must be a boolean");
+    assert!(msg.contains("'broken'"), "message should name the profile: {msg}");
+}
+
+/// A value rejected in a child config file falls back to the parent file's value,
+/// and the rejection survives the file-hierarchy merge.
+#[test]
+fn parse_rejection_falls_back_to_parent_file_value() {
+    let mut c = Cfg::new();
+    let ws = c.ws("ws1");
+    write_odools(&c.temp, "[[config]]\nname = \"default\"\nauto_refresh_delay = 4321\n");
+    write_odools(&ws, "[[config]]\nname = \"default\"\nauto_refresh_delay = -1\n");
+
+    assert_eq!(c.default().auto_refresh_delay(), 4321);
+    let msg = c.message("'auto_refresh_delay' must be a non-negative integer");
+    assert!(msg.contains("using '4321' instead"), "unexpected message: {msg}");
+}
+
+/// Two workspace folders under the same parent `odools.toml` report its
+/// warnings and rejections once, not once per workspace.
+#[test]
+fn shared_parent_file_messages_not_duplicated() {
+    let mut c = Cfg::new();
+    c.ws("ws1");
+    c.ws("ws2");
+    write_odools(&c.temp, "[[config]]\nname = \"default\"\nfile_cache = \"yes\"\nunknown_key = 1\n");
+
+    let messages = c.messages();
+    let count = |needle: &str| messages.iter().filter(|m| m.contains(needle)).count();
+    assert_eq!(count("'file_cache' must be a boolean"), 1, "{messages:?}");
+    assert_eq!(count("unknown config key 'unknown_key'"), 1, "{messages:?}");
+}
+
+/// A non-string list entry is rejected on its own; the valid entries are kept.
+#[test]
+fn list_entry_rejected_keeps_other_entries() {
+    let mut c = Cfg::new();
+    let ws = c.ws("ws1");
+    write_odools(&ws, "[[config]]\nname = \"default\"\nadditional_languages = [\"fr\", 1]\n");
+
+    assert!(c.default().additional_languages().contains("fr"));
+    let msg = c.message("'additional_languages' entries must be strings");
+    assert!(msg.contains("= '1'"), "message should show the rejected entry: {msg}");
+}
+
+/// When every entry is rejected, an empty list is kept: with `override` it
+/// still overrides the parent's list.
+#[test]
+fn all_list_entries_rejected_keeps_empty_list() {
+    let mut c = Cfg::new();
+    let ws = c.ws("ws");
+    let parent_stub = c.dir("parent_stub");
+    write_odools(&c.temp, &format!(
+        "[[config]]\nname = \"default\"\nadditional_stubs = [\"{}\"]\n",
+        canonicalized(parent_stub.path())
+    ));
+    write_odools(&ws, "[[config]]\nname = \"default\"\nadditional_stubs = [1]\nadditional_stubs_merge = \"override\"\n");
+
+    assert!(c.default().additional_stubs().is_empty(), "override with an empty list drops the parent stub");
+    assert!(c.message("'additional_stubs' entries must be strings").contains("no valid entries remain"));
+}
+
+/// Two workspace folders giving a profile different parents is a warning, not
+/// an error: each workspace applies its own parent, and the values are merged.
+#[test]
+fn extends_conflict_across_workspaces_is_a_warning() {
+    let mut c = Cfg::new();
+    let ws1 = c.ws("ws1");
+    let ws2 = c.ws("ws2");
+    write_odools(&ws1, r#"
+        [[config]]
+        name = "a"
+        auto_refresh_delay = 1234
+
+        [[config]]
+        name = "x"
+        extends = "a"
+    "#);
+    write_odools(&ws2, r#"
+        [[config]]
+        name = "b"
+        file_cache = false
+
+        [[config]]
+        name = "x"
+        extends = "b"
+    "#);
+
+    let x = c.entry("x");
+    assert_eq!(x.auto_refresh_delay(), 1234, "value from parent 'a' is kept");
+    assert!(!x.file_cache(), "value from parent 'b' is kept");
+    let msg = c.message("conflicting 'extends'");
+    assert!(msg.contains("'x'") && msg.contains("'a'") && msg.contains("'b'"), "unexpected message: {msg}");
+}
+
+/// A field-type error is rejected without failing the config, and the message
+/// names the offending file and profile.
+#[test]
+fn field_type_error_rejected_names_file_and_profile() {
     let mut c = Cfg::new();
     let ws = c.ws("ws1");
     write_odools(&ws, "[[config]]\nname = \"myprofile\"\npython_path = 123\n");
 
-    let err = c.err();
-    assert!(err.contains("odools.toml"), "error should name the config file: {err}");
-    assert!(err.contains("myprofile"), "error should name the profile: {err}");
-    assert!(err.contains("python_path"), "unexpected error: {err}");
+    let msg = c.message("'python_path' must be a string");
+    assert!(msg.contains("odools.toml"), "message should name the config file: {msg}");
+    assert!(msg.contains("myprofile"), "message should name the profile: {msg}");
+    assert!(c.entry("myprofile").python_path() != "123");
 }
 
-/// `name` must be a string — a non-string `name` (e.g. an integer) must not be
-/// silently swallowed into the "default" profile.
+/// A non-string `name` (e.g. an integer) is used as its raw text with a warning:
+/// the config still loads, and the entry is not swallowed into "default".
 #[test]
-fn non_string_name_errors() {
+fn non_string_name_uses_raw_text_with_warning() {
     let mut c = Cfg::new();
     let ws = c.ws("ws1");
-    write_odools(&ws, "[[config]]\nname = 123\n");
+    write_odools(&ws, "[[config]]\nname = 123\nauto_refresh_delay = 4321\n");
 
-    let err = c.err();
-    assert!(err.contains("odools.toml"), "error should name the config file: {err}");
-    assert!(err.contains("'name' must be a string"), "unexpected error: {err}");
+    assert_eq!(c.entry("123").auto_refresh_delay(), 4321);
+    assert_ne!(c.default().auto_refresh_delay(), 4321, "not merged into default");
+    let msg = c.message("'name' must be a string");
+    assert!(msg.contains("odools.toml") && msg.contains("using '123'"), "unexpected message: {msg}");
+
+    // Also shown on the profile in the config panel.
+    let json = serde_json::to_value(c.view()).unwrap();
+    let root = json["config"].as_array().unwrap().iter().find(|p| p["name"] == "123").unwrap();
+    assert!(root["warnings"][0].as_str().unwrap().contains("'name' must be a string"));
+    let html = c.view().to_html_string();
+    assert!(html.contains("⚠ &#39;name&#39; must be a string"), "warning missing from panel");
 }
 
-/// `extends` must be a string — a non-string `extends` must not be silently
-/// dropped (which would leave the profile un-extended with no explanation).
+/// A non-string `extends` is rejected and not applied, even when a profile
+/// with that raw name exists; the config still loads.
 #[test]
-fn non_string_extends_errors() {
+fn non_string_extends_rejected() {
     let mut c = Cfg::new();
     let ws = c.ws("ws1");
-    write_odools(&ws, "[[config]]\nname = \"default\"\nextends = 123\n");
+    write_odools(&ws, r#"
+        [[config]]
+        name = 123
+        auto_refresh_delay = 4321
 
-    let err = c.err();
-    assert!(err.contains("odools.toml"), "error should name the config file: {err}");
-    assert!(err.contains("default"), "error should name the profile: {err}");
-    assert!(err.contains("'extends' must be a string"), "unexpected error: {err}");
+        [[config]]
+        name = "default"
+        extends = 123
+    "#);
+
+    assert_ne!(c.default().auto_refresh_delay(), 4321, "extends is not applied");
+    let msg = c.message("'extends' must be a string");
+    assert!(msg.contains("odools.toml") && msg.contains("ignoring '123'"), "unexpected message: {msg}");
 }
 
 /// A TOML syntax error names the offending file, not just the parser's
@@ -1891,7 +2085,7 @@ fn base_and_detect_version_resolve_for_subpaths() {
         }
     }
 
-    // $base as an absolute (non-existent) path → error.
+    // $base as an absolute (non-existent) path → rejected.
     let mut c_abs = Cfg::new();
     let v = c_abs.dir("17.0");
     v.create_dir_all().unwrap();
@@ -1903,9 +2097,10 @@ fn base_and_detect_version_resolve_for_subpaths() {
         addons_paths = [ "${base}/addon-path" ]
     "#).unwrap();
     c_abs.workspaces.push((S!("ws_abs"), canonicalized(v.path())));
-    assert!(c_abs.resolve().is_err(), "absolute $base should error");
+    assert!(c_abs.message("$base").contains("Failed to canonicalize base path"));
+    assert!(c_abs.default().odoo_path().is_none(), "paths using ${{base}} are rejected");
 
-    // $base that is not a valid path → error.
+    // $base that is not a valid path → rejected.
     let mut c_inv = Cfg::new();
     let v = c_inv.dir("17.0");
     v.create_dir_all().unwrap();
@@ -1917,7 +2112,33 @@ fn base_and_detect_version_resolve_for_subpaths() {
         addons_paths = [ "${base}/addon-path" ]
     "#).unwrap();
     c_inv.workspaces.push((S!("ws_invalid"), canonicalized(v.path())));
-    assert!(c_inv.resolve().is_err(), "invalid $base should error");
+    c_inv.message("$base");
+    assert!(c_inv.default().odoo_path().is_none(), "paths using ${{base}} are rejected");
+}
+
+/// A `${detectVersion}` base that matches one workspace but not another: the
+/// config still loads, using the base detected from the matching workspace.
+#[test]
+fn detect_version_mismatch_in_one_workspace_is_rejected() {
+    let mut c = Cfg::new();
+    let base = c.dir("versions");
+    let v17 = base.child("17.0");
+    v17.create_dir_all().unwrap();
+    make_odoo(&v17.child("odoo"));
+    let other = c.dir("other");
+    let odools = format!(r#"
+        [[config]]
+        name = "default"
+        "$base" = "{}/${{detectVersion}}"
+        odoo_path = "${{base}}/odoo"
+    "#, canonicalized(base.path()));
+    write_odools(&v17, &odools);
+    write_odools(&other, &odools);
+    c.workspaces.push((S!("v17"), canonicalized(v17.path())));
+    c.workspaces.push((S!("other"), canonicalized(other.path())));
+
+    assert_eq!(c.default().odoo_path(), Some(canonicalized(v17.child("odoo").path())));
+    c.message("\"$base\" does not match the current workspace folder");
 }
 
 /// When both `${detectVersion}` (via `$base`) and `${splitVersion}` (via `$version`)
@@ -1963,8 +2184,7 @@ $version = "18.0"
     assert!(c.resolve().is_err(), "unquoted $version should fail TOML parsing");
 }
 
-/// `"$version"` must be a string, not a TOML float — `"$version" = 18.0` fails to
-/// deserialize.
+/// `"$version"` must be a string, not a TOML float — `"$version" = 18.0` is rejected.
 #[test]
 fn version_must_be_string_not_float() {
     let mut c = Cfg::new();
@@ -1973,7 +2193,7 @@ fn version_must_be_string_not_float() {
 name = "default"
 "$version" = 18.0
 "#);
-    assert!(c.resolve().is_err(), "$version as a float should fail deserialization");
+    c.message("'$version' must be a string");
 }
 
 /// Restart contract: a change in `$version` between two resolved configs must
@@ -2082,11 +2302,15 @@ name = "default"
 
 [[config.diagnostic_filters]]
 codes = ["OLS.*"]
+
+[[config.diagnostic_filters]]
+paths = ["good/**"]
 "#,
     );
 
-    // `paths` is required: the error must name the missing field, not just fail.
-    assert!(cfg.err().contains("paths"), "error should mention the missing 'paths' field");
+    // `paths` is required: the rejection must name the missing field.
+    cfg.message("paths");
+    assert_eq!(cfg.default().diagnostic_filters().len(), 1, "the valid filter is kept");
 }
 
 #[test]
@@ -2175,6 +2399,73 @@ diagnostic_settings = { "OLS03001" = "Disabled", "OLS02001" = "Warning" }
     let ols02001 = diagnostic_settings.iter().find(|(code, _)| code.to_string() == "OLS02001");
     assert!(ols02001.is_some());
     assert_eq!(format!("{:?}", ols02001.unwrap().1), "Warning");
+}
+
+/// An unknown code or an invalid level rejects only that entry; the rejected
+/// entries are listed in the config panel with their notes.
+#[test]
+fn diagnostic_settings_entry_rejected_keeps_others() {
+    let mut cfg = Cfg::new();
+    let ws = cfg.ws("ws");
+    write_odools(&ws, r#"[[config]]
+name = "default"
+
+[config.diagnostic_settings]
+OLS03001 = "Error"
+NOT_A_CODE = "Error"
+OLS02001 = "Loud"
+"#);
+
+    let settings = cfg.default().diagnostic_settings();
+    assert_eq!(settings.len(), 1);
+    assert!(settings.iter().any(|(c, _)| c.to_string() == "OLS03001"));
+    cfg.message("unknown diagnostic code 'NOT_A_CODE'");
+    let msg = cfg.message("OLS02001 = Loud");
+    assert!(msg.contains("using the 1 remaining valid entry instead"), "unexpected message: {msg}");
+
+    let json = serde_json::to_value(cfg.view()).unwrap();
+    let root = json["config"].as_array().unwrap().iter().find(|c| c["name"] == "default").unwrap();
+    let panel = &root["diagnostic_settings"];
+    assert_eq!(panel["OLS03001"]["value"], "Error");
+    assert_eq!(panel["OLS02001"]["value"], "Loud");
+    assert!(!panel["OLS02001"]["info"].as_str().unwrap().is_empty());
+    assert!(panel["NOT_A_CODE"]["info"].as_str().unwrap().contains("unknown diagnostic code"));
+}
+
+/// A rejected level for a code the parent file sets: the parent's level is used,
+/// and the panel notes the ignored one on that code's row.
+#[test]
+fn diagnostic_settings_rejected_entry_noted_on_parent_value() {
+    let mut cfg = Cfg::new();
+    let ws = cfg.ws("ws");
+    write_odools(&cfg.temp, "[[config]]\nname = \"default\"\ndiagnostic_settings = { OLS03001 = \"Warning\" }\n");
+    write_odools(&ws, "[[config]]\nname = \"default\"\ndiagnostic_settings = { OLS03001 = \"Loud\" }\n");
+
+    let settings = cfg.default().diagnostic_settings();
+    assert_eq!(settings.iter().find(|(c, _)| c.to_string() == "OLS03001").map(|(_, s)| format!("{s:?}")), Some(S!("Warning")));
+
+    let json = serde_json::to_value(cfg.view()).unwrap();
+    let root = json["config"].as_array().unwrap().iter().find(|c| c["name"] == "default").unwrap();
+    let row = &root["diagnostic_settings"]["OLS03001"];
+    assert_eq!(row["value"], "Warning");
+    assert!(row["info"].as_str().unwrap().contains("ignored 'Loud'"), "{row}");
+}
+
+/// A whole `diagnostic_settings` value rejected (not a table) while a parent
+/// file supplies valid settings: the panel lists it under a `(rejected)` row.
+#[test]
+fn diagnostic_settings_whole_value_rejected_shown_in_view() {
+    let mut cfg = Cfg::new();
+    let ws = cfg.ws("ws");
+    write_odools(&cfg.temp, "[[config]]\nname = \"default\"\ndiagnostic_settings = { OLS03001 = \"Warning\" }\n");
+    write_odools(&ws, "[[config]]\nname = \"default\"\ndiagnostic_settings = \"Error\"\n");
+
+    let json = serde_json::to_value(cfg.view()).unwrap();
+    let root = json["config"].as_array().unwrap().iter().find(|c| c["name"] == "default").unwrap();
+    let row = &root["diagnostic_settings"]["(rejected)"];
+    assert_eq!(row["value"], "Error");
+    assert!(row["info"].as_str().unwrap().contains("must be a table"), "{row}");
+    assert!(root["diagnostic_settings"].get("Error").is_none());
 }
 
 #[test]
@@ -2293,17 +2584,37 @@ name = "default"
 [[config.diagnostic_filters]]
 paths = ["**/*"]
 types = ["Disabled"]
+
+[[config.diagnostic_filters]]
+paths = ["good/**"]
 "#,
     );
 
-    assert!(
-        cfg.err().contains("Disabled"),
-        "error should explain that 'Disabled' is not an allowed filter type"
-    );
+    cfg.message("Disabled");
+    assert_eq!(cfg.default().diagnostic_filters().len(), 1, "the valid filter is kept");
+}
+
+/// The config panel lists a rejected filter (with its note) next to the valid
+/// ones, even when none survived.
+#[test]
+fn rejected_diagnostic_filter_shown_in_view() {
+    let mut cfg = Cfg::new();
+    let ws = cfg.ws("ws");
+    write_odools(&ws, r#"[[config]]
+name = "default"
+diagnostic_filters = [ { codes = ["[invalid regex"], paths = ["**/*"] } ]
+"#);
+
+    let json = serde_json::to_value(cfg.view()).unwrap();
+    let root = json["config"].as_array().unwrap().iter().find(|c| c["name"] == "default").unwrap();
+    let filters = root["diagnostic_filters"].as_array().unwrap();
+    assert_eq!(filters.len(), 1, "{filters:?}");
+    assert!(filters[0]["value"].as_str().unwrap().contains("[invalid regex"));
+    assert!(filters[0]["info"].as_str().unwrap().contains("regex"));
 }
 
 #[test]
-fn diagnostic_filter_invalid_regex_error() {
+fn diagnostic_filter_invalid_regex_rejected() {
     let mut cfg = Cfg::new();
     let ws = cfg.ws("ws");
     write_odools(
@@ -2314,13 +2625,16 @@ name = "default"
 [[config.diagnostic_filters]]
 paths = ["**/*"]
 codes = ["[invalid regex"]
+
+[[config.diagnostic_filters]]
+paths = ["good/**"]
 "#,
     );
 
-    assert!(
-        cfg.err().to_lowercase().contains("regex"),
-        "error should point at the invalid regex"
-    );
+    let msg = cfg.message("invalid regex '[invalid regex': unclosed character class");
+    assert!(!msg.contains('\n'), "message should be one line: {msg:?}");
+    assert!(msg.contains("using the 1 remaining valid entry instead"), "unexpected message: {msg}");
+    assert_eq!(cfg.default().diagnostic_filters().len(), 1, "the valid filter is kept");
 }
 
 #[test]

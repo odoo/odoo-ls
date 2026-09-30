@@ -152,15 +152,29 @@ fn path_ends_with(value: &str, token: &str) -> bool {
 
 /// `$base` ending in `${detectVersion}`: infer `$version` from the workspace
 /// path's component just past the base prefix, and rewrite `$base` to point at
-/// that version.
-fn resolve_detect_version(profile: &mut Profile, ws_path: &Path) -> Result<(), String> {
+/// that version. On failure, `$base` is rejected.
+fn resolve_detect_version(profile: &mut Profile, ws_path: &Path) {
     let Some((base_value, base_sources)) = read_scalar(profile, ConfigKey::Base) else {
-        return Ok(());
+        return;
     };
     if !path_ends_with(&base_value, DETECT_VERSION) {
-        return Ok(());
+        return;
     }
-    let base_path = Path::new(&base_value);
+    match detect_version(&base_value, ws_path) {
+        Ok((version, base)) => {
+            profile.set_scalar_str(ConfigKey::Version, version, default_sources());
+            profile.set_scalar_str(ConfigKey::Base, base, base_sources);
+        }
+        Err(reason) => {
+            profile.values.remove(&ConfigKey::Base);
+            profile.add_rejected(ConfigKey::Base, base_value, base_sources, reason);
+        }
+    }
+}
+
+/// `(version, resolved $base)` detected from `ws_path` for a `${detectVersion}` base.
+fn detect_version(base_value: &str, ws_path: &Path) -> Result<(String, String), String> {
+    let base_path = Path::new(base_value);
     let Some(prefix) = base_path.parent() else {
         return Err(S!("\"$base\" must be a valid path with a parent directory"));
     };
@@ -189,13 +203,8 @@ fn resolve_detect_version(profile: &mut Profile, ws_path: &Path) -> Result<(), S
         ));
     }
 
-    profile.set_scalar_str(ConfigKey::Version, version.clone(), default_sources());
-    profile.set_scalar_str(
-        ConfigKey::Base,
-        prefix.join(&version).sanitize(),
-        base_sources,
-    );
-    Ok(())
+    let base = prefix.join(&version).sanitize();
+    Ok((version, base))
 }
 
 /// `$version` ending in `${splitVersion}`: mark the profile abstract and spawn a
@@ -269,7 +278,7 @@ pub(super) fn expand_version_profiles(
     };
     let mut spawned = Vec::new();
     for profile in set.values_mut() {
-        resolve_detect_version(profile, Path::new(ws_path))?;
+        resolve_detect_version(profile, Path::new(ws_path));
         spawned.extend(resolve_split_version(profile, &ctx)?);
     }
     for child in spawned {
