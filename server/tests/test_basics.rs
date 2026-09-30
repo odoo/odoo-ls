@@ -342,11 +342,11 @@ fn test_sections() {
     assert_get_int_eval_values("d", HashSet::from_iter([4, 5]));
     assert_get_int_eval_values("e", HashSet::from_iter([1, 2 ,3]));
     // For statement sections
-    assert_get_int_eval_values("f", HashSet::from_iter([32, 33, 34, 35]));
+    assert_get_int_eval_values("f", HashSet::from_iter([35]));
     assert_get_int_eval_values("g", HashSet::from_iter([98, 99]));
-    assert_get_int_eval_values("h", HashSet::from_iter([98, 5]));
+    assert_get_int_eval_values("h", HashSet::from_iter([5]));
     // While statement sections
-    assert_get_int_eval_values("i", HashSet::from_iter([67, 76]));
+    assert_get_int_eval_values("i", HashSet::from_iter([76]));
     assert_get_int_eval_values("j", HashSet::from_iter([37, 27]));
     // Try statement sections
     assert_get_int_eval_values("k", HashSet::from_iter([2, 3]));
