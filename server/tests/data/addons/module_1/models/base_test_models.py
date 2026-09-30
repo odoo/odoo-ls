@@ -95,3 +95,64 @@ class DisplayNameRelatedModel(models.Model):
 
     def _init_column_kind(self):
         pass
+
+
+ref_probe = 1
+
+
+def probe_decorator(x):
+    return x
+
+
+@probe_decorator(ref_probe)
+def probe_func(a=ref_probe, b: ref_probe = None) -> ref_probe:
+    annotated: ref_probe = None
+    acc = 0
+    acc += ref_probe
+    for _ in [ref_probe]:
+        pass
+    while ref_probe:
+        break
+    with ref_probe:
+        pass
+    try:
+        ref_probe
+    except ref_probe:
+        ref_probe
+    else:
+        ref_probe
+    finally:
+        ref_probe
+    match acc:
+        case ProbeBase():
+            pass
+    raise ValueError() from ref_probe
+
+
+class ProbeBase:
+    pass
+
+
+class ProbeChild(ProbeBase):
+    pass
+
+
+@probe_decorator(ref_probe)
+class ProbeDecorated:
+    pass
+
+
+probe_aug = 1
+probe_aug += 1
+
+with probe_decorator(1) as probe_ctx_var:
+    probe_ctx_var
+
+
+comp_elt = [ref_probe for _ in []]
+comp_iter = [1 for _ in [ref_probe]]
+comp_cond = [1 for _ in [] if ref_probe]
+gen_iter = (1 for _ in [ref_probe])
+setcomp_iter = {1 for _ in [ref_probe]}
+dictcomp_iter = {1: 2 for _ in [ref_probe]}
+nested_comp_iter = [1 for _ in [] for __ in [ref_probe]]

@@ -7,6 +7,8 @@ use crate::setup::setup::{create_init_session, setup_server};
 
 mod setup;
 
+
+
 #[test]
 /// Test various calls to GotoReferences
 fn test_references() {
@@ -142,6 +144,86 @@ fn test_references() {
     assert_in_result(&mut references, "module_for_diagnostics/models/bike_parts_wheel.py", 11, 4);
     assert_in_result(&mut references, "module_for_diagnostics/data/bike_parts.wheel.csv", 0, 14);
 
+
+    // constructs the reference visitor used to skip entirely
+    let base_models_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
+    let mut references = get_references(&mut session, &base_models_file, Position::new(99, 0));
+    // definition
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 99, 0);
+    // function decorator
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 106, 17);
+    // parameter default
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 107, 17);
+    // parameter annotation
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 107, 31);
+    // return annotation
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 107, 52);
+    // annotation of an annotated assignment
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 108, 15);
+    // value of an augmented assignment
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 110, 11);
+    // iterable of a for statement
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 111, 14);
+    // test of a while statement
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 113, 10);
+    // context expression of a with statement
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 115, 9);
+    // try body
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 118, 8);
+    // except handler type
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 119, 11);
+    // except handler body
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 120, 8);
+    // try else clause
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 122, 8);
+    // try finally clause
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 124, 8);
+    // cause of a raise statement
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 128, 28);
+    // class decorator
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 139, 17);
+    // comprehension element
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 151, 12);
+    // iterable of a list comprehension
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 152, 25);
+    // condition of a list comprehension
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 153, 30);
+    // iterable of a generator expression
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 154, 24);
+    // iterable of a set comprehension
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 155, 28);
+    // iterable of a dict comprehension
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 156, 32);
+    // iterable of a second `for` clause in one comprehension
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 157, 45);
+    assert!(references.is_empty(), "Some references were not expected: {}",
+        references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
+    );
+
+    // target of an augmented assignment
+    let mut references = get_references(&mut session, &base_models_file, Position::new(144, 0));
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 144, 0);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 145, 0);
+    assert!(references.is_empty(), "Some references were not expected: {}",
+        references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
+    );
+
+    // `as` target of a with statement
+    let mut references = get_references(&mut session, &base_models_file, Position::new(147, 27));
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 147, 27);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 148, 4);
+    assert!(references.is_empty(), "Some references were not expected: {}",
+        references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
+    );
+
+    // class base, and a class named in a match pattern
+    let mut references = get_references(&mut session, &base_models_file, Position::new(131, 6));
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 126, 13);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 131, 0);
+    assert_in_result(&mut references, "module_1/models/base_test_models.py", 135, 17);
+    assert!(references.is_empty(), "Some references were not expected: {}",
+        references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
+    );
     // for r in references.iter() {
     //     error!("Reference found at {}:{}:{}", r.uri.as_str(), r.range.start.line, r.range.start.character);
     // }
