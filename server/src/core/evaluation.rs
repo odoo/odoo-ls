@@ -15,7 +15,7 @@ use itertools::FoldWhile::{Continue, Done};
 use itertools::Itertools;
 use lsp_types::{Diagnostic, Location, Position, Range};
 use ruff_python_ast::{
-    Expr, ExprCall, FStringPart, Identifier, Number, Parameter, UnaryOp,
+    Comprehension, Expr, ExprCall, FStringPart, Identifier, Number, Parameter, UnaryOp,
 };
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use std::cmp::{max, min};
@@ -570,6 +570,23 @@ impl Evaluation {
     * should be equal to vec![vec![], vec![]] to be able to get arch and arch_eval deps at index 0 and 1. It means that if validation is
     * not build but required during the eval_from_ast, it will NOT be built
     */
+    /// A comprehension's `for ... in <iter>` and `if <cond>` clauses. Only the element decides
+    /// the resulting type, but the clauses are ordinary expressions and still have to be walked.
+    fn eval_comprehension_clauses(session: &mut SessionInfo, generators: &[Comprehension], parent: SymbolKey, max_infer: &TextSize, required_dependencies: &mut Vec<Vec<SourceFileKey>>, diagnostics: &mut Vec<Diagnostic>, is_in_validation: bool) {
+        for generator in generators.iter() {
+            let (_, diags) = Evaluation::eval_from_ast(session, &generator.iter, parent, max_infer, false, required_dependencies);
+            if is_in_validation {
+                diagnostics.extend(diags);
+            }
+            for condition in generator.ifs.iter() {
+                let (_, diags) = Evaluation::eval_from_ast(session, condition, parent, max_infer, false, required_dependencies);
+                if is_in_validation {
+                    diagnostics.extend(diags);
+                }
+            }
+        }
+    }
+
     pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: impl Into<SymbolKey>, max_infer: &TextSize, for_annotation: bool, required_dependencies: &mut Vec<Vec<SourceFileKey>>) -> (Vec<Evaluation>, Vec<Diagnostic>) {
         let parent = parent.into();
         let from_module;
@@ -1494,7 +1511,6 @@ impl Evaluation {
                     }
                 }
             },
-            // Todo: process comprehensions
             ExprOrIdent::Expr(Expr::ListComp(list_comp_expr)) => {
                 evals.push(Evaluation::new_list(odoo, None, list_comp_expr.range));
                 if is_in_validation || odoo.evaluation_search.is_some() {
@@ -1502,6 +1518,7 @@ impl Evaluation {
                     if is_in_validation {
                         diagnostics.extend(diags);
                     }
+                    Evaluation::eval_comprehension_clauses(session, &list_comp_expr.generators, parent, max_infer, required_dependencies, &mut diagnostics, is_in_validation);
                 }
             },
             ExprOrIdent::Expr(Expr::SetComp(set_comp_expr)) => {
@@ -1511,6 +1528,7 @@ impl Evaluation {
                     if is_in_validation {
                         diagnostics.extend(diags);
                     }
+                    Evaluation::eval_comprehension_clauses(session, &set_comp_expr.generators, parent, max_infer, required_dependencies, &mut diagnostics, is_in_validation);
                 }
             },
             ExprOrIdent::Expr(Expr::Generator(generator_expr)) => {
@@ -1519,6 +1537,7 @@ impl Evaluation {
                     if is_in_validation {
                         diagnostics.extend(diags);
                     }
+                    Evaluation::eval_comprehension_clauses(session, &generator_expr.generators, parent, max_infer, required_dependencies, &mut diagnostics, is_in_validation);
                 }
             },
             ExprOrIdent::Expr(Expr::DictComp(dict_comp_expr)) => {
@@ -1532,6 +1551,7 @@ impl Evaluation {
                     if is_in_validation {
                         diagnostics.extend(diags);
                     }
+                    Evaluation::eval_comprehension_clauses(session, &dict_comp_expr.generators, parent, max_infer, required_dependencies, &mut diagnostics, is_in_validation);
                 }
             },
             // Nothing to do here

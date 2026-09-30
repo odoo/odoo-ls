@@ -20,8 +20,9 @@ use crate::{
 };
 use lsp_types::Location;
 use ruff_python_ast::{
-    Alias, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign,
-    StmtClassDef, StmtIf, StmtMatch, StmtRaise, StmtReturn, StmtTry, StmtTypeAlias, StmtWith,
+    Alias, Decorator, ExceptHandler, Expr, Identifier, Parameters, Pattern, Stmt, StmtAnnAssign,
+    StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtFunctionDef, StmtIf, StmtMatch,
+    StmtRaise, StmtReturn, StmtTry, StmtTypeAlias, StmtWith,
 };
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::error;
@@ -470,12 +471,7 @@ impl ReferenceVisitor {
         for stmt in vec_ast.iter() {
             match stmt {
                 Stmt::FunctionDef(f) => {
-                    let sym = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &f.name, &f.range);
-                    if let Some(sym) = sym {
-                        self.sym_stack.push(sym);
-                        self.visit_vec_stmt(session, &f.body);
-                        self.sym_stack.pop();
-                    }
+                    self.visit_func_def(session, f);
                 },
                 Stmt::ClassDef(c) => {
                     self.visit_class_def(session, c);
@@ -509,6 +505,7 @@ impl ReferenceVisitor {
                     }
                 },
                 Stmt::For(f) => {
+                    self.visit_expr(session, &f.iter, &f.iter.start());
                     self.visit_expr(session, &f.target, &f.target.start());
                     self.visit_vec_stmt(session, &f.body);
                     self.visit_vec_stmt(session, &f.orelse);
@@ -571,7 +568,48 @@ impl ReferenceVisitor {
         }
     }
 
+    fn visit_decorators(&mut self, session: &mut SessionInfo, decorators: &[Decorator]) {
+        for decorator in decorators.iter() {
+            self.visit_expr(session, &decorator.expression, &decorator.range.start());
+        }
+    }
+
+    /// Defaults and annotations are evaluated where the `def` is, not inside it.
+    fn visit_parameters(&mut self, session: &mut SessionInfo, parameters: &Parameters, max_infer: &TextSize) {
+        for parameter in parameters.iter() {
+            if let Some(annotation) = parameter.annotation() {
+                self.visit_expr(session, annotation, max_infer);
+            }
+            if let Some(default) = parameter.default() {
+                self.visit_expr(session, default, max_infer);
+            }
+        }
+    }
+
+    fn visit_func_def(&mut self, session: &mut SessionInfo, f: &StmtFunctionDef) {
+        self.visit_decorators(session, &f.decorator_list);
+        self.visit_parameters(session, &f.parameters, &f.range.start());
+        if let Some(returns) = f.returns.as_ref() {
+            self.visit_expr(session, returns, &f.range.start());
+        }
+        let sym = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &f.name, &f.range);
+        if let Some(sym) = sym {
+            self.sym_stack.push(sym);
+            self.visit_vec_stmt(session, &f.body);
+            self.sym_stack.pop();
+        }
+    }
+
     fn visit_class_def(&mut self, session: &mut SessionInfo, c: &StmtClassDef) {
+        self.visit_decorators(session, &c.decorator_list);
+        if let Some(arguments) = c.arguments.as_ref() {
+            for base in arguments.args.iter() {
+                self.visit_expr(session, base, &c.range.start());
+            }
+            for keyword in arguments.keywords.iter() {
+                self.visit_expr(session, &keyword.value, &c.range.start());
+            }
+        }
         let sym = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &c.name, &c.range);
         if let Some(sym) = sym {
             self.sym_stack.push(sym);
@@ -595,15 +633,60 @@ impl ReferenceVisitor {
         if let Some(exc) = stmt_raise.exc.as_ref() {
             self.visit_expr(session, exc, &stmt_raise.range.start());
         }
+        if let Some(cause) = stmt_raise.cause.as_ref() {
+            self.visit_expr(session, cause, &stmt_raise.range.start());
+        }
     }
 
     fn visit_match(&mut self, session: &mut SessionInfo, stmt_match: &StmtMatch) {
         self.visit_expr(session, &stmt_match.subject, &stmt_match.range.start());
         for case in stmt_match.cases.iter() {
+            self.visit_pattern(session, &case.pattern);
             if let Some(guard) = case.guard.as_ref() {
                 self.visit_expr(session, guard, &case.pattern.start());
             }
             self.visit_vec_stmt(session, &case.body);
+        }
+    }
+
+    /// A pattern can name types and constants, e.g. `case Point(x=0)` or `case Color.RED`.
+    fn visit_pattern(&mut self, session: &mut SessionInfo, pattern: &Pattern) {
+        let max_infer = pattern.range().start();
+        match pattern {
+            Pattern::MatchValue(value) => self.visit_expr(session, &value.value, &max_infer),
+            Pattern::MatchClass(class) => {
+                self.visit_expr(session, &class.cls, &max_infer);
+                for pattern in class.arguments.patterns.iter() {
+                    self.visit_pattern(session, pattern);
+                }
+                for keyword in class.arguments.keywords.iter() {
+                    self.visit_pattern(session, &keyword.pattern);
+                }
+            },
+            Pattern::MatchMapping(mapping) => {
+                for key in mapping.keys.iter() {
+                    self.visit_expr(session, key, &max_infer);
+                }
+                for pattern in mapping.patterns.iter() {
+                    self.visit_pattern(session, pattern);
+                }
+            },
+            Pattern::MatchSequence(sequence) => {
+                for pattern in sequence.patterns.iter() {
+                    self.visit_pattern(session, pattern);
+                }
+            },
+            Pattern::MatchOr(or) => {
+                for pattern in or.patterns.iter() {
+                    self.visit_pattern(session, pattern);
+                }
+            },
+            Pattern::MatchAs(as_pattern) => {
+                if let Some(pattern) = as_pattern.pattern.as_ref() {
+                    self.visit_pattern(session, pattern);
+                }
+            },
+            Pattern::MatchStar(_) | Pattern::MatchSingleton(_) => {},
         }
     }
 
@@ -612,6 +695,7 @@ impl ReferenceVisitor {
     }
 
     fn visit_aug_assign(&mut self, session: &mut SessionInfo, assign: &StmtAugAssign) {
+        self.visit_expr(session, &assign.target, &assign.range.start());
         self.visit_expr(session, &assign.value, &assign.range.start());
     }
 
@@ -635,6 +719,9 @@ impl ReferenceVisitor {
     fn visit_with(&mut self, session: &mut SessionInfo, stmt_with: &StmtWith) {
         for item in stmt_with.items.iter() {
             self.visit_expr(session, &item.context_expr, &stmt_with.range.start());
+            if let Some(optional_vars) = item.optional_vars.as_ref() {
+                self.visit_expr(session, optional_vars, &stmt_with.range.start());
+            }
         }
         self.visit_vec_stmt(session, &stmt_with.body);
     }
@@ -648,13 +735,22 @@ impl ReferenceVisitor {
 
     fn visit_ann_assign(&mut self, session: &mut SessionInfo, assign: &StmtAnnAssign) {
         self.visit_expr(session, &assign.target, &assign.range.start());
+        self.visit_expr(session, &assign.annotation, &assign.range.start());
         if let Some(value) = assign.value.as_ref() {
             self.visit_expr(session, value, &assign.range.start());
         }
     }
 
     fn visit_try(&mut self, session: &mut SessionInfo, node: &StmtTry) {
-        //TODO handle handlers of try
         self.visit_vec_stmt(session, &node.body);
+        for handler in node.handlers.iter() {
+            let ExceptHandler::ExceptHandler(handler) = handler;
+            if let Some(type_) = handler.type_.as_ref() {
+                self.visit_expr(session, type_, &handler.range.start());
+            }
+            self.visit_vec_stmt(session, &handler.body);
+        }
+        self.visit_vec_stmt(session, &node.orelse);
+        self.visit_vec_stmt(session, &node.finalbody);
     }
 }
