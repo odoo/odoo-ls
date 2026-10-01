@@ -3,6 +3,7 @@ use std::fmt::Display;
 use itertools::Itertools;
 use ruff_python_ast::{Expr, ExprCall, Keyword};
 use ruff_text_size::{Ranged, TextRange, TextSize};
+use crate::core::evaluation_context::ContextKey::ComodelName;
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use crate::core::file_mgr::FileMgr;
 use crate::core::odoo::SyncOdoo;
@@ -758,8 +759,16 @@ impl FeaturesUtils {
     fn get_class_type_info(
         session: &mut SessionInfo,
         eval_weak: &EvaluationSymbolWeak,
+        result_sym_key: SymbolKey,
         class_key: ClassKey,
     ) -> TypeInfo {
+        let is_relational = SymbolTable::is_specific_field_class(session, result_sym_key, &["Many2one", "One2many", "Many2many"]);
+        if is_relational
+            && let Some(comodel_name) = eval_weak.context.get(ComodelName)
+        {
+            let comodel_name = comodel_name.as_str();
+            return TypeInfo::VALUE(format!("({comodel_name}) {}", session.st()[class_key].name));
+        }
         TypeInfo::VALUE(if eval_weak.is_super {format!("super[{}]", session.st()[class_key].name)} else {session.st()[class_key].name.to_string()})
     }
 
@@ -774,7 +783,7 @@ impl FeaturesUtils {
             SymbolKey::File(_) => TypeInfo::VALUE(S!("File")),
             SymbolKey::PythonPackage(_) | SymbolKey::Module(_) => TypeInfo::VALUE(S!("Module")),
             SymbolKey::Namespace(_) => TypeInfo::VALUE(S!("Namespace")),
-            SymbolKey::Class(class_key) => Self::get_class_type_info(session, eval_weak, class_key), // TODO: Maybe do something special if it is a descriptor
+            SymbolKey::Class(class_key) => Self::get_class_type_info(session, eval_weak, result_sym_key, class_key), // TODO: Maybe do something special if it is a descriptor
             SymbolKey::XmlRecord(xml_field_record_key) => {
                 let xml_record = &session.st()[xml_field_record_key];
                 match xml_record.get_field_text(XmlFieldName::Type, session.st()) {
