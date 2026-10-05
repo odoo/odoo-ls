@@ -104,9 +104,14 @@ impl ResettableBuildable for name {
     }
 }
 
-//arch - arch_eval - validation
-#[duplicate_item(name; [ModuleSymbol]; [PythonPackageSymbol]; [FileSymbol]; [FunctionSymbol])]
+//arch - arch_eval - pre_validation - validation
+#[duplicate_item(name; [ModuleSymbol]; [PythonPackageSymbol]; [FileSymbol])]
 impl Buildable for name {
+    const STEPS: &'static [BuildSteps] = &[BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::PRE_VALIDATION, BuildSteps::VALIDATION];
+}
+
+//arch - arch_eval - validation (inner functions are built by the PRE_VALIDATION of their file)
+impl Buildable for FunctionSymbol {
     const STEPS: &'static [BuildSteps] = &[BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::VALIDATION];
 }
 

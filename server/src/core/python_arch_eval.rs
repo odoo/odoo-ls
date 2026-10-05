@@ -52,7 +52,7 @@ impl PythonArchEval {
             entry_point,
             file,
             file_mode,
-            current_step: if file_mode {BuildSteps::ARCH_EVAL} else {BuildSteps::VALIDATION},
+            current_step: if file_mode {BuildSteps::ARCH_EVAL} else {BuildSteps::PRE_VALIDATION},
             sym_stack: vec![symbol.into()],
             diagnostics: Vec::new(),
             safe_import: vec![false],

@@ -161,11 +161,7 @@ impl GotoUtils {
         let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
         let file_info_ast_clone = file_info.borrow().file_info_ast.clone();
         let file_info_ast_ref = file_info_ast_clone.borrow();
-        let (mut analyse_ast_result, _range, expr, call_expr) = AstUtils::get_symbols(session, &file_info_ast_ref, file_symbol, offset as u32);
-        if let Some(expr @ ExprOrIdent::Expr(attr_expr)) = &expr
-            && AstUtils::ensure_instance_attributes(session, file_symbol, attr_expr, &analyse_ast_result.evaluations, offset as u32) {
-                analyse_ast_result = AstUtils::get_symbol_from_expr(session, file_symbol, expr, offset as u32).0;
-            }
+        let (analyse_ast_result, _range, expr, call_expr) = AstUtils::get_symbols(session, &file_info_ast_ref, file_symbol, offset as u32);
         if analyse_ast_result.evaluations.is_empty() {
             return vec![];
         }

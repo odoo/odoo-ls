@@ -87,13 +87,6 @@ impl PythonValidator {
                     let old_noqa = session.current_noqa.clone();
                     session.current_noqa = session.st().get_noqas(symbol);
                     let stmts = file_info_ast.get_stmts().unwrap();
-                    // Build ARCH for every function/method in this file first, then
-                    // ARCH_EVAL for every one of them, and only then actually validate -
-                    // instead of doing ARCH, ARCH_EVAL and VALIDATION one symbol at a
-                    // time. This still only guarantees the ordering within this one
-                    // file (not globally across the whole codebase).
-                    self.build_functions_phase(session, stmts, BuildSteps::ARCH);
-                    self.build_functions_phase(session, stmts, BuildSteps::ARCH_EVAL);
                     self.validate_body(session, stmts);
                     session.current_noqa = old_noqa;
                 }
@@ -195,6 +188,50 @@ impl PythonValidator {
         }
     }
 
+    /// PRE_VALIDATION step of a python file: build ARCH for every function/method of the
+    /// file, then ARCH_EVAL for every one of them, so that the VALIDATION step only has
+    /// to validate. As the BuildScheduler only validates files once no PRE_VALIDATION is
+    /// left in its queues, all files waiting for validation have their functions built
+    /// before any of them is validated.
+    pub fn pre_validate(&mut self, session: &mut SessionInfo) {
+        let symbol = self.sym_stack[0];
+        if !matches!(symbol, SymbolKey::File(_) | SymbolKey::PythonPackage(_) | SymbolKey::Module(_)) {
+            panic!("Only File can be pre-validated")
+        }
+        if !session.st().ready_for_step(symbol.unwrap_buildable_key(), BuildSteps::PRE_VALIDATION) {
+            return;
+        }
+        if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !session.st().is_external(symbol)) {
+            trace!("PRE_VALIDATION - PYTHON FILE {}", session.st().paths(symbol).first().unwrap_or(&S!("No path found")));
+        }
+        let (file_info_rc, loaded) = FileMgr::get_or_recreate_file_info(session, self.file);
+        if !loaded {
+            session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::PRE_VALIDATION, BuildStatus::INVALID);
+            return;
+        }
+        session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::PRE_VALIDATION, BuildStatus::IN_PROGRESS);
+        if !file_info_rc.borrow().file_info_ast.borrow().ast.is_built() {
+            file_info_rc.borrow_mut().prepare_ast(session);
+        }
+        if file_info_rc.borrow().file_info_ast.borrow().text_hash != session.st().get_processed_text_hash(self.file) {
+            session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::PRE_VALIDATION, BuildStatus::INVALID);
+            return;
+        }
+        let file_info_ast_rc = file_info_rc.borrow().file_info_ast.clone();
+        let file_info_ast = file_info_ast_rc.borrow();
+        if file_info_ast.ast.as_py_ast().indexed_module.is_some() {
+            let old_noqa = session.current_noqa.clone();
+            session.current_noqa = session.st().get_noqas(symbol);
+            let stmts = file_info_ast.get_stmts().unwrap();
+            self.build_functions_phase(session, stmts, BuildSteps::ARCH);
+            self.build_functions_phase(session, stmts, BuildSteps::ARCH_EVAL);
+            session.current_noqa = old_noqa;
+        }
+        drop(file_info_ast);
+        session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::PRE_VALIDATION, BuildStatus::DONE);
+        BuildScheduler::queue(session, symbol.unwrap_buildable_key());
+    }
+
     /// Recursively `build_now(step)` every function/method definition
     /// reachable from `vec_ast` - through classes and control-flow bodies,
     /// in the same shape `validate_body` itself walks - without descending
@@ -202,10 +239,7 @@ impl PythonValidator {
     /// into whatever it nests (see `PythonArchEval::_visit_function_def`),
     /// so doing it again here would be redundant.
     ///
-    /// Called twice before `validate_body` (once for ARCH, once for
-    /// ARCH_EVAL) so that, within one file, every function has both steps
-    /// done before any of them gets validated - instead of doing ARCH,
-    /// ARCH_EVAL and VALIDATION for each function one at a time.
+    /// Called twice by `pre_validate` (once for ARCH, once for ARCH_EVAL).
     fn build_functions_phase(&mut self, session: &mut SessionInfo, vec_ast: &[Stmt], step: BuildSteps) {
         for stmt in vec_ast.iter() {
             match stmt {
@@ -259,10 +293,8 @@ impl PythonValidator {
                 Stmt::FunctionDef(f) => {
                     let sym = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &f.name, &f.range);
                     if let Some(sym) = sym {
-                        // Normally already done by the two build_functions_phase passes run
-                        // before validate_body for a whole file (see `validate`) - these are
-                        // a safety net for validate() entry points that skip that pre-pass
-                        // (e.g. validating a single function directly).
+                        // Normally already done by the PRE_VALIDATION step of the file (see
+                        // `pre_validate`) - this is a safety net for functions invalidated since.
                         if session.st().ready_for_step(sym.unwrap_buildable_key(), BuildSteps::ARCH) {
                             BuildScheduler::build_now(session, sym.unwrap_buildable_key(), BuildSteps::ARCH);
                         }
@@ -871,7 +903,7 @@ impl PythonValidator {
     }
 
     fn validate_expr(&mut self, session: &mut SessionInfo, expr: &Expr, max_infer: &TextSize) {
-        let mut deps = vec![vec![], vec![], vec![]];
+        let mut deps = vec![vec![], vec![], vec![], vec![]];
         let (_, diags) = Evaluation::eval_from_ast(session, expr, *self.sym_stack.last().unwrap(), max_infer, false, &mut deps);
         session.sync_odoo.symbol_table.insert_dependencies(self.file, &deps, BuildSteps::VALIDATION);
         self.diagnostics.extend(diags);

@@ -55,7 +55,7 @@ impl PythonArchBuilder {
             entry_point,
             file,
             file_mode,
-            current_step: if file_mode {BuildSteps::ARCH} else {BuildSteps::VALIDATION},
+            current_step: if file_mode {BuildSteps::ARCH} else {BuildSteps::PRE_VALIDATION},
             sym_stack: vec![symbol.into()],
             __all_symbols_to_add: Vec::new(),
             diagnostics: vec![],

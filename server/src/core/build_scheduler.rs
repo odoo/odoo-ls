@@ -9,6 +9,7 @@ use crate::{S, constants::{BuildStatus, BuildSteps, DEBUG_REBUILD_NOW, DEBUG_STE
 pub struct BuildScheduler {
     rebuild_arch: FifoWeakHashSet<BuildableSymbolKey>,
     rebuild_arch_eval: FifoWeakHashSet<BuildableSymbolKey>,
+    rebuild_pre_validation: FifoWeakHashSet<BuildableSymbolKey>,
     rebuild_validation: FifoWeakHashSet<BuildableSymbolKey>,
 }
 
@@ -29,11 +30,12 @@ impl BuildScheduler {
         BuildScheduler {
             rebuild_arch: FifoWeakHashSet::new(),
             rebuild_arch_eval: FifoWeakHashSet::new(),
+            rebuild_pre_validation: FifoWeakHashSet::new(),
             rebuild_validation: FifoWeakHashSet::new(),
         }
     }
 
-    /// Build one item from the build queues, preferably ARCH, then ARCH_EVAL, then VALIDATION if `validation` is `true`.
+    /// Build one item from the build queues, preferably ARCH, then ARCH_EVAL, then PRE_VALIDATION and VALIDATION if `validation` is `true`.
     /// Returns true if an item was built, false if all queues are empty.
     pub fn build_one(session: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, validation: bool) -> bool {
         while let Some(symbol) = bs!(session).rebuild_arch.pop_front_valid(&session.sync_odoo.symbol_table) {
@@ -50,7 +52,16 @@ impl BuildScheduler {
                 return true;
             }
         }
-        if validation && let Some(symbol) = bs!(session).rebuild_validation.pop_front_valid(&session.sync_odoo.symbol_table) {
+        if !validation {
+            return false;
+        }
+        while let Some(symbol) = bs!(session).rebuild_pre_validation.pop_front_valid(&session.sync_odoo.symbol_table) {
+            if let Some(python_buildable) = symbol.as_python_buildable() {
+                PythonValidator::new(session.st(), entry.clone(), python_buildable).pre_validate(session);
+                return true;
+            }
+        }
+        if let Some(symbol) = bs!(session).rebuild_validation.pop_front_valid(&session.sync_odoo.symbol_table) {
             Self::validate(session, symbol.into(), entry.clone());
             return true;
         }
@@ -72,6 +83,7 @@ impl BuildScheduler {
         match current_step {
             BuildSteps::ARCH => bs!(session).rebuild_arch.insert(symbol),
             BuildSteps::ARCH_EVAL => bs!(session).rebuild_arch_eval.insert(symbol),
+            BuildSteps::PRE_VALIDATION => bs!(session).rebuild_pre_validation.insert(symbol),
             BuildSteps::VALIDATION => bs!(session).rebuild_validation.insert(symbol)
         }
     }
@@ -79,11 +91,18 @@ impl BuildScheduler {
     pub fn get_rebuild_queue_size(session: &mut SessionInfo) -> usize {
         bs!(session).rebuild_arch.len() +
         bs!(session).rebuild_arch_eval.len() +
+        bs!(session).rebuild_pre_validation.len() +
         bs!(session).rebuild_validation.len()
     }
 
+    /// Remaining validation work: a file waiting for PRE_VALIDATION still has to be validated, so it counts twice.
     pub fn validation_queue_len(session: &mut SessionInfo) -> usize {
-        bs!(session).rebuild_validation.len()
+        bs!(session).rebuild_pre_validation.len() * 2 + bs!(session).rebuild_validation.len()
+    }
+
+    fn has_work(session: &SessionInfo) -> bool {
+        !bs!(session).rebuild_arch.is_empty() || !bs!(session).rebuild_arch_eval.is_empty()
+        || !bs!(session).rebuild_pre_validation.is_empty() || !bs!(session).rebuild_validation.is_empty()
     }
 
     fn pop_item(session: &mut SessionInfo, step: BuildSteps) -> Option<BuildableSymbolKey> {
@@ -91,6 +110,7 @@ impl BuildScheduler {
         let set =  match step {
             BuildSteps::ARCH => &bs!(session).rebuild_arch,
             BuildSteps::ARCH_EVAL => &bs!(session).rebuild_arch_eval,
+            BuildSteps::PRE_VALIDATION => &bs!(session).rebuild_pre_validation,
             BuildSteps::VALIDATION => &bs!(session).rebuild_validation,
         };
         let mut selected_sym: Option<BuildableSymbolKey> = None;
@@ -104,6 +124,7 @@ impl BuildScheduler {
                 let index_set =  match index {
                     x if x == BuildSteps::ARCH as usize => &bs!(session).rebuild_arch,
                     x if x == BuildSteps::ARCH_EVAL as usize => &bs!(session).rebuild_arch_eval,
+                    x if x == BuildSteps::PRE_VALIDATION as usize => &bs!(session).rebuild_pre_validation,
                     x if x == BuildSteps::VALIDATION as usize => &bs!(session).rebuild_validation,
                     _ => continue,
                 };
@@ -121,6 +142,7 @@ impl BuildScheduler {
         }
         let set =  match step {
             BuildSteps::ARCH_EVAL => &mut bs!(session).rebuild_arch_eval,
+            BuildSteps::PRE_VALIDATION => &mut bs!(session).rebuild_pre_validation,
             BuildSteps::VALIDATION => &mut bs!(session).rebuild_validation,
             _ => &mut bs!(session).rebuild_arch,
         };
@@ -184,14 +206,14 @@ impl BuildScheduler {
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::default();
 
         //workdone progress
-        let mut reporter = (!bs!(session).rebuild_arch.is_empty() || !bs!(session).rebuild_arch_eval.is_empty() || !bs!(session).rebuild_validation.is_empty())
+        let mut reporter = Self::has_work(session)
             .then(|| ProgressReporterRemaining::start(session, "Odoo: Indexing"));
-        trace!("Starting rebuild: {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), bs!(session).rebuild_validation.len());
-        while !session.sync_odoo.need_rebuild && (!bs!(session).rebuild_arch.is_empty() || !bs!(session).rebuild_arch_eval.is_empty() || !bs!(session).rebuild_validation.is_empty()) {
+        trace!("Starting rebuild: {:?} - {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), bs!(session).rebuild_pre_validation.len(), bs!(session).rebuild_validation.len());
+        while !session.sync_odoo.need_rebuild && Self::has_work(session) {
             if DEBUG_THREADS {
-                trace!("remains: {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), bs!(session).rebuild_validation.len());
+                trace!("remains: {:?} - {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), bs!(session).rebuild_pre_validation.len(), bs!(session).rebuild_validation.len());
             }
-            let queue_size = bs!(session).rebuild_arch.len() * 3 + bs!(session).rebuild_arch_eval.len() * 2 + bs!(session).rebuild_validation.len();
+            let queue_size = bs!(session).rebuild_arch.len() * 4 + bs!(session).rebuild_arch_eval.len() * 3 + Self::validation_queue_len(session);
             if let Some(reporter) = &mut reporter {
                 reporter.report_progress(queue_size);
             }
@@ -236,6 +258,17 @@ impl BuildScheduler {
                 };
                 continue;
             }
+            let sym = BuildScheduler::pop_item(session, BuildSteps::PRE_VALIDATION);
+            if let Some(sym_key) = sym {
+                if DEBUG_STEPS {
+                    trace!("PROCESSING FROM PRE_VALIDATION - {}", session.st().debug_path(sym_key.into()));
+                }
+                let (_, entry) = session.st().get_tree_and_entry(sym_key.into());
+                if let Some(python_buildable) = sym_key.as_python_buildable() {
+                    PythonValidator::new(session.st(), entry, python_buildable).pre_validate(session);
+                }
+                continue;
+            }
             if no_validation {
                 session.request_delayed_rebuild();
                 if let Some(reporter) = &mut reporter {
@@ -269,7 +302,7 @@ impl BuildScheduler {
         if let Some(reporter) = &mut reporter {
             reporter.end();
         }
-        trace!("Leaving rebuild with remaining tasks: {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), bs!(session).rebuild_validation.len());
+        trace!("Leaving rebuild with remaining tasks: {:?} - {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), bs!(session).rebuild_pre_validation.len(), bs!(session).rebuild_validation.len());
         true
     }
 
@@ -329,6 +362,8 @@ impl BuildScheduler {
                     if let Some(mut builder) = PythonArchEval::new(session.st(), entry_point, python_buildable) {
                         builder.eval_arch(session);
                     };
+                } else if step == BuildSteps::PRE_VALIDATION {
+                    PythonValidator::new(session.st(), entry_point, python_buildable).pre_validate(session);
                 } else if step == BuildSteps::VALIDATION {
                     let mut validator = PythonValidator::new(session.st(), entry_point, python_buildable);
                     validator.validate(session);

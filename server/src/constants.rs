@@ -85,9 +85,11 @@ impl fmt::Display for SymType {
 
 #[derive(Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Copy, Clone)]
 pub enum BuildSteps {
-    ARCH       = 0,
-    ARCH_EVAL  = 1,
-    VALIDATION = 2,
+    ARCH           = 0,
+    ARCH_EVAL      = 1,
+    /// Python files only: ARCH, then ARCH_EVAL, of all the functions of the file, before its validation
+    PRE_VALIDATION = 2,
+    VALIDATION     = 3,
 }
 
 impl From<i32> for BuildSteps {
@@ -95,7 +97,8 @@ impl From<i32> for BuildSteps {
         match value {
             0 => BuildSteps::ARCH,
             1 => BuildSteps::ARCH_EVAL,
-            2 => BuildSteps::VALIDATION,
+            2 => BuildSteps::PRE_VALIDATION,
+            3 => BuildSteps::VALIDATION,
             _ => panic!("Invalid value for BuildSteps: {}", value),
         }
     }
@@ -125,7 +128,7 @@ impl From<BuildSteps> for DiagnosticSource {
         match value {
             BuildSteps::ARCH => DiagnosticSource::PY_ARCH,
             BuildSteps::ARCH_EVAL => DiagnosticSource::PY_ARCH_EVAL,
-            BuildSteps::VALIDATION => DiagnosticSource::PY_VALIDATION,
+            BuildSteps::PRE_VALIDATION | BuildSteps::VALIDATION => DiagnosticSource::PY_VALIDATION,
         }
     }
 }

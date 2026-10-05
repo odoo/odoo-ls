@@ -567,7 +567,7 @@ impl Evaluation {
     * The result is a list, because some ast can give various possible results. For example: a = func()
     * required_dependencies will be filled with dependencies required to build the value, step by step.
     * You have to provide a vector with the length matching the available steps. For example, in arch_eval, required_dependencies
-    * should be equal to vec![vec![], vec![]] to be able to get arch and arch_eval deps at index 0 and 1. It means that if validation is
+    * should be equal to vec![vec![], vec![]] to be able to get arch and arch_eval deps at index 0 and 1 (index = BuildSteps). It means that if validation is
     * not build but required during the eval_from_ast, it will NOT be built
     */
     pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: impl Into<SymbolKey>, max_infer: &TextSize, for_annotation: bool, required_dependencies: &mut Vec<Vec<SourceFileKey>>) -> (Vec<Evaluation>, Vec<Diagnostic>) {
@@ -669,7 +669,9 @@ impl Evaluation {
         let parent_file_or_func = session.st().parent_file_or_function(parent).unwrap();
         let is_in_validation = match parent_file_or_func.typ() {
             SymType::FILE | SymType::PACKAGE(_) | SymType::FUNCTION => {
-                session.st().build_status(parent_file_or_func.unwrap_buildable_key(), BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
+                let parent_key = parent_file_or_func.unwrap_buildable_key();
+                session.st().build_status(parent_key, BuildSteps::PRE_VALIDATION) == BuildStatus::IN_PROGRESS
+                || session.st().build_status(parent_key, BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
             },
             _ => {false}
         };
@@ -1013,8 +1015,9 @@ impl Evaluation {
                         SyncOdoo::ensure_func_evaluations(session, f);
 
 
-                        if required_dependencies.len() >= 3 && in_class {
-                            required_dependencies[2].push(base_sym_file);
+                        // depends on the highest validation step being built (PRE_VALIDATION or VALIDATION)
+                        if required_dependencies.len() > BuildSteps::PRE_VALIDATION as usize && in_class {
+                            required_dependencies.last_mut().unwrap().push(base_sym_file);
                         }
                         let (call_parent, base_is_self) = match (
                             base_sym_weak_eval.context.get(ContextKey::BaseAttr),
@@ -1085,10 +1088,9 @@ impl Evaluation {
                             if let Some(base_loc_file) = file {
                                 BuildScheduler::build_now(session, base_loc_file, BuildSteps::ARCH_EVAL);
                                 if session.st().in_workspace(base_loc_file.into()) {
-                                    if required_dependencies.len() == 2 {
-                                        required_dependencies[1].push(base_loc_file);
-                                    } else if required_dependencies.len() == 3 {
-                                        required_dependencies[2].push(base_loc_file);
+                                    // depends on the highest step being built (from ARCH_EVAL)
+                                    if required_dependencies.len() > BuildSteps::ARCH_EVAL as usize {
+                                        required_dependencies.last_mut().unwrap().push(base_loc_file);
                                     }
                                 }
                             }

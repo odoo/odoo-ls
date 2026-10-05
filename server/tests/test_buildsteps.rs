@@ -127,6 +127,9 @@ fn test_buildsteps_steps() {
     assert_eq!(session.st().build_status(file_a, BuildSteps::ARCH_EVAL), BuildStatus::PENDING);
     session.st_mut().set_build_status(file_a, BuildSteps::ARCH_EVAL, BuildStatus::DONE);
     assert_eq!(session.st().build_status(file_a, BuildSteps::ARCH_EVAL), BuildStatus::DONE);
+    assert_eq!(session.st().build_status(file_a, BuildSteps::PRE_VALIDATION), BuildStatus::PENDING);
+    session.st_mut().set_build_status(file_a, BuildSteps::PRE_VALIDATION, BuildStatus::DONE);
+    assert_eq!(session.st().build_status(file_a, BuildSteps::PRE_VALIDATION), BuildStatus::DONE);
     assert_eq!(session.st().build_status(file_a, BuildSteps::VALIDATION), BuildStatus::PENDING);
     session.st_mut().set_build_status(file_a, BuildSteps::VALIDATION, BuildStatus::DONE);
     assert_eq!(session.st().build_status(file_a, BuildSteps::ARCH), BuildStatus::DONE);
@@ -141,6 +144,9 @@ fn test_buildsteps_steps() {
     assert_eq!(session.st().build_status(file_a, BuildSteps::ARCH_EVAL), BuildStatus::PENDING);
     BuildScheduler::build_now(&mut session, file_a, BuildSteps::ARCH_EVAL);
     assert_eq!(session.st().build_status(file_a, BuildSteps::ARCH_EVAL), BuildStatus::DONE);
+    assert_eq!(session.st().build_status(file_a, BuildSteps::PRE_VALIDATION), BuildStatus::PENDING);
+    BuildScheduler::build_now(&mut session, file_a, BuildSteps::PRE_VALIDATION);
+    assert_eq!(session.st().build_status(file_a, BuildSteps::PRE_VALIDATION), BuildStatus::DONE);
     assert_eq!(session.st().build_status(file_a, BuildSteps::VALIDATION), BuildStatus::PENDING);
     BuildScheduler::build_now(&mut session, file_a, BuildSteps::VALIDATION);
     assert_eq!(session.st().build_status(file_a, BuildSteps::ARCH), BuildStatus::DONE);
