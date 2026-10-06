@@ -1,10 +1,9 @@
-use std::rc::Rc;
-use std::cell::RefCell;
 use ruff_python_ast::Expr;
 use lsp_types::Diagnostic;
 use tracing::error;
 
 use crate::constants::OYarn;
+use crate::core::entry_point::EntryPoint;
 use crate::core::evaluation_context::ContextKey;
 use crate::core::model::{Model, ModelData};
 use crate::core::symbols::{ClassSymbol, ModuleSymbol};
@@ -59,23 +58,18 @@ impl PythonOdooBuilder {
             let xml_id_model_name = oyarn!("model_{}", model_name.replace(".", "_").as_str());
             ModuleSymbol::insert_xml_id(session.st_mut(), module, xml_id_model_name, XmlId::PythonClass(sym));
         }
-        match session.sync_odoo.models.get(&model_name).cloned() {
-            Some(model) => {
-                if model.borrow().has_xml_symbols(session.st()) {
-                    if let Some(file_sym) = session.st().get_file(self.symbol.into()) {
-                        session.sync_odoo.symbol_table.add_model_dependencies(file_sym, &model);
-                    }
-                } else {
-                    model.borrow_mut().add_symbol(session, sym)
+        if let Some(model_key) = session.model_mgr().get_model_key(&model_name)
+            && session.model_mgr()[model_key].has_xml_symbols(session.st()) {
+                if let Some(file_sym) = session.st().get_file(self.symbol.into()) {
+                    session.model_mgr_mut()[model_key].add_dependent(file_sym);
                 }
             }
-            None => {
-                let mut model = Model::new(model_name.clone());
-                model.add_symbol(session, sym);
-                session.sync_odoo.models.insert(model_name.clone(), Rc::new(RefCell::new(model)));
-            }
+        else {
+            let model_key = session.model_mgr_mut().add_or_get_model(&model_name);
+                Model::add_symbol(session, model_key, sym);
         }
-        session.sync_odoo.get_main_entry().borrow_mut().search_rebuild_for_models(session, model_name);
+        let main_entry = session.sync_odoo.get_main_entry();
+        EntryPoint::search_rebuild_for_models(session, main_entry, model_name);
         self.process_fields(session, sym);
         diagnostics
     }

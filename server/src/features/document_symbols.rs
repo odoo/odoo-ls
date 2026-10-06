@@ -1,33 +1,31 @@
-use std::{cell::RefCell, rc::Rc};
-
 use lsp_types::{DocumentSymbol, DocumentSymbolResponse, Range, SymbolKind};
 use ruff_python_ast::{Expr, Stmt, StmtAnnAssign, StmtAssign, StmtAugAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtGlobal, StmtIf, StmtImport, StmtImportFrom, StmtMatch, StmtNonlocal, StmtTry, StmtTypeAlias, StmtWhile, StmtWith};
 use ruff_text_size::Ranged;
 
-use crate::{core::{file_mgr::{Ast, FileInfo}, python_utils::{unpack_assign, Assign, AssignTargetType}}, threads::SessionInfo, S};
+use crate::{S, core::{file_mgr::{Ast, FileInfoKey}, python_utils::{Assign, AssignTargetType, unpack_assign}}, threads::SessionInfo};
 
 
 pub struct DocumentSymbolFeature;
 
 impl DocumentSymbolFeature {
 
-    pub fn get_symbols(session: &mut SessionInfo, file_info: &Rc<RefCell<FileInfo>>) -> Option<DocumentSymbolResponse> {
+    pub fn get_symbols(session: &mut SessionInfo, file_info: FileInfoKey) -> Option<DocumentSymbolResponse> {
         let mut results = vec![];
 
         // JS/TS: delegate to tsserver navtree.
         let is_js = matches!(
-            file_info.borrow().file_info_ast.borrow().ast,
+            session.file_mgr()[file_info].file_info_ast.borrow().ast,
             Ast::JsAst(_)
         );
         if is_js {
-            let uri = file_info.borrow().uri.clone();
+            let uri = session.file_mgr()[file_info].uri.clone();
             if let Some(bridge) = session.sync_odoo.tsserver_bridge.as_mut() {
                 results = bridge.get_nav_tree(&uri);
             }
             return if results.is_empty() { None } else { Some(DocumentSymbolResponse::Nested(results)) };
         }
 
-        let file_info_bw = file_info.borrow();
+        let file_info_bw = &session.file_mgr()[file_info];
         let file_info_ast = file_info_bw.file_info_ast.borrow();
         if let Some(ast) = &file_info_ast.get_stmts() {
             for stmt in ast.iter() {
@@ -46,7 +44,7 @@ impl DocumentSymbolFeature {
         Some(DocumentSymbolResponse::Nested(results))
     }
 
-    fn visit_stmt(session: &mut SessionInfo, stmt: &Stmt, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>) {
+    fn visit_stmt(session: &SessionInfo, stmt: &Stmt, results: &mut Vec<DocumentSymbol>, file_info: FileInfoKey) {
         match stmt {
             Stmt::FunctionDef(stmt_function_def) => {DocumentSymbolFeature::visit_function(session, results, file_info, stmt_function_def)},
             Stmt::ClassDef(stmt_class_def) => {DocumentSymbolFeature::visit_class(session, results, file_info, stmt_class_def)},
@@ -68,7 +66,7 @@ impl DocumentSymbolFeature {
         }
     }
 
-    fn visit_function(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_function_def: &StmtFunctionDef) {
+    fn visit_function(session: &SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: FileInfoKey, stmt_function_def: &StmtFunctionDef) {
         if stmt_function_def.name.to_string().is_empty() {
             return;
         }
@@ -85,8 +83,8 @@ impl DocumentSymbolFeature {
                 tags: None,
                 #[allow(deprecated)]
                 deprecated: None,
-                range: file_info.borrow().text_range_to_range(arg.range, session.sync_odoo.encoding),
-                selection_range: file_info.borrow().text_range_to_range(arg.range, session.sync_odoo.encoding),
+                range: session.file_mgr()[file_info].text_range_to_range(arg.range, session.sync_odoo.encoding),
+                selection_range: session.file_mgr()[file_info].text_range_to_range(arg.range, session.sync_odoo.encoding),
                 children: None
             });
         }
@@ -100,13 +98,13 @@ impl DocumentSymbolFeature {
             tags: None,
             #[allow(deprecated)]
             deprecated: None,
-            range: file_info.borrow().text_range_to_range(stmt_function_def.range(), session.sync_odoo.encoding),
-            selection_range: file_info.borrow().text_range_to_range(stmt_function_def.range(), session.sync_odoo.encoding),
+            range: session.file_mgr()[file_info].text_range_to_range(stmt_function_def.range(), session.sync_odoo.encoding),
+            selection_range: session.file_mgr()[file_info].text_range_to_range(stmt_function_def.range(), session.sync_odoo.encoding),
             children: Some(children_symbols)
         });
     }
 
-    fn visit_class(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_class_def: &StmtClassDef) {
+    fn visit_class(session: &SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: FileInfoKey, stmt_class_def: &StmtClassDef) {
         if stmt_class_def.name.to_string().is_empty() {
             return;
         }
@@ -121,28 +119,28 @@ impl DocumentSymbolFeature {
             tags: None,
             #[allow(deprecated)]
             deprecated: None,
-            range: file_info.borrow().text_range_to_range(stmt_class_def.range(), session.sync_odoo.encoding),
-            selection_range: file_info.borrow().text_range_to_range(stmt_class_def.range(), session.sync_odoo.encoding),
+            range: session.file_mgr()[file_info].text_range_to_range(stmt_class_def.range(), session.sync_odoo.encoding),
+            selection_range: session.file_mgr()[file_info].text_range_to_range(stmt_class_def.range(), session.sync_odoo.encoding),
             children: Some(children_symbols)
         });
     }
 
-    fn visit_assign(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_assign: &StmtAssign) {
+    fn visit_assign(session: &SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: FileInfoKey, stmt_assign: &StmtAssign) {
         let assigns = unpack_assign(&stmt_assign.targets, None, None);
         DocumentSymbolFeature::build_assign_results(session, results, file_info, assigns);
     }
 
-    fn visit_aug_assign(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_aug_assign: &StmtAugAssign) {
+    fn visit_aug_assign(session: &SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: FileInfoKey, stmt_aug_assign: &StmtAugAssign) {
         let assigns = unpack_assign(&[*stmt_aug_assign.target.clone()], None, None);
         DocumentSymbolFeature::build_assign_results(session, results, file_info, assigns);
     }
 
-    fn visit_ann_assign(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_ann_assign: &StmtAnnAssign) {
+    fn visit_ann_assign(session: &SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: FileInfoKey, stmt_ann_assign: &StmtAnnAssign) {
         let assigns = unpack_assign(&[*stmt_ann_assign.target.clone()], None, None);
         DocumentSymbolFeature::build_assign_results(session, results, file_info, assigns);
     }
 
-    fn build_assign_results(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, assigns: Vec<Assign>) {
+    fn build_assign_results(session: &SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: FileInfoKey, assigns: Vec<Assign>) {
         for assign in assigns.iter() {
             match assign.target {
                 AssignTargetType::Name(ref target_name) => {
@@ -153,8 +151,8 @@ impl DocumentSymbolFeature {
                         tags: None,
                         #[allow(deprecated)]
                         deprecated: None,
-                        range: file_info.borrow().text_range_to_range(target_name.range, session.sync_odoo.encoding),
-                        selection_range: file_info.borrow().text_range_to_range(target_name.range, session.sync_odoo.encoding),
+                        range: session.file_mgr()[file_info].text_range_to_range(target_name.range, session.sync_odoo.encoding),
+                        selection_range: session.file_mgr()[file_info].text_range_to_range(target_name.range, session.sync_odoo.encoding),
                         children: None,
                     });
                 },
@@ -165,7 +163,7 @@ impl DocumentSymbolFeature {
         }
     }
 
-    fn visit_type_alias(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_type_alias: &StmtTypeAlias) {
+    fn visit_type_alias(session: &SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: FileInfoKey, stmt_type_alias: &StmtTypeAlias) {
         let name = match *stmt_type_alias.name {
             Expr::Name(ref name) => name.clone(),
             _ => {return;}
@@ -177,13 +175,13 @@ impl DocumentSymbolFeature {
             tags: None,
             #[allow(deprecated)]
             deprecated: None,
-            range: file_info.borrow().text_range_to_range(stmt_type_alias.range(), session.sync_odoo.encoding),
-            selection_range: file_info.borrow().text_range_to_range(stmt_type_alias.range(), session.sync_odoo.encoding),
+            range: session.file_mgr()[file_info].text_range_to_range(stmt_type_alias.range(), session.sync_odoo.encoding),
+            selection_range: session.file_mgr()[file_info].text_range_to_range(stmt_type_alias.range(), session.sync_odoo.encoding),
             children: None
         });
     }
 
-    fn visit_for(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_for: &StmtFor) {
+    fn visit_for(session: &SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: FileInfoKey, stmt_for: &StmtFor) {
         let unpacked = unpack_assign(&[*stmt_for.target.clone()], None, None);
         DocumentSymbolFeature::build_assign_results(session, results, file_info, unpacked);
         for child in stmt_for.body.iter() {
@@ -195,7 +193,7 @@ impl DocumentSymbolFeature {
         }
     }
 
-    fn visit_while(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_while: &StmtWhile) {
+    fn visit_while(session: &SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: FileInfoKey, stmt_while: &StmtWhile) {
         //TODO search for walrus operator in condition
         for child in stmt_while.body.iter() {
             DocumentSymbolFeature::visit_stmt(session, child, results, file_info);
@@ -206,7 +204,7 @@ impl DocumentSymbolFeature {
         }
     }
 
-    fn visit_if(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_if: &StmtIf) {
+    fn visit_if(session: &SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: FileInfoKey, stmt_if: &StmtIf) {
         //TODO search for walrus operator in condition
         for child in stmt_if.body.iter() {
             DocumentSymbolFeature::visit_stmt(session, child, results, file_info);
@@ -219,7 +217,7 @@ impl DocumentSymbolFeature {
         }
     }
 
-    fn visit_with(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_with: &StmtWith) {
+    fn visit_with(session: &SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: FileInfoKey, stmt_with: &StmtWith) {
         for item in stmt_with.items.iter() {
             if let Some(var) = &item.optional_vars {
                 let name = match **var {
@@ -233,8 +231,8 @@ impl DocumentSymbolFeature {
                     tags: None,
                     #[allow(deprecated)]
                     deprecated: None,
-                    range: file_info.borrow().text_range_to_range(var.range(), session.sync_odoo.encoding),
-                    selection_range: file_info.borrow().text_range_to_range(var.range(), session.sync_odoo.encoding),
+                    range: session.file_mgr()[file_info].text_range_to_range(var.range(), session.sync_odoo.encoding),
+                    selection_range: session.file_mgr()[file_info].text_range_to_range(var.range(), session.sync_odoo.encoding),
                     children: None
                 });
             }
@@ -244,7 +242,7 @@ impl DocumentSymbolFeature {
         }
     }
 
-    fn visit_match(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_match: &StmtMatch) {
+    fn visit_match(session: &SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: FileInfoKey, stmt_match: &StmtMatch) {
         for case in stmt_match.cases.iter() {
             //TODO handle pattern
             for child in case.body.iter() {
@@ -253,7 +251,7 @@ impl DocumentSymbolFeature {
         }
     }
 
-    fn visit_try(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_match: &StmtTry) {
+    fn visit_try(session: &SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: FileInfoKey, stmt_match: &StmtTry) {
         for child in stmt_match.body.iter() {
             DocumentSymbolFeature::visit_stmt(session, child, results, file_info);
         }
@@ -267,8 +265,8 @@ impl DocumentSymbolFeature {
                         tags: None,
                         #[allow(deprecated)]
                         deprecated: None,
-                        range: file_info.borrow().text_range_to_range(name.range(), session.sync_odoo.encoding),
-                        selection_range: file_info.borrow().text_range_to_range(name.range(), session.sync_odoo.encoding),
+                        range: session.file_mgr()[file_info].text_range_to_range(name.range(), session.sync_odoo.encoding),
+                        selection_range: session.file_mgr()[file_info].text_range_to_range(name.range(), session.sync_odoo.encoding),
                         children: None
                     });
                 }
@@ -285,7 +283,7 @@ impl DocumentSymbolFeature {
         }
     }
 
-    fn visit_import(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_import: &StmtImport) {
+    fn visit_import(session: &SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: FileInfoKey, stmt_import: &StmtImport) {
         for name in stmt_import.names.iter() {
             results.push(DocumentSymbol{
                 name: name.name.to_string(),
@@ -294,14 +292,14 @@ impl DocumentSymbolFeature {
                 tags: None,
                 #[allow(deprecated)]
                 deprecated: None,
-                range: file_info.borrow().text_range_to_range(name.range, session.sync_odoo.encoding),
-                selection_range: file_info.borrow().text_range_to_range(name.range, session.sync_odoo.encoding),
+                range: session.file_mgr()[file_info].text_range_to_range(name.range, session.sync_odoo.encoding),
+                selection_range: session.file_mgr()[file_info].text_range_to_range(name.range, session.sync_odoo.encoding),
                 children: None
             });
         }
     }
 
-    fn visit_import_from(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_import_from: &StmtImportFrom) {
+    fn visit_import_from(session: &SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: FileInfoKey, stmt_import_from: &StmtImportFrom) {
         for name in stmt_import_from.names.iter() {
             results.push(DocumentSymbol{
                 name: name.name.to_string(),
@@ -310,14 +308,14 @@ impl DocumentSymbolFeature {
                 tags: None,
                 #[allow(deprecated)]
                 deprecated: None,
-                range: file_info.borrow().text_range_to_range(name.range, session.sync_odoo.encoding),
-                selection_range: file_info.borrow().text_range_to_range(name.range, session.sync_odoo.encoding),
+                range: session.file_mgr()[file_info].text_range_to_range(name.range, session.sync_odoo.encoding),
+                selection_range: session.file_mgr()[file_info].text_range_to_range(name.range, session.sync_odoo.encoding),
                 children: None
             });
         }
     }
 
-    fn visit_global(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_global: &StmtGlobal) {
+    fn visit_global(session: &SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: FileInfoKey, stmt_global: &StmtGlobal) {
         for name in stmt_global.names.iter() {
             results.push(DocumentSymbol{
                 name: name.id.to_string(),
@@ -326,14 +324,14 @@ impl DocumentSymbolFeature {
                 tags: None,
                 #[allow(deprecated)]
                 deprecated: None,
-                range: file_info.borrow().text_range_to_range(name.range, session.sync_odoo.encoding),
-                selection_range: file_info.borrow().text_range_to_range(name.range, session.sync_odoo.encoding),
+                range: session.file_mgr()[file_info].text_range_to_range(name.range, session.sync_odoo.encoding),
+                selection_range: session.file_mgr()[file_info].text_range_to_range(name.range, session.sync_odoo.encoding),
                 children: None
             });
         }
     }
 
-    fn visit_nonlocal(session: &mut SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>, stmt_nonlocal: &StmtNonlocal) {
+    fn visit_nonlocal(session: &SessionInfo, results: &mut Vec<DocumentSymbol>, file_info: FileInfoKey, stmt_nonlocal: &StmtNonlocal) {
         for name in stmt_nonlocal.names.iter() {
             results.push(DocumentSymbol{
                 name: name.id.to_string(),
@@ -342,8 +340,8 @@ impl DocumentSymbolFeature {
                 tags: None,
                 #[allow(deprecated)]
                 deprecated: None,
-                range: file_info.borrow().text_range_to_range(name.range, session.sync_odoo.encoding),
-                selection_range: file_info.borrow().text_range_to_range(name.range, session.sync_odoo.encoding),
+                range: session.file_mgr()[file_info].text_range_to_range(name.range, session.sync_odoo.encoding),
+                selection_range: session.file_mgr()[file_info].text_range_to_range(name.range, session.sync_odoo.encoding),
                 children: None
             });
         }
@@ -353,7 +351,7 @@ impl DocumentSymbolFeature {
 // XML
 ///////////////////////////////////////////////
 
-    fn visit_xml_document(session: &mut SessionInfo, document: roxmltree::Document, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>) {
+    fn visit_xml_document(session: &SessionInfo, document: roxmltree::Document, results: &mut Vec<DocumentSymbol>, file_info: FileInfoKey) {
         let mut children = vec![];
         for node in document.root_element().children() {
             if node.is_element() {
@@ -361,8 +359,8 @@ impl DocumentSymbolFeature {
             }
         }
         let range = Range {
-            start: file_info.borrow().offset_to_position(document.root_element().range().start as u32, session.sync_odoo.encoding),
-            end: file_info.borrow().offset_to_position(document.root_element().range().end as u32, session.sync_odoo.encoding),
+            start: session.file_mgr()[file_info].offset_to_position(document.root_element().range().start as u32, session.sync_odoo.encoding),
+            end: session.file_mgr()[file_info].offset_to_position(document.root_element().range().end as u32, session.sync_odoo.encoding),
         };
         results.push(DocumentSymbol {
             name: document.root_element().tag_name().name().to_string(),
@@ -377,10 +375,10 @@ impl DocumentSymbolFeature {
         });
     }
 
-    fn visit_xml_node(session: &mut SessionInfo, node: &roxmltree::Node, results: &mut Vec<DocumentSymbol>, file_info: &Rc<RefCell<FileInfo>>) {
+    fn visit_xml_node(session: &SessionInfo, node: &roxmltree::Node, results: &mut Vec<DocumentSymbol>, file_info: FileInfoKey) {
         let range = Range {
-            start: file_info.borrow().offset_to_position(node.range().start as u32, session.sync_odoo.encoding),
-            end: file_info.borrow().offset_to_position(node.range().end as u32, session.sync_odoo.encoding),
+            start: session.file_mgr()[file_info].offset_to_position(node.range().start as u32, session.sync_odoo.encoding),
+            end: session.file_mgr()[file_info].offset_to_position(node.range().end as u32, session.sync_odoo.encoding),
         };
         let mut children = vec![];
         for child in node.children() {
