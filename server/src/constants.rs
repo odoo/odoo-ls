@@ -216,3 +216,5 @@ pub const TSSERVER_DIAGS_COVERED_BY_OXC: &[&str] = &[
     "tsserver_7028",  // oxc_eslint(no-unused-labels)
     "tsserver_17009", // oxc_eslint(no-this-before-super)
 ];
+
+pub const DISABLED_PROFILE_NAME: &str = "Disabled";

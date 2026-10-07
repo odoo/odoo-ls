@@ -1436,7 +1436,7 @@ impl Odoo {
         };
         info!("Selected config profile ({})", selected_config);
         session.sync_odoo.selected_config = Some(selected_config.clone());
-        if selected_config == "Disabled" {
+        if selected_config == DISABLED_PROFILE_NAME {
             info!("OdooLS is disabled. Exiting...");
             return;
         }
@@ -2385,9 +2385,12 @@ impl Odoo {
     fn check_handle_config_file_update(session: &mut SessionInfo, path: &Path) -> bool {
         // Check if the change is affecting a config file
         if Odoo::is_config_workspace_file(session, path) {
+            let config_name = session.sync_odoo.selected_config.clone().unwrap_or(DEFAULT_PROFILE_NAME.to_string());
+            if config_name == DISABLED_PROFILE_NAME {
+                return true; // No processing needed for disabled configuration
+            }
             let config_result = config::get_configuration(session)
                 .and_then(|(cfg_map, cfg_file)| {
-                    let config_name = session.sync_odoo.selected_config.clone().unwrap_or(DEFAULT_PROFILE_NAME.to_string());
                     cfg_map.get(&config_name)
                         .cloned()
                         .ok_or_else(|| format!("Unable to find selected configuration \"{config_name}\""))
