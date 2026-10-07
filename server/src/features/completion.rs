@@ -46,6 +46,7 @@ pub enum ExpectedType {
     EXTERNAL_FIELD(OYarn), // Like in inverse_name='field_name', we attach the comodel_name
     METHOD_NAME,
     INHERITS,
+    CS_FIELDS, // Comma-Separated Fields
 }
 
 pub struct CompletionFeature;
@@ -172,16 +173,24 @@ fn complete_delete_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt
     complete_expr( target, session, file, offset, false, &[])
 }
 
+/// Expected types of the value assigned to `target`, from its name, e.g. model names for `_inherit`
+fn expected_types_of_target(target: &Expr) -> Vec<ExpectedType> {
+    let Some(target_name) = target.as_name_expr() else {
+        return vec![];
+    };
+    match target_name.id.as_str() {
+        "_inherit" => vec![ExpectedType::MODEL_NAME],
+        "_inherits" => vec![ExpectedType::INHERITS],
+        "_order" => vec![ExpectedType::CS_FIELDS],
+        _ => vec![],
+    }
+}
+
 fn complete_assign_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_assign: &ruff_python_ast::StmtAssign, offset: usize) -> Option<CompletionResponse> {
-    let mut expected_type = vec![];
-    if stmt_assign.targets.len() == 1
-        && let Some(target_name) = stmt_assign.targets.first().unwrap().as_name_expr() {
-            match target_name.id.as_str() {
-                "_inherit" => expected_type.push(ExpectedType::MODEL_NAME),
-                "_inherits" => expected_type.push(ExpectedType::INHERITS),
-                _ => {}
-            }
-        }
+    let expected_type = match stmt_assign.targets.as_slice() {
+        [target] => expected_types_of_target(target),
+        _ => vec![],
+    };
     if offset > stmt_assign.value.range().start().to_usize() && offset <= stmt_assign.value.range().end().to_usize() {
         return complete_expr( &stmt_assign.value, session, file, offset, false, &expected_type);
     }
@@ -198,7 +207,7 @@ fn complete_aug_assign_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, 
 fn complete_ann_assign_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_ann_assign: &ruff_python_ast::StmtAnnAssign, offset: usize) -> Option<CompletionResponse> {
     if let Some(expr) = stmt_ann_assign.value.as_ref()
         && offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize() {
-            return complete_expr( expr, session, file, offset, false, &[]);
+            return complete_expr( expr, session, file, offset, false, &expected_types_of_target(&stmt_ann_assign.target));
         }
     None
 }
@@ -538,8 +547,7 @@ fn complete_decorator_call(
     if decorator_args.args.is_empty(){
         return None; // All the decorators we handle have at least one arg for now
     }
-    let scope = session.st().get_scope_symbol(file, offset as u32, false);
-    AstUtils::build_scope(session, scope);
+    let scope = get_and_build_scope(session, file, offset as u32, false);
     let dec_evals = Evaluation::eval_from_ast(session, decorator_base, scope, max_infer, false, &mut vec![]).0;
     let mut followed_evals = vec![];
     for eval in dec_evals {
@@ -584,9 +592,8 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
     if offset > expr_call.func.range().start().to_usize() && offset <= expr_call.func.range().end().to_usize() {
         return complete_expr( &expr_call.func, session, file, offset, is_param, expected_type);
     }
-    let scope = session.st().get_scope_symbol(file, offset as u32, is_param);
+    let scope = get_and_build_scope(session, file, offset as u32, is_param);
     let from_module = session.st().find_module(file);
-    AstUtils::build_scope(session, scope);
     let callable_evals = Evaluation::eval_from_ast(session, &expr_call.func, scope, &expr_call.func.range().start(), false, &mut vec![]).0;
     let callable_eval_sym_ptrs = callable_evals.iter().flat_map(|callable_eval|
         SymbolTable::follow_ref(&callable_eval.symbol.get_symbol(session, None, &mut vec![], None), session, None, false, false, None, None)
@@ -728,7 +735,7 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
     complete_expr(&keyword.value, session, file, offset, is_param, &[])
 }
 
-fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_string_literal: &ruff_python_ast::ExprStringLiteral, _offset: usize, _is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
+fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_string_literal: &ruff_python_ast::ExprStringLiteral, offset: usize, _is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     let mut items = vec![];
     let current_module = session.st().find_module(file);
     for expected_type in expected_type.iter() {
@@ -833,14 +840,13 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
             ExpectedType::DOMAIN_FIELD(parent) => {
                 add_nested_field_names(session, &mut items, current_module, expr_string_literal.value.to_str(), *parent, true, &None);
             },
-            ExpectedType::SIMPLE_FIELD(_) | ExpectedType::NESTED_FIELD(_) | ExpectedType::METHOD_NAME => 'field_block:  {
-                let scope = session.st().get_scope_symbol(file, expr_string_literal.range().start().to_u32(), true);
-                AstUtils::build_scope(session, scope);
+            ExpectedType::SIMPLE_FIELD(_) | ExpectedType::NESTED_FIELD(_) | ExpectedType::METHOD_NAME => {
+                let scope = get_and_build_scope(session, file, expr_string_literal.range().start().to_u32(), true);
                 let Some(SymbolKey::Class(parent_class)) = session.st().get_in_parents(scope, &[SymType::CLASS], true) else {
-                    break 'field_block;
+                    continue;
                 };
                 if session.st()[parent_class]._model.is_none() {
-                    break 'field_block;
+                    continue;
                 }
                 match expected_type {
                     ExpectedType::SIMPLE_FIELD(maybe_field_type) => add_model_attributes(
@@ -863,6 +869,36 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
                     add_model_attributes(session, &mut items, current_module, class_key.into(), false, true, false, expr_string_literal.value.to_str(), &Some(Sy!("Many2one")))
                 });
             },
+            ExpectedType::CS_FIELDS => {
+                let scope = get_and_build_scope(session, file, expr_string_literal.range().start().to_u32(), true);
+                let Some(SymbolKey::Class(parent_class)) = session.st().get_in_parents(scope, &[SymType::CLASS], true) else {
+                    continue;
+                };
+                let order = expr_string_literal.value.to_str();
+                // Outside the string, between its parts, or in a part with escapes: no completion
+                let Some(index) = AstUtils::index_in_string(expr_string_literal, TextSize::new(offset as u32)) else {
+                    continue;
+                };
+                let before_cursor = &order[..index];
+                // In the item under the cursor (`name desc nulls last`): the words already typed,
+                // and the one being typed
+                let item = before_cursor.rsplit(',').next().unwrap_or("");
+                let (typed, current) = item.rsplit_once(char::is_whitespace).unwrap_or(("", item));
+                let typed: Vec<&str> = typed.split_whitespace().collect();
+                match typed.as_slice() {
+                    // "<current>"
+                    [] => add_model_attributes(
+                        session, &mut items, current_module, parent_class.into(), false, true, false, current, &None),
+                    // "<_field> <current>"
+                    [_field] => add_order_keywords(&mut items, &["asc", "desc", "nulls first", "nulls last"], current),
+                    // "<_field> <asc|desc> <current>"
+                    [_field, direction] if direction.eq_ignore_ascii_case("asc") || direction.eq_ignore_ascii_case("desc") =>
+                        add_order_keywords(&mut items, &["nulls first", "nulls last"], current),
+                    // "... nulls <current>"
+                    [.., nulls] if nulls.eq_ignore_ascii_case("nulls") => add_order_keywords(&mut items, &["first", "last"], current),
+                    _ => {},
+                }
+            },
             ExpectedType::CLASS(_) => {},
             ExpectedType::INHERITS => {},
         }
@@ -879,8 +915,7 @@ fn complete_attribut(session: &mut SessionInfo, file: SourceFileKey, attr: &Expr
     //TODO actually using start_expr instead of offset, because when we complete an attr, like "self.", the ast is invalid, preventing any rebuild
     //As symbols are not rebuilt, boundaries are not rights, and a "return self." at the end of a function/class body would be out of scope.
     //Temporary, by using the start of expr, we can hope that it is still in the right scope.
-    let scope = session.st().get_scope_symbol(file, start_expr, is_param);
-    AstUtils::build_scope(session, scope);
+    let scope = get_and_build_scope(session, file, start_expr, is_param);
     if offset > attr.value.range().start().to_usize() && offset <= attr.value.range().end().to_usize() {
         return complete_expr( &attr.value, session, file, offset, is_param, expected_type);
     } else {
@@ -906,8 +941,7 @@ fn complete_attribut(session: &mut SessionInfo, file: SourceFileKey, attr: &Expr
 }
 
 fn complete_subscript(session: &mut SessionInfo, file: SourceFileKey, expr_subscript: &ExprSubscript, offset: usize, is_param: bool, _expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
-    let scope = session.st().get_scope_symbol(file, offset as u32, is_param);
-    AstUtils::build_scope(session, scope);
+    let scope = get_and_build_scope(session, file, offset as u32, is_param);
     let subscripted = Evaluation::eval_from_ast(session, &expr_subscript.value, scope, &expr_subscript.value.range().start(), false, &mut vec![]).0;
     for eval in subscripted.iter() {
         let eval_symbol = eval.symbol.get_symbol(session, None, &mut vec![], Some(scope));
@@ -941,8 +975,7 @@ fn complete_name_expression(session: &mut SessionInfo, file: SourceFileKey, expr
 }
 
 fn complete_name(session: &mut SessionInfo, file: SourceFileKey, offset: usize, is_param: bool, name: &str) -> Option<CompletionResponse> {
-    let scope = session.st().get_scope_symbol(file, offset as u32, is_param);
-    AstUtils::build_scope(session, scope);
+    let scope = get_and_build_scope(session, file, offset as u32, is_param);
     let symbols = session.st().get_all_inferred_names(scope, name, offset as u32);
     Some(CompletionResponse::List(CompletionList {
         is_incomplete: false,
@@ -1282,4 +1315,20 @@ fn get_completion_item_kind(typ: &SymType) -> CompletionItemKind {
         SymType::XML_DELETE => CompletionItemKind::CONSTANT,
         SymType::JS_FILE => CompletionItemKind::FILE,
     }
+}
+
+/// Keywords of an `_order` item that start with the word being typed, e.g. `desc` for `de`.
+fn add_order_keywords(items: &mut Vec<CompletionItem>, keywords: &[&str], current: &str) {
+    let current = current.to_ascii_lowercase();
+    items.extend(keywords.iter().filter(|keyword| keyword.starts_with(&current)).map(|keyword| CompletionItem {
+        label: keyword.to_string(),
+        kind: Some(lsp_types::CompletionItemKind::KEYWORD),
+        ..Default::default()
+    }));
+}
+
+fn get_and_build_scope(session: &mut SessionInfo, file: impl Into<SymbolKey>, offset: u32, is_param: bool) -> SymbolKey {
+    let scope = session.st().get_scope_symbol(file, offset, is_param);
+    AstUtils::build_scope(session, scope);
+    scope
 }
