@@ -26,6 +26,7 @@ fn test_completions() {
     let mut session = setup::setup::create_init_session(&mut odoo, config);
     test_depends_kwarg_nested_field_completion(&mut session);
     test_lambda_is_not_a_member(&mut session);
+    test_ext_symbols_completion(&mut session);
     test_compute_sql_kwarg_method_completion(&mut session);
     test_selection_field_method_completion(&mut session);
     test_init_storage_kwarg_method_completion(&mut session);
@@ -82,6 +83,40 @@ fn test_lambda_is_not_a_member(session: &mut SessionInfo) {
     let labels = labels(response);
     assert!(labels.iter().any(|l| l == "company_id"), "Expected the model fields to be suggested after 'self.', got: {:?}", labels);
     assert!(!labels.iter().any(|l| l == "<lambda>"), "<lambda> is not a member and must not be suggested, got: {:?}", labels);
+}
+
+/// `odoo/init.py` (>= 18.1) injects `_`, `_lt`, `Command` and `SUPERUSER_ID` into the `odoo`
+/// namespace as ext symbols: they must be offered both in `from odoo import` and after `odoo.`.
+fn test_ext_symbols_completion(session: &mut SessionInfo) {
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
+    let disk_text = std::fs::read_to_string(&test_file).expect("Test file does not exist");
+
+    let did_open_params = lsp_types::DidOpenTextDocumentParams {
+        text_document: lsp_types::TextDocumentItem {
+            uri: FileMgr::pathname2uri(&test_file),
+            language_id: "python".to_string(),
+            version: 2,
+            text: disk_text.replace("        return self\n", "        import odoo\n        return odoo.Comm\n"),
+        }
+    };
+    Odoo::handle_did_open(session, did_open_params);
+
+    let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&test_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    // `from odoo import api, fields, models, _, tools`: cursor right after `_`
+    let response = CompletionFeature::autocomplete(session, file_symbol, &file_info, None, 0, 39);
+    let import_labels = labels(response);
+    assert!(import_labels.iter().any(|l| l == "_"), "Expected '_' to be suggested in 'from odoo import', got: {:?}", import_labels);
+    assert!(import_labels.iter().any(|l| l == "_lt"), "Expected '_lt' to be suggested in 'from odoo import', got: {:?}", import_labels);
+
+    // `        return odoo.Comm` (0-indexed line 25), cursor after `Comm`
+    let response = CompletionFeature::autocomplete(session, file_symbol, &file_info, None, 25, 24);
+    let attr_labels = labels(response);
+    assert!(attr_labels.iter().any(|l| l == "Command"), "Expected 'Command' to be suggested after 'odoo.', got: {:?}", attr_labels);
 }
 
 /// `fields.Integer(compute_sql="...")`: the kwarg offers method completion, but only from 19.1 on

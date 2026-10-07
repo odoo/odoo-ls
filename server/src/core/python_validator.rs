@@ -86,7 +86,15 @@ impl PythonValidator {
                 if file_info_ast.ast.as_py_ast().indexed_module.is_some() {
                     let old_noqa = session.current_noqa.clone();
                     session.current_noqa = session.st().get_noqas(symbol);
-                    self.validate_body(session, file_info_ast.get_stmts().as_ref().unwrap());
+                    let stmts = file_info_ast.get_stmts().unwrap();
+                    // Build ARCH for every function/method in this file first, then
+                    // ARCH_EVAL for every one of them, and only then actually validate -
+                    // instead of doing ARCH, ARCH_EVAL and VALIDATION one symbol at a
+                    // time. This still only guarantees the ordering within this one
+                    // file (not globally across the whole codebase).
+                    self.build_functions_phase(session, stmts, BuildSteps::ARCH);
+                    self.build_functions_phase(session, stmts, BuildSteps::ARCH_EVAL);
+                    self.validate_body(session, stmts);
                     session.current_noqa = old_noqa;
                 }
                 drop(file_info_ast);
@@ -187,12 +195,74 @@ impl PythonValidator {
         }
     }
 
+    /// Recursively `build_now(step)` every function/method definition
+    /// reachable from `vec_ast` - through classes and control-flow bodies,
+    /// in the same shape `validate_body` itself walks - without descending
+    /// into a function's *own* body: building a function already recurses
+    /// into whatever it nests (see `PythonArchEval::_visit_function_def`),
+    /// so doing it again here would be redundant.
+    ///
+    /// Called twice before `validate_body` (once for ARCH, once for
+    /// ARCH_EVAL) so that, within one file, every function has both steps
+    /// done before any of them gets validated - instead of doing ARCH,
+    /// ARCH_EVAL and VALIDATION for each function one at a time.
+    fn build_functions_phase(&mut self, session: &mut SessionInfo, vec_ast: &[Stmt], step: BuildSteps) {
+        for stmt in vec_ast.iter() {
+            match stmt {
+                Stmt::FunctionDef(f) => {
+                    if let Some(sym) = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &f.name, &f.range)
+                    && session.st().ready_for_step(sym.unwrap_buildable_key(), step) {
+                        BuildScheduler::build_now(session, sym.unwrap_buildable_key(), step);
+                    }
+                },
+                Stmt::ClassDef(c) => {
+                    if let Some(sym) = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &c.name, &c.range) {
+                        self.sym_stack.push(sym);
+                        self.build_functions_phase(session, &c.body, step);
+                        self.sym_stack.pop();
+                    }
+                },
+                Stmt::If(i) => {
+                    self.build_functions_phase(session, &i.body, step);
+                    for elses in i.elif_else_clauses.iter() {
+                        self.build_functions_phase(session, &elses.body, step);
+                    }
+                },
+                Stmt::For(f) => {
+                    self.build_functions_phase(session, &f.body, step);
+                    self.build_functions_phase(session, &f.orelse, step);
+                },
+                Stmt::While(w) => {
+                    self.build_functions_phase(session, &w.body, step);
+                    self.build_functions_phase(session, &w.orelse, step);
+                },
+                Stmt::Try(t) => {
+                    // matches visit_try's own scope: only the try body itself
+                    self.build_functions_phase(session, &t.body, step);
+                },
+                Stmt::With(w) => {
+                    self.build_functions_phase(session, &w.body, step);
+                },
+                Stmt::Match(m) => {
+                    for case in m.cases.iter() {
+                        self.build_functions_phase(session, &case.body, step);
+                    }
+                },
+                _ => {}
+            }
+        }
+    }
+
     fn validate_body(&mut self, session: &mut SessionInfo, vec_ast: &[Stmt]) {
         for stmt in vec_ast.iter() {
             match stmt {
                 Stmt::FunctionDef(f) => {
                     let sym = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &f.name, &f.range);
                     if let Some(sym) = sym {
+                        // Normally already done by the two build_functions_phase passes run
+                        // before validate_body for a whole file (see `validate`) - these are
+                        // a safety net for validate() entry points that skip that pre-pass
+                        // (e.g. validating a single function directly).
                         if session.st().ready_for_step(sym.unwrap_buildable_key(), BuildSteps::ARCH) {
                             BuildScheduler::build_now(session, sym.unwrap_buildable_key(), BuildSteps::ARCH);
                         }

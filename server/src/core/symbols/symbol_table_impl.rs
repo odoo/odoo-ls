@@ -879,10 +879,14 @@ impl SymbolTable {
         } else {
             ContentSymbols::default()
         };
-        let ext_sym = self.get_ext_symbol(target, name);
-        if ext_sym.len() > 1 {
-            content.symbols.extend(ext_sym.into_iter().map(SymbolKey::from));
-            content.always_defined = true;
+        // ext symbols of a class are instance attributes, not names of its body: they are handled by get_member_symbol.
+        // Functions are not modules either: their ext symbols are attributes of the function object (see get_sub_symbol)
+        if matches!(target, SymbolKey::File(_) | SymbolKey::Module(_) | SymbolKey::PythonPackage(_)) {
+            let ext_sym = self.get_ext_symbol(target, name);
+            if !ext_sym.is_empty() {
+                content.symbols.extend(ext_sym.into_iter().map(SymbolKey::from));
+                content.always_defined = true;
+            }
         }
         content
     }
@@ -905,6 +909,12 @@ impl SymbolTable {
 
             if !content.symbols.is_empty() {
                 result.insert(name.clone(), content.symbols);
+            }
+        }
+        // only ext symbols injected into a file are names of its body (see get_content_symbol)
+        if matches!(target, SymbolKey::File(_)) {
+            for (name, ext_symbols) in self.get_all_ext_symbols(target, name_prefix) {
+                result.entry(name).or_default().extend(ext_symbols.into_iter().map(SymbolKey::from));
             }
         }
         result
@@ -1798,6 +1808,12 @@ impl SymbolTable {
                 )
             }
         }
+        // Add Ext variables
+        if !only_fields && !only_methods && !(is_super && matches!(symbol_key, SymbolKey::Class(_))) {
+            for (name, ext_symbols) in session.st().get_all_ext_symbols(symbol_key, "") {
+                result.entry(name).or_default().extend(ext_symbols.into_iter().map(SymbolKey::from));
+            }
+        }
     }
 
     /* return the Symbol (class, function or file) the closest to the given offset */
@@ -2245,7 +2261,70 @@ impl SymbolTable {
                 }
             }
         }
+        // Only add ext symbols if result is empty, to not pollute "official" values
+        if !is_super && !only_fields && !only_methods && result.is_empty() {
+            let ext_symbols = session.st().get_ext_symbol(target, name).into_iter().map(SymbolKey::from).collect();
+            extend_result(ext_symbols, &mut result, &mut visited_symbols);
+        }
         (result, diagnostics)
+    }
+
+    /// The classes (or class instances) that `evaluations` evaluate to
+    pub fn evaluated_classes(session: &mut SessionInfo, evaluations: &[Evaluation]) -> Vec<ClassKey> {
+        let mut classes = vec![];
+        for evaluation in evaluations.iter() {
+            let symbol = evaluation.symbol.get_symbol(session, None, &mut vec![], None);
+            for followed in SymbolTable::follow_ref(&symbol, session, None, false, false, None, None) {
+                if let Some(SymbolKey::Class(class)) = followed.upgrade_weak(session.st())
+                    && !classes.contains(&class) {
+                        classes.push(class);
+                    }
+            }
+        }
+        classes
+    }
+
+    /// The instance attributes of a class are injected by the ARCH_EVAL of the methods assigning them,
+    /// that is lazy: evaluate the methods of `class`, of its bases and of the other classes of its model,
+    /// that were not yet (not for external files, as `ensure_func_evaluations`). Returns whether a method was evaluated.
+    /// Not to be used while building: the evaluated methods could need the same thing, recursively.
+    pub fn ensure_instance_attributes_evaluated(session: &mut SessionInfo, class: ClassKey) -> bool {
+        let mut visited = HashSet::default();
+        let mut to_visit = vec![class];
+        let mut evaluated = false;
+        while let Some(class) = to_visit.pop() {
+            if !visited.insert(class) {
+                continue;
+            }
+            evaluated |= SymbolTable::ensure_methods_evaluated(session, class);
+            to_visit.extend(session.st()[class].bases.iter().filter_map(|base| base.upgrade(session.st())));
+            let model = session.st()[class]._model.as_ref().and_then(|model_data| session.sync_odoo.models.get(&model_data.name).cloned());
+            if let Some(model) = model {
+                to_visit.extend(Model::get_full_model_classes(model, session, None));
+            }
+        }
+        evaluated
+    }
+
+    fn ensure_methods_evaluated(session: &mut SessionInfo, class: ClassKey) -> bool {
+        let Some(file) = session.st().get_file(class.into()) else {
+            return false;
+        };
+        if session.st().is_external(file.into()) {
+            return false;
+        }
+        let methods: Vec<FunctionKey> = session.st().iter_inner_functions(class.into()).into_iter()
+            .filter(|&f| session.st().build_status(f.into(), BuildSteps::ARCH_EVAL) == BuildStatus::PENDING)
+            .collect();
+        if methods.is_empty() {
+            return false;
+        }
+        BuildScheduler::build_now(session, file, BuildSteps::ARCH_EVAL);
+        for method in methods {
+            BuildScheduler::build_now(session, method, BuildSteps::ARCH);
+            BuildScheduler::build_now(session, method, BuildSteps::ARCH_EVAL);
+        }
+        true
     }
 
     /**

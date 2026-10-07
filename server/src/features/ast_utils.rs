@@ -2,6 +2,8 @@ use crate::constants::{BuildSteps, SymType};
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::evaluation::{AnalyzeAstResult, Evaluation, ExprOrIdent};
 use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
+use crate::core::symbols::storage::parents::FileContentParent;
+use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::symbol_keys::{SourceFileKey, SymbolKey};
 use crate::core::import_resolver::{resolve_from_stmt, resolve_import_stmt};
 use crate::core::file_mgr::FileInfoAst;
@@ -54,6 +56,43 @@ impl AstUtils {
         ]);
         let analyse_ast_result: AnalyzeAstResult = Evaluation::analyze_ast(session, expr, parent_symbol, &expr.range().end(), &mut context, false, &mut vec![]);
         (analyse_ast_result, Some(expr.range()))
+    }
+
+    /// Instance attributes (`x` in `base.x = ...`) only exist once the methods assigning them are evaluated,
+    /// that is lazy. If `evaluations` of `expr` are not a declared member, evaluate the methods of the
+    /// classes the base of `expr` evaluates to, along the attribute chain. Returns whether a method was
+    /// evaluated, so that `expr` has to be evaluated again.
+    pub fn ensure_instance_attributes(session: &mut SessionInfo, file_symbol: SourceFileKey, expr: &Expr, evaluations: &[Evaluation], offset: u32) -> bool {
+        let Expr::Attribute(attr_expr) = expr else {
+            return false;
+        };
+        if !Self::may_be_instance_attribute(session, evaluations) {
+            return false;
+        }
+        let scope = session.st().get_scope_symbol(file_symbol, offset, false);
+        let base = &*attr_expr.value;
+        let (mut base_evaluations, _) = Evaluation::eval_from_ast(session, base, scope, &base.range().end(), false, &mut vec![]);
+        if Self::ensure_instance_attributes(session, file_symbol, base, &base_evaluations, offset) {
+            base_evaluations = Evaluation::eval_from_ast(session, base, scope, &base.range().end(), false, &mut vec![]).0;
+        }
+        let mut evaluated = false;
+        for class in SymbolTable::evaluated_classes(session, &base_evaluations) {
+            evaluated |= SymbolTable::ensure_instance_attributes_evaluated(session, class);
+        }
+        evaluated
+    }
+
+    /// Nothing found, or only instance attributes: they are only a fallback of the member lookup, so
+    /// if another one is found, the non-evaluated instance attributes can't change the result
+    fn may_be_instance_attribute(session: &mut SessionInfo, evaluations: &[Evaluation]) -> bool {
+        evaluations.iter().all(|evaluation| {
+            match evaluation.symbol.get_symbol_as_weak(session, None, &mut vec![], None).weak.upgrade(session.st()) {
+                // an instance attribute is owned by the function or file assigning it, not by the class
+                Some(SymbolKey::Variable(variable)) => !matches!(session.st()[variable].parent(), FileContentParent::Class(_)),
+                Some(_) => false,
+                None => true,
+            }
+        })
     }
 
     pub fn flatten_expr(expr: &Expr) -> String {
