@@ -588,6 +588,11 @@ fn valid_names_for_a_symbol(symbol_table: &SymbolTable, symbol: SymbolKey, start
         SymbolKey::XmlField(_) => {
         }
     }
+    if !only_on_disk {
+        for name in symbol_table.get_all_ext_symbols(symbol, start_filter).into_keys() {
+            res.entry(name).or_insert(SymType::VARIABLE);
+        }
+    }
     res
 }
 
