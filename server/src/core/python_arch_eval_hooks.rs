@@ -175,42 +175,6 @@ static arch_eval_file_hooks: LazyLock<Vec<PythonArchEvalFileHook>> = LazyLock::n
         }
     }},
     PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![((18, 1), (999, 0), (&["odoo", "init"], &["_"]))],
-                            if_exist_only: true,
-                            func: |odoo: &mut SyncOdoo, _entry: EntryPointKey, file_symbol: SourceFileKey, symbol: SymbolKey| {
-        let odoo_underscore = odoo.get_symbol(odoo.symbol_table.path(file_symbol), (&["odoo"], &["_"]), u32::MAX);
-        if let Some(&eval_1) = odoo_underscore.first() {
-            odoo.symbol_table.set_evaluations(eval_1, vec![Evaluation::eval_from_symbol(&odoo.symbol_table, symbol, Some(false))]);
-        }
-    }},
-    PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![((18, 1), (999, 0), (&["odoo", "init"], &["SUPERUSER_ID"]))],
-                            if_exist_only: true,
-                            func: |odoo: &mut SyncOdoo, _entry: EntryPointKey, file_symbol: SourceFileKey, symbol: SymbolKey| {
-        let odoo_superuser_id = odoo.get_symbol(odoo.symbol_table.path(file_symbol), (&["odoo"], &["SUPERUSER_ID"]), u32::MAX);
-        if let Some(&eval_1) = odoo_superuser_id.first() {
-            odoo.symbol_table.set_evaluations(eval_1,vec![Evaluation::eval_from_symbol(&odoo.symbol_table, symbol, Some(false))]);
-        }
-    }},
-    PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![((18, 1), (999, 0), (&["odoo", "init"], &["_lt"]))],
-                            if_exist_only: true,
-                            func: |odoo: &mut SyncOdoo, _entry: EntryPointKey, file_symbol: SourceFileKey, symbol: SymbolKey| {
-        let odoo_lt = odoo.get_symbol(odoo.symbol_table.path(file_symbol), (&["odoo"], &["_lt"]), u32::MAX);
-        if let Some(&eval_1) = odoo_lt.first() {
-            odoo.symbol_table.set_evaluations(eval_1, vec![Evaluation::eval_from_symbol(&odoo.symbol_table, symbol, Some(false))]);
-        }
-    }},
-    PythonArchEvalFileHook {odoo_entry: true,
-                            trees: vec![((18, 1), (999, 0), (&["odoo", "init"], &["Command"]))],
-                            if_exist_only: true,
-                            func: |odoo: &mut SyncOdoo, _entry: EntryPointKey, file_symbol: SourceFileKey, symbol: SymbolKey| {
-        let odoo_command = odoo.get_symbol(odoo.symbol_table.path(file_symbol), (&["odoo"], &["Command"]), u32::MAX);
-        if let Some(&eval_1) = odoo_command.first() {
-            odoo.symbol_table.set_evaluations(eval_1, vec![Evaluation::eval_from_symbol(&odoo.symbol_table, symbol, Some(false))]);
-        }
-    }},
-    PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![((15, 0), (19, 4), (&["odoo", "addons", "base", "models", "ir_rule"], &["IrRule", "global"]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, _entry: EntryPointKey, file_symbol: SourceFileKey, symbol: SymbolKey| {

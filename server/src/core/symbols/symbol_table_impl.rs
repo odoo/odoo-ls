@@ -874,10 +874,14 @@ impl SymbolTable {
         } else {
             ContentSymbols::default()
         };
-        let ext_sym = self.get_ext_symbol(target, name);
-        if ext_sym.len() > 1 {
-            content.symbols.extend(ext_sym.into_iter().map(SymbolKey::from));
-            content.always_defined = true;
+        // ext symbols of a class are instance attributes, not names of its body: they are handled by get_member_symbol.
+        // Functions are not modules either: their ext symbols are attributes of the function object (see get_sub_symbol)
+        if matches!(target, SymbolKey::File(_) | SymbolKey::Module(_) | SymbolKey::PythonPackage(_)) {
+            let ext_sym = self.get_ext_symbol(target, name);
+            if !ext_sym.is_empty() {
+                content.symbols.extend(ext_sym.into_iter().map(SymbolKey::from));
+                content.always_defined = true;
+            }
         }
         content
     }
@@ -900,6 +904,12 @@ impl SymbolTable {
 
             if !content.symbols.is_empty() {
                 result.insert(name.clone(), content.symbols);
+            }
+        }
+        // only ext symbols injected into a file are names of its body (see get_content_symbol)
+        if matches!(target, SymbolKey::File(_)) {
+            for (name, ext_symbols) in self.get_all_ext_symbols(target, name_prefix) {
+                result.entry(name).or_default().extend(ext_symbols.into_iter().map(SymbolKey::from));
             }
         }
         result
@@ -1777,6 +1787,12 @@ impl SymbolTable {
                 )
             }
         }
+        // Add Ext variables
+        if !only_fields && !only_methods && !(is_super && matches!(symbol_key, SymbolKey::Class(_))) {
+            for (name, ext_symbols) in session.st().get_all_ext_symbols(symbol_key, "") {
+                result.entry(name).or_default().extend(ext_symbols.into_iter().map(SymbolKey::from));
+            }
+        }
     }
 
     /* return the Symbol (class, function or file) the closest to the given offset */
@@ -2223,7 +2239,30 @@ impl SymbolTable {
                 }
             }
         }
+        // Only add ext symbols if result is empty, to not pollute "official" values
+        if !is_super && !only_fields && !only_methods && result.is_empty() {
+            let ext_symbols = session.st().get_ext_symbol(target, name).into_iter().map(SymbolKey::from).collect();
+            extend_result(ext_symbols, &mut result, &mut visited_symbols);
+        }
         (result, diagnostics)
+    }
+
+    /// The symbols that `evaluations` evaluate to and that can host an attribute assigned from outside
+    /// (`base.x = ...`): classes (or class instances), namespaces, packages, files and functions
+    pub fn evaluated_ext_targets(session: &mut SessionInfo, evaluations: &[Evaluation]) -> Vec<SymbolKey> {
+        let mut targets = vec![];
+        for evaluation in evaluations.iter() {
+            let symbol = evaluation.symbol.get_symbol(session, None, &mut vec![], None);
+            for followed in SymbolTable::follow_ref(&symbol, session, None, false, false, None, None) {
+                if let Some(target) = followed.upgrade_weak(session.st())
+                    && matches!(target, SymbolKey::Class(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_)
+                        | SymbolKey::Module(_) | SymbolKey::File(_) | SymbolKey::Function(_))
+                    && !targets.contains(&target) {
+                        targets.push(target);
+                    }
+            }
+        }
+        targets
     }
 
     /**
