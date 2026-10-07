@@ -1245,6 +1245,13 @@ impl SyncOdoo {
         results
     }
 
+    /// Whether an xml id points to a res.groups record, a `groups` list accepting no other model.
+    pub fn is_group_xml_id(session: &mut SessionInfo, from_file: SourceFileKey, group: &str, range: &std::ops::Range<usize>, diagnostics: &mut Vec<Diagnostic>) -> bool {
+        let xml_ids = SyncOdoo::get_xml_ids(session, from_file, group, range, diagnostics);
+        xml_ids.iter_valid(session.st()).any(|xml_id|
+            matches!(xml_id, XmlId::XmlRecord(record_key) if session.st()[record_key].model.0 == "res.groups"))
+    }
+
     pub fn get_ts_dict(&mut self) -> Wk<SymbolKey> {
         if self.typeshed_weak_cache.dict.is_expired(&self.symbol_table) {
             self.typeshed_weak_cache.dict = self.get_symbol("", (&["builtins"], &["dict"]), u32::MAX).last().copied().unwrap().into();
