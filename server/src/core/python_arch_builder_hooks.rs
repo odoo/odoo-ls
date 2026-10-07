@@ -206,20 +206,6 @@ impl PythonArchBuilderHooks {
                     session.sync_odoo.need_rebuild = true;
                 }
             }
-        } else if name == "init" {
-            if session.sync_odoo.version >= (18, 1)
-                && session.sync_odoo.get_main_entry_tree(symbol) == (&["odoo", "init"], &[]) {
-                    let file_path = session.st().path(symbol);
-                    let odoo_namespace = session.sync_odoo.get_symbol(file_path, (&["odoo"], &[]), u32::MAX);
-                    if let Some(&odoo_namespace) = odoo_namespace.first() {
-                        // create _ and Command as ext_symbols
-                        let owner = symbol.into();
-                        session.st_mut().add_new_ext_symbol(odoo_namespace, "SUPERUSER_ID", TextRange::default(), owner);
-                        session.st_mut().add_new_ext_symbol(odoo_namespace, "_", TextRange::default(), owner);
-                        session.st_mut().add_new_ext_symbol(odoo_namespace, "_lt", TextRange::default(), owner);
-                        session.st_mut().add_new_ext_symbol(odoo_namespace, "Command", TextRange::default(), owner);
-                    }
-                }
         } else if name == "werkzeug" {
             if session.sync_odoo.get_main_entry_tree(symbol) == (&["odoo", "_monkeypatches", "werkzeug"], &[]) {
                 //doing this patch like this imply that an odoo project will make these functions available for all entrypoints, but heh
