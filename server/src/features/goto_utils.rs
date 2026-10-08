@@ -163,7 +163,7 @@ impl GotoUtils {
         let Some(py_ast) = session.file_mgr()[file_info].file_info_ast.ast.as_py_ast().cloned() else {
             return vec![];
         };
-        let (analyse_ast_result, _range, expr, call_expr) = AstUtils::get_symbols(session, &py_ast, file_symbol, offset as u32);
+        let (analyse_ast_result, _range, expr, string_ctx) = AstUtils::get_symbols(session, &py_ast, file_symbol, offset as u32);
         if analyse_ast_result.evaluations.is_empty() {
             return vec![];
         }
@@ -190,7 +190,7 @@ impl GotoUtils {
             let eval = &evaluations[index];
             if let Some((string_val, string_range)) = eval.value.as_ref().and_then(EvaluationValue::as_string_literal).map(|expr| (expr.value.to_str(), expr.range)) {
                 let uri = session.file_mgr()[file_info].uri.clone();
-                if let Some(resolution) = FeaturesUtils::resolve_string_symbols(session, file_symbol, &uri, string_val, string_range, call_expr.as_ref(), SegmentPick::Cursor(offset)) {
+                if let Some(resolution) = FeaturesUtils::resolve_string_symbols(session, file_symbol, &uri, string_val, string_range, string_ctx.as_ref(), SegmentPick::Cursor(offset)) {
                     GotoUtils::push_string_sources(session, resolution, file_symbol, string_range, &mut definition_sources);
                 }
                 index += 1;
