@@ -344,8 +344,7 @@ impl<'a, 'b, 's> SemanticTokenVisitor<'a, 'b, 's> {
             self.session,
             self.file_symbol,
             &self.file_path,
-            string_literal.value.to_str(),
-            range,
+            string_literal,
             self.string_ctx.as_ref(),
             SegmentPick::All
         ) else {
