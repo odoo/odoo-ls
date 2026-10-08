@@ -93,3 +93,12 @@ class SemTokensUsage(models.Model):
     triple_quoted = fields.Char(related='''other_id.other_name''')
     # Field path whose separator is an escape sequence
     escaped_dot = fields.Char(related='other_id\x2eother_name')
+
+    # `_order`: the field of each comma-separated item, before its direction; trailing comma as while typing
+    _order = 'other_id desc, name, id,'
+
+
+class SemTokensOrderSplit(models.Model):
+    _inherit = 'sem.tokens.usage'
+    # Field split between the parts of an implicitly concatenated string
+    _order = 'other_' 'id'
