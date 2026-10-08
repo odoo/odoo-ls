@@ -2,7 +2,7 @@ from . import arch_eval_hooks_model
 from . import base_test_models
 from . import diagnostics
 from . import env_attr_probe
-from . import env_subscript_probe
+from . import instance_attr_probe
 from . import models
 from . import reexport_usage
 from . import to_complete
