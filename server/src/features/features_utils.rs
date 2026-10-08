@@ -448,6 +448,44 @@ impl FeaturesUtils {
         }
     }
 
+    /// Fields of `_order = "name desc, id"`, with their range in the file: the first word of each
+    /// comma-separated item.
+    fn find_order_fields(
+        session: &mut SessionInfo,
+        scope: SymbolKey,
+        from_module: Option<ModuleKey>,
+        string: &ExprStringLiteral,
+        pick: SegmentPick,
+    ) -> Vec<(SymbolKey, TextRange)> {
+        let order = string.value.to_str();
+        let mut fields = vec![];
+        let mut item_start = 0;
+        for item in order.split(',') {
+            if let Some(name) = item.split_whitespace().next() {
+                let start = item_start + (item.len() - item.trim_start().len());
+                fields.push((name, start, start + name.len()));
+            }
+            item_start += item.len() + 1;
+        }
+        if let SegmentPick::Cursor(offset) = pick {
+            let Some(cursor) = AstUtils::index_in_string(string, TextSize::new(offset as u32)) else {
+                return vec![];
+            };
+            fields.retain(|&(_, start, end)| start <= cursor && cursor <= end);
+        }
+        let mut members = vec![];
+        for (name, start, end) in fields {
+            let range = match (AstUtils::range_in_file(string, start, end), pick) {
+                (Some(range), _) => range,
+                // Not found in the file (escapes, split between parts): no token, but hover and definition still work
+                (None, SegmentPick::Cursor(_)) => string.range,
+                (None, SegmentPick::All) => continue,
+            };
+            members.extend(FeaturesUtils::find_simple_decorator_field_symbol(session, scope, from_module, name).into_iter().map(|s| (s, range)));
+        }
+        members
+    }
+
 
     /// Field/method symbols a string refers to, given its syntactic context,
     /// with the sub-range each covers.
@@ -472,7 +510,7 @@ impl FeaturesUtils {
                     .into_iter().map(|s| (s, string.range)).collect()
             },
             StringContext::ModelOrder => {
-                vec![]
+                FeaturesUtils::find_order_fields(session, scope, from_module, string, pick)
             },
         }
     }
