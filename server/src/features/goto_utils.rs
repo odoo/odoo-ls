@@ -188,10 +188,10 @@ impl GotoUtils {
         let mut index = 0;
         while index < evaluations.len() {
             let eval = &evaluations[index];
-            if let Some((string_val, string_range)) = eval.value.as_ref().and_then(EvaluationValue::as_string_literal).map(|expr| (expr.value.to_str(), expr.range)) {
+            if let Some(string) = eval.value.as_ref().and_then(EvaluationValue::as_string_literal) {
                 let uri = session.file_mgr()[file_info].uri.clone();
-                if let Some(resolution) = FeaturesUtils::resolve_string_symbols(session, file_symbol, &uri, string_val, string_range, string_ctx.as_ref(), SegmentPick::Cursor(offset)) {
-                    GotoUtils::push_string_sources(session, resolution, file_symbol, string_range, &mut definition_sources);
+                if let Some(resolution) = FeaturesUtils::resolve_string_symbols(session, file_symbol, &uri, string, string_ctx.as_ref(), SegmentPick::Cursor(offset)) {
+                    GotoUtils::push_string_sources(session, resolution, file_symbol, string.range, &mut definition_sources);
                 }
                 index += 1;
                 continue;
