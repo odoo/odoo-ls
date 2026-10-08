@@ -2,4 +2,6 @@ from .file_b import ClassB
 
 
 class ClassA(ClassB):
-    pass
+
+    def method_a(self):
+        return 1
