@@ -9,7 +9,7 @@ use crate::threads::SessionInfo;
 use crate::S;
 use ruff_python_ast::name::Name;
 use ruff_python_ast::visitor::{Visitor, walk_expr, walk_stmt, walk_alias, walk_except_handler, walk_parameter, walk_keyword, walk_pattern_keyword, walk_type_param, walk_pattern};
-use ruff_python_ast::{Alias, AtomicNodeIndex, ExceptHandler, Expr, ExprCall, Identifier, Keyword, Parameter, Pattern, PatternKeyword, Stmt, TypeParam};
+use ruff_python_ast::{Alias, AtomicNodeIndex, ExceptHandler, Expr, ExprCall, ExprStringLiteral, Identifier, Keyword, Parameter, Pattern, PatternKeyword, Stmt, TypeParam};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::warn;
 
@@ -18,15 +18,15 @@ pub struct AstUtils {}
 impl AstUtils {
 
 
-    pub fn get_symbols<'a>(session: &mut SessionInfo, py_ast: &'a IndexedModule, file_symbol: SourceFileKey, offset: u32) -> (AnalyzeAstResult, Option<TextRange>, Option<ExprOrIdent<'a>>, Option<ExprCall>) {
+    pub fn get_symbols<'a>(session: &mut SessionInfo, py_ast: &'a IndexedModule, file_symbol: SourceFileKey, offset: u32) -> (AnalyzeAstResult, Option<TextRange>, Option<ExprOrIdent<'a>>, Option<StringContext<'a>>) {
         let mut expr: Option<ExprOrIdent<'a>> = None;
-        let mut call_expr: Option<ExprCall> = None;
+        let mut string_ctx: Option<StringContext<'a>> = None;
         for stmt in py_ast.get_stmts().iter() {
             //we have to handle imports differently as symbols are not visible in file.
             if let Some((result, range)) = Self::get_symbol_in_import(session, file_symbol, offset, stmt) {
                 return (result, range, None, None);
             }
-            (expr, call_expr) = ExprFinderVisitor::find_expr_at(stmt, offset);
+            (expr, string_ctx) = ExprFinderVisitor::find_expr_at(stmt, offset);
             if expr.is_some() {
                 break;
             }
@@ -36,7 +36,7 @@ impl AstUtils {
             return (AnalyzeAstResult::default(), None, None, None);
         };
         let (result, range) = Self::get_symbol_from_expr(session, file_symbol, &expr, offset);
-        (result, range, Some(expr), call_expr)
+        (result, range, Some(expr), string_ctx)
     }
 
     pub fn get_symbol_from_expr<'a>(session: &mut SessionInfo, file_symbol: SourceFileKey, expr: &ExprOrIdent<'a>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>) {
@@ -175,40 +175,75 @@ impl AstUtils {
     }
 }
 
+/// Narrowest context around a string expression in the AST
+/// Used for features that need to know info about the encapsuling expression or statement
+pub enum StringContext<'a> {
+    /// The innermost call whose arguments contain the string
+    CallArgument(&'a ExprCall),
+    /// Whether the current expression is a string expression under an (annotated) assign statement setting `_order`
+    ///  i.e. `_order = "..."` or `_order: str = "..."`
+    ModelOrder,
+}
+
+impl<'a> StringContext<'a> {
+    /// Try to find a `CallArgument` `StringContext` at the current statement
+    /// Looks for an (annotated) assignment to `_order` with the value being a string literal
+    /// Returns the `StringContext::ModelOrder` value, alongside the string expression
+    pub fn try_to_model_order(stmt: &Stmt) -> Option<(Self, &ExprStringLiteral)> {
+        let (target, value) = match stmt {
+            Stmt::Assign(assign) => match assign.targets.as_slice() {
+                [target] => (target, assign.value.as_ref()),
+                _ => return None,
+            },
+            Stmt::AnnAssign(assign) => (assign.target.as_ref(), assign.value.as_deref()?),
+            _ => return None,
+        };
+        if let Expr::StringLiteral(expr) = value
+            && let Expr::Name(name) = target
+            && name.id == "_order"
+        {
+            return Some((StringContext::ModelOrder, expr));
+        }
+        None
+    }
+}
 
 pub struct ExprFinderVisitor<'a> {
     offset: TextSize,
     expr: Option<ExprOrIdent<'a>>,
-    last_call_expr: Option<&'a ExprCall>,
+    string_ctx: Option<StringContext<'a>>,
 }
 
 impl<'a> ExprFinderVisitor<'a> {
     /*
     Find expr from `stmt` at the given `offset`
-    Returns: (expr, last_call_expr)
+    Returns: (expr, string_ctx)
         expr: the expr being searched for
-        last_call_expr: The last call expr preceding the expr we are searching for
+        string_ctx: the narrowest context around the string at `offset`, see `StringContext`
      */
-    pub fn find_expr_at(stmt: &'a Stmt, offset: u32) -> (Option<ExprOrIdent<'a>>, Option<ExprCall>) {
+    pub fn find_expr_at(stmt: &'a Stmt, offset: u32) -> (Option<ExprOrIdent<'a>>, Option<StringContext<'a>>) {
         let mut visitor = Self {
             offset: TextSize::new(offset),
             expr: None,
-            last_call_expr: None
+            string_ctx: None,
         };
         visitor.visit_stmt(stmt);
-        (visitor.expr, visitor.last_call_expr.cloned())
+        (visitor.expr, visitor.string_ctx)
     }
 
 }
 
 impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
-
     fn visit_expr(&mut self, expr: &'a Expr) {
+        if self.expr.is_some() {
+            return;
+        }
         if expr.range().contains(self.offset) {
             if let Expr::Call(expr_call) = expr
-                && expr_call.arguments.range().contains(self.offset){
-                    self.last_call_expr = Some(expr_call);
-                }
+                && expr_call.arguments.range().contains(self.offset)
+            {
+                self.string_ctx = Some(StringContext::CallArgument(expr_call));
+            }
             walk_expr(self, expr);
             if self.expr.is_none() {
                 self.expr = Some(ExprOrIdent::Expr(expr));
@@ -313,6 +348,13 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
     }
 
     fn visit_stmt(&mut self, stmt: &'a Stmt) {
+        if self.expr.is_some(){
+            return;
+        }
+        self.string_ctx = match StringContext::try_to_model_order(stmt) {
+            Some((ctx, expr)) if expr.range().contains(self.offset) => Some(ctx),
+            _ => None,
+        };
         walk_stmt(self, stmt);
         if self.expr.is_none() {
             let idents = match stmt {
