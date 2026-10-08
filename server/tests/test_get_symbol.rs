@@ -1,13 +1,18 @@
 ﻿// Test the hover feature by calling get_hover on various symbols in the test addons.
 
+use odoo_ls_server::core::file_mgr::FileInfo;
 use odoo_ls_server::core::odoo::SyncOdoo;
+use odoo_ls_server::core::symbols::symbol_keys::SourceFileKey;
 use odoo_ls_server::odoo_version::OdooVersion;
 use odoo_ls_server::utils::{PathSanitizer, ToFilePath};
 use odoo_ls_server::Sy;
 use odoo_ls_server::constants::OYarn;
 use odoo_ls_server::threads::SessionInfo;
+use std::cell::RefCell;
 use std::env;
+use std::fs;
 use std::path::Path;
+use std::rc::Rc;
 
 mod setup;
 mod test_utils;
@@ -1193,4 +1198,120 @@ fn test_xml_definition() {
         "Python xml_id ref string: one location should be the xml_test_model record in test_records.xml; got: {:?}",
         py_ref_locs
     );
+}
+
+/// AST strings and identifiers hold decoded values (implicit concatenation joined, quotes and
+/// prefixes stripped, names NFKC-normalized) while their ranges point into the source: hover and
+/// definition must map between the two, never mix them. Panics are caught per case, so that one
+/// run reports every failing case.
+#[test]
+fn test_decoded_values_vs_source_offsets() {
+    let (mut odoo, config) = setup::setup::setup_server(true);
+    let models_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons")
+        .join("module_semantic_tokens").join("models");
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let main = Fixture::open(&mut session, &models_path.join("sem_tokens_main.py").sanitize());
+    let non_ascii = Fixture::open(&mut session, &models_path.join("sem_tokens_non_ascii.py").sanitize());
+    let mut failures = vec![];
+
+    // Field paths, compared to the single literal `related='other_id.other_name'`. Cursor on the
+    // last char of the segment: near the start of a part, a shifted segment can still contain it.
+    let last_char = "other_name".len() - 1;
+    let control = main.position(35, "other_name", last_char);
+    let control_hover = main.hover(&mut session, control);
+    let control_targets = main.definition(&mut session, control);
+    assert!(control_hover.contains("other_name"), "Control hover should show `other_name`, got: {:?}", control_hover);
+    assert!(!control_targets.is_empty(), "Control definition should find `other_name`");
+    for (case, line) in [("concat inline", 87), ("concat multiline", 89), ("triple quoted", 93)] {
+        catch(&mut failures, case, || {
+            let position = main.position(line, "other_name", last_char);
+            same_as_control(&mut session, &main, position, &control_hover, &control_targets)
+        });
+    }
+
+    // Comment between concatenated parts: it holds no field, and the segment wrongly laid out
+    // over it ends inside an `é`.
+    catch(&mut failures, "definition on a comment between concatenated parts", || {
+        let targets = non_ascii.definition(&mut session, non_ascii.position(15, "#", 0));
+        if targets.is_empty() { vec![] } else { vec![format!("expected no definition, got: {:?}", targets)] }
+    });
+
+    // NFKC-normalized import names (`ｏｓ` is `os`), compared to the cursor on their first char
+    for (case, line) in [("import name", 4), ("from-import module", 5)] {
+        catch(&mut failures, case, || {
+            let first_char = non_ascii.position(line, "ｏｓ", 0);
+            let control_hover = non_ascii.hover(&mut session, first_char);
+            let control_targets = non_ascii.definition(&mut session, first_char);
+            if control_hover.is_empty() || control_targets.is_empty() {
+                return vec![format!("control on the first char should resolve `os`, got hover {:?} and definition {:?}", control_hover, control_targets)];
+            }
+            let second_char = non_ascii.position(line, "ｏｓ", 1);
+            same_as_control(&mut session, &non_ascii, second_char, &control_hover, &control_targets)
+        });
+    }
+
+    assert!(failures.is_empty(), "Decoded values vs source offsets:\n{}", failures.join("\n"));
+}
+
+/// Hover and definition at `position` must match the control's.
+fn same_as_control(session: &mut SessionInfo, fixture: &Fixture, position: (u32, u32), control_hover: &str, control_targets: &[(lsp_types::Uri, lsp_types::Range)]) -> Vec<String> {
+    let mut problems = vec![];
+    let hover = fixture.hover(session, position);
+    if hover != control_hover {
+        problems.push(format!("hover differs from control, got: {:?}", hover));
+    }
+    let targets = fixture.definition(session, position);
+    if targets != control_targets {
+        problems.push(format!("definition differs from control, got: {:?}", targets));
+    }
+    problems
+}
+
+/// Run one case, turning its problems and its panic, if any, into failures.
+fn catch(failures: &mut Vec<String>, case: &str, check: impl FnOnce() -> Vec<String>) {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(check)) {
+        Ok(problems) => failures.extend(problems.into_iter().map(|problem| format!("{case}: {problem}"))),
+        Err(panic) => {
+            let message = panic.downcast_ref::<String>().cloned()
+                .or_else(|| panic.downcast_ref::<&str>().map(|message| message.to_string()))
+                .unwrap_or_default();
+            failures.push(format!("{case}: panicked: {message}"));
+        }
+    }
+}
+
+/// A fixture file of the session, located by text rather than by hard-coded columns.
+struct Fixture {
+    file_symbol: SourceFileKey,
+    file_info: Rc<RefCell<FileInfo>>,
+    lines: Vec<String>,
+}
+
+impl Fixture {
+    fn open(session: &mut SessionInfo, path: &str) -> Fixture {
+        let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(path).unwrap();
+        let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(path)) else {
+            panic!("Failed to get file symbol of {path}");
+        };
+        let lines = fs::read_to_string(path).unwrap().lines().map(str::to_string).collect();
+        Fixture { file_symbol, file_info, lines }
+    }
+
+    /// LSP position (UTF-16) of the `char_index`-th char of `needle`, which must appear exactly
+    /// once on the 1-based `line`.
+    fn position(&self, line: u32, needle: &str, char_index: usize) -> (u32, u32) {
+        let text = &self.lines[line as usize - 1];
+        assert_eq!(text.matches(needle).count(), 1, "`{needle}` must appear exactly once on line {line}: `{text}`");
+        let byte = text.find(needle).unwrap() + needle.char_indices().nth(char_index).unwrap().0;
+        (line - 1, text[..byte].encode_utf16().count() as u32)
+    }
+
+    fn hover(&self, session: &mut SessionInfo, (line, character): (u32, u32)) -> String {
+        test_utils::get_hover_markdown(session, self.file_symbol, &self.file_info, line, character).unwrap_or_default()
+    }
+
+    fn definition(&self, session: &mut SessionInfo, (line, character): (u32, u32)) -> Vec<(lsp_types::Uri, lsp_types::Range)> {
+        test_utils::get_definition_locs(session, self.file_symbol, &self.file_info, line, character)
+            .into_iter().map(|loc| (loc.target_uri, loc.target_range)).collect()
+    }
 }
