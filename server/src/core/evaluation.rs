@@ -667,9 +667,14 @@ impl Evaluation {
         let mut found_one_reference = false;
 
         let parent_file_or_func = session.st().parent_file_or_function(parent).unwrap();
+        // in validation, or in the ARCH/ARCH_EVAL of a function, for what is evaluated in its file (its decorators).
+        // Not its body: it is evaluated again by the function validation, that would report the same diagnostics.
         let is_in_validation = match parent_file_or_func.typ() {
             SymType::FILE | SymType::PACKAGE(_) | SymType::FUNCTION => {
                 session.st().build_status(parent_file_or_func.unwrap_buildable_key(), BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
+                || session.sync_odoo.functions_in_build.last().is_some_and(|&function| {
+                    session.st().get_file(function.into()).is_some_and(|file| parent_file_or_func == SymbolKey::from(file))
+                })
             },
             _ => {false}
         };

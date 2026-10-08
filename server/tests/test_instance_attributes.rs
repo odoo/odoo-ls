@@ -2,7 +2,10 @@ mod setup;
 mod test_utils;
 
 use lsp_types::CompletionResponse;
+use odoo_ls_server::constants::BuildSteps;
+use odoo_ls_server::core::build_scheduler::BuildScheduler;
 use odoo_ls_server::core::odoo::SyncOdoo;
+use odoo_ls_server::core::symbols::storage::SymbolTable;
 use odoo_ls_server::features::completion::CompletionFeature;
 use odoo_ls_server::utils::PathSanitizer;
 use std::env;
