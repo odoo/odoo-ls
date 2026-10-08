@@ -183,6 +183,9 @@ impl PythonValidator {
                 Stmt::FunctionDef(f) => {
                     let sym = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &f.name, &f.range);
                     if let Some(sym) = sym {
+                        // Normally already done by the function queues of the BuildScheduler (see
+                        // `BuildScheduler::queue_functions`) - this is a safety net for functions that
+                        // were not queued (e.g. validating a single function directly).
                         if session.st().ready_for_step(sym.unwrap_buildable_key(), BuildSteps::ARCH) {
                             BuildScheduler::build_now(session, sym.unwrap_buildable_key(), BuildSteps::ARCH);
                         }
