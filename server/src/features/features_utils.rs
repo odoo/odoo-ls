@@ -11,6 +11,7 @@ use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::symbol_keys::{ModelSymbolKey, ModuleKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlRecordKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::FunctionSymbol;
+use crate::features::ast_utils::StringContext;
 use crate::tree::OYarnExt;
 use crate::utils::HashMap;
 use std::path::Path;
@@ -440,26 +441,33 @@ impl FeaturesUtils {
     }
 
 
-    /// Field/method symbols a string refers to, given the call it is an argument of,
+    /// Field/method symbols a string refers to, given its syntactic context,
     /// with the sub-range each covers.
     fn resolve_string_members(
         session: &mut SessionInfo,
         file_symbol: SourceFileKey,
         string_val: &str,
         string_range: TextRange,
-        call_expr: &ExprCall,
+        string_ctx: &StringContext,
         pick: SegmentPick,
     ) -> Vec<(SymbolKey, TextRange)> {
         let from_module = session.st().find_module(file_symbol);
         // Any byte inside the string works for scope/kwarg location.
         let offset = string_range.start().to_usize() + 1;
         let scope = session.st().get_scope_symbol(file_symbol, offset as u32, false);
-        let members = FeaturesUtils::find_argument_symbols(session, scope, from_module, string_val, call_expr, string_range, pick);
-        if !members.is_empty() {
-            return members;
+        match string_ctx {
+            StringContext::CallArgument(call_expr) => {
+                let members = FeaturesUtils::find_argument_symbols(session, scope, from_module, string_val, call_expr, string_range, pick);
+                if !members.is_empty() {
+                    return members;
+                }
+                FeaturesUtils::find_kwarg_methods_symbols(session, scope, from_module, string_val, call_expr, &offset)
+                    .into_iter().map(|s| (s, string_range)).collect()
+            },
+            StringContext::ModelOrder => {
+                vec![]
+            },
         }
-        FeaturesUtils::find_kwarg_methods_symbols(session, scope, from_module, string_val, call_expr, &offset)
-            .into_iter().map(|s| (s, string_range)).collect()
     }
 
     /// Resolve a model-related string to its symbols/category, in this order:
@@ -472,12 +480,12 @@ impl FeaturesUtils {
         file_path: &str,
         string_val: &str,
         string_range: TextRange,
-        call_expr: Option<&ExprCall>,
+        string_ctx: Option<&StringContext>,
         pick: SegmentPick,
     ) -> Option<StringResolution> {
         let from_module = session.st().find_module(file_symbol);
-        if let Some(call_expr) = call_expr {
-            let members = FeaturesUtils::resolve_string_members(session, file_symbol, string_val, string_range, call_expr, pick);
+        if let Some(string_ctx) = string_ctx {
+            let members = FeaturesUtils::resolve_string_members(session, file_symbol, string_val, string_range, string_ctx, pick);
             if !members.is_empty() {
                 return Some(StringResolution::Members(members));
             }
@@ -511,7 +519,7 @@ impl FeaturesUtils {
         file_symbol: Option<SourceFileKey>,
         file_path: Option<&str>,
         evals: &[Evaluation],
-        call_expr: &Option<ExprCall>,
+        string_ctx: &Option<StringContext>,
         offset: Option<usize>
     ) -> String {
         #[derive(Debug, Eq, PartialEq, Hash)]
@@ -548,8 +556,8 @@ impl FeaturesUtils {
                     continue;
                 }
                 let from_module = file_symbol.and_then(|fs| session.st().find_module(fs));
-                if let (Some(call_expression), Some(file_sym), Some(offset)) = (call_expr, file_symbol, offset){
-                    let special_string_syms: Vec<SymbolKey> = FeaturesUtils::resolve_string_members(session, file_sym, str, expr.range, call_expression, SegmentPick::Cursor(offset))
+                if let (Some(string_ctx_val), Some(file_sym), Some(offset)) = (string_ctx, file_symbol, offset){
+                    let special_string_syms: Vec<SymbolKey> = FeaturesUtils::resolve_string_members(session, file_sym, str, expr.range, string_ctx_val, SegmentPick::Cursor(offset))
                         .into_iter().map(|(sym, _)| sym).collect();
                     // Inject `base_attr` to get descriptor type on follow_ref in features
                     if !special_string_syms.is_empty() {
@@ -561,7 +569,7 @@ impl FeaturesUtils {
                             .chain(evals.iter().take(index).cloned())
                             .chain(evals.iter().skip(index + 1).cloned())
                             .collect();
-                        let r = FeaturesUtils::build_markdown_description(session, file_symbol, file_path, &string_domain_fields_evals, call_expr, Some(offset));
+                        let r = FeaturesUtils::build_markdown_description(session, file_symbol, file_path, &string_domain_fields_evals, string_ctx, Some(offset));
                         // remove the injected `base_attr` context value
                         FeaturesUtils::remove_base_attr(session, &special_string_syms);
                         return r;

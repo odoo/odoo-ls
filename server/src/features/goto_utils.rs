@@ -161,7 +161,7 @@ impl GotoUtils {
         let offset = file_info.borrow().position_to_offset(line, character, session.sync_odoo.encoding);
         let file_info_ast_clone = file_info.borrow().file_info_ast.clone();
         let file_info_ast_ref = file_info_ast_clone.borrow();
-        let (analyse_ast_result, _range, expr, call_expr) = AstUtils::get_symbols(session, &file_info_ast_ref, file_symbol, offset as u32);
+        let (analyse_ast_result, _range, expr, string_ctx) = AstUtils::get_symbols(session, &file_info_ast_ref, file_symbol, offset as u32);
         if analyse_ast_result.evaluations.is_empty() {
             return vec![];
         }
@@ -188,7 +188,7 @@ impl GotoUtils {
         while index < evaluations.len() {
             let eval = &evaluations[index];
             if let Some((string_val, string_range)) = eval.value.as_ref().and_then(EvaluationValue::as_string_literal).map(|expr| (expr.value.to_str(), expr.range)) {
-                if let Some(resolution) = FeaturesUtils::resolve_string_symbols(session, file_symbol, &file_info.borrow().uri, string_val, string_range, call_expr.as_ref(), SegmentPick::Cursor(offset)) {
+                if let Some(resolution) = FeaturesUtils::resolve_string_symbols(session, file_symbol, &file_info.borrow().uri, string_val, string_range, string_ctx.as_ref(), SegmentPick::Cursor(offset)) {
                     GotoUtils::push_string_sources(session, resolution, file_symbol, string_range, &mut definition_sources);
                 }
                 index += 1;

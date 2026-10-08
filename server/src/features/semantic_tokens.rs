@@ -1,15 +1,15 @@
 //! LSP semantic tokens
 
 use lsp_types::{Range, SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokens, SemanticTokensLegend};
-use ruff_python_ast::visitor::{walk_expr, walk_parameter, Visitor};
-use ruff_python_ast::{Decorator, Expr, ExprCall, ExprStringLiteral, Parameter};
+use ruff_python_ast::visitor::{walk_expr, walk_parameter, walk_stmt, Visitor};
+use ruff_python_ast::{Decorator, Expr, ExprStringLiteral, Parameter, Stmt};
 use ruff_text_size::{Ranged, TextRange};
 
 use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr, ExprOrIdent};
 use crate::core::file_mgr::FileInfo;
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::symbol_keys::{SourceFileKey, SymbolKey};
-use crate::features::ast_utils::AstUtils;
+use crate::features::ast_utils::{AstUtils, StringContext};
 use crate::features::features_utils::{FeaturesUtils, SegmentPick, StringResolution};
 use crate::features::owl_component_utils::template_reference_resolves;
 use crate::threads::SessionInfo;
@@ -133,7 +133,7 @@ impl SemanticTokensFeature {
                 raw: &mut raw,
                 in_manifest: uri.ends_with("__manifest__.py"),
                 file_path: uri,
-                enclosing_call: None,
+                string_ctx: None,
             };
             for stmt in stmts.iter() {
                 visitor.visit_stmt(stmt);
@@ -278,8 +278,8 @@ struct SemanticTokenVisitor<'a, 'b, 's> {
     raw: &'a mut Vec<(Range, u32, u32)>,
     file_path: String,
     in_manifest: bool,
-    /// Nearest enclosing call, so string args resolve to fields/methods.
-    enclosing_call: Option<&'a ExprCall>,
+    /// Narrowest context around the visited node, so strings resolve to fields/methods.
+    string_ctx: Option<StringContext>,
 }
 
 impl<'a, 'b, 's> SemanticTokenVisitor<'a, 'b, 's> {
@@ -346,7 +346,7 @@ impl<'a, 'b, 's> SemanticTokenVisitor<'a, 'b, 's> {
             &self.file_path,
             string_literal.value.to_str(),
             range,
-            self.enclosing_call,
+            self.string_ctx.as_ref(),
             SegmentPick::All
         ) else {
             return;
@@ -395,9 +395,9 @@ impl<'a, 'b, 's> Visitor<'a> for SemanticTokenVisitor<'a, 'b, 's> {
             }
             Expr::Call(call) => {
                 // Expose the enclosing call so string args resolve to fields/methods.
-                let prev = self.enclosing_call.replace(call);
+                let prev = self.string_ctx.replace(StringContext::CallArgument(call.clone()));
                 walk_expr(self, expr);
-                self.enclosing_call = prev;
+                self.string_ctx = prev;
                 return;
             }
             Expr::Dict(dict) if self.in_manifest => {
@@ -427,10 +427,21 @@ impl<'a, 'b, 's> Visitor<'a> for SemanticTokenVisitor<'a, 'b, 's> {
     fn visit_decorator(&mut self, decorator: &'a Decorator) {
         // Visit only its args, leave the callee to the grammar.
         if let Expr::Call(call) = &decorator.expression {
-            let prev = self.enclosing_call.replace(call);
+            let prev = self.string_ctx.replace(StringContext::CallArgument(call.clone()));
             self.visit_arguments(&call.arguments);
-            self.enclosing_call = prev;
+            self.string_ctx = prev;
         }
+    }
+
+    fn visit_stmt(&mut self, stmt: &'a Stmt) {
+        // Expose the statement context (i.e. `_order = "..."`) to its string value.
+        let Some((ctx, _)) = StringContext::from_stmt(stmt) else {
+            walk_stmt(self, stmt);
+            return;
+        };
+        let prev = self.string_ctx.replace(ctx);
+        walk_stmt(self, stmt);
+        self.string_ctx = prev;
     }
 }
 

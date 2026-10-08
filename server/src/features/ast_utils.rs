@@ -9,7 +9,7 @@ use crate::threads::SessionInfo;
 use crate::S;
 use ruff_python_ast::name::Name;
 use ruff_python_ast::visitor::{Visitor, walk_expr, walk_stmt, walk_alias, walk_except_handler, walk_parameter, walk_keyword, walk_pattern_keyword, walk_type_param, walk_pattern};
-use ruff_python_ast::{Alias, AtomicNodeIndex, ExceptHandler, Expr, ExprCall, Identifier, Keyword, Parameter, Pattern, PatternKeyword, Stmt, TypeParam};
+use ruff_python_ast::{Alias, AtomicNodeIndex, ExceptHandler, Expr, ExprCall, ExprStringLiteral, Identifier, Keyword, Parameter, Pattern, PatternKeyword, Stmt, TypeParam};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::warn;
 
@@ -18,15 +18,15 @@ pub struct AstUtils {}
 impl AstUtils {
 
 
-    pub fn get_symbols<'a>(session: &mut SessionInfo, file_info_ast: &'a FileInfoAst, file_symbol: SourceFileKey, offset: u32) -> (AnalyzeAstResult, Option<TextRange>, Option<ExprOrIdent<'a>>, Option<ExprCall>) {
+    pub fn get_symbols<'a>(session: &mut SessionInfo, file_info_ast: &'a FileInfoAst, file_symbol: SourceFileKey, offset: u32) -> (AnalyzeAstResult, Option<TextRange>, Option<ExprOrIdent<'a>>, Option<StringContext>) {
         let mut expr: Option<ExprOrIdent<'a>> = None;
-        let mut call_expr: Option<ExprCall> = None;
+        let mut string_ctx: Option<StringContext> = None;
         for stmt in file_info_ast.get_stmts().unwrap().iter() {
             //we have to handle imports differently as symbols are not visible in file.
             if let Some((result, range)) = Self::get_symbol_in_import(session, file_symbol, offset, stmt) {
                 return (result, range, None, None);
             }
-            (expr, call_expr) = ExprFinderVisitor::find_expr_at(stmt, offset);
+            (expr, string_ctx) = ExprFinderVisitor::find_expr_at(stmt, offset);
             if expr.is_some() {
                 break;
             }
@@ -36,7 +36,7 @@ impl AstUtils {
             return (AnalyzeAstResult::default(), None, None, None);
         };
         let (result, range) = Self::get_symbol_from_expr(session, file_symbol, &expr, offset);
-        (result, range, Some(expr), call_expr)
+        (result, range, Some(expr), string_ctx)
     }
 
     pub fn get_symbol_from_expr<'a>(session: &mut SessionInfo, file_symbol: SourceFileKey, expr: &ExprOrIdent<'a>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>) {
@@ -175,28 +175,51 @@ impl AstUtils {
     }
 }
 
+/// Narrowest context around a string expression in the AST
+/// Used for features that need to know info about the encapsuling expression or statement
+pub enum StringContext {
+    /// The innermost call whose arguments contain the string
+    CallArgument(ExprCall),
+    /// Is the current expression, a string expression under an assign statement i.e. `_order = "..."`
+    ModelOrder,
+}
+
+impl StringContext {
+    /// Context `stmt` gives to its direct string value, if any, along with that string
+    pub fn from_stmt(stmt: &Stmt) -> Option<(Self, &ExprStringLiteral)> {
+        if let Stmt::Assign(assign) = stmt
+            && let [target] = assign.targets.as_slice()
+            && let Expr::StringLiteral(expr) = assign.value.as_ref()
+            && let Expr::Name(name) = target
+            && name.id == "_order"
+        {
+            return Some((StringContext::ModelOrder, expr));
+        }
+        None
+    }
+}
 
 pub struct ExprFinderVisitor<'a> {
     offset: TextSize,
     expr: Option<ExprOrIdent<'a>>,
-    last_call_expr: Option<&'a ExprCall>,
+    string_ctx: Option<StringContext>,
 }
 
 impl<'a> ExprFinderVisitor<'a> {
     /*
     Find expr from `stmt` at the given `offset`
-    Returns: (expr, last_call_expr)
+    Returns: (expr, string_ctx)
         expr: the expr being searched for
-        last_call_expr: The last call expr preceding the expr we are searching for
+        string_ctx: the narrowest context around the string at `offset`, see `StringContext`
      */
-    pub fn find_expr_at(stmt: &'a Stmt, offset: u32) -> (Option<ExprOrIdent<'a>>, Option<ExprCall>) {
+    pub fn find_expr_at(stmt: &'a Stmt, offset: u32) -> (Option<ExprOrIdent<'a>>, Option<StringContext>) {
         let mut visitor = Self {
             offset: TextSize::new(offset),
             expr: None,
-            last_call_expr: None
+            string_ctx: None,
         };
         visitor.visit_stmt(stmt);
-        (visitor.expr, visitor.last_call_expr.cloned())
+        (visitor.expr, visitor.string_ctx)
     }
 
 }
@@ -207,7 +230,7 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
         if expr.range().contains(self.offset) {
             if let Expr::Call(expr_call) = expr
                 && expr_call.arguments.range().contains(self.offset){
-                    self.last_call_expr = Some(expr_call);
+                    self.string_ctx = Some(StringContext::CallArgument(expr_call.clone()));
                 }
             walk_expr(self, expr);
             if self.expr.is_none() {
@@ -313,6 +336,11 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
     }
 
     fn visit_stmt(&mut self, stmt: &'a Stmt) {
+        if let Some((ctx, expr)) = StringContext::from_stmt(stmt)
+            && expr.range().contains(self.offset)
+        {
+            self.string_ctx = Some(ctx);
+        }
         walk_stmt(self, stmt);
         if self.expr.is_none() {
             let idents = match stmt {
