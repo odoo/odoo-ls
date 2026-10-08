@@ -56,6 +56,7 @@ fn test_semantic_tokens_python() {
     check_concatenated_field_path_tokens(&main);
     check_quoted_field_path_tokens(&main);
     check_escaped_field_path_tokens(&main);
+    check_model_order_tokens(&main);
     // Loaded last: an offset landing inside one of its multi-byte characters panics
     let non_ascii = TokenFile::load(&mut session, &module.join("models").join("sem_tokens_non_ascii.py").sanitize());
     check_non_ascii_concatenated_tokens(&non_ascii);
@@ -195,6 +196,17 @@ fn check_quoted_field_path_tokens(main: &TokenFile) {
 fn check_escaped_field_path_tokens(main: &TokenFile) {
     check_exact_or_none(main, 95, "other_id", (PROPERTY, &[]));
     check_exact_or_none(main, 95, "other_name", (PROPERTY, &[]));
+}
+
+/// `_order` colours the field of each comma-separated item, not its direction. `id` is also
+/// found inside `other_id`: it must be coloured after it, not over it.
+fn check_model_order_tokens(main: &TokenFile) {
+    check(main, 98, "other_id", Some((PROPERTY, &[])));
+    check(main, 98, "name", Some((PROPERTY, &[])));
+    check(main, 98, "desc", None);
+    // A field split between the parts of `'other_' 'id'` is not found in the file: no token
+    check(main, 104, "'other_'", None);
+    check(main, 104, "'id'", None);
 }
 
 /// A non-ASCII comment between concatenated parts: no segment may end inside one of its
