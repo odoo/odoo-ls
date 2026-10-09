@@ -29,6 +29,7 @@ fn test_completions() {
     test_compute_sql_kwarg_method_completion(&mut session);
     test_selection_field_method_completion(&mut session);
     test_init_storage_kwarg_method_completion(&mut session);
+    test_import_completion_with_normalized_name(&mut session);
 }
  
 /// `fields.Char(compute="...", depends=["partner_id.disp"])`: the `depends` kwarg should
@@ -147,4 +148,30 @@ fn test_init_storage_kwarg_method_completion(session: &mut SessionInfo) {
     assert!(!gated_out.iter().any(|l| l == "_init_column_kind"), "Expected no method completion for init_storage before 20.0, got: {:?}", gated_out);
     // The session is shared with the other completion tests, leave the version as it was found
     session.sync_odoo.version = initial_version;
+}
+
+/// `import ｏ|ｓ`: the AST holds the NFKC-normalized name `os`, so the typed prefix must be read up
+/// to the cursor in the source, not by slicing the normalized name with source offsets.
+fn test_import_completion_with_normalized_name(session: &mut SessionInfo) {
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_semantic_tokens").join("models").join("sem_tokens_non_ascii.py").sanitize();
+
+    let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&test_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    // Cursor right after `ｏ` (UTF-16 columns) in `import ｏｓ` (0-indexed line 3) and in
+    // `from ｏｓ import path` (line 4).
+    let mut failures = vec![];
+    for (line, character) in [(3, 8), (4, 6)] {
+        let labels = labels(CompletionFeature::autocomplete(session, file_symbol, &file_info, None, line, character));
+        let has_os = labels.iter().any(|l| l == "os");
+        let others: Vec<&String> = labels.iter().filter(|l| !l.starts_with('o')).collect();
+        if !has_os || !others.is_empty() {
+            failures.push(format!("line {line}: `os` suggested: {has_os}, {} names not starting with the typed `o`, e.g. {:?}",
+                others.len(), &others[..others.len().min(5)]));
+        }
+    }
+    assert!(failures.is_empty(), "Import completion on an NFKC-normalized name:\n{}", failures.join("\n"));
 }

@@ -51,6 +51,14 @@ fn test_semantic_tokens_python() {
     check_xml_id_string_tokens(&main);
     check_import_shim_tokens(&main);
     check_manifest_module_strings(&manifest);
+    let calls = TokenFile::load(&mut session, &module.join("models").join("sem_tokens_calls.py").sanitize());
+    check_call_context_tokens(&calls);
+    check_concatenated_field_path_tokens(&main);
+    check_quoted_field_path_tokens(&main);
+    check_escaped_field_path_tokens(&main);
+    // Loaded last: an offset landing inside one of its multi-byte characters panics
+    let non_ascii = TokenFile::load(&mut session, &module.join("models").join("sem_tokens_non_ascii.py").sanitize());
+    check_non_ascii_concatenated_tokens(&non_ascii);
 }
 
 /// Signature bindings are coloured directly, without resolution: one `parameter` token with the
@@ -164,6 +172,37 @@ fn check_field_path_string_tokens(main: &TokenFile) {
     check(main, 83, "name", Some((PROPERTY, &[])));
 }
 
+/// A field path split over implicitly concatenated string parts is coloured per segment at its
+/// real position, the gap between the parts (quotes, spaces, newline) included.
+fn check_concatenated_field_path_tokens(main: &TokenFile) {
+    check(main, 87, "other_id", Some((PROPERTY, &[])));
+    check(main, 87, "other_name", Some((PROPERTY, &[])));
+    check(main, 88, "other_id", Some((PROPERTY, &[])));
+    check(main, 89, "other_name", Some((PROPERTY, &[])));
+}
+
+/// A field path whose content starts past a prefix or a triple quote is coloured at its real
+/// position, not one byte past the opening quote.
+fn check_quoted_field_path_tokens(main: &TokenFile) {
+    check(main, 92, "other_id", Some((PROPERTY, &[])));
+    check(main, 92, "other_name", Some((PROPERTY, &[])));
+    check(main, 93, "other_id", Some((PROPERTY, &[])));
+    check(main, 93, "other_name", Some((PROPERTY, &[])));
+}
+
+/// An escape sequence makes the decoded path shorter than its source: segments past it are
+/// either mapped back onto the source or left uncoloured, never misplaced.
+fn check_escaped_field_path_tokens(main: &TokenFile) {
+    check_exact_or_none(main, 95, "other_id", (PROPERTY, &[]));
+    check_exact_or_none(main, 95, "other_name", (PROPERTY, &[]));
+}
+
+/// A non-ASCII comment between concatenated parts: no segment may end inside one of its
+/// multi-byte characters, and `other_name` is still coloured on its own line.
+fn check_non_ascii_concatenated_tokens(non_ascii: &TokenFile) {
+    check(non_ascii, 16, "other_name", Some((PROPERTY, &[])));
+}
+
 /// An xml id is coloured exactly where Definition would navigate from it — so a reference to a
 /// record that does not exist stays grammar-coloured.
 fn check_xml_id_string_tokens(main: &TokenFile) {
@@ -192,6 +231,13 @@ fn check_manifest_module_strings(manifest: &TokenFile) {
     // coloured as if it were a module.
     check(manifest, 12, "'website'", None);
     check(manifest, 12, "'https://www.example.com'", None);
+}
+
+/// Only the arguments of a call take its context, its callee keeps the one around the call: the
+/// path in the callee of `strip()` is still the value of `related`, as hover and definition see it.
+fn check_call_context_tokens(calls: &TokenFile) {
+    check(calls, 10, "other_id", Some((PROPERTY, &[])));
+    check(calls, 10, "other_name", Some((PROPERTY, &[])));
 }
 
 /// One decoded semantic token: absolute position, and the legend entries its indices name.
@@ -279,6 +325,16 @@ fn check_todo(file: &TokenFile, line: u32, needle: &str, expected: Option<(Seman
     locate(file, line, needle);
     if std::panic::catch_unwind(|| check(file, line, needle, expected)).is_ok() {
         panic!("{}:{line}: `{needle}` gets its expected token — toggle check_todo -> check", file.path);
+    }
+}
+
+/// Like `check` with an expected token, but also accepts no token at all: for spans that may be
+/// left to the grammar, as long as they are never coloured at the wrong place.
+fn check_exact_or_none(file: &TokenFile, line: u32, needle: &str, expected: (SemanticTokenType, &[SemanticTokenModifier])) {
+    let (line_index, start) = locate(file, line, needle);
+    let end = start + needle.len() as u32;
+    if file.tokens.iter().any(|tok| tok.line == line_index && tok.start < end && start < tok.start + tok.len) {
+        check(file, line, needle, Some(expected));
     }
 }
 
