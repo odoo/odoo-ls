@@ -1271,6 +1271,9 @@ fn test_model_order_fields() {
         // Field split between the parts of `'other_' 'id'`: found from either part
         ("split field, first part", main.position(70, "other_id", 0), main.position(104, "'other_'", 1)),
         ("split field, second part", main.position(70, "other_id", 0), main.position(104, "'id'", 1)),
+        // `.id` is a property of `other_record`: the `id` field of its comodel, like a plain `id`
+        ("field with a property", main.position(110, "other_record", 0), main.position(112, "other_record", 3)),
+        ("property", main.position(98, ", id", 2), main.position(112, ".id", 1)),
     ];
     for (case, control, position) in cases {
         catch(&mut failures, case, || {

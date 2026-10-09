@@ -102,3 +102,11 @@ class SemTokensOrderSplit(models.Model):
     _inherit = 'sem.tokens.usage'
     # Field split between the parts of an implicitly concatenated string
     _order = 'other_' 'id'
+
+
+class SemTokensOrderProperty(models.Model):
+    _inherit = 'sem.tokens.usage'
+
+    other_record = fields.Many2one('sem.tokens.other')
+    # `.id` is a property of the field `other_record`: the `id` field of its comodel
+    _order = 'other_record.id desc, name'

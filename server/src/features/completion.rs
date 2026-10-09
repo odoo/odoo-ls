@@ -866,35 +866,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
                     add_model_attributes(session, &mut items, current_module, class_key.into(), false, true, false, expr_string_literal.value.to_str(), &Some(Sy!("Many2one")))
                 });
             },
-            ExpectedType::CS_FIELDS => {
-                let scope = get_and_build_scope(session, file, expr_string_literal.range().start().to_u32(), true);
-                let Some(SymbolKey::Class(parent_class)) = session.st().get_in_parents(scope, &[SymType::CLASS], true) else {
-                    continue;
-                };
-                let order = expr_string_literal.value.to_str();
-                // The end of the string stands for a cursor not found in it (e.g. escapes)
-                let cursor = AstUtils::index_in_string(expr_string_literal, TextSize::new(offset as u32)).unwrap_or(order.len());
-                let Some(item) = OrderItem::order_items(order).into_iter().find(|item| item.start <= cursor && cursor <= item.end()) else {
-                    continue;
-                };
-                // Words of the item before the cursor: those already typed, and the one being typed
-                let before_cursor = &order[item.start..cursor];
-                let (typed, current) = before_cursor.rsplit_once(char::is_whitespace).unwrap_or(("", before_cursor));
-                let typed: Vec<&str> = typed.split_whitespace().collect();
-                match typed.as_slice() {
-                    // "<current>"
-                    [] => add_model_attributes(
-                        session, &mut items, current_module, parent_class.into(), false, true, false, current, &None),
-                    // "<_field> <current>"
-                    [_field] => add_order_keywords(&mut items, &["asc", "desc", "nulls first", "nulls last"], current),
-                    // "<_field> <asc|desc> <current>"
-                    [_field, direction] if direction.eq_ignore_ascii_case("asc") || direction.eq_ignore_ascii_case("desc") =>
-                        add_order_keywords(&mut items, &["nulls first", "nulls last"], current),
-                    // "... nulls <current>"
-                    [.., nulls] if nulls.eq_ignore_ascii_case("nulls") => add_order_keywords(&mut items, &["first", "last"], current),
-                    _ => {},
-                }
-            },
+            ExpectedType::CS_FIELDS => complete_model_order(session, file, expr_string_literal, offset, current_module, &mut items),
             ExpectedType::CLASS(_) => {},
             ExpectedType::INHERITS => {},
         }
@@ -1310,6 +1282,76 @@ fn get_completion_item_kind(typ: &SymType) -> CompletionItemKind {
         SymType::XML_ASSET => CompletionItemKind::CONSTANT,
         SymType::XML_DELETE => CompletionItemKind::CONSTANT,
         SymType::JS_FILE => CompletionItemKind::FILE,
+    }
+}
+
+/// Completion in `_order = "name desc nulls last, partner_id.id"`, depending on the word of the
+/// item under the cursor: a field, the `id` of a many2one, then the direction and nulls keywords.
+fn complete_model_order(
+    session: &mut SessionInfo,
+    file: SourceFileKey,
+    order_string: &ruff_python_ast::ExprStringLiteral,
+    offset: usize,
+    current_module: Option<ModuleKey>,
+    items: &mut Vec<CompletionItem>,
+) {
+    let scope = get_and_build_scope(session, file, order_string.range().start().to_u32(), true);
+    let Some(SymbolKey::Class(parent_class)) = session.st().get_in_parents(scope, &[SymType::CLASS], true) else {
+        return;
+    };
+    let order = order_string.value.to_str();
+    // The end of the string stands for a cursor not found in it (e.g. escapes)
+    let cursor = AstUtils::index_in_string(order_string, TextSize::new(offset as u32)).unwrap_or(order.len());
+    let Some(item) = OrderItem::order_items(order).into_iter().find(|item| item.start <= cursor && cursor <= item.end()) else {
+        return;
+    };
+    // Words of the item before the cursor: those already typed, and the one being typed
+    let before_cursor = &order[item.start..cursor];
+    let (typed, current) = before_cursor.rsplit_once(char::is_whitespace).unwrap_or(("", before_cursor));
+    let typed: Vec<&str> = typed.split_whitespace().collect();
+    match typed.as_slice() {
+        // "<current>", or "<field>.<current>"
+        [] => match current.split_once('.') {
+            Some((field, property)) => add_order_property(session, items, current_module, parent_class, field, property),
+            None => add_model_attributes(session, items, current_module, parent_class.into(), false, true, false, current, &None),
+        },
+        // "<_field> <current>"
+        [_field] => add_order_keywords(items, &["asc", "desc", "nulls first", "nulls last"], current),
+        // "<_field> <asc|desc> <current>"
+        [_field, direction] if direction.eq_ignore_ascii_case("asc") || direction.eq_ignore_ascii_case("desc") =>
+            add_order_keywords(items, &["nulls first", "nulls last"], current),
+        // "... nulls <current>"
+        [.., nulls] if nulls.eq_ignore_ascii_case("nulls") => add_order_keywords(items, &["first", "last"], current),
+        _ => {},
+    }
+}
+
+/// The `id` of a many2one field, the only property `_order` accepts (`partner_id.id`).
+fn add_order_property(
+    session: &mut SessionInfo,
+    items: &mut Vec<CompletionItem>,
+    current_module: Option<ModuleKey>,
+    parent_class: ClassKey,
+    field: &str,
+    property: &str,
+) {
+    if !"id".starts_with(property) {
+        return;
+    }
+    let mut walker = DeepFieldEvalWalker::new(parent_class.into(), current_module);
+    let Some(model) = walker.get_model_symbol(session) else {
+        return;
+    };
+    let fields = walker.get_model_fields(session, model, field);
+    if !fields.iter().any(|&field| SymbolTable::is_specific_field(session, field, &["Many2one"])) {
+        return;
+    }
+    let Some(comodel) = walker.get_model_symbol(session) else {
+        return;
+    };
+    if let Some(&id) = walker.get_model_fields(session, comodel, "id").first() {
+        let context = Context::from_iter([(ContextKey::BaseAttr, ContextValue::SYMBOL(comodel.into()))]);
+        items.push(build_completion_item_from_symbol(session, vec![id], "id", context));
     }
 }
 

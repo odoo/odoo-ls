@@ -207,6 +207,9 @@ fn check_model_order_tokens(main: &TokenFile) {
     // A field split between the parts of `'other_' 'id'` is not found in the file: no token
     check(main, 104, "'other_'", None);
     check(main, 104, "'id'", None);
+    // `.id` is a property of `other_record`: the `id` field of its comodel
+    check(main, 112, "other_record", Some((PROPERTY, &[])));
+    check(main, 112, "id", Some((PROPERTY, &[])));
 }
 
 /// A non-ASCII comment between concatenated parts: no segment may end inside one of its

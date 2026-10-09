@@ -170,8 +170,8 @@ fn test_order_completion_with_escape(session: &mut SessionInfo) {
     assert!(labels.iter().any(|l| l == "id"), "Expected fields matching the 'id' prefix, got: {:?}", labels);
 }
 
-/// `_order = "name desc nulls last, id"`: what is completed depends on the word of the item under
-/// the cursor: the field first, then its direction, then where nulls go.
+/// `_order = "name desc nulls last, id, escape_id.id, name.id"`: what is completed depends on the
+/// word of the item under the cursor: the field first, then its direction, then where nulls go.
 fn test_order_completion_by_word(session: &mut SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
@@ -185,13 +185,18 @@ fn test_order_completion_by_word(session: &mut SessionInfo) {
     let (line, text) = content.lines().enumerate().find(|(_, text)| text.contains(r#"_order = "name desc"#)).unwrap();
     let mut failures = vec![];
     // (text right before the cursor, labels that must be offered, labels that must not)
-    let cases: [(&str, &[&str], &[&str]); 6] = [
+    let cases: [(&str, &[&str], &[&str]); 9] = [
         (r#""na"#, &["name"], &["id", "desc"]),
         (r#""name "#, &["asc", "desc", "nulls first", "nulls last"], &["name", "id"]),
         (r#""name d"#, &["desc"], &["asc", "nulls first", "name"]),
         ("desc ", &["nulls first", "nulls last"], &["asc", "desc", "name"]),
         ("nulls ", &["first", "last"], &["nulls first", "name"]),
         (", ", &["name", "id"], &["asc", "desc"]),
+        // After a many2one and a `.`, only its `id`
+        ("escape_id.", &["id"], &["name", "escape_id", "asc"]),
+        ("escape_id.i", &["id"], &["name", "escape_id"]),
+        // `name` is not a many2one
+        ("name.", &[], &["id", "name"]),
     ];
     for (before_cursor, offered, not_offered) in cases {
         let character = (text.find(before_cursor).unwrap() + before_cursor.len()) as u32;
