@@ -29,6 +29,8 @@ fn test_completions() {
     test_compute_sql_kwarg_method_completion(&mut session);
     test_selection_field_method_completion(&mut session);
     test_init_storage_kwarg_method_completion(&mut session);
+    test_order_completion_with_escape(&mut session);
+    test_order_completion_by_word(&mut session);
     test_import_completion_with_normalized_name(&mut session);
 }
  
@@ -148,6 +150,64 @@ fn test_init_storage_kwarg_method_completion(session: &mut SessionInfo) {
     assert!(!gated_out.iter().any(|l| l == "_init_column_kind"), "Expected no method completion for init_storage before 20.0, got: {:?}", gated_out);
     // The session is shared with the other completion tests, leave the version as it was found
     session.sync_odoo.version = initial_version;
+}
+
+/// `_order = "name,\tid"`: the escape makes the decoded value one byte shorter than its source,
+/// so a cursor right before the closing quote must not slice past the end of the value.
+fn test_order_completion_with_escape(session: &mut SessionInfo) {
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
+    let content = std::fs::read_to_string(&test_file).expect("Test file does not exist");
+
+    let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&test_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    let (line, text) = content.lines().enumerate().find(|(_, text)| text.contains("_order = ")).unwrap();
+    let character = text.rfind('"').unwrap() as u32;
+    let labels = labels(CompletionFeature::autocomplete(session, file_symbol, &file_info, None, line as u32, character));
+    assert!(labels.iter().any(|l| l == "id"), "Expected fields matching the 'id' prefix, got: {:?}", labels);
+}
+
+/// `_order = "name desc nulls last, id, escape_id.id, name.id"`: what is completed depends on the
+/// word of the item under the cursor: the field first, then its direction, then where nulls go.
+fn test_order_completion_by_word(session: &mut SessionInfo) {
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
+    let content = std::fs::read_to_string(&test_file).expect("Test file does not exist");
+
+    let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&test_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    let (line, text) = content.lines().enumerate().find(|(_, text)| text.contains(r#"_order = "name desc"#)).unwrap();
+    let mut failures = vec![];
+    // (text right before the cursor, labels that must be offered, labels that must not)
+    let cases: [(&str, &[&str], &[&str]); 9] = [
+        (r#""na"#, &["name"], &["id", "desc"]),
+        (r#""name "#, &["asc", "desc", "nulls first", "nulls last"], &["name", "id"]),
+        (r#""name d"#, &["desc"], &["asc", "nulls first", "name"]),
+        ("desc ", &["nulls first", "nulls last"], &["asc", "desc", "name"]),
+        ("nulls ", &["first", "last"], &["nulls first", "name"]),
+        (", ", &["name", "id"], &["asc", "desc"]),
+        // After a many2one and a `.`, only its `id`
+        ("escape_id.", &["id"], &["name", "escape_id", "asc"]),
+        ("escape_id.i", &["id"], &["name", "escape_id"]),
+        // `name` is not a many2one
+        ("name.", &[], &["id", "name"]),
+    ];
+    for (before_cursor, offered, not_offered) in cases {
+        let character = (text.find(before_cursor).unwrap() + before_cursor.len()) as u32;
+        let labels = labels(CompletionFeature::autocomplete(session, file_symbol, &file_info, None, line as u32, character));
+        let missing: Vec<_> = offered.iter().filter(|label| !labels.iter().any(|l| l == *label)).collect();
+        let unexpected: Vec<_> = not_offered.iter().filter(|label| labels.iter().any(|l| l == *label)).collect();
+        if !missing.is_empty() || !unexpected.is_empty() {
+            failures.push(format!("after `{before_cursor}`: missing {missing:?}, unexpected {unexpected:?}"));
+        }
+    }
+    assert!(failures.is_empty(), "`_order` completion:\n{}", failures.join("\n"));
 }
 
 /// `import ｏ|ｓ`: the AST holds the NFKC-normalized name `os`, so the typed prefix must be read up

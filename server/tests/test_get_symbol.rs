@@ -1253,6 +1253,55 @@ fn test_decoded_values_vs_source_offsets() {
     assert!(failures.is_empty(), "Decoded values vs source offsets:\n{}", failures.join("\n"));
 }
 
+/// `_order = 'other_id desc, name, id,'`: hover and definition on each field lead where
+/// `self.<field>` does, and nothing on a direction.
+#[test]
+fn test_model_order_fields() {
+    let (mut odoo, config) = setup::setup::setup_server(true);
+    let test_file = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons")
+        .join("module_semantic_tokens").join("models").join("sem_tokens_main.py").sanitize();
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let main = Fixture::open(&mut session, &test_file);
+    let mut failures = vec![];
+
+    // (case, `self.<field>` as control, position in `_order`)
+    let cases = [
+        ("other_id", main.position(70, "other_id", 0), main.position(98, "other_id", 7)),
+        ("name", main.position(69, "name", 0), main.position(98, "name", 3)),
+        // Field split between the parts of `'other_' 'id'`: found from either part
+        ("split field, first part", main.position(70, "other_id", 0), main.position(104, "'other_'", 1)),
+        ("split field, second part", main.position(70, "other_id", 0), main.position(104, "'id'", 1)),
+        // `.id` is a property of `other_record`: the `id` field of its comodel, like a plain `id`
+        ("field with a property", main.position(110, "other_record", 0), main.position(112, "other_record", 3)),
+        ("property", main.position(98, ", id", 2), main.position(112, ".id", 1)),
+    ];
+    for (case, control, position) in cases {
+        catch(&mut failures, case, || {
+            let mut problems = vec![];
+            let control_targets = main.definition(&mut session, control);
+            let targets = main.definition(&mut session, position);
+            if control_targets.is_empty() || targets != control_targets {
+                problems.push(format!("definition should be {:?}, got: {:?}", control_targets, targets));
+            }
+            if main.hover(&mut session, position).is_empty() {
+                problems.push("expected a hover".to_string());
+            }
+            problems
+        });
+    }
+    // `id` is also found inside `other_id`: the one after it must still resolve
+    catch(&mut failures, "id", || {
+        let targets = main.definition(&mut session, main.position(98, ", id", 2));
+        if targets.is_empty() { vec!["expected a definition".to_string()] } else { vec![] }
+    });
+    catch(&mut failures, "direction", || {
+        let targets = main.definition(&mut session, main.position(98, "desc", 0));
+        if targets.is_empty() { vec![] } else { vec![format!("expected no definition, got: {:?}", targets)] }
+    });
+
+    assert!(failures.is_empty(), "`_order` fields:\n{}", failures.join("\n"));
+}
+
 /// Hover and definition at `position` must match the control's.
 fn same_as_control(session: &mut SessionInfo, fixture: &Fixture, position: (u32, u32), control_hover: &str, control_targets: &[(lsp_types::Uri, lsp_types::Range)]) -> Vec<String> {
     let mut problems = vec![];
