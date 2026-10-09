@@ -36,6 +36,7 @@ class OrderEscapeModel(models.Model):
 class OrderKeywordsModel(models.Model):
     _name = "module_1.order_keywords_model"
     _description = "Order Keywords Model"
-    _order = "name desc nulls last, id"
+    _order = "name desc nulls last, id, escape_id.id, name.id"
 
     name = fields.Char()
+    escape_id = fields.Many2one("module_1.order_escape_model")
