@@ -393,9 +393,11 @@ impl<'a, 'b, 's> Visitor<'a> for SemanticTokenVisitor<'a, 'b, 's> {
                 self.tokenize_string(string_literal);
             }
             Expr::Call(call) => {
-                // Expose the enclosing call so string args resolve to fields/methods.
+                // The callee keeps the context around the call: only the arguments are in this one,
+                // so that string args resolve to fields/methods.
+                self.visit_expr(&call.func);
                 let prev = self.string_ctx.replace(StringContext::CallArgument(call.clone()));
-                walk_expr(self, expr);
+                self.visit_arguments(&call.arguments);
                 self.string_ctx = prev;
                 return;
             }

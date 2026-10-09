@@ -51,6 +51,8 @@ fn test_semantic_tokens_python() {
     check_xml_id_string_tokens(&main);
     check_import_shim_tokens(&main);
     check_manifest_module_strings(&manifest);
+    let calls = TokenFile::load(&mut session, &module.join("models").join("sem_tokens_calls.py").sanitize());
+    check_call_context_tokens(&calls);
     check_concatenated_field_path_tokens(&main);
     check_quoted_field_path_tokens(&main);
     check_escaped_field_path_tokens(&main);
@@ -229,6 +231,13 @@ fn check_manifest_module_strings(manifest: &TokenFile) {
     // coloured as if it were a module.
     check(manifest, 12, "'website'", None);
     check(manifest, 12, "'https://www.example.com'", None);
+}
+
+/// Only the arguments of a call take its context, its callee keeps the one around the call: the
+/// path in the callee of `strip()` is still the value of `related`, as hover and definition see it.
+fn check_call_context_tokens(calls: &TokenFile) {
+    check(calls, 10, "other_id", Some((PROPERTY, &[])));
+    check(calls, 10, "other_name", Some((PROPERTY, &[])));
 }
 
 /// One decoded semantic token: absolute position, and the legend entries its indices name.
