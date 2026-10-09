@@ -8,7 +8,7 @@ use crate::core::file_mgr::FileMgr;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::function_symbol::Argument;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
-use crate::core::symbols::symbol_keys::{ModelSymbolKey, ModuleKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlRecordKey};
+use crate::core::symbols::symbol_keys::{ClassKey, ModelSymbolKey, ModuleKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlRecordKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::FunctionSymbol;
 use crate::features::ast_utils::StringContext;
@@ -92,11 +92,35 @@ impl<'a> OrderItem<'a> {
         self.start + self.text.len()
     }
 
-    /// The field, first word of the item, with its start and end indexes in the string.
+    /// Whether `index` of the string is in the item, its bounds included (a cursor before a comma)
+    pub fn contains(&self, index: usize) -> bool {
+        self.start <= index && index <= self.end()
+    }
+
+    /// The field, first word of the item without its `.property` (e.g. `partner_id.id`), with its
+    /// start and end indexes in the string.
     pub fn field(&self) -> Option<(&'a str, usize, usize)> {
-        let field = self.text.split_whitespace().next()?;
-        let start = self.start + (self.text.len() - self.text.trim_start().len());
+        let (word, start) = self.first_word()?;
+        let field = word.split('.').next().filter(|field| !field.is_empty())?;
         Some((field, start, start + field.len()))
+    }
+
+    /// The property of the field (e.g. `id` in `partner_id.id`), with its start and end indexes in
+    /// the string.
+    pub fn property(&self) -> Option<(&'a str, usize, usize)> {
+        let (word, start) = self.first_word()?;
+        let (field, property) = word.split_once('.')?;
+        if field.is_empty() || property.is_empty() {
+            return None;
+        }
+        let property_start = start + field.len() + 1;
+        Some((property, property_start, property_start + property.len()))
+    }
+
+    /// The first word of the item, with its start index in the string.
+    fn first_word(&self) -> Option<(&'a str, usize)> {
+        let word = self.text.split_whitespace().next()?;
+        Some((word, self.start + (self.text.len() - self.text.trim_start().len())))
     }
 }
 
@@ -479,7 +503,17 @@ impl FeaturesUtils {
         }
     }
 
-    /// Fields of `_order = "name desc, id"`, with their range in the file.
+    /// The model whose `_order` is written in `scope`: only in the body of a model class, not in
+    /// one of its methods, nor in a class that is not a model.
+    pub fn order_model_class(session: &SessionInfo, scope: SymbolKey) -> Option<ClassKey> {
+        let SymbolKey::Class(class) = scope else {
+            return None;
+        };
+        session.st()[class]._model.is_some().then_some(class)
+    }
+
+    /// Fields of `_order = "name desc, partner_id.id"`, with their range in the file. The property
+    /// of a field (`.id`) is a field of its comodel.
     fn find_order_fields(
         session: &mut SessionInfo,
         scope: SymbolKey,
@@ -487,23 +521,42 @@ impl FeaturesUtils {
         string: &ExprStringLiteral,
         pick: SegmentPick,
     ) -> Vec<(SymbolKey, TextRange)> {
-        let order = string.value.to_str();
-        let mut fields: Vec<_> = OrderItem::order_items(order).iter().filter_map(OrderItem::field).collect();
-        if let SegmentPick::Cursor(offset) = pick {
-            let Some(cursor) = AstUtils::index_in_string(string, TextSize::new(offset as u32)) else {
-                return vec![];
-            };
-            fields.retain(|&(_, start, end)| start <= cursor && cursor <= end);
-        }
+        let Some(parent_class) = FeaturesUtils::order_model_class(session, scope) else {
+            return vec![];
+        };
+        let cursor = match pick {
+            SegmentPick::Cursor(offset) => {
+                let Some(cursor) = AstUtils::index_in_string(string, TextSize::new(offset as u32)) else {
+                    return vec![];
+                };
+                Some(cursor)
+            },
+            SegmentPick::All => None,
+        };
         let mut members = vec![];
-        for (name, start, end) in fields {
-            let range = match (AstUtils::range_in_file(string, start, end), pick) {
-                (Some(range), _) => range,
-                // Not found in the file (escapes, split between parts): no token, but hover and definition still work
-                (None, SegmentPick::Cursor(_)) => string.range,
-                (None, SegmentPick::All) => continue,
-            };
-            members.extend(FeaturesUtils::find_simple_decorator_field_symbol(session, scope, from_module, name).into_iter().map(|s| (s, range)));
+        for item in OrderItem::order_items(string.value.to_str()) {
+            // Only the item under the cursor is resolved
+            if cursor.is_some_and(|cursor| !item.contains(cursor)) {
+                continue;
+            }
+            // The field on the model, then its property on the comodel
+            let mut walker = DeepFieldEvalWalker::new(parent_class.into(), from_module);
+            for (name, start, end) in [item.field(), item.property()].into_iter().flatten() {
+                let Some(model) = walker.get_model_symbol(session) else {
+                    break;
+                };
+                let symbols = walker.get_model_fields(session, model, name);
+                if cursor.is_some_and(|cursor| cursor < start || end < cursor) {
+                    continue;
+                }
+                let range = match (AstUtils::range_in_file(string, start, end), pick) {
+                    (Some(range), _) => range,
+                    // Not found in the file (escapes, split between parts): no token, but hover and definition still work
+                    (None, SegmentPick::Cursor(_)) => string.range,
+                    (None, SegmentPick::All) => continue,
+                };
+                members.extend(symbols.into_iter().map(|symbol| (symbol, range)));
+            }
         }
         members
     }
@@ -556,9 +609,13 @@ impl FeaturesUtils {
             if !members.is_empty() {
                 return Some(StringResolution::Members(members));
             }
-            // `_order` only holds fields: not a module, a model or an XML id
+            // The `_order` of a model only holds fields: not a module, a model or an XML id. Anywhere
+            // else, `_order` is a variable like any other.
             if matches!(string_ctx, StringContext::ModelOrder) {
-                return None;
+                let scope = session.st().get_scope_symbol(file_symbol, string.range.start().to_u32() + 1, false);
+                if FeaturesUtils::order_model_class(session, scope).is_some() {
+                    return None;
+                }
             }
         }
         if let SourceFileKey::Module(module_key) = file_symbol && file_path.ends_with("__manifest__.py") {
@@ -1081,12 +1138,14 @@ mod tests {
 
     #[test]
     fn test_order_items() {
-        let order = " name desc,  id ,, partner_id nulls last,";
+        let order = " name desc,  id ,, partner_id.id nulls last,";
         let items = OrderItem::order_items(order);
         let texts: Vec<_> = items.iter().map(|item| &order[item.start..item.end()]).collect();
-        assert_eq!(texts, [" name desc", "  id ", "", " partner_id nulls last", ""]);
-        // The field, and the text found at its indexes
+        assert_eq!(texts, [" name desc", "  id ", "", " partner_id.id nulls last", ""]);
+        // The field and its property, with the text found at their indexes
         let fields: Vec<_> = items.iter().map(|item| item.field().map(|(field, start, end)| (field, &order[start..end]))).collect();
         assert_eq!(fields, [Some(("name", "name")), Some(("id", "id")), None, Some(("partner_id", "partner_id")), None]);
+        let properties: Vec<_> = items.iter().map(|item| item.property().map(|(property, start, end)| (property, &order[start..end]))).collect();
+        assert_eq!(properties, [None, None, None, Some(("id", "id")), None]);
     }
 }

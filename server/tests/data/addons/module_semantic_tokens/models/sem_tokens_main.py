@@ -102,3 +102,49 @@ class SemTokensOrderSplit(models.Model):
     _inherit = 'sem.tokens.usage'
     # Field split between the parts of an implicitly concatenated string
     _order = 'other_' 'id'
+
+
+class SemTokensOrderProperty(models.Model):
+    _inherit = 'sem.tokens.usage'
+
+    other_record = fields.Many2one('sem.tokens.other')
+    # `.id` is a property of the field `other_record`: the `id` field of its comodel
+    _order = 'other_record.id desc, name'
+
+
+class SemTokensOrderAnnotated(models.Model):
+    _inherit = 'sem.tokens.usage'
+    # Annotated assignment: same as `_order = ...`
+    _order: str = 'other_id desc'
+
+
+class SemTokensOrderPlain:
+    # Not a model: `_order` is a plain attribute
+    _order = 'other_id'
+
+
+class SemTokensOrderLocal(models.Model):
+    _inherit = 'sem.tokens.usage'
+
+    def local_order(self):
+        # A local variable, not the model's `_order`
+        _order = 'other_id'
+
+
+class SemTokensOrderModelName:
+    # Not a model: `_order` is a variable like any other, a model name is resolved as a model
+    _order = 'sem.tokens.other'
+
+
+class SemTokensOrderModelNameLocal(models.Model):
+    _inherit = 'sem.tokens.usage'
+
+    def local_order(self):
+        # A local variable like any other: a model name is resolved as a model
+        _order = 'sem.tokens.other'
+
+
+class SemTokensOrderModelNameInModel(models.Model):
+    _inherit = 'sem.tokens.usage'
+    # The model's `_order` only holds fields: a model name is not resolved as a model
+    _order = 'sem.tokens.other'
