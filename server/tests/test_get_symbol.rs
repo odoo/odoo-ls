@@ -1273,6 +1273,10 @@ fn test_model_order_fields() {
         // Field split between the parts of `'other_' 'id'`: found from either part
         ("split field, first part", main.position(70, "other_id", 0), main.position(104, "'other_'", 1)),
         ("split field, second part", main.position(70, "other_id", 0), main.position(104, "'id'", 1)),
+        // `.id` is a property of `other_record`: the `id` field of its comodel, like a plain `id`
+        ("field with a property", main.position(110, "other_record", 0), main.position(112, "other_record", 3)),
+        ("property", main.position(98, ", id", 2), main.position(112, ".id", 1)),
+        ("annotated assignment", main.position(70, "other_id", 0), main.position(118, "other_id", 0)),
     ];
     for (case, control, position) in cases {
         catch(&mut failures, case, || {
@@ -1295,6 +1299,30 @@ fn test_model_order_fields() {
     });
     catch(&mut failures, "direction", || {
         let targets = main.definition(&mut session, main.position(98, "desc", 0));
+        if targets.is_empty() { vec![] } else { vec![format!("expected no definition, got: {:?}", targets)] }
+    });
+    // Not a model's `_order`: a plain class attribute, or a local variable in a method
+    for (case, line) in [("plain class", 123), ("method local", 131)] {
+        catch(&mut failures, case, || {
+            let targets = main.definition(&mut session, main.position(line, "other_id", 0));
+            if targets.is_empty() { vec![] } else { vec![format!("expected no definition, got: {:?}", targets)] }
+        });
+    }
+    // A model name in `_order`: the model, as in any string (`self.env['sem.tokens.other']` as
+    // control), except in a model's `_order`
+    let control_targets = main.definition(&mut session, main.position(80, "sem.tokens.other", 0));
+    for (case, line) in [("model name, plain class", 136), ("model name, method local", 144)] {
+        catch(&mut failures, case, || {
+            let targets = main.definition(&mut session, main.position(line, "sem.tokens.other", 0));
+            if !control_targets.is_empty() && targets == control_targets {
+                vec![]
+            } else {
+                vec![format!("definition should be {:?}, got: {:?}", control_targets, targets)]
+            }
+        });
+    }
+    catch(&mut failures, "model name, model's `_order`", || {
+        let targets = main.definition(&mut session, main.position(150, "sem.tokens.other", 0));
         if targets.is_empty() { vec![] } else { vec![format!("expected no definition, got: {:?}", targets)] }
     });
 

@@ -209,6 +209,19 @@ fn check_model_order_tokens(main: &TokenFile) {
     // A field split between the parts of `'other_' 'id'` is not found in the file: no token
     check(main, 104, "'other_'", None);
     check(main, 104, "'id'", None);
+    // `.id` is a property of `other_record`: the `id` field of its comodel
+    check(main, 112, "other_record", Some((PROPERTY, &[])));
+    check(main, 112, "id", Some((PROPERTY, &[])));
+    // Annotated assignment: same as `_order = ...`
+    check(main, 118, "other_id", Some((PROPERTY, &[])));
+    check(main, 118, "desc", None);
+    // Not a model's `_order`: a plain class attribute, or a local variable in a method
+    check(main, 123, "other_id", None);
+    check(main, 131, "other_id", None);
+    // A model name in `_order`: coloured as a model like in any string, except in a model's `_order`
+    check(main, 136, "'sem.tokens.other'", Some((CLASS, &[])));
+    check(main, 144, "'sem.tokens.other'", Some((CLASS, &[])));
+    check(main, 150, "sem.tokens.other", None);
 }
 
 /// A non-ASCII comment between concatenated parts: no segment may end inside one of its

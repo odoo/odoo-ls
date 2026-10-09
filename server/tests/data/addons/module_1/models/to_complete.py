@@ -36,6 +36,25 @@ class OrderEscapeModel(models.Model):
 class OrderKeywordsModel(models.Model):
     _name = "module_1.order_keywords_model"
     _description = "Order Keywords Model"
-    _order = "name desc nulls last, id"
+    _order = "name desc nulls last, escape_id.id, name.id, id"
 
     name = fields.Char()
+    escape_id = fields.Many2one("module_1.order_escape_model")
+
+
+class OrderAnnotatedModel(models.Model):
+    _inherit = "module_1.order_keywords_model"
+    _order: str = "name, "
+
+
+class OrderPlainClass:
+    # Not a model: `_order` is a plain attribute
+    _order = "name "
+
+
+class OrderLocalModel(models.Model):
+    _inherit = "module_1.order_keywords_model"
+
+    def local_order(self):
+        # A local variable, not the model's `_order`
+        _order = "name "

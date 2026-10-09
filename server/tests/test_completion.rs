@@ -31,6 +31,8 @@ fn test_completions() {
     test_init_storage_kwarg_method_completion(&mut session);
     test_order_completion_with_escape(&mut session);
     test_order_completion_by_word(&mut session);
+    test_order_completion_annotated(&mut session);
+    test_order_completion_outside_model(&mut session);
     test_import_completion_with_normalized_name(&mut session);
 }
 
@@ -170,8 +172,8 @@ fn test_order_completion_with_escape(session: &mut SessionInfo) {
     assert!(labels.is_empty(), "Expected no completion in a part with escapes, got: {:?}", labels);
 }
 
-/// `_order = "name desc nulls last, id"`: what is completed depends on the word of the item under
-/// the cursor: the field first, then its direction, then where nulls go.
+/// `_order = "name desc nulls last, escape_id.id, name.id, id"`: what is completed depends on the
+/// word of the item under the cursor: the field first, then its direction, then where nulls go.
 fn test_order_completion_by_word(session: &mut SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
@@ -185,7 +187,7 @@ fn test_order_completion_by_word(session: &mut SessionInfo) {
     let (line, text) = content.lines().enumerate().find(|(_, text)| text.contains(r#"_order = "name desc"#)).unwrap();
     let mut failures = vec![];
     // (text right before the cursor, labels that must be offered, labels that must not)
-    let cases: [(&str, &[&str], &[&str]); 7] = [
+    let cases: [(&str, &[&str], &[&str]); 10] = [
         (r#""na"#, &["name"], &["id", "desc"]),
         (r#""name "#, &["asc", "desc", "nulls first", "nulls last"], &["name", "id"]),
         (r#""name d"#, &["desc"], &["asc", "nulls first", "name"]),
@@ -194,6 +196,11 @@ fn test_order_completion_by_word(session: &mut SessionInfo) {
         (", ", &["name", "id"], &["asc", "desc"]),
         // Right after the closing quote: outside the string
         ("id\"", &[], &["name", "id", "asc", "desc"]),
+        // After a many2one and a `.`, only its `id`
+        ("escape_id.", &["id"], &["name", "escape_id", "asc"]),
+        ("escape_id.i", &["id"], &["name", "escape_id"]),
+        // `name` is not a many2one
+        ("name.", &[], &["id", "name"]),
     ];
     for (before_cursor, offered, not_offered) in cases {
         let character = (text.find(before_cursor).unwrap() + before_cursor.len()) as u32;
@@ -205,6 +212,54 @@ fn test_order_completion_by_word(session: &mut SessionInfo) {
         }
     }
     assert!(failures.is_empty(), "`_order` completion:\n{}", failures.join("\n"));
+}
+
+/// `_order: str = "name, "`: an annotated assignment is completed like `_order = ...`
+fn test_order_completion_annotated(session: &mut SessionInfo) {
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
+    let content = std::fs::read_to_string(&test_file).expect("Test file does not exist");
+
+    let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    let before_cursor = r#"_order: str = "name, "#;
+    let (line, text) = content.lines().enumerate().find(|(_, text)| text.contains(before_cursor)).unwrap();
+    let character = (text.find(before_cursor).unwrap() + before_cursor.len()) as u32;
+    let labels = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, line as u32, character));
+    for label in ["name", "id"] {
+        assert!(labels.iter().any(|l| l == label), "Expected `{label}` after `{before_cursor}`, got: {labels:?}");
+    }
+}
+
+/// `_order = "name "` outside the body of a model class is not the model's `_order`: no completion,
+/// neither in a class that is not a model nor as a local variable in a method.
+fn test_order_completion_outside_model(session: &mut SessionInfo) {
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
+    let content = std::fs::read_to_string(&test_file).expect("Test file does not exist");
+
+    let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    let lines: Vec<&str> = content.lines().collect();
+    let before_cursor = r#"_order = "name "#;
+    let mut failures = vec![];
+    for class in ["class OrderPlainClass", "class OrderLocalModel"] {
+        // The first `_order` after the class line
+        let class_line = lines.iter().position(|text| text.starts_with(class)).unwrap();
+        let line = class_line + lines[class_line..].iter().position(|text| text.contains(before_cursor)).unwrap();
+        let character = (lines[line].find(before_cursor).unwrap() + before_cursor.len()) as u32;
+        let labels = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, line as u32, character));
+        if !labels.is_empty() {
+            failures.push(format!("{class}: expected no completion, got: {labels:?}"));
+        }
+    }
+    assert!(failures.is_empty(), "`_order` completion outside a model:\n{}", failures.join("\n"));
 }
 
 /// `import ｏ|ｓ`: the AST holds the NFKC-normalized name `os`, so the typed prefix must be read up
