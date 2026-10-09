@@ -14,7 +14,7 @@ use crate::core::symbols::{FunctionSymbol, ModuleSymbol};
 use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey, SourceFileKey, SymbolKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::features::ast_utils::AstUtils;
-use crate::features::features_utils::FeaturesUtils;
+use crate::features::features_utils::{FeaturesUtils, OrderItem};
 use crate::threads::SessionInfo;
 use crate::tree::OYarnExt;
 use crate::{Sy, S};
@@ -872,15 +872,14 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
                     continue;
                 };
                 let order = expr_string_literal.value.to_str();
-                // Text up to the cursor, or the whole string if the cursor is not found in it (e.g. escapes)
-                let before_cursor = match AstUtils::index_in_string(expr_string_literal, TextSize::new(offset as u32)) {
-                    Some(index) => &order[..index],
-                    None => order,
+                // The end of the string stands for a cursor not found in it (e.g. escapes)
+                let cursor = AstUtils::index_in_string(expr_string_literal, TextSize::new(offset as u32)).unwrap_or(order.len());
+                let Some(item) = OrderItem::order_items(order).into_iter().find(|item| item.start <= cursor && cursor <= item.end()) else {
+                    continue;
                 };
-                // In the item under the cursor (`name desc nulls last`): the words already typed,
-                // and the one being typed
-                let item = before_cursor.rsplit(',').next().unwrap_or("");
-                let (typed, current) = item.rsplit_once(char::is_whitespace).unwrap_or(("", item));
+                // Words of the item before the cursor: those already typed, and the one being typed
+                let before_cursor = &order[item.start..cursor];
+                let (typed, current) = before_cursor.rsplit_once(char::is_whitespace).unwrap_or(("", before_cursor));
                 let typed: Vec<&str> = typed.split_whitespace().collect();
                 match typed.as_slice() {
                     // "<current>"

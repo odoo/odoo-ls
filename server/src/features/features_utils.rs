@@ -69,6 +69,37 @@ pub enum SegmentPick {
     All,
 }
 
+/// A comma-separated item of an `_order` string, e.g. ` partner_id desc nulls last`.
+pub struct OrderItem<'a> {
+    pub text: &'a str,
+    /// Index of the item in the string
+    pub start: usize,
+}
+
+impl<'a> OrderItem<'a> {
+    /// The items of an `_order` string such as `"name desc, id"`.
+    pub fn order_items(order: &str) -> Vec<OrderItem<'_>> {
+        let mut start = 0;
+        order.split(',').map(|text| {
+            let item = OrderItem { text, start };
+            start += text.len() + 1;
+            item
+        }).collect()
+    }
+
+    /// Index of the end of the item in the string
+    pub fn end(&self) -> usize {
+        self.start + self.text.len()
+    }
+
+    /// The field, first word of the item, with its start and end indexes in the string.
+    pub fn field(&self) -> Option<(&'a str, usize, usize)> {
+        let field = self.text.split_whitespace().next()?;
+        let start = self.start + (self.text.len() - self.text.trim_start().len());
+        Some((field, start, start + field.len()))
+    }
+}
+
 pub struct FeaturesUtils {}
 
 impl FeaturesUtils {
@@ -448,8 +479,7 @@ impl FeaturesUtils {
         }
     }
 
-    /// Fields of `_order = "name desc, id"`, with their range in the file: the first word of each
-    /// comma-separated item.
+    /// Fields of `_order = "name desc, id"`, with their range in the file.
     fn find_order_fields(
         session: &mut SessionInfo,
         scope: SymbolKey,
@@ -458,15 +488,7 @@ impl FeaturesUtils {
         pick: SegmentPick,
     ) -> Vec<(SymbolKey, TextRange)> {
         let order = string.value.to_str();
-        let mut fields = vec![];
-        let mut item_start = 0;
-        for item in order.split(',') {
-            if let Some(name) = item.split_whitespace().next() {
-                let start = item_start + (item.len() - item.trim_start().len());
-                fields.push((name, start, start + name.len()));
-            }
-            item_start += item.len() + 1;
-        }
+        let mut fields: Vec<_> = OrderItem::order_items(order).iter().filter_map(OrderItem::field).collect();
         if let SegmentPick::Cursor(offset) = pick {
             let Some(cursor) = AstUtils::index_in_string(string, TextSize::new(offset as u32)) else {
                 return vec![];
@@ -1047,5 +1069,21 @@ impl FeaturesUtils {
             })
             .unwrap_or_default();
         Some(format!("```\n(XML record) {}\nmodel: {}\nfile: {}\n```", full_xml_id, record.model.0, file_name))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OrderItem;
+
+    #[test]
+    fn test_order_items() {
+        let order = " name desc,  id ,, partner_id nulls last,";
+        let items = OrderItem::order_items(order);
+        let texts: Vec<_> = items.iter().map(|item| &order[item.start..item.end()]).collect();
+        assert_eq!(texts, [" name desc", "  id ", "", " partner_id nulls last", ""]);
+        // The field, and the text found at its indexes
+        let fields: Vec<_> = items.iter().map(|item| item.field().map(|(field, start, end)| (field, &order[start..end]))).collect();
+        assert_eq!(fields, [Some(("name", "name")), Some(("id", "id")), None, Some(("partner_id", "partner_id")), None]);
     }
 }
