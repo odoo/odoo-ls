@@ -142,10 +142,17 @@ impl ReferenceFeature {
                             }
                         }
                     }
+                    // Any expression typed as a class matches it, so never skip files for a class
+                    let name = (target_typ != SymType::CLASS).then(|| session.st().name(definition_source).clone());
                     for &file in files_to_check.iter() {
                         let Some(dep_file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(session.st().path(file)) else {
                             continue;
                         };
+                        // A reference spells the target's name, so skip the files that never contain it
+                        if let Some(name) = &name && !dep_file_info.borrow().file_info_ast.borrow().text_document.as_ref()
+                            .is_some_and(|td| td.contents().contains(name.as_str())) {
+                            continue;
+                        }
                         match file {
                             SourceFileKey::File(_) | SourceFileKey::PythonPackage(_) | SourceFileKey::Module(_) => {
                                 locations.extend(ReferenceFeature::references_in_file(session, file, &dep_file_info, &ReferenceTarget::Symbol(definition_source)));
