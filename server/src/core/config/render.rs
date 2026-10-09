@@ -75,7 +75,7 @@ impl ProfileView {
             let (level, outcome) = match effective {
                 // A list can survive the rejection with zero valid entries left —
                 // as bad as the key being absent, so treat it the same way.
-                Some(ConfigValue::List(items)) if items.is_empty() => {
+                Some(v) if entry_count(v) == Some(0) => {
                     (2, "no valid entries remain for it".to_string())
                 }
                 Some(v) => (1, format!("using {} instead", describe_value(v))),
@@ -116,6 +116,9 @@ impl ProfileView {
             json!(self.extends.clone().unwrap_or_default()),
         );
         obj.insert("abstract".to_string(), json!(self.abstract_));
+        if !self.warnings.is_empty() {
+            obj.insert("warnings".to_string(), json!(self.warnings));
+        }
         for &key in ConfigKey::all() {
             let value = self.values.get(&key);
             let rejected = self.rejected.get(&key).filter(|v| !v.is_empty());
@@ -145,8 +148,38 @@ impl ProfileView {
                     }
                     json!({"value": scalar_json(s.value()), "sources": sources_json(s.sources()), "info": info})
                 }
-                // Other kinds never record rejections; render as-is.
-                (Some(v), Some(_)) => value_to_json(v),
+                // Same for filters: valid filters, then the rejected ones.
+                (Some(v @ ConfigValue::DiagFilters(_)), Some(rej)) => {
+                    let mut items = value_to_json(v).as_array().cloned().unwrap_or_default();
+                    items.extend(rej.iter().map(sourced_string_json));
+                    Value::Array(items)
+                }
+                // Diagnostic settings: a rejected `CODE = level` is its own row, or a
+                // note on that code's row when a valid level is set for it.
+                (Some(v @ ConfigValue::DiagSettings(_)), Some(rej)) => {
+                    let mut json = value_to_json(v);
+                    if let Some(map) = json.as_object_mut() {
+                        for r in rej {
+                            // A whole-value rejection (not a table) has no code.
+                            let (code, level) = r.value().split_once(" = ").unwrap_or(("(rejected)", r.value()));
+                            match map.get_mut(code) {
+                                Some(Value::Object(row)) => {
+                                    let info = row.get("info").and_then(Value::as_str).unwrap_or_default();
+                                    let sep = if info.is_empty() { "" } else { "; " };
+                                    let note = format!("{info}{sep}ignored '{level}' ({})", r.info);
+                                    row.insert("info".to_string(), json!(note));
+                                }
+                                _ => {
+                                    map.insert(
+                                        code.to_string(),
+                                        json!({"value": level, "sources": sources_json(r.sources()), "info": r.info}),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    json
+                }
                 // No valid value survived: surface the rejected value(s) with notes.
                 (None, Some(rej)) if rej.len() == 1 => sourced_string_json(&rej[0]),
                 (None, Some(rej)) => Value::Array(rej.iter().map(sourced_string_json).collect()),
@@ -178,14 +211,24 @@ fn sources_note(sources: &HashSet<String>) -> String {
 
 /// Short human description of a config value, for "using X instead" notes.
 fn describe_value(value: &ConfigValue) -> String {
+    if let ConfigValue::Scalar(s) = value {
+        return format!("'{}'", scalar_display(s.value()));
+    }
+    match entry_count(value) {
+        Some(0) => "an empty list".to_string(),
+        Some(1) => "the 1 remaining valid entry".to_string(),
+        Some(n) => format!("the {n} remaining valid entries"),
+        None => "the existing value".to_string(),
+    }
+}
+
+/// Number of entries of a list-like value (`None` for other kinds).
+fn entry_count(value: &ConfigValue) -> Option<usize> {
     match value {
-        ConfigValue::Scalar(s) => format!("'{}'", scalar_display(s.value())),
-        ConfigValue::List(items) => match items.len() {
-            0 => "an empty list".to_string(),
-            1 => "the 1 remaining valid entry".to_string(),
-            n => format!("the {n} remaining valid entries"),
-        },
-        _ => "the existing value".to_string(),
+        ConfigValue::List(items) => Some(items.len()),
+        ConfigValue::DiagFilters(items) => Some(items.len()),
+        ConfigValue::DiagSettings(items) => Some(items.len()),
+        _ => None,
     }
 }
 
@@ -343,7 +386,18 @@ impl ConfigRenderer {
 
     fn render_entry(&self, entry_val: &serde_json::Value) -> String {
         let mut html = String::new();
-        html.push_str("<div class=\"toml-row\"><div class=\"toml-left\"><b>[[config]]</b></div><div class=\"toml-right\"></div></div>\n");
+        // Profile-level warnings (not tied to a field) go on the header row.
+        let warnings = entry_val["warnings"]
+            .as_array()
+            .map(|ws| {
+                ws.iter()
+                    .filter_map(Value::as_str)
+                    .map(|w| format!("<span class=\"toml-info\">⚠ {}</span>", esc(w)))
+                    .collect::<Vec<_>>()
+                    .join("<br>")
+            })
+            .unwrap_or_default();
+        html.push_str(&Self::row("<b>[[config]]</b>", &warnings));
         if let serde_json::Value::Object(map) = entry_val {
             for key in display_order() {
                 if let Some(val) = map.get(key) {

@@ -6,6 +6,7 @@
 use std::path::Path;
 
 use crate::{
+    S,
     core::config::ConfigKey,
     utils::{
         HashMap, HashSet, PathSanitizer, default_python_command, expand_language_code,
@@ -399,55 +400,52 @@ pub(super) fn infer_addons(
 
 /// Global inference (after cross-workspace merge): when `odoo_path` is unset,
 /// detect it from a workspace folder root, then from immediate children.
-/// Detecting more than one is an error.
+/// Detecting more than one rejects all candidates and leaves it unset.
 pub(super) fn infer_odoo_path(
     profile: &mut Profile,
-    _key: ConfigKey,
+    key: ConfigKey,
     ctx: &PipelineCtx,
 ) -> Result<(), String> {
-    // Iterate workspace folders in a stable order: `unique_ws` is a `HashMap`, and
-    // the conflict error names whichever valid root is hit first — so without
-    // sorting the diagnostic text would vary run-to-run.
-    let mut ws_sorted: Vec<(&String, &String)> = ctx.unique_ws_folders.iter().collect();
-    ws_sorted.sort();
-    if profile.get(ConfigKey::OdooPath).is_some() {
+    if profile.get(key).is_some() {
+        // Odoo_path is already set, nothing to infer.
         return Ok(());
     }
+    // Sorted so candidates are reported in a stable order.
+    let mut ws_sorted: Vec<(&String, &String)> = ctx.unique_ws_folders.iter().collect();
+    ws_sorted.sort();
     // First pass: workspace folder roots.
-    for (name, path) in &ws_sorted {
-        try_set_odoo_path(profile, path, format!("$workspaceFolder:{name}"))?;
-    }
+    let mut candidates: Vec<(String, String)> = ws_sorted
+        .iter()
+        .filter(|(_, path)| is_odoo_path(path))
+        .map(|(name, path)| (path.to_string(), format!("$workspaceFolder:{name}")))
+        .collect();
     // Second pass: immediate children, only if no root matched.
-    // Only check one level deep, to avoid false positives from nested workspaces.
-    if profile.get(ConfigKey::OdooPath).is_none() {
+    if candidates.is_empty() {
         for (name, path) in &ws_sorted {
             scan_workspace_children(path, name, |child, source| {
-                try_set_odoo_path(profile, child, source)?;
+                if is_odoo_path(child) {
+                    candidates.push((child.to_string(), source));
+                }
                 Ok(true)
             })?;
         }
     }
-    Ok(())
-}
-
-fn try_set_odoo_path(profile: &mut Profile, path: &str, source: String) -> Result<(), String> {
-    if !is_odoo_path(path) {
-        return Ok(());
+    match candidates.len() {
+        0 => {}
+        1 => {
+            let (path, source) = candidates.remove(0);
+            profile.set_scalar_str(key, path, HashSet::from_iter([source]));
+        }
+        _ => {
+            for (path, source) in candidates {
+                profile.add_rejected(
+                    key,
+                    path,
+                    HashSet::from_iter([source]),
+                    S!("more than one workspace folder or subfolder is a valid odoo_path, set odoo_path in the config file"),
+                );
+            }
+        }
     }
-    if let Some(ConfigValue::Scalar(prev)) = profile.get(ConfigKey::OdooPath) {
-        let prev_sources: Vec<String> = prev.sources().iter().cloned().collect();
-        return Err(format!(
-            "More than one workspace folder or subfolder is a valid odoo_path.\n\
-             Please set the odoo_path in the config file.\n\
-             Conflicting path: '{}', previously set from '{}'",
-            path,
-            prev_sources.join(", ")
-        ));
-    }
-    profile.set_scalar_str(
-        ConfigKey::OdooPath,
-        path.to_string(),
-        HashSet::from_iter([source]),
-    );
     Ok(())
 }

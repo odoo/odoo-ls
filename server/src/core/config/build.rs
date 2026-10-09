@@ -6,6 +6,7 @@
 
 use std::path::Path;
 
+use crate::S;
 use crate::core::config::{ConfigKey, ConfigMap};
 use crate::threads::SessionInfo;
 use crate::utils::{HashMap, HashSet};
@@ -229,6 +230,9 @@ fn merge_child_wins(child: &Profile, parent: &Profile) -> Profile {
         .chain(parent.warnings.iter())
         .cloned()
         .collect();
+    for (key, items) in child.rejected.iter().chain(parent.rejected.iter()) {
+        result.rejected.entry(*key).or_default().extend(items.iter().cloned());
+    }
     for key in keys_union(child, parent) {
         if let Some(value) = merge_value(key, child.get(key), parent.get(key), child) {
             result.values.insert(key, value);
@@ -349,16 +353,15 @@ fn apply_extends(set: &mut ProfileSet) -> Result<(), String> {
     // children. Walk each chain with a local visited set to detect cycles —
     // including a rootless cycle (A→B→A) that a root-seeded DFS would miss.
     let mut depth: HashMap<String, usize> = HashMap::default();
+    let mut missing: Vec<(String, String)> = Vec::new();
     for key in &keys {
         let mut seen: HashSet<String> = HashSet::from_iter([key.clone()]);
         let mut current = key.clone();
         let mut chain_len = 0;
         while let Some(parent) = set.get(&current).and_then(|p| p.extends.clone()) {
             if !set.contains_key(&parent) {
-                return Err(format!(
-                    "Profile '{}' extends non-existing profile '{}'",
-                    current, parent
-                ));
+                missing.push((current, parent));
+                break;
             }
             if !seen.insert(parent.clone()) {
                 return Err("Circular dependency detected in profile extensions!".to_string());
@@ -367,6 +370,14 @@ fn apply_extends(set: &mut ProfileSet) -> Result<(), String> {
             current = parent;
         }
         depth.insert(key.clone(), chain_len);
+    }
+    // A missing parent is not applied, with a warning; the profile keeps its own values.
+    for (name, parent) in missing {
+        if let Some(p) = set.get_mut(&name)
+            && p.extends.take().is_some()
+        {
+            p.warnings.push(format!("extends non-existing profile '{parent}', ignoring it"));
+        }
     }
 
     let mut ordered = keys;
@@ -390,71 +401,91 @@ fn apply_extends(set: &mut ProfileSet) -> Result<(), String> {
 
 fn merge_ws_profile(a: &Profile, b: &Profile, name: &str) -> Result<Profile, String> {
     let mut result = Profile::new(name);
-    result.extends = match (a.extends.clone(), b.extends.clone()) {
-        (Some(x), Some(y)) if x != y => {
-            return Err(format!(
-                "Conflict in 'extends' for profile '{name}': '{x}' vs '{y}'"
-            ));
-        }
-        (x, y) => y.or(x),
+    // `extends` is already applied per source, so a conflict only affects display.
+    let extends_conflict = match (&a.extends, &b.extends) {
+        (Some(x), Some(y)) if x != y => Some(format!(
+            "conflicting 'extends' across workspace folders: '{x}' vs '{y}'; values from both parents are merged"
+        )),
+        _ => None,
     };
+    result.extends = b.extends.clone().or_else(|| a.extends.clone());
     result.abstract_ = a.abstract_ || b.abstract_;
-    result.warnings = a.warnings.iter().chain(b.warnings.iter()).cloned().collect();
+    // Workspaces under the same parent `odools.toml` report the same warnings and
+    // rejections: keep one copy.
+    let mut seen_warnings: HashSet<&String> = HashSet::default();
+    result.warnings = a
+        .warnings
+        .iter()
+        .chain(b.warnings.iter())
+        .filter(|w| seen_warnings.insert(*w))
+        .cloned()
+        .collect();
+    result.warnings.extend(extends_conflict);
+    result.conflicted = a.conflicted.union(&b.conflicted).copied().collect();
     for key in keys_union(a, b) {
         let merged = match (a.get(key), b.get(key)) {
-            (Some(x), Some(y)) => merge_ws_value(key, x, y, name)?,
-            (Some(v), None) | (None, Some(v)) => v.clone(),
+            (Some(x), Some(y)) => merge_ws_value(key, x, y),
+            (Some(v), None) | (None, Some(v)) => Some(v.clone()),
             (None, None) => continue,
         };
-        result.values.insert(key, merged);
+        match merged {
+            Some(v) if !result.conflicted.contains(&key) => {
+                result.values.insert(key, v);
+            }
+            _ => {
+                result.conflicted.insert(key);
+                for s in [a.get(key), b.get(key)].into_iter().flatten().filter_map(ConfigValue::as_scalar) {
+                    result.add_rejected(
+                        key,
+                        s.value().to_string(),
+                        s.sources().clone(),
+                        S!("conflicting values across workspace folders"),
+                    );
+                }
+            }
+        }
     }
     // Carry rejected settings from both workspaces, even when the key ends up
     // with a valid value: the panel shows the effective value and notes the
     // rejected one, so the failure is never hidden.
+    let mut seen_rejected = HashSet::default();
     for (key, items) in a.rejected.iter().chain(b.rejected.iter()) {
-        result
-            .rejected
-            .entry(*key)
-            .or_default()
-            .extend(items.iter().cloned());
+        for item in items {
+            let mut sources: Vec<&String> = item.sources.iter().collect();
+            sources.sort();
+            if seen_rejected.insert((*key, &item.value, &item.info, sources)) {
+                result.rejected.entry(*key).or_default().push(item.clone());
+            }
+        }
     }
     Ok(result)
 }
 
-fn merge_ws_value(
-    key: ConfigKey,
-    a: &ConfigValue,
-    b: &ConfigValue,
-    profile: &str,
-) -> Result<ConfigValue, String> {
+/// Merge one key's values from two workspaces; `None` on a scalar conflict.
+fn merge_ws_value(key: ConfigKey, a: &ConfigValue, b: &ConfigValue) -> Option<ConfigValue> {
     // Local keys do not cause workspace conflicts
     let local = registry().get(&key).map(|s| s.local).unwrap_or(false);
     match (a, b) {
         (ConfigValue::Scalar(sa), ConfigValue::Scalar(sb)) => {
             if !local && sa.value() != sb.value() {
-                return Err(format!(
-                    "Conflict detected in '{profile}' for key '{}': {} vs {}",
-                    key.as_str(),
-                    sa.value(),
-                    sb.value()
-                ));
+                return None;
             }
             let sources: HashSet<String> = sa.sources().union(sb.sources()).cloned().collect();
-            Ok(ConfigValue::scalar(sa.value().clone(), sources))
+            Some(ConfigValue::scalar(sa.value().clone(), sources))
         }
         // Lists union across workspaces (never conflict).
         (ConfigValue::List(la), ConfigValue::List(lb)) => {
             let all = la.iter().chain(lb).cloned();
-            Ok(ConfigValue::List(group_sourced_iters(all).collect()))
+            Some(ConfigValue::List(group_sourced_iters(all).collect()))
         }
         // Diagnostic settings merge (per-key), filters concatenate.
-        (ConfigValue::DiagSettings(sa), ConfigValue::DiagSettings(sb)) => Ok(
+        (ConfigValue::DiagSettings(sa), ConfigValue::DiagSettings(sb)) => Some(
             ConfigValue::DiagSettings(merge_sourced_diagnostic_setting_map(sa, sb)),
         ),
-        (ConfigValue::DiagFilters(fa), ConfigValue::DiagFilters(fb)) => Ok(
+        (ConfigValue::DiagFilters(fa), ConfigValue::DiagFilters(fb)) => Some(
             ConfigValue::DiagFilters(fa.iter().chain(fb).cloned().collect()),
         ),
-        _ => Ok(a.clone()),
+        _ => Some(a.clone()),
     }
 }
 

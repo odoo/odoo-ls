@@ -45,21 +45,30 @@ fn parse_entry(entry: &toml::Value, source: &str) -> Result<Profile, String> {
         .as_table()
         .ok_or_else(|| format!("{source}: a [[config]] entry must be a table"))?;
 
-    let name = match table.get("name") {
-        Some(v) => as_str_field(v, "name")
-            .map_err(|e| format!("{source}: {e}"))?
-            .to_string(),
-        None => DEFAULT_PROFILE_NAME.to_string(),
+    // A non-string `name` is used as its raw text, with a warning, rather than
+    // failing the config or being merged into "default".
+    let (name, name_warning) = match table.get("name") {
+        Some(v) => match v.as_str() {
+            Some(s) => (s.to_string(), None),
+            None => {
+                let raw = raw_text(v);
+                let msg = format!("'name' must be a string in {source}, using '{raw}'");
+                (raw, Some(msg))
+            }
+        },
+        None => (DEFAULT_PROFILE_NAME.to_string(), None),
     };
     let mut profile = Profile::new(name);
-    profile.extends = match table.get("extends") {
-        Some(v) => Some(
-            as_str_field(v, "extends")
-                .map_err(|e| format!("{source}: profile '{}': {e}", profile.name))?
-                .to_string(),
-        ),
-        None => None,
-    };
+    profile.warnings.extend(name_warning);
+    // A non-string `extends` is not applied, with a warning.
+    match table.get("extends") {
+        Some(v) if v.is_str() => profile.extends = v.as_str().map(str::to_string),
+        Some(v) => profile.warnings.push(format!(
+            "'extends' must be a string in {source}, ignoring '{}'",
+            raw_text(v)
+        )),
+        None => {}
+    }
 
     for (raw_key, value) in table {
         if raw_key == "name" || raw_key == "extends" {
@@ -75,13 +84,26 @@ fn parse_entry(entry: &toml::Value, source: &str) -> Result<Profile, String> {
             profile.warnings.push(msg);
             continue;
         };
-        let parsed = parse_value(key, value, source)
-            .map_err(|e| format!("{source}: profile '{}': {e}", profile.name))?;
-        if let Some(parsed) = parsed {
-            profile.values.insert(key, parsed);
+        let mut rejected_entries = Vec::new();
+        match parse_value(key, value, source, &mut rejected_entries) {
+            Ok(Some(parsed)) => {
+                profile.values.insert(key, parsed);
+            }
+            Ok(None) => {}
+            Err(e) => rejected_entries.push((raw_text(value), e)),
+        }
+        for (raw, reason) in rejected_entries {
+            // toml errors end with a newline.
+            let reason = reason.trim_end().to_string();
+            profile.add_rejected(key, raw, HashSet::from_iter([source.to_string()]), reason);
         }
     }
     Ok(profile)
+}
+
+/// A TOML value as shown in a rejection: strings unquoted, others as TOML.
+fn raw_text(value: &toml::Value) -> String {
+    value.as_str().map_or_else(|| value.to_string(), str::to_string)
 }
 
 fn scalar(value: Scalar, source: &str) -> ConfigValue {
@@ -96,10 +118,13 @@ fn as_str_field<'a>(value: &'a toml::Value, name: &str) -> Result<&'a str, Strin
 }
 
 /// Parse a single value according to its key's `ConfigFieldSpecKind`.
+/// Invalid list entries are pushed to `rejected` as `(raw, reason)` and skipped;
+/// `Err` rejects the whole value.
 fn parse_value(
     key: ConfigKey,
     value: &toml::Value,
     source: &str,
+    rejected: &mut Vec<(String, String)>,
 ) -> Result<Option<ConfigValue>, String> {
     let name = key.as_str();
     match key.kind() {
@@ -141,34 +166,49 @@ fn parse_value(
                 .ok_or_else(|| format!("'{name}' must be an array"))?;
             let mut items = Vec::with_capacity(arr.len());
             for el in arr {
-                let s = el
-                    .as_str()
-                    .ok_or_else(|| format!("'{name}' entries must be strings"))?;
-                items.push(Sourced::new(s.to_string(), source));
+                match el.as_str() {
+                    Some(s) => items.push(Sourced::new(s.to_string(), source)),
+                    None => rejected.push((raw_text(el), format!("'{name}' entries must be strings"))),
+                }
             }
             Ok(Some(ConfigValue::List(items)))
         }
         ConfigFieldSpecKind::DiagSettings => {
-            let map: HashMap<DiagnosticCode, DiagnosticSetting> = value
-                .clone()
-                .try_into()
-                .map_err(|e: toml::de::Error| e.to_string())?;
-            let sourced = map
-                .into_iter()
-                .map(|(k, v)| (k, Sourced::new(v, source)))
-                .collect();
-            Ok(Some(ConfigValue::DiagSettings(sourced)))
+            let table = value
+                .as_table()
+                .ok_or_else(|| format!("'{name}' must be a table"))?;
+            let mut settings = HashMap::default();
+            for (code, setting) in table {
+                let parsed = DiagnosticCode::from_str(code)
+                    .map_err(|_| format!("unknown diagnostic code '{code}'"))
+                    .and_then(|c| {
+                        let s: DiagnosticSetting = setting
+                            .clone()
+                            .try_into()
+                            .map_err(|e: toml::de::Error| e.to_string())?;
+                        Ok((c, s))
+                    });
+                match parsed {
+                    Ok((c, s)) => {
+                        settings.insert(c, Sourced::new(s, source));
+                    }
+                    Err(e) => rejected.push((format!("{code} = {}", raw_text(setting)), e)),
+                }
+            }
+            Ok(Some(ConfigValue::DiagSettings(settings)))
         }
         ConfigFieldSpecKind::DiagFilters => {
-            let filters: Vec<DiagnosticFilter> = value
-                .clone()
-                .try_into()
-                .map_err(|e: toml::de::Error| e.to_string())?;
-            let sourced = filters
-                .into_iter()
-                .map(|f| Sourced::new(f, source))
-                .collect();
-            Ok(Some(ConfigValue::DiagFilters(sourced)))
+            let arr = value
+                .as_array()
+                .ok_or_else(|| format!("'{name}' must be an array"))?;
+            let mut filters = Vec::with_capacity(arr.len());
+            for el in arr {
+                match el.clone().try_into::<DiagnosticFilter>() {
+                    Ok(f) => filters.push(Sourced::new(f, source)),
+                    Err(e) => rejected.push((raw_text(el), e.to_string())),
+                }
+            }
+            Ok(Some(ConfigValue::DiagFilters(filters)))
         }
     }
 }
