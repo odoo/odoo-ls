@@ -110,6 +110,8 @@ fn test_ols05000s_xml_file() {
     check_xml_diag("OLS05067", 119);
     check_xml_warning("OLS05068", 121);
     check_xml_warning("OLS05076", 123);
+    assert!(diag_on_line(&bikes_xml_diagnostics, 126).is_empty());
+    assert!(diag_on_line(&bikes_xml_diagnostics, 127).is_empty());
 }
 
 #[test]

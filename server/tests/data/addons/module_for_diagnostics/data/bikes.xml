@@ -124,4 +124,6 @@
         <field name="name">Overwritten by the declaration below</field> <!-- OLS05076 -->
         <field name="name">Odoo keeps this one</field>
     </record>
+    <record id="bike_demo" model="bikes.bike"><field name="wheel_id" ref="bike_wheel_demo"/></record>
+    <record id="bike_other" model="bikes.bike"><field name="wheel_id" ref="bike_wheel_other"/></record>
 </odoo>
