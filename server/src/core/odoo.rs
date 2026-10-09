@@ -199,6 +199,7 @@ pub struct SyncOdoo {
     pub evaluation_locations: Vec<Location>,
     pub typeshed_weak_cache: TypeshedWeakReferences, //cache of weak references to important typeshed symbols, to avoid having to look for them in the graph for each evaluation
     pub deferred_subfunc_invalidation: Option<FifoWeakHashSet<SourceFileKey>>, // None = eager (default)
+    pub functions_in_build: Vec<FunctionKey>, // functions whose ARCH or ARCH_EVAL is being built, innermost last
     languages_by_source: WeakMap<SourceFileKey, HashSet<String>>,
     language_dependents: WeakSet<SymbolKey>,
     pre_parse_cache: Option<Arc<PreParseCache>>, // used by `build_modules`
@@ -262,6 +263,7 @@ impl SyncOdoo {
             languages_by_source: WeakMap::new(),
             language_dependents: WeakSet::new(),
             deferred_subfunc_invalidation: None,
+            functions_in_build: vec![],
             pre_parse_cache: None,
 
             test_mode: false,
@@ -736,6 +738,7 @@ impl SyncOdoo {
         if let Some(mut files) = session.sync_odoo.deferred_subfunc_invalidation.take() {
             while let Some(file) = files.pop_front_valid(session.st()) {
                 SymbolTable::invalidate_sub_functions(session, file);
+                BuildScheduler::queue_functions(session, file);
             }
         }
         // Drain validation queue
@@ -744,7 +747,7 @@ impl SyncOdoo {
             if session.sync_odoo.terminate_rebuild.load(Ordering::Relaxed) { return; }
             let items_left = BuildScheduler::validation_queue_len(session) as u32;
             // report progress (total_items > 0, otherwise loop wouldn't run)
-            reporter.report_progress(BUILD_PHASE_WEIGHT + (total_items - items_left) * (VALIDATION_PHASE_WEIGHT) / total_items);
+            reporter.report_progress(BUILD_PHASE_WEIGHT + total_items.saturating_sub(items_left) * (VALIDATION_PHASE_WEIGHT) / total_items);
         }
         session.sync_odoo.import_cache = None;
         let modules_count = session.sync_odoo.modules.len();
