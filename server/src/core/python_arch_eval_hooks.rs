@@ -180,37 +180,25 @@ static arch_eval_file_hooks: LazyLock<Vec<PythonArchEvalFileHook>> = LazyLock::n
                             trees: vec![((18, 1), (999, 0), (&["odoo", "init"], &["_"]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey| {
-        let odoo_underscore = odoo.get_symbol(odoo.symbol_table.path(file_symbol), (&["odoo"], &["_"]), u32::MAX);
-        if let Some(&eval_1) = odoo_underscore.first() {
-            odoo.symbol_table.set_evaluations(eval_1, vec![Evaluation::eval_from_symbol(&odoo.symbol_table, symbol, Some(false))]);
-        }
+        PythonArchEvalHooks::create_and_eval_ext_sym_in_odoo_namespace(odoo, file_symbol, "_", symbol);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![((18, 1), (999, 0), (&["odoo", "init"], &["SUPERUSER_ID"]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey| {
-        let odoo_superuser_id = odoo.get_symbol(odoo.symbol_table.path(file_symbol), (&["odoo"], &["SUPERUSER_ID"]), u32::MAX);
-        if let Some(&eval_1) = odoo_superuser_id.first() {
-            odoo.symbol_table.set_evaluations(eval_1,vec![Evaluation::eval_from_symbol(&odoo.symbol_table, symbol, Some(false))]);
-        }
+        PythonArchEvalHooks::create_and_eval_ext_sym_in_odoo_namespace(odoo, file_symbol, "SUPERUSER_ID", symbol);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![((18, 1), (999, 0), (&["odoo", "init"], &["_lt"]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey| {
-        let odoo_lt = odoo.get_symbol(odoo.symbol_table.path(file_symbol), (&["odoo"], &["_lt"]), u32::MAX);
-        if let Some(&eval_1) = odoo_lt.first() {
-            odoo.symbol_table.set_evaluations(eval_1, vec![Evaluation::eval_from_symbol(&odoo.symbol_table, symbol, Some(false))]);
-        }
+        PythonArchEvalHooks::create_and_eval_ext_sym_in_odoo_namespace(odoo, file_symbol, "_lt", symbol);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![((18, 1), (999, 0), (&["odoo", "init"], &["Command"]))],
                             if_exist_only: true,
                             func: |odoo: &mut SyncOdoo, _entry: &Rc<RefCell<EntryPoint>>, file_symbol: SourceFileKey, symbol: SymbolKey| {
-        let odoo_command = odoo.get_symbol(odoo.symbol_table.path(file_symbol), (&["odoo"], &["Command"]), u32::MAX);
-        if let Some(&eval_1) = odoo_command.first() {
-            odoo.symbol_table.set_evaluations(eval_1, vec![Evaluation::eval_from_symbol(&odoo.symbol_table, symbol, Some(false))]);
-        }
+        PythonArchEvalHooks::create_and_eval_ext_sym_in_odoo_namespace(odoo, file_symbol, "Command", symbol);
     }},
     PythonArchEvalFileHook {odoo_entry: true,
                             trees: vec![((15, 0), (19, 4), (&["odoo", "addons", "base", "models", "ir_rule"], &["IrRule", "global"]))],
@@ -904,6 +892,16 @@ impl PythonArchEvalHooks {
                     (hook.func)(session.sync_odoo, entry_point, function);
                 }
             }
+        }
+    }
+
+    /// `odoo/init.py` exposes some of its symbols at the `odoo` namespace level (`odoo._ = _`):
+    /// inject them as ext symbols of the `odoo` namespace, evaluated to `symbol`
+    fn create_and_eval_ext_sym_in_odoo_namespace(odoo: &mut SyncOdoo, file_symbol: SourceFileKey, name: &str, symbol: SymbolKey) {
+        let odoo_namespace = odoo.get_symbol(odoo.symbol_table.path(file_symbol), (&["odoo"], &[]), u32::MAX);
+        if let Some(&odoo_namespace) = odoo_namespace.first() {
+            let variable = odoo.symbol_table.add_new_ext_symbol(odoo_namespace, name, TextRange::default(), file_symbol.into());
+            odoo.symbol_table.set_evaluations(variable.into(), vec![Evaluation::eval_from_symbol(&odoo.symbol_table, symbol, Some(false))]);
         }
     }
 

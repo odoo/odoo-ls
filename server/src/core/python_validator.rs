@@ -86,7 +86,8 @@ impl PythonValidator {
                 if file_info_ast.ast.as_py_ast().indexed_module.is_some() {
                     let old_noqa = session.current_noqa.clone();
                     session.current_noqa = session.st().get_noqas(symbol);
-                    self.validate_body(session, file_info_ast.get_stmts().as_ref().unwrap());
+                    let stmts = file_info_ast.get_stmts().unwrap();
+                    self.validate_body(session, stmts);
                     session.current_noqa = old_noqa;
                 }
                 drop(file_info_ast);
@@ -193,6 +194,9 @@ impl PythonValidator {
                 Stmt::FunctionDef(f) => {
                     let sym = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &f.name, &f.range);
                     if let Some(sym) = sym {
+                        // Normally already done by the function queues of the BuildScheduler (see
+                        // `BuildScheduler::queue_functions`) - this is a safety net for functions that
+                        // were not queued (e.g. validating a single function directly).
                         if session.st().ready_for_step(sym.unwrap_buildable_key(), BuildSteps::ARCH) {
                             BuildScheduler::build_now(session, sym.unwrap_buildable_key(), BuildSteps::ARCH);
                         }

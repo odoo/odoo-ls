@@ -9,6 +9,11 @@ use crate::{S, constants::{BuildStatus, BuildSteps, DEBUG_REBUILD_NOW, DEBUG_STE
 pub struct BuildScheduler {
     rebuild_arch: FifoWeakHashSet<BuildableSymbolKey>,
     rebuild_arch_eval: FifoWeakHashSet<BuildableSymbolKey>,
+    /// Functions of the python files waiting for validation, whose ARCH has to be built. They
+    /// are built after the ARCH and ARCH_EVAL of all files, but before any validation (see `queue_functions`).
+    rebuild_func_arch: FifoWeakHashSet<BuildableSymbolKey>,
+    /// Same as `rebuild_func_arch`, for the ARCH_EVAL of the functions, once all their ARCH are built
+    rebuild_func_arch_eval: FifoWeakHashSet<BuildableSymbolKey>,
     rebuild_validation: FifoWeakHashSet<BuildableSymbolKey>,
 }
 
@@ -29,11 +34,14 @@ impl BuildScheduler {
         BuildScheduler {
             rebuild_arch: FifoWeakHashSet::new(),
             rebuild_arch_eval: FifoWeakHashSet::new(),
+            rebuild_func_arch: FifoWeakHashSet::new(),
+            rebuild_func_arch_eval: FifoWeakHashSet::new(),
             rebuild_validation: FifoWeakHashSet::new(),
         }
     }
 
-    /// Build one item from the build queues, preferably ARCH, then ARCH_EVAL, then VALIDATION if `validation` is `true`.
+    /// Build one item from the build queues, preferably ARCH, then ARCH_EVAL, then the functions and
+    /// VALIDATION if `validation` is `true`.
     /// Returns true if an item was built, false if all queues are empty.
     pub fn build_one(session: &mut SessionInfo, entry: &Rc<RefCell<EntryPoint>>, validation: bool) -> bool {
         while let Some(symbol) = bs!(session).rebuild_arch.pop_front_valid(&session.sync_odoo.symbol_table) {
@@ -50,11 +58,69 @@ impl BuildScheduler {
                 return true;
             }
         }
-        if validation && let Some(symbol) = bs!(session).rebuild_validation.pop_front_valid(&session.sync_odoo.symbol_table) {
+        if !validation {
+            return false;
+        }
+        if Self::build_one_function(session) {
+            return true;
+        }
+        if let Some(symbol) = bs!(session).rebuild_validation.pop_front_valid(&session.sync_odoo.symbol_table) {
             Self::validate(session, symbol.into(), entry.clone());
             return true;
         }
         false
+    }
+
+    /// Build the ARCH, or if all ARCH are done, the ARCH_EVAL, of one queued function.
+    /// Returns true if a function was built, false if the function queues are empty.
+    fn build_one_function(session: &mut SessionInfo) -> bool {
+        for step in [BuildSteps::ARCH, BuildSteps::ARCH_EVAL] {
+            loop {
+                let queue = match step {
+                    BuildSteps::ARCH => &mut bs!(session).rebuild_func_arch,
+                    _ => &mut bs!(session).rebuild_func_arch_eval,
+                };
+                let Some(function) = queue.pop_front_valid(&session.sync_odoo.symbol_table) else {
+                    break;
+                };
+                if !session.st().ready_for_step(function, step) {
+                    continue; // already built (by a dependent evaluation or the build of its parent function)
+                }
+                if DEBUG_STEPS {
+                    trace!("PROCESSING FUNCTION FROM {step:?} - {}", session.st().debug_path(function.into()));
+                }
+                BuildScheduler::build_now(session, function, step);
+                if step == BuildSteps::ARCH {
+                    Self::queue_function(session, function);
+                }
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Queue the functions of `file` that are not built yet, if `file` is waiting for its validation:
+    /// they have to be built (ARCH and ARCH_EVAL) before the validation of any file.
+    pub fn queue_functions(session: &mut SessionInfo, file: impl Into<BuildableSymbolKey>) {
+        let file = file.into();
+        if !bs!(session).rebuild_validation.contains(&file) || !matches!(file, BuildableSymbolKey::File(_) | BuildableSymbolKey::PythonPackage(_) | BuildableSymbolKey::Module(_)) {
+            return;
+        }
+        for function in session.st().iter_inner_functions(file.into()) {
+            Self::queue_function(session, function.into());
+        }
+    }
+
+    fn queue_function(session: &mut SessionInfo, function: BuildableSymbolKey) {
+        let current_step = session.st().get_current_build_step(function);
+        if session.st().build_status(function, current_step) != BuildStatus::PENDING {
+            return;
+        }
+        match current_step {
+            BuildSteps::ARCH => bs!(session).rebuild_func_arch.insert(function),
+            BuildSteps::ARCH_EVAL => bs!(session).rebuild_func_arch_eval.insert(function),
+            BuildSteps::VALIDATION => {}, // validated with its file
+        }
     }
 
     /**
@@ -72,18 +138,32 @@ impl BuildScheduler {
         match current_step {
             BuildSteps::ARCH => bs!(session).rebuild_arch.insert(symbol),
             BuildSteps::ARCH_EVAL => bs!(session).rebuild_arch_eval.insert(symbol),
-            BuildSteps::VALIDATION => bs!(session).rebuild_validation.insert(symbol)
+            BuildSteps::VALIDATION => {
+                bs!(session).rebuild_validation.insert(symbol);
+                Self::queue_functions(session, symbol);
+            }
         }
     }
 
     pub fn get_rebuild_queue_size(session: &mut SessionInfo) -> usize {
         bs!(session).rebuild_arch.len() +
         bs!(session).rebuild_arch_eval.len() +
+        Self::functions_queue_len(session) +
         bs!(session).rebuild_validation.len()
     }
 
+    fn functions_queue_len(session: &SessionInfo) -> usize {
+        bs!(session).rebuild_func_arch.len() + bs!(session).rebuild_func_arch_eval.len()
+    }
+
+    fn has_work(session: &SessionInfo) -> bool {
+        !bs!(session).rebuild_arch.is_empty() || !bs!(session).rebuild_arch_eval.is_empty()
+        || Self::functions_queue_len(session) > 0 || !bs!(session).rebuild_validation.is_empty()
+    }
+
+    /// Remaining validation work, including the functions to build before the validation
     pub fn validation_queue_len(session: &mut SessionInfo) -> usize {
-        bs!(session).rebuild_validation.len()
+        Self::functions_queue_len(session) + bs!(session).rebuild_validation.len()
     }
 
     fn pop_item(session: &mut SessionInfo, step: BuildSteps) -> Option<BuildableSymbolKey> {
@@ -184,14 +264,14 @@ impl BuildScheduler {
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::default();
 
         //workdone progress
-        let mut reporter = (!bs!(session).rebuild_arch.is_empty() || !bs!(session).rebuild_arch_eval.is_empty() || !bs!(session).rebuild_validation.is_empty())
+        let mut reporter = Self::has_work(session)
             .then(|| ProgressReporterRemaining::start(session, "Odoo: Indexing"));
-        trace!("Starting rebuild: {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), bs!(session).rebuild_validation.len());
-        while !session.sync_odoo.need_rebuild && (!bs!(session).rebuild_arch.is_empty() || !bs!(session).rebuild_arch_eval.is_empty() || !bs!(session).rebuild_validation.is_empty()) {
+        trace!("Starting rebuild: {:?} - {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), Self::functions_queue_len(session), bs!(session).rebuild_validation.len());
+        while !session.sync_odoo.need_rebuild && Self::has_work(session) {
             if DEBUG_THREADS {
-                trace!("remains: {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), bs!(session).rebuild_validation.len());
+                trace!("remains: {:?} - {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), Self::functions_queue_len(session), bs!(session).rebuild_validation.len());
             }
-            let queue_size = bs!(session).rebuild_arch.len() * 3 + bs!(session).rebuild_arch_eval.len() * 2 + bs!(session).rebuild_validation.len();
+            let queue_size = bs!(session).rebuild_arch.len() * 3 + bs!(session).rebuild_arch_eval.len() * 2 + Self::validation_queue_len(session);
             if let Some(reporter) = &mut reporter {
                 reporter.report_progress(queue_size);
             }
@@ -236,6 +316,14 @@ impl BuildScheduler {
                 };
                 continue;
             }
+            // a request is waiting: let it run. Not when building for a request (no_validation), as it needs the functions
+            if !no_validation
+            && session.sync_odoo.state_init == InitState::ODOO_READY
+            && session.sync_odoo.interrupt_rebuild.load(Ordering::SeqCst) {
+                session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
+                session.log_message(MessageType::INFO, S!("Rebuild interrupted"));
+                return true;
+            }
             if no_validation {
                 session.request_delayed_rebuild();
                 if let Some(reporter) = &mut reporter {
@@ -243,11 +331,8 @@ impl BuildScheduler {
                 }
                 break;
             }
-            if session.sync_odoo.state_init == InitState::ODOO_READY
-            && session.sync_odoo.interrupt_rebuild.load(Ordering::SeqCst) {
-                session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
-                session.log_message(MessageType::INFO, S!("Rebuild interrupted"));
-                return true;
+            if Self::build_one_function(session) {
+                continue;
             }
             let sym = BuildScheduler::pop_item(session, BuildSteps::VALIDATION);
             if let Some(sym_key) = sym {
@@ -269,7 +354,7 @@ impl BuildScheduler {
         if let Some(reporter) = &mut reporter {
             reporter.end();
         }
-        trace!("Leaving rebuild with remaining tasks: {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), bs!(session).rebuild_validation.len());
+        trace!("Leaving rebuild with remaining tasks: {:?} - {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), Self::functions_queue_len(session), bs!(session).rebuild_validation.len());
         true
     }
 
@@ -320,6 +405,10 @@ impl BuildScheduler {
         if session.st().ready_for_step(symbol, step) {
             Self::build_now_dependencies(session, symbol, step, visited);
             let entry_point = session.st().get_entry(symbol);
+            let function_build = matches!(symbol, BuildableSymbolKey::Function(_)) && step <= BuildSteps::ARCH_EVAL;
+            if let BuildableSymbolKey::Function(function) = symbol && function_build {
+                session.sync_odoo.functions_in_build.push(function);
+            }
             if let Some(python_buildable) = symbol.as_python_buildable() {
                 if step == BuildSteps::ARCH {
                     if let Some(mut builder) = PythonArchBuilder::new(session.st(), entry_point, python_buildable) {
@@ -333,6 +422,9 @@ impl BuildScheduler {
                     let mut validator = PythonValidator::new(session.st(), entry_point, python_buildable);
                     validator.validate(session);
                 }
+            }
+            if function_build {
+                session.sync_odoo.functions_in_build.pop();
             }
         } else if DEBUG_REBUILD_NOW {
             let current_step = session.st().get_current_build_step(symbol);

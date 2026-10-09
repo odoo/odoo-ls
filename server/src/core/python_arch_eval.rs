@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::vec;
 
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use ruff_python_ast::{Alias, AnyRootNodeRef, ExceptHandler, Expr, ExprNamed, FStringPart, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
+use ruff_python_ast::{Alias, AnyRootNodeRef, ExceptHandler, Expr, ExprAttribute, ExprNamed, FStringPart, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{debug, trace, warn};
 
@@ -68,6 +68,8 @@ impl PythonArchEval {
             trace!("ARCH_EVAL  - PYTHON {} - {}", session.st().path(self.file), session.st().name(symbol));
         }
         session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::ARCH_EVAL, BuildStatus::IN_PROGRESS);
+        // attributes injected by the previous evaluation (see eval_attribute_ext_symbol)
+        session.st_mut().remove_ext_symbols(symbol);
         let (file_info_rc, _) = FileMgr::get_or_recreate_file_info(session, self.file);
         if !file_info_rc.borrow().file_info_ast.borrow().ast.is_built() {
             file_info_rc.borrow_mut().prepare_ast(session);
@@ -527,6 +529,7 @@ impl PythonArchEval {
                     }
                 },
                 AssignTargetType::Attribute(ref attr_expr) => {
+                    self.eval_attribute_ext_symbol(session, assign, attr_expr, range);
                     // Validation for compute methods, only in function mode
                     if self.file_mode {
                         continue;
@@ -586,6 +589,41 @@ impl PythonArchEval {
                         }
                 }
             }
+        }
+    }
+
+    /// `base.x = ...`: inject `x` into each class `base` evaluates to (`self` in a method, an instance
+    /// or a class anywhere), as an ext symbol owned by the evaluated symbol (file or function).
+    fn eval_attribute_ext_symbol(&mut self, session: &mut SessionInfo, assign: &Assign, attr_expr: &ExprAttribute, range: &TextRange) {
+        let owner = self.sym_stack[0];
+        let scope = *self.sym_stack.last().unwrap();
+        let mut deps = vec![vec![], vec![]];
+        if !self.file_mode {
+            deps.push(vec![]);
+        }
+        let (base_evaluations, _) = Evaluation::eval_from_ast(session, &attr_expr.value, scope, &attr_expr.range.start(), false, &mut deps);
+        let classes = SymbolTable::evaluated_classes(session, &base_evaluations);
+        if classes.is_empty() {
+            return;
+        }
+        // evaluate the value before creating the symbols, so that `self.x = self.x + 1` can't evaluate to itself
+        let evaluations = if assign.index.is_some() { //the value is the indexed element of an iterable, so its evaluation would be wrong
+            vec![]
+        } else if let Some(annotation) = assign.annotation.as_ref() {
+            let (evaluations, diags) = Evaluation::eval_from_ast(session, annotation, scope, &range.start(), true, &mut deps);
+            self.diagnostics.extend(diags);
+            evaluations
+        } else if let Some(value) = assign.value.as_ref() {
+            let (evaluations, diags) = Evaluation::eval_from_ast(session, value, scope, &range.start(), false, &mut deps);
+            self.diagnostics.extend(diags);
+            evaluations
+        } else {
+            vec![]
+        };
+        session.st_mut().insert_dependencies(self.file, &deps, self.current_step);
+        for class in classes {
+            let variable = session.st_mut().add_new_ext_symbol(class.into(), &attr_expr.attr.id, attr_expr.attr.range, owner);
+            session.st_mut()[variable].evaluations = evaluations.clone();
         }
     }
 
