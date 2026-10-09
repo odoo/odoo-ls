@@ -13,6 +13,7 @@ use crate::features::ast_utils::{AstUtils, StringContext};
 use crate::features::features_utils::{FeaturesUtils, SegmentPick, StringResolution};
 use crate::features::owl_component_utils::template_reference_resolves;
 use crate::threads::SessionInfo;
+use crate::utils::HashSet;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -352,9 +353,13 @@ impl<'a, 'b, 's> SemanticTokenVisitor<'a, 'b, 's> {
         };
         match resolved {
             StringResolution::Members(members) => {
+                // A field defined in several classes gives several symbols: one token per range
+                let mut tokenized = HashSet::default();
                 for (sym, segment_range) in members {
-                    if let Some((token_type, modifiers)) = classify(self.session, sym, TokenOrigin::Attr) {
+                    if !tokenized.contains(&segment_range)
+                        && let Some((token_type, modifiers)) = classify(self.session, sym, TokenOrigin::Attr) {
                         self.push_raw(segment_range, token_type, modifiers);
+                        tokenized.insert(segment_range);
                     }
                 }
             },
