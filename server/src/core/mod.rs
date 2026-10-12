@@ -25,6 +25,7 @@ pub mod python_arch_builder_hooks;
 pub mod python_arch_eval;
 pub mod python_arch_eval_hooks;
 pub mod python_odoo_builder;
+pub mod pylint_diagnostics;
 pub mod python_validator;
 pub mod python_utils;
 pub mod symbols;

@@ -21,6 +21,7 @@ use super::entry_point::EntryPoint;
 use super::evaluation::{Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak, EvaluationValue};
 use super::file_mgr::{FileInfo, FileMgr};
 use super::import_resolver::manual_import;
+use super::pylint_diagnostics;
 use super::python_arch_eval::PythonArchEval;
 
 #[derive(Debug)]
@@ -87,6 +88,7 @@ impl PythonValidator {
                     let old_noqa = session.current_noqa.clone();
                     session.current_noqa = session.st().get_noqas(symbol);
                     self.validate_body(session, file_info_ast.get_stmts().as_ref().unwrap());
+                    self.diagnostics.extend(pylint_diagnostics::check_python_file(session, self.file, &file_info_rc.borrow(), &file_info_ast));
                     session.current_noqa = old_noqa;
                 }
                 drop(file_info_ast);

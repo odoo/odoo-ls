@@ -34,7 +34,7 @@ e(5)
 e(5, d=3)
 e(6, d=5, e=6, f=7)
 
-def e(a, *args, **kwargs):
+def e(a, *args, **kwargs): # pylint: disable=function-redefined
     pass
 
 e(5)

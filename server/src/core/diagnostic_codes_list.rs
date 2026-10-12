@@ -15,7 +15,8 @@ Sections:
 - JavaScript/TypeScript 06
  */
 
-diagnostic_codes! {
+// The PyLint codes are defined in pylint_diagnostics.rs
+crate::with_pylint_diagnostic_codes! { diagnostic_codes! {
 /**
 See the error message to get the details from Ruff
 */
@@ -599,4 +600,4 @@ OLS06000, DiagnosticSetting::Error, "Template not found",
 * manifest dependencies. 
 */
 OLS06001, DiagnosticSetting::Error, "'{0}' is not in the dependencies of module '{1}'",
-}
+} }

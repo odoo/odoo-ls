@@ -24,3 +24,4 @@ pub mod ols05000s;
 pub mod ols05073_74;
 pub mod implicit_class_method_no_ols_01007;
 pub mod panic_super_arg;
+pub mod pylint;

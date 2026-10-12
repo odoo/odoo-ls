@@ -19,6 +19,7 @@ use crate::utils::{HashMap, HashSet};
 use crate::core::{config::{DiagnosticFilter, DiagnosticFilterPathType}, js_arch_builder, js_utils};
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode, DiagnosticSetting};
 use crate::core::text_document::TextDocument;
+use crate::core::pylint_diagnostics::{self, PylintPragmaScope};
 use crate::features::node_index_ast::IndexedModule;
 use crate::core::symbols::symbol_keys::SourceFileKey;
 use crate::threads::SessionInfo;
@@ -720,6 +721,7 @@ impl FileInfo {
             match token.kind() {
                 TokenKind::Comment => {
                     let text = &source[token.range()];
+                    let mut directive = None;
                     if text.starts_with("#noqa") || text.starts_with("# noqa") || text.starts_with("# odools: noqa") {
                         let after_noqa = text.split("noqa").nth(1);
                         if let Some(after_noqa) = after_noqa {
@@ -731,23 +733,39 @@ impl FileInfo {
                                 }
                             }
                             if !codes.is_empty() {
-                                noqa_to_add = Some(NoqaInfo::Codes(codes));
+                                directive = Some(NoqaInfo::Codes(codes));
                             } else {
-                                noqa_to_add = Some(NoqaInfo::All);
+                                directive = Some(NoqaInfo::All);
                             }
-                            let source_location = text_document.index().source_location(token.start(), text_document.contents(), encoding);
-                            if let Some(previous_token) = previous_token {
-                                let prev_location = text_document.index().source_location(previous_token.start(), text_document.contents(), encoding);
-                                if prev_location.line == source_location.line {
-                                    lines.insert(source_location.line.to_zero_indexed() as u32, noqa_to_add.unwrap());
-                                    noqa_to_add = None;
-                                    continue;
-                                }
+                        }
+                    } else if let Some(pragma) = pylint_diagnostics::parse_pylint_pragma(text) {
+                        match pragma.scope {
+                            PylintPragmaScope::LikeNoqa => directive = Some(pragma.noqa),
+                            PylintPragmaScope::NextLine => {
+                                let line = text_document.index().source_location(token.start(), text_document.contents(), encoding).line.to_zero_indexed() as u32;
+                                let noqa = match lines.remove(&(line + 1)) {
+                                    Some(existing) => combine_noqa_info(&[existing, pragma.noqa]),
+                                    None => pragma.noqa,
+                                };
+                                lines.insert(line + 1, noqa);
                             }
-                            if is_first_expr {
-                                add_noqa_bloc(&mut blocs, 0, noqa_to_add.unwrap());
+                            PylintPragmaScope::File => add_noqa_bloc(&mut blocs, 0, pragma.noqa),
+                        }
+                    }
+                    if let Some(directive) = directive {
+                        noqa_to_add = Some(directive);
+                        let source_location = text_document.index().source_location(token.start(), text_document.contents(), encoding);
+                        if let Some(previous_token) = previous_token {
+                            let prev_location = text_document.index().source_location(previous_token.start(), text_document.contents(), encoding);
+                            if prev_location.line == source_location.line {
+                                lines.insert(source_location.line.to_zero_indexed() as u32, noqa_to_add.unwrap());
                                 noqa_to_add = None;
+                                continue;
                             }
+                        }
+                        if is_first_expr {
+                            add_noqa_bloc(&mut blocs, 0, noqa_to_add.unwrap());
+                            noqa_to_add = None;
                         }
                     }
                     if parse_test_comments

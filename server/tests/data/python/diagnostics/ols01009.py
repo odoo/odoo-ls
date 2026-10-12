@@ -8,14 +8,14 @@ def a():
 
 a()
 
-def b(*args):
+def b(*args): # pylint: disable=function-redefined
     pass
 
 b(5)
 b(5, d=5) #OLS01008
 b(6, d=5, e=5) #OLS01008
 
-if intput():
+if intput(): # pylint: disable=undefined-variable
     def c(x, y):
         pass
 else:
@@ -25,7 +25,7 @@ else:
 c(5) #OLS01009
 
 
-if intput():
+if intput(): # pylint: disable=undefined-variable
     def d(x, y):
         pass
 else:
