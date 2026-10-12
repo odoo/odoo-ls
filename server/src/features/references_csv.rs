@@ -26,14 +26,14 @@ impl CsvAstReferenceVisitor {
                 headers.push(oyarn!("{}", h));
                 if h.is_empty() { continue; }
                 let header_elts = h.splitn(2, [':', '/']).collect::<Vec<_>>();
-                if let &ReferenceTarget::Symbol(target_sym) = target {
+                if let ReferenceTarget::Symbols(target_syms) = target {
                     let Some(model_name) = model_name else {continue;};
                     let Some(model) = session.sync_odoo.models.get(model_name).cloned() else {return vec![];};
                     let Some(main_symbol) = model.borrow().get_main_symbols(session, module).next() else {return results;};
                     let mut deep_field_walker = DeepFieldEvalWalker::new(main_symbol.into(), module);
                     let symbols =
                         deep_field_walker.get_model_fields(session, main_symbol.into(), header_elts[0]);
-                    if symbols.contains(&target_sym) {
+                    if symbols.iter().any(|sym| target_syms.contains(sym)) {
                         results.push(Location {
                             uri: uri.clone(),
                             range: session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, &std::ops::Range {
@@ -47,7 +47,7 @@ impl CsvAstReferenceVisitor {
                     };
                     let Some(&sub_name) = header_elts.get(1) else { continue };
                     let sub_symbols = deep_field_walker.get_model_fields(session, next_base, sub_name);
-                    if sub_symbols.contains(&target_sym) {
+                    if sub_symbols.iter().any(|sym| target_syms.contains(sym)) {
                         results.push(Location {
                             uri: uri.clone(),
                             range: session.sync_odoo.get_file_mgr().borrow().std_range_to_range(session, &path, &std::ops::Range {

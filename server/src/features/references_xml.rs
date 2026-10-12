@@ -70,17 +70,21 @@ impl XmlAstReferenceVisitor {
     fn visit_button<'a>(session: &mut SessionInfo<'_>, node: &Node<'a, '_>, from_module: Option<ModuleKey>, scope: XmlScope<'a>, results: &mut Vec<Range<usize>>, target: &ReferenceTarget) {
         let is_action_type = node.attribute("type") == Some("action");
         if !is_action_type
-            && let &ReferenceTarget::Symbol(SymbolKey::Function(target_fn)) = target
+            && let ReferenceTarget::Symbols(targets) = target
         {
             for attr in node.attributes() {
                 if attr.name() != "name" { continue; }
-                if session.st()[target_fn].name != attr.value() { continue; }
-                let target_class = session.st().get_in_parents(target_fn.into(), &[SymType::CLASS], true);
-                let Some(SymbolKey::Class(target_class)) = target_class else { continue; };
-                let Some(target_model) = session.st()[target_class]._model.as_ref() else { continue; };
                 let Some(record_model) = scope.record_model.filter(|m| !m.is_empty()) else { continue; };
-                if target_model.name == *record_model {
-                    results.push(attr.range_value());
+                for &target_fn in targets.iter() {
+                    let SymbolKey::Function(target_fn) = target_fn else { continue; };
+                    if session.st()[target_fn].name != attr.value() { continue; }
+                    let target_class = session.st().get_in_parents(target_fn.into(), &[SymType::CLASS], true);
+                    let Some(SymbolKey::Class(target_class)) = target_class else { continue; };
+                    let Some(target_model) = session.st()[target_class]._model.as_ref() else { continue; };
+                    if target_model.name == *record_model {
+                        results.push(attr.range_value());
+                        break;
+                    }
                 }
             }
         }
@@ -99,12 +103,11 @@ impl XmlAstReferenceVisitor {
                             results.push(attr.range_value());
                         }
                     },
-                    ReferenceTarget::Symbol(s) => {
-                        if let &SymbolKey::Class(class_key) = s
-                            && let Some(model) = &session.st()[class_key]._model
-                                && model.name == attr.value() {
-                                    results.push(attr.range_value());
-                                }
+                    ReferenceTarget::Symbols(s) => {
+                        if s.iter().any(|&sym| matches!(sym, SymbolKey::Class(class_key)
+                            if session.st()[class_key]._model.as_ref().is_some_and(|model| model.name == attr.value()))) {
+                                results.push(attr.range_value());
+                            }
                     }
                 }
             } else if attr.name() == "id"
@@ -125,16 +128,20 @@ impl XmlAstReferenceVisitor {
         for attr in node.attributes() {
             if attr.name() == "name" {
                 child_scope.field_name = Some(attr.value());
-                let &ReferenceTarget::Symbol(SymbolKey::Variable(target)) = target else {continue;};
-                if !SymbolTable::is_field(session, target.into()) {continue;}
-                if session.st()[target].name != attr.value() {continue;}
-                //field name matches, but we still have to check model is the same
+                let ReferenceTarget::Symbols(targets) = target else {continue;};
                 let Some(model_name) = scope.record_model.filter(|m| !m.is_empty()) else {continue;};
-                let field_model = session.st().get_in_parents(target.into(), &[SymType::CLASS], true);
-                let Some(SymbolKey::Class(field_model)) = field_model else {continue;};
-                let Some(model) = session.st()[field_model]._model.as_ref() else {continue;};
-                if model.name == *model_name {
-                    results.push(attr.range_value());
+                for &target in targets.iter() {
+                    let SymbolKey::Variable(target) = target else {continue;};
+                    if !SymbolTable::is_field(session, target.into()) {continue;}
+                    if session.st()[target].name != attr.value() {continue;}
+                    //field name matches, but we still have to check model is the same
+                    let field_model = session.st().get_in_parents(target.into(), &[SymType::CLASS], true);
+                    let Some(SymbolKey::Class(field_model)) = field_model else {continue;};
+                    let Some(model) = session.st()[field_model]._model.as_ref() else {continue;};
+                    if model.name == *model_name {
+                        results.push(attr.range_value());
+                        break;
+                    }
                 }
             } else if attr.name() == "ref"
                 && XmlAstReferenceVisitor::test_attr_as_xml_id(session.st(), &attr, from_module, target) {
@@ -162,9 +169,9 @@ impl XmlAstReferenceVisitor {
             return;
         };
         if (field == "model" || field == "res_model")
-            && let &ReferenceTarget::Symbol(SymbolKey::Class(target)) = target
-                && let Some(model) = &session.st()[target]._model
-                    && model.name == node.text().unwrap() {
+            && let ReferenceTarget::Symbols(targets) = target
+                && targets.iter().any(|&sym| matches!(sym, SymbolKey::Class(class_key)
+                    if session.st()[class_key]._model.as_ref().is_some_and(|model| model.name == node.text().unwrap()))) {
                         results.push(node.range());
                     }
         if field == "context" {

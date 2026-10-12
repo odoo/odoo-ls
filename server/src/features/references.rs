@@ -31,7 +31,7 @@ use std::{cell::RefCell, path::Path, rc::Rc};
 
 #[derive(Debug, Clone)]
 pub enum ReferenceTarget {
-    Symbol(SymbolKey),
+    Symbols(HashSet<SymbolKey>),
     String(String),
 }
 
@@ -39,13 +39,6 @@ impl ReferenceTarget {
     pub fn as_string(&self) -> Option<&String> {
         match self {
             ReferenceTarget::String(s) => Some(s),
-            _ => None,
-        }
-    }
-
-    pub fn as_symbol(&self) -> Option<SymbolKey> {
-        match self {
-            ReferenceTarget::Symbol(s) => Some(*s),
             _ => None,
         }
     }
@@ -81,6 +74,12 @@ impl ReferenceFeature {
 
 
         let mut locations = Vec::new();
+        // A model name resolves to every class of the model, so search all of them in one visit per file
+        let target = ReferenceTarget::Symbols(def_sources.iter().filter_map(|definition| match definition.source {
+            GotoSourceType::SymbolKey(symbol) if matches!(symbol.typ(), SymType::CLASS | SymType::FUNCTION | SymType::VARIABLE | SymType::FILE) => Some(symbol),
+            _ => None,
+        }).collect());
+        let mut visited_files = HashSet::default();
         for definition in def_sources.iter() {
             let GotoSourceType::SymbolKey(definition_source) = definition.source else {
                 continue;
@@ -151,16 +150,19 @@ impl ReferenceFeature {
                         if target_typ != SymType::CLASS && !dep_file_info.borrow().file_info_ast.borrow().text_document.as_ref().is_some_and(|td| td.contents().contains(target_name.as_str())) {
                             continue;
                         }
+                        if !matches!(file, SourceFileKey::CsvFile(_)) && !visited_files.insert(file) {
+                            continue;
+                        }
                         match file {
                             SourceFileKey::File(_) | SourceFileKey::PythonPackage(_) | SourceFileKey::Module(_) => {
-                                locations.extend(ReferenceFeature::references_in_file(session, file, &dep_file_info, &ReferenceTarget::Symbol(definition_source)));
+                                locations.extend(ReferenceFeature::references_in_file(session, file, &dep_file_info, &target));
                             },
                             SourceFileKey::XmlFile(xml_file) => {
                                 let data = dep_file_info.borrow().file_info_ast.borrow().text_document.as_ref()?.contents().to_string();
                                 let document = roxmltree::Document::parse(&data);
                                 if let Ok(document) = document {
                                     let root = document.root_element();
-                                    locations.extend(XmlAstReferenceVisitor::search_target(session, xml_file, root, &ReferenceTarget::Symbol(definition_source)));
+                                    locations.extend(XmlAstReferenceVisitor::search_target(session, xml_file, root, &target));
                                 }
                             },
                             SourceFileKey::CsvFile(csv_file) => {
@@ -171,7 +173,7 @@ impl ReferenceFeature {
                                     if let Some(SymbolKey::Class(model_class)) = model_class
                                         && let Some(model) = &session.st()[model_class]._model {
                                             let model_name = model.name.clone();
-                                            locations.extend(CsvAstReferenceVisitor::search_target(session, csv_file, &mut csv_reader, Some(&model_name), &ReferenceTarget::Symbol(definition_source), &data));
+                                            locations.extend(CsvAstReferenceVisitor::search_target(session, csv_file, &mut csv_reader, Some(&model_name), &target, &data));
                                         }
                                 }
                             },
@@ -272,6 +274,9 @@ impl ReferenceFeature {
         if locations.is_empty() {
             None
         } else {
+            locations.sort_by(|a, b| (a.uri.as_str(), a.range.start.line, a.range.start.character, a.range.end.line, a.range.end.character)
+                .cmp(&(b.uri.as_str(), b.range.start.line, b.range.start.character, b.range.end.line, b.range.end.character)));
+            locations.dedup();
             Some(locations)
         }
     }
@@ -541,9 +546,8 @@ impl ReferenceVisitor {
         let Some(eval_search) = session.sync_odoo.evaluation_search.clone() else {
             return;
         };
-        let eval_search_sym = match eval_search {
-            ReferenceTarget::Symbol(s) => s,
-            _ => return,
+        let ReferenceTarget::Symbols(eval_search_syms) = eval_search else {
+            return;
         };
         for alias in name_aliases.iter() {
             if alias.name.id == "*" {
@@ -561,7 +565,7 @@ impl ReferenceVisitor {
                     panic!("Internal error: evaluated has invalid evaluationType");
                 };
                 if let Some(symbol) = w.weak.upgrade(session.st())
-                    && symbol == eval_search_sym {
+                    && eval_search_syms.contains(&symbol) {
                         let path = session.st().path(file_symbol).to_string();
                         let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, alias.range);
                         session.sync_odoo.evaluation_locations.push(Location {

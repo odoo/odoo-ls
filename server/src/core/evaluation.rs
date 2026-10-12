@@ -1566,7 +1566,7 @@ impl Evaluation {
                     break;
                 }
                 if eval.symbol.sym.has_weak() && let Some(weak) = eval.symbol.sym.get_weak().weak.upgrade(session.st())
-                    && let Some(evaluation_search_sym) = evaluation_search.as_symbol() && weak == evaluation_search_sym {
+                    && let ReferenceTarget::Symbols(evaluation_search_syms) = evaluation_search && evaluation_search_syms.contains(&weak) {
                         found_one_reference |= record_evaluation_hit(session, parent, ast.range());
                     }
                 if let Some(value) = eval.value.as_ref()
@@ -1578,12 +1578,11 @@ impl Evaluation {
                                         found_one_reference |= record_evaluation_hit(session, parent, ast.range());
                                     }
                                 },
-                                ReferenceTarget::Symbol(evaluation_search_sym) => {
-                                    if let SymbolKey::Class(class_key) = *evaluation_search_sym
-                                        && let Some(model_data) = session.st()[class_key]._model.as_ref()
-                                            && model_data.name == constant.value.to_str() {
-                                                record_evaluation_hit(session, parent, constant.range);
-                                            }
+                                ReferenceTarget::Symbols(evaluation_search_syms) => {
+                                    if evaluation_search_syms.iter().any(|&sym| matches!(sym, SymbolKey::Class(class_key)
+                                        if session.st()[class_key]._model.as_ref().is_some_and(|model_data| model_data.name == constant.value.to_str()))) {
+                                            record_evaluation_hit(session, parent, constant.range);
+                                        }
                                 }
                             }
                         }

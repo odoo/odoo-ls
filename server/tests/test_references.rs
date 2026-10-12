@@ -224,6 +224,24 @@ fn test_references() {
     assert!(references.is_empty(), "Some references were not expected: {}",
         references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
     );
+
+    // model name string resolving to several classes of the model
+    let models_file = test_addons_path.join("module_1").join("models").join("models.py").sanitize();
+    let mut references = get_references(&mut session, &models_file, Position::new(31, 20));
+    assert_in_result(&mut references, "module_1/models/models.py", 14, 0);
+    assert_in_result(&mut references, "module_1/models/models.py", 15, 12);
+    assert_in_result(&mut references, "module_1/models/models.py", 23, 28);
+    assert_in_result(&mut references, "module_1/models/models.py", 26, 0);
+    assert_in_result(&mut references, "module_1/models/models.py", 27, 12);
+    assert_in_result(&mut references, "module_1/models/models.py", 28, 15);
+    assert_in_result(&mut references, "module_1/models/models.py", 31, 15);
+    assert_in_result(&mut references, "module_1/models/models.py", 35, 15);
+    assert_in_result(&mut references, "module_1/models/models.py", 42, 16);
+    assert_in_result(&mut references, "module_1/models/models.py", 79, 17);
+    assert_in_result(&mut references, "module_1/models/models.py", 81, 38);
+    assert!(references.is_empty(), "Some references were not expected: {}",
+        references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
+    );
     // for r in references.iter() {
     //     error!("Reference found at {}:{}:{}", r.uri.as_str(), r.range.start.line, r.range.start.character);
     // }
