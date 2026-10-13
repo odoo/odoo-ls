@@ -68,3 +68,24 @@ fn test_ols03029_not_in_tests() {
         .collect();
     assert!(on_line.is_empty(), "expected no OLS03029 in tests, got: {:?}", on_line);
 }
+
+/// OLS03029 is not raised on AbstractModels, that are often mixins using fields declared by the models
+/// inheriting from them.
+#[test]
+fn test_ols03029_not_on_abstract_model() {
+    let (mut odoo, config) = setup_server(true);
+    let mut session = create_init_session(&mut odoo, config);
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("data")
+        .join("addons")
+        .join("module_1")
+        .join("models")
+        .join("abstract_attr_probe.py")
+        .sanitize();
+    let diagnostics = get_diagnostics_for_path(&mut session, &path);
+
+    // Line 9: self.concrete_value = 1 → attribute set on a recordset of an AbstractModel
+    let on_line = diag_on_line(&diagnostics, 9);
+    assert!(on_line.is_empty(), "expected no diagnostic on an AbstractModel, got: {:?}", on_line);
+}
