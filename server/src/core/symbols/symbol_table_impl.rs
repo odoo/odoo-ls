@@ -1316,6 +1316,23 @@ impl SymbolTable {
         )
     }
 
+    /// Whether `key` is in a `tests` directory (of its module, or of odoo itself)
+    pub fn is_in_tests(&self, key: impl Into<SymbolKey>) -> bool {
+        let mut key = key.into();
+        loop {
+            if !self.is_file_content(key) && self.name(key) == "tests" {
+                return true;
+            }
+            if matches!(key, SymbolKey::Module(_)) {
+                return false;
+            }
+            let Some(parent) = self.parent(key) else {
+                return false;
+            };
+            key = parent;
+        }
+    }
+
     pub fn find_module(&self, key: impl Into<SymbolKey>) -> Option<ModuleKey> {
         let mut key = key.into();
         loop {

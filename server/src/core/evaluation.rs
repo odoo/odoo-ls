@@ -1076,6 +1076,9 @@ impl Evaluation {
                 if base_evals.is_empty() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
+                // The same base can be reached by several evaluations (ex: one per override of the called method):
+                // report the attribute diagnostics only once per base
+                let mut reported_bases: HashSet<(SymbolKey, bool)> = HashSet::default();
                 for base_eval in base_evals.iter() {
                     let base_ref = base_eval.symbol.get_symbol(session, Some(context), &mut diagnostics, Some(parent));
                     if base_ref.is_expired_if_weak(session.st()) {
@@ -1127,7 +1130,7 @@ impl Evaluation {
                                     }
                                     evals.push(eval);
                                 });
-                            } else if is_in_validation {
+                            } else if is_in_validation && reported_bases.insert((base_loc, is_super)) {
                                 let mut found_through_inheritance = false;
                                 if module.is_some() {
                                     // Retry unfiltered: if it resolves at all, it's only reachable through

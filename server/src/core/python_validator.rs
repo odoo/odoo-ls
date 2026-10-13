@@ -21,6 +21,7 @@ use super::entry_point::EntryPoint;
 use super::evaluation::{Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak, EvaluationValue};
 use super::file_mgr::{FileInfo, FileMgr};
 use super::import_resolver::manual_import;
+use super::python_utils::{self, AssignTargetType};
 use super::python_arch_eval::PythonArchEval;
 
 #[derive(Debug)]
@@ -369,10 +370,56 @@ impl PythonValidator {
         if let Some(value) = assign.value.as_ref() {
             self.validate_expr(session, value, &assign.range.start());
         }
+        self.validate_assign_targets(session, std::slice::from_ref(&assign.target), &assign.range.start());
     }
 
     fn visit_assign(&mut self, session: &mut SessionInfo, assign: &StmtAssign) {
         self.validate_expr(session, &assign.value, &assign.range.start());
+        self.validate_assign_targets(session, &assign.targets, &assign.range.start());
+    }
+
+    /// `base.x = ...`: warn if `base` is a recordset and `x` is not a field nor a member of the model (OLS03029).
+    /// Not in tests, where it is a common and controlled practice
+    fn validate_assign_targets(&mut self, session: &mut SessionInfo, targets: &[Expr], max_infer: &TextSize) {
+        let scope = *self.sym_stack.last().unwrap();
+        if session.st().is_in_tests(scope) {
+            return;
+        }
+        for assign in python_utils::unpack_assign(targets, None, None) {
+            let AssignTargetType::Attribute(attr_expr) = assign.target else {
+                continue;
+            };
+            let mut deps = vec![vec![], vec![], vec![]];
+            let (base_evals, _) = Evaluation::eval_from_ast(session, &attr_expr.value, scope, max_infer, false, &mut deps);
+            session.sync_odoo.symbol_table.insert_dependencies(self.file, &deps, BuildSteps::VALIDATION);
+            let mut is_ext_symbol_on_recordset = false;
+            'evals: for base_eval in base_evals.iter() {
+                let base_ref = base_eval.symbol.get_symbol(session, None, &mut vec![], None);
+                for ibase in SymbolTable::follow_ref(&base_ref, session, None, false, false, None, None) {
+                    if !ibase.has_weak() || !ibase.get_weak().instance.unwrap_or(false) {
+                        continue;
+                    }
+                    let Some(SymbolKey::Class(base_class)) = ibase.upgrade_weak(session.st()) else {
+                        continue;
+                    };
+                    if session.st()[base_class]._model.is_none() {
+                        continue;
+                    }
+                    let (attributes, _) = SymbolTable::get_member_symbol(session, base_class.into(), &attr_expr.attr, self.current_module, false, false, false, true, false);
+                    if !attributes.is_empty() && attributes.iter().all(|&attribute| matches!(attribute, SymbolKey::Variable(v) if session.st().is_ext_symbol(v))) {
+                        is_ext_symbol_on_recordset = true;
+                        break 'evals;
+                    }
+                }
+            }
+            if is_ext_symbol_on_recordset
+                && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03029, &[&attr_expr.attr]) {
+                    self.diagnostics.push(Diagnostic {
+                        range: Range::new(Position::new(attr_expr.range.start().to_u32(), 0), Position::new(attr_expr.range.end().to_u32(), 0)),
+                        ..diagnostic
+                    });
+                }
+        }
     }
 
     fn visit_with(&mut self, session: &mut SessionInfo, stmt_with: &StmtWith) {
