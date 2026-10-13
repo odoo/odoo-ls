@@ -316,12 +316,13 @@ impl Model {
         symbol_set
     }
 
-    /// Gets recursively all models that are inherited using "inherits" mechanism.
-    pub fn get_inherits_models(&self, session: &SessionInfo, from_module: Option<ModuleKey>) -> Vec<ModelKey> {
+    /// Gets all models that are inherited using "inherits" mechanism, by the model or by the models it
+    /// inherits from (ex: a mixin declaring `_inherits`).
+    pub fn get_inherits_models(model_key: ModelKey, session: &SessionInfo, from_module: Option<ModuleKey>) -> Vec<ModelKey> {
+        let symbols = Self::get_full_model_classes(model_key, session, from_module).into_iter().sorted();
         let st = &session.sync_odoo.symbol_table;
         let mut res = vec![];
         let mut already_in = HashSet::default();
-        let symbols = Self::filter_by_module(self.get_python_symbols(st), st, from_module);
         for symbol_key in symbols {
             let Some(model_data) = &st[symbol_key]._model else {
                 continue;
