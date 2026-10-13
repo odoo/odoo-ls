@@ -89,3 +89,28 @@ fn test_ols03029_not_on_abstract_model() {
     let on_line = diag_on_line(&diagnostics, 9);
     assert!(on_line.is_empty(), "expected no diagnostic on an AbstractModel, got: {:?}", on_line);
 }
+
+/// The fields given by the `_inherits` of a mixin are members of the models inheriting from the mixin:
+/// no OLS03029 on their assignment, nor OLS02003 on their usage.
+#[test]
+fn test_ols03029_inherits_of_mixin() {
+    let (mut odoo, config) = setup_server(true);
+    let mut session = create_init_session(&mut odoo, config);
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("data")
+        .join("addons")
+        .join("module_1")
+        .join("models")
+        .join("mixin_inherits_probe.py")
+        .sanitize();
+    let diagnostics = get_diagnostics_for_path(&mut session, &path);
+
+    // Line 24: self.target_value = 1 → field given by the `_inherits` of the mixin
+    let on_line = diag_on_line(&diagnostics, 24);
+    assert!(on_line.is_empty(), "expected no diagnostic on the assignment of a field given by the _inherits of a mixin, got: {:?}", on_line);
+
+    // Line 25: return self.target_value
+    let on_line = diag_on_line(&diagnostics, 25);
+    assert!(on_line.is_empty(), "expected no diagnostic on the usage of a field given by the _inherits of a mixin, got: {:?}", on_line);
+}

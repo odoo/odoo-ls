@@ -2206,7 +2206,7 @@ impl SymbolTable {
                         }
                     }
                 }
-                for model_inherits_symbol in model.clone().borrow().get_inherits_models(session, from_module) {
+                for model_inherits_symbol in Model::get_inherits_models(model.clone(), session, from_module) {
                     //only fields are visible on inherits, not methods
                     let model_symbols = Model::get_full_model_classes(model_inherits_symbol, session, from_module);
                     for model_symbol in model_symbols {
