@@ -379,7 +379,7 @@ impl PythonValidator {
     }
 
     /// `base.x = ...`: warn if `base` is a recordset and `x` is not a field nor a member of the model (OLS03029).
-    /// Not in tests, where it is a common and controlled practice
+    /// Not in tests, where it is a common and controlled practice, nor on AbstractModels
     fn validate_assign_targets(&mut self, session: &mut SessionInfo, targets: &[Expr], max_infer: &TextSize) {
         let scope = *self.sym_stack.last().unwrap();
         if session.st().is_in_tests(scope) {
@@ -402,7 +402,8 @@ impl PythonValidator {
                     let Some(SymbolKey::Class(base_class)) = ibase.upgrade_weak(session.st()) else {
                         continue;
                     };
-                    if session.st()[base_class]._model.is_none() {
+                    // An AbstractModel is often a mixin, using fields that are declared by the models inheriting from it
+                    if session.st()[base_class]._model.as_ref().is_none_or(|model_data| model_data.is_abstract) {
                         continue;
                     }
                     let (attributes, _) = SymbolTable::get_member_symbol(session, base_class.into(), &attr_expr.attr, self.current_module, false, false, false, true, false);
