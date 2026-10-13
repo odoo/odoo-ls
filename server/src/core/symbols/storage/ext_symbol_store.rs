@@ -118,6 +118,18 @@ impl SymbolTable {
         result
     }
 
+    /// Whether `variable` has been injected as an ext symbol (by its parent, that is its owner)
+    pub fn is_ext_symbol(&self, variable: VariableKey) -> bool {
+        let owner: SymbolKey = self[variable].parent().into();
+        let Some(decls) = self.ext_symbols.symbols_by_owner.get(&owner) else {
+            return false;
+        };
+        decls.values()
+            .flat_map(|named| named.values())
+            .flat_map(|sections| sections.values())
+            .any(|variables| variables.contains(&variable))
+    }
+
     /// Returns all the ext symbols injected into `target` whose name starts with `name_prefix`, grouped by name
     pub fn get_all_ext_symbols(&self, target: SymbolKey, name_prefix: &str) -> HashMap<OYarn, Vec<VariableKey>> {
         let mut result: HashMap<OYarn, Vec<VariableKey>> = HashMap::default();

@@ -205,6 +205,16 @@ OLS03027, DiagnosticSetting::Error, "Invalid field for operator: 'access'; The f
 */
 OLS03028, DiagnosticSetting::Warning, "'{0}' is only defined through indirect inheritance from module '{1}', which are not declared as a dependency",
 /**
+* You are assigning an attribute on a recordset (`self.x = ...`) that is not a field nor a member
+* of the model. A recordset is only a short-lived view on some records: the ORM creates new recordset objects all the time (browse, sudo, with_context, filtered,
+* mapped, iteration, indexing, ...), and the attribute only lives on the python object it was set on.
+* It is not shared with the other recordsets of the same records, not stored in the database nor in
+* the ORM cache, and is lost as soon as the code (or an override in another module) works on
+* another recordset. Use a field (possibly non-stored), the context, or pass the value explicitly
+* as a parameter instead.
+*/
+OLS03029, DiagnosticSetting::Warning, "'{0}' is not a field nor a member of the model: it is only set on this recordset, and lost on any other recordset of the same records (browse, sudo, with_context, filtered, iteration...)",
+/**
 * Form is no longer available on odoo.tests.common, thus it should not be imported from there.
 */
 OLS03301, DiagnosticSetting::Warning, "Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form",

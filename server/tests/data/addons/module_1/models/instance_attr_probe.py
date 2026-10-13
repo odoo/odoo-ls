@@ -1,4 +1,4 @@
-from odoo import models
+from odoo import fields, models
 from odoo.addons.base.models.ir_asset import AssetPaths
 
 
@@ -12,3 +12,8 @@ class InstanceAttrProbe(models.Model):
 
     def other(self):
         return self.cache
+
+    def set_field(self):
+        self.value = 1
+
+    value = fields.Integer()

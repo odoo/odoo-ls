@@ -50,4 +50,14 @@ fn test_ols03028_indirect_method_inheritance() {
         "expected no diagnostics on line 11 (own_method call), got: {:?}",
         on_line
     );
+
+    // Line 18: self.get_record().indirect_method() → get_record has two evaluations (one per override) leading to the same class,
+    // the diagnostic must be reported only once.
+    let on_line = diag_on_line(&diagnostics, 18);
+    assert_eq!(
+        on_line.len(),
+        1,
+        "expected exactly one diagnostic on line 19 (indirect_method call on a base evaluated twice), got: {:?}",
+        on_line
+    );
 }
