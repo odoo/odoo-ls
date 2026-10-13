@@ -27,7 +27,6 @@ use ruff_python_ast::{
     ExprYield, Stmt, StmtGlobal, StmtImport, StmtImportFrom, StmtNonlocal,
 };
 use ruff_text_size::{Ranged, TextSize};
-use crate::utils::HashSet;
 use std::{cell::RefCell, rc::Rc};
 
 
@@ -943,7 +942,7 @@ fn complete_name(session: &mut SessionInfo, file: SourceFileKey, offset: usize, 
     Some(CompletionResponse::List(CompletionList {
         is_incomplete: false,
         items: symbols.into_iter().map(|(symbol_name, symbols)| {
-            build_completion_item_from_symbol(session, symbols, &symbol_name, Context::default())
+            build_completion_item_from_symbols(session, symbols, &symbol_name, Context::default())
         }).collect::<Vec<_>>(),
     }))
 }
@@ -1105,7 +1104,7 @@ fn add_nested_field_names(
                     // Remove duplicates, except those of different type, where it show a user that a field and a function have a name collision.
                     for final_sym in symbols.into_iter().unique_by(|&sym| sym.typ()) {
                         if specific_field_type.is_none() || SymbolTable::is_specific_field(session, final_sym, &["Many2one", "One2many", "Many2many", specific_field_type.as_ref().unwrap().as_str()]){
-                            items.push(build_completion_item_from_symbol(session, vec![final_sym], &symbol_name, Context::default()));
+                            items.push(build_completion_item_from_symbols(session, vec![final_sym], &symbol_name, Context::default()));
                             found_one = true;
                         }
                     }
@@ -1175,29 +1174,44 @@ fn add_model_attributes(
         }
         if symbol_name.starts_with(attribute_name) {
             let context_of_symbol = Context::from_iter([(ContextKey::BaseAttr, ContextValue::SYMBOL(parent_sym.into()))]);
-            items.push(build_completion_item_from_symbol(session, vec![*final_sym], &symbol_name, context_of_symbol));
+            items.push(build_completion_item_from_symbols(session, vec![*final_sym], &symbol_name, context_of_symbol));
         }
     }
 }
 
-fn build_completion_item_from_symbol(session: &mut SessionInfo, symbols: Vec<SymbolKey>, symbol_name: &str, context_of_symbol: Context) -> CompletionItem {
+/// Builds a completion item from a list of symbols that represent the same name
+/// We get multiple symbols for the same name due to definitions from different execution graphs (if/else, try/else, ...)
+fn build_completion_item_from_symbols(session: &mut SessionInfo, symbols: Vec<SymbolKey>, symbol_name: &str, context_of_symbol: Context) -> CompletionItem {
     if symbols.is_empty() {
         return CompletionItem::default();
     }
     //TODO use dependency to show it? or to filter depending of configuration
-    let typ = symbols.iter().flat_map(|&symbol|
-        SymbolTable::follow_ref(&EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(
-            symbol,
-            None,
-            false,
-        )), session, None, false, false, None, None)
-    ).collect::<Vec<_>>();
-    let type_details = typ.iter().map(|eval|
-        FeaturesUtils::get_inferred_types(session, eval, Some(&context_of_symbol), &symbols[0].typ())
-    ).collect::<HashSet<_>>();
-    let label_details_description = match type_details.len() {
-        0 => None,
-        1 => Some(match &type_details.iter().next().unwrap() {
+    let sym_evals = symbols
+        .iter()
+        .flat_map(|&symbol| {
+            let r#type = symbol.typ();
+            let evaluations = SymbolTable::follow_ref(
+                &EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(symbol, None, false)),
+                session,
+                None,
+                false,
+                false,
+                None,
+                None,
+            );
+            evaluations.into_iter().map(move |eval| (eval, r#type))
+        })
+        .collect::<Vec<_>>();
+    let type_details = sym_evals
+        .into_iter()
+        .map(|(eval, symbol_type)| {
+            FeaturesUtils::get_inferred_types(session, &eval, Some(&context_of_symbol), symbol_type)
+        })
+        .unique()
+        .collect::<Vec<_>>();
+    let label_details_description = match &type_details[..] {
+        [] => None,
+        [one] => Some(match one {
             TypeInfo::CALLABLE(c) => c.return_types.clone(),
             TypeInfo::VALUE(v) => v.clone(),
         }),

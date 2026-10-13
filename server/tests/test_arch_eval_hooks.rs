@@ -396,3 +396,46 @@ fn test_relational_field_get_hooks() {
         names(&session, &resolved_partner_ids)
     );
 }
+
+/// Hovering a relational field declaration (`Many2one`/`One2many`/`Many2many`)
+/// prefixes the field class with its comodel name between brackets, e.g.
+/// `(res.partner) Many2many` (`get_class_type_info`, driven by the `ComodelName`
+/// context). Non-relational fields are left untouched.
+#[test]
+fn test_relational_field_hover_shows_comodel() {
+    let (mut odoo, config) = setup::setup::setup_server(true);
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_1").join("models").join("arch_eval_hooks_model.py").sanitize();
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
+
+    let file_mgr = session.sync_odoo.get_file_mgr();
+    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file)) else {
+        panic!("Failed to get file symbol for {}", test_file);
+    };
+
+    // (line, char) of the field name in its declaration, expected type in hover
+    let cases: &[(u32, u32, &str)] = &[
+        (63, 4, "(pygls.tests.arch_eval_hooks_model) Many2one"),
+        (64, 4, "(pygls.tests.arch_eval_hooks_model) One2many"),
+        (65, 4, "(res.partner) Many2many"),
+    ];
+    for &(line, character, expected) in cases {
+        let hover = test_utils::get_hover_markdown(&mut session, file_symbol, &file_info, line, character)
+            .unwrap_or_default();
+        assert!(
+            hover.contains(expected),
+            "hover on relational field at line {} should show `{}`, got: {:?}",
+            line + 1, expected, hover
+        );
+    }
+
+    // `test_int = fields.Integer()` (line 9, 0-indexed 8): no comodel prefix
+    let hover = test_utils::get_hover_markdown(&mut session, file_symbol, &file_info, 8, 4)
+        .unwrap_or_default();
+    assert!(
+        hover.contains("Integer") && !hover.contains(") Integer"),
+        "hover on a non-relational field should not show a comodel prefix, got: {:?}",
+        hover
+    );
+}
