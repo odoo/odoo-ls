@@ -1,5 +1,6 @@
 use lsp_types::Diagnostic;
 use roxmltree::Error;
+use ruff_source_file::PositionEncoding;
 use weak_table::PtrWeakHashSet;
 
 use crate::constants::MissingDataSource;
@@ -68,12 +69,16 @@ impl XmlFileSymbol {
 }
 
 impl XmlFileSymbol {
-    pub fn build_syntax_diagnostics(session: &SessionInfo, diagnostics: &mut Vec<Diagnostic>, file_info: &mut FileInfo, doc_error: &Error) {
-        let offset = file_info.position_to_offset(doc_error.pos().row -1, doc_error.pos().col -1, session.sync_odoo.encoding);
+    pub fn build_syntax_diagnostics(session: &SessionInfo, diagnostics: &mut Vec<Diagnostic>, file_info: &FileInfo, doc_error: &Error) {
         if let Some(diagnostic) = crate::core::diagnostics::create_diagnostic(session, DiagnosticCode::OLS05000, &[&doc_error.to_string()]) {
-            diagnostics.push(lsp_types::Diagnostic {
-                range: lsp_types::Range::new(lsp_types::Position::new(offset as u32, 0), lsp_types::Position::new(offset as u32 + 1, 0)),
-                ..diagnostic.clone()
+            let file_info_ast = file_info.file_info_ast.borrow(); 
+            let Some(text) = file_info_ast.text_document.as_ref() else { return };
+            // roxmltree::TextPos are 1-indexed chars
+            let start = file_info.position_to_offset(doc_error.pos().row -1, doc_error.pos().col -1, PositionEncoding::Utf32);
+            let end = text.contents().ceil_char_boundary(start + 1);
+            diagnostics.push(Diagnostic {
+                range: lsp_types::Range::new(lsp_types::Position::new(start as u32, 0), lsp_types::Position::new(end as u32, 0)),
+                ..diagnostic
             });
         }
     }
