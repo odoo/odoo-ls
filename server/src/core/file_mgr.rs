@@ -713,7 +713,7 @@ impl FileInfo {
             let mut fia = file.file_info_ast.borrow_mut();
             fia.text_hash = hash_text_document(fia.text_document.as_ref().unwrap());
         }
-        let is_external = session.file_mgr().is_in_workspace(&session.file_mgr()[key].uri);
+        let is_external = FileMgr::is_external_path(session, &session.file_mgr()[key].uri);
         FileInfo::_build_ast(session, key, is_external);
     }
 
@@ -1184,6 +1184,12 @@ impl FileMgr {
         path.starts_with("untitled:")
     }
 
+    /// External = owned by a `public` entry point only, not by any entry the user actually owns.
+    pub fn is_external_path(session: &SessionInfo, uri: &str) -> bool {
+        let ep_mgr = &session.sync_odoo.entry_point_mgr;
+        !ep_mgr.iter_all_but_public().any(|entry| uri.starts_with(ep_mgr[entry].path()))
+    }
+
     pub fn update_file_info(session: &mut SessionInfo, uri: &str, content: Option<&[TextDocumentContentChangeEvent]>, version: Option<i32>, force: bool) -> (bool, FileInfoKey) {
         let is_untitled = Self::is_untitled(uri);
         let is_new = if is_untitled { !session.file_mgr().untitled_files.contains_key(uri) } else { !session.file_mgr().files.contains_key(uri) };
@@ -1194,9 +1200,8 @@ impl FileMgr {
         //Do not modify the file if a version is not given but the file is opened
         let mut updated: bool = false;
         if (version.is_some() && version.unwrap() != -100) || !session.file_mgr()[file_key].opened || force {
-            let ep_mgr = &session.sync_odoo.entry_point_mgr;
-            let is_part_of_ep = ep_mgr.iter_all_but_public().any(|entry| uri.starts_with(ep_mgr[entry].path()));
-            updated = FileInfo::update(session, file_key, uri, content, version, !is_part_of_ep, force, is_untitled);
+            let is_external = Self::is_external_path(session, uri);
+            updated = FileInfo::update(session, file_key, uri, content, version, is_external, force, is_untitled);
         }
         (updated, file_key)
     }
