@@ -492,9 +492,8 @@ impl PythonArchEval {
                             ann_evaluations.unwrap()
                         };
                         let v_mut = &mut session.st_mut()[variable_key];
-                        if assign.index.is_none() { //if index is some, we should take indexed value in the iterable object, so this evaluation is wrong
-                            v_mut.evaluations.extend(eval);
-                        }
+                        //if index is some, we should take indexed value in the iterable object, so this evaluation is wrong
+                        v_mut.evaluations = if assign.index.is_none() { eval } else { vec![] };
                         self.diagnostics.extend(diags);
                         let var_name = v_mut.name.clone();
                         let evaluations = v_mut.evaluations.clone();
@@ -608,6 +607,7 @@ impl PythonArchEval {
     }
 
     fn load_base_classes(&mut self, session: &mut SessionInfo, loc_sym: ClassKey, class_stmt: &StmtClassDef) {
+        session.st_mut()[loc_sym].bases.clear();
         for base in class_stmt.bases() {
             let mut deps = vec![vec![], vec![]];
             let eval_base = Evaluation::eval_from_ast(session, base, *self.sym_stack.last().unwrap(), &class_stmt.range().start(), false, &mut deps);
@@ -724,7 +724,7 @@ impl PythonArchEval {
                     let arg_sym = session.st()[f].symbols().get(arg_name).unwrap().get(&0).unwrap()[0]; //get first declaration
                     let v = arg_sym.unwrap_variable_key();
                     let evaluation = Evaluation::new_self(scope, Some(!is_class_method));
-                    session.st_mut()[v].evaluations.push(evaluation);
+                    session.st_mut()[v].evaluations = vec![evaluation];
                     is_first = false;
                     continue;
                 }
