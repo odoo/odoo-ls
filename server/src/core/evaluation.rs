@@ -1265,6 +1265,9 @@ impl Evaluation {
                         false,
                     ).0;
                     for get_item in get_item_symbols {
+                        if let SymbolKey::Function(f) = get_item {
+                            SyncOdoo::ensure_func_evaluations(session, f);
+                        }
                         let Some(evaluations) = session.st().evaluations(get_item) else {
                             continue;
                         };
