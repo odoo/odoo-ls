@@ -108,6 +108,8 @@ impl ProfileView {
 
     /// JSON shape consumed by the renderer and by serialization:
     /// scalars → `{value, sources, info}`, lists → `[{value, sources, info}]`.
+    /// Rejected values also carry `rejected: true`, so clients can tell them
+    /// apart from the values actually in use.
     fn to_json(&self) -> Value {
         let mut obj = serde_json::Map::new();
         obj.insert("name".to_string(), json!(self.name));
@@ -130,8 +132,8 @@ impl ProfileView {
                 (Some(ConfigValue::List(items)), Some(rej)) => Value::Array(
                     items
                         .iter()
-                        .chain(rej.iter())
                         .map(sourced_string_json)
+                        .chain(rej.iter().map(rejected_json))
                         .collect(),
                 ),
                 // A scalar value is present but the user's explicit value was
@@ -151,7 +153,7 @@ impl ProfileView {
                 // Same for filters: valid filters, then the rejected ones.
                 (Some(v @ ConfigValue::DiagFilters(_)), Some(rej)) => {
                     let mut items = value_to_json(v).as_array().cloned().unwrap_or_default();
-                    items.extend(rej.iter().map(sourced_string_json));
+                    items.extend(rej.iter().map(rejected_json));
                     Value::Array(items)
                 }
                 // Diagnostic settings: a rejected `CODE = level` is its own row, or a
@@ -172,7 +174,7 @@ impl ProfileView {
                                 _ => {
                                     map.insert(
                                         code.to_string(),
-                                        json!({"value": level, "sources": sources_json(r.sources()), "info": r.info}),
+                                        json!({"value": level, "sources": sources_json(r.sources()), "info": r.info, "rejected": true}),
                                     );
                                 }
                             }
@@ -181,8 +183,8 @@ impl ProfileView {
                     json
                 }
                 // No valid value survived: surface the rejected value(s) with notes.
-                (None, Some(rej)) if rej.len() == 1 => sourced_string_json(&rej[0]),
-                (None, Some(rej)) => Value::Array(rej.iter().map(sourced_string_json).collect()),
+                (None, Some(rej)) if rej.len() == 1 => rejected_json(&rej[0]),
+                (None, Some(rej)) => Value::Array(rej.iter().map(rejected_json).collect()),
             };
             obj.insert(key.as_str().to_string(), field);
         }
@@ -249,10 +251,15 @@ fn scalar_json(value: &Scalar) -> Value {
     }
 }
 
-/// The `{value, sources, info}` shape for a string-valued list item (or a
-/// rejected entry, which is also just a string value with provenance + note).
+/// The `{value, sources, info}` shape for a string-valued list item.
 fn sourced_string_json(s: &Sourced<String>) -> Value {
     json!({"value": s.value(), "sources": sources_json(s.sources()), "info": s.info})
+}
+
+/// A rejected entry: a string value with provenance + the rejection note, flagged
+/// with `rejected: true` so it isn't mistaken for a value in use.
+fn rejected_json(s: &Sourced<String>) -> Value {
+    json!({"value": s.value(), "sources": sources_json(s.sources()), "info": s.info, "rejected": true})
 }
 
 fn value_to_json(value: &ConfigValue) -> Value {
