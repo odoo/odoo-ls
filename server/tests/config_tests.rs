@@ -3000,6 +3000,7 @@ fn invalid_scalar_path_excluded_from_runtime_and_surfaced_in_view() {
     let odoo_path = root.get("odoo_path").expect("rejected odoo_path should still appear in the view");
     assert!(!odoo_path.get("info").unwrap().as_str().unwrap().is_empty(),
         "a rejected path must carry a non-empty info note");
+    assert_eq!(odoo_path["rejected"], true, "a rejected path must be flagged as rejected");
 }
 
 #[test]
@@ -3041,6 +3042,12 @@ fn invalid_list_item_excluded_from_runtime_and_surfaced_in_view() {
         .expect("rejected addons entry should appear in the view");
     assert!(!bad_entry.get("info").unwrap().as_str().unwrap().is_empty(),
         "a rejected list entry must carry a failure note");
+    assert_eq!(bad_entry["rejected"], true, "a rejected list entry must be flagged as rejected");
+    let good_path = canonicalized(good.path());
+    let good_entry = arr.iter()
+        .find(|e| e.get("value").and_then(|v| v.as_str()) == Some(good_path.as_str()))
+        .unwrap();
+    assert!(good_entry.get("rejected").is_none(), "a valid list entry must not be flagged as rejected");
 }
 
 #[test]
@@ -3095,6 +3102,7 @@ fn invalid_odoo_path_inferred_still_shows_rejection() {
     let info = op.get("info").unwrap().as_str().unwrap();
     assert!(info.contains(&canonicalized(bad.path())),
         "odoo_path info must note the rejected explicit path, got: {info}");
+    assert!(op.get("rejected").is_none(), "the inferred odoo_path in use must not be flagged as rejected");
 }
 
 #[test]
