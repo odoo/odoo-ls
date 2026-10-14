@@ -852,6 +852,22 @@ impl SyncOdoo {
     }
 
     pub fn unload_path(session: &mut SessionInfo, path: &Path) {
+        // Unloading a file can invalidate the same dependents many times (once per model it defines, and once
+        // for the file itself): defer the invalidation of their sub functions to do it only once per file.
+        let defer_subfunc_invalidation = session.sync_odoo.deferred_subfunc_invalidation.is_none();
+        if defer_subfunc_invalidation {
+            session.sync_odoo.deferred_subfunc_invalidation = Some(FifoWeakHashSet::new());
+        }
+        Self::unload_path_impl(session, path);
+        if defer_subfunc_invalidation
+            && let Some(mut files) = session.sync_odoo.deferred_subfunc_invalidation.take() {
+                while let Some(file) = files.pop_front_valid(session.st()) {
+                    SymbolTable::invalidate_sub_functions(session, file);
+                }
+            }
+    }
+
+    fn unload_path_impl(session: &mut SessionInfo, path: &Path) {
         // file/dir might no longer exist in file system, we can't stat it
         let ep_mgr = session.sync_odoo.entry_point_mgr.clone();
         for entry in ep_mgr.borrow().iter_all() {

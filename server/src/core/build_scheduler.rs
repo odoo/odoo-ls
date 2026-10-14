@@ -87,6 +87,11 @@ impl BuildScheduler {
     }
 
     fn pop_item(session: &mut SessionInfo, step: BuildSteps) -> Option<BuildableSymbolKey> {
+        // Validation does not produce anything that would be needed for another validation, so we can simply pop from the validation queue,
+        // and skip all the dependency checks for validation.
+        if step == BuildSteps::VALIDATION {
+            return bs!(session).rebuild_validation.pop_front_valid(&session.sync_odoo.symbol_table);
+        }
         //Part 1: Find the symbol with a unmutable set
         let set =  match step {
             BuildSteps::ARCH => &bs!(session).rebuild_arch,
@@ -95,22 +100,14 @@ impl BuildScheduler {
         };
         let mut selected_sym: Option<BuildableSymbolKey> = None;
         let mut selected_count: u32 = 999999999;
-        let mut current_count: u32;
         for sym in set.iter_valid(&session.sync_odoo.symbol_table) {
-            current_count = 0;
             let file = session.sync_odoo.symbol_table.get_file(sym.into()).unwrap();
-            let all_dep = session.sync_odoo.symbol_table.get_all_dependencies(file, step);
-            for (index, dep_set) in all_dep.iter().enumerate() {
-                let index_set =  match index {
-                    x if x == BuildSteps::ARCH as usize => &bs!(session).rebuild_arch,
-                    x if x == BuildSteps::ARCH_EVAL as usize => &bs!(session).rebuild_arch_eval,
-                    x if x == BuildSteps::VALIDATION as usize => &bs!(session).rebuild_validation,
-                    _ => continue,
-                };
-                current_count += dep_set.iter_valid(&session.sync_odoo.symbol_table)
-                    .filter(|&dep| index_set.contains(&dep.into()))
-                    .count() as u32;
-            }
+            // Queues of previous steps are empty at this point, only dependencies on the current step can be pending
+            let current_count = session.sync_odoo.symbol_table.get_all_dependencies(file, step).get(step as usize)
+                .map(|dep_set| dep_set.iter_valid(&session.sync_odoo.symbol_table)
+                    .filter(|&dep| set.contains(&dep.into()))
+                    .count() as u32)
+                .unwrap_or(0);
             if current_count < selected_count {
                 selected_sym = Some(sym);
                 selected_count = current_count;
