@@ -7,7 +7,7 @@ use tracing::error;
 use crate::constants::OYarn;
 use crate::core::evaluation_context::ContextKey;
 use crate::core::model::{Model, ModelData};
-use crate::core::symbols::{ClassSymbol, ModuleSymbol};
+use crate::core::symbols::{ClassSymbol, ModuleSymbol, SymbolMgr};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::symbol_keys::{ClassKey, SymbolKey, XmlId};
 use crate::threads::SessionInfo;
@@ -308,51 +308,23 @@ impl PythonOdooBuilder {
             }
         }
         //These magic fields are added at odoo step, but it should be ok as most usage will be done in functions, not outside.
-        //id
-        let range = session.st()[symbol].range;
-        let id = session.st_mut().add_new_variable(symbol, "id", range);
-        let id_field = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Id"]), u32::MAX);
-        if let Some(&id_field) = id_field.last() {
-            let evaluation = Evaluation::eval_from_symbol(session.st(), id_field, Some(true));
-            session.st_mut()[id].evaluations.push(evaluation);
-        }
-        //display_name
-        let display_name = session.st_mut().add_new_variable(symbol, "display_name", range);
-        let char_field = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Char"]), u32::MAX);
-        if let Some(&char_field) = char_field.last() {
-            let evaluation = Evaluation::eval_from_symbol(session.st(), char_field, Some(true));
-            session.st_mut()[display_name].evaluations.push(evaluation);
-        }
-        //if log_access
+        let mut magic_fields = vec![("id", "Id"), ("display_name", "Char")];
         if session.st()[symbol]._model.as_ref().unwrap().log_access {
-            //create_uid
-            let create_uid = session.st_mut().add_new_variable(symbol, "create_uid", range);
-            let many2one_field = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Many2one"]), u32::MAX);
-            if let Some(&many2one_field) = many2one_field.last() {
-                let evaluation = Evaluation::eval_from_symbol(session.st(), many2one_field, Some(true));
-                session.st_mut()[create_uid].evaluations.push(evaluation);
-            }
-            //create_date
-            let create_date = session.st_mut().add_new_variable(symbol, "create_date", range);
-            let datetime_field = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Datetime"]), u32::MAX);
-            if let Some(&datetime_field) = datetime_field.last() {
-                let evaluation = Evaluation::eval_from_symbol(session.st(), datetime_field, Some(true));
-                session.st_mut()[create_date].evaluations.push(evaluation);
-            }
-            //write_uid
-            let write_uid = session.st_mut().add_new_variable(symbol, "write_uid", range);
-            let many2one_field = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Many2one"]), u32::MAX);
-            if let Some(&many2one_field) = many2one_field.last() {
-                let evaluation = Evaluation::eval_from_symbol(session.st(), many2one_field, Some(true));
-                session.st_mut()[write_uid].evaluations.push(evaluation);
-            }
-            //write_date
-            let write_date = session.st_mut().add_new_variable(symbol, "write_date", range);
-            let datetime_field = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &["Datetime"]), u32::MAX);
-            if let Some(&datetime_field) = datetime_field.last() {
-                let evaluation = Evaluation::eval_from_symbol(session.st(), datetime_field, Some(true));
-                session.st_mut()[write_date].evaluations.push(evaluation);
-            }
+            magic_fields.extend([("create_uid", "Many2one"), ("create_date", "Datetime"), ("write_uid", "Many2one"), ("write_date", "Datetime")]);
+        }
+        let range = session.st()[symbol].range;
+        for (name, field_class) in magic_fields {
+            //reuse the variable created by a previous evaluation of the class, if any
+            let existing = session.st()[symbol].symbols().get(name)
+                .and_then(|sections| sections.values().flatten().find_map(|&s| match s {
+                    SymbolKey::Variable(v) if session.st()[v].range == range => Some(v),
+                    _ => None,
+                }));
+            let variable = existing.unwrap_or_else(|| session.st_mut().add_new_variable(symbol, name, range));
+            let field = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &[field_class]), u32::MAX);
+            session.st_mut()[variable].evaluations = field.last()
+                .map(|&field| vec![Evaluation::eval_from_symbol(session.st(), field, Some(true))])
+                .unwrap_or_default();
         }
     }
 

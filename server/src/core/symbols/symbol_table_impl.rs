@@ -1110,12 +1110,10 @@ impl SymbolTable {
             deferred.insert(target);
             return;
         }
-        if matches!(target, SourceFileKey::File(_) | SourceFileKey::PythonPackage(_) | SourceFileKey::Module(_)) {
-            for func_key in session.st().iter_inner_functions(target.into()) {
-                let func = &mut session.st_mut()[func_key];
-                func.evaluations.clear();
-                func.reset_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
-            }
+        for func_key in session.st().iter_inner_functions(target.into()) {
+            let func = &mut session.st_mut()[func_key];
+            func.evaluations.clear();
+            func.reset_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
         }
     }
 
@@ -2250,7 +2248,7 @@ impl SymbolTable {
 
     /**
      * Only browse file content, do not use on namespace or packages to browse disk
-     * return a list of functions under Class symbol
+     * return a list of subfunctions
      */
     pub fn iter_inner_functions(&self, key: SymbolKey) -> Vec<FunctionKey> {
         let mut res = vec![];
@@ -2259,41 +2257,24 @@ impl SymbolTable {
             match key {
                 SymbolKey::Class(c) => {
                     for child_key in iter_symbol_keys(&table[c]) {
-                        if let SymbolKey::Function(fk) = child_key {
-                            res.push(*fk);
-                        }
-                    }
-                },
-                SymbolKey::File(f) => {
-                    for child_key in iter_symbol_keys(&table[f]) {
                         iter_recursive(table, *child_key, res);
                     }
                 },
                 SymbolKey::Function(f) => {
+                    res.push(f);
                     for child_key in iter_symbol_keys(&table[f]) {
                         iter_recursive(table, *child_key, res);
                     }
                 },
-                SymbolKey::DiskDir(_)
-                | SymbolKey::Root(_)
-                | SymbolKey::Namespace(_)
-                | SymbolKey::PythonPackage(_)
-                | SymbolKey::Module(_)
-                | SymbolKey::Compiled(_)
-                | SymbolKey::Variable(_)
-                | SymbolKey::XmlFile(_)
-                | SymbolKey::XmlRecord(_)
-                | SymbolKey::XmlField(_)
-                | SymbolKey::XmlMenuItem(_)
-                | SymbolKey::XmlTemplate(_)
-                | SymbolKey::XmlAsset(_)
-                | SymbolKey::XmlDelete(_)
-                | SymbolKey::CsvFile(_)
-                | SymbolKey::JsFile(_) => {},
+                _ => {},
             }
         }
 
-        iter_recursive(self, key, &mut res);
+        if let Ok(parent) = FileContentParent::try_from(key) {
+            for child_key in parent.children(self) {
+                iter_recursive(self, child_key, &mut res);
+            }
+        }
         res
     }
 
