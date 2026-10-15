@@ -236,6 +236,25 @@ impl SymbolTable {
         range: TextRange,
         owner: SymbolKey,
     ) -> VariableKey {
+        let (section, variable_key) = self.create_ext_variable(target, name, range, owner);
+        self.ext_symbols.add(target, owner, name, section, variable_key);
+        variable_key
+    }
+
+    /// Remove the ext symbols injected by `owner`
+    pub fn remove_ext_symbols(&mut self, owner: SymbolKey) {
+        for variable in self.ext_symbols.remove_owned(owner) {
+            self.remove(variable.into());
+        }
+    }
+
+    fn create_ext_variable(
+        &mut self,
+        target: SymbolKey,
+        name: &str,
+        range: TextRange,
+        owner: SymbolKey,
+    ) -> (u32, VariableKey) {
         // validate target can host an external symbol
         if !matches!(target.typ(),
             SymType::FILE | SymType::PACKAGE(PackageType::MODULE)
@@ -253,9 +272,7 @@ impl SymbolTable {
         );
         let variable_key = self.variables.insert(variable_symbol);
         let section = parent.as_symbol_mgr(self).get_section_for(range.start().to_u32()).index;
-
-        self.ext_symbols.add(target, owner, name, section, variable_key);
-        variable_key
+        (section, variable_key)
     }
 
     // ====== Helpers for symbol creation ======
@@ -638,6 +655,27 @@ mod tests {
         assert!(!f.st.is_key_valid(f.module), "the module survived its own removal");
         assert!(!f.st.is_key_valid(injected), "the ext symbol outlived its owner");
         assert!(f.st.is_key_valid(host), "removing the module took the injection target down");
+        f.st.assert_no_orphans();
+        Ok(())
+    }
+
+    /// Ext symbols injected by an ARCH_EVAL are dropped when the owner is evaluated again, but not
+    /// the ones injected by another owner into the same target.
+    #[test]
+    fn eval_ext_symbols_are_removed_on_reevaluation() -> Result<(), NameTakenError> {
+        let mut f = Fixture::new();
+        let file = f.st.add_new_file(f.module.into(), "models", "/root/ns/mod/models.py")?;
+        let other_file = f.st.add_new_file(f.module.into(), "other", "/root/ns/mod/other.py")?;
+        let class = f.st.add_new_class(file.into(), "AClass", range_at(0), TextSize::new(0));
+        let from_file = f.st.add_new_ext_symbol(class.into(), "from_file", range_at(10), file.into());
+        let from_other = f.st.add_new_ext_symbol(class.into(), "from_other", range_at(20), other_file.into());
+        assert_eq!(f.st.get_ext_symbol(class.into(), "from_file"), vec![from_file]);
+
+        f.st.remove_ext_symbols(file.into());
+
+        assert!(!f.st.is_key_valid(from_file), "the eval ext symbol survived the re-evaluation");
+        assert!(f.st.get_ext_symbol(class.into(), "from_file").is_empty());
+        assert_eq!(f.st.get_ext_symbol(class.into(), "from_other"), vec![from_other]);
         f.st.assert_no_orphans();
         Ok(())
     }
