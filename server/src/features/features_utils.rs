@@ -69,6 +69,56 @@ pub enum SegmentPick {
     All,
 }
 
+/// A comma-separated item of an `_order` string, e.g. ` partner_id desc nulls last`.
+pub struct OrderItem<'a> {
+    pub text: &'a str,
+    /// Index of the item in the string
+    pub start: usize,
+}
+
+impl<'a> OrderItem<'a> {
+    /// The items of an `_order` string such as `"name desc, id"`.
+    pub fn order_items(order: &str) -> Vec<OrderItem<'_>> {
+        let mut start = 0;
+        order.split(',').map(|text| {
+            let item = OrderItem { text, start };
+            start += text.len() + 1;
+            item
+        }).collect()
+    }
+
+    /// Index of the end of the item in the string
+    pub fn end(&self) -> usize {
+        self.start + self.text.len()
+    }
+
+    /// The field, first word of the item without its `.property` (e.g. `partner_id.id`), with its
+    /// start and end indexes in the string.
+    pub fn field(&self) -> Option<(&'a str, usize, usize)> {
+        let (word, start) = self.first_word()?;
+        let field = word.split('.').next().filter(|field| !field.is_empty())?;
+        Some((field, start, start + field.len()))
+    }
+
+    /// The property of the field (e.g. `id` in `partner_id.id`), with its start and end indexes in
+    /// the string.
+    pub fn property(&self) -> Option<(&'a str, usize, usize)> {
+        let (word, start) = self.first_word()?;
+        let (field, property) = word.split_once('.')?;
+        if field.is_empty() || property.is_empty() {
+            return None;
+        }
+        let property_start = start + field.len() + 1;
+        Some((property, property_start, property_start + property.len()))
+    }
+
+    /// The first word of the item, with its start index in the string.
+    fn first_word(&self) -> Option<(&'a str, usize)> {
+        let word = self.text.split_whitespace().next()?;
+        Some((word, self.start + (self.text.len() - self.text.trim_start().len())))
+    }
+}
+
 pub struct FeaturesUtils {}
 
 impl FeaturesUtils {
@@ -448,6 +498,54 @@ impl FeaturesUtils {
         }
     }
 
+    /// Fields of `_order = "name desc, partner_id.id"`, with their range in the file. The property
+    /// of a field (`.id`) is a field of its comodel.
+    fn find_order_fields(
+        session: &mut SessionInfo,
+        scope: SymbolKey,
+        from_module: Option<ModuleKey>,
+        string: &ExprStringLiteral,
+        pick: SegmentPick,
+    ) -> Vec<(SymbolKey, TextRange)> {
+        let Some(SymbolKey::Class(parent_class)) = session.st().get_in_parents(scope, &[SymType::CLASS], true) else {
+            return vec![];
+        };
+        if session.st()[parent_class]._model.is_none() {
+            return vec![];
+        }
+        let cursor = match pick {
+            SegmentPick::Cursor(offset) => {
+                let Some(cursor) = AstUtils::index_in_string(string, TextSize::new(offset as u32)) else {
+                    return vec![];
+                };
+                Some(cursor)
+            },
+            SegmentPick::All => None,
+        };
+        let mut members = vec![];
+        for item in OrderItem::order_items(string.value.to_str()) {
+            // The field on the model, then its property on the comodel
+            let mut walker = DeepFieldEvalWalker::new(parent_class.into(), from_module);
+            for (name, start, end) in [item.field(), item.property()].into_iter().flatten() {
+                let Some(model) = walker.get_model_symbol(session) else {
+                    break;
+                };
+                let symbols = walker.get_model_fields(session, model, name);
+                if cursor.is_some_and(|cursor| cursor < start || end < cursor) {
+                    continue;
+                }
+                let range = match (AstUtils::range_in_file(string, start, end), pick) {
+                    (Some(range), _) => range,
+                    // Not found in the file (escapes, split between parts): no token, but hover and definition still work
+                    (None, SegmentPick::Cursor(_)) => string.range,
+                    (None, SegmentPick::All) => continue,
+                };
+                members.extend(symbols.into_iter().map(|symbol| (symbol, range)));
+            }
+        }
+        members
+    }
+
 
     /// Field/method symbols a string refers to, given its syntactic context,
     /// with the sub-range each covers.
@@ -472,7 +570,7 @@ impl FeaturesUtils {
                     .into_iter().map(|s| (s, string.range)).collect()
             },
             StringContext::ModelOrder => {
-                vec![]
+                FeaturesUtils::find_order_fields(session, scope, from_module, string, pick)
             },
         }
     }
@@ -1009,5 +1107,23 @@ impl FeaturesUtils {
             })
             .unwrap_or_default();
         Some(format!("```\n(XML record) {}\nmodel: {}\nfile: {}\n```", full_xml_id, record.model.0, file_name))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OrderItem;
+
+    #[test]
+    fn test_order_items() {
+        let order = " name desc,  id ,, partner_id.id nulls last,";
+        let items = OrderItem::order_items(order);
+        let texts: Vec<_> = items.iter().map(|item| &order[item.start..item.end()]).collect();
+        assert_eq!(texts, [" name desc", "  id ", "", " partner_id.id nulls last", ""]);
+        // The field and its property, with the text found at their indexes
+        let fields: Vec<_> = items.iter().map(|item| item.field().map(|(field, start, end)| (field, &order[start..end]))).collect();
+        assert_eq!(fields, [Some(("name", "name")), Some(("id", "id")), None, Some(("partner_id", "partner_id")), None]);
+        let properties: Vec<_> = items.iter().map(|item| item.property().map(|(property, start, end)| (property, &order[start..end]))).collect();
+        assert_eq!(properties, [None, None, None, Some(("id", "id")), None]);
     }
 }
