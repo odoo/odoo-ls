@@ -2,13 +2,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use lsp_types::{Diagnostic, Position, Range};
+use ruff_source_file::{LineIndex, PositionEncoding};
 use tracing::info;
 
 use crate::core::build_scheduler::BuildScheduler;
+use crate::core::file_mgr::position_to_offset_with_line_index;
 use crate::core::js_module_scope;
 use crate::core::js_utils::read_module_header;
 use crate::core::symbols::symbol_keys::JsFileKey;
-use crate::{constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource}, core::{csv_arch_builder::CsvArchBuilder, data_hooks, diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileInfo, symbols::{ModuleSymbol, SymbolTable, XmlFileSymbol, symbol_keys::{BuildableSymbolKey, ModuleKey, SourceFileKey, XmlFileKey}}, xml_arch_builder::XmlArchBuilder}, threads::SessionInfo, utils::PathSanitizer};
+use crate::{constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource}, core::{csv_arch_builder::CsvArchBuilder, data_hooks, diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileInfo, symbols::{ModuleSymbol, SymbolTable, symbol_keys::{BuildableSymbolKey, ModuleKey, SourceFileKey, XmlFileKey}}, xml_arch_builder::XmlArchBuilder}, threads::SessionInfo, utils::PathSanitizer};
 
 const ASSET_FOLDERS: [&str; 3] = ["src", "tests", "lib"];
 
@@ -187,16 +189,19 @@ impl ModuleSymbol {
         };
         //That's a little bit crappy, but the SYNTAX step of XML files are done here, as lifetime of roXMLTree are not flexible enough to be separated from the Arch building
         let document = roxmltree::Document::parse(&data);
-        if let Ok(document) = document {
-            file_info.replace_diagnostics(DiagnosticSource::XML_SYNTAX, vec![]);
-            let root = document.root_element();
-            let mut xml_builder = XmlArchBuilder::new(xml_sym, web_asset);
-            xml_builder.load_arch(session, file_info, &root);
-        } else if !data.is_empty() {
-            let mut diagnostics = vec![];
-            XmlFileSymbol::build_syntax_diagnostics(session, &mut diagnostics, file_info, &document.unwrap_err());
-            file_info.replace_diagnostics(DiagnosticSource::XML_SYNTAX, diagnostics);
-            file_info.publish_diagnostics(session);
+        match document {
+            Ok(document) => {
+                file_info.replace_diagnostics(DiagnosticSource::XML_SYNTAX, vec![]);
+                let root = document.root_element();
+                let mut xml_builder = XmlArchBuilder::new(xml_sym, web_asset);
+                xml_builder.load_arch(session, file_info, &root);
+            },
+            Err(_) if data.is_empty() => {},
+            Err(error) => {
+                let diag = build_syntax_diagnostic(session, file_info, &error);
+                file_info.replace_diagnostics(DiagnosticSource::XML_SYNTAX, Vec::from_iter(diag));
+                file_info.publish_diagnostics(session); 
+            }
         }
     }
 
@@ -262,6 +267,26 @@ fn is_asset_file(path: &Path, is_lib: bool) -> bool {
     }
 }
 
+fn build_syntax_diagnostic(session: &SessionInfo, file_info: &FileInfo, doc_error: &roxmltree::Error) -> Option<Diagnostic> {
+    let diagnostic = create_diagnostic(session, DiagnosticCode::OLS05000, &[&doc_error.to_string()])?; 
+    let ast = file_info.file_info_ast.borrow();
+    let text_document = ast.text_document.as_ref()?;
+    let std::ops::Range{ start, end } = xml_syntax_error_range(text_document.contents(), text_document.index(), doc_error.pos());
+    Some(Diagnostic {
+        range: Range::new(Position::new(start as u32, 0), Position::new(end as u32, 0)),
+        ..diagnostic
+    })
+}
+
+/// Converts a romxltree:TextPos to a byte range spanning one character
+fn xml_syntax_error_range(text: &str, index: &LineIndex, pos: roxmltree::TextPos) -> std::ops::Range<usize> {
+    // TextPos are 1-indexed Chars
+    let start = position_to_offset_with_line_index(index, text, pos.row - 1, pos.col - 1, PositionEncoding::Utf32);
+    // Next char boundary
+    let end = text.ceil_char_boundary(start + 1);
+    start..end
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,5 +304,37 @@ mod tests {
         assert_eq!(asset_folder_of(module, "/addons/mod/tools/a.js"), None);
         // `mod` must not claim `mod_extra`.
         assert_eq!(asset_folder_of(module, "/addons/mod_extra/static/src/a.js"), None);
+    }
+
+    fn error_range(text: &str) -> std::ops::Range<usize> {
+        let pos = roxmltree::Document::parse(text).unwrap_err().pos();
+        xml_syntax_error_range(text, &LineIndex::from_source_text(text), pos)
+    }
+
+    #[test]
+    fn xml_syntax_error_range_covers_the_whole_char() {
+        let text = "<field name=\"date\" string='Date d'échéance'/>";
+        assert_eq!(&text[error_range(text)], "é");
+        let text = "<field string='x'😀/>";
+        assert_eq!(&text[error_range(text)], "😀");
+    }
+
+    #[test]
+    fn xml_syntax_error_range_reads_the_column_in_chars() {
+        let text = "<field name=\"😀\" string='Date d'échéance'/>";
+        assert_eq!(&text[error_range(text)], "é");
+    }
+
+    #[test]
+    fn xml_syntax_error_range_finds_the_row() {
+        let text = "<odoo string='ç'>\r\n<field string='d'é'/>\r\n</odoo>";
+        assert_eq!(&text[error_range(text)], "é");
+    }
+
+    #[test]
+    fn xml_syntax_error_range_stops_at_the_end_of_the_text() {
+        let text = "<a>";
+        let range = xml_syntax_error_range(text, &LineIndex::from_source_text(text), roxmltree::TextPos::new(1, 4));
+        assert_eq!(range, 3..3);
     }
 }
