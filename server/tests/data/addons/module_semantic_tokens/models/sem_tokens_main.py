@@ -82,3 +82,14 @@ class SemTokensUsage(models.Model):
         _ = self.env.ref('module_semantic_tokens.no_such_record')
         _ = self.search([('name', '=', 'a value')])
         return 'not.a.model'
+
+    # Field paths split over implicitly concatenated string parts
+    concat_inline = fields.Char(related='other_id' '.other_name')
+    concat_multiline = fields.Char(related=('other_id'
+                                            '.other_name'))
+
+    # Field paths whose content does not start right after a one-byte opening quote
+    raw_prefixed = fields.Char(related=r'other_id.other_name')
+    triple_quoted = fields.Char(related='''other_id.other_name''')
+    # Field path whose separator is an escape sequence
+    escaped_dot = fields.Char(related='other_id\x2eother_name')
