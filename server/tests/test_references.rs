@@ -242,6 +242,23 @@ fn test_references() {
     assert!(references.is_empty(), "Some references were not expected: {}",
         references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
     );
+
+    // function imported by the __init__.py of its package
+    let sub_file = test_addons_path.join("module_1").join("reexport").join("sub.py").sanitize();
+    let mut references = get_references(&mut session, &sub_file, Position::new(7, 4));
+    assert_in_result(&mut references, "module_1/reexport/sub.py", 7, 0);
+    assert_in_result(&mut references, "module_1/reexport/__init__.py", 1, 17);
+    assert!(references.is_empty(), "Some references were not expected: {}",
+        references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
+    );
+
+    // class used in the body of the __init__.py of its package
+    let mut references = get_references(&mut session, &sub_file, Position::new(3, 6));
+    assert_in_result(&mut references, "module_1/reexport/sub.py", 3, 0);
+    assert_in_result(&mut references, "module_1/reexport/__init__.py", 6, 14);
+    assert!(references.is_empty(), "Some references were not expected: {}",
+        references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
+    );
     // for r in references.iter() {
     //     error!("Reference found at {}:{}:{}", r.uri.as_str(), r.range.start.line, r.range.start.character);
     // }
