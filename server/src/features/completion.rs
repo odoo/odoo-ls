@@ -1314,20 +1314,19 @@ fn complete_model_order(
     let before_cursor = &order[item.start..cursor];
     let (typed, current) = before_cursor.rsplit_once(char::is_whitespace).unwrap_or(("", before_cursor));
     let typed: Vec<&str> = typed.split_whitespace().collect();
-    match typed.as_slice() {
+    match typed.split_first() {
         // "<current>", or "<field>.<current>"
-        [] => match current.split_once('.') {
+        None => match current.split_once('.') {
             Some((field, property)) => add_order_property(session, items, current_module, parent_class, field, property),
             None => add_model_attributes(session, items, current_module, parent_class.into(), false, true, false, current, &None),
         },
-        // "<_field> <current>"
-        [_field] => add_order_keywords(items, &["asc", "desc", "nulls first", "nulls last"], current),
-        // "<_field> <asc|desc> <current>"
-        [_field, direction] if direction.eq_ignore_ascii_case("asc") || direction.eq_ignore_ascii_case("desc") =>
-            add_order_keywords(items, &["nulls first", "nulls last"], current),
-        // "... nulls <current>"
-        [.., nulls] if nulls.eq_ignore_ascii_case("nulls") => add_order_keywords(items, &["first", "last"], current),
-        _ => {},
+        // "<_field> <keywords> <current>": `nulls` is offered with where nulls go
+        Some((_field, keywords)) => {
+            let next: Vec<&str> = OrderItem::next_keywords(keywords).iter()
+                .flat_map(|&keyword| if keyword == "nulls" { vec!["nulls first", "nulls last"] } else { vec![keyword] })
+                .collect();
+            add_order_keywords(items, &next, current);
+        },
     }
 }
 
@@ -1347,8 +1346,8 @@ fn add_order_property(
     let Some(model) = walker.get_model_symbol(session) else {
         return;
     };
-    let fields = walker.get_model_fields(session, model, field);
-    if !fields.iter().any(|&field| SymbolTable::is_specific_field(session, field, &["Many2one"])) {
+    let _ = walker.get_model_fields(session, model, field);
+    if !walker.last_field_is_many2one(session){
         return;
     }
     let Some(comodel) = walker.get_model_symbol(session) else {

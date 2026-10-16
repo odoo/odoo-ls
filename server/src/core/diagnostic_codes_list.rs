@@ -134,8 +134,8 @@ OLS03012, DiagnosticSetting::Error, "Invalid search domain field: Unknown date g
 */
 OLS03013, DiagnosticSetting::Error, "Invalid search domain field: Invalid dot notation",
 /**
-* In related keyword argument or decorators api.onchange/depends/constrains, the field provided
-* should exist and be able to be resolved from current module
+* In related keyword argument, decorators api.onchange/depends/constrains or the _order of a model,
+* the field provided should exist and be able to be resolved from current module
 */
 OLS03014, DiagnosticSetting::Error, "Field does not exist on model or not in dependencies",
 /**
@@ -200,6 +200,11 @@ OLS03027, DiagnosticSetting::Error, "Invalid field for operator: 'access'; The f
 * and can break if it's ever made optional or uninstalled. Add it to your manifest's depends.
 */
 OLS03028, DiagnosticSetting::Warning, "'{0}' is only defined through indirect inheritance from module '{1}', which are not declared as a dependency",
+/**
+* Invalid _order string in a model definition.
+* Either a malformed string or an invalid field/property combination or a wrong keyword
+*/
+OLS03029, DiagnosticSetting::Error, "Invalid _order: {0}",
 /**
 * Form is no longer available on odoo.tests.common, thus it should not be imported from there.
 */
