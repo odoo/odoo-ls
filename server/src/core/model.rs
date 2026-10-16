@@ -7,6 +7,7 @@ use crate::core::build_scheduler::BuildScheduler;
 use crate::utils::HashMap;
 use crate::utils::HashSet;
 use std::collections::VecDeque;
+use std::rc::Rc;
 
 use crate::constants::OYarn;
 use crate::core::symbols::symbol_keys::ModelSymbolKey;
@@ -292,7 +293,11 @@ impl Model {
     }
 
     /// Gets all class symbols of current model and its inherited models
-    pub fn get_full_model_classes(model_key: ModelKey, session: &SessionInfo, from_module: Option<ModuleKey>) -> HashSet<ClassKey> {
+    pub fn get_full_model_classes(model_key: ModelKey, session: &mut SessionInfo, from_module: Option<ModuleKey>) -> Rc<HashSet<ClassKey>> {
+        let cache_key = (model_key, from_module);
+        if let Some(cached) = session.sync_odoo.model_classes_cache.get(&cache_key) {
+            return cached.clone();
+        }
         let st = &session.sync_odoo.symbol_table;
         let model_mgr = &session.sync_odoo.model_mgr;
         let mut symbol_set  = HashSet::default();
@@ -313,6 +318,8 @@ impl Model {
             }
             symbol_set.extend(symbols);
         }
+        let symbol_set = Rc::new(symbol_set);
+        session.sync_odoo.model_classes_cache.insert(cache_key, symbol_set.clone());
         symbol_set
     }
 

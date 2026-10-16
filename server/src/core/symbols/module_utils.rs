@@ -68,6 +68,7 @@ impl ModuleSymbol {
                 }
             }
         }
+        session.sync_odoo.model_classes_cache.clear();
         (diagnostics, loaded)
     }
 
