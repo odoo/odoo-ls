@@ -1,8 +1,11 @@
 
 
 use std::path::Path;
-use std::env;
-use odoo_ls_server::core::odoo::SyncOdoo;
+use std::{env, fs};
+use lsp_types::TextDocumentContentChangeEvent;
+use odoo_ls_server::core::file_mgr::FileMgr;
+use odoo_ls_server::core::odoo::{Odoo, SyncOdoo};
+use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
 mod setup;
@@ -40,6 +43,31 @@ fn test_structure() {
     test_imports(&odoo);
 }
 
+fn reload(session: &mut SessionInfo, path: &str) {
+    let text = fs::read_to_string(path).unwrap() + "\n";
+    let event = [TextDocumentContentChangeEvent { range: None, range_length: None, text }];
+    FileMgr::update_file_info(session, path, Some(event.as_slice()), Some(2), false);
+    Odoo::update_file_index(session, Path::new(path), "py", false, false);
+}
+
+#[test]
+fn test_imports_after_dependency_edit() {
+    let (mut odoo, config) = setup::setup::setup_server(true);
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let odoo_path = Path::new(&env::var("COMMUNITY_PATH").unwrap()).sanitize();
+    let addons = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/addons");
+    let module_a = session.sync_odoo.get_symbol(&odoo_path, (&["odoo", "addons", "module_indirect_a"], &[]), u32::MAX)[0];
+    let module_a_symbols = session.st().all_symbols(module_a).len();
+    // star-imported by its package, which is star-imported by the parent package
+    reload(&mut session, &addons.join("module_1/constants/data/constants.py").sanitize());
+    // module_indirect_a depends on module_indirect_base
+    reload(&mut session, &addons.join("module_indirect_base/__manifest__.py").sanitize());
+    test_imports(session.sync_odoo);
+    assert_eq!(session.st().all_symbols(module_a).len(), module_a_symbols);
+    let models_var = session.st().get_symbol(module_a, (&[], &["models"]), u32::MAX);
+    assert_eq!(session.st().evaluations(models_var[0]).unwrap().len(), 1);
+}
+
 fn test_imports(odoo: &SyncOdoo) {
     //test direct imports
     let st = &odoo.symbol_table;
@@ -70,6 +98,7 @@ fn test_imports(odoo: &SyncOdoo) {
     assert!(st.evaluations(st.get_symbol(constants_dir, (&[], &["CONSTANT_1"]), u32::MAX)[0]).as_ref().unwrap()[0].value.is_none());
     assert!(st.evaluations(st.get_symbol(constants_dir, (&[], &["CONSTANT_2"]), u32::MAX)[0]).as_ref().unwrap().len() == 1);
     assert!(st.evaluations(st.get_symbol(constants_dir, (&[], &["CONSTANT_2"]), u32::MAX)[0]).as_ref().unwrap()[0].value.is_none());
+    assert!(!st.evaluations(st.get_symbol(constants_dir, (&[], &["CONSTANT_2"]), u32::MAX)[0]).as_ref().unwrap()[0].symbol.get_weak().weak.is_expired(st));
     let data_dir = odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "constants", "data"], &[]), u32::MAX);
     assert!(data_dir.len() == 1);
     let data_dir = data_dir[0];
