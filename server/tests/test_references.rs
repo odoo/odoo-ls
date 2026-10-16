@@ -55,6 +55,8 @@ fn test_references() {
     let mut references = get_references(&mut session, &test_file, Position::new(52, 4));
     // usage in models.py import
     assert_in_result(&mut references, "module_1/models/models.py", 1, 30);
+    // usage in models.py through the import
+    assert_in_result(&mut references, "module_1/models/models.py", 3, 6);
     //definition
     assert_in_result(&mut references, "module_1/models/base_test_models.py", 52, 0);
     // usage inside lambda body
@@ -239,6 +241,34 @@ fn test_references() {
     assert_in_result(&mut references, "module_1/models/models.py", 42, 16);
     assert_in_result(&mut references, "module_1/models/models.py", 79, 17);
     assert_in_result(&mut references, "module_1/models/models.py", 81, 38);
+    assert!(references.is_empty(), "Some references were not expected: {}",
+        references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
+    );
+
+    // function imported by the __init__.py of its package, and imported again from that package
+    let sub_file = test_addons_path.join("module_1").join("reexport").join("sub.py").sanitize();
+    let mut references = get_references(&mut session, &sub_file, Position::new(7, 4));
+    assert_in_result(&mut references, "module_1/reexport/sub.py", 7, 0);
+    assert_in_result(&mut references, "module_1/reexport/__init__.py", 1, 17);
+    assert_in_result(&mut references, "module_1/models/reexport_usage.py", 1, 53);
+    // calls, through the import alias and through the package attribute
+    assert_in_result(&mut references, "module_1/reexport/__init__.py", 6, 24);
+    assert_in_result(&mut references, "module_1/models/reexport_usage.py", 6, 15);
+    assert_in_result(&mut references, "module_1/models/reexport_usage.py", 8, 15);
+    // the call is a reference, the name holding its result is not
+    assert_in_result(&mut references, "module_1/models/reexport_usage.py", 16, 11);
+    assert!(references.is_empty(), "Some references were not expected: {}",
+        references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
+    );
+
+    // class used in the body of the __init__.py of its package, and star-imported from that package
+    let mut references = get_references(&mut session, &sub_file, Position::new(3, 6));
+    assert_in_result(&mut references, "module_1/reexport/sub.py", 3, 0);
+    assert_in_result(&mut references, "module_1/reexport/__init__.py", 6, 14);
+    assert_in_result(&mut references, "module_1/models/reexport_usage.py", 1, 42);
+    // except clause and isinstance argument
+    assert_in_result(&mut references, "module_1/models/reexport_usage.py", 7, 11);
+    assert_in_result(&mut references, "module_1/models/reexport_usage.py", 12, 29);
     assert!(references.is_empty(), "Some references were not expected: {}",
         references.iter().map(|r| format!("{}:{}:{}", r.uri.as_str(), r.range.start.line + 1, r.range.start.character + 1)).collect::<Vec<String>>().join(", ")
     );

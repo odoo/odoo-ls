@@ -246,7 +246,7 @@ impl AnalyzeAstResult {
 /// cannot be resolved, so callers can avoid claiming a match in that case.
 fn record_evaluation_hit(session: &mut SessionInfo, parent: SymbolKey, range: TextRange) -> bool {
     let Some(file) = session.st().get_file(parent) else { return false };
-    let file_path = session.st().path(file).to_string();
+    let file_path = session.st().file_path(file).to_string();
     let Some(file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&file_path) else { return false };
     let transformed_range = file_info.borrow().text_range_to_range(range, session.sync_odoo.encoding);
     let uri = FileMgr::pathname2uri(&file_path);
@@ -1568,8 +1568,13 @@ impl Evaluation {
                     //if we have multiple matches, it means that that ast can reference it multiple times, but we only want to know if that ast matches or not
                     break;
                 }
+                // Names and attributes spell the alias, while a call can return one without naming it
                 if eval.symbol.sym.has_weak() && let Some(weak) = eval.symbol.sym.get_weak().weak.upgrade(session.st())
-                    && let ReferenceTarget::Symbols(evaluation_search_syms) = evaluation_search && evaluation_search_syms.contains(&weak) {
+                    && let ReferenceTarget::Symbols(evaluation_search_syms) = evaluation_search
+                    && (evaluation_search_syms.contains(&weak)
+                        || (matches!(ast, ExprOrIdent::Expr(Expr::Name(_) | Expr::Attribute(_)))
+                        && SymbolTable::follow_imported_ref(&eval.symbol.sym, session, None).iter().any(|end_sym|
+                            end_sym.upgrade_weak(session.st()).is_some_and(|symbol| evaluation_search_syms.contains(&symbol))))) {
                         found_one_reference |= record_evaluation_hit(session, parent, ast.range());
                     }
                 if let Some(value) = eval.value.as_ref()
