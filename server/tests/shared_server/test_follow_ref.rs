@@ -1,5 +1,5 @@
-mod setup;
-mod test_utils;
+use crate::{setup, test_utils};
+use crate::setup::shared::with_shared_session;
 use odoo_ls_server::core::file_mgr::FileInfo;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::core::symbols::symbol_keys::{SourceFileKey};
@@ -13,20 +13,20 @@ use test_utils::get_resolved_symbols_at_position;
 
 #[test]
 fn test_follow_ref() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
-    let path = env::current_dir()
-        .unwrap()
-        .join("tests/data/python/expressions/follow_ref.py")
-        .sanitize();
-    setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
-    assert!(session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.len() == 1);
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&path).unwrap();
-    let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&path))
-        .expect("Failed to get file symbol");
+    with_shared_session(false, |session| {
+        let path = env::current_dir()
+            .unwrap()
+            .join("tests/data/python/expressions/follow_ref.py")
+            .sanitize();
+        setup::setup::prepare_custom_entry_point(session, path.as_str());
+        assert!(session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.len() == 1);
+        let file_mgr = session.sync_odoo.get_file_mgr();
+        let file_info = file_mgr.borrow().get_file_info(&path).unwrap();
+        let file_symbol = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&path))
+            .expect("Failed to get file symbol");
 
-    test_variable_type_resolution(&mut session, &file_info, file_symbol);
+        test_variable_type_resolution(session, &file_info, file_symbol);
+    });
 }
 
 fn test_variable_type_resolution(
