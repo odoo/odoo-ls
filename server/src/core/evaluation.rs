@@ -246,7 +246,7 @@ impl AnalyzeAstResult {
 /// cannot be resolved, so callers can avoid claiming a match in that case.
 fn record_evaluation_hit(session: &mut SessionInfo, parent: SymbolKey, range: TextRange) -> bool {
     let Some(file) = session.st().get_file(parent) else { return false };
-    let file_path = session.st().path(file).to_string();
+    let file_path = session.st().file_path(file).to_string();
     let Some(file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&file_path) else { return false };
     let transformed_range = file_info.borrow().text_range_to_range(range, session.sync_odoo.encoding);
     let uri = FileMgr::pathname2uri(&file_path);

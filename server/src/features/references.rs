@@ -143,7 +143,7 @@ impl ReferenceFeature {
                     }
                     let target_name = session.st().name(definition_source).clone();
                     for &file in files_to_check.iter() {
-                        let Some(dep_file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(session.st().path(file)) else {
+                        let Some(dep_file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(session.st().file_path(file)) else {
                             continue;
                         };
                         // A reference spells the target's name, so skip the files that never contain it. Classes are exceptions, as a `self.env['my.class']` reference it without spelling it, so they are excluded here
@@ -184,7 +184,7 @@ impl ReferenceFeature {
                     let sym_typ = definition_source.typ();
                     if matches!(sym_typ, SymType::CLASS | SymType::FUNCTION | SymType::VARIABLE) {
                         let file = session.st().get_file(definition_source).unwrap();
-                        let path = session.st().path(file);
+                        let path = session.st().file_path(file);
                         let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(path);
                         if let Some(file_info) = file_info {
                             let transformed_range = file_info.borrow().text_range_to_range(session.st().range(definition_source), session.sync_odoo.encoding);
@@ -566,7 +566,7 @@ impl ReferenceVisitor {
                 };
                 if let Some(symbol) = w.weak.upgrade(session.st())
                     && eval_search_syms.contains(&symbol) {
-                        let path = session.st().path(file_symbol).to_string();
+                        let path = session.st().file_path(file_symbol).to_string();
                         let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, alias.range);
                         session.sync_odoo.evaluation_locations.push(Location {
                             uri: FileMgr::pathname2uri(&path),
