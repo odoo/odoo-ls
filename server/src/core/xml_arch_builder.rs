@@ -1,6 +1,6 @@
 use super::file_mgr::FileInfo;
 use crate::{
-    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource, MissingDataSource, OYarn}, core::{build_scheduler::BuildScheduler, entry_point::EntryPointType, symbols::{ModuleSymbol, symbol_keys::{XmlDataKey, XmlId}}}, features::xml_ast_utils::XmlAstUtils, threads::SessionInfo
+    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource, MissingDataSource, OYarn}, core::{build_scheduler::BuildScheduler, entry_point::EntryPointType, symbols::{ModuleSymbol, storage::SymbolTable, symbol_keys::{XmlDataKey, XmlId}}}, threads::SessionInfo
 };
 use crate::{
     core::{
@@ -100,24 +100,31 @@ impl XmlArchBuilder {
             ModuleSymbol::insert_xml_id(session.st_mut(), xml_module, Sy!(id), XmlId::from(xml_data));
         }
         if let Some(t_name) = t_name {
-            if XmlAstUtils::ensure_js_template_validity(session, &t_name) {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05072, &[]) {
-                    diagnostics.push(lsp_types::Diagnostic {
-                        range: lsp_types::Range {
-                            start: lsp_types::Position::new(node.range().start as u32, 0),
-                            end: lsp_types::Position::new(node.range().end as u32, 0),
-                        },
-                        ..diagnostic.clone()
-                    });
+            let Some(template) = xml_data.as_xml_template_key() else {
+                error!("Template data is not a XmlTemplateKey for t-name: {}", t_name);
+                return;
+            };
+            // If there is already a registered template with this t-name, we should 
+            // retrigger its validation (maybe it does not depend on this current file yet)
+            // This is not done at validation level as it could cause infinite loops
+            let mut others = vec![];
+            if let Some(templates) = session.sync_odoo.js_templates.get(&t_name) {
+                for other in templates.iter_valid(session.st()) {
+                    if let Some(file) = session.st().get_file(other.into())
+                        && file != self.xml_symbol.into()
+                        && !others.contains(&file) {
+                        others.push(file);
+                    }
                 }
-            } else {
-                let Some(template) = xml_data.as_xml_template_key() else {
-                    error!("Template data is not a XmlTemplateKey for t-name: {}", t_name);
-                    return;
-                };
-                session.sync_odoo.get_main_entry().borrow_mut().search_rebuild_for_data_id(session, MissingDataSource::TEMPLATE(Sy!(t_name.clone())));
-                session.sync_odoo.js_templates.entry(t_name).or_default().insert(template);
             }
+            for file in others {
+                if session.st().build_status(file.into(), BuildSteps::VALIDATION) == BuildStatus::DONE {
+                    SymbolTable::invalidate(session, file, BuildSteps::VALIDATION);
+                    BuildScheduler::queue(session, file);
+                }
+            }
+            session.sync_odoo.get_main_entry().borrow_mut().search_rebuild_for_data_id(session, MissingDataSource::TEMPLATE(Sy!(t_name.clone())));
+            session.sync_odoo.js_templates.entry(t_name).or_default().insert(template);
         }
     }
 
