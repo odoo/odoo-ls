@@ -1,7 +1,6 @@
-use weak_table::PtrWeakHashSet;
 
-use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, model::Model, symbols::{storage::{dependency_mgr::{DependenciesTable, DependentsTable}, FileSystemSymbolParent}, symbol_keys::SymbolKey}}, oyarn, utils::PathSanitizer};
-use std::{cell::RefCell, path::Path, rc::Weak};
+use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo, symbols::{storage::{FileSystemSymbolParent, dependency_mgr::{DependenciesTable, DependentsTable}}, symbol_keys::SymbolKey}}, oyarn, utils::PathSanitizer};
+use std::path::Path;
 use crate::utils::HashMap;
 
 use super::symbol_mgr::{SectionRange, SymbolMgr};
@@ -18,7 +17,6 @@ pub struct PythonPackageSymbol {
     pub not_found_paths: Vec<(BuildSteps, Vec<OYarn>)>,
     pub(super) in_workspace: bool,
     pub self_import: bool,
-    pub model_dependencies: PtrWeakHashSet<Weak<RefCell<Model>>>, //always on validation level, as odoo step is always required
     pub dependencies: DependenciesTable,
     pub dependents: DependentsTable,
     pub processed_text_hash: u64,
@@ -51,7 +49,6 @@ impl PythonPackageSymbol {
             fs_symbols: HashMap::default(),
             sections: vec![],
             symbols: HashMap::default(),
-            model_dependencies: PtrWeakHashSet::new(),
             dependencies: DependenciesTable::default(),
             dependents: DependentsTable::default(),
             processed_text_hash: 0,
