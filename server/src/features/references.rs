@@ -561,11 +561,11 @@ impl ReferenceVisitor {
             let Some(SymbolKey::Variable(variable_key)) = variable else { continue };
             for evaluation in session.st()[variable_key].evaluations.clone() {
                 let eval_sym = evaluation.symbol.get_symbol(session, None, &mut vec![], Some(file_symbol.into()));
-                let EvaluationSymbolPtr::WEAK(w) = eval_sym else {
+                let EvaluationSymbolPtr::WEAK(_) = eval_sym else {
                     panic!("Internal error: evaluated has invalid evaluationType");
                 };
-                if let Some(symbol) = w.weak.upgrade(session.st())
-                    && eval_search_syms.contains(&symbol) {
+                if SymbolTable::follow_imported_ref(&eval_sym, session, None).iter().any(|end_sym|
+                    end_sym.upgrade_weak(session.st()).is_some_and(|symbol| eval_search_syms.contains(&symbol))) {
                         let path = session.st().file_path(file_symbol).to_string();
                         let range = session.sync_odoo.get_file_mgr().borrow().text_range_to_range(session, &path, alias.range);
                         session.sync_odoo.evaluation_locations.push(Location {
