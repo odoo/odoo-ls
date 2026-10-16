@@ -117,10 +117,40 @@ impl<'a> OrderItem<'a> {
         Some((property, property_start, property_start + property.len()))
     }
 
+    /// The words after the field (e.g. `desc`, `nulls`, `last`), each with its start and end
+    /// indexes in the string.
+    pub fn keywords(&self) -> Vec<(&'a str, usize, usize)> {
+        self.words().skip(1).map(|(word, start)| (word, start, start + word.len())).collect()
+    }
+
+    /// Keywords allowed after `previous`, the keywords before them in an item: a direction, then
+    /// where nulls go. Case-insensitive, as in Odoo.
+    pub fn next_keywords(previous: &[&str]) -> &'static [&'static str] {
+        let is = |word: &str, keyword: &str| word.eq_ignore_ascii_case(keyword);
+        let is_direction = |word: &str| is(word, "asc") || is(word, "desc");
+        match previous {
+            [] => &["asc", "desc", "nulls"],
+            [direction] if is_direction(direction) => &["nulls"],
+            [nulls] if is(nulls, "nulls") => &["first", "last"],
+            [direction, nulls] if is_direction(direction) && is(nulls, "nulls") => &["first", "last"],
+            _ => &[],
+        }
+    }
+
     /// The first word of the item, with its start index in the string.
-    fn first_word(&self) -> Option<(&'a str, usize)> {
-        let word = self.text.split_whitespace().next()?;
-        Some((word, self.start + (self.text.len() - self.text.trim_start().len())))
+    pub fn first_word(&self) -> Option<(&'a str, usize)> {
+        self.words().next()
+    }
+
+    /// The words of the item, each with its start index in the string.
+    fn words(&self) -> impl Iterator<Item = (&'a str, usize)> {
+        let mut end = 0;
+        self.text.split_whitespace().map(move |word| {
+            // Words come in order: each one is found after the previous
+            let start = end + self.text[end..].find(word).unwrap_or(0);
+            end = start + word.len();
+            (word, self.start + start)
+        })
     }
 }
 
@@ -1147,5 +1177,28 @@ mod tests {
         assert_eq!(fields, [Some(("name", "name")), Some(("id", "id")), None, Some(("partner_id", "partner_id")), None]);
         let properties: Vec<_> = items.iter().map(|item| item.property().map(|(property, start, end)| (property, &order[start..end]))).collect();
         assert_eq!(properties, [None, None, None, Some(("id", "id")), None]);
+    }
+
+    #[test]
+    fn test_order_item_keywords() {
+        // `desc` also appears inside the field, and the words are separated by various spaces
+        let order = "name, desc_date  desc nulls\tlast";
+        let items = OrderItem::order_items(order);
+        // Each keyword, and the text found at its indexes
+        let keywords: Vec<Vec<_>> = items.iter()
+            .map(|item| item.keywords().into_iter().map(|(keyword, start, end)| (keyword, &order[start..end])).collect())
+            .collect();
+        assert_eq!(keywords, [vec![], vec![("desc", "desc"), ("nulls", "nulls"), ("last", "last")]]);
+    }
+
+    #[test]
+    fn test_order_next_keywords() {
+        assert_eq!(OrderItem::next_keywords(&[]), ["asc", "desc", "nulls"]);
+        assert_eq!(OrderItem::next_keywords(&["DESC"]), ["nulls"]);
+        assert_eq!(OrderItem::next_keywords(&["nulls"]), ["first", "last"]);
+        assert_eq!(OrderItem::next_keywords(&["asc", "Nulls"]), ["first", "last"]);
+        // A complete item, and a wrong keyword: nothing can follow
+        assert!(OrderItem::next_keywords(&["desc", "nulls", "last"]).is_empty());
+        assert!(OrderItem::next_keywords(&["dsc"]).is_empty());
     }
 }

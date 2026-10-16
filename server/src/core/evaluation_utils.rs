@@ -86,18 +86,25 @@ impl DeepFieldEvalWalker {
     /// Cheaper than get_model_symbol: it does not resolve the comodel, and it is also correct
     /// for the multi-comodel case where get_model_symbol would return None.
     pub fn last_field_is_relational(&self, session: &mut SessionInfo) -> bool {
+        self.last_field_has_type(session, &["many2one", "many2many", "one2many"], &["Many2one", "One2many", "Many2many"])
+    }
+
+    /// Returns true if any field symbol from the previous get_model_fields call is a Many2one relational field.
+    pub fn last_field_is_many2one(&self, session: &mut SessionInfo) -> bool {
+        self.last_field_has_type(session, &["many2one"], &["Many2one"])
+    }
+
+    /// Whether any field symbol from the previous get_model_fields call has one of these types:
+    /// `xml_types` for fields defined in XML, `field_classes` for fields defined in Python.
+    fn last_field_has_type(&self, session: &mut SessionInfo, xml_types: &[&str], field_classes: &[&str]) -> bool {
         let Some(field_symbols) = &self.prev_field_symbols else {
             return false;
         };
         field_symbols.iter().any(|field_symbol_key| match field_symbol_key {
             SymbolKey::XmlRecord(key) => session.st()[*key]
                 .get_field_text(XmlFieldName::Type, session.st())
-                .is_some_and(|ttype| ["many2one", "many2many", "one2many"].contains(&ttype.as_str())),
-            SymbolKey::Variable(_) => SymbolTable::is_specific_field(
-                session,
-                *field_symbol_key,
-                &["Many2one", "One2many", "Many2many"],
-            ),
+                .is_some_and(|ttype| xml_types.contains(&ttype.as_str())),
+            SymbolKey::Variable(_) => SymbolTable::is_specific_field(session, *field_symbol_key, field_classes),
             _ => false,
         })
     }
