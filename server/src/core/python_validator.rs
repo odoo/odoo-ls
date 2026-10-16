@@ -1,4 +1,4 @@
-use ruff_python_ast::{Alias, AnyRootNodeRef, Expr, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtMatch, StmtRaise, StmtTry, StmtTypeAlias, StmtWith};
+use ruff_python_ast::{Alias, AnyRootNodeRef, Expr, ExprStringLiteral, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtMatch, StmtRaise, StmtTry, StmtTypeAlias, StmtWith};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::{trace, warn};
 use std::rc::Rc;
@@ -8,9 +8,12 @@ use lsp_types::{Diagnostic, Position, Range};
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation_context::{ContextKey, ContextValue};
+use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::symbol_keys::{ClassKey, ModelSymbolKey, ModuleKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey};
+use crate::features::ast_utils::AstUtils;
+use crate::features::features_utils::OrderItem;
 use crate::{constants::*, oyarn};
 use crate::core::symbols::{ModuleSymbol};
 use crate::threads::SessionInfo;
@@ -277,7 +280,7 @@ impl PythonValidator {
     fn visit_class_def(&mut self, session: &mut SessionInfo, c: &StmtClassDef) {
         let sym = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &c.name, &c.range);
         if let Some(sym) = sym {
-            self._check_model(session, sym.unwrap_class_key());
+            self.check_model(session, sym.unwrap_class_key());
             let old_noqa = session.current_noqa.clone();
             session.current_noqa = session.st().get_noqas(sym).clone();
             self.sym_stack.push(sym);
@@ -378,7 +381,7 @@ impl PythonValidator {
         self.validate_body(session, &stmt_with.body);
     }
 
-    fn _check_model(&mut self, session: &mut SessionInfo, class: ClassKey) {
+    fn check_model(&mut self, session: &mut SessionInfo, class: ClassKey) {
         let Some(model_data) = session.st()[class]._model.as_ref() else {
             return;
         };
@@ -679,6 +682,7 @@ impl PythonValidator {
                 }
             }
         }
+        self.check_model_order(session, class, maybe_from_module);
         // Check name for shadowing warning
         let Some(model) = session.sync_odoo.models.get(&model_name).cloned() else {
             return;
@@ -742,6 +746,146 @@ impl PythonValidator {
                 }
             }
         }
+    }
+
+    /// Validation for the _order attribute of the model
+    fn check_model_order(
+        &mut self,
+        session: &mut SessionInfo,
+        class: ClassKey,
+        maybe_from_module: Option<ModuleKey>,
+    ) {
+        let model_order_syms = session
+            .st()
+            .get_symbol(class.into(), (&[], &["_order"]), u32::MAX);
+        // Normally it is one symbol, take the last to account for shadowing
+        let Some(&model_order) = model_order_syms.last() else {
+            return;
+        };
+        let order_string = session
+            .st()
+            .evaluations(model_order)
+            .cloned()
+            .into_iter()
+            .flatten()
+            .flat_map(|eval| eval.follow_ref_and_get_value(session, None, &mut vec![]))
+            .find_map(|ev| match ev {
+                EvaluationValue::CONSTANT(expr) => match *expr {
+                    Expr::StringLiteral(s) => Some(s),
+                    _ => None,
+                },
+                _ => None,
+            });
+        let Some(order_string) = order_string else {
+            return;
+        };
+        let order = order_string.value.to_str();
+        if order.is_empty() {
+            return; // an empty _order attribute is valid
+        }
+        for item in OrderItem::order_items(order) {
+            self.check_model_order_item(session, class, maybe_from_module, &order_string, item);
+        }
+    }
+
+    /// Validation for one item of the _order attribute, e.g. `partner_id.id desc`: its field must
+    /// exist, and a property is only allowed as `.id` of a many2one.
+    fn check_model_order_item(
+        &mut self,
+        session: &mut SessionInfo,
+        class: ClassKey,
+        maybe_from_module: Option<ModuleKey>,
+        order_string: &ExprStringLiteral,
+        item: OrderItem,
+    ) {
+        if item.text.trim().is_empty() {
+            // `name,,id` or a trailing comma: point at the comma before the item, after it if first
+            let comma = if item.start > 0 { item.start - 1 } else { item.end() };
+            self.push_order_diagnostic(session, DiagnosticCode::OLS03029, &["empty item"], order_string, comma, comma + 1);
+            return;
+        }
+        self.check_model_order_keywords(session, order_string, &item);
+        let Some((field_name, start, end)) = item.field() else {
+            // The first word starts with a property, e.g. `.id`
+            if let Some((word, start)) = item.first_word() {
+                let detail = format!("missing field before `{word}`");
+                self.push_order_diagnostic(session, DiagnosticCode::OLS03029, &[&detail], order_string, start, start + word.len());
+            }
+            return;
+        };
+        let mut walker = DeepFieldEvalWalker::new(class.into(), maybe_from_module);
+        let symbols = walker.get_model_fields(session, class.into(), field_name);
+        if symbols.is_empty() {
+            self.push_order_diagnostic(session, DiagnosticCode::OLS03014, &[], order_string, start, end);
+        } else if let Some((property_name, prop_start, prop_end)) = item.property() {
+            if !walker.last_field_is_many2one(session) {
+                let detail = format!("`{field_name}` must be a many2one field to have a property");
+                self.push_order_diagnostic(session, DiagnosticCode::OLS03029, &[&detail], order_string, start, end);
+                return;
+            }
+            if property_name != "id" {
+                let detail = format!("only `.id` is allowed, not `.{property_name}`");
+                self.push_order_diagnostic(session, DiagnosticCode::OLS03029, &[&detail], order_string, prop_start, prop_end);
+            }
+        }
+    }
+
+    /// Validation for the keywords after the field of an _order item: the first one not allowed
+    /// where it is (e.g. `dsc`, or `desc` after `nulls first`), a `nulls` without `first` or `last`,
+    /// and more than one space in `nulls first` or `nulls last`.
+    fn check_model_order_keywords(&mut self, session: &SessionInfo, order_string: &ExprStringLiteral, item: &OrderItem) {
+        let order = order_string.value.to_str();
+        let keywords = item.keywords();
+        let words: Vec<&str> = keywords.iter().map(|&(keyword, _, _)| keyword).collect();
+        for (index, &(keyword, start, end)) in keywords.iter().enumerate() {
+            let allowed = OrderItem::next_keywords(&words[..index]);
+            if !allowed.contains(&keyword.to_ascii_lowercase().as_str()) {
+                let detail = match allowed {
+                    [] => format!("unexpected `{keyword}`"),
+                    _ => {
+                        let expected = allowed.iter().map(|allowed| format!("`{allowed}`")).collect::<Vec<_>>().join(" or ");
+                        format!("expected {expected}, got `{keyword}`")
+                    },
+                };
+                self.push_order_diagnostic(session, DiagnosticCode::OLS03029, &[&detail], order_string, start, end);
+                return;
+            }
+            if index > 0 && words[index - 1].eq_ignore_ascii_case("nulls") {
+                let (_, nulls_start, nulls_end) = keywords[index - 1];
+                if &order[nulls_end..start] != " " {
+                    let detail = format!("`nulls {keyword}` takes a single space");
+                    self.push_order_diagnostic(session, DiagnosticCode::OLS03029, &[&detail], order_string, nulls_start, end);
+                    return;
+                }
+            }
+        }
+        if let Some(&(keyword, start, end)) = keywords.last()
+            && keyword.eq_ignore_ascii_case("nulls")
+        {
+            let detail = format!("`{keyword}` must be followed by `first` or `last`");
+            self.push_order_diagnostic(session, DiagnosticCode::OLS03029, &[&detail], order_string, start, end);
+        }
+    }
+
+    /// Report `code` on `order_string[start..end]`, or on the whole string if that piece can't be
+    /// found in the file.
+    fn push_order_diagnostic(
+        &mut self,
+        session: &SessionInfo,
+        code: DiagnosticCode,
+        params: &[&str],
+        order_string: &ExprStringLiteral,
+        start: usize,
+        end: usize,
+    ) {
+        let Some(diagnostic_base) = create_diagnostic(session, code, params) else {
+            return;
+        };
+        let range = AstUtils::range_in_file(order_string, start, end).unwrap_or(order_string.range());
+        self.diagnostics.push(Diagnostic {
+            range: FileMgr::textRange_to_temporary_Range(&range),
+            ..diagnostic_base
+        });
     }
 
     fn _check_module_dependency(&mut self, session: &mut SessionInfo, class_key: ClassKey, model_name: &str, range: &TextRange) {
