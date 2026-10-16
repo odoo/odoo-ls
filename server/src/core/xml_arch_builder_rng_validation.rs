@@ -4,7 +4,7 @@ use lsp_types::{Diagnostic, Position, Range};
 use roxmltree::Node;
 use ruff_text_size::{TextRange, TextSize};
 
-use crate::{Sy, constants::OYarn, core::{diagnostics::{DiagnosticCode, create_diagnostic}, model::Model, odoo::SyncOdoo, symbols::{storage::{XmlFieldParent, xml::xml_field_symbol::XmlFieldName}, symbol_keys::{XmlFieldKey, XmlId, XmlRecordKey}}}, oyarn, threads::SessionInfo, utils};
+use crate::{Sy, constants::OYarn, core::{diagnostics::{DiagnosticCode, create_diagnostic}, model::Model, odoo::SyncOdoo, symbols::{storage::{XmlFieldParent, xml::xml_field_symbol::XmlFieldName}, symbol_keys::{XmlFieldKey, XmlId, XmlRecordKey}}}, features::owl_xml_utils::is_template_extension, oyarn, threads::SessionInfo, utils};
 
 use super::xml_arch_builder::XmlArchBuilder;
 
@@ -538,7 +538,19 @@ impl XmlArchBuilder {
     }
 
     fn load_qweb_template(&mut self, session: &mut SessionInfo, node: &Node, found_id: Option<String>, for_web: bool, diagnostics: &mut Vec<Diagnostic>) -> bool {
-        let found_t_name = Self::collect_t_name(node);
+        let mut found_t_name = Self::collect_t_name(node);
+        // An extension modifies the inherited template in place: Odoo ignores its t-name
+        if is_template_extension(*node)
+            && let Some(t_name_attr) = node.attribute_node("t-name")
+        {
+            found_t_name = None;
+            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05077, &[]) {
+                diagnostics.push(Diagnostic {
+                    range: Range { start: Position::new(t_name_attr.range().start as u32, 0), end: Position::new(t_name_attr.range().end as u32, 0) },
+                    ..diagnostic
+                });
+            }
+        }
         let found_inherit = node.attribute("t-inherit").is_some();
         if found_id.is_none() && found_t_name.is_none() && !found_inherit {
             return false;

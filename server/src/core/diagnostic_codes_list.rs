@@ -591,6 +591,11 @@ OLS05075, DiagnosticSetting::Warning, "It is discouraged to declare a template a
 */
 OLS05076, DiagnosticSetting::Warning, "Duplicate declaration of field '{0}'. Only the last one is used",
 /**
+* A template with `t-inherit-mode="extend"` modifies the inherited template in place: its
+* `t-name` is ignored by Odoo.
+*/
+OLS05077, DiagnosticSetting::Warning, "With t-inherit-mode:'extend', t-name is irrelevant and can be removed",
+/**
 * Template not found
 */
 OLS06000, DiagnosticSetting::Error, "Template not found",
