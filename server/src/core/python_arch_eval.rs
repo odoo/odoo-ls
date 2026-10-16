@@ -700,6 +700,7 @@ impl PythonArchEval {
                 }
             } else {
                 let odoo_builder_diags = PythonOdooBuilder::new(c).load(session);
+                session.sync_odoo.model_classes_cache.clear();
                 self.diagnostics.extend(odoo_builder_diags);
             }
         }

@@ -107,7 +107,7 @@ impl XmlAstUtils {
         let mut out = Vec::new();
         let Some(model) = session.sync_odoo.models.get(model_name).cloned() else { return out };
         let from_module = if on_dep_only { from_module } else { None };
-        for class_key in Model::get_full_model_classes(model.clone(), session, from_module) {
+        for &class_key in Model::get_full_model_classes(model.clone(), session, from_module).iter() {
             let content = session.st().get_content_symbol(class_key.into(), member_name, u32::MAX);
             out.extend(content.symbols);
         }
