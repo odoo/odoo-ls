@@ -331,15 +331,27 @@ impl SymbolTable {
     /// Remove `symbol` and its descendants, and clean up.
     /// WARNING: After this call, `symbol` and its descendants are no longer valid keys.
     pub fn unload(session: &mut SessionInfo, symbol: FileSystemSymbolKey) {
-        fn unload_recursively(session: &mut SessionInfo, symbol: SymbolKey) {
-            for child in session.st().children(symbol) {
-                unload_recursively(session, child);
-            }
-            SyncOdoo::on_unload(session, symbol);
-        }
-        unload_recursively(session, symbol.into());
+        Self::unload_recursively(session, symbol.into());
         session.st_mut().unlink_from_parent(symbol);
         session.st_mut().remove(symbol.into());
+    }
+
+    /// Remove the variables, functions and classes of `symbol`, before its arch is walked again.
+    pub fn unload_content(session: &mut SessionInfo, symbol: SymbolKey) {
+        let Ok(symbol) = FileContentParent::try_from(symbol) else { return };
+        for child in symbol.children(session.st()).collect::<Vec<_>>() {
+            Self::unload_recursively(session, child);
+            session.st_mut().remove(child);
+        }
+        symbol.symbols_mut(session.st_mut()).clear();
+        symbol.sections_mut(session.st_mut()).truncate(1);
+    }
+
+    fn unload_recursively(session: &mut SessionInfo, symbol: SymbolKey) {
+        for child in session.st().children(symbol) {
+            Self::unload_recursively(session, child);
+        }
+        SyncOdoo::on_unload(session, symbol);
     }
 
     /// Only accessible from entry point module
