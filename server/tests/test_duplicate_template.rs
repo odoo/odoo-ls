@@ -25,15 +25,21 @@ fn addons_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons")
 }
 
-fn has_ols05072(session: &mut SessionInfo, paths: &[String; 2]) -> [bool; 2] {
+fn extension_xml(t_name: &str, t_inherit: &str) -> String {
+    format!("<templates>\n    <t t-name=\"{t_name}\" t-inherit=\"{t_inherit}\" t-inherit-mode=\"extend\">\n        <div/>\n    </t>\n</templates>\n")
+}
+
+/// Whether each file was last published with a diagnostic of each code.
+fn has_codes<const N: usize, const C: usize>(session: &mut SessionInfo, paths: &[String; N], codes: [&str; C]) -> [[bool; C]; N] {
     let diagnostics = setup::setup::get_diagnostics_for_paths(session, paths);
-    paths.clone().map(|path| {
-        diagnostics.get(&path).is_some_and(|diags| diags.iter().any(|d| d.code == Some(NumberOrString::String(S!("OLS05072")))))
-    })
+    paths.clone().map(|path| codes.map(|code| {
+        diagnostics.get(&path).is_some_and(|diags| diags.iter().any(|d| d.code == Some(NumberOrString::String(S!(code)))))
+    }))
 }
 
 /// OLS05072 must flag every declaration of a duplicated t-name, whatever the build order,
-/// and must follow the edits of any of them.
+/// and must follow the edits of any of them. The t-name of an extension is ignored, and
+/// flagged as useless (OLS05077).
 #[test]
 fn test_ols05072_duplicate_template() {
     let fixture = TempDir::new().expect("failed to create the fixture addons dir");
@@ -45,10 +51,13 @@ fn test_ols05072_duplicate_template() {
     let duplicated = "module_duplicate_templates.Duplicated";
     module.child("static/src/a.xml").write_str(&template_xml(duplicated)).unwrap();
     module.child("static/src/b.xml").write_str(&template_xml(duplicated)).unwrap();
+    module.child("static/src/ext.xml").write_str(&extension_xml(duplicated, duplicated)).unwrap();
     let paths = [
         module.child("static/src/a.xml").path().sanitize(),
         module.child("static/src/b.xml").path().sanitize(),
+        module.child("static/src/ext.xml").path().sanitize(),
     ];
+    let codes = ["OLS05072", "OLS05077"];
     let fixture_path = fixture.path().sanitize();
 
     let (mut odoo, mut config) = setup::setup::setup_server(true);
@@ -57,8 +66,13 @@ fn test_ols05072_duplicate_template() {
         .add_workspace_folder(S!("duplicate_templates_addons"), FileMgr::pathname2uri(&fixture_path));
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
-    assert_eq!(has_ols05072(&mut session, &paths), [true, true], "both declarations must be flagged");
+    assert_eq!(
+        has_codes(&mut session, &paths, codes),
+        [[true, false], [true, false], [false, true]],
+        "both declarations must be flagged, and the extension's t-name must only be reported as useless",
+    );
 
+    let declarations = [paths[0].clone(), paths[1].clone()];
     let uri = FileMgr::pathname2uri(&paths[0]);
     Odoo::handle_did_open(&mut session, DidOpenTextDocumentParams {
         text_document: TextDocumentItem {
@@ -76,8 +90,8 @@ fn test_ols05072_duplicate_template() {
     };
 
     change(&mut session, 2, template_xml("module_duplicate_templates.Renamed"));
-    assert_eq!(has_ols05072(&mut session, &paths), [false, false], "renaming one declaration must clear both");
+    assert_eq!(has_codes(&mut session, &declarations, codes), [[false, false]; 2], "renaming one declaration must clear both");
 
     change(&mut session, 3, template_xml(duplicated));
-    assert_eq!(has_ols05072(&mut session, &paths), [true, true], "restoring the duplicate must flag both again");
+    assert_eq!(has_codes(&mut session, &declarations, codes), [[true, false]; 2], "restoring the duplicate must flag both again");
 }

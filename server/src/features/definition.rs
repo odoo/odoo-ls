@@ -7,7 +7,7 @@ use crate::core::tsserver_bridge;
 use crate::core::symbols::symbol_keys::SourceFileKey;
 use crate::features::goto_utils::{GotoRequest, GotoSource, GotoSourceType, GotoUtils};
 use crate::features::owl_virtual;
-use crate::features::owl_xml_utils::TEMPLATE_NAME_ATTRS;
+use crate::features::owl_xml_utils::{TEMPLATE_NAME_ATTRS, is_template_extension};
 use crate::threads::SessionInfo;
 
 pub struct DefinitionFeature {}
@@ -131,6 +131,11 @@ impl DefinitionFeature {
             // range maps 1:1 to the attribute value string.
             let r = attr.range_value();
             if r.start <= offset && offset <= r.end {
+                // An extension's `t-name` is ignored: it stands for the inherited template
+                if attr.name() == "t-name" && is_template_extension(node) {
+                    let template_name = node.attribute("t-inherit")?;
+                    return Some((attr.name().to_string(), template_name.to_string(), r.start..r.end));
+                }
                 return Some((attr.name().to_string(), attr.value().to_string(), r.start..r.end));
             }
         }
@@ -262,5 +267,19 @@ mod tests {
             DefinitionFeature::find_template_name_attr(root, override_name_start + 1).unwrap();
         assert_eq!(attr, "t-name");
         assert_eq!(name, "mod.Override");
+    }
+
+    #[test]
+    fn find_template_name_attr_maps_extension_t_name_to_inherited_template() {
+        // An extension's `t-name` is ignored by Odoo: it stands for the inherited template.
+        let xml = r#"<templates><t t-name="mod.Useless" t-inherit="mod.Base" t-inherit-mode="extend"><div/></t></templates>"#;
+        let document = roxmltree::Document::parse(xml).unwrap();
+        let name_start = xml.find("mod.Useless").unwrap();
+        let (attr, name, range) =
+            DefinitionFeature::find_template_name_attr(document.root_element(), name_start + 1).unwrap();
+        assert_eq!(attr, "t-name");
+        assert_eq!(name, "mod.Base");
+        // The origin range stays on the `t-name` value under the cursor.
+        assert_eq!(range, name_start..name_start + "mod.Useless".len());
     }
 }

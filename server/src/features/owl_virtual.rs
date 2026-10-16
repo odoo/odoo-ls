@@ -27,7 +27,7 @@ use crate::core::js_arch_builder::JsExportKind;
 use crate::features::owl_component_utils::{template_reference_resolves};
 use crate::core::tsserver_bridge::{ts_to_lsp_location, TsLocation, TsServerBridge};
 use crate::features::owl_expr::{compile_owl_expr, interp_chunk_ranges, this_token_at};
-use crate::features::owl_xml_utils::{TEMPLATE_NAME_ATTRS, component_tag_name_range, is_owl_expression_attr, is_owl_interpolation_attr, is_prop_expr_attr, tag_is_component};
+use crate::features::owl_xml_utils::{TEMPLATE_NAME_ATTRS, component_tag_name_range, is_owl_expression_attr, is_owl_interpolation_attr, is_prop_expr_attr, tag_is_component, template_name_of};
 use crate::features::semantic_tokens::{SemanticTokensFeature, TokMod, TokType, U16ToByte};
 use crate::threads::SessionInfo;
 
@@ -675,7 +675,7 @@ fn collect_exprs<'a>(
     if !node.is_element() {
         return;
     }
-    let current_template = node.attribute("t-name").or(parent_template);
+    let current_template = template_name_of(node).or(parent_template);
 
     // Loop var introduced by this element (in scope for its non-`t-foreach` attrs + children).
     let mut inner_scope = scope.to_vec();
@@ -1222,6 +1222,25 @@ mod tests {
         for no in ["label.translate", "t-if", "t-props", "t-on-click", "t-foreach"] {
             assert!(!is_prop_expr_attr(no), "{no} should NOT be an expr prop");
         }
+    }
+
+    #[test]
+    fn collect_exprs_binds_extensions_to_the_inherited_template() {
+        // An extension modifies the inherited template in place: its expressions belong to
+        // the `t-inherit` target, with or without a (useless) `t-name`.
+        let xml = r#"<templates>
+            <t t-name="mod.Useless" t-inherit="mod.Base" t-inherit-mode="extend"><div t-if="this.a"/></t>
+            <t t-inherit="mod.Base" t-inherit-mode="extend"><div t-if="this.b"/></t>
+            <t t-name="mod.Child" t-inherit="mod.Base" t-inherit-mode="primary"><div t-if="this.c"/></t>
+        </templates>"#;
+        let document = roxmltree::Document::parse(xml).unwrap();
+        let mut out = vec![];
+        collect_exprs(document.root_element(), xml, None, &[], &mut out);
+
+        let template_of = |text: &str| out.iter().find(|c| c.text == text).map(|c| c.template_name.as_str());
+        assert_eq!(template_of("this.a"), Some("mod.Base"));
+        assert_eq!(template_of("this.b"), Some("mod.Base"));
+        assert_eq!(template_of("this.c"), Some("mod.Child"));
     }
 
     #[test]

@@ -3,6 +3,22 @@
 /// Definition dispatch (`definition.rs::find_template_name_attr`).
 pub const TEMPLATE_NAME_ATTRS: &[&str] = &["t-name", "t-call", "t-inherit"];
 
+/// Whether an element is an extension (`t-inherit-mode="extend"`): it modifies the inherited
+/// template in place, so Odoo ignores its own `t-name`.
+pub fn is_template_extension(node: roxmltree::Node) -> bool {
+    node.attribute("t-inherit-mode") == Some("extend")
+}
+
+/// The template an element's content belongs to: its `t-name`, or for an extension the
+/// `t-inherit` target.
+pub fn template_name_of<'a>(node: roxmltree::Node<'a, '_>) -> Option<&'a str> {
+    if is_template_extension(node) {
+        node.attribute("t-inherit")
+    } else {
+        node.attribute("t-name")
+    }
+}
+
 /// An OWL directive attribute whose *entire* value is a single JS expression (fed straight
 /// to OWL's `compileExpr`): the whole value splices as one `return (EXPR)`. Excludes the
 /// interpolation directives ([`is_owl_interp_attr`]) and the name/binding directives
