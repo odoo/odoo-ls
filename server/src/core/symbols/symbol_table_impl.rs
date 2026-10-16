@@ -2166,7 +2166,7 @@ impl SymbolTable {
             if let Some(model) = model {
                 // from_module: None means no dependency filtering (return everything)
                 let model_symbols = Model::get_full_model_classes(model, session, from_module);
-                for model_symbol in model_symbols {
+                for &model_symbol in model_symbols.iter() {
                     if target == model_symbol || visited_classes.contains(&model_symbol) {
                         continue;
                     }
@@ -2185,7 +2185,7 @@ impl SymbolTable {
                 for model_inherits_symbol in session.model_mgr()[model].get_inherits_models(session, from_module) {
                     //only fields are visible on inherits, not methods
                     let model_symbols = Model::get_full_model_classes(model_inherits_symbol, session, from_module);
-                    for model_symbol in model_symbols {
+                    for &model_symbol in model_symbols.iter() {
                         if target == model_symbol || visited_classes.contains(&model_symbol) {
                             continue;
                         }
