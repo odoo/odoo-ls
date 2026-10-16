@@ -215,20 +215,19 @@ impl OwlVirtualDoc {
     /// Whether a completion item points to an artifact of the virtual doc - one that
     /// does not really exist in OWL's evaluation context
     fn is_vdoc_artifact(&self, item: &CompletionItem) -> bool {
-        let Some(kind) = item.kind else { return false };
-        match kind {
-            CompletionItemKind::FUNCTION => {
-                // artificial functions we build: function __ols_m0() {...}
-                item.label.starts_with(SYNTHETIC_FN_PREFIX)
-            },
-            CompletionItemKind::VARIABLE => {
-                // The component name, which is imported to type `this` 
-                item.label == self.class_name
-                // `arguments` shows up because we're evaluating the JS expression inside a function
-                || item.label == "arguments"
-            },
-            _ => false,
+        // artificial functions we build: function __ols_m0() {...}
+        if item.label.starts_with(SYNTHETIC_FN_PREFIX) {
+            return true;
         }
+        if matches!(item.kind, Some(CompletionItemKind::VARIABLE)) && (
+            // The component name, which is imported to type `this`
+            item.label == self.class_name
+            // `arguments` shows up because we're evaluating the JS expression inside a function
+            || item.label == "arguments"
+        ) {
+            return true;
+        }
+        false
     }
 
 }
@@ -1487,5 +1486,33 @@ mod tests {
         let tset = extract_tset_local(tset_node).unwrap();
         let off = tset.decl_offset();
         assert_eq!(&xml[off..off + tset.name().len()], "greeting");
+    }
+
+    #[test]
+    fn is_vdoc_artifact_drops_synthetic_fn_names_of_any_kind() {
+        let content = String::new();
+        let doc = OwlVirtualDoc {
+            virtual_path: String::new(),
+            index: LineIndex::from_source_text(&content),
+            real_index: LineIndex::from_source_text(&content),
+            content,
+            real_path: String::new(),
+            shim: None,
+            real_content: String::new(),
+            exprs: vec![],
+            local_decls: vec![],
+            class_name: "Foo".to_string(),
+        };
+        let item = |label: &str, kind| CompletionItem {
+            label: label.to_string(),
+            kind: Some(kind),
+            ..Default::default()
+        };
+        for kind in [CompletionItemKind::VARIABLE, CompletionItemKind::TEXT, CompletionItemKind::FUNCTION] {
+            assert!(doc.is_vdoc_artifact(&item("__ols_m0", kind)));
+            assert!(doc.is_vdoc_artifact(&item("__ols_m12", kind)));
+        }
+        assert!(!doc.is_vdoc_artifact(&item("my_method", CompletionItemKind::VARIABLE)));
+        assert!(!doc.is_vdoc_artifact(&item("my_method", CompletionItemKind::TEXT)));
     }
 }
