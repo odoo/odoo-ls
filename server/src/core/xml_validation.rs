@@ -316,11 +316,41 @@ impl XmlValidator {
         if !self.is_in_main_ep {
             return;
         }
+        self.validate_t_name_unicity(session, xml_data_template, diagnostics, dependencies);
         let for_web = session.st()[xml_data_template].is_web;
         if for_web {
             self.validate_t_calls_for_frontend(session, xml_data_template, diagnostics, dependencies, _model_dependencies, _missing_model_dependencies);
         } else {
             self.validate_t_calls_for_backend(session, xml_data_template, diagnostics, dependencies, _model_dependencies, _missing_model_dependencies);
+        }
+    }
+
+    fn validate_t_name_unicity(&self, session: &mut SessionInfo, xml_data_template: XmlTemplateKey, diagnostics: &mut Vec<Diagnostic>, dependencies: &mut Vec<SourceFileKey>) {
+        let Some((t_name, _)) = session.st()[xml_data_template].t_name.clone() else {
+            return;
+        };
+        let Some(templates) = session.sync_odoo.js_templates.get(t_name.as_str()) else {
+            return;
+        };
+        let others: Vec<XmlTemplateKey> = templates.iter_valid(session.st()).filter(|t| *t != xml_data_template).collect();
+        if others.is_empty() {
+            return;
+        }
+        for other in others {
+            if let Some(file) = session.st().get_file(other.into())
+                && file != self.xml_symbol.into() {
+                dependencies.push(file);
+            }
+        }
+        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05072, &[]) {
+            let range = session.st()[xml_data_template].range;
+            diagnostics.push(Diagnostic {
+                range: Range {
+                    start: Position::new(range.start().into(), 0),
+                    end: Position::new(range.end().into(), 0),
+                },
+                ..diagnostic
+            });
         }
     }
 
