@@ -1,9 +1,9 @@
+use crate::setup::shared::with_shared_session;
 use std::env;
 use std::path::Path;
 
 use odoo_ls_server::utils::PathSanitizer;
 
-mod setup;
 
 /* This file tests that your setup is working, and show you how to write tests. */
 
@@ -18,15 +18,15 @@ fn test_setup() {
 #[test]
 fn test_start_odoo_server() {
     /* First, let's launch the server. It will setup a SyncOdoo struct, with a SyncChannel, that we can use to get the messages that the client would receive. */
-    let (mut odoo, config) = setup::setup::setup_server(true);
-    let _ = setup::setup::create_init_session(&mut odoo, config);
+    with_shared_session(true, |session| {
 
-    let odoo_path = Path::new(&env::var("COMMUNITY_PATH").unwrap()).sanitize();
+        let odoo_path = Path::new(&env::var("COMMUNITY_PATH").unwrap()).sanitize();
 
-    /* Let's ensure that the architecture is loaded */
-    assert!(!odoo.get_symbol(odoo_path.as_str(), (&["odoo"], &[]), u32::MAX).is_empty());
-    /* Let's ensure that odoo/addons is loaded */
-    assert!(!odoo.get_symbol(odoo_path.as_str(), (&["odoo", "addons"], &[]), u32::MAX).is_empty());
-    /* And let's test that our test module has well been added and available in odoo/addons */
-    assert!(!odoo.get_symbol(odoo_path.as_str(), (&["odoo", "addons", "module_1"], &[]), u32::MAX).is_empty());
+        /* Let's ensure that the architecture is loaded */
+        assert!(!session.sync_odoo.get_symbol(odoo_path.as_str(), (&["odoo"], &[]), u32::MAX).is_empty());
+        /* Let's ensure that odoo/addons is loaded */
+        assert!(!session.sync_odoo.get_symbol(odoo_path.as_str(), (&["odoo", "addons"], &[]), u32::MAX).is_empty());
+        /* And let's test that our test module has well been added and available in odoo/addons */
+        assert!(!session.sync_odoo.get_symbol(odoo_path.as_str(), (&["odoo", "addons", "module_1"], &[]), u32::MAX).is_empty());
+    });
 }

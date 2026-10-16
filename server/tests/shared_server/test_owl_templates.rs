@@ -1,3 +1,5 @@
+use crate::test_utils;
+use crate::setup::shared::with_shared_session;
 use std::path::{Path, PathBuf};
 
 use odoo_ls_server::core::js_arch_builder::ComponentDescriptor;
@@ -5,8 +7,6 @@ use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod setup;
-mod test_utils;
 
 fn module_owl_path(rel: &[&str]) -> String {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -23,11 +23,11 @@ fn module_owl_path(rel: &[&str]) -> String {
 // shared setup
 #[test]
 fn test_owl_templates() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
-    test_template_and_component_are_linked(&session);
-    test_super_class_resolves_through_its_import(&session);
-    test_goto_definition_from_js_template_to_xml(&mut session);
+    with_shared_session(true, |session| {
+        test_template_and_component_are_linked(&session);
+        test_super_class_resolves_through_its_import(&session);
+        test_goto_definition_from_js_template_to_xml(session);
+    });
 }
 
 /// After a full build, the JS `static template = "module_owl.Counter"` and the XML

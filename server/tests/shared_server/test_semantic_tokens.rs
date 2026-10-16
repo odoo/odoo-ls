@@ -1,3 +1,4 @@
+use crate::setup::shared::with_shared_session;
 use std::fs;
 use std::path::Path;
 
@@ -11,9 +12,7 @@ use odoo_ls_server::features::semantic_tokens::SemanticTokensFeature;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
-use crate::setup::setup::{create_init_session, setup_server};
 
-mod setup;
 
 const CLASS: SemanticTokenType = SemanticTokenType::CLASS;
 const FUNCTION: SemanticTokenType = SemanticTokenType::FUNCTION;
@@ -30,27 +29,27 @@ const STATIC: SemanticTokenModifier = SemanticTokenModifier::STATIC;
 /// functions, one per family of tokens, and each file is requested exactly once — like a client.
 #[test]
 fn test_semantic_tokens_python() {
-    let (mut odoo, config) = setup_server(true);
-    let mut session = create_init_session(&mut odoo, config);
-    let module = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests").join("data").join("addons").join("module_semantic_tokens");
+    with_shared_session(true, |session| {
+        let module = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests").join("data").join("addons").join("module_semantic_tokens");
 
-    let main = TokenFile::load(&mut session, &module.join("models").join("sem_tokens_main.py").sanitize());
-    let manifest = TokenFile::load(&mut session, &module.join("__manifest__.py").sanitize());
+        let main = TokenFile::load(session, &module.join("models").join("sem_tokens_main.py").sanitize());
+        let manifest = TokenFile::load(session, &module.join("__manifest__.py").sanitize());
 
-    check_parameter_declarations(&main);
-    check_parameter_usages(&main);
-    check_class_tokens(&main);
-    check_function_and_method_tokens(&main);
-    check_property_tokens(&main);
-    check_namespace_tokens(&main);
-    check_names_left_to_the_grammar(&main);
-    check_decorators_left_to_the_grammar(&main);
-    check_model_string_tokens(&main);
-    check_field_path_string_tokens(&main);
-    check_xml_id_string_tokens(&main);
-    check_import_shim_tokens(&main);
-    check_manifest_module_strings(&manifest);
+        check_parameter_declarations(&main);
+        check_parameter_usages(&main);
+        check_class_tokens(&main);
+        check_function_and_method_tokens(&main);
+        check_property_tokens(&main);
+        check_namespace_tokens(&main);
+        check_names_left_to_the_grammar(&main);
+        check_decorators_left_to_the_grammar(&main);
+        check_model_string_tokens(&main);
+        check_field_path_string_tokens(&main);
+        check_xml_id_string_tokens(&main);
+        check_import_shim_tokens(&main);
+        check_manifest_module_strings(&manifest);
+    });
 }
 
 /// Signature bindings are coloured directly, without resolution: one `parameter` token with the
