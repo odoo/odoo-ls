@@ -216,7 +216,11 @@ impl Model {
     }
 
     /// Gets all class symbols of current model and its inherited models
-    pub fn get_full_model_classes(model_rc: Rc<RefCell<Model>>, session: &SessionInfo, from_module: Option<ModuleKey>) -> HashSet<ClassKey> {
+    pub fn get_full_model_classes(model_rc: Rc<RefCell<Model>>, session: &mut SessionInfo, from_module: Option<ModuleKey>) -> Rc<HashSet<ClassKey>> {
+        let cache_key = (model_rc.borrow().name.clone(), from_module);
+        if let Some(cached) = session.sync_odoo.model_classes_cache.get(&cache_key) {
+            return cached.clone();
+        }
         let st = &session.sync_odoo.symbol_table;
         let mut symbol_set  = HashSet::default();
         let mut already_in = HashSet::default();
@@ -236,6 +240,8 @@ impl Model {
             }
             symbol_set.extend(symbols);
         }
+        let symbol_set = Rc::new(symbol_set);
+        session.sync_odoo.model_classes_cache.insert(cache_key, symbol_set.clone());
         symbol_set
     }
 
@@ -244,7 +250,10 @@ impl Model {
         let st = &session.sync_odoo.symbol_table;
         let mut res = vec![];
         let mut already_in = HashSet::default();
-        let symbols = Self::filter_by_module(self.get_python_symbols(st), st, from_module);
+        // Most classes declare no `_inherits`, drop them before the costly module filter
+        let with_inherits = self.get_python_symbols(st)
+            .filter(|&key| st[key]._model.as_ref().is_some_and(|model_data| !model_data.inherits.is_empty()));
+        let symbols = Self::filter_by_module(with_inherits, st, from_module);
         for symbol_key in symbols {
             let Some(model_data) = &st[symbol_key]._model else {
                 continue;

@@ -10,7 +10,7 @@ use crate::core::pre_parser::{PreParseCache, PreParser};
 use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::storage::{FileSystemSymbolParent, JsFileParent, SymbolTable};
 use crate::core::symbols::storage::metrics::{log_slotmap_capacities, log_symbol_counts, log_memory_usage};
-use crate::core::symbols::symbol_keys::{BuildableSymbolKey, FileSystemSymbolKey, FunctionKey, ModuleKey, NamespaceKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlTemplateKey};
+use crate::core::symbols::symbol_keys::{BuildableSymbolKey, ClassKey, FileSystemSymbolKey, FunctionKey, ModuleKey, NamespaceKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlTemplateKey};
 use crate::core::symbols::symbol_table_impl::CreateError;
 use crate::core::tsserver_bridge::{TsServerBridge};
 use crate::core::tsserver_paths::generate_paths_map;
@@ -180,6 +180,7 @@ pub struct SyncOdoo {
     file_mgr: Rc<RefCell<FileMgr>>,
     pub modules: HashMap<OYarn, Wk<ModuleKey>>,
     pub models: HashMap<OYarn, Rc<RefCell<Model>>>,
+    pub model_classes_cache: HashMap<(OYarn, Option<ModuleKey>), Rc<HashSet<ClassKey>>>,
     pub interrupt_rebuild: Arc<AtomicBool>,
     pub terminate_rebuild: Arc<AtomicBool>,
     pub current_request_id: Option<RequestId>,
@@ -241,6 +242,7 @@ impl SyncOdoo {
             stdlib_dir: SyncOdoo::default_stdlib(),
             modules: HashMap::default(),
             models: HashMap::default(),
+            model_classes_cache: HashMap::default(),
             interrupt_rebuild: Arc::new(AtomicBool::new(false)),
             terminate_rebuild: Arc::new(AtomicBool::new(false)),
             current_request_id: None,
@@ -281,6 +283,7 @@ impl SyncOdoo {
         session.sync_odoo.stdlib_dir = SyncOdoo::default_stdlib();
         session.sync_odoo.modules = HashMap::default();
         session.sync_odoo.models = HashMap::default();
+        session.sync_odoo.model_classes_cache.clear();
         session.sync_odoo.build_scheduler = BuildScheduler::new();
         session.sync_odoo.state_init = InitState::NOT_READY;
         session.sync_odoo.load_odoo_addons = true;
@@ -939,6 +942,7 @@ impl SyncOdoo {
 
     /// Side effects of unloading a symbol
     pub fn on_unload(session: &mut SessionInfo, symbol: SymbolKey) {
+        session.sync_odoo.model_classes_cache.clear();
         // Invalidate dependents
         if let Some(source_file) = symbol.as_source_file_key() {
             if DEBUG_MEMORY {
