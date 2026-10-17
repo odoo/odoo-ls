@@ -328,7 +328,10 @@ impl Model {
         let st = &session.sync_odoo.symbol_table;
         let mut res = vec![];
         let mut already_in = HashSet::default();
-        let symbols = Self::filter_by_module(self.get_python_symbols(st), st, from_module);
+        // Most classes declare no `_inherits`, drop them before the costly module filter
+        let with_inherits = self.get_python_symbols(st)
+            .filter(|&key| st[key]._model.as_ref().is_some_and(|model_data| !model_data.inherits.is_empty()));
+        let symbols = Self::filter_by_module(with_inherits, st, from_module);
         for symbol_key in symbols {
             let Some(model_data) = &st[symbol_key]._model else {
                 continue;
