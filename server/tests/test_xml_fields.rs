@@ -24,11 +24,11 @@ fn get_test_data_file_paths() -> HashMap<TestDataFiles, String> {
         .join("data")
         .join("addons");
     let mut map = HashMap::new();
-    map.insert(TestDataFiles::XTestModelXml, test_addons_path.join("module_xml_models_fields/data/x_test_model.xml").to_string_lossy().to_string());
-    map.insert(TestDataFiles::XTestModelCsv, test_addons_path.join("module_xml_models_fields/data/x_test_model.csv").to_string_lossy().to_string());
-    map.insert(TestDataFiles::XTestModelM2oXml, test_addons_path.join("module_xml_models_fields/data/x_test_model_m2o.xml").to_string_lossy().to_string());
-    map.insert(TestDataFiles::XTestModelM2oCsv, test_addons_path.join("module_xml_models_fields/data/x_test_model_m2o.csv").to_string_lossy().to_string());
-    map.insert(TestDataFiles::PyTestModel, test_addons_path.join("module_xml_models_fields/models/py_test_model.py").to_string_lossy().to_string());
+    map.insert(TestDataFiles::XTestModelXml, test_addons_path.join("module_xml_models_fields/data/x_test_model.xml").sanitize());
+    map.insert(TestDataFiles::XTestModelCsv, test_addons_path.join("module_xml_models_fields/data/x_test_model.csv").sanitize());
+    map.insert(TestDataFiles::XTestModelM2oXml, test_addons_path.join("module_xml_models_fields/data/x_test_model_m2o.xml").sanitize());
+    map.insert(TestDataFiles::XTestModelM2oCsv, test_addons_path.join("module_xml_models_fields/data/x_test_model_m2o.csv").sanitize());
+    map.insert(TestDataFiles::PyTestModel, test_addons_path.join("module_xml_models_fields/models/py_test_model.py").sanitize());
     map
 }
 
