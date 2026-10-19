@@ -178,13 +178,16 @@ fn detect_version(base_value: &str, ws_path: &Path) -> Result<(String, String), 
     let Some(prefix) = base_path.parent() else {
         return Err(S!("\"$base\" must be a valid path with a parent directory"));
     };
-    let prefix = prefix.canonicalize().map_err(|e| {
+    // Sanitize both sides so they compare equal on Windows (`canonicalize`
+    // yields a `\\?\C:\` verbatim prefix; workspace paths are `c:/...`).
+    let prefix = PathBuf::from(prefix.canonicalize().map_err(|e| {
         format!(
             "Failed to canonicalize base path: {} ({})",
             prefix.display(),
             e
         )
-    })?;
+    })?.sanitize());
+    let ws_path = PathBuf::from(ws_path.sanitize());
     let prefix_components: Vec<_> = prefix.components().collect();
     let ws_components: Vec<_> = ws_path.components().collect();
 
