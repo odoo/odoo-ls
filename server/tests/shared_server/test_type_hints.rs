@@ -1,6 +1,6 @@
-mod setup;
-mod test_utils;
 
+use crate::{setup, test_utils};
+use crate::setup::shared::with_shared_session;
 use odoo_ls_server::core::file_mgr::FileInfo;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::core::symbols::symbol_keys::{SourceFileKey, SymbolKey};
@@ -16,26 +16,26 @@ use test_utils::get_resolved_symbols_at_position;
 /// the session, file info, file symbol, and `MyClass` symbol.
 fn with_type_hints_fixture<F>(f: F)
 where
-    F: FnOnce(&mut SessionInfo, &Rc<RefCell<FileInfo>>, SourceFileKey, SymbolKey),
+    F: FnOnce(&mut SessionInfo, &Rc<RefCell<FileInfo>>, SourceFileKey, SymbolKey) + Send + 'static,
 {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
-    let path = env::current_dir()
-        .unwrap()
-        .join("tests/data/python/expressions/type_hints.py")
-        .sanitize();
-    setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
+    with_shared_session(false, |session| {
+        let path = env::current_dir()
+            .unwrap()
+            .join("tests/data/python/expressions/type_hints.py")
+            .sanitize();
+        setup::setup::prepare_custom_entry_point(session, path.as_str());
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&path).unwrap();
-    let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&path))
-        .expect("Failed to get file symbol");
+        let file_mgr = session.sync_odoo.get_file_mgr();
+        let file_info = file_mgr.borrow().get_file_info(&path).unwrap();
+        let file_symbol = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&path))
+            .expect("Failed to get file symbol");
 
-    let my_class = session.sync_odoo.get_symbol(path.as_str(), (&[], &["MyClass"]), u32::MAX);
-    assert!(!my_class.is_empty(), "MyClass should be found in the test file");
-    let my_class = my_class[0];
+        let my_class = session.sync_odoo.get_symbol(path.as_str(), (&[], &["MyClass"]), u32::MAX);
+        assert!(!my_class.is_empty(), "MyClass should be found in the test file");
+        let my_class = my_class[0];
 
-    f(&mut session, &file_info, file_symbol, my_class);
+        f(session, &file_info, file_symbol, my_class);
+    });
 }
 
 /// Test that a function with a return type hint and `pass` body is recognized as returning
