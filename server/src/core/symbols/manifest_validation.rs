@@ -3,7 +3,7 @@ use std::{ffi::OsStr, path::Path};
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
 
-use crate::{Sy, constants::{BuildSteps, DEBUG_STEPS, DiagnosticSource, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileInfo, symbols::{ModuleSymbol, symbol_keys::ModuleKey}}, threads::SessionInfo, utils::PathSanitizer};
+use crate::{Sy, constants::{BuildSteps, DEBUG_STEPS, DiagnosticSource, OYarn}, core::{diagnostics::{Diag, DiagnosticCode, create_diagnostic}, file_mgr::FileInfo, symbols::{ModuleSymbol, symbol_keys::ModuleKey}}, threads::SessionInfo, utils::PathSanitizer};
 
 
 
@@ -43,7 +43,7 @@ impl ModuleSymbol {
         }
         let manifest_path = Path::new(&root_path).join("__manifest__.py");
         let manifest_file_info = session.file_mgr().get_file_info(&manifest_path.sanitize_cow()).expect("file not found in cache");
-        session.file_mgr_mut()[manifest_file_info].replace_diagnostics(DiagnosticSource::PY_VALIDATION, diagnostics);
+        session.file_mgr_mut()[manifest_file_info].replace_diagnostics(DiagnosticSource::PY_VALIDATION, diagnostics.into_iter().map(Diag::from).collect());
         FileInfo::publish_diagnostics(session, manifest_file_info);
     }
 }

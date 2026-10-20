@@ -4,7 +4,7 @@ use lsp_types::Diagnostic;
 use ruff_text_size::TextRange;
 use tracing::warn;
 
-use crate::{Sy, constants::{BuildSteps, DiagnosticSource, OYarn}, core::{build_scheduler::BuildScheduler, diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileMgr, import_resolver::create_module_from_name, symbols::{ModuleSymbol, SymbolTable, symbol_keys::{ModuleKey, NamespaceKey, SymbolKey}}}, threads::SessionInfo, utils::PathSanitizer};
+use crate::{Sy, constants::{BuildSteps, DiagnosticSource, OYarn}, core::{build_scheduler::BuildScheduler, diagnostics::{Diag, DiagnosticCode, create_diagnostic}, file_mgr::FileMgr, import_resolver::create_module_from_name, symbols::{ModuleSymbol, SymbolTable, symbol_keys::{ModuleKey, NamespaceKey, SymbolKey}}}, threads::SessionInfo, utils::PathSanitizer};
 use crate::core::symbols::symbol_table_impl::CreateError;
 
 
@@ -21,7 +21,7 @@ impl ModuleSymbol {
         module.loaded = true;
         let manifest_path = Path::new(&module.root_path).join("__manifest__.py");
         let manifest_file_info = session.file_mgr().get_file_info(&manifest_path.sanitize_cow()).expect("file not found in cache");
-        session.file_mgr_mut()[manifest_file_info].replace_diagnostics(DiagnosticSource::PY_ARCH, diagnostics);
+        session.file_mgr_mut()[manifest_file_info].replace_diagnostics(DiagnosticSource::PY_ARCH, diagnostics.into_iter().map(Diag::from).collect());
     }
 
     /* ensure that all modules indicates in the module dependencies are well loaded.

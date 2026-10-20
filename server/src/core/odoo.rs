@@ -1,7 +1,7 @@
 use crate::constants::OYarn;
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::component_mgr::ComponentMgr;
-use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
+use crate::core::diagnostics::{Diag, DiagnosticCode, create_diagnostic};
 use crate::core::entry_point::{EntryPointKey, EntryPointType};
 use crate::core::file_mgr::{AstKind, FileInfo, PreloadedFile};
 use crate::core::js_module_scope;
@@ -2512,7 +2512,7 @@ impl Odoo {
                 };
                 new_d
             }).collect();
-            session.file_mgr_mut()[file_info].replace_diagnostics(msg.diagnostic_level, diagnostics); //TsServer will alwayse use ARCH/ARCH_EVAL and VALIDATION level to store diagnostics, while SYNTAX is reserved to OXC
+            session.file_mgr_mut()[file_info].replace_diagnostics(msg.diagnostic_level, diagnostics.into_iter().map(Diag::from).collect()); //TsServer will alwayse use ARCH/ARCH_EVAL and VALIDATION level to store diagnostics, while SYNTAX is reserved to OXC
             FileInfo::publish_diagnostics(session, file_info);
         } else {
             warn!("Received diagnostics for unknown file: {}", msg.file);

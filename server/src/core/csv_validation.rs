@@ -6,7 +6,7 @@ use tracing::info;
 
 use crate::{
     Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource, MissingDataSource, OYarn}, core::{
-        diagnostics::{DiagnosticCode, create_diagnostic}, evaluation_utils::DeepFieldEvalWalker, file_mgr::{FileInfo, FileInfoKey, FileMgr}, symbols::{Buildable as _, symbol_keys::{CsvFileKey, ModuleKey}}
+        diagnostics::{Diag, DiagnosticCode, create_diagnostic}, evaluation_utils::DeepFieldEvalWalker, file_mgr::{FileInfo, FileInfoKey, FileMgr}, symbols::{Buildable as _, symbol_keys::{CsvFileKey, ModuleKey}}
     }, features::csv_ast_utils::{CsvFieldIter, split_csv_xml_ids}, oyarn, threads::SessionInfo
 };
 pub struct CsvValidator {
@@ -111,7 +111,7 @@ impl CsvValidator {
 
     fn finalize_validation(&self, session: &mut SessionInfo, csv_symbol: CsvFileKey, file_info: FileInfoKey, diagnostics: Vec<Diagnostic>) {
         session.sync_odoo.symbol_table.set_build_status(csv_symbol.into(), BuildSteps::VALIDATION, BuildStatus::DONE);
-        session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::CSV_VALIDATION, diagnostics);
+        session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::CSV_VALIDATION, diagnostics.into_iter().map(Diag::from).collect());
         FileInfo::publish_diagnostics(session, file_info);
     }
 

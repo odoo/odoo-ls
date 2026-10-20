@@ -1,5 +1,5 @@
 use crate::{
-    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource, MissingDataSource, OYarn}, core::{build_scheduler::BuildScheduler, entry_point::{EntryPoint, EntryPointType}, file_mgr::FileInfoKey, symbols::{ModuleSymbol, SymbolTable, symbol_keys::{XmlDataKey, XmlId}}}, threads::SessionInfo
+    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource, MissingDataSource, OYarn}, core::{build_scheduler::BuildScheduler, diagnostics::Diag, entry_point::{EntryPoint, EntryPointType}, file_mgr::FileInfoKey, symbols::{ModuleSymbol, SymbolTable, symbol_keys::{XmlDataKey, XmlId}}}, threads::SessionInfo
 };
 use crate::{
     core::{
@@ -49,7 +49,7 @@ impl XmlArchBuilder {
             self.load_odoo_openerp_data(session, node, &mut diagnostics);
         }
         session.st_mut()[self.xml_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
-        session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::XML_ARCH, diagnostics);
+        session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::XML_ARCH, diagnostics.into_iter().map(Diag::from).collect());
         BuildScheduler::queue(session, self.xml_symbol);
     }
 

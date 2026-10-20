@@ -224,3 +224,25 @@ pub fn create_diag(
         tags: Vec::new(),
     })
 }
+
+// temp
+impl From<Diagnostic> for Diag {
+    fn from(d: Diagnostic) -> Self {
+        Self {
+            range: TextRange::new(d.range.start.line.into(), d.range.end.line.into()),
+            severity: d.severity.unwrap(),
+            message: d.message,
+            code: match d.code {
+                Some(NumberOrString::String(s)) => s,
+                _ => String::default(),
+            },
+            tags: d.tags.unwrap_or_default(),
+            related_info: d.related_information.unwrap_or_default().into_iter()
+                .map(|r| RelatedInfo {
+                    range: TextRange::new(r.location.range.start.line.into(), r.location.range.end.line.into()),
+                    message: r.message,
+                })
+                .collect(),
+        }
+    }
+}

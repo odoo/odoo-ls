@@ -1,7 +1,7 @@
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::trace;
 
-use crate::{Sy, constants::{BuildStatus, DiagnosticSource, MissingDataSource}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::{Ast, FileInfo, FileMgr, JsImport}}, features::xml_ast_utils::XmlAstUtils};
+use crate::{Sy, constants::{BuildStatus, DiagnosticSource, MissingDataSource}, core::{diagnostics::{Diag, DiagnosticCode, create_diagnostic}, file_mgr::{Ast, FileInfo, FileMgr, JsImport}}, features::xml_ast_utils::XmlAstUtils};
 use crate::{
     constants::{BuildSteps, OYarn, DEBUG_STEPS},
     core::{
@@ -70,7 +70,7 @@ impl JsValidator {
                 }
             }
         }
-        session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::JS_VALIDATION, diagnostics);
+        session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::JS_VALIDATION, diagnostics.into_iter().map(Diag::from).collect());
         FileInfo::publish_diagnostics(session, file_info);
         session.st_mut().set_build_status(self.js_symbol.into(), BuildSteps::VALIDATION, BuildStatus::DONE);
     }

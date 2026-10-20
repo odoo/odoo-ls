@@ -469,7 +469,7 @@ impl FileInfo {
         let (valid, diagnostics) = Self::syntax_diagnostics(session, &parsed.indexed_module.parsed);
         session.file_mgr_mut()[key].valid = valid;
         session.file_mgr_mut()[key].file_info_ast.ast = Ast::PythonAst(parsed.indexed_module);
-        session.file_mgr_mut()[key].replace_diagnostics(DiagnosticSource::PY_SYNTAX, diagnostics);
+        session.file_mgr_mut()[key].replace_diagnostics(DiagnosticSource::PY_SYNTAX, diagnostics.into_iter().map(Diag::from).collect());
     }
 
     /// Build the SYNTAX-step diagnostics (OLS01000) for a parsed Python module.
@@ -515,7 +515,7 @@ impl FileInfo {
                     fia.text_document = Some(text_document);
                     fia.ast = Ast::PythonAst(parsed.indexed_module);
                 }
-                session.file_mgr_mut()[key].replace_diagnostics(DiagnosticSource::PY_SYNTAX, diagnostics);
+                session.file_mgr_mut()[key].replace_diagnostics(DiagnosticSource::PY_SYNTAX, diagnostics.into_iter().map(Diag::from).collect());
             }
             PreloadedFile::DataFile { text_hash, text_document, ast } => {
                 let fia = &mut session.file_mgr_mut()[key].file_info_ast;
@@ -557,7 +557,7 @@ impl FileInfo {
         });
         let uri = FileMgr::pathname2uri(&session.file_mgr()[key].uri);
         let to_lsp_diag = |diags: Vec<OxcDiagnostic>|
-            diags.iter().flat_map(|d| js_utils::oxc_diagnostic_to_lsp_diagnostic(d, &uri)).collect();
+            diags.iter().flat_map(|d| js_utils::oxc_diagnostic_to_lsp_diagnostic(d, &uri)).map(Diag::from).collect();
         session.file_mgr_mut()[key].replace_diagnostics(DiagnosticSource::JS_OXC_SYNTAX, to_lsp_diag(parsed.syntax_diagnostics));
         session.file_mgr_mut()[key].replace_diagnostics(DiagnosticSource::JS_OXC_LINT, to_lsp_diag(parsed.lint_diagnostics));
     }
