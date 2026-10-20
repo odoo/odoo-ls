@@ -270,9 +270,10 @@ impl PythonValidator {
     fn visit_class_def(&mut self, session: &mut SessionInfo, c: &StmtClassDef) {
         let sym = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &c.name, &c.range);
         if let Some(sym) = sym {
-            self.check_model(session, sym.unwrap_class_key());
             let old_noqa = session.current_noqa.clone();
+            // The class's noqa also applies to the checks of the model it defines (e.g. `_order`)
             session.current_noqa = session.st().get_noqas(sym).clone();
+            self.check_model(session, sym.unwrap_class_key());
             self.sym_stack.push(sym);
             self.validate_body(session, &c.body);
             self.sym_stack.pop();
