@@ -6,6 +6,7 @@ use ruff_source_file::{LineIndex, PositionEncoding};
 use tracing::info;
 
 use crate::core::build_scheduler::BuildScheduler;
+use crate::core::diagnostics::Diag;
 use crate::core::file_mgr::{FileInfoKey, FileMgr, position_to_offset_with_line_index};
 use crate::core::js_module_scope;
 use crate::core::js_utils::read_module_header;
@@ -73,7 +74,7 @@ impl ModuleSymbol {
                 };
                 let mut csv_builder = CsvArchBuilder::new();
                 let diagnostics = csv_builder.load_csv(session, csv_sym, &data);
-                session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::CSV_SYNTAX, diagnostics);
+                session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::CSV_SYNTAX, diagnostics.into_iter().map(Diag::from).collect());
                 FileInfo::publish_diagnostics(session, file_info);
             }
         }
@@ -81,7 +82,7 @@ impl ModuleSymbol {
         let Some(manifest_file_info) = session.file_mgr().get_file_info(&manifest_path.sanitize_cow()) else {
             return;
         };
-        session.file_mgr_mut()[manifest_file_info].replace_diagnostics(DiagnosticSource::PY_ARCH_EVAL, diagnostics);
+        session.file_mgr_mut()[manifest_file_info].replace_diagnostics(DiagnosticSource::PY_ARCH_EVAL, diagnostics.into_iter().map(Diag::from).collect());
         FileInfo::publish_diagnostics(session, manifest_file_info);
     }
 
@@ -197,7 +198,7 @@ impl ModuleSymbol {
             Err(_) if data.is_empty() => {},
             Err(error) => {
                 let diag = build_syntax_diagnostic(session, file_info, &error);
-                session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::XML_SYNTAX, Vec::from_iter(diag));
+                session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::XML_SYNTAX, Vec::from_iter(diag.map(Diag::from)));
                 FileInfo::publish_diagnostics(session, file_info);
             }
         }

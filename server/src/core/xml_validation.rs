@@ -1,4 +1,4 @@
-use crate::{constants::BuildStatus, core::{entry_point::EntryPointMgr, file_mgr::{FileInfo, FileMgr}, model::ModelKey, odoo::SyncOdoo, symbols::{ModuleSymbol, storage::xml::xml_field_symbol::XmlFieldName}}, utils::{HashMap, HashSet}};
+use crate::{constants::BuildStatus, core::{diagnostics::Diag, entry_point::EntryPointMgr, file_mgr::{FileInfo, FileMgr}, model::ModelKey, odoo::SyncOdoo, symbols::{ModuleSymbol, storage::xml::xml_field_symbol::XmlFieldName}}, utils::{HashMap, HashSet}};
 
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
@@ -67,7 +67,7 @@ impl XmlValidator {
         if !loaded {
             return;
         }
-        session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::XML_VALIDATION, diagnostics);
+        session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::XML_VALIDATION, diagnostics.into_iter().map(Diag::from).collect());
         FileInfo::publish_diagnostics(session, file_info);
         session.st_mut().set_build_status(self.xml_symbol.into(), BuildSteps::VALIDATION, BuildStatus::DONE);
     }

@@ -4,7 +4,7 @@ use tracing::{trace, warn};
 use std::path::Path;
 use lsp_types::{Diagnostic, Position, Range};
 use crate::core::build_scheduler::BuildScheduler;
-use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
+use crate::core::diagnostics::{Diag, DiagnosticCode, create_diagnostic};
 use crate::core::entry_point::EntryPointKey;
 use crate::core::evaluation_context::{ContextKey, ContextValue};
 use crate::core::file_mgr::FileInfoKey;
@@ -89,7 +89,7 @@ impl PythonValidator {
                 if let SymbolKey::Module(m) = symbol {
                     ModuleSymbol::validate_manifest(m, session);
                 }
-                session.file_mgr_mut()[file_info_key].replace_diagnostics(DiagnosticSource::PY_VALIDATION, self.diagnostics.clone());
+                session.file_mgr_mut()[file_info_key].replace_diagnostics(DiagnosticSource::PY_VALIDATION, self.diagnostics.clone().into_iter().map(Diag::from).collect());
             },
             SymbolKey::Function(f) => {
                 if DEBUG_STEPS && (!DEBUG_STEPS_ONLY_INTERNAL || !session.st().is_external(symbol)) {

@@ -7,7 +7,7 @@ use ruff_python_ast::{Alias, AnyRootNodeRef, ExceptHandler, Expr, ExprNamed, FSt
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{debug, trace, warn};
 
-use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
+use crate::core::diagnostics::{Diag, DiagnosticCode, create_diagnostic};
 use crate::core::entry_point::{EntryPointKey, EntryPointType};
 use crate::core::symbols::{ModuleSymbol, SymbolMgr};
 use crate::core::symbols::storage::SymbolTable;
@@ -120,7 +120,7 @@ impl PythonArchEval {
         let file_path = self.file_path(session);
         if self.file_mode {
             if let Some(file_info_key) = session.file_mgr().get_file_info(&file_path) {
-                session.file_mgr_mut()[file_info_key].replace_diagnostics(DiagnosticSource::PY_ARCH_EVAL, self.diagnostics.clone());
+                session.file_mgr_mut()[file_info_key].replace_diagnostics(DiagnosticSource::PY_ARCH_EVAL, self.diagnostics.clone().into_iter().map(Diag::from).collect());
             }
             PythonArchEvalHooks::on_file_eval(session, self.entry_point, self.file);
         } else {
