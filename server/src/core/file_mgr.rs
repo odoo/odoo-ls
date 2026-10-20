@@ -10,7 +10,7 @@ use rustc_hash::FxHasher;
 use slotmap::{SlotMap, new_key_type};
 use tracing::{error, warn};
 use std::path::Path;
-use crate::core::js_arch_builder::{ImportSource, JsImportKind, JsDeclaration, JsExportKind, span_to_range};
+use crate::core::{diagnostics::Diag, js_arch_builder::{ImportSource, JsDeclaration, JsExportKind, JsImportKind, span_to_range}};
 use crate::core::js_arch_builder::ComponentDescriptor;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
@@ -321,7 +321,7 @@ pub struct FileInfo {
     pub opened: bool,
     need_push: bool,
     pub file_info_ast: FileInfoAst,
-    diagnostics: HashMap<DiagnosticSource, Vec<Diagnostic>>,
+    diagnostics: HashMap<DiagnosticSource, Vec<Diag>>,
     pub noqas_blocs: HashMap<u32, NoqaInfo>,
     noqas_lines: HashMap<u32, NoqaInfo>,
     diagnostic_filters: Vec<DiagnosticFilter>,
@@ -715,12 +715,12 @@ impl FileInfo {
         NoqaScan { blocs, lines, test_comments }
     }
 
-    pub fn replace_diagnostics(&mut self, step: DiagnosticSource, diagnostics: Vec<Diagnostic>) {
+    pub fn replace_diagnostics(&mut self, step: DiagnosticSource, diagnostics: Vec<Diag>) {
         self.need_push = true;
         self.diagnostics.insert(step, diagnostics);
     }
 
-    pub fn update_validation_diagnostics(&mut self, diagnostics: HashMap<DiagnosticSource, Vec<Diagnostic>>) {
+    pub fn update_validation_diagnostics(&mut self, diagnostics: HashMap<DiagnosticSource, Vec<Diag>>) {
         self.need_push = true;
         for (key, value) in diagnostics {
             self.diagnostics.entry(key).or_default().extend(value);
@@ -732,17 +732,6 @@ impl FileInfo {
         self.diagnostics.clear();
     }
 
-    fn update_range(&self, mut diagnostic: Diagnostic, encoding: PositionEncoding) -> Diagnostic {
-        diagnostic.range.start = self.offset_to_position(diagnostic.range.start.line, encoding);
-        diagnostic.range.end = self.offset_to_position(diagnostic.range.end.line, encoding);
-        if let Some(ref mut related_information) = diagnostic.related_information {
-            for related in related_information.iter_mut() {
-                related.location.range.start = self.offset_to_position(related.location.range.start.line, encoding);
-                related.location.range.end = self.offset_to_position(related.location.range.end.line, encoding);
-            }
-        }
-        diagnostic
-    }
     pub fn update_diagnostic_filters(session: &mut SessionInfo, key: FileInfoKey) {
         let uri = session.file_mgr()[key].uri.clone();
         let filters = session.sync_odoo.config.diagnostic_filters().iter().filter(|filter| {
@@ -758,7 +747,7 @@ impl FileInfo {
         session.file_mgr_mut()[key].diagnostic_filters = filters;
     }
 
-    fn js_diagnostics(&self) -> Vec<Diagnostic> {
+    fn js_diagnostics(&self) -> Vec<Diag> {
         // If there are syntax diagnostics, we only send the ones from OXC, to be less noisy
         if let Some(syntax_diags) = self.diagnostics.get(&DiagnosticSource::JS_OXC_SYNTAX)
             && !syntax_diags.is_empty()
@@ -776,8 +765,7 @@ impl FileInfo {
         ] {
             let Some(source_diags) = self.diagnostics.get(&source) else { continue };
             for diagnostic in source_diags {
-                let Some(NumberOrString::String(code)) = &diagnostic.code else { continue };
-                if TSSERVER_DIAGS_COVERED_BY_OXC.contains(&code.as_str()) { continue }
+                if TSSERVER_DIAGS_COVERED_BY_OXC.contains(&diagnostic.code()) { continue }
                 diagnostics.push(diagnostic.clone());
             }
         }
@@ -785,88 +773,89 @@ impl FileInfo {
     }
 
     pub fn publish_diagnostics(session: &mut SessionInfo, key: FileInfoKey) {
-        if session.file_mgr()[key].need_push {
-            let mut all_diagnostics = Vec::new();
-            {
-                let file = &session.file_mgr()[key];
-                let is_js = file.file_info_ast.ast.kind() == AstKind::JsAst;
-                let diagnostics = if is_js {
-                    Self::js_diagnostics(file)
-                } else {
-                    file.diagnostics.values().flatten().cloned().collect::<Vec<_>>()
-                };
+        let file = &session.file_mgr()[key];
+        if !file.need_push {
+            return;
+        }
+        let mut all_diagnostics = Vec::new();
+        let is_js = file.file_info_ast.ast.kind() == AstKind::JsAst;
+        let diagnostics = if is_js {
+            Self::js_diagnostics(file)
+        } else {
+            file.diagnostics.values().flatten().cloned().collect::<Vec<_>>()
+        };
 
-                'diagnostics: for d in diagnostics {
-                    //check noqa lines
-                    let updated = file.update_range(d, session.sync_odoo.encoding);
-                    let updated_line = updated.range.start.line;
-                    if let Some(noqa_line) = file.noqas_lines.get(&updated_line) {
-                        match noqa_line {
-                            NoqaInfo::None => {},
-                            NoqaInfo::All => {
-                                continue;
-                            }
-                            NoqaInfo::Codes(codes) => {
-                                match &updated.code {
-                                    None => {continue;},
-                                    Some(NumberOrString::Number(n)) => {
-                                        if codes.contains(&n.to_string()) {
-                                            continue;
-                                        }
-                                    },
-                                    Some(NumberOrString::String(s)) => {
-                                        if codes.contains(s) {
-                                            continue;
-                                        }
-                                    }
+        let uri = FileMgr::pathname2uri(&file.uri);
+        let text_range_to_lsp_range = |range| file.text_range_to_range(range, session.sync_odoo.encoding);
+
+        'diagnostics: for d in diagnostics {
+            //check noqa lines
+            let lsp_diag = d.into_lsp(&uri, text_range_to_lsp_range);
+            let updated_line = lsp_diag.range.start.line;
+            if let Some(noqa_line) = file.noqas_lines.get(&updated_line) {
+                match noqa_line {
+                    NoqaInfo::None => {},
+                    NoqaInfo::All => {
+                        continue;
+                    }
+                    NoqaInfo::Codes(codes) => {
+                        match &lsp_diag.code {
+                            None => {continue;},
+                            Some(NumberOrString::Number(n)) => {
+                                if codes.contains(&n.to_string()) {
+                                    continue;
+                                }
+                            },
+                            Some(NumberOrString::String(s)) => {
+                                if codes.contains(s) {
+                                    continue;
                                 }
                             }
                         }
                     }
-                    for filter in file.diagnostic_filters.iter() {
-                        if !filter.codes.is_empty(){
-                            // we pass the filter if we do not have code, or does it not match the filter
-                            let Some(updated_code) = &updated.code else {
-                                continue;
-                            };
-                            let updated_code = match updated_code {
-                                NumberOrString::Number(n) => n.to_string(),
-                                NumberOrString::String(s) => s.clone(),
-                            };
-                            if !filter.codes.iter().any(|re| re.is_match(&updated_code)) {
-                                continue;
-                            }
-                        }
-                        if !filter.types.is_empty() {
-                            // we pass the filter if we do not have severity, or does it not match the filter
-                            let Some(severity) = &updated.severity else {
-                                continue;
-                            };
-                            if !filter.types.iter().any(|t| {
-                                matches!(
-                                    (t, severity),
-                                    (DiagnosticSetting::Error, &DiagnosticSeverity::ERROR)
-                                        | (DiagnosticSetting::Warning, &DiagnosticSeverity::WARNING)
-                                        | (DiagnosticSetting::Info, &DiagnosticSeverity::INFORMATION)
-                                        | (DiagnosticSetting::Hint, &DiagnosticSeverity::HINT)
-                                )
-                            }) {
-                                continue;
-                            }
-                        }
-                        continue 'diagnostics;
-                    }
-                    all_diagnostics.push(updated);
                 }
             }
-            let file = &session.file_mgr()[key];
-            session.send_notification(PublishDiagnostics::METHOD, PublishDiagnosticsParams{
-                uri: FileMgr::pathname2uri(&file.uri),
-                diagnostics: all_diagnostics,
-                version: file.version,
-            });
-            session.file_mgr_mut()[key].need_push = false;
+            for filter in file.diagnostic_filters.iter() {
+                if !filter.codes.is_empty() {
+                    // we pass the filter if we do not have code, or does it not match the filter
+                    let Some(updated_code) = &lsp_diag.code else {
+                        continue;
+                    };
+                    let updated_code = match updated_code {
+                        NumberOrString::Number(n) => n.to_string(),
+                        NumberOrString::String(s) => s.clone(),
+                    };
+                    if !filter.codes.iter().any(|re| re.is_match(&updated_code)) {
+                        continue;
+                    }
+                }
+                if !filter.types.is_empty() {
+                    // we pass the filter if we do not have severity, or does it not match the filter
+                    let Some(severity) = &lsp_diag.severity else {
+                        continue;
+                    };
+                    if !filter.types.iter().any(|t| {
+                        matches!(
+                            (t, severity),
+                            (DiagnosticSetting::Error, &DiagnosticSeverity::ERROR)
+                                | (DiagnosticSetting::Warning, &DiagnosticSeverity::WARNING)
+                                | (DiagnosticSetting::Info, &DiagnosticSeverity::INFORMATION)
+                                | (DiagnosticSetting::Hint, &DiagnosticSeverity::HINT)
+                        )
+                    }) {
+                        continue;
+                    }
+                }
+                continue 'diagnostics;
+            }
+            all_diagnostics.push(lsp_diag);
         }
+        session.send_notification(PublishDiagnostics::METHOD, PublishDiagnosticsParams {
+            uri,
+            diagnostics: all_diagnostics,
+            version: file.version,
+        });
+        session.file_mgr_mut()[key].need_push = false;
     }
 
     fn offset_to_position_with_text_document(text_document: &TextDocument, offset: u32, encoding: PositionEncoding) -> Position {
@@ -890,8 +879,8 @@ impl FileInfo {
 
     pub fn text_range_to_range(&self, range: TextRange, encoding: PositionEncoding) -> Range {
         Range {
-            start: self.offset_to_position(range.start().to_usize() as u32, encoding),
-            end: self.offset_to_position(range.end().to_usize() as u32, encoding)
+            start: self.offset_to_position(range.start().to_u32(), encoding),
+            end: self.offset_to_position(range.end().to_u32(), encoding)
         }
     }
 
