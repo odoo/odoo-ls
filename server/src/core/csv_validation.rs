@@ -1,13 +1,12 @@
 use std::path::Path;
 
 use csv::StringRecord;
-use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
 
 use crate::{
     Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource, MissingDataSource, OYarn}, core::{
-        diagnostics::{Diag, DiagnosticCode, create_diagnostic}, evaluation_utils::DeepFieldEvalWalker, file_mgr::{FileInfo, FileInfoKey, FileMgr}, symbols::{Buildable as _, symbol_keys::{CsvFileKey, ModuleKey}}
-    }, features::csv_ast_utils::{CsvFieldIter, split_csv_xml_ids}, oyarn, threads::SessionInfo
+        diagnostics::{Diag, DiagnosticCode, create_diag}, evaluation_utils::DeepFieldEvalWalker, file_mgr::{FileInfo, FileInfoKey, FileMgr}, symbols::{Buildable as _, symbol_keys::{CsvFileKey, ModuleKey}}
+    }, features::csv_ast_utils::{CsvFieldIter, split_csv_xml_ids}, oyarn, threads::SessionInfo, utils::range_to_text_range
 };
 pub struct CsvValidator {
 }
@@ -53,12 +52,9 @@ impl CsvValidator {
             if let Ok(headers) = rdr.headers() {
                 max_range = headers.len();
             }
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[model_name]) {
-                diagnostics.push(Diagnostic {
-                    range: Range { start: Position::new(0, 0), end: Position::new(max_range as u32, 0) },
-                    ..diagnostic.clone()
-                });
-            }
+            // @todo: fix-me: assuming the idea was to make the diag span the first line, using headers.len() does not do that!
+            let range = range_to_text_range(0..max_range);
+            diagnostics.extend(create_diag(session, DiagnosticCode::OLS05056, &[model_name], range));
             self.finalize_validation(session, csv_symbol, file_info, diagnostics);
             return;
         };
@@ -88,12 +84,8 @@ impl CsvValidator {
                 );
                 if member_symbols.is_empty() {
                     header_is_xml[idx] = false;
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05057, &[h, model_name]) {
-                        diagnostics.push(Diagnostic {
-                            range: Range { start: Position::new(start as u32, 0), end: Position::new(end as u32, 0) },
-                            ..diagnostic.clone()
-                        });
-                    }
+                    let range = range_to_text_range(start..end);
+                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS05057, &[h, model_name], range));
                 } else {
                     header_is_xml[idx] = header_elts.len() == 2
                         && header_elts[1] == "id"
@@ -109,13 +101,13 @@ impl CsvValidator {
         self.finalize_validation(session, csv_symbol, file_info, diagnostics);
     }
 
-    fn finalize_validation(&self, session: &mut SessionInfo, csv_symbol: CsvFileKey, file_info: FileInfoKey, diagnostics: Vec<Diagnostic>) {
+    fn finalize_validation(&self, session: &mut SessionInfo, csv_symbol: CsvFileKey, file_info: FileInfoKey, diagnostics: Vec<Diag>) {
         session.sync_odoo.symbol_table.set_build_status(csv_symbol.into(), BuildSteps::VALIDATION, BuildStatus::DONE);
-        session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::CSV_VALIDATION, diagnostics.into_iter().map(Diag::from).collect());
+        session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::CSV_VALIDATION, diagnostics);
         FileInfo::publish_diagnostics(session, file_info);
     }
 
-    fn validate_record(&self, session: &mut SessionInfo, csv_module: ModuleKey, headers_is_xml: &[bool], record: &StringRecord, diagnostics: &mut Vec<Diagnostic>, data: &str) {
+    fn validate_record(&self, session: &mut SessionInfo, csv_module: ModuleKey, headers_is_xml: &[bool], record: &StringRecord, diagnostics: &mut Vec<Diag>, data: &str) {
         let Some(field_iter) = CsvFieldIter::new(record, data) else { return; };
         for (idx, (start, _end, field)) in field_iter.enumerate() {
             let Some(&should_be_xml_id) = headers_is_xml.get(idx) else { break;};
@@ -133,12 +125,8 @@ impl CsvValidator {
                     continue;
                 }
                 let Some(&module_symbol) = session.sync_odoo.modules.get(module_name) else {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05003, &[]) {
-                        diagnostics.push(Diagnostic {
-                            range: Range { start: Position::new(id_start as u32, 0), end: Position::new(id_end as u32, 0) },
-                            ..diagnostic.clone()
-                        });
-                    }
+                    let range = range_to_text_range(id_start..id_end);
+                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS05003, &[], range));
                     continue;
                 };
                 let complete_id = oyarn!("{}.{}", module_name, id_split.last().unwrap());
@@ -147,12 +135,8 @@ impl CsvValidator {
                     session.st_mut()[csv_module].not_found_data_ids.insert(MissingDataSource::XML_ID(complete_id), BuildSteps::VALIDATION);
                     let main_entry = session.sync_odoo.get_main_entry();
                     session.ep_mgr_mut()[main_entry].not_found_data_ids.insert(csv_module.into());
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05001, &[]) {
-                        diagnostics.push(Diagnostic {
-                            range: Range { start: Position::new(id_start as u32, 0), end: Position::new(id_end as u32, 0) },
-                            ..diagnostic.clone()
-                        });
-                    }
+                    let range = range_to_text_range(id_start..id_end);
+                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS05001, &[], range));
                 }
             }
         }
