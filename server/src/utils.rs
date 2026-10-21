@@ -3,6 +3,7 @@ use path_slash::PathExt;
 use ruff_text_size::{TextRange, TextSize};
 use std::borrow::Cow;
 use std::ffi::OsStr;
+use std::fmt::Debug;
 use std::ops::Range;
 use std::process::Command;
 use std::sync::atomic::Ordering;
@@ -265,8 +266,13 @@ pub fn string_fuzzy_contains(string: &str, pattern: &str) -> bool {
     false
 }
 
-pub fn range_to_text_range(range: Range<usize>) -> TextRange {
-    TextRange::new(TextSize::new(range.start as u32), TextSize::new(range.end as u32))
+/// Converts a range of byte offsets to TextRange.
+pub fn range_to_text_range<T>(range: Range<T>) -> TextRange
+where
+    T: TryInto<TextSize>,
+    T::Error: Debug,
+{
+    TextRange::new(range.start.try_into().unwrap(), range.end.try_into().unwrap())
 }
 
 pub fn text_range_to_range(text_range: &TextRange) -> Range<usize> {
