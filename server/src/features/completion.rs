@@ -15,7 +15,7 @@ use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey, SourceFileKey, Symb
 use crate::core::symbols::storage::SymbolTable;
 use crate::features::ast_utils::AstUtils;
 use crate::features::features_utils;
-use crate::features::features_utils::order_item::OrderItem;
+use crate::features::features_utils::OrderItem;
 use crate::threads::SessionInfo;
 use crate::tree::OYarnExt;
 use crate::{Sy, S};
