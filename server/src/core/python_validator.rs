@@ -14,7 +14,7 @@ use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::symbol_keys::{ClassKey, ModelSymbolKey, ModuleKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey};
 use crate::features::ast_utils::AstUtils;
-use crate::features::features_utils::order_item::OrderItem;
+use crate::features::features_utils::OrderItem;
 use crate::{constants::*, oyarn};
 use crate::core::symbols::{ModuleSymbol};
 use crate::threads::SessionInfo;
