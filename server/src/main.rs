@@ -73,7 +73,7 @@ fn main() {
         .with_writer(file_writer)
         .finish();
     if cli.parse || use_debug {
-        let stdout_subscriber = fmt::layer().with_writer(std::io::stdout).with_ansi(true);
+        let stdout_subscriber = fmt::layer().with_writer(std::io::stdout).with_ansi(cli.color.use_ansi());
         tracing::subscriber::set_global_default(subscriber.with(stdout_subscriber)).expect("Unable to set default tracing subscriber");
     } else {
         tracing::subscriber::set_global_default(subscriber).expect("Unable to set default tracing subscriber");

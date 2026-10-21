@@ -66,6 +66,27 @@ pub struct Cli {
     #[arg(long)]
     pub selected_config: Option<String>,
 
+    /// Colored log output on stdout. "auto" follows anstream detection (tty, TERM, NO_COLOR, CLICOLOR, CLICOLOR_FORCE, CI).
+    #[arg(value_enum, long, default_value="auto")]
+    pub color: ColorMode,
+
+}
+
+#[derive(ValueEnum, Clone, Debug, PartialEq)]
+pub enum ColorMode {
+    Auto,
+    Always,
+    Never,
+}
+
+impl ColorMode {
+    pub fn use_ansi(&self) -> bool {
+        match self {
+            ColorMode::Always => true,
+            ColorMode::Never => false,
+            ColorMode::Auto => anstream::AutoStream::choice(&std::io::stdout()) != anstream::ColorChoice::Never,
+        }
+    }
 }
 
 #[derive(ValueEnum, Clone, Debug)]
