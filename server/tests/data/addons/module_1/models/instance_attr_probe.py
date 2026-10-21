@@ -17,3 +17,12 @@ class InstanceAttrProbe(models.Model):
         self.value = 1
 
     value = fields.Integer()
+
+    def pick(self, flag):
+        if flag:
+            return self.env['module_1.instance_attr_probe']
+        return self.env['res.partner']
+
+    def use_pick(self):
+        self.pick(True).value
+        self.pick(True).not_on_any_candidate

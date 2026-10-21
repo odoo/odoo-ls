@@ -93,3 +93,32 @@ fn test_ols03029_not_on_abstract_model() {
     let on_line = diag_on_line(&diagnostics, 13);
     assert!(on_line.is_empty(), "expected no OLS02003 on an AbstractModel, got: {:?}", on_line);
 }
+
+/// OLS02003 is raised only if no candidate type of the base has the attribute.
+#[test]
+fn test_ols02003_union_of_candidates() {
+    let (mut odoo, config) = setup_server(true);
+    let mut session = create_init_session(&mut odoo, config);
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("data")
+        .join("addons")
+        .join("module_1")
+        .join("models")
+        .join("instance_attr_probe.py")
+        .sanitize();
+    let diagnostics = get_diagnostics_for_path(&mut session, &path);
+
+    // Line 26: self.pick(True).value → `value` is a field of only one of the candidates
+    let on_line = diag_on_line(&diagnostics, 26);
+    assert!(on_line.is_empty(), "expected no diagnostic when one candidate has the attribute, got: {:?}", on_line);
+
+    // Line 27: self.pick(True).not_on_any_candidate → no candidate has it, reported once
+    let on_line = diag_on_line(&diagnostics, 27);
+    assert_eq!(on_line.len(), 1, "expected exactly one diagnostic when no candidate has the attribute, got: {:?}", on_line);
+    assert!(
+        matches!(&on_line[0].code, Some(NumberOrString::String(c)) if c == "OLS02003"),
+        "expected OLS02003, got: {:?}",
+        on_line[0].code
+    );
+}

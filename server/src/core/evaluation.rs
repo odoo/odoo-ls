@@ -1096,6 +1096,9 @@ impl Evaluation {
                 // The same base can be reached by several evaluations (ex: one per override of the called method):
                 // report the attribute diagnostics only once per base
                 let mut reported_bases: HashSet<(SymbolKey, bool)> = HashSet::default();
+                // The base can have several candidate types: the attribute is not found only if no candidate has it
+                let mut attribute_found = false;
+                let mut attribute_not_found_on_model = false;
                 for base_eval in base_evals.iter() {
                     let base_ref = base_eval.symbol.get_symbol(session, Some(context), &mut diagnostics, Some(parent));
                     if base_ref.is_expired_if_weak(session.st()) {
@@ -1124,6 +1127,7 @@ impl Evaluation {
                             }
                             diagnostics.extend(attributes_diagnostics);
                             if !attributes.is_empty() {
+                                attribute_found = true;
                                 let is_instance = ibase.get_weak().instance.unwrap_or(false);
                                 attributes.iter().for_each(|&attribute|{
                                     let instance = match attribute {
@@ -1176,20 +1180,23 @@ impl Evaluation {
                                             false
                                         }
                                     });
-                                    if ok
-                                    && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS02003, &[expr.attr.as_str()]) {
-                                        diagnostics.push(
-                                            Diagnostic {
-                                                range: FileMgr::textRange_to_temporary_Range(&expr.range()),
-                                                tags: None,
-                                                ..diagnostic_base.clone()
-                                            }
-                                        );
+                                    if ok {
+                                        attribute_not_found_on_model = true;
                                     }
                                 }
                             }
                         }
                     }
+                }
+                if attribute_not_found_on_model && !attribute_found
+                    && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS02003, &[expr.attr.as_str()]) {
+                    diagnostics.push(
+                        Diagnostic {
+                            range: FileMgr::textRange_to_temporary_Range(&expr.range()),
+                            tags: None,
+                            ..diagnostic_base
+                        }
+                    );
                 }
             },
             ExprOrIdent::Expr(Expr::Name(_)) | ExprOrIdent::Expr(Expr::Named(_)) | ExprOrIdent::Ident(_) | ExprOrIdent::Parameter(_) => {
