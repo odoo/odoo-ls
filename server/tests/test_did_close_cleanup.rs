@@ -80,14 +80,14 @@ fn test_is_external_path() {
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
     let builtins_path = Path::new(&session.sync_odoo.stdlib_dir).join("builtins.pyi").sanitize();
-    assert!(session.sync_odoo.is_external_path(Path::new(&builtins_path)), "typeshed is external");
+    assert!(session.sync_odoo.has_only_external_symbols(Path::new(&builtins_path)), "typeshed is external");
 
     let own_path = env::current_dir().unwrap().join("tests/data/nested_dir_race/pkg/models/point.py").sanitize();
     setup::setup::prepare_custom_entry_point(&mut session, &own_path);
-    assert!(!session.sync_odoo.is_external_path(Path::new(&own_path)), "a file with an entry of its own is not");
+    assert!(!session.sync_odoo.has_only_external_symbols(Path::new(&own_path)), "a file with an entry of its own is not");
 
     let unknown_path = env::current_dir().unwrap().join("tests/data/nothing_here.py").sanitize();
-    assert!(!session.sync_odoo.is_external_path(Path::new(&unknown_path)), "and neither is a path that resolves to nothing");
+    assert!(!session.sync_odoo.has_only_external_symbols(Path::new(&unknown_path)), "and neither is a path that resolves to nothing");
 }
 
 // The one thing a close does reclaim: the cache of a file served only by a public entry
@@ -104,7 +104,7 @@ fn test_closing_an_external_file_drops_its_cache_but_keeps_its_symbols() {
     setup::setup::prepare_custom_entry_point(&mut session, &client_path);
 
     assert!(
-        session.sync_odoo.is_external_path(Path::new(&lib_path)),
+        session.sync_odoo.has_only_external_symbols(Path::new(&lib_path)),
         "imported through a public entry, so external"
     );
 
