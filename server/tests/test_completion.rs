@@ -59,6 +59,8 @@ fn test_lambda_is_not_a_member(session: &mut SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
     let disk_text = std::fs::read_to_string(&test_file).expect("Test file does not exist");
+    // Don't match on the line ending: the fixture may be checked out with CRLF (git autocrlf on Windows).
+    assert_eq!(disk_text.matches("return self").count(), 1, "Expected a single 'return self' in {}", test_file);
 
     // Open the buffer with the dot typed after `return self`: the completed attribute name is
     // then empty, so every member of LambdaDefaultModel is offered.
@@ -67,7 +69,7 @@ fn test_lambda_is_not_a_member(session: &mut SessionInfo) {
             uri: FileMgr::pathname2uri(&test_file),
             language_id: "python".to_string(),
             version: 1,
-            text: disk_text.replace("return self\n", "return self.\n"),
+            text: disk_text.replace("return self", "return self."),
         }
     };
     Odoo::handle_did_open(session, did_open_params);
