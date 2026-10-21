@@ -502,6 +502,11 @@ impl EntryPointMgr {
         path.sanitize()
     }
 
+    /// External = owned by a `public` entry point only, not by any entry the user actually owns.
+    pub fn is_public_only_path(&self, uri: &str) -> bool {
+        !self.iter_all_but_public().any(|entry| Path::new(uri).starts_with(self[entry].path()))
+    }
+
 }
 
 #[derive(Debug, Clone, Copy,PartialEq)]
