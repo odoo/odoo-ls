@@ -292,7 +292,7 @@ impl CsvAstUtils {
                     session,
                     csv_symbol.into(),
                     xml_id,
-                    &std::ops::Range::default(), //we don't care about range as it's used only for diagnostic
+                    TextRange::default(), //we don't care about range as it's used only for diagnostic
                     &mut vec![],
                 )
                 .iter_valid(session.st())

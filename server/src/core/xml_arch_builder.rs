@@ -1,15 +1,14 @@
 use crate::{
-    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource, MissingDataSource, OYarn}, core::{build_scheduler::BuildScheduler, diagnostics::Diag, entry_point::{EntryPoint, EntryPointType}, file_mgr::FileInfoKey, symbols::{ModuleSymbol, SymbolTable, symbol_keys::{XmlDataKey, XmlId}}}, threads::SessionInfo
+    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource, MissingDataSource, OYarn}, core::{build_scheduler::BuildScheduler, diagnostics::{Diag, create_diag}, entry_point::{EntryPoint, EntryPointType}, file_mgr::FileInfoKey, symbols::{ModuleSymbol, SymbolTable, symbol_keys::{XmlDataKey, XmlId}}}, threads::SessionInfo, utils::TextRanged
 };
-use crate::{
+use crate::
     core::{
         data_hooks,
-        diagnostics::{create_diagnostic, DiagnosticCode},
+        diagnostics::DiagnosticCode,
         odoo::SyncOdoo,
         symbols::{Buildable, symbol_keys::XmlFileKey},
-    },
-};
-use lsp_types::Diagnostic;
+    }
+;
 use roxmltree::{Attribute, Node};
 use tracing::{info, error, warn};
 
@@ -49,7 +48,7 @@ impl XmlArchBuilder {
             self.load_odoo_openerp_data(session, node, &mut diagnostics);
         }
         session.st_mut()[self.xml_symbol].set_build_status(BuildSteps::ARCH, BuildStatus::DONE);
-        session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::XML_ARCH, diagnostics.into_iter().map(Diag::from).collect());
+        session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::XML_ARCH, diagnostics);
         BuildScheduler::queue(session, self.xml_symbol);
     }
 
@@ -60,7 +59,7 @@ impl XmlArchBuilder {
         t_name: Option<String>,
         node: &Node,
         xml_data: XmlDataKey,
-        diagnostics: &mut Vec<Diagnostic>
+        diagnostics: &mut Vec<Diag>
     ) {
         if !self.is_in_main_ep {
             return;
@@ -73,15 +72,7 @@ impl XmlArchBuilder {
             };
             let id_split = id.split(".").collect::<Vec<&str>>();
             if id_split.len() > 2 {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05051, &[&id]) {
-                    diagnostics.push(lsp_types::Diagnostic {
-                        range: lsp_types::Range {
-                            start: lsp_types::Position::new(node.range().start as u32, 0),
-                            end: lsp_types::Position::new(node.range().end as u32, 0),
-                        },
-                        ..diagnostic.clone()
-                    });
-                }
+                diagnostics.extend(create_diag(session, DiagnosticCode::OLS05051, &[&id], node.text_range()));
                 return;
             }
             let id = id_split.last().unwrap().to_string();
@@ -130,8 +121,8 @@ impl XmlArchBuilder {
         }
     }
 
-    pub fn get_group_ids(&self, session: &mut SessionInfo, xml_id: &str, attr: &Attribute, diagnostics: &mut Vec<Diagnostic>) -> Vec<XmlId> {
-        let xml_ids = SyncOdoo::get_xml_ids(session, self.xml_symbol.into(), xml_id, &attr.range(), diagnostics);
+    pub fn get_group_ids(&self, session: &mut SessionInfo, xml_id: &str, attr: &Attribute, diagnostics: &mut Vec<Diag>) -> Vec<XmlId> {
+        let xml_ids = SyncOdoo::get_xml_ids(session, self.xml_symbol.into(), xml_id, attr.text_range(), diagnostics);
         let mut res = vec![];
         for data in xml_ids.iter_valid(session.st()) {
             if let XmlId::XmlRecord(r) = data {

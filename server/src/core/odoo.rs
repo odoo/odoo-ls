@@ -1,7 +1,7 @@
 use crate::constants::OYarn;
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::component_mgr::ComponentMgr;
-use crate::core::diagnostics::{Diag, DiagnosticCode, create_diagnostic};
+use crate::core::diagnostics::{Diag, DiagnosticCode, create_diag};
 use crate::core::entry_point::{EntryPointKey, EntryPointType};
 use crate::core::file_mgr::{AstKind, FileInfo, PreloadedFile};
 use crate::core::js_module_scope;
@@ -39,6 +39,7 @@ use lsp_types::request::GotoDeclarationResponse;
 use lsp_types::*;
 use request::{RegisterCapability, Request, WorkspaceConfiguration};
 use ruff_source_file::PositionEncoding;
+use ruff_text_size::TextRange;
 use serde_json::Value;
 use tracing::{error, warn, info};
 
@@ -1165,7 +1166,7 @@ impl SyncOdoo {
     /**
      * search for an xml_id in the already registered xml files.
      * */
-    pub fn get_xml_ids(session: &mut SessionInfo, from_file: SourceFileKey, xml_id: &str, range: &std::ops::Range<usize>, diagnostics: &mut Vec<Diagnostic>) -> WeakSet<XmlId> {
+    pub fn get_xml_ids(session: &mut SessionInfo, from_file: SourceFileKey, xml_id: &str, range: TextRange, diagnostics: &mut Vec<Diag>) -> WeakSet<XmlId> {
         if !session.ep_mgr()[session.st().get_entry(from_file)].is_main() {
             return WeakSet::new();
         }
@@ -1180,15 +1181,7 @@ impl SyncOdoo {
                 module = m.upgrade(session.st());
             }
         } else if id_split.len() > 2 {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05051, &[xml_id]) {
-                diagnostics.push(lsp_types::Diagnostic {
-                    range: lsp_types::Range {
-                        start: lsp_types::Position::new(range.start as u32, 0),
-                        end: lsp_types::Position::new(range.end as u32, 0),
-                    },
-                    ..diagnostic.clone()
-                });
-            }
+            diagnostics.extend(create_diag(session, DiagnosticCode::OLS05051, &[xml_id], range));
             return WeakSet::new();
         }
         let Some(module_key) = module else {

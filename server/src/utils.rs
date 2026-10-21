@@ -266,6 +266,25 @@ pub fn string_fuzzy_contains(string: &str, pattern: &str) -> bool {
     false
 }
 
+
+/// Implement only for types whose own range is already in byte offsets: this
+/// does no unit conversion.
+pub trait TextRanged {
+    fn text_range(&self) -> TextRange;
+}
+
+impl TextRanged for roxmltree::Node<'_, '_> {
+    fn text_range(&self) -> TextRange {
+        range_to_text_range(self.range())
+    }
+}
+
+impl TextRanged for roxmltree::Attribute<'_, '_> {
+    fn text_range(&self) -> TextRange {
+        range_to_text_range(self.range())
+    }
+}
+
 /// Converts a range of byte offsets to TextRange.
 pub fn range_to_text_range<T>(range: Range<T>) -> TextRange
 where
