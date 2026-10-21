@@ -892,7 +892,7 @@ impl SyncOdoo {
     }
 
     /// Whether `path` resolves to at least one symbol, and every one of them is external.
-    pub fn is_external_path(&self, path: &Path) -> bool {
+    pub fn has_only_external_symbols(&self, path: &Path) -> bool {
         let symbols: Vec<SymbolKey> = self.entry_point_mgr.iter_all().filter_map(|entry| {
             let entry = &self.entry_point_mgr[entry];
             if !entry.is_valid_for(path) {
@@ -2140,7 +2140,7 @@ impl Odoo {
         if !path_exists {
             SyncOdoo::unload_path(session, Path::new(&path));
             FileMgr::delete_file_path(session, &path);
-        } else if session.sync_odoo.is_external_path(Path::new(&path)) {
+        } else if session.sync_odoo.has_only_external_symbols(Path::new(&path)) {
             FileMgr::delete_file_path(session, &path);
         }
     }
