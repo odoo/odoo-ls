@@ -30,6 +30,7 @@ fn test_completions() {
     test_compute_sql_kwarg_method_completion(&mut session);
     test_selection_field_method_completion(&mut session);
     test_init_storage_kwarg_method_completion(&mut session);
+    test_object_members_completion(&mut session);
 }
  
 /// `fields.Char(compute="...", depends=["partner_id.disp"])`: the `depends` kwarg should
@@ -182,4 +183,31 @@ fn test_init_storage_kwarg_method_completion(session: &mut SessionInfo) {
     assert!(!gated_out.iter().any(|l| l == "_init_column_kind"), "Expected no method completion for init_storage before 20.0, got: {:?}", gated_out);
     // The session is shared with the other completion tests, leave the version as it was found
     session.sync_odoo.version = initial_version;
+}
+
+/// Members of `object` (`__class__`, ...) are offered on models, even if `object` is not in their bases.
+fn test_object_members_completion(session: &mut SessionInfo) {
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
+    let disk_text = std::fs::read_to_string(&test_file).expect("Test file does not exist");
+
+    let did_open_params = lsp_types::DidOpenTextDocumentParams {
+        text_document: lsp_types::TextDocumentItem {
+            uri: FileMgr::pathname2uri(&test_file),
+            language_id: "python".to_string(),
+            version: 3,
+            text: disk_text.replace("return self\n", "return self.__cl\n"),
+        }
+    };
+    Odoo::handle_did_open(session, did_open_params);
+
+    let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    // `        return self.__cl` (0-indexed line 24), cursor after `__cl`
+    let response = CompletionFeature::autocomplete(session, file_symbol, file_info, None, 24, 24);
+    let labels = labels(response);
+    assert!(labels.iter().any(|l| l == "__class__"), "Expected '__class__' to be suggested after 'self.__cl', got: {:?}", labels);
 }

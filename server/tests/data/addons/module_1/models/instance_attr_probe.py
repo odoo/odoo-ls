@@ -12,3 +12,7 @@ class InstanceAttrProbe(models.Model):
 
     def other(self):
         return self.cache
+
+    def get_class(self):
+        InstanceAttrProbe.__class__
+        return self.__class__
