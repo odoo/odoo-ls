@@ -74,7 +74,7 @@ impl ModuleSymbol {
                 };
                 let mut csv_builder = CsvArchBuilder::new();
                 let diagnostics = csv_builder.load_csv(session, csv_sym, &data);
-                session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::CSV_SYNTAX, diagnostics.into_iter().map(Diag::from).collect());
+                session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::CSV_SYNTAX, diagnostics);
                 FileInfo::publish_diagnostics(session, file_info);
             }
         }

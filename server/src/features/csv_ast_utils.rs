@@ -7,6 +7,7 @@ use crate::core::file_mgr::FileInfoKey;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::symbol_keys::CsvFileKey;
 use crate::features::goto_utils::{GotoSource, GotoSourceType};
+use crate::utils::range_to_text_range;
 use crate::{
     constants::OYarn,
     core::{
@@ -52,6 +53,7 @@ impl<'a> CsvFieldIter<'a> {
 }
 
 impl<'a> Iterator for CsvFieldIter<'a> {
+    // byte offsets
     type Item = (usize, usize, &'a str);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -97,9 +99,9 @@ impl<'a> CsvRecordIter<'a> {
 }
 
 impl<'a> Iterator for CsvRecordIter<'a> {
-    // (start, end, record or error)
-    // start and end are byte offsets in the file, used for diagnostics range
-    type Item = (u32, u32, Result<StringRecord, csv::Error>);
+    // (range, record or error)
+    // TextRange are byte offsets in the file, used for diagnostics range
+    type Item = (TextRange, Result<StringRecord, csv::Error>);
 
     fn next(&mut self) -> Option<Self::Item> {
         let record = self.first_record.take()?;
@@ -117,7 +119,8 @@ impl<'a> Iterator for CsvRecordIter<'a> {
         };
         self.first_record = self.second_record.take();
         self.second_record = self.records.next();
-        Some((start, end, record))
+        let range = range_to_text_range(start..end);
+        Some((range, record))
     }
 }
 

@@ -1,12 +1,11 @@
 use crate::{
     Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, OYarn}, core::{
-        build_scheduler::BuildScheduler, data_hooks, diagnostics::{DiagnosticCode, create_diagnostic}, symbols::{
+        build_scheduler::BuildScheduler, data_hooks, diagnostics::{Diag, DiagnosticCode, create_diag}, symbols::{
             Buildable, ModuleSymbol, symbol_keys::{CsvFileKey, XmlId, XmlRecordKey}
         },
-    }, features::csv_ast_utils::{CsvFieldIter, CsvRecordIter}, oyarn, threads::SessionInfo, utils::HashSet
+    }, features::csv_ast_utils::{CsvFieldIter, CsvRecordIter}, oyarn, threads::SessionInfo, utils::{HashSet, range_to_text_range}
 };
 use csv::StringRecord;
-use lsp_types::{Diagnostic, Position, Range};
 use ruff_text_size::{TextRange, TextSize};
 use std::path::PathBuf;
 use tracing::{error, info};
@@ -27,7 +26,7 @@ impl CsvArchBuilder {
         }
     }
 
-    pub fn load_csv(&mut self, session: &mut SessionInfo, csv_symbol: CsvFileKey, content: &str) -> Vec<Diagnostic> {
+    pub fn load_csv(&mut self, session: &mut SessionInfo, csv_symbol: CsvFileKey, content: &str) -> Vec<Diag> {
         let mut diagnostics = vec![];
         if !session.st().ready_for_step(csv_symbol.into(), BuildSteps::ARCH) {
             return diagnostics;
@@ -53,17 +52,13 @@ impl CsvArchBuilder {
                 let columns: Vec<_> = CsvFieldIter::new(header, content).into_iter().flatten().collect();
                 let mut seen = HashSet::default();
                 for (start, end, name) in columns.into_iter().rev() {
-                    if !seen.insert(name)
-                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05076, &[name]) {
-                            diagnostics.push(Diagnostic {
-                                range: Range { start: Position::new(start as u32, 0), end: Position::new(end as u32, 0) },
-                                ..diagnostic
-                            });
-                        }
+                    if !seen.insert(name) {
+                        diagnostics.extend(create_diag(session, DiagnosticCode::OLS05076, &[name], range_to_text_range(start..end)));
+                    }
                 }
             }
         if session.st()[csv_symbol].headers.contains(&Sy!("id")) {
-            for (start, end, result) in CsvRecordIter::new(&mut rdr, content) {
+            for (range, result) in CsvRecordIter::new(&mut rdr, content) {
                 match result {
                     Ok(result) => {
                         let record = self.extract_record(session, csv_symbol, model_name.clone(), &result, content);
@@ -71,12 +66,7 @@ impl CsvArchBuilder {
                         let Some(xml_id) = session.st()[record_key].xml_id.clone() else { continue };
                         let id_split = xml_id.split(".").collect::<Vec<&str>>();
                         if id_split.len() > 2 {
-                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05051, &[xml_id.as_str()]) {
-                                diagnostics.push(Diagnostic {
-                                    range: Range { start: Position::new(start, 0), end: Position::new(end, 1) },
-                                    ..diagnostic.clone()
-                                });
-                            }
+                            diagnostics.extend(create_diag(session, DiagnosticCode::OLS05051, &[xml_id.as_str()], range));
                             continue;
                         }
                         let mut csv_module = csv_module;
@@ -90,23 +80,13 @@ impl CsvArchBuilder {
                         ModuleSymbol::insert_xml_id(session.st_mut(), csv_module, Sy!(id_split.last().unwrap().to_string()), XmlId::XmlRecord(record_key));
                     },
                     Err(err) => {
-                         match err.kind() {
+                        match err.kind() {
                             csv::ErrorKind::UnequalLengths { pos: _, expected_len, len } => {
-                                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05069, &[&len.to_string(), &expected_len.to_string()]) {
-                                    diagnostics.push(Diagnostic {
-                                        range: Range { start: Position::new(start, 0), end: Position::new(end, 1) },
-                                        ..diagnostic.clone()
-                                    });
-                                }
+                                diagnostics.extend(create_diag(session, DiagnosticCode::OLS05069, &[&len.to_string(), &expected_len.to_string()], range));
                             }
                             _ => {
                                 // Use OLS05070 for CSV parsing errors
-                                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05070, &[&err.to_string()]) {
-                                    diagnostics.push(Diagnostic {
-                                        range: Range { start: Position::new(start, 0), end: Position::new(end, 0) },
-                                        ..diagnostic.clone()
-                                    });
-                                }
+                                diagnostics.extend(create_diag(session, DiagnosticCode::OLS05070, &[&err.to_string()], range));
                                 error!("Could not read record in CSV file {:?}. Error: {:?}", model_name_pb, err);
                             }
                         }
