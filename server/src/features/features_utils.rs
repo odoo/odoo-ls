@@ -8,7 +8,7 @@ use crate::core::file_mgr::FileMgr;
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::function_symbol::Argument;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
-use crate::core::symbols::symbol_keys::{ModelSymbolKey, ModuleKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlRecordKey};
+use crate::core::symbols::symbol_keys::{ClassKey, ModelSymbolKey, ModuleKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlRecordKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::FunctionSymbol;
 use crate::features::ast_utils::StringContext;
@@ -67,6 +67,91 @@ pub enum StringResolution {
 pub enum SegmentPick {
     Cursor(usize),
     All,
+}
+
+/// A comma-separated item of an `_order` string, e.g. ` partner_id desc nulls last`.
+pub struct OrderItem<'a> {
+    pub text: &'a str,
+    /// Index of the item in the string
+    pub start: usize,
+}
+
+impl<'a> OrderItem<'a> {
+    /// The items of an `_order` string such as `"name desc, id"`.
+    pub fn order_items(order: &str) -> Vec<OrderItem<'_>> {
+        let mut start = 0;
+        order.split(',').map(|text| {
+            let item = OrderItem { text, start };
+            start += text.len() + 1;
+            item
+        }).collect()
+    }
+
+    /// Index of the end of the item in the string
+    pub fn end(&self) -> usize {
+        self.start + self.text.len()
+    }
+
+    /// Whether `index` of the string is in the item, its bounds included (a cursor before a comma)
+    pub fn contains(&self, index: usize) -> bool {
+        self.start <= index && index <= self.end()
+    }
+
+    /// The field, first word of the item without its `.property` (e.g. `partner_id.id`), with its
+    /// start and end indexes in the string.
+    pub fn field(&self) -> Option<(&'a str, usize, usize)> {
+        let (word, start) = self.first_word()?;
+        let field = word.split('.').next().filter(|field| !field.is_empty())?;
+        Some((field, start, start + field.len()))
+    }
+
+    /// The property of the field (e.g. `id` in `partner_id.id`), with its start and end indexes in
+    /// the string.
+    pub fn property(&self) -> Option<(&'a str, usize, usize)> {
+        let (word, start) = self.first_word()?;
+        let (field, property) = word.split_once('.')?;
+        if field.is_empty() || property.is_empty() {
+            return None;
+        }
+        let property_start = start + field.len() + 1;
+        Some((property, property_start, property_start + property.len()))
+    }
+
+    /// The words after the field (e.g. `desc`, `nulls`, `last`), each with its start and end
+    /// indexes in the string.
+    pub fn keywords(&self) -> Vec<(&'a str, usize, usize)> {
+        self.words().skip(1).map(|(word, start)| (word, start, start + word.len())).collect()
+    }
+
+    /// Keywords allowed after `previous`, the keywords before them in an item: a direction, then
+    /// where nulls go. Case-insensitive, as in Odoo.
+    pub fn next_keywords(previous: &[&str]) -> &'static [&'static str] {
+        let is = |word: &str, keyword: &str| word.eq_ignore_ascii_case(keyword);
+        let is_direction = |word: &str| is(word, "asc") || is(word, "desc");
+        match previous {
+            [] => &["asc", "desc", "nulls"],
+            [direction] if is_direction(direction) => &["nulls"],
+            [nulls] if is(nulls, "nulls") => &["first", "last"],
+            [direction, nulls] if is_direction(direction) && is(nulls, "nulls") => &["first", "last"],
+            _ => &[],
+        }
+    }
+
+    /// The first word of the item, with its start index in the string.
+    pub fn first_word(&self) -> Option<(&'a str, usize)> {
+        self.words().next()
+    }
+
+    /// The words of the item, each with its start index in the string.
+    fn words(&self) -> impl Iterator<Item = (&'a str, usize)> {
+        let mut end = 0;
+        self.text.split_whitespace().map(move |word| {
+            // Words come in order: each one is found after the previous
+            let start = end + self.text[end..].find(word).unwrap_or(0);
+            end = start + word.len();
+            (word, self.start + start)
+        })
+    }
 }
 
 pub struct FeaturesUtils {}
@@ -448,6 +533,64 @@ impl FeaturesUtils {
         }
     }
 
+    /// The model whose `_order` is written in `scope`: only in the body of a model class, not in
+    /// one of its methods, nor in a class that is not a model.
+    pub fn order_model_class(session: &SessionInfo, scope: SymbolKey) -> Option<ClassKey> {
+        let SymbolKey::Class(class) = scope else {
+            return None;
+        };
+        session.st()[class]._model.is_some().then_some(class)
+    }
+
+    /// Fields of `_order = "name desc, partner_id.id"`, with their range in the file. The property
+    /// of a field (`.id`) is a field of its comodel.
+    fn find_order_fields(
+        session: &mut SessionInfo,
+        scope: SymbolKey,
+        from_module: Option<ModuleKey>,
+        string: &ExprStringLiteral,
+        pick: SegmentPick,
+    ) -> Vec<(SymbolKey, TextRange)> {
+        let Some(parent_class) = FeaturesUtils::order_model_class(session, scope) else {
+            return vec![];
+        };
+        let cursor = match pick {
+            SegmentPick::Cursor(offset) => {
+                let Some(cursor) = AstUtils::index_in_string(string, TextSize::new(offset as u32)) else {
+                    return vec![];
+                };
+                Some(cursor)
+            },
+            SegmentPick::All => None,
+        };
+        let mut members = vec![];
+        for item in OrderItem::order_items(string.value.to_str()) {
+            // Only the item under the cursor is resolved
+            if cursor.is_some_and(|cursor| !item.contains(cursor)) {
+                continue;
+            }
+            // The field on the model, then its property on the comodel
+            let mut walker = DeepFieldEvalWalker::new(parent_class.into(), from_module);
+            for (name, start, end) in [item.field(), item.property()].into_iter().flatten() {
+                let Some(model) = walker.get_model_symbol(session) else {
+                    break;
+                };
+                let symbols = walker.get_model_fields(session, model, name);
+                if cursor.is_some_and(|cursor| cursor < start || end < cursor) {
+                    continue;
+                }
+                let range = match (AstUtils::range_in_file(string, start, end), pick) {
+                    (Some(range), _) => range,
+                    // Not found in the file (escapes, split between parts): no token, but hover and definition still work
+                    (None, SegmentPick::Cursor(_)) => string.range,
+                    (None, SegmentPick::All) => continue,
+                };
+                members.extend(symbols.into_iter().map(|symbol| (symbol, range)));
+            }
+        }
+        members
+    }
+
 
     /// Field/method symbols a string refers to, given its syntactic context,
     /// with the sub-range each covers.
@@ -472,7 +615,7 @@ impl FeaturesUtils {
                     .into_iter().map(|s| (s, string.range)).collect()
             },
             StringContext::ModelOrder => {
-                vec![]
+                FeaturesUtils::find_order_fields(session, scope, from_module, string, pick)
             },
         }
     }
@@ -495,6 +638,14 @@ impl FeaturesUtils {
             let members = FeaturesUtils::resolve_string_members(session, file_symbol, string, string_ctx, pick);
             if !members.is_empty() {
                 return Some(StringResolution::Members(members));
+            }
+            // The `_order` of a model only holds fields: not a module, a model or an XML id. Anywhere
+            // else, `_order` is a variable like any other.
+            if matches!(string_ctx, StringContext::ModelOrder) {
+                let scope = session.st().get_scope_symbol(file_symbol, string.range.start().to_u32() + 1, false);
+                if FeaturesUtils::order_model_class(session, scope).is_some() {
+                    return None;
+                }
             }
         }
         if let SourceFileKey::Module(module_key) = file_symbol && file_path.ends_with("__manifest__.py") {
@@ -1008,5 +1159,46 @@ impl FeaturesUtils {
             })
             .unwrap_or_default();
         Some(format!("```\n(XML record) {}\nmodel: {}\nfile: {}\n```", full_xml_id, record.model.0, file_name))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OrderItem;
+
+    #[test]
+    fn test_order_items() {
+        let order = " name desc,  id ,, partner_id.id nulls last,";
+        let items = OrderItem::order_items(order);
+        let texts: Vec<_> = items.iter().map(|item| &order[item.start..item.end()]).collect();
+        assert_eq!(texts, [" name desc", "  id ", "", " partner_id.id nulls last", ""]);
+        // The field and its property, with the text found at their indexes
+        let fields: Vec<_> = items.iter().map(|item| item.field().map(|(field, start, end)| (field, &order[start..end]))).collect();
+        assert_eq!(fields, [Some(("name", "name")), Some(("id", "id")), None, Some(("partner_id", "partner_id")), None]);
+        let properties: Vec<_> = items.iter().map(|item| item.property().map(|(property, start, end)| (property, &order[start..end]))).collect();
+        assert_eq!(properties, [None, None, None, Some(("id", "id")), None]);
+    }
+
+    #[test]
+    fn test_order_item_keywords() {
+        // `desc` also appears inside the field, and the words are separated by various spaces
+        let order = "name, desc_date  desc nulls\tlast";
+        let items = OrderItem::order_items(order);
+        // Each keyword, and the text found at its indexes
+        let keywords: Vec<Vec<_>> = items.iter()
+            .map(|item| item.keywords().into_iter().map(|(keyword, start, end)| (keyword, &order[start..end])).collect())
+            .collect();
+        assert_eq!(keywords, [vec![], vec![("desc", "desc"), ("nulls", "nulls"), ("last", "last")]]);
+    }
+
+    #[test]
+    fn test_order_next_keywords() {
+        assert_eq!(OrderItem::next_keywords(&[]), ["asc", "desc", "nulls"]);
+        assert_eq!(OrderItem::next_keywords(&["DESC"]), ["nulls"]);
+        assert_eq!(OrderItem::next_keywords(&["nulls"]), ["first", "last"]);
+        assert_eq!(OrderItem::next_keywords(&["asc", "Nulls"]), ["first", "last"]);
+        // A complete item, and a wrong keyword: nothing can follow
+        assert!(OrderItem::next_keywords(&["desc", "nulls", "last"]).is_empty());
+        assert!(OrderItem::next_keywords(&["dsc"]).is_empty());
     }
 }

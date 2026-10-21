@@ -233,16 +233,22 @@ pub enum StringContext {
     /// The innermost call whose arguments contain the string
     CallArgument(ExprCall),
     /// Whether the current expression is a string expression under an (annotated) assign statement setting `_order`
-    ///  i.e. `_order = "..."`
+    ///  i.e. `_order = "..."` or `_order: str = "..."`
     ModelOrder,
 }
 
 impl StringContext {
     /// Context `stmt` gives to its direct string value, if any, along with that string
     pub fn from_stmt(stmt: &Stmt) -> Option<(Self, &ExprStringLiteral)> {
-        if let Stmt::Assign(assign) = stmt
-            && let [target] = assign.targets.as_slice()
-            && let Expr::StringLiteral(expr) = assign.value.as_ref()
+        let (target, value) = match stmt {
+            Stmt::Assign(assign) => match assign.targets.as_slice() {
+                [target] => (target, assign.value.as_ref()),
+                _ => return None,
+            },
+            Stmt::AnnAssign(assign) => (assign.target.as_ref(), assign.value.as_deref()?),
+            _ => return None,
+        };
+        if let Expr::StringLiteral(expr) = value
             && let Expr::Name(name) = target
             && name.id == "_order"
         {
