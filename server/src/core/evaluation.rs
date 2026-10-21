@@ -1167,10 +1167,11 @@ impl Evaluation {
                                 if ! found_through_inheritance {
                                     let typ = SymbolTable::follow_ref(ibase,
                                         session, None, true, true, None, None);
+                                    // An AbstractModel is often a mixin, using members declared by the models inheriting from it
                                     let ok = typ.iter().any(|t| {
                                         if let Some(t_class) = t.upgrade_weak(&session.sync_odoo.symbol_table) {
                                             t_class.typ() == SymType::CLASS
-                                            && session.st()[t_class.unwrap_class_key()]._model.is_some()
+                                            && session.st()[t_class.unwrap_class_key()]._model.as_ref().is_some_and(|model_data| !model_data.is_abstract)
                                         } else {
                                             false
                                         }

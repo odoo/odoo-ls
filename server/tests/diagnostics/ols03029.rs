@@ -69,7 +69,7 @@ fn test_ols03029_not_in_tests() {
     assert!(on_line.is_empty(), "expected no OLS03029 in tests, got: {:?}", on_line);
 }
 
-/// OLS03029 is not raised on AbstractModels, that are often mixins using fields declared by the models
+/// OLS03029 and OLS02003 are not raised on AbstractModels, that are often mixins using fields declared by the models
 /// inheriting from them.
 #[test]
 fn test_ols03029_not_on_abstract_model() {
@@ -88,4 +88,8 @@ fn test_ols03029_not_on_abstract_model() {
     // Line 9: self.concrete_value = 1 → attribute set on a recordset of an AbstractModel
     let on_line = diag_on_line(&diagnostics, 9);
     assert!(on_line.is_empty(), "expected no diagnostic on an AbstractModel, got: {:?}", on_line);
+
+    // Line 13: return self.concrete_value → no OLS02003 on the usage either
+    let on_line = diag_on_line(&diagnostics, 13);
+    assert!(on_line.is_empty(), "expected no OLS02003 on an AbstractModel, got: {:?}", on_line);
 }

@@ -8,3 +8,6 @@ class AbstractAttrProbe(models.AbstractModel):
     def set_value(self):
         # a mixin can use fields declared by the models inheriting from it
         self.concrete_value = 1
+
+    def get_value(self):
+        return self.concrete_value
