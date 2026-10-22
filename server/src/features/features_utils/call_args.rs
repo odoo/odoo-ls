@@ -65,7 +65,7 @@ fn is_field_call(session: &mut SessionInfo, scope: SymbolKey, call_expr: &ExprCa
         .any(|(_, callable_sym)| SymbolTable::is_field_class(session, callable_sym))
 }
 
-pub(super) fn find_kwarg_methods_symbols(
+fn find_kwarg_methods_symbols(
     session: &mut SessionInfo,
     scope: SymbolKey,
     from_module: Option<ModuleKey>,
@@ -80,8 +80,8 @@ pub(super) fn find_kwarg_methods_symbols(
     }
     field_paths::find_simple_method_in_class(session, parent_class.into(), from_module, string.value.to_str())
         .into_iter()
-                .map(|res| (res, string.range))
-                .collect()
+        .map(|res| (res, string.range))
+        .collect()
 }
 
 fn find_inverse_name_field_symbol(
@@ -142,7 +142,6 @@ fn find_positional_argument_symbols(
             }
             // Check if we are in api.onchange/constrains/depends
             let func_sym_tree = session.st().get_tree(callable_sym);
-            // TODO: account for change in tree after 18.1 odoo.orm.decorators
             let is_18_1_or_later = session.sync_odoo.version >= (18, 1);
             if (!is_18_1_or_later && func_sym_tree.0.ends_with_strs(&["odoo", "api"])) ||
                 (is_18_1_or_later && func_sym_tree.0.ends_with_strs(&["odoo", "orm", "decorators"])) {
@@ -187,7 +186,6 @@ fn find_positional_argument_symbols(
             continue
         };
 
-
         if session.st()[func_arg_sym].name == "inverse_name"
             && callable_sym.typ() == SymType::CLASS
             && SymbolTable::is_specific_field_class(session, callable_sym, &["One2many"]) {
@@ -219,7 +217,6 @@ fn find_positional_argument_symbols(
         }
 
     }
-    //Process kwargs related/comodel_name
     arg_symbols
 }
 
@@ -232,7 +229,6 @@ fn find_keyword_argument_symbols(
     keyword: &Keyword,
     pick: SegmentPick,
 ) -> Vec<(SymbolKey, TextRange)> {
-    // We only process the `related` and `depends` keyword arguments
     match keyword.arg.as_ref().map(Identifier::as_str) {
         Some("related") | Some("depends") => {},
         Some("inverse_name") => {

@@ -5,7 +5,7 @@ use crate::core::symbols::symbol_keys::{ModelSymbolKey, ModuleKey, SourceFileKey
 use crate::features::ast_utils::StringContext;
 use crate::threads::SessionInfo;
 
-use super::call_args::{find_argument_symbols};
+use super::call_args::find_argument_symbols;
 use super::order::{find_order_fields, order_model_class};
 
 /// What a model-related string literal resolves to. Shared by go-to-definition and
@@ -36,7 +36,7 @@ pub(super) fn resolve_string_members(
     pick: SegmentPick,
 ) -> Vec<(SymbolKey, TextRange)> {
     let from_module = session.st().find_module(file_symbol);
-    // Any byte inside the string works for scope/kwarg location.
+    // Any byte inside the string works for the scope.
     let offset = string.range.start().to_usize() + 1;
     let scope = session.st().get_scope_symbol(file_symbol, offset as u32, false);
     match string_ctx {
