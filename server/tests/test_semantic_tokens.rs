@@ -261,10 +261,10 @@ fn check_manifest_module_strings(manifest: &TokenFile) {
 }
 
 /// Only the arguments of a call take its context, its callee keeps the one around the call: the
-/// path in the callee of `strip()` is still the value of `related`, as hover and definition see it.
+/// path in the callee of `strip()` is in the `related` argument, but not its value, so no field.
 fn check_call_context_tokens(calls: &TokenFile) {
-    check(calls, 10, "other_id", Some((PROPERTY, &[])));
-    check(calls, 10, "other_name", Some((PROPERTY, &[])));
+    check(calls, 10, "other_id", None);
+    check(calls, 10, "other_name", None);
 }
 
 /// One decoded semantic token: absolute position, and the legend entries its indices name.
