@@ -1,4 +1,3 @@
-use lsp_types::Diagnostic;
 use ruff_python_ast::{
     Alias, AnyRootNodeRef, CmpOp, Expr, ExprNamed, ExprTuple, FStringPart, Identifier, Parameters,
     Pattern, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf,
@@ -43,7 +42,7 @@ pub struct PythonArchBuilder {
     current_step: BuildSteps,
     sym_stack: Vec<SymbolKey>,
     __all_symbols_to_add: Vec<(String, TextRange)>,
-    diagnostics: Vec<Diagnostic>,
+    diagnostics: Vec<Diag>,
     file_info: FileInfoKey,
 }
 
@@ -92,7 +91,7 @@ impl PythonArchBuilder {
         self.file_info = file_info_key;
         if self.file_mode {
             //diagnostics for functions are stored directly on funcs
-            session.file_mgr_mut()[file_info_key].replace_diagnostics(DiagnosticSource::PY_ARCH, self.diagnostics.clone().into_iter().map(Diag::from).collect());
+            session.file_mgr_mut()[file_info_key].replace_diagnostics(DiagnosticSource::PY_ARCH, self.diagnostics.clone());
         }
         let file_noqa = if self.file_mode {
              session.file_mgr()[file_info_key].noqas_blocs.get(&0).cloned()
@@ -179,7 +178,7 @@ impl PythonArchBuilder {
                     from_stmt,
                     name_aliases,
                     level,
-                    &mut None).remove(0); //we don't need the vector with this call as there will be 1 result.
+                    None).remove(0); //we don't need the vector with this call as there will be 1 result.
                 if !import_result.found {
                     session.ep_mgr_mut()[self.entry_point].not_found_symbols.insert(self.file);
                     session.st_mut().not_found_paths_mut(self.file).push((self.current_step, import_result.file_tree.clone()));

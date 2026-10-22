@@ -2,7 +2,7 @@ use std::{
     collections::{VecDeque, hash_map}, path::Path,
 };
 
-use lsp_types::{Diagnostic, DiagnosticTag, Range, SymbolKind};
+use lsp_types::{DiagnosticTag, SymbolKind};
 use ruff_text_size::TextRange;
 
 use crate::{
@@ -10,7 +10,7 @@ use crate::{
         BuildStatus, BuildSteps, LAMBDA_NAME, MissingDataSource, OYarn, PackageType, SymType,
     }, core::{
         build_scheduler::BuildScheduler,
-        diagnostics::{DiagnosticCode, create_diagnostic},
+        diagnostics::{Diag, DiagnosticCode, create_diag},
         entry_point::EntryPointKey,
         evaluation::{Evaluation, EvaluationSymbolPtr},
         evaluation_context::{Context, ContextKey, ContextValue},
@@ -1867,18 +1867,13 @@ impl SymbolTable {
     The setting of the position is then delegated to the calling function.
     TODO Consider refactoring.
         */
-    fn member_symbol_hook(session: &SessionInfo, target: SymbolKey, name: &str, diagnostics: &mut Vec<Diagnostic>){
+    fn member_symbol_hook(session: &SessionInfo, target: SymbolKey, name: &str, diagnostics: &mut Vec<Diag>){
         if session.sync_odoo.version.major >= 17 && name == "Form"{
             let tree = session.sync_odoo.symbol_table.get_tree(target);
             if tree.0.ends_with_strs(&["odoo", "tests", "common"]) && tree.1.is_empty()
-                && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03301, &[]) {
-                    diagnostics.push(
-                        Diagnostic {
-                            range: Range::default(),
-                            tags: Some(vec![DiagnosticTag::DEPRECATED]),
-                            ..diagnostic_base.clone()
-                        }
-                    );
+                && let Some(mut diag) = create_diag(session, DiagnosticCode::OLS03301, &[], TextRange::default()) {
+                    diag.add_tag(DiagnosticTag::DEPRECATED);
+                    diagnostics.push(diag);
                 }
         }
     }
@@ -2058,7 +2053,7 @@ impl SymbolTable {
         only_methods: bool,
         all: bool,
         is_super: bool
-    ) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
+    ) -> (Vec<SymbolKey>, Vec<Diag>) {
         let mut visited_classes: HashSet<ClassKey> = HashSet::default();
         Self::get_member_symbol_helper(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super, &mut visited_classes)
     }
@@ -2074,7 +2069,7 @@ impl SymbolTable {
         all: bool,
         is_super: bool,
         visited_classes: &mut HashSet<ClassKey>
-    ) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
+    ) -> (Vec<SymbolKey>, Vec<Diag>) {
         let mut result: Vec<SymbolKey> = vec![];
         let mut visited_symbols: HashSet<SymbolKey> = HashSet::default();
         let extend_result = |syms: Vec<SymbolKey>, result: &mut Vec<SymbolKey>, visited_symbols: &mut HashSet<SymbolKey>| {
@@ -2085,7 +2080,7 @@ impl SymbolTable {
                 }
             });
         };
-        let mut diagnostics: Vec<Diagnostic> = vec![];
+        let mut diagnostics: Vec<Diag> = vec![];
         Self::member_symbol_hook(session, target, name, &mut diagnostics);
         let mod_sym = session.st().get_module_symbol(target, name);
         if let Some(mod_sym) = mod_sym

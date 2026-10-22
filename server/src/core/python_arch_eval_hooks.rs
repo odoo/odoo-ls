@@ -1,4 +1,6 @@
 use crate::core::entry_point::EntryPointKey;
+use crate::core::diagnostics::Diag;
+use crate::core::diagnostics::create_diag;
 use crate::core::evaluation_context::ContextKey;
 use crate::core::evaluation::HookName;
 use crate::core::model::ModelKey;
@@ -11,7 +13,7 @@ use ruff_python_ast::StmtFunctionDef;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use tracing::warn;
-use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
+use crate::core::diagnostics::DiagnosticCode;
 use crate::core::evaluation::GetSymbolHook;
 use crate::core::evaluation::GetSymbolHookCallable;
 use crate::core::odoo::SyncOdoo;
@@ -32,7 +34,6 @@ use crate::tree::TreeStrSlice;
 
 use super::evaluation::{Evaluation, EvaluationSymbolPtr, EvaluationSymbol, EvaluationSymbolWeak};
 use super::evaluation_context::ContextValue;
-use super::file_mgr::FileMgr;
 use super::python_arch_eval::PythonArchEval;
 
 type PythonArchEvalHookFile = fn (odoo: &mut SyncOdoo, entry: EntryPointKey, file_symbol: SourceFileKey, symbol: SymbolKey);
@@ -804,7 +805,7 @@ static arch_eval_function_hooks: LazyLock<Vec<PythonArchEvalFunctionHook>> = Laz
 ]});
 
 
-type PythonArchEvalHookDecorator = fn (session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments) -> Vec<Diagnostic>;
+type PythonArchEvalHookDecorator = fn (session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments) -> Vec<Diag>;
 
 pub struct PythonArchEvalDecoratorHook {
     pub trees: Vec<(Version, Version, TreeStrSlice<'static>)>, //min_version, max_version, tree
@@ -914,7 +915,7 @@ impl PythonArchEvalHooks {
         func_sym: FunctionKey,
         file: SourceFileKey,
         current_step: BuildSteps,
-    ) -> Vec<Diagnostic>{
+    ) -> Vec<Diag>{
 
         let mut diagnostics = vec![];
         for decorator in func_stmt.decorator_list.iter() {
@@ -1025,17 +1026,17 @@ impl PythonArchEvalHooks {
         res
     }
 
-    pub fn eval_env_user(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: Option<&Context>, _diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
+    pub fn eval_env_user(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: Option<&Context>, _diagnostics: &mut Vec<Diag>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
     {
         PythonArchEvalHooks::eval_env_model(session, "res.users", context, scope)
     }
 
-    pub fn eval_env_company(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: Option<&Context>, _diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
+    pub fn eval_env_company(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: Option<&Context>, _diagnostics: &mut Vec<Diag>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
     {
         PythonArchEvalHooks::eval_env_model(session, "res.company", context, scope)
     }
 
-    pub fn eval_env_get_item(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
+    pub fn eval_env_get_item(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: Option<&Context>, diagnostics: &mut Vec<Diag>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
     {
         let res = Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak::new(Wk::null(), Some(true), false)));
         let Some(context) = context else {
@@ -1068,43 +1069,27 @@ impl PythonArchEvalHooks {
                     let symbols = model.get_main_symbols(session, None).collect::<Vec<_>>();
                     if symbols.is_empty() {
                         // Model exists, but has no main symbols
-                        if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03005, &[]) { // Is this error code correct?
-                            diagnostics.push(Diagnostic {
-                                range: FileMgr::textRange_to_temporary_Range(&context.get(ContextKey::Range).unwrap().as_text_range()),
-                                ..diagnostic_base.clone()
-                            });
-                        }
+                        let range = context.get(ContextKey::Range).unwrap().as_text_range();
+                        diagnostics.extend(create_diag(session, DiagnosticCode::OLS03005, &[], range));
                     } else {
                         // Model exists but not in dependencies
                         let valid_modules: Vec<OYarn> = symbols.iter().map(|&s| match session.st().find_module(s) {
                             Some(sym) => session.st().name(sym).clone(),
                             None => Sy!("Unknown")
                         }).collect();
-                        if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03001, &[&format!("{:?}", valid_modules)]) {
-                            diagnostics.push(Diagnostic {
-                                range: FileMgr::textRange_to_temporary_Range(&context.get(ContextKey::Range).unwrap().as_text_range()),
-                                ..diagnostic_base.clone()
-                            });
-                        }
+                        let range = context.get(ContextKey::Range).unwrap().as_text_range();
+                        diagnostics.extend(create_diag(session, DiagnosticCode::OLS03001, &[&format!("{:?}", valid_modules)], range));
                     }
                 } else {
                     // Model exists, but has no main symbols
-                    if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03005, &[]) {
-                            diagnostics.push(Diagnostic {
-                                range: FileMgr::textRange_to_temporary_Range(&context.get(ContextKey::Range).unwrap().as_text_range()),
-                                ..diagnostic_base
-                            });
-                    }
+                    let range = context.get(ContextKey::Range).unwrap().as_text_range();
+                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS03005, &[], range));
                 }
             }
         } else if in_validation && has_class_in_parents {
             // Model Unknown
-            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03002, &[]) {
-                diagnostics.push(Diagnostic {
-                    range: FileMgr::textRange_to_temporary_Range(&context.get(ContextKey::Range).unwrap().as_text_range()),
-                    ..diagnostic_base
-                });
-            }
+            let range = context.get(ContextKey::Range).unwrap().as_text_range();
+            diagnostics.extend(create_diag(session, DiagnosticCode::OLS03002, &[], range));
             let Some(file_symbol) = scope.and_then(|scope| session.st().get_file(scope)) else {
               return res
             };
@@ -1116,7 +1101,7 @@ impl PythonArchEvalHooks {
         res
     }
 
-    pub fn eval_registry_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
+    pub fn eval_registry_get_item(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: Option<&Context>, diagnostics: &mut Vec<Diag>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
     {
         let mut result = PythonArchEvalHooks::eval_env_get_item(session, evaluation_sym, context, diagnostics, scope);
         if let EvaluationSymbolPtr::WEAK(weak) = result.as_mut().unwrap() {
@@ -1125,7 +1110,7 @@ impl PythonArchEvalHooks {
         result
     }
 
-    fn eval_get(_session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: Option<&Context>, _diagnostics: &mut Vec<Diagnostic>, _scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
+    fn eval_get(_session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, context: Option<&Context>, _diagnostics: &mut Vec<Diag>, _scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
     {
         if let Some(context) = context
             && let Some(ContextValue::BOOLEAN(b)) = context.get(ContextKey::ParentInstance)
@@ -1235,7 +1220,7 @@ impl PythonArchEvalHooks {
         Some(EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Wk::null(), context: Context::default(), instance: Some(true), is_super: false}))
     }
 
-    fn eval_relational(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: Option<&Context>, _diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
+    fn eval_relational(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: Option<&Context>, _diagnostics: &mut Vec<Diag>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>
     {
         let context = context?;
         if let Some(comodel) = context.get(ContextKey::ComodelName) {
@@ -1268,7 +1253,7 @@ impl PythonArchEvalHooks {
         })
     }
 
-    fn eval_init_common(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: Option<&Context>, _diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>, relational: bool, one2many: bool) -> Option<EvaluationSymbolPtr>
+    fn eval_init_common(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: Option<&Context>, _diagnostics: &mut Vec<Diag>, file_symbol: Option<SymbolKey>, relational: bool, one2many: bool) -> Option<EvaluationSymbolPtr>
     {
         let context = maybe_context?;
 
@@ -1359,15 +1344,15 @@ impl PythonArchEvalHooks {
         }))
     }
 
-    fn eval_init(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
+    fn eval_init(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: Option<&Context>, diagnostics: &mut Vec<Diag>, file_symbol: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
         PythonArchEvalHooks::eval_init_common(session, evaluation_sym, maybe_context, diagnostics, file_symbol, false, false)
     }
 
-    fn eval_init_relational(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
+    fn eval_init_relational(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: Option<&Context>, diagnostics: &mut Vec<Diag>, file_symbol: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
         PythonArchEvalHooks::eval_init_common(session, evaluation_sym, maybe_context, diagnostics, file_symbol, true, false)
     }
 
-    fn eval_init_relational_one2many(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
+    fn eval_init_relational_one2many(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: Option<&Context>, diagnostics: &mut Vec<Diag>, file_symbol: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
         PythonArchEvalHooks::eval_init_common(session, evaluation_sym, maybe_context, diagnostics, file_symbol, true, true)
     }
 
@@ -1376,7 +1361,7 @@ impl PythonArchEvalHooks {
     /// - string: model name if exists + validate
     ///   Adds evaluation to the function symbol
     ///   Returns a vector of diagnostics if the model is not found or not in the dependencies of the module
-    fn handle_api_returns_decorator(session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments) -> Vec<Diagnostic>{
+    fn handle_api_returns_decorator(session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments) -> Vec<Diag>{
         let mut diagnostics = vec![];
         let Some(Expr::StringLiteral(expr)) = arguments.args.first() else {return diagnostics};
         let returns_str = expr.value.to_str();
@@ -1388,24 +1373,14 @@ impl PythonArchEvalHooks {
             return diagnostics;
         }
         let Some(model) = session.model_mgr().get_model_key(returns_str) else {
-            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03002, &[]) {
-                diagnostics.push(Diagnostic {
-                    range: FileMgr::textRange_to_temporary_Range(&expr.range()),
-                    ..diagnostic_base
-                });
-            };
+            diagnostics.extend(create_diag(session, DiagnosticCode::OLS03002, &[], expr.range()));
             return diagnostics;
         };
         let Some(main_model_sym) = session.model_mgr()[model]
             .get_main_symbols(session, session.st().find_module(func_sym))
             .next()
         else {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03001, &[]) {
-                diagnostics.push(Diagnostic {
-                    range: FileMgr::textRange_to_temporary_Range(&expr.range()),
-                    ..diagnostic
-                });
-            }
+            diagnostics.extend(create_diag(session, DiagnosticCode::OLS03001, &[], expr.range()));
             return diagnostics
         };
         session.st_mut()[func_sym].evaluations = vec![Evaluation::eval_from_symbol(session.st(), main_model_sym, Some(false))];
@@ -1413,7 +1388,7 @@ impl PythonArchEvalHooks {
     }
 
     /// For @api.constrains and @api.onchange, both can only take a simple field name
-    fn handle_api_simple_field_decorator(session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments) -> Vec<Diagnostic>{
+    fn handle_api_simple_field_decorator(session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments) -> Vec<Diag>{
         let mut diagnostics = vec![];
         let from_module = session.st().find_module(func_sym);
 
@@ -1430,19 +1405,15 @@ impl PythonArchEvalHooks {
             let Expr::StringLiteral(expr) = arg else {return diagnostics};
             let field_name = expr.value.to_str();
             let (syms, _) = SymbolTable::get_member_symbol(session, class_sym, field_name, from_module, false, true, false, true, false);
-            if syms.is_empty()
-                && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03014, &[field_name, &model_name]) {
-                    diagnostics.push(Diagnostic {
-                        range: FileMgr::textRange_to_temporary_Range(&expr.range()),
-                        ..diagnostic
-                    });
-                }
+            if syms.is_empty() {
+                diagnostics.extend(create_diag(session, DiagnosticCode::OLS03014, &[field_name, &model_name], expr.range()));
+            }
         }
         diagnostics
     }
 
     /// For @api.depends, which can take a nested simple field name
-    fn handle_api_nested_field_decorator(session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments) -> Vec<Diagnostic>{
+    fn handle_api_nested_field_decorator(session: &mut SessionInfo, func_sym: FunctionKey, arguments: &Arguments) -> Vec<Diag>{
         let mut diagnostics = vec![];
         let from_module = session.st().find_module(func_sym);
 
@@ -1459,18 +1430,14 @@ impl PythonArchEvalHooks {
             let Expr::StringLiteral(expr) = arg else {return diagnostics};
             let field_name = expr.value.to_str();
             let syms = PythonArchEval::get_nested_sub_field(session, field_name, class_key, from_module);
-            if syms.is_empty()
-                && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03014, &[field_name, &model_name]) {
-                    diagnostics.push(Diagnostic {
-                        range: FileMgr::textRange_to_temporary_Range(&expr.range()),
-                        ..diagnostic
-                    });
-                }
+            if syms.is_empty() {
+                diagnostics.extend(create_diag(session, DiagnosticCode::OLS03014, &[field_name, &model_name], expr.range()));
+            }
         }
         diagnostics
     }
 
-    fn eval_env_ref(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
+    fn eval_env_ref(session: &mut SessionInfo, _evaluation_sym: &EvaluationSymbol, context: Option<&Context>, diagnostics: &mut Vec<Diag>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
         let context = context?;
         let in_validation = context.get(ContextKey::IsInValidation).unwrap_or(&ContextValue::BOOLEAN(false)).as_bool();
         let parameters = context.get(ContextKey::Parameters).map(|ps| ps.as_arguments())?;
@@ -1490,30 +1457,15 @@ impl PythonArchEvalHooks {
         let module_name = xml_id_split.next().unwrap();
         let xml_id = xml_id_split.collect::<Vec<&str>>().join(".");
         if in_validation && xml_id.contains(".") { // invalid xml_id format, should not contain any dots, i.e. module.xml_id
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05051, &[]) {
-                diagnostics.push(Diagnostic {
-                    range: FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
-                    ..diagnostic
-                });
-            }
+            diagnostics.extend(create_diag(session, DiagnosticCode::OLS05051, &[], xml_id_expr.range()));
         }
         let module = session.sync_odoo.modules.get(module_name);
         if module.is_none() {
             if in_validation {
                 if xml_id.is_empty() {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05002, &[]) {
-                        diagnostics.push(Diagnostic {
-                            range: FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
-                            ..diagnostic
-                        });
-                    }
+                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS05002, &[], xml_id_expr.range()));
                 } else {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05003, &[]) {
-                        diagnostics.push(Diagnostic {
-                            range: FileMgr::textRange_to_temporary_Range(&xml_id_expr.range()),
-                            ..diagnostic
-                        });
-                    }
+                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS05003, &[], xml_id_expr.range()));
                 }
             }
             return None;

@@ -57,6 +57,14 @@ impl Diag {
     pub fn code(&self) -> &str {
         &self.code
     }
+
+    pub fn add_tag(&mut self, tag: DiagnosticTag) {
+        self.tags.push(tag);
+    }
+
+    pub fn set_range(&mut self, range: TextRange) {
+        self.range = range;
+    }
 }
 
 impl RelatedInfo {

@@ -4,10 +4,9 @@ use std::vec;
 
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use ruff_python_ast::{Alias, AnyRootNodeRef, ExceptHandler, Expr, ExprNamed, FStringPart, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
-use lsp_types::{Diagnostic, Position, Range};
 use tracing::{debug, trace, warn};
 
-use crate::core::diagnostics::{Diag, DiagnosticCode, create_diagnostic};
+use crate::core::diagnostics::{Diag, DiagnosticCode, create_diag};
 use crate::core::entry_point::{EntryPointKey, EntryPointType};
 use crate::core::symbols::{ModuleSymbol, SymbolMgr};
 use crate::core::symbols::storage::SymbolTable;
@@ -37,7 +36,7 @@ pub struct PythonArchEval {
     file_mode: bool,
     current_step: BuildSteps,
     sym_stack: Vec<SymbolKey>,
-    diagnostics: Vec<Diagnostic>,
+    diagnostics: Vec<Diag>,
     safe_import: Vec<bool>,
 }
 
@@ -120,7 +119,7 @@ impl PythonArchEval {
         let file_path = self.file_path(session);
         if self.file_mode {
             if let Some(file_info_key) = session.file_mgr().get_file_info(&file_path) {
-                session.file_mgr_mut()[file_info_key].replace_diagnostics(DiagnosticSource::PY_ARCH_EVAL, self.diagnostics.clone().into_iter().map(Diag::from).collect());
+                session.file_mgr_mut()[file_info_key].replace_diagnostics(DiagnosticSource::PY_ARCH_EVAL, self.diagnostics.clone());
             }
             PythonArchEvalHooks::on_file_eval(session, self.entry_point, self.file);
         } else {
@@ -392,7 +391,7 @@ impl PythonArchEval {
             from_stmt,
             name_aliases,
             level,
-            &mut Some(&mut self.diagnostics));
+            Some(&mut self.diagnostics));
 
         for import_result in import_results.iter() {
             let variable = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &import_result.var_name, &import_result.range);
@@ -420,13 +419,9 @@ impl PythonArchEval {
                         file_tree.extend(import_result.name.split(".").map(|s| oyarn!("{}", s)));
                         session.st_mut().not_found_paths_mut(self.file).push((self.current_step, file_tree.clone()));
                         session.ep_mgr_mut()[self.entry_point].not_found_symbols.insert(self.file);
-                        if self._match_diag_config(session.sync_odoo, import_sym)
-                            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS02002, &[&file_tree.clone().join(".")]) {
-                                self.diagnostics.push(Diagnostic {
-                                    range: Range::new(Position::new(import_result.range.start().to_u32(), 0), Position::new(import_result.range.end().to_u32(), 0)),
-                                    ..diagnostic
-                                });
-                            }
+                        if self._match_diag_config(session.sync_odoo, import_sym) {
+                            self.diagnostics.extend(create_diag(session, DiagnosticCode::OLS02002, &[&file_tree.clone().join(".")], import_result.range));
+                        }
                     }
                 }
 
@@ -440,13 +435,9 @@ impl PythonArchEval {
                     session.st_mut().not_found_paths_mut(self.file).push((self.current_step, file_tree.clone()));
                     session.ep_mgr_mut()[self.entry_point].not_found_symbols.insert(self.file);
                     for &import_sym in import_result.symbols.iter() {
-                        if self._match_diag_config(session.sync_odoo, import_sym)
-                            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS02001, &[&file_tree.clone().join(".")]) {
-                                self.diagnostics.push(Diagnostic {
-                                    range: Range::new(Position::new(import_result.range.start().to_u32(), 0), Position::new(import_result.range.end().to_u32(), 0)),
-                                    ..diagnostic
-                                });
-                            }
+                        if self._match_diag_config(session.sync_odoo, import_sym) {
+                            self.diagnostics.extend(create_diag(session, DiagnosticCode::OLS02001, &[&file_tree.clone().join(".")], import_result.range));
+                        }
                     }
                 }
             }
@@ -585,13 +576,9 @@ impl PythonArchEval {
                     }
 
                     // If there is some modified fields in the method, that are not the correct ones, show diagnostic
-                    if !valid_field && invalid_field
-                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03019, &[]) {
-                            self.diagnostics.push(Diagnostic {
-                                range: Range::new(Position::new(attr_expr.range.start().to_u32(), 0), Position::new(attr_expr.range.end().to_u32(), 0)),
-                                ..diagnostic
-                            });
-                        }
+                    if !valid_field && invalid_field {
+                        self.diagnostics.extend(create_diag(session, DiagnosticCode::OLS03019, &[], attr_expr.range));
+                    }
                 }
             }
         }
@@ -625,33 +612,18 @@ impl PythonArchEval {
             let eval_base = eval_base.0;
             if eval_base.is_empty() {
                 //TODO build tree for not_found_path
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01001, &[&AstUtils::flatten_expr(base)]) {
-                    self.diagnostics.push(Diagnostic {
-                        range: Range::new(Position::new(base.range().start().to_u32(), 0), Position::new(base.range().end().to_u32(), 0)),
-                        ..diagnostic
-                    });
-                }
+                self.diagnostics.extend(create_diag(session, DiagnosticCode::OLS01001, &[&AstUtils::flatten_expr(base)], base.range()));
                 continue;
             }
             if eval_base.len() > 1 {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01003, &[&AstUtils::flatten_expr(base)]) {
-                    self.diagnostics.push(Diagnostic {
-                        range: Range::new(Position::new(base.range().start().to_u32(), 0), Position::new(base.range().end().to_u32(), 0)),
-                        ..diagnostic
-                    });
-                }
+                self.diagnostics.extend(create_diag(session, DiagnosticCode::OLS01003, &[&AstUtils::flatten_expr(base)], base.range()));
                 continue;
             }
             let eval_base = &eval_base[0];
             let eval_symbol = eval_base.symbol.get_symbol(session, None, &mut vec![], None);
             let ref_sym = SymbolTable::follow_ref(&eval_symbol, session, None, false, true, None, None);
             if ref_sym.len() > 1 {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01003, &[&AstUtils::flatten_expr(base)]) {
-                    self.diagnostics.push(Diagnostic {
-                        range: Range::new(Position::new(base.range().start().to_u32(), 0), Position::new(base.range().end().to_u32(), 0)),
-                        ..diagnostic
-                    });
-                }
+                self.diagnostics.extend(create_diag(session, DiagnosticCode::OLS01003, &[&AstUtils::flatten_expr(base)], base.range()));
                 continue;
             }
             let symbol = ref_sym[0].upgrade_weak(session.st());
@@ -674,12 +646,7 @@ impl PythonArchEval {
                 }
                 session.st_mut()[loc_sym].bases.push(c.into());
             } else if !matches!(symbol, SymbolKey::Variable(_)) || session.st()[symbol.unwrap_variable_key()].is_value() { // if it's a variable and not a value, it means we can't evaluate it, let's skip diagnostic
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01002, &[&AstUtils::flatten_expr(base)]) {
-                    self.diagnostics.push(Diagnostic {
-                        range: Range::new(Position::new(base.start().to_u32(), 0), Position::new(base.end().to_u32(), 0)),
-                        ..diagnostic
-                    });
-                }
+                self.diagnostics.extend(create_diag(session, DiagnosticCode::OLS01002, &[&AstUtils::flatten_expr(base)], base.range()));
             }
         }
     }
@@ -701,12 +668,7 @@ impl PythonArchEval {
         self.sym_stack.pop();
         if !session.st().is_external(self.sym_stack[0]) && session.ep_mgr()[session.st().get_entry(self.sym_stack[0])].typ() == EntryPointType::MAIN {
             if session.st().get_in_parents(class_key, &[SymType::FUNCTION], true).is_some() {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03024, &[]) {
-                    self.diagnostics.push(Diagnostic {
-                        range: FileMgr::textRange_to_temporary_Range(&class_stmt.name.range),
-                        ..diagnostic
-                    });
-                }
+                self.diagnostics.extend(create_diag(session, DiagnosticCode::OLS03024, &[], class_stmt.name.range));
             } else {
                 let odoo_builder_diags = PythonOdooBuilder::new(c).load(session);
                 self.diagnostics.extend(odoo_builder_diags);
@@ -774,13 +736,9 @@ impl PythonArchEval {
                     self.diagnostics.extend(diags);
                 }
             }
-        } else if !is_static
-            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01004, &[]) {
-                self.diagnostics.push(Diagnostic {
-                    range: FileMgr::textRange_to_temporary_Range(&func_stmt.name.range()),
-                    ..diagnostic
-                });
-            }
+        } else if !is_static {
+            self.diagnostics.extend(create_diag(session, DiagnosticCode::OLS01004, &[], func_stmt.name.range()));
+        }
         if (!self.file_mode || session.st().get_in_parents(function_sym_key, &[SymType::CLASS], true).is_none())
         && session.st().build_status(BuildableSymbolKey::Function(f), BuildSteps::ARCH_EVAL) ==  BuildStatus::PENDING 
         {
@@ -1023,7 +981,7 @@ impl PythonArchEval {
         func_stmt: &StmtFunctionDef,
         func_sym: FunctionKey,
         max_infer: &TextSize,
-        diagnostics: &mut Vec<Diagnostic>,
+        diagnostics: &mut Vec<Diag>,
     ) {
 
         if let Some(returns_ann) = func_stmt.returns.as_ref() {

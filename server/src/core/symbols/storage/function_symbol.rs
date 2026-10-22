@@ -1,4 +1,4 @@
-use crate::{core::symbols::storage::FileContentParent, utils::HashMap};
+use crate::{core::{diagnostics::Diag, symbols::storage::FileContentParent}, utils::HashMap};
 
 use lsp_types::Diagnostic;
 use ruff_python_ast::{AtomicNodeIndex, Expr, ExprCall};
@@ -37,7 +37,7 @@ pub struct FunctionSymbol {
     pub is_property: bool,
     pub doc_string: Option<String>,
     pub node_index: AtomicNodeIndex,
-    pub diagnostics: HashMap<BuildSteps, Vec<Diagnostic>>, //only temporary used for CLASS and FUNCTION to be collected like others are stored on FileInfo
+    pub diagnostics: HashMap<BuildSteps, Vec<Diag>>, //only temporary used for CLASS and FUNCTION to be collected like others are stored on FileInfo
     pub evaluations: Vec<Evaluation>, //Vec, because sometimes a single allocation can be ambiguous, like ''' a = "5" if X else 5 '''
     pub(super) current_build_step: BuildSteps,
     pub(super) build_status: BuildStatus,
@@ -88,7 +88,7 @@ impl FunctionSymbol {
         res
     }
 
-    pub fn replace_diagnostics(&mut self, step: BuildSteps, diagnostics: Vec<Diagnostic>) {
+    pub fn replace_diagnostics(&mut self, step: BuildSteps, diagnostics: Vec<Diag>) {
         self.diagnostics.insert(step, diagnostics);
     }
 
