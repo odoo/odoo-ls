@@ -9,6 +9,7 @@ mod type_info;
 #[cfg(test)]
 mod tests;
 
+pub use call_args::{api_decorator, ApiDecorator};
 pub use description::build_markdown_description;
 pub use order::order_model_class;
 pub use string_resolution::{resolve_string_symbols, SegmentPick, StringResolution};

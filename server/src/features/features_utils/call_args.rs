@@ -63,6 +63,36 @@ fn is_field_call(session: &mut SessionInfo, scope: SymbolKey, call_expr: &ExprCa
         .any(|(_, callable_sym)| SymbolTable::is_field_class(session, callable_sym))
 }
 
+/// An `api` decorator whose arguments name fields of the model.
+pub enum ApiDecorator {
+    Onchange,
+    Constrains,
+    Depends,
+}
+
+/// The decorator `symbol` is, if it is `api.onchange`, `api.constrains` or `api.depends` of Odoo.
+pub fn api_decorator(session: &mut SessionInfo, symbol: SymbolKey) -> Option<ApiDecorator> {
+    let SymbolKey::Function(_) = symbol else {
+        return None;
+    };
+    let tree = session.st().get_tree(symbol);
+    let is_18_1_or_later = session.sync_odoo.version >= (18, 1);
+    let is_api = (!is_18_1_or_later && tree.0.ends_with_strs(&["odoo", "api"]))
+        || (is_18_1_or_later && tree.0.ends_with_strs(&["odoo", "orm", "decorators"]));
+    if !is_api || !SyncOdoo::is_in_main_entry(session, &tree.0) {
+        return None;
+    }
+    let [name] = tree.1.as_slice() else {
+        return None;
+    };
+    match name.as_str() {
+        "onchange" => Some(ApiDecorator::Onchange),
+        "constrains" => Some(ApiDecorator::Constrains),
+        "depends" => Some(ApiDecorator::Depends),
+        _ => None,
+    }
+}
+
 /// What a string given to a parameter of a field class names.
 enum FieldParam {
     /// A field path on the model, e.g. `related='partner_id.name'`
@@ -150,6 +180,26 @@ fn find_simple_decorator_field_symbol(
     field_paths::find_simple_field_in_class(session, parent_class.into(), from_module, field_name)
 }
 
+/// Symbols of `string` given to `decorator`, e.g. `@api.depends('partner_id.name')`.
+fn find_decorator_arg_symbols(
+    session: &mut SessionInfo,
+    scope: SymbolKey,
+    from_module: Option<ModuleKey>,
+    string: &ExprStringLiteral,
+    decorator: ApiDecorator,
+    pick: SegmentPick,
+) -> Vec<(SymbolKey, TextRange)> {
+    match decorator {
+        ApiDecorator::Onchange | ApiDecorator::Constrains => {
+            find_simple_decorator_field_symbol(session, scope, from_module, string.value.to_str())
+                .into_iter()
+                .map(|symbol| (symbol, string.range))
+                .collect()
+        },
+        ApiDecorator::Depends => field_paths::find_nested_fields_in_class(session, scope, from_module, string, pick),
+    }
+}
+
 fn find_field_param_symbols(
     session: &mut SessionInfo,
     scope: SymbolKey,
@@ -221,34 +271,15 @@ fn find_positional_argument_symbols(
         if ![SymType::FUNCTION, SymType::CLASS].contains(&callable_sym.typ()) {
             continue;
         }
-        if let SymbolKey::Function(function_key) = callable_sym {
-            if session.st()[function_key].is_property {
-                continue;
-            }
-            // Check if we are in api.onchange/constrains/depends
-            let func_sym_tree = session.st().get_tree(callable_sym);
-            let is_18_1_or_later = session.sync_odoo.version >= (18, 1);
-            let is_api_decorator = ((!is_18_1_or_later && func_sym_tree.0.ends_with_strs(&["odoo", "api"]))
-                || (is_18_1_or_later && func_sym_tree.0.ends_with_strs(&["odoo", "orm", "decorators"])))
-                && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0);
-            if is_api_decorator && let [decorator] = func_sym_tree.1.as_slice() {
-                match decorator.as_str() {
-                    "onchange" | "constrains" => {
-                        arg_symbols.extend(
-                            find_simple_decorator_field_symbol(session, scope, from_module, string.value.to_str())
-                            .into_iter().map(|symbol| (symbol, string.range))
-                        );
-                        continue;
-                    },
-                    "depends" => {
-                        arg_symbols.extend(
-                            field_paths::find_nested_fields_in_class(session, scope, from_module, string, pick)
-                        );
-                        continue;
-                    },
-                    _ => {},
-                }
-            }
+        if let SymbolKey::Function(function_key) = callable_sym
+            && session.st()[function_key].is_property {
+            continue;
+        }
+        if let Some(decorator) = api_decorator(session, callable_sym) {
+            arg_symbols.extend(
+                find_decorator_arg_symbols(session, scope, from_module, string, decorator, pick)
+            );
+            continue;
         }
         let Some(param) = find_call_param(session, from_module, &callable, callable_sym, call_expr, arg_index) else {
             continue;
