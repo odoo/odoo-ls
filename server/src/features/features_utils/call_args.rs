@@ -89,7 +89,7 @@ fn find_call_param(
 }
 
 /// The model the callable is called on, e.g. `res.partner` in `self.env['res.partner'].search(...)`.
-fn model_called_on(session: &SessionInfo, callable: &EvaluationSymbolWeak) -> Option<ModelSymbolKey> {
+pub fn model_called_on(session: &SessionInfo, callable: &EvaluationSymbolWeak) -> Option<ModelSymbolKey> {
     let base_sym = callable.context.get(ContextKey::BaseAttr)?.as_symbol().upgrade(session.st())?;
     match base_sym {
         SymbolKey::Class(class_key) => Some(class_key.into()),

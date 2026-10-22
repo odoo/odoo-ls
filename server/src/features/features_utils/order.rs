@@ -19,7 +19,7 @@ pub fn order_model_class(session: &SessionInfo, scope: SymbolKey) -> Option<Clas
 
 /// Whether `callable_sym` is a search method of the models, whose `order` follows the same grammar
 /// as `_order`, e.g. `search(order='name desc')`.
-pub(super) fn is_search_method(session: &SessionInfo, callable_sym: SymbolKey) -> bool {
+pub fn is_search_method(session: &SessionInfo, callable_sym: SymbolKey) -> bool {
     let SymbolKey::Function(function_key) = callable_sym else {
         return false;
     };

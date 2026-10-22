@@ -10,7 +10,7 @@ use crate::core::import_resolver;
 use crate::core::python_odoo_builder::ACCESS_OPERATOR_OPTIONS;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::{FunctionSymbol, ModuleSymbol};
-use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey, SourceFileKey, SymbolKey};
+use crate::core::symbols::symbol_keys::{ClassKey, ModelSymbolKey, ModuleKey, SourceFileKey, SymbolKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::features::ast_utils::AstUtils;
 use crate::features::features_utils;
@@ -641,6 +641,12 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
                 .and_then(|func_arg| func_arg.symbol.upgrade(session.st())) else {
                 continue;
             };
+            // The order of a search method, on the model it is called on
+            if session.st()[func_arg_sym].name == "order"
+                && features_utils::is_search_method(session, callable_sym)
+                && let Some(ModelSymbolKey::Class(model_class)) = features_utils::model_called_on(session, callable) {
+                return complete_expr(arg, session, file, offset, is_param, &[ExpectedType::ORDER(model_class)]);
+            }
             let mut expected_type = vec![];
             if session.st()[func_arg_sym].name == "inverse_name"
                 && callable_sym.typ() == SymType::CLASS
@@ -695,6 +701,13 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
     for callable_eval_sym_ptr in callable_eval_sym_ptrs.iter() {
         let callable_option = callable_eval_sym_ptr.upgrade_weak(session.st());
         let Some(callable_sym) = callable_option else {continue};
+        // The order of a search method, on the model it is called on: overrides often take it in
+        // `**kwargs`, so it is known by its name
+        if keyword.arg.as_ref().is_some_and(|name| name.as_str() == "order")
+            && features_utils::is_search_method(session, callable_sym)
+            && let Some(ModelSymbolKey::Class(model_class)) = features_utils::model_called_on(session, callable_eval_sym_ptr.get_weak()) {
+            return complete_expr(&keyword.value, session, file, offset, is_param, &[ExpectedType::ORDER(model_class)]);
+        }
         if callable_sym.typ() != SymType::CLASS || !SymbolTable::is_field_class(session, callable_sym){
             continue;
         }
