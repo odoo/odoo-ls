@@ -8,3 +8,7 @@ class SemTokensCalls(models.Model):
 
     # The path is in the callee of `strip()`, inside the `related` argument of `fields.Char` but not its value
     stripped = fields.Char(related='other_id.other_name'.strip())
+
+    def _search_by_keyword(self):
+        # A domain given by keyword, as by position
+        return self.search(domain=[('other_id.other_name', '=', False)])

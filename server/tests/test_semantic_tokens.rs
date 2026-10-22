@@ -265,6 +265,9 @@ fn check_manifest_module_strings(manifest: &TokenFile) {
 fn check_call_context_tokens(calls: &TokenFile) {
     check(calls, 10, "other_id", None);
     check(calls, 10, "other_name", None);
+    // A domain given to `search` by keyword is resolved as one given by position
+    check(calls, 14, "other_id", Some((PROPERTY, &[])));
+    check(calls, 14, "other_name", Some((PROPERTY, &[])));
 }
 
 /// One decoded semantic token: absolute position, and the legend entries its indices name.
