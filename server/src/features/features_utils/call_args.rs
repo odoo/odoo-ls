@@ -93,10 +93,9 @@ fn is_domain_param(session: &SessionInfo, param: VariableKey) -> bool {
         .any(|evaluation| matches!(evaluation.symbol.get_symbol_ptr(), EvaluationSymbolPtr::DOMAIN))
 }
 
-
 /// The argument holding the string: its index, keyword arguments coming after the positional
-// ones, its value, and its name if it is a keyword argument
-fn find_argument<'a>(arguments: &'a Arguments, string: &ExprStringLiteral) -> Option<(usize, &'a Expr, Option<&'a str>)>{
+/// ones, its value, and its name if it is a keyword argument
+fn find_argument<'a>(arguments: &'a Arguments, string: &ExprStringLiteral) -> Option<(usize, &'a Expr, Option<&'a str>)> {
     if let Some((index, arg)) = arguments.args.iter()
         .find_position(|arg| arg.range().contains_range(string.range)) {
         Some((index, arg, None))

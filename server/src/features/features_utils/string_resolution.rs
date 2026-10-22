@@ -44,7 +44,10 @@ pub(super) fn resolve_string_members(
             find_argument_symbols(session, scope, from_module, string, call_expr, pick)
         },
         StringContext::ModelOrder => {
-            find_order_fields(session, scope, from_module, string, pick)
+            let Some(model_class) = order_model_class(session, scope) else {
+                return vec![];
+            };
+            find_order_fields(session, model_class, from_module, string, pick)
         },
     }
 }

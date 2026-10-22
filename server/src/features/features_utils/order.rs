@@ -21,14 +21,11 @@ pub fn order_model_class(session: &SessionInfo, scope: SymbolKey) -> Option<Clas
 /// of a field (`.id`) is a field of its comodel.
 pub(super) fn find_order_fields(
     session: &mut SessionInfo,
-    scope: SymbolKey,
+    model_class: ClassKey,
     from_module: Option<ModuleKey>,
     string: &ExprStringLiteral,
     pick: SegmentPick,
 ) -> Vec<(SymbolKey, TextRange)> {
-    let Some(parent_class) = order_model_class(session, scope) else {
-        return vec![];
-    };
     let cursor = match pick {
         SegmentPick::Cursor(offset) => {
             let Some(cursor) = AstUtils::index_in_string(string, TextSize::new(offset as u32)) else {
@@ -45,7 +42,7 @@ pub(super) fn find_order_fields(
             continue;
         }
         // The field on the model, then its property on the comodel
-        let mut walker = DeepFieldEvalWalker::new(parent_class.into(), from_module);
+        let mut walker = DeepFieldEvalWalker::new(model_class.into(), from_module);
         for (name, start, end) in [item.field(), item.property()].into_iter().flatten() {
             let Some(model) = walker.get_model_symbol(session) else {
                 break;
