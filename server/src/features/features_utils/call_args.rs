@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use ruff_python_ast::{Expr, ExprCall, ExprStringLiteral, Identifier, Keyword};
+use ruff_python_ast::{Expr, ExprCall, ExprStringLiteral, Keyword};
 use ruff_text_size::{Ranged, TextRange};
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::symbol_keys::{ModuleKey, SymbolKey};
@@ -63,23 +63,54 @@ fn is_field_call(session: &mut SessionInfo, scope: SymbolKey, call_expr: &ExprCa
         .any(|(_, callable_sym)| SymbolTable::is_field_class(session, callable_sym))
 }
 
-fn find_kwarg_methods_symbols(
+/// What a string given to a parameter of a field class names.
+enum FieldParam {
+    /// A field path on the model, e.g. `related='partner_id.name'`
+    FieldPath,
+    /// A field of the comodel, e.g. `inverse_name='partner_id'`
+    ComodelField,
+    /// A method of the model, e.g. `compute='_compute_name'`
+    ModelMethod,
+}
+
+impl FieldParam {
+    /// What `string`, in the `value` of the field class parameter `name`, names.
+    fn of(session: &SessionInfo, name: &str, value: &Expr, string: &ExprStringLiteral) -> Option<Self> {
+        if name == "depends" {
+            // The field paths are the items of the value, e.g. `depends=['partner_id']`
+            let items = match value {
+                Expr::List(list) => &list.elts,
+                Expr::Tuple(tuple) => &tuple.elts,
+                _ => return None,
+            };
+            return items.iter().any(|item| item.range() == string.range).then_some(FieldParam::FieldPath);
+        }
+        // Otherwise the value is the string itself:
+        // in order to not trigger on an item of `selection=[('key', 'Label')]`
+        if !matches!(value, Expr::StringLiteral(value_string) if value_string.range == string.range) {
+            return None;
+        }
+        match name {
+            "related" => Some(FieldParam::FieldPath),
+            "inverse_name" => Some(FieldParam::ComodelField),
+            "compute" | "group_expand" | "inverse" | "search" | "selection" => Some(FieldParam::ModelMethod),
+            "compute_sql" if session.sync_odoo.version >= (19, 1) => Some(FieldParam::ModelMethod),
+            "init_storage" if session.sync_odoo.version >= (20, 0) => Some(FieldParam::ModelMethod),
+            _ => None,
+        }
+    }
+}
+
+fn find_model_method_symbol(
     session: &mut SessionInfo,
     scope: SymbolKey,
     from_module: Option<ModuleKey>,
-    string: &ExprStringLiteral,
-    call_expr: &ExprCall,
-) -> Vec<(SymbolKey, TextRange)> {
+    method_name: &str,
+) -> Vec<SymbolKey> {
     let Some(parent_class) = field_paths::enclosing_model_class(session, scope) else {
         return vec![];
     };
-    if !is_field_call(session, scope, call_expr) {
-        return vec![];
-    }
-    field_paths::find_simple_method_in_class(session, parent_class.into(), from_module, string.value.to_str())
-        .into_iter()
-        .map(|res| (res, string.range))
-        .collect()
+    field_paths::find_simple_method_in_class(session, parent_class.into(), from_module, method_name)
 }
 
 fn find_inverse_name_field_symbol(
@@ -117,6 +148,25 @@ fn find_simple_decorator_field_symbol(
         return vec![];
     };
     field_paths::find_simple_field_in_class(session, parent_class.into(), from_module, field_name)
+}
+
+fn find_field_param_symbols(
+    session: &mut SessionInfo,
+    scope: SymbolKey,
+    from_module: Option<ModuleKey>,
+    string: &ExprStringLiteral,
+    call_expr: &ExprCall,
+    field_param: FieldParam,
+    pick: SegmentPick,
+) -> Vec<(SymbolKey, TextRange)> {
+    let symbols = match field_param {
+        FieldParam::FieldPath => {
+            return field_paths::find_nested_fields_in_class(session, scope, from_module, string, pick);
+        },
+        FieldParam::ComodelField => find_inverse_name_field_symbol(session, from_module, string.value.to_str(), call_expr),
+        FieldParam::ModelMethod => find_model_method_symbol(session, scope, from_module, string.value.to_str()),
+    };
+    symbols.into_iter().map(|symbol| (symbol, string.range)).collect()
 }
 
 fn find_positional_argument_symbols(
@@ -190,26 +240,12 @@ fn find_positional_argument_symbols(
             continue
         };
 
-        if session.st()[func_arg_sym].name == "inverse_name"
-            && callable_sym.typ() == SymType::CLASS
-            && SymbolTable::is_specific_field_class(session, callable_sym, &["One2many"]) {
-            let Some(value) = Evaluation::expr_to_str(session, arg_expr, scope, &call_expr.range().end(), false, &mut vec![]).0 else {
-                continue;
-            };
-            arg_symbols.extend(
-                find_inverse_name_field_symbol(session, from_module, &value, call_expr)
-                .into_iter().map(|res| (res, arg_expr.range()))
-            );
-            continue;
-        }
-        if session.st()[func_arg_sym].name == "selection"
-            && callable_sym.typ() == SymType::CLASS
-            && SymbolTable::is_field_class(session, callable_sym)
-            && let Some(parent_class) = field_paths::enclosing_model_class(session, scope) {
-            arg_symbols.extend(
-                field_paths::find_simple_method_in_class(session, parent_class.into(), from_module, string.value.to_str())
-                .into_iter().map(|res| (res, arg_expr.range()))
-            );
+        if SymbolTable::is_field_class(session, callable_sym) {
+            if let Some(field_param) = FieldParam::of(session, session.st()[func_arg_sym].name.as_str(), arg_expr, string) {
+                arg_symbols.extend(
+                    find_field_param_symbols(session, scope, from_module, string, call_expr, field_param, pick)
+                );
+            }
             continue;
         }
         for evaluation in session.st()[func_arg_sym].evaluations.clone() {
@@ -224,6 +260,8 @@ fn find_positional_argument_symbols(
     arg_symbols
 }
 
+/// Find the symbols corresponding to a keyword argument in a call, if it represents a field parameter.
+/// The call now is always field class call.
 fn find_keyword_argument_symbols(
     session: &mut SessionInfo,
     scope: SymbolKey,
@@ -233,30 +271,15 @@ fn find_keyword_argument_symbols(
     keyword: &Keyword,
     pick: SegmentPick,
 ) -> Vec<(SymbolKey, TextRange)> {
-    match keyword.arg.as_ref().map(Identifier::as_str) {
-        Some("related") | Some("depends") => {},
-        Some("inverse_name") => {
-            return find_inverse_name_field_symbol(session, from_module, string.value.to_str(), call_expr)
-                .into_iter()
-                .map(|res| (res, string.range))
-                .collect();
-        },
-        Some("compute" | "group_expand" | "inverse" | "search" | "selection") => {
-            return find_kwarg_methods_symbols(session, scope, from_module, string, call_expr);
-        },
-        Some("compute_sql") if session.sync_odoo.version >= (19, 1) => {
-            return find_kwarg_methods_symbols(session, scope, from_module, string, call_expr);
-        },
-        Some("init_storage") if session.sync_odoo.version >= (20, 0) => {
-            return find_kwarg_methods_symbols(session, scope, from_module, string, call_expr);
-        },
-        _ => return vec![],
-    }
-
+    // Classify the parameter first: only then evaluate the callee
+    let Some(field_param) = keyword.arg.as_ref()
+        .and_then(|name| FieldParam::of(session, name.as_str(), &keyword.value, string)) else {
+        return vec![];
+    };
     if !is_field_call(session, scope, call_expr) {
         return vec![];
     }
-    field_paths::find_nested_fields_in_class(session, scope, from_module, string, pick)
+    find_field_param_symbols(session, scope, from_module, string, call_expr, field_param, pick)
 }
 
 pub(super) fn find_argument_symbols(
