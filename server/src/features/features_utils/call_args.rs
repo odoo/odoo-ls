@@ -1,4 +1,4 @@
-use ruff_python_ast::{Expr, ExprCall, ExprStringLiteral, Keyword};
+use ruff_python_ast::{Expr, ExprCall, ExprStringLiteral, Identifier, Keyword};
 use ruff_text_size::{Ranged, TextRange};
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::symbol_keys::{ModuleKey, SymbolKey};
@@ -13,40 +13,14 @@ use crate::core::evaluation_context::ContextKey;
 use crate::threads::SessionInfo;
 use crate::Sy;
 
-use super::field_paths::{find_domain_param_symbols, find_nested_fields_in_class};
+use super::field_paths;
 use super::string_resolution::SegmentPick;
 
-pub(super) fn find_kwarg_methods_symbols(
+fn follow_function_evaluation(
     session: &mut SessionInfo,
     scope: SymbolKey,
-    from_module: Option<ModuleKey>,
-    field_value: &str,
     call_expr: &ExprCall,
-    offset: &usize,
-) -> Vec<SymbolKey>{
-    if let Some(keyword) = call_expr.arguments.keywords.iter().find(|arg|
-        *offset > arg.range().start().to_usize() && *offset <= arg.range().end().to_usize()
-    ){
-        let Some(ref arg_id) = keyword.arg else {
-            return vec![];
-        };
-        if arg_id.as_str() == "inverse_name" {
-            return find_inverse_name_field_symbol(session, from_module, field_value, call_expr);
-        }
-        if !(["compute", "group_expand", "inverse", "search", "selection"].contains(&arg_id.as_str())
-            || (arg_id.as_str() == "compute_sql" && session.sync_odoo.version >= (19, 1))
-            || (arg_id.as_str() == "init_storage" && session.sync_odoo.version >= (20, 0))){
-            return vec![];
-        }
-    } else {
-        return vec![];
-    }
-    let Some(SymbolKey::Class(parent_class)) = session.st().get_in_parents(scope, &[SymType::CLASS], true) else {
-        return vec![];
-    };
-    if session.st()[parent_class]._model.is_none(){
-        return vec![];
-    }
+) -> Vec<EvaluationSymbolPtr> {
     let evaluations = Evaluation::eval_from_ast(session, &call_expr.func, scope, &call_expr.func.range().start(), false, &mut vec![]).0;
     let mut followed_evals = vec![];
     for eval in evaluations {
@@ -62,12 +36,32 @@ pub(super) fn find_kwarg_methods_symbols(
             )
         );
     }
+    followed_evals
+}
+
+pub(super) fn find_kwarg_methods_symbols(
+    session: &mut SessionInfo,
+    scope: SymbolKey,
+    from_module: Option<ModuleKey>,
+    string: &ExprStringLiteral,
+    call_expr: &ExprCall,
+) -> Vec<(SymbolKey, TextRange)> {
+    let Some(SymbolKey::Class(parent_class)) = session.st().get_in_parents(scope, &[SymType::CLASS], true) else {
+        return vec![];
+    };
+    if session.st()[parent_class]._model.is_none(){
+        return vec![];
+    }
+    let followed_evals = follow_function_evaluation(session, scope, call_expr);
     if !followed_evals.iter().any(|eval|
         eval.has_weak() && eval.get_weak().weak.upgrade(session.st()).map(|sym| SymbolTable::is_field_class(session, sym)).unwrap_or(false)
     ) {
         return vec![];
     }
-    SymbolTable::get_member_symbol(session, parent_class.into(), field_value, from_module, false, false, true, true, false).0
+    field_paths::find_simple_method_in_class(session, parent_class.into(), from_module, string.value.to_str())
+        .into_iter()
+                .map(|res| (res, string.range))
+                .collect()
 }
 
 fn find_inverse_name_field_symbol(
@@ -92,7 +86,7 @@ fn find_inverse_name_field_symbol(
         return vec![];
     };
     let main_syms = session.model_mgr()[model].get_main_symbols(session, from_module).collect::<Vec<_>>();
-    main_syms.iter().flat_map(|&main_sym| SymbolTable::get_member_symbol(session, main_sym.into(), field_value, from_module, false, true, false, true, false).0).collect()
+    main_syms.iter().flat_map(|&main_sym| field_paths::find_simple_field_in_class(session, main_sym, from_module, field_value)).collect()
 }
 
 fn find_simple_decorator_field_symbol(
@@ -107,7 +101,7 @@ fn find_simple_decorator_field_symbol(
     if session.st()[parent_class]._model.is_none() {
         return vec![];
     }
-    SymbolTable::get_member_symbol(session, parent_class.into(), field_name, from_module, false, true, false, true, false).0
+    field_paths::find_simple_field_in_class(session, parent_class.into(), from_module, field_name)
 }
 
 fn find_positional_argument_symbols(
@@ -121,21 +115,7 @@ fn find_positional_argument_symbols(
     pick: SegmentPick,
 ) -> Vec<(SymbolKey, TextRange)> {
     let mut arg_symbols: Vec<(SymbolKey, TextRange)> = vec![];
-    let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope, &call_expr.func.range().start(), false, &mut vec![]).0;
-    let mut followed_evals = vec![];
-    for eval in callable_evals {
-        followed_evals.extend(
-            SymbolTable::follow_ref(
-                &eval.symbol.get_symbol(session, None, &mut vec![], None),
-                session,
-                None,
-                true,
-                false,
-                None,
-                None,
-            )
-        );
-    }
+    let followed_evals = follow_function_evaluation(session, scope, call_expr);
     for callable_eval in followed_evals {
         let EvaluationSymbolPtr::WEAK(callable) = callable_eval else {
             continue;
@@ -164,7 +144,7 @@ fn find_positional_argument_symbols(
                     continue;
                 } else if func_sym_tree.1 == ["depends"] && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0){
                     arg_symbols.extend(
-                        find_nested_fields_in_class(session, scope, from_module, string, pick)
+                        field_paths::find_nested_fields_in_class(session, scope, from_module, string, pick)
                     );
                     continue;
                 }
@@ -215,7 +195,7 @@ fn find_positional_argument_symbols(
             && SymbolTable::is_field_class(session, callable_sym)
             && let Some(SymbolKey::Class(parent_class)) = session.st().get_in_parents(scope, &[SymType::CLASS], true) {
             arg_symbols.extend(
-                SymbolTable::get_member_symbol(session, parent_class.into(), string.value.to_str(), from_module, false, false, true, true, false).0
+                field_paths::find_simple_method_in_class(session, parent_class.into(), from_module, string.value.to_str())
                 .into_iter().map(|res| (res, arg_expr.range()))
             );
             continue;
@@ -223,7 +203,7 @@ fn find_positional_argument_symbols(
         for evaluation in session.st()[func_arg_sym].evaluations.clone() {
             if matches!(evaluation.symbol.get_symbol_ptr(), EvaluationSymbolPtr::DOMAIN) {
                 arg_symbols.extend(
-                    find_domain_param_symbols(session, &callable, string, from_module, pick)
+                    field_paths::find_domain_param_symbols(session, &callable, string, from_module, pick)
                 );
             }
         }
@@ -243,25 +223,29 @@ fn find_keyword_argument_symbols(
     pick: SegmentPick,
 ) -> Vec<(SymbolKey, TextRange)> {
     // We only process the `related` and `depends` keyword arguments
-    if keyword.arg.as_ref().filter(|kw_arg| ["related", "depends"].contains(&kw_arg.id.as_str())).is_none(){
-        return vec![];
+    match keyword.arg.as_ref().map(Identifier::as_str) {
+        Some("related") | Some("depends") => {},
+        Some("inverse_name") => {
+            return find_inverse_name_field_symbol(session, from_module, string.value.to_str(), call_expr)
+                .into_iter()
+                .map(|res| (res, string.range))
+                .collect();
+        },
+        Some("compute" | "group_expand" | "inverse" | "search" | "selection") => {
+            return find_kwarg_methods_symbols(session, scope, from_module, string, call_expr);
+        },
+        Some("compute_sql") if session.sync_odoo.version >= (19, 1) => {
+            return find_kwarg_methods_symbols(session, scope, from_module, string, call_expr);
+        },
+        Some("init_storage") if session.sync_odoo.version >= (20, 0) => {
+            return find_kwarg_methods_symbols(session, scope, from_module, string, call_expr);
+        },
+        _ => return vec![],
     }
+
     let mut arg_symbols = vec![];
-    let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope, &call_expr.func.range().start(), false, &mut vec![]).0;
-    let mut followed_evals = vec![];
-    for eval in callable_evals {
-        followed_evals.extend(
-            SymbolTable::follow_ref(
-                &eval.symbol.get_symbol(session, None, &mut vec![], None),
-                session,
-                None,
-                true,
-                false,
-                None,
-                None,
-            )
-        );
-    }
+    let followed_evals = follow_function_evaluation(session, scope, call_expr);
+
     for callable_eval in followed_evals {
         let EvaluationSymbolPtr::WEAK(callable) = callable_eval else {
             continue;
@@ -273,7 +257,7 @@ fn find_keyword_argument_symbols(
             continue;
         }
         arg_symbols.extend(
-            find_nested_fields_in_class(session, scope, from_module, string, pick)
+            field_paths::find_nested_fields_in_class(session, scope, from_module, string, pick)
         );
     }
     arg_symbols

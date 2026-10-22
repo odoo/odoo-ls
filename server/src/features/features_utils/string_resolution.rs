@@ -5,7 +5,7 @@ use crate::core::symbols::symbol_keys::{ModelSymbolKey, ModuleKey, SourceFileKey
 use crate::features::ast_utils::StringContext;
 use crate::threads::SessionInfo;
 
-use super::call_args::{find_argument_symbols, find_kwarg_methods_symbols};
+use super::call_args::{find_argument_symbols};
 use super::order::{find_order_fields, order_model_class};
 
 /// What a model-related string literal resolves to. Shared by go-to-definition and
@@ -41,12 +41,7 @@ pub(super) fn resolve_string_members(
     let scope = session.st().get_scope_symbol(file_symbol, offset as u32, false);
     match string_ctx {
         StringContext::CallArgument(call_expr) => {
-            let members = find_argument_symbols(session, scope, from_module, string, call_expr, pick);
-            if !members.is_empty() {
-                return members;
-            }
-            find_kwarg_methods_symbols(session, scope, from_module, string.value.to_str(), call_expr, &offset)
-                .into_iter().map(|s| (s, string.range)).collect()
+            find_argument_symbols(session, scope, from_module, string, call_expr, pick)
         },
         StringContext::ModelOrder => {
             find_order_fields(session, scope, from_module, string, pick)
