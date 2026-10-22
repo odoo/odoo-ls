@@ -565,14 +565,17 @@ fn complete_decorator_call(
         };
         let dec_sym_tree = session.st().get_tree(dec_sym);
         let is_18_1_or_later = session.sync_odoo.version >= (18, 1);
-        let expected_types = if (!is_18_1_or_later && dec_sym_tree.0.ends_with_strs(&["odoo", "api"])) ||
-                (is_18_1_or_later && dec_sym_tree.0.ends_with_strs(&["odoo", "orm", "decorators"])) {
-            if (dec_sym_tree.1 == ["onchange"] || dec_sym_tree.1 == ["constrains"]) && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0) {
-                &[ExpectedType::SIMPLE_FIELD(None)]
-            } else if dec_sym_tree.1 == ["depends"] && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0){
-                &[ExpectedType::NESTED_FIELD(None)]
-            } else {
+        let expected_types = if ((!is_18_1_or_later && dec_sym_tree.0.ends_with_strs(&["odoo", "api"]))
+            || (is_18_1_or_later && dec_sym_tree.0.ends_with_strs(&["odoo", "orm", "decorators"])))
+            && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0)
+        {
+            let [decorator] = dec_sym_tree.1.as_slice() else {
                 continue;
+            };
+            match decorator.as_str() {
+                "onchange" | "constrains" => &[ExpectedType::SIMPLE_FIELD(None)],
+                "depends" => &[ExpectedType::NESTED_FIELD(None)],
+                _ => continue,
             }
         } else {
             continue;
