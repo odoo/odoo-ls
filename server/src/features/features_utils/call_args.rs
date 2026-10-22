@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use ruff_python_ast::{Arguments, Expr, ExprCall, ExprStringLiteral};
 use ruff_text_size::{Ranged, TextRange};
-use crate::core::symbols::symbol_keys::{ModuleKey, SymbolKey, VariableKey};
+use crate::core::symbols::symbol_keys::{ModelSymbolKey, ModuleKey, SymbolKey, VariableKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::FunctionSymbol;
 
@@ -87,6 +87,16 @@ fn find_call_param(
         .and_then(|func_arg| func_arg.symbol.upgrade(session.st()))
 }
 
+/// The model the callable is called on, e.g. `res.partner` in `self.env['res.partner'].search(...)`.
+fn model_called_on(session: &SessionInfo, callable: &EvaluationSymbolWeak) -> Option<ModelSymbolKey> {
+    let base_sym = callable.context.get(ContextKey::BaseAttr)?.as_symbol().upgrade(session.st())?;
+    match base_sym {
+        SymbolKey::Class(class_key) => Some(class_key.into()),
+        SymbolKey::XmlRecord(xml_rec_key) => Some(xml_rec_key.into()),
+        _ => None,
+    }
+}
+
 /// Whether `param` takes a domain, e.g. `domain` of `search`.
 fn is_domain_param(session: &SessionInfo, param: VariableKey) -> bool {
     session.st()[param].evaluations.iter()
@@ -144,9 +154,11 @@ pub(super) fn find_argument_symbols(
 
         // If the parameter is a domain parameter, find its symbols using the domain-specific logic
         if param.is_some_and(|param| is_domain_param(session, param)) {
-            arg_symbols.extend(
-                field_paths::find_domain_param_symbols(session, &callable, string, from_module, pick)
-            );
+            if let Some(model) = model_called_on(session, &callable) {
+                arg_symbols.extend(
+                    field_paths::find_domain_param_symbols(session, model, string, from_module, pick)
+                );
+            }
             continue;
         }
 
