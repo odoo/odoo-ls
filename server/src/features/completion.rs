@@ -10,7 +10,7 @@ use crate::core::import_resolver;
 use crate::core::python_odoo_builder::ACCESS_OPERATOR_OPTIONS;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::{FunctionSymbol, ModuleSymbol};
-use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey, SourceFileKey, SymbolKey};
+use crate::core::symbols::symbol_keys::{ClassKey, ModelSymbolKey, ModuleKey, SourceFileKey, SymbolKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::features::ast_utils::AstUtils;
 use crate::features::features_utils;
@@ -45,7 +45,7 @@ pub enum ExpectedType {
     EXTERNAL_FIELD(OYarn), // Like in inverse_name='field_name', we attach the comodel_name
     METHOD_NAME,
     INHERITS,
-    CS_FIELDS, // Comma-Separated Fields
+    ORDER(ClassKey), // An order on the fields of the model, like `_order = "name desc"`
 }
 
 pub struct CompletionFeature;
@@ -173,25 +173,29 @@ fn complete_delete_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt
     complete_expr( target, session, file, offset, false, &[])
 }
 
-/// Expected types of the value assigned to `target`, from its name, e.g. model names for `_inherit`
-fn expected_types_of_target(target: &Expr) -> Vec<ExpectedType> {
+/// Expected types of the `value` assigned to `target`, from its name, e.g. model names for `_inherit`
+fn expected_types_of_target(session: &mut SessionInfo, file: SourceFileKey, target: &Expr, value: &Expr) -> Vec<ExpectedType> {
     let Some(target_name) = target.as_name_expr() else {
         return vec![];
     };
     match target_name.id.as_str() {
         "_inherit" => vec![ExpectedType::MODEL_NAME],
         "_inherits" => vec![ExpectedType::INHERITS],
-        "_order" => vec![ExpectedType::CS_FIELDS],
+        // An order on the model whose class body holds the assignment
+        "_order" => {
+            let scope = get_and_build_scope(session, file, value.range().start().to_u32(), true);
+            features_utils::order_model_class(session, scope).map(ExpectedType::ORDER).into_iter().collect()
+        },
         _ => vec![],
     }
 }
 
 fn complete_assign_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_assign: &ruff_python_ast::StmtAssign, offset: usize) -> Option<CompletionResponse> {
-    let expected_type = match stmt_assign.targets.as_slice() {
-        [target] => expected_types_of_target(target),
-        _ => vec![],
-    };
     if offset > stmt_assign.value.range().start().to_usize() && offset <= stmt_assign.value.range().end().to_usize() {
+        let expected_type = match stmt_assign.targets.as_slice() {
+            [target] => expected_types_of_target(session, file, target, &stmt_assign.value),
+            _ => vec![],
+        };
         return complete_expr( &stmt_assign.value, session, file, offset, false, &expected_type);
     }
     None
@@ -207,7 +211,8 @@ fn complete_aug_assign_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, 
 fn complete_ann_assign_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_ann_assign: &ruff_python_ast::StmtAnnAssign, offset: usize) -> Option<CompletionResponse> {
     if let Some(expr) = stmt_ann_assign.value.as_ref()
         && offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize() {
-            return complete_expr( expr, session, file, offset, false, &expected_types_of_target(&stmt_ann_assign.target));
+            let expected_type = expected_types_of_target(session, file, &stmt_ann_assign.target, expr);
+            return complete_expr( expr, session, file, offset, false, &expected_type);
         }
     None
 }
@@ -636,6 +641,12 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
                 .and_then(|func_arg| func_arg.symbol.upgrade(session.st())) else {
                 continue;
             };
+            // The order of a search method, on the model it is called on
+            if session.st()[func_arg_sym].name == "order"
+                && features_utils::is_search_method(session, callable_sym)
+                && let Some(ModelSymbolKey::Class(model_class)) = features_utils::model_called_on(session, callable) {
+                return complete_expr(arg, session, file, offset, is_param, &[ExpectedType::ORDER(model_class)]);
+            }
             let mut expected_type = vec![];
             if session.st()[func_arg_sym].name == "inverse_name"
                 && callable_sym.typ() == SymType::CLASS
@@ -690,6 +701,13 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
     for callable_eval_sym_ptr in callable_eval_sym_ptrs.iter() {
         let callable_option = callable_eval_sym_ptr.upgrade_weak(session.st());
         let Some(callable_sym) = callable_option else {continue};
+        // The order of a search method, on the model it is called on: overrides often take it in
+        // `**kwargs`, so it is known by its name
+        if keyword.arg.as_ref().is_some_and(|name| name.as_str() == "order")
+            && features_utils::is_search_method(session, callable_sym)
+            && let Some(ModelSymbolKey::Class(model_class)) = features_utils::model_called_on(session, callable_eval_sym_ptr.get_weak()) {
+            return complete_expr(&keyword.value, session, file, offset, is_param, &[ExpectedType::ORDER(model_class)]);
+        }
         if callable_sym.typ() != SymType::CLASS || !SymbolTable::is_field_class(session, callable_sym){
             continue;
         }
@@ -860,7 +878,7 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
                     add_model_attributes(session, &mut items, current_module, class_key.into(), false, true, false, expr_string_literal.value.to_str(), &Some(Sy!("Many2one")))
                 });
             },
-            ExpectedType::CS_FIELDS => complete_model_order(session, file, expr_string_literal, offset, current_module, &mut items),
+            &ExpectedType::ORDER(model_class) => complete_model_order(session, model_class, expr_string_literal, offset, current_module, &mut items),
             ExpectedType::CLASS(_) => {},
             ExpectedType::INHERITS => {},
         }
@@ -1279,20 +1297,17 @@ fn get_completion_item_kind(typ: &SymType) -> CompletionItemKind {
     }
 }
 
-/// Completion in `_order = "name desc nulls last, partner_id.id"`, depending on the word of the
-/// item under the cursor: a field, the `id` of a many2one, then the direction and nulls keywords.
+/// Completion in an order on `model_class`, e.g. `_order = "name desc nulls last, partner_id.id"`,
+/// depending on the word of the item under the cursor: a field, the `id` of a many2one, then the
+/// direction and nulls keywords.
 fn complete_model_order(
     session: &mut SessionInfo,
-    file: SourceFileKey,
+    model_class: ClassKey,
     order_string: &ruff_python_ast::ExprStringLiteral,
     offset: usize,
     current_module: Option<ModuleKey>,
     items: &mut Vec<CompletionItem>,
 ) {
-    let scope = get_and_build_scope(session, file, order_string.range().start().to_u32(), true);
-    let Some(parent_class) = features_utils::order_model_class(session, scope) else {
-        return;
-    };
     let order = order_string.value.to_str();
     // Outside the string, between its parts, or in a part with escapes: no completion
     let Some(cursor) = AstUtils::index_in_string(order_string, TextSize::new(offset as u32)) else {
@@ -1308,8 +1323,8 @@ fn complete_model_order(
     match typed.split_first() {
         // "<current>", or "<field>.<current>"
         None => match current.split_once('.') {
-            Some((field, property)) => add_order_property(session, items, current_module, parent_class, field, property),
-            None => add_model_attributes(session, items, current_module, parent_class.into(), false, true, false, current, &None),
+            Some((field, property)) => add_order_property(session, items, current_module, model_class, field, property),
+            None => add_model_attributes(session, items, current_module, model_class.into(), false, true, false, current, &None),
         },
         // "<_field> <keywords> <current>": `nulls` is offered with where nulls go
         Some((_field, keywords)) => {

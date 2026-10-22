@@ -12,3 +12,11 @@ class SemTokensCalls(models.Model):
     def _search_by_keyword(self):
         # A domain given by keyword, as by position
         return self.search(domain=[('other_id.other_name', '=', False)])
+
+    def _search_with_order(self):
+        # An order given to a search method, by keyword or by position, names fields of the model searched
+        self.search([], order='other_id desc, name')
+        self.search_fetch([], ['total'], 0, None, 'other_id')
+        self.env['sem.tokens.other'].search_read([], order='other_name')
+        # The order of a method that is not a search method names nothing
+        return self.with_context(order='mirrored')

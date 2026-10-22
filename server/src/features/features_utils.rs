@@ -12,8 +12,9 @@ mod type_info;
 mod tests;
 
 pub use api_decorators::{api_decorator, ApiDecorator};
+pub use call_args::model_called_on;
 pub use description::build_markdown_description;
-pub use order::order_model_class;
+pub use order::{is_search_method, order_model_class};
 pub use string_resolution::{resolve_string_symbols, SegmentPick, StringResolution};
 pub use type_info::{get_inferred_types, CallableSignature, TypeInfo};
 pub use order_item::OrderItem;
