@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use ruff_python_ast::{Expr, ExprCall, ExprStringLiteral, Identifier, Keyword};
+use ruff_python_ast::{Arguments, Expr, ExprCall, ExprStringLiteral};
 use ruff_text_size::{Ranged, TextRange};
 use crate::core::odoo::SyncOdoo;
 use crate::core::symbols::symbol_keys::{ModuleKey, SymbolKey, VariableKey};
@@ -56,13 +56,6 @@ fn find_callables(
     callables
 }
 
-/// Whether `call_expr` calls a field class, e.g. `fields.Char(...)`.
-fn is_field_call(session: &mut SessionInfo, scope: SymbolKey, call_expr: &ExprCall) -> bool {
-    find_callables(session, scope, call_expr)
-        .into_iter()
-        .any(|(_, callable_sym)| SymbolTable::is_field_class(session, callable_sym))
-}
-
 /// An `api` decorator whose arguments name fields of the model.
 pub enum ApiDecorator {
     Onchange,
@@ -94,6 +87,7 @@ pub fn api_decorator(session: &mut SessionInfo, symbol: SymbolKey) -> Option<Api
 }
 
 /// What a string given to a parameter of a field class names.
+#[derive(Clone, Copy)]
 enum FieldParam {
     /// A field path on the model, e.g. `related='partner_id.name'`
     FieldPath,
@@ -131,18 +125,6 @@ impl FieldParam {
     }
 }
 
-fn find_model_method_symbol(
-    session: &mut SessionInfo,
-    scope: SymbolKey,
-    from_module: Option<ModuleKey>,
-    method_name: &str,
-) -> Vec<SymbolKey> {
-    let Some(parent_class) = field_paths::enclosing_model_class(session, scope) else {
-        return vec![];
-    };
-    field_paths::find_simple_method_in_class(session, parent_class.into(), from_module, method_name)
-}
-
 fn find_inverse_name_field_symbol(
     session: &mut SessionInfo,
     from_module: Option<ModuleKey>,
@@ -168,18 +150,6 @@ fn find_inverse_name_field_symbol(
     main_syms.iter().flat_map(|&main_sym| field_paths::find_simple_field_in_class(session, main_sym, from_module, field_value)).collect()
 }
 
-fn find_simple_decorator_field_symbol(
-    session: &mut SessionInfo,
-    scope: SymbolKey,
-    from_module: Option<ModuleKey>,
-    field_name: &str,
-) -> Vec<SymbolKey> {
-    let Some(parent_class) = field_paths::enclosing_model_class(session, scope) else {
-        return vec![];
-    };
-    field_paths::find_simple_field_in_class(session, parent_class.into(), from_module, field_name)
-}
-
 /// Symbols of `string` given to `decorator`, e.g. `@api.depends('partner_id.name')`.
 fn find_decorator_arg_symbols(
     session: &mut SessionInfo,
@@ -191,7 +161,7 @@ fn find_decorator_arg_symbols(
 ) -> Vec<(SymbolKey, TextRange)> {
     match decorator {
         ApiDecorator::Onchange | ApiDecorator::Constrains => {
-            find_simple_decorator_field_symbol(session, scope, from_module, string.value.to_str())
+            field_paths::find_field_in_enclosing_model(session, scope, from_module, string.value.to_str())
                 .into_iter()
                 .map(|symbol| (symbol, string.range))
                 .collect()
@@ -214,7 +184,7 @@ fn find_field_param_symbols(
             return field_paths::find_nested_fields_in_class(session, scope, from_module, string, pick);
         },
         FieldParam::ComodelField => find_inverse_name_field_symbol(session, from_module, string.value.to_str(), call_expr),
-        FieldParam::ModelMethod => find_model_method_symbol(session, scope, from_module, string.value.to_str()),
+        FieldParam::ModelMethod => field_paths::find_method_in_enclosing_model(session, scope, from_module, string.value.to_str()),
     };
     symbols.into_iter().map(|symbol| (symbol, string.range)).collect()
 }
@@ -256,88 +226,21 @@ fn is_domain_param(session: &SessionInfo, param: VariableKey) -> bool {
         .any(|evaluation| matches!(evaluation.symbol.get_symbol_ptr(), EvaluationSymbolPtr::DOMAIN))
 }
 
-fn find_positional_argument_symbols(
-    session: &mut SessionInfo,
-    scope: SymbolKey,
-    from_module: Option<ModuleKey>,
-    string: &ExprStringLiteral,
-    call_expr: &ExprCall,
-    arg_index: usize,
-    arg_expr: &Expr,
-    pick: SegmentPick,
-) -> Vec<(SymbolKey, TextRange)> {
-    let mut arg_symbols: Vec<(SymbolKey, TextRange)> = vec![];
-    for (callable, callable_sym) in find_callables(session, scope, call_expr) {
-        if ![SymType::FUNCTION, SymType::CLASS].contains(&callable_sym.typ()) {
-            continue;
-        }
-        if let SymbolKey::Function(function_key) = callable_sym
-            && session.st()[function_key].is_property {
-            continue;
-        }
-        if let Some(decorator) = api_decorator(session, callable_sym) {
-            arg_symbols.extend(
-                find_decorator_arg_symbols(session, scope, from_module, string, decorator, pick)
-            );
-            continue;
-        }
-        let Some(param) = find_call_param(session, from_module, &callable, callable_sym, call_expr, arg_index) else {
-            continue;
-        };
-        if is_domain_param(session, param) {
-            arg_symbols.extend(
-                field_paths::find_domain_param_symbols(session, &callable, string, from_module, pick)
-            );
-            continue;
-        }
-        if SymbolTable::is_field_class(session, callable_sym)
-            && let Some(field_param) = FieldParam::of(session, session.st()[param].name.as_str(), arg_expr, string) {
-            arg_symbols.extend(
-                find_field_param_symbols(session, scope, from_module, string, call_expr, field_param, pick)
-            );
-        }
-    }
-    arg_symbols
-}
 
-/// Find the symbols corresponding to a keyword argument in a call, if it is a domain or a field
-/// parameter.
-fn find_keyword_argument_symbols(
-    session: &mut SessionInfo,
-    scope: SymbolKey,
-    from_module: Option<ModuleKey>,
-    string: &ExprStringLiteral,
-    call_expr: &ExprCall,
-    keyword_index: usize,
-    keyword: &Keyword,
-    pick: SegmentPick,
-) -> Vec<(SymbolKey, TextRange)> {
-    // `**kwargs` has no name
-    let Some(name) = keyword.arg.as_ref().map(Identifier::as_str) else {
-        return vec![];
-    };
-    // Only the `domain` parameter of `search` takes a domain, see its hook
-    if name == "domain" {
-        let arg_index = call_expr.arguments.args.len() + keyword_index;
-        let mut arg_symbols = vec![];
-        for (callable, callable_sym) in find_callables(session, scope, call_expr) {
-            if let Some(param) = find_call_param(session, from_module, &callable, callable_sym, call_expr, arg_index)
-                && is_domain_param(session, param) {
-                arg_symbols.extend(
-                    field_paths::find_domain_param_symbols(session, &callable, string, from_module, pick)
-                );
-            }
-        }
-        return arg_symbols;
+/// The argument holding the string: its index, keyword arguments coming after the positional
+// ones, its value, and its name if it is a keyword argument
+fn find_argument<'a>(arguments: &'a Arguments, string: &ExprStringLiteral) -> Option<(usize, &'a Expr, Option<&'a str>)>{
+    if let Some((index, arg)) = arguments.args.iter()
+        .find_position(|arg| arg.range().contains_range(string.range)) {
+        Some((index, arg, None))
+    } else if let Some((index, keyword)) = arguments.keywords.iter()
+        .find_position(|keyword| keyword.range().contains_range(string.range))
+        // `**kwargs` has no name
+        && let Some(name) = keyword.arg.as_ref() {
+        Some((arguments.args.len() + index, &keyword.value, Some(name.as_str())))
+    } else {
+        None
     }
-    // Classify the parameter first: only then evaluate the callee
-    let Some(field_param) = FieldParam::of(session, name, &keyword.value, string) else {
-        return vec![];
-    };
-    if !is_field_call(session, scope, call_expr) {
-        return vec![];
-    }
-    find_field_param_symbols(session, scope, from_module, string, call_expr, field_param, pick)
 }
 
 pub(super) fn find_argument_symbols(
@@ -348,39 +251,52 @@ pub(super) fn find_argument_symbols(
     call_expr: &ExprCall,
     pick: SegmentPick,
 ) -> Vec<(SymbolKey, TextRange)> {
-    if let Some((arg_index, arg_expr)) = call_expr
-        .arguments
-        .args
-        .iter()
-        .find_position(|arg| arg.range().contains_range(string.range))
-    {
-        find_positional_argument_symbols(
-            session,
-            scope,
-            from_module,
-            string,
-            call_expr,
-            arg_index,
-            arg_expr,
-            pick,
-        )
-    } else if let Some((keyword_index, keyword)) = call_expr
-        .arguments
-        .keywords
-        .iter()
-        .find_position(|arg| arg.range().contains_range(string.range))
-    {
-        find_keyword_argument_symbols(
-            session,
-            scope,
-            from_module,
-            string,
-            call_expr,
-            keyword_index,
-            keyword,
-            pick,
-        )
-    } else {
-        vec![]
+    let Some((arg_index, value, keyword_name)) = find_argument(&call_expr.arguments, string) else {
+        return vec![];
+    };
+
+    let keyword_field_param = keyword_name.and_then(|name| FieldParam::of(session, name, value, string));
+
+    // If the keyword argument is not "domain" and cannot be classified as a field parameter, skip it
+    if keyword_name.is_some_and(|name| name != "domain") && keyword_field_param.is_none() {
+        return vec![];
     }
+    let mut arg_symbols = vec![];
+    for (callable, callable_sym) in find_callables(session, scope, call_expr) {
+        if let SymbolKey::Function(function_key) = callable_sym
+            && session.st()[function_key].is_property {
+            continue;
+        }
+        if let Some(decorator) = api_decorator(session, callable_sym) {
+            arg_symbols.extend(
+                find_decorator_arg_symbols(session, scope, from_module, string, decorator, pick)
+            );
+            continue;
+        }
+        // Call parameter symbol corresponding to the argument
+        let param = find_call_param(session, from_module, &callable, callable_sym, call_expr, arg_index);
+
+        // If the parameter is a domain parameter, find its symbols using the domain-specific logic
+        if param.is_some_and(|param| is_domain_param(session, param)) {
+            arg_symbols.extend(
+                field_paths::find_domain_param_symbols(session, &callable, string, from_module, pick)
+            );
+            continue;
+        }
+
+        if !SymbolTable::is_field_class(session, callable_sym) {
+            continue;
+        }
+        let field_param = match keyword_name {
+            Some(_) => keyword_field_param,
+            None => param.and_then(|param| FieldParam::of(session, session.st()[param].name.as_str(), value, string)),
+        };
+        if let Some(field_param) = field_param {
+            arg_symbols.extend(
+                find_field_param_symbols(session, scope, from_module, string, call_expr, field_param, pick)
+            );
+        }
+    }
+
+    arg_symbols.into_iter().unique().collect()
 }

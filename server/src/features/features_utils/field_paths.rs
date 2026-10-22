@@ -91,6 +91,30 @@ pub(super) fn find_nested_fields_in_class(
     find_nested_fields(session, parent_class.into(), from_module, string, pick)
 }
 
+pub(super) fn find_field_in_enclosing_model(
+    session: &mut SessionInfo,
+    scope: SymbolKey,
+    from_module: Option<ModuleKey>,
+    field_name: &str,
+) -> Vec<SymbolKey> {
+    let Some(parent_class) = enclosing_model_class(session, scope) else {
+        return vec![];
+    };
+    find_simple_field_in_class(session, parent_class.into(), from_module, field_name)
+}
+
+pub(super) fn find_method_in_enclosing_model(
+    session: &mut SessionInfo,
+    scope: SymbolKey,
+    from_module: Option<ModuleKey>,
+    method_name: &str,
+) -> Vec<SymbolKey> {
+    let Some(parent_class) = enclosing_model_class(session, scope) else {
+        return vec![];
+    };
+    find_simple_method_in_class(session, parent_class.into(), from_module, method_name)
+}
+
 pub(super) fn find_domain_param_symbols(
     session: &mut SessionInfo,
     callable: &EvaluationSymbolWeak,
@@ -118,7 +142,7 @@ pub(super) fn find_simple_field_in_class(
     SymbolTable::get_member_symbol(session, parent_class.into(), field_name, from_module, false, true, false, true, false).0
 }
 
-pub(super) fn find_simple_method_in_class(
+fn find_simple_method_in_class(
     session: &mut SessionInfo,
     parent_class: ModelSymbolKey,
     from_module: Option<ModuleKey>,
