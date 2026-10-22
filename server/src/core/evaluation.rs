@@ -1,5 +1,5 @@
 use crate::core::build_scheduler::BuildScheduler;
-use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
+use crate::core::diagnostics::{Diag, DiagnosticCode, create_diag};
 use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use crate::core::odoo::SyncOdoo;
@@ -13,7 +13,7 @@ use crate::threads::SessionInfo;
 use crate::{constants::*, Sy};
 use itertools::FoldWhile::{Continue, Done};
 use itertools::Itertools;
-use lsp_types::{Diagnostic, Location, Position, Range};
+use lsp_types::Location;
 use ruff_python_ast::{
     Comprehension, Expr, ExprCall, FStringPart, Identifier, Number, Parameter, UnaryOp,
 };
@@ -145,7 +145,7 @@ impl ExprOrIdent<'_> {
  * diagnostics: a vec the hook can fill to add diagnostics
  * file_symbol: if provided, can be used to add dependencies
  */
-pub type GetSymbolHookCallable = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>;
+pub type GetSymbolHookCallable = fn (session: &mut SessionInfo, eval: &EvaluationSymbol, context: Option<&Context>, diagnostics: &mut Vec<Diag>, scope: Option<SymbolKey>) -> Option<EvaluationSymbolPtr>;
 
 #[derive(Debug, Clone)]
 pub struct GetSymbolHook {
@@ -229,11 +229,11 @@ pub struct EvaluationSymbol {
 #[derive(Default)]
 pub struct AnalyzeAstResult {
     pub evaluations: Vec<Evaluation>,
-    pub diagnostics: Vec<Diagnostic>
+    pub diagnostics: Vec<Diag>
 }
 
 impl AnalyzeAstResult {
-    pub fn from_only_diagnostics(diags: Vec<Diagnostic>) -> Self {
+    pub fn from_only_diagnostics(diags: Vec<Diag>) -> Self {
         AnalyzeAstResult { evaluations: vec![], diagnostics: diags }
     }
 }
@@ -260,7 +260,7 @@ fn resolve_super_class_args(
     class_evals: &[Evaluation],
     session: &mut SessionInfo,
     context: Option<&Context>,
-    diagnostics: &mut Vec<Diagnostic>,
+    diagnostics: &mut Vec<Diag>,
 ) -> Vec<(Wk<SymbolKey>, bool)> {
     let mut hits = Vec::new();
     for class_eval in class_evals {
@@ -473,7 +473,7 @@ impl Evaluation {
         res
     }
 
-    pub fn follow_ref_and_get_value(&self, session: &mut SessionInfo, context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>) -> Option<EvaluationValue> {
+    pub fn follow_ref_and_get_value(&self, session: &mut SessionInfo, context: Option<&Context>, diagnostics: &mut Vec<Diag>) -> Option<EvaluationValue> {
         if let Some(value) = &self.value {
             return Some(value.clone());
         }
@@ -572,7 +572,7 @@ impl Evaluation {
     */
     /// A comprehension's `for ... in <iter>` and `if <cond>` clauses. Only the element decides
     /// the resulting type, but the clauses are ordinary expressions and still have to be walked.
-    fn eval_comprehension_clauses(session: &mut SessionInfo, generators: &[Comprehension], parent: SymbolKey, max_infer: &TextSize, required_dependencies: &mut Vec<Vec<SourceFileKey>>, diagnostics: &mut Vec<Diagnostic>, is_in_validation: bool) {
+    fn eval_comprehension_clauses(session: &mut SessionInfo, generators: &[Comprehension], parent: SymbolKey, max_infer: &TextSize, required_dependencies: &mut Vec<Vec<SourceFileKey>>, diagnostics: &mut Vec<Diag>, is_in_validation: bool) {
         for generator in generators.iter() {
             let (_, diags) = Evaluation::eval_from_ast(session, &generator.iter, parent, max_infer, false, required_dependencies);
             if is_in_validation {
@@ -587,7 +587,7 @@ impl Evaluation {
         }
     }
 
-    pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: impl Into<SymbolKey>, max_infer: &TextSize, for_annotation: bool, required_dependencies: &mut Vec<Vec<SourceFileKey>>) -> (Vec<Evaluation>, Vec<Diagnostic>) {
+    pub fn eval_from_ast(session: &mut SessionInfo, ast: &Expr, parent: impl Into<SymbolKey>, max_infer: &TextSize, for_annotation: bool, required_dependencies: &mut Vec<Vec<SourceFileKey>>) -> (Vec<Evaluation>, Vec<Diag>) {
         let parent = parent.into();
         let from_module;
         if let Some(module) = session.sync_odoo.symbol_table.find_module(parent) {
@@ -604,7 +604,7 @@ impl Evaluation {
     }
 
     /* Given an Expr, try to return the represented String. None if it can't be achieved */
-    pub fn expr_to_str(session: &mut SessionInfo, ast: &Expr, parent: SymbolKey, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diagnostic>) -> (Option<String>, Vec<Diagnostic>) {
+    pub fn expr_to_str(session: &mut SessionInfo, ast: &Expr, parent: SymbolKey, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diag>) -> (Option<String>, Vec<Diag>) {
         let from_module;
         if let Some(module) = session.sync_odoo.symbol_table.find_module(parent) {
             from_module = ContextValue::MODULE(module.into());
@@ -629,7 +629,7 @@ impl Evaluation {
     }
 
     /* Given an Expr, try to return the represented Boolean. None if it can't be achieved */
-    pub fn expr_to_bool(session: &mut SessionInfo, ast: &Expr, parent: SymbolKey, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diagnostic>) -> (Option<bool>, Vec<Diagnostic>) {
+    pub fn expr_to_bool(session: &mut SessionInfo, ast: &Expr, parent: SymbolKey, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diag>) -> (Option<bool>, Vec<Diag>) {
         let from_module;
         if let Some(module) = session.sync_odoo.symbol_table.find_module(parent) {
             from_module = ContextValue::MODULE(module.into());
@@ -870,14 +870,8 @@ impl Evaluation {
                                     if classes.is_empty() {
                                         // Only warn if every candidate was an instance; if some candidate resolved to a
                                         // usable class, prefer it silently instead of flagging the ambiguous ones.
-                                        if !instances.is_empty()
-                                            && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS01005, &[])
-                                        {
-                                            diagnostics.push(Diagnostic {
-                                                range: Range::new(Position::new(expr.arguments.args[0].range().start().to_u32(), 0),
-                                                Position::new(expr.arguments.args[0].range().end().to_u32(), 0)),
-                                                ..diagnostic_base
-                                            });
+                                        if !instances.is_empty() {
+                                            diagnostics.extend(create_diag(session, DiagnosticCode::OLS01005, &[], expr.arguments.args[0].range()));
                                         }
                                         vec![]
                                     } else {
@@ -911,13 +905,7 @@ impl Evaluation {
                                 } else {
                                     match session.st().get_in_parents(parent, &[SymType::CLASS], true) {
                                         None => {
-                                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01006, &[]) {
-                                                diagnostics.push(Diagnostic {
-                                                    range: Range::new(Position::new(expr.range().start().to_u32(), 0),
-                                                    Position::new(expr.range().end().to_u32(), 0)),
-                                                    ..diagnostic
-                                                });
-                                            }
+                                            diagnostics.extend(create_diag(session, DiagnosticCode::OLS01006, &[], expr.range()));
                                             vec![]
                                         },
                                         Some(parent_class) => {
@@ -1111,8 +1099,8 @@ impl Evaluation {
                             }
                             let is_super = ibase.has_weak() && ibase.get_weak().is_super;
                             let (attributes, mut attributes_diagnostics) = SymbolTable::get_member_symbol(session, base_loc, &expr.attr, module, false, false, false, true, is_super);
-                            for diagnostic in attributes_diagnostics.iter_mut(){
-                                diagnostic.range = FileMgr::textRange_to_temporary_Range(&expr.range())
+                            for diagnostic in attributes_diagnostics.iter_mut() {
+                                diagnostic.set_range(expr.range());
                             }
                             diagnostics.extend(attributes_diagnostics);
                             if !attributes.is_empty() {
@@ -1144,13 +1132,8 @@ impl Evaluation {
                                     // a module outside our dependencies ("indirect inheritance").
                                     let (indirect_syms, _) = SymbolTable::get_member_symbol(session, base_loc, &expr.attr, None, false, false, false, false, is_super);
                                     if let Some(indirect_module) = indirect_syms.first().and_then(|&sym| session.st().find_module(sym)) {
-                                        let dir_name = session.st()[indirect_module].dir_name.clone();
-                                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03028, &[&expr.attr, dir_name.as_str()]) {
-                                            diagnostics.push(Diagnostic {
-                                                range: FileMgr::textRange_to_temporary_Range(&expr.range()),
-                                                ..diagnostic
-                                            });
-                                        }
+                                        let dir_name = session.st()[indirect_module].dir_name.as_str();
+                                        diagnostics.extend(create_diag(session, DiagnosticCode::OLS03028, &[&expr.attr, dir_name], expr.range()));
                                     }
                                 }
                         }
@@ -1603,7 +1586,7 @@ impl Evaluation {
      * parameters:
      * object_instance: None if called on nothing, true on an instance, false on a class
      */
-    fn validate_call_arguments(session: &mut SessionInfo, function_key: FunctionKey, expr_call: &ExprCall, on_object: Wk<SymbolKey>, from_module: Option<ModuleKey>, object_instance: Option<bool>) -> Vec<Diagnostic> {
+    fn validate_call_arguments(session: &mut SessionInfo, function_key: FunctionKey, expr_call: &ExprCall, on_object: Wk<SymbolKey>, from_module: Option<ModuleKey>, object_instance: Option<bool>) -> Vec<Diag> {
         let function = &session.st()[function_key];
         if FunctionSymbol::is_func_overloaded(session.st(), function_key) || function.is_property {
             return vec![];
@@ -1659,12 +1642,7 @@ impl Evaluation {
                     }
                 }
                 if !pos_arg {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01007, &[&function_name, &0.to_string(), &1.to_string()]) {
-                        diagnostics.push(Diagnostic {
-                            range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
-                            ..diagnostic
-                        });
-                    }
+                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS01007, &[&function_name, &0.to_string(), &1.to_string()], expr_call.range()));
                     return diagnostics;
                 }
                 arg_index += 1;
@@ -1678,12 +1656,7 @@ impl Evaluation {
             let function = &session.st()[function_key];
             let function_arg = function.args.get(min(arg_index, vararg_index) as usize);
             if function_arg.is_none() || function_arg.unwrap().arg_type == ArgumentType::KWORD_ONLY || function_arg.unwrap().arg_type == ArgumentType::KWARG {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01007, &[&function_name, &number_pos_arg.to_string(), &(arg_index + 1).to_string()]) {
-                    diagnostics.push(Diagnostic {
-                        range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
-                        ..diagnostic
-                    });
-                }
+                diagnostics.extend(create_diag(session, DiagnosticCode::OLS01007, &[&function_name, &number_pos_arg.to_string(), &(arg_index + 1).to_string()], expr_call.range()));
                 return diagnostics;
             }
             if function_arg.unwrap().arg_type != ArgumentType::VARARG {
@@ -1700,12 +1673,7 @@ impl Evaluation {
                 // First, check if the keyword matches a positional-only parameter
                 if pos_only_args.contains(&arg_identifier.id.to_string()) {
                     found_pos_arg_with_kw += 1; // We do not want to double report 1011 with 1007
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01011, &[&function_name, &arg_identifier.id]) {
-                        diagnostics.push(Diagnostic {
-                            range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
-                            ..diagnostic
-                        });
-                    }
+                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS01011, &[&function_name, &arg_identifier.id], expr_call.range()));
                     continue;
                 }
                 let mut found_one = false;
@@ -1723,13 +1691,9 @@ impl Evaluation {
                         break;
                     }
                 }
-                if !found_one && kwarg_index == i32::MAX
-                    && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01008, &[&function_name, &arg_identifier.id]) {
-                        diagnostics.push(Diagnostic {
-                            range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
-                            ..diagnostic
-                        });
-                    }
+                if !found_one && kwarg_index == i32::MAX {
+                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS01008, &[&function_name, &arg_identifier.id], expr_call.range()));
+                }
             } else {
                 // if arg is None, it means that it is a **arg, which could replace all args (except pos-only args, of which some could have been set already)
                 found_pos_arg_with_kw = number_pos_arg - (pos_only_args.len() as i32 - arg_index).max(0);
@@ -1737,12 +1701,7 @@ impl Evaluation {
             }
         }
         if found_pos_arg_with_kw < number_pos_arg {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01007, &[&function_name, &number_pos_arg.to_string(), &arg_index.to_string()]) {
-                diagnostics.push(Diagnostic {
-                    range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
-                    ..diagnostic
-                });
-            }
+            diagnostics.extend(create_diag(session, DiagnosticCode::OLS01007, &[&function_name, &number_pos_arg.to_string(), &arg_index.to_string()], expr_call.range()));
             return diagnostics;
         }
         let mut kword_only_arg_missing = vec![]; // missing kword_only args without default value
@@ -1752,25 +1711,21 @@ impl Evaluation {
                 kword_only_arg_missing.push(name);
             }
         }
-        if !kword_only_arg_missing.is_empty()
-            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01010, &[&kword_only_arg_missing.join(", ")]) {
-                diagnostics.push(Diagnostic {
-                    range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
-                    ..diagnostic
-                });
-            }
+        if !kword_only_arg_missing.is_empty() {
+            diagnostics.extend(create_diag(session, DiagnosticCode::OLS01010, &[&kword_only_arg_missing.join(", ")], expr_call.range()));
+        }
         diagnostics
     }
 
-    fn process_argument_diagnostics(session: &SessionInfo, expr_call: &ExprCall, diagnostics: Vec<Vec<Diagnostic>>, _eval_count: usize) -> Vec<Diagnostic> {
+    fn process_argument_diagnostics(session: &SessionInfo, expr_call: &ExprCall, diagnostics: Vec<Vec<Diag>>, _eval_count: usize) -> Vec<Diag> {
         let mut filtered_diagnostics = vec![];
         //iter through diagnostics and check that each evaluation has the same amount of diagnostics with code OLS01007 or OLS01008 or OLS01010
         let all_same_issues = diagnostics.iter().fold_while(None, |acc, diags| {
             let new_count = diags.iter().filter(|d|
-                d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01007.to_string())) ||
-                d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01008.to_string())) ||
-                d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01010.to_string())) ||
-                d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01011.to_string()))
+                d.code() == DiagnosticCode::OLS01007.to_string() ||
+                d.code() == DiagnosticCode::OLS01008.to_string() ||
+                d.code() == DiagnosticCode::OLS01010.to_string() ||
+                d.code() == DiagnosticCode::OLS01011.to_string()
             ).count() as i32;
             match acc {
                 None => Continue(Some(new_count)),
@@ -1785,42 +1740,32 @@ impl Evaluation {
         }).into_inner();
         match all_same_issues {
             Some(-1) => {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS01009, &[]) {
-                    filtered_diagnostics.push(Diagnostic {
-                        range: Range::new(Position::new(expr_call.range().start().to_u32(), 0), Position::new(expr_call.range().end().to_u32(), 0)),
-                        ..diagnostic
-                    });
-                }
+                filtered_diagnostics.extend(create_diag(session, DiagnosticCode::OLS01009, &[], expr_call.range()));
             },
             Some(_count) => {
                 filtered_diagnostics.extend(diagnostics[0].iter().filter(|d|
-                    d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01007.to_string())) ||
-                    d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01008.to_string())) ||
-                    d.code == Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01010.to_string()))
-                ).cloned().collect::<Vec<Diagnostic>>());
+                    d.code() == DiagnosticCode::OLS01007.to_string() ||
+                    d.code() == DiagnosticCode::OLS01008.to_string() ||
+                    d.code() == DiagnosticCode::OLS01010.to_string()
+                ).cloned().collect::<Vec<Diag>>());
             },
             None => {}
         }
         // // we add the rest of the diagnostics as is
         for eval_diag in diagnostics {
             filtered_diagnostics.extend(eval_diag.into_iter().filter(|d| {
-                d.code != Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01007.to_string())) &&
-                d.code != Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01008.to_string())) &&
-                d.code != Some(lsp_types::NumberOrString::String(DiagnosticCode::OLS01010.to_string()))
+                d.code() != DiagnosticCode::OLS01007.to_string() &&
+                d.code() != DiagnosticCode::OLS01008.to_string() &&
+                d.code() != DiagnosticCode::OLS01010.to_string()
             }));
         }
         filtered_diagnostics
     }
 
-    fn validate_domain(session: &mut SessionInfo, on_object: Wk<SymbolKey>, from_module: Option<ModuleKey>, value: &Expr) -> Vec<Diagnostic> {
+    fn validate_domain(session: &mut SessionInfo, on_object: Wk<SymbolKey>, from_module: Option<ModuleKey>, value: &Expr) -> Vec<Diag> {
         let mut diagnostics = vec![];
         if value.is_literal_expr() || matches!(value, Expr::Tuple(_)) {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03006, &[]) {
-                diagnostics.push(Diagnostic {
-                    range: Range::new(Position::new(value.range().start().to_u32(), 0), Position::new(value.range().end().to_u32(), 0)),
-                    ..diagnostic
-                });
-            }
+            diagnostics.extend(create_diag(session, DiagnosticCode::OLS03006, &[], value.range()));
             return diagnostics;
         }
         if !matches!(value, Expr::List(_)) {
@@ -1835,12 +1780,7 @@ impl Evaluation {
                 Expr::Tuple(t) => {
                     need_tuple = max(need_tuple - 1, 0);
                     if t.elts.len() != 3 {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03007, &[]) {
-                            diagnostics.push(Diagnostic {
-                                range: Range::new(Position::new(t.range().start().to_u32(), 0), Position::new(t.range().end().to_u32(), 0)),
-                                ..diagnostic
-                            });
-                        }
+                        diagnostics.extend(create_diag(session, DiagnosticCode::OLS03007, &[], t.range()));
                     } else {
                         Evaluation::validate_tuple_search_domain(session, on_object, from_module, &t.elts[0], &t.elts[1], &t.elts[2], &mut diagnostics);
                     }
@@ -1848,12 +1788,7 @@ impl Evaluation {
                 Expr::List(l) => {
                     need_tuple = max(need_tuple - 1, 0);
                     if l.elts.len() != 3 {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03007, &[]) {
-                            diagnostics.push(Diagnostic {
-                                range: Range::new(Position::new(l.range().start().to_u32(), 0), Position::new(l.range().end().to_u32(), 0)),
-                                ..diagnostic
-                            });
-                        }
+                        diagnostics.extend(create_diag(session, DiagnosticCode::OLS03007, &[], l.range()));
                     } else {
                         Evaluation::validate_tuple_search_domain(session, on_object, from_module, &l.elts[0], &l.elts[1], &l.elts[2], &mut diagnostics);
                     }
@@ -1872,12 +1807,7 @@ impl Evaluation {
                             }
                         }
                         _ => {
-                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03008, &[]) {
-                                diagnostics.push(Diagnostic {
-                                    range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
-                                    ..diagnostic
-                                });
-                            }
+                            diagnostics.extend(create_diag(session, DiagnosticCode::OLS03008, &[], s.range()));
                         }
                     }
                 },
@@ -1885,17 +1815,13 @@ impl Evaluation {
                 }
             }
         }
-        if need_tuple > 0
-            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03010, &[]) {
-                diagnostics.push(Diagnostic {
-                    range: Range::new(Position::new(value.range().start().to_u32(), 0), Position::new(value.range().end().to_u32(), 0)),
-                    ..diagnostic
-                });
-            }
+        if need_tuple > 0 {
+            diagnostics.extend(create_diag(session, DiagnosticCode::OLS03010, &[], value.range()));
+        }
         diagnostics
     }
 
-    fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: Wk<SymbolKey>, from_module: Option<ModuleKey>, elt1: &Expr, elt2: &Expr, elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
+    fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: Wk<SymbolKey>, from_module: Option<ModuleKey>, elt1: &Expr, elt2: &Expr, elt3: &Expr, diagnostics: &mut Vec<Diag>) {
         //parameter 2
         let mut access_op = false;
         if let Expr::StringLiteral(s) = elt2 {
@@ -1904,23 +1830,13 @@ impl Evaluation {
                 "not ilike" | "=ilike" | "in" | "not in" | "child_of" | "parent_of" | "any" | "not any" => {},
                 "access" => {
                     if session.sync_odoo.version < (19, 3) {
-                        if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03025, &[]) {
-                            diagnostics.push(Diagnostic {
-                                range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
-                                ..diagnostic_base
-                            });
-                        }
+                        diagnostics.extend(create_diag(session, DiagnosticCode::OLS03025, &[], s.range()));
                     } else {
                         access_op = true;
                     }
                 }
                 _ => {
-                    if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03009, &[]) {
-                        diagnostics.push(Diagnostic {
-                            range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
-                            ..diagnostic_base
-                        });
-                    }
+                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS03009, &[], s.range()));
                 }
             }
         }
@@ -1933,42 +1849,25 @@ impl Evaluation {
             let split_expr = value.split(".").collect::<Vec<_>>();
             'split_name: for (index, field_name) in split_expr.iter().enumerate() {
                 if date_mode {
-                    if !["year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"].contains(field_name)
-                        && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03012, &[])
-                    {
-                        diagnostics.push(Diagnostic {
-                            range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
-                            ..diagnostic_base
-                        });
+                    if !["year_number", "quarter_number", "month_number", "iso_week_number", "day_of_week", "day_of_month", "day_of_year", "hour_number", "minute_number", "second_number"].contains(field_name) {
+                        diagnostics.extend(create_diag(session, DiagnosticCode::OLS03012, &[], s.range()));
                     }
                     date_mode = false;
                     continue;
                 }
                 let Some(base_symbol) = deep_field_walker.get_model_symbol(session) else {
-                    if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03013, &[]) {
-                        diagnostics.push(Diagnostic {
-                            range: Range::new(Position::new(s.range().start().to_u32(), 0), Position::new(s.range().end().to_u32(), 0)),
-                            ..diagnostic_base
-                        });
-                    }
+                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS03013, &[], s.range()));
                     break;
                 };
                 let field_symbols =
                     deep_field_walker.get_model_fields(session, base_symbol, field_name);
                 if field_symbols.is_empty() {
-                    if let Some(diagnostic_base) = create_diagnostic(
+                    diagnostics.extend(create_diag(
                         session,
                         DiagnosticCode::OLS03011,
                         &[field_name, &session.st().repr(base_symbol)],
-                    ) {
-                        diagnostics.push(Diagnostic {
-                            range: Range::new(
-                                Position::new(s.range().start().to_u32(), 0),
-                                Position::new(s.range().end().to_u32(), 0),
-                            ),
-                            ..diagnostic_base
-                        });
-                    }
+                        s.range()
+                    ));
                     break;
                 }
                 let mut access_field_valid = *field_name == "id";
@@ -2009,36 +1908,19 @@ impl Evaluation {
                         _ => {}
                     }
                 }
-                if index == split_expr.len() - 1 && access_op && !date_mode && !access_field_valid
-                    && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03027, &[])
-                    {
-                        diagnostics.push(Diagnostic {
-                            range: Range::new(
-                                Position::new(s.range().start().to_u32(), 0),
-                                Position::new(s.range().end().to_u32(), 0),
-                            ),
-                            ..diagnostic_base
-                        });
-                    }
-
+                if index == split_expr.len() - 1 && access_op && !date_mode && !access_field_valid {
+                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS03027, &[], s.range()));
+                }
             }
         }
         if access_op
           && let Expr::StringLiteral(str_expr) = elt3
-          && !ACCESS_OPERATOR_OPTIONS.contains(&str_expr.value.to_str())
-          && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03026, &[])
-        {
-            diagnostics.push(Diagnostic {
-                range: Range::new(
-                    Position::new(str_expr.range().start().to_u32(), 0),
-                    Position::new(str_expr.range().end().to_u32(), 0),
-                ),
-                ..diagnostic_base
-            });
-        }
+          && !ACCESS_OPERATOR_OPTIONS.contains(&str_expr.value.to_str()) {
+              diagnostics.extend(create_diag(session, DiagnosticCode::OLS03026, &[], str_expr.range()))
+          }
     }
 
-    fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg: &Argument, arg: &Expr, on_object: Wk<SymbolKey>, from_module: Option<ModuleKey>) -> Vec<Diagnostic> {
+    fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg: &Argument, arg: &Expr, on_object: Wk<SymbolKey>, from_module: Option<ModuleKey>) -> Vec<Diag> {
         let st = &session.sync_odoo.symbol_table;
         let mut diagnostics = vec![];
         let Some(symbol) = function_arg.symbol.upgrade(st) else { return diagnostics; };
@@ -2102,7 +1984,7 @@ impl EvaluationSymbol {
     }
 
     /* Execute the hook, then use context to return an EvaluationSymbolWeak if possible, else return an empty one */
-    pub fn get_symbol_as_weak(&self, session: &mut SessionInfo, context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> EvaluationSymbolWeak {
+    pub fn get_symbol_as_weak(&self, session: &mut SessionInfo, context: Option<&Context>, diagnostics: &mut Vec<Diag>, scope: Option<SymbolKey>) -> EvaluationSymbolWeak {
         let eval = self.get_symbol(session, context, diagnostics, scope);
         match eval {
             EvaluationSymbolPtr::WEAK(w) => {
@@ -2126,7 +2008,7 @@ impl EvaluationSymbol {
     }
 
     /* Execute Hook, then return the effective EvaluationSymbolPtr, but transformed as EvaluationSmbolWeak if possible */
-    pub fn get_symbol_weak_transformed(&self, session: &mut SessionInfo, context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, scope: Option<SymbolKey>) -> EvaluationSymbolPtr {
+    pub fn get_symbol_weak_transformed(&self, session: &mut SessionInfo, context: Option<&Context>, diagnostics: &mut Vec<Diag>, scope: Option<SymbolKey>) -> EvaluationSymbolPtr {
         let eval = self.get_symbol(session, context, diagnostics, scope);
         match eval {
             EvaluationSymbolPtr::WEAK(_) => {
@@ -2163,7 +2045,7 @@ impl EvaluationSymbol {
     }
 
     /* Execute Hook, then return the effective EvaluationSymbolPtr */
-    pub fn get_symbol(&self, session: &mut SessionInfo, context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>) -> EvaluationSymbolPtr {
+    pub fn get_symbol(&self, session: &mut SessionInfo, context: Option<&Context>, diagnostics: &mut Vec<Diag>, file_symbol: Option<SymbolKey>) -> EvaluationSymbolPtr {
         let mut custom_eval = None;
         if let Some(hook) = self.get_symbol_hook.as_ref() {
             custom_eval = (hook.callable)(session, self, context, diagnostics, file_symbol);
