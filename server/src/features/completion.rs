@@ -7,7 +7,6 @@ use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use crate::core::file_mgr::FileInfoKey;
 use crate::core::import_resolver;
-use crate::core::odoo::SyncOdoo;
 use crate::core::python_odoo_builder::ACCESS_OPERATOR_OPTIONS;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::{FunctionSymbol, ModuleSymbol};
@@ -15,9 +14,8 @@ use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey, SourceFileKey, Symb
 use crate::core::symbols::storage::SymbolTable;
 use crate::features::ast_utils::AstUtils;
 use crate::features::features_utils;
-use crate::features::features_utils::OrderItem;
+use crate::features::features_utils::{ApiDecorator, OrderItem};
 use crate::threads::SessionInfo;
-use crate::tree::OYarnExt;
 use crate::{Sy, S};
 use itertools::Itertools;
 use lsp_types::{
@@ -563,22 +561,10 @@ fn complete_decorator_call(
         let Some(dec_sym) = decorator_eval_sym_weak.weak.upgrade(session.st()) else {
             continue;
         };
-        let dec_sym_tree = session.st().get_tree(dec_sym);
-        let is_18_1_or_later = session.sync_odoo.version >= (18, 1);
-        let expected_types = if ((!is_18_1_or_later && dec_sym_tree.0.ends_with_strs(&["odoo", "api"]))
-            || (is_18_1_or_later && dec_sym_tree.0.ends_with_strs(&["odoo", "orm", "decorators"])))
-            && SyncOdoo::is_in_main_entry(session, &dec_sym_tree.0)
-        {
-            let [decorator] = dec_sym_tree.1.as_slice() else {
-                continue;
-            };
-            match decorator.as_str() {
-                "onchange" | "constrains" => &[ExpectedType::SIMPLE_FIELD(None)],
-                "depends" => &[ExpectedType::NESTED_FIELD(None)],
-                _ => continue,
-            }
-        } else {
-            continue;
+        let expected_types = match features_utils::api_decorator(session, dec_sym) {
+            Some(ApiDecorator::Onchange | ApiDecorator::Constrains) => &[ExpectedType::SIMPLE_FIELD(None)],
+            Some(ApiDecorator::Depends) => &[ExpectedType::NESTED_FIELD(None)],
+            None => continue,
         };
         // if dec_sym_tree == (vec![S!("odoo"), S!("api")], vec![S!("returns")]){
         //     // Todo
