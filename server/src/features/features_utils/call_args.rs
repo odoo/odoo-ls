@@ -1,8 +1,8 @@
 use itertools::Itertools;
-use ruff_python_ast::{Expr, ExprCall, ExprStringLiteral, Keyword};
+use ruff_python_ast::{Expr, ExprCall, ExprStringLiteral, Identifier, Keyword};
 use ruff_text_size::{Ranged, TextRange};
 use crate::core::odoo::SyncOdoo;
-use crate::core::symbols::symbol_keys::{ModuleKey, SymbolKey};
+use crate::core::symbols::symbol_keys::{ModuleKey, SymbolKey, VariableKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::FunctionSymbol;
 use crate::tree::OYarnExt;
@@ -169,6 +169,43 @@ fn find_field_param_symbols(
     symbols.into_iter().map(|symbol| (symbol, string.range)).collect()
 }
 
+/// The parameter of the callable that the argument at `arg_index` of `call_expr` is given to, the
+/// keyword arguments being indexed after the positional ones.
+fn find_call_param(
+    session: &mut SessionInfo,
+    from_module: Option<ModuleKey>,
+    callable: &EvaluationSymbolWeak,
+    callable_sym: SymbolKey,
+    call_expr: &ExprCall,
+    arg_index: usize,
+) -> Option<VariableKey> {
+    let func_key = match callable_sym {
+        SymbolKey::Function(function_key) => function_key,
+        // if class get __init__ method, we need to get the argument from there
+        SymbolKey::Class(_) => {
+            let Some(&SymbolKey::Function(init_method)) = SymbolTable::get_member_symbol(session, callable_sym, "__init__", from_module, false, false, true, false, false).0.first() else {
+                return None;
+            };
+            init_method
+        },
+        _ => return None,
+    };
+    let is_on_instance = if callable_sym.typ() == SymType::CLASS {
+        // skip self on __init__
+        Some(true)
+    } else {
+        callable.context.get(ContextKey::IsAttrOfInstance).map(|v| v.as_bool())
+    };
+    FunctionSymbol::get_indexed_arg_in_call(session.st(), func_key, call_expr, arg_index as u32, is_on_instance)
+        .and_then(|func_arg| func_arg.symbol.upgrade(session.st()))
+}
+
+/// Whether `param` takes a domain, e.g. `domain` of `search`.
+fn is_domain_param(session: &SessionInfo, param: VariableKey) -> bool {
+    session.st()[param].evaluations.iter()
+        .any(|evaluation| matches!(evaluation.symbol.get_symbol_ptr(), EvaluationSymbolPtr::DOMAIN))
+}
+
 fn find_positional_argument_symbols(
     session: &mut SessionInfo,
     scope: SymbolKey,
@@ -213,67 +250,57 @@ fn find_positional_argument_symbols(
                 }
             }
         }
-        // if class get __init__ method, we need to get the argument from there
-        let func_key = if callable_sym.typ() == SymType::CLASS {
-            if let Some(&SymbolKey::Function(init_method)) = SymbolTable::get_member_symbol(session, callable_sym, "__init__", from_module, false, false, true, false, false).0.first() {
-                init_method
-            } else {
-                continue;
-            }
-        } else {
-            callable_sym.unwrap_function_key()
+        let Some(param) = find_call_param(session, from_module, &callable, callable_sym, call_expr, arg_index) else {
+            continue;
         };
-        let is_on_instance = if callable_sym.typ() == SymType::CLASS {
-            // skip self on __init__
-            Some(true)
-        } else {
-            callable.context.get(ContextKey::IsAttrOfInstance).map(|v| v.as_bool())
-        };
-
-        let func_arg = FunctionSymbol::get_indexed_arg_in_call(
-            session.st(),
-            func_key,
-            call_expr,
-            arg_index as u32,
-            is_on_instance);
-        let Some(func_arg_sym) = func_arg.and_then(|func_arg| func_arg.symbol.upgrade(session.st())) else {
-            continue
-        };
-
-        if SymbolTable::is_field_class(session, callable_sym) {
-            if let Some(field_param) = FieldParam::of(session, session.st()[func_arg_sym].name.as_str(), arg_expr, string) {
-                arg_symbols.extend(
-                    find_field_param_symbols(session, scope, from_module, string, call_expr, field_param, pick)
-                );
-            }
+        if is_domain_param(session, param) {
+            arg_symbols.extend(
+                field_paths::find_domain_param_symbols(session, &callable, string, from_module, pick)
+            );
             continue;
         }
-        for evaluation in session.st()[func_arg_sym].evaluations.clone() {
-            if matches!(evaluation.symbol.get_symbol_ptr(), EvaluationSymbolPtr::DOMAIN) {
-                arg_symbols.extend(
-                    field_paths::find_domain_param_symbols(session, &callable, string, from_module, pick)
-                );
-            }
+        if SymbolTable::is_field_class(session, callable_sym)
+            && let Some(field_param) = FieldParam::of(session, session.st()[param].name.as_str(), arg_expr, string) {
+            arg_symbols.extend(
+                find_field_param_symbols(session, scope, from_module, string, call_expr, field_param, pick)
+            );
         }
-
     }
     arg_symbols
 }
 
-/// Find the symbols corresponding to a keyword argument in a call, if it represents a field parameter.
-/// The call now is always field class call.
+/// Find the symbols corresponding to a keyword argument in a call, if it is a domain or a field
+/// parameter.
 fn find_keyword_argument_symbols(
     session: &mut SessionInfo,
     scope: SymbolKey,
     from_module: Option<ModuleKey>,
     string: &ExprStringLiteral,
     call_expr: &ExprCall,
+    keyword_index: usize,
     keyword: &Keyword,
     pick: SegmentPick,
 ) -> Vec<(SymbolKey, TextRange)> {
+    // `**kwargs` has no name
+    let Some(name) = keyword.arg.as_ref().map(Identifier::as_str) else {
+        return vec![];
+    };
+    // Only the `domain` parameter of `search` takes a domain, see its hook
+    if name == "domain" {
+        let arg_index = call_expr.arguments.args.len() + keyword_index;
+        let mut arg_symbols = vec![];
+        for (callable, callable_sym) in find_callables(session, scope, call_expr) {
+            if let Some(param) = find_call_param(session, from_module, &callable, callable_sym, call_expr, arg_index)
+                && is_domain_param(session, param) {
+                arg_symbols.extend(
+                    field_paths::find_domain_param_symbols(session, &callable, string, from_module, pick)
+                );
+            }
+        }
+        return arg_symbols;
+    }
     // Classify the parameter first: only then evaluate the callee
-    let Some(field_param) = keyword.arg.as_ref()
-        .and_then(|name| FieldParam::of(session, name.as_str(), &keyword.value, string)) else {
+    let Some(field_param) = FieldParam::of(session, name, &keyword.value, string) else {
         return vec![];
     };
     if !is_field_call(session, scope, call_expr) {
@@ -306,11 +333,11 @@ pub(super) fn find_argument_symbols(
             arg_expr,
             pick,
         )
-    } else if let Some(keyword) = call_expr
+    } else if let Some((keyword_index, keyword)) = call_expr
         .arguments
         .keywords
         .iter()
-        .find(|arg| arg.range().contains_range(string.range))
+        .find_position(|arg| arg.range().contains_range(string.range))
     {
         find_keyword_argument_symbols(
             session,
@@ -318,6 +345,7 @@ pub(super) fn find_argument_symbols(
             from_module,
             string,
             call_expr,
+            keyword_index,
             keyword,
             pick,
         )
