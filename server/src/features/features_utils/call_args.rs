@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use ruff_python_ast::{Expr, ExprCall, ExprStringLiteral, Identifier, Keyword};
 use ruff_text_size::{Ranged, TextRange};
 use crate::core::odoo::SyncOdoo;
@@ -264,17 +265,38 @@ pub(super) fn find_argument_symbols(
     string: &ExprStringLiteral,
     call_expr: &ExprCall,
     pick: SegmentPick,
-) -> Vec<(SymbolKey, TextRange)>{
-    // Any byte inside the string picks the same call arg, so locate it from the range.
-    let offset = string.range.start().to_usize() + 1;
-    if let Some((arg_index, arg_expr)) = call_expr.arguments.args.iter().enumerate().find(|(_, arg)|
-        offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize()
-    ){
-        find_positional_argument_symbols(session, scope, from_module, string, call_expr, arg_index, arg_expr, pick)
-    } else if let Some((_, keyword)) = call_expr.arguments.keywords.iter().enumerate().find(|(_, arg)|
-        offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize()
-    ){
-        find_keyword_argument_symbols(session, scope, from_module, string, call_expr, keyword, pick)
+) -> Vec<(SymbolKey, TextRange)> {
+    if let Some((arg_index, arg_expr)) = call_expr
+        .arguments
+        .args
+        .iter()
+        .find_position(|arg| arg.range().contains_range(string.range))
+    {
+        find_positional_argument_symbols(
+            session,
+            scope,
+            from_module,
+            string,
+            call_expr,
+            arg_index,
+            arg_expr,
+            pick,
+        )
+    } else if let Some(keyword) = call_expr
+        .arguments
+        .keywords
+        .iter()
+        .find(|arg| arg.range().contains_range(string.range))
+    {
+        find_keyword_argument_symbols(
+            session,
+            scope,
+            from_module,
+            string,
+            call_expr,
+            keyword,
+            pick,
+        )
     } else {
         vec![]
     }
