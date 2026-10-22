@@ -1,6 +1,7 @@
 use ruff_python_ast::ExprStringLiteral;
 use ruff_text_size::{TextRange, TextSize};
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
+use crate::core::symbols::SymbolTable;
 use crate::core::symbols::symbol_keys::{ModelSymbolKey, ModuleKey, SymbolKey};
 use crate::features::ast_utils::AstUtils;
 
@@ -98,4 +99,22 @@ pub(super) fn find_domain_param_symbols(
         _ => return vec![],
     };
     find_nested_fields(session, model_sym, from_module, string, pick)
+}
+
+pub(super) fn find_simple_field_in_class(
+    session: &mut SessionInfo,
+    parent_class: ModelSymbolKey,
+    from_module: Option<ModuleKey>,
+    field_name: &str,
+) -> Vec<SymbolKey> {
+    SymbolTable::get_member_symbol(session, parent_class.into(), field_name, from_module, false, true, false, true, false).0
+}
+
+pub(super) fn find_simple_method_in_class(
+    session: &mut SessionInfo,
+    parent_class: ModelSymbolKey,
+    from_module: Option<ModuleKey>,
+    field_name: &str,
+) -> Vec<SymbolKey> {
+    SymbolTable::get_member_symbol(session, parent_class.into(), field_name, from_module, false, false, true, true, false).0
 }
