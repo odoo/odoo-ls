@@ -3,14 +3,14 @@ use oxc_linter::{ConfigStore, ConfigStoreBuilder, ContextSubHost, ExternalPlugin
 use oxc::syntax::module_record::{ExportExportName, ImportImportName};
 use ruff_python_ast::{ModModule, PySourceType, token::{Token, TokenKind}};
 use ruff_python_parser::Parsed;
-use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent, Uri};
+use lsp_types::{DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent, Uri};
 use lsp_types::notification::{Notification, PublishDiagnostics};
 use ruff_source_file::{LineIndex, OneIndexed, PositionEncoding, SourceLocation};
 use rustc_hash::FxHasher;
 use slotmap::{SlotMap, new_key_type};
 use tracing::{error, warn};
 use std::path::Path;
-use crate::core::{diagnostics::Diag, js_arch_builder::{ImportSource, JsDeclaration, JsExportKind, JsImportKind, span_to_range}};
+use crate::core::{diagnostics::{Diag, create_diag}, js_arch_builder::{ImportSource, JsDeclaration, JsExportKind, JsImportKind, span_to_range}};
 use crate::core::js_arch_builder::ComponentDescriptor;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
@@ -18,7 +18,7 @@ use std::sync::{atomic::{AtomicBool, Ordering}, Arc, OnceLock};
 use std::{fs};
 use crate::utils::{HashMap, HashSet};
 use crate::core::{config::{DiagnosticFilter, DiagnosticFilterPathType}, js_arch_builder, js_utils};
-use crate::core::diagnostics::{create_diagnostic, DiagnosticCode, DiagnosticSetting};
+use crate::core::diagnostics::{DiagnosticCode, DiagnosticSetting};
 use crate::core::text_document::TextDocument;
 use crate::features::node_index_ast::IndexedModule;
 use crate::core::symbols::symbol_keys::SourceFileKey;
@@ -469,26 +469,17 @@ impl FileInfo {
         let (valid, diagnostics) = Self::syntax_diagnostics(session, &parsed.indexed_module.parsed);
         session.file_mgr_mut()[key].valid = valid;
         session.file_mgr_mut()[key].file_info_ast.ast = Ast::PythonAst(parsed.indexed_module);
-        session.file_mgr_mut()[key].replace_diagnostics(DiagnosticSource::PY_SYNTAX, diagnostics.into_iter().map(Diag::from).collect());
+        session.file_mgr_mut()[key].replace_diagnostics(DiagnosticSource::PY_SYNTAX, diagnostics);
     }
 
     /// Build the SYNTAX-step diagnostics (OLS01000) for a parsed Python module.
     /// Returns whether the module is syntactically valid along with the diagnostics.
-    fn syntax_diagnostics(session: &SessionInfo, parsed: &Parsed<ModModule>) -> (bool, Vec<Diagnostic>) {
+    fn syntax_diagnostics(session: &SessionInfo, parsed: &Parsed<ModModule>) -> (bool, Vec<Diag>) {
         let mut diagnostics = vec![];
         let mut valid = true;
         for error in parsed.errors().iter() {
             valid = false;
-            if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS01000, &[]) {
-                diagnostics.push(Diagnostic {
-                    range: Range{
-                        start: Position::new(error.location.start().to_u32(), 0),
-                        end: Position::new(error.location.end().to_u32(), 0)
-                    },
-                    message: error.error.to_string(),
-                    ..diagnostic_base
-                });
-            }
+            diagnostics.extend(create_diag(session, DiagnosticCode::OLS01000, &[&error.error.to_string()], error.location));
         }
         (valid, diagnostics)
     }
@@ -515,7 +506,7 @@ impl FileInfo {
                     fia.text_document = Some(text_document);
                     fia.ast = Ast::PythonAst(parsed.indexed_module);
                 }
-                session.file_mgr_mut()[key].replace_diagnostics(DiagnosticSource::PY_SYNTAX, diagnostics.into_iter().map(Diag::from).collect());
+                session.file_mgr_mut()[key].replace_diagnostics(DiagnosticSource::PY_SYNTAX, diagnostics);
             }
             PreloadedFile::DataFile { text_hash, text_document, ast } => {
                 let fia = &mut session.file_mgr_mut()[key].file_info_ast;
