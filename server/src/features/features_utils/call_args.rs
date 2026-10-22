@@ -103,6 +103,46 @@ fn is_domain_param(session: &SessionInfo, param: VariableKey) -> bool {
         .any(|evaluation| matches!(evaluation.symbol.get_symbol_ptr(), EvaluationSymbolPtr::DOMAIN))
 }
 
+/// What a string given to a parameter names, for the parameters naming something of a model.
+enum ParamKind {
+    /// A domain on the model the method is called on, e.g. `search(domain=[('name', '=', 'x')])`
+    Domain,
+    /// A parameter of a field class, e.g. `fields.Char(related='partner_id.name')`
+    Field(FieldParam),
+}
+
+impl ParamKind {
+    /// What `string`, in the `value` of an argument given to `callable_sym`, names: from its declared
+    /// `param`, or its `keyword_name`.
+    fn of(
+        session: &SessionInfo,
+        callable_sym: SymbolKey,
+        param: Option<VariableKey>,
+        keyword_name: Option<&str>,
+        value: &Expr,
+        string: &ExprStringLiteral,
+    ) -> Option<Self> {
+        if param.is_some_and(|param| is_domain_param(session, param)) {
+            return Some(ParamKind::Domain);
+        }
+        if !SymbolTable::is_field_class(session, callable_sym) {
+            return None;
+        }
+        // Field classes do not declare most of their parameters: a keyword is known by its name
+        let name = match keyword_name {
+            Some(name) => name,
+            None => session.st()[param?].name.as_str(),
+        };
+        FieldParam::of(session, name, value, string).map(ParamKind::Field)
+    }
+
+    /// Whether the keyword argument `name` can be of a kind, known before evaluating the callee: only
+    /// the `domain` parameter of `search` is marked as a domain, see its hook.
+    fn can_be_keyword(session: &SessionInfo, name: &str, value: &Expr, string: &ExprStringLiteral) -> bool {
+        name == "domain" || FieldParam::of(session, name, value, string).is_some()
+    }
+}
+
 /// The argument holding the string: its index, keyword arguments coming after the positional
 /// ones, its value, and its name if it is a keyword argument
 fn find_argument<'a>(arguments: &'a Arguments, string: &ExprStringLiteral) -> Option<(usize, &'a Expr, Option<&'a str>)> {
@@ -130,11 +170,8 @@ pub(super) fn find_argument_symbols(
     let Some((arg_index, value, keyword_name)) = find_argument(&call_expr.arguments, string) else {
         return vec![];
     };
-
-    let keyword_field_param = keyword_name.and_then(|name| FieldParam::of(session, name, value, string));
-
-    // If the keyword argument is not "domain" and cannot be classified as a field parameter, skip it
-    if keyword_name.is_some_and(|name| name != "domain") && keyword_field_param.is_none() {
+    // Skip a keyword argument that cannot be of a kind, without evaluating the callee
+    if keyword_name.is_some_and(|name| !ParamKind::can_be_keyword(session, name, value, string)) {
         return vec![];
     }
     let mut arg_symbols = vec![];
@@ -151,28 +188,20 @@ pub(super) fn find_argument_symbols(
         }
         // Call parameter symbol corresponding to the argument
         let param = find_call_param(session, from_module, &callable, callable_sym, call_expr, arg_index);
-
-        // If the parameter is a domain parameter, find its symbols using the domain-specific logic
-        if param.is_some_and(|param| is_domain_param(session, param)) {
-            if let Some(model) = model_called_on(session, &callable) {
+        match ParamKind::of(session, callable_sym, param, keyword_name, value, string) {
+            Some(ParamKind::Domain) => {
+                if let Some(model) = model_called_on(session, &callable) {
+                    arg_symbols.extend(
+                        field_paths::find_domain_param_symbols(session, model, string, from_module, pick)
+                    );
+                }
+            },
+            Some(ParamKind::Field(field_param)) => {
                 arg_symbols.extend(
-                    field_paths::find_domain_param_symbols(session, model, string, from_module, pick)
+                    find_field_param_symbols(session, scope, from_module, string, call_expr, field_param, pick)
                 );
-            }
-            continue;
-        }
-
-        if !SymbolTable::is_field_class(session, callable_sym) {
-            continue;
-        }
-        let field_param = match keyword_name {
-            Some(_) => keyword_field_param,
-            None => param.and_then(|param| FieldParam::of(session, session.st()[param].name.as_str(), value, string)),
-        };
-        if let Some(field_param) = field_param {
-            arg_symbols.extend(
-                find_field_param_symbols(session, scope, from_module, string, call_expr, field_param, pick)
-            );
+            },
+            None => {},
         }
     }
 
