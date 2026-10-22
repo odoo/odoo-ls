@@ -12,7 +12,7 @@ use crate::{
     oyarn,
     utils::{HashMap, HashSet},
 };
-use super::SymbolTable;
+use super::{SymbolTable, symbol_mgr::SectionRange};
 
 // ==== File content ====
 
@@ -46,6 +46,16 @@ impl FileContentParent {
         }
     }
     
+    pub(super) fn sections_mut(self, st: &mut SymbolTable) -> &mut Vec<SectionRange> {
+        match self {
+            Self::File(f) => &mut st[f].sections,
+            Self::PythonPackage(p) => &mut st[p].sections,
+            Self::Module(m) => &mut st[m].sections,
+            Self::Class(c) => &mut st[c].sections,
+            Self::Function(f) => &mut st[f].sections,
+        }
+    }
+
     pub(super) fn add_child(self, st: &mut SymbolTable, name: &str, child: SymbolKey, position: u32) {
         let section = self.as_symbol_mgr(st).get_section_for(position).index;
         let name = oyarn!("{}", name);

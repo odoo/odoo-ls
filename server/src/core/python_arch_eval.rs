@@ -434,6 +434,13 @@ impl PythonArchEval {
                 if session.sync_odoo.config.diag_missing_imports() != DiagMissingImportsMode::All && BUILT_IN_LIBS.contains(&file_tree[0].as_str()) {
                     continue;
                 }
+                // the deepest symbol found is rebuilt when the missing name is added to it
+                for &import_sym in import_result.symbols.iter() {
+                    if let Some(import_file) = session.st().get_file(import_sym)
+                        && self.file != import_file {
+                            session.st_mut().add_dependency(self.file, import_file, self.current_step, BuildSteps::ARCH);
+                        }
+                }
                 if !self.safe_import.last().unwrap() {
                     session.st_mut().not_found_paths_mut(self.file).push((self.current_step, file_tree.clone()));
                     session.ep_mgr_mut()[self.entry_point].not_found_symbols.insert(self.file);

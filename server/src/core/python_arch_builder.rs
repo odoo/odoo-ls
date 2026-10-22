@@ -75,6 +75,7 @@ impl PythonArchBuilder {
         session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::ARCH, BuildStatus::IN_PROGRESS);
         let path = session.st().file_path(self.file).to_string();
         if self.file_mode {
+            SymbolTable::unload_content(session, symbol);
             let in_workspace = session.st().parent(self.file)
                 .is_some_and(|parent| session.st().in_workspace(parent)) ||
                 SyncOdoo::is_in_workspace_or_entry(session, &path);
