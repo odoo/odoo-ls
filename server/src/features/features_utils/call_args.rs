@@ -46,12 +46,9 @@ pub(super) fn find_kwarg_methods_symbols(
     string: &ExprStringLiteral,
     call_expr: &ExprCall,
 ) -> Vec<(SymbolKey, TextRange)> {
-    let Some(SymbolKey::Class(parent_class)) = session.st().get_in_parents(scope, &[SymType::CLASS], true) else {
+    let Some(parent_class) = field_paths::enclosing_model_class(session, scope) else {
         return vec![];
     };
-    if session.st()[parent_class]._model.is_none(){
-        return vec![];
-    }
     let followed_evals = follow_function_evaluation(session, scope, call_expr);
     if !followed_evals.iter().any(|eval|
         eval.has_weak() && eval.get_weak().weak.upgrade(session.st()).map(|sym| SymbolTable::is_field_class(session, sym)).unwrap_or(false)
@@ -95,12 +92,9 @@ fn find_simple_decorator_field_symbol(
     from_module: Option<ModuleKey>,
     field_name: &str,
 ) -> Vec<SymbolKey> {
-    let Some(SymbolKey::Class(parent_class)) = session.st().get_in_parents(scope, &[SymType::CLASS], true) else {
+    let Some(parent_class) = field_paths::enclosing_model_class(session, scope) else {
         return vec![];
     };
-    if session.st()[parent_class]._model.is_none() {
-        return vec![];
-    }
     field_paths::find_simple_field_in_class(session, parent_class.into(), from_module, field_name)
 }
 
@@ -193,7 +187,7 @@ fn find_positional_argument_symbols(
         if session.st()[func_arg_sym].name == "selection"
             && callable_sym.typ() == SymType::CLASS
             && SymbolTable::is_field_class(session, callable_sym)
-            && let Some(SymbolKey::Class(parent_class)) = session.st().get_in_parents(scope, &[SymType::CLASS], true) {
+            && let Some(parent_class) = field_paths::enclosing_model_class(session, scope) {
             arg_symbols.extend(
                 field_paths::find_simple_method_in_class(session, parent_class.into(), from_module, string.value.to_str())
                 .into_iter().map(|res| (res, arg_expr.range()))

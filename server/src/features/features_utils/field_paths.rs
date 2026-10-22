@@ -2,7 +2,7 @@ use ruff_python_ast::ExprStringLiteral;
 use ruff_text_size::{TextRange, TextSize};
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use crate::core::symbols::SymbolTable;
-use crate::core::symbols::symbol_keys::{ModelSymbolKey, ModuleKey, SymbolKey};
+use crate::core::symbols::symbol_keys::{ClassKey, ModelSymbolKey, ModuleKey, SymbolKey};
 use crate::features::ast_utils::AstUtils;
 
 use crate::constants::SymType;
@@ -70,6 +70,14 @@ fn find_nested_fields(
     results
 }
 
+/// The model class `scope` is written in, if that class is a model.
+pub(super) fn enclosing_model_class(session: &SessionInfo, scope: SymbolKey) -> Option<ClassKey> {
+    let Some(SymbolKey::Class(class)) = session.st().get_in_parents(scope, &[SymType::CLASS], true) else {
+        return None;
+    };
+    session.st()[class]._model.is_some().then_some(class)
+}
+
 pub(super) fn find_nested_fields_in_class(
     session: &mut SessionInfo,
     scope: SymbolKey,
@@ -77,7 +85,7 @@ pub(super) fn find_nested_fields_in_class(
     string: &ExprStringLiteral,
     pick: SegmentPick,
 ) ->  Vec<(SymbolKey, TextRange)>{
-    let Some(SymbolKey::Class(parent_class)) = session.st().get_in_parents(scope, &[SymType::CLASS], true) else {
+    let Some(parent_class) = enclosing_model_class(session, scope) else {
         return vec![];
     };
     find_nested_fields(session, parent_class.into(), from_module, string, pick)
