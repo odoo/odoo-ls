@@ -47,7 +47,7 @@ pub(super) fn resolve_string_members(
             let Some(model_class) = order_model_class(session, scope) else {
                 return vec![];
             };
-            find_order_fields(session, model_class, from_module, string, pick)
+            find_order_fields(session, model_class.into(), from_module, string, pick)
         },
     }
 }
