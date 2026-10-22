@@ -10,7 +10,8 @@ use crate::core::file_mgr::FileInfoKey;
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::symbol_keys::{SourceFileKey, SymbolKey};
 use crate::features::ast_utils::{AstUtils, StringContext};
-use crate::features::features_utils::{FeaturesUtils, SegmentPick, StringResolution};
+use crate::features::features_utils;
+use crate::features::features_utils::{SegmentPick, StringResolution};
 use crate::features::owl_component_utils::template_reference_resolves;
 use crate::threads::SessionInfo;
 use crate::utils::HashSet;
@@ -339,7 +340,7 @@ impl<'a, 'b, 's> SemanticTokenVisitor<'a, 'b, 's> {
     /// - field/method paths as property/method per dotted segment
     fn tokenize_string(&mut self, string_literal: &ExprStringLiteral) {
         let range = string_literal.range;
-        let Some(resolved) = FeaturesUtils::resolve_string_symbols(
+        let Some(resolved) = features_utils::resolve_string_symbols(
             self.session,
             self.file_symbol,
             &self.file_path,

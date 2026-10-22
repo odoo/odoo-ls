@@ -7,7 +7,8 @@ use ruff_text_size::TextRange;
 use crate::constants::PackageType;
 use crate::core::file_mgr::FileInfoKey;
 use crate::core::symbols::symbol_keys::{ModuleKey, SourceFileKey};
-use crate::features::features_utils::{FeaturesUtils, SegmentPick, StringResolution};
+use crate::features::features_utils;
+use crate::features::features_utils::{SegmentPick, StringResolution};
 use crate::utils::HashSet;
 use crate::{
     constants::{OYarn, SymType},
@@ -190,7 +191,7 @@ impl GotoUtils {
             let eval = &evaluations[index];
             if let Some(string) = eval.value.as_ref().and_then(EvaluationValue::as_string_literal) {
                 let uri = session.file_mgr()[file_info].uri.clone();
-                if let Some(resolution) = FeaturesUtils::resolve_string_symbols(session, file_symbol, &uri, string, string_ctx.as_ref(), SegmentPick::Cursor(offset)) {
+                if let Some(resolution) = features_utils::resolve_string_symbols(session, file_symbol, &uri, string, string_ctx.as_ref(), SegmentPick::Cursor(offset)) {
                     GotoUtils::push_string_sources(session, resolution, file_symbol, string.range, &mut definition_sources);
                 }
                 index += 1;
