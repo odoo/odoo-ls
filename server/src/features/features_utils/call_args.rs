@@ -9,7 +9,7 @@ use crate::tree::OYarnExt;
 
 use crate::constants::SymType;
 use crate::constants::OYarn;
-use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr};
+use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak};
 use crate::core::evaluation_context::ContextKey;
 use crate::threads::SessionInfo;
 use crate::Sy;
@@ -17,27 +17,52 @@ use crate::Sy;
 use super::field_paths;
 use super::string_resolution::SegmentPick;
 
-fn follow_function_evaluation(
+/// What the callee of `call_expr` refers to, each as its weak evaluation and its symbol.
+fn find_callables(
     session: &mut SessionInfo,
     scope: SymbolKey,
     call_expr: &ExprCall,
-) -> Vec<EvaluationSymbolPtr> {
-    let evaluations = Evaluation::eval_from_ast(session, &call_expr.func, scope, &call_expr.func.range().start(), false, &mut vec![]).0;
-    let mut followed_evals = vec![];
+) -> Vec<(EvaluationSymbolWeak, SymbolKey)> {
+    let evaluations = Evaluation::eval_from_ast(
+        session,
+        &call_expr.func,
+        scope,
+        &call_expr.func.range().start(),
+        false,
+        &mut vec![],
+    )
+    .0;
+    let mut callables = vec![];
     for eval in evaluations {
-        followed_evals.extend(
-            SymbolTable::follow_ref(
-                &eval.symbol.get_symbol(session, None, &mut vec![], None),
-                session,
-                None,
-                true,
-                false,
-                None,
-                None,
-            )
+        let followed_evals = SymbolTable::follow_ref(
+            &eval.symbol.get_symbol(session, None, &mut vec![], None),
+            session,
+            None,
+            true,
+            false,
+            None,
+            None,
         );
+        callables.extend(followed_evals.into_iter().filter_map(|followed_eval| {
+            match followed_eval {
+                EvaluationSymbolPtr::SELF(callable) | EvaluationSymbolPtr::WEAK(callable) => {
+                    callable
+                        .weak
+                        .upgrade(session.st())
+                        .map(|callable_sym| (callable, callable_sym))
+                }
+                _ => None,
+            }
+        }));
     }
-    followed_evals
+    callables
+}
+
+/// Whether `call_expr` calls a field class, e.g. `fields.Char(...)`.
+fn is_field_call(session: &mut SessionInfo, scope: SymbolKey, call_expr: &ExprCall) -> bool {
+    find_callables(session, scope, call_expr)
+        .into_iter()
+        .any(|(_, callable_sym)| SymbolTable::is_field_class(session, callable_sym))
 }
 
 pub(super) fn find_kwarg_methods_symbols(
@@ -50,10 +75,7 @@ pub(super) fn find_kwarg_methods_symbols(
     let Some(parent_class) = field_paths::enclosing_model_class(session, scope) else {
         return vec![];
     };
-    let followed_evals = follow_function_evaluation(session, scope, call_expr);
-    if !followed_evals.iter().any(|eval|
-        eval.has_weak() && eval.get_weak().weak.upgrade(session.st()).map(|sym| SymbolTable::is_field_class(session, sym)).unwrap_or(false)
-    ) {
+    if !is_field_call(session, scope, call_expr) {
         return vec![];
     }
     field_paths::find_simple_method_in_class(session, parent_class.into(), from_module, string.value.to_str())
@@ -110,14 +132,7 @@ fn find_positional_argument_symbols(
     pick: SegmentPick,
 ) -> Vec<(SymbolKey, TextRange)> {
     let mut arg_symbols: Vec<(SymbolKey, TextRange)> = vec![];
-    let followed_evals = follow_function_evaluation(session, scope, call_expr);
-    for callable_eval in followed_evals {
-        let EvaluationSymbolPtr::WEAK(callable) = callable_eval else {
-            continue;
-        };
-        let Some(callable_sym) = callable.weak.upgrade(session.st()) else {
-            continue;
-        };
+    for (callable, callable_sym) in find_callables(session, scope, call_expr) {
         if ![SymType::FUNCTION, SymType::CLASS].contains(&callable_sym.typ()) {
             continue;
         }
@@ -238,24 +253,10 @@ fn find_keyword_argument_symbols(
         _ => return vec![],
     }
 
-    let mut arg_symbols = vec![];
-    let followed_evals = follow_function_evaluation(session, scope, call_expr);
-
-    for callable_eval in followed_evals {
-        let EvaluationSymbolPtr::WEAK(callable) = callable_eval else {
-            continue;
-        };
-        let Some(callable_sym) = callable.weak.upgrade(session.st()) else {
-            continue;
-        };
-        if !SymbolTable::is_field_class(session, callable_sym) {
-            continue;
-        }
-        arg_symbols.extend(
-            field_paths::find_nested_fields_in_class(session, scope, from_module, string, pick)
-        );
+    if !is_field_call(session, scope, call_expr) {
+        return vec![];
     }
-    arg_symbols
+    field_paths::find_nested_fields_in_class(session, scope, from_module, string, pick)
 }
 
 pub(super) fn find_argument_symbols(
