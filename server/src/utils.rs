@@ -20,7 +20,7 @@ macro_rules! S {
 #[macro_export]
 macro_rules! Sy {
     ($x: expr) => {
-        OYarn::from($x)
+        $crate::constants::OYarn::from($x)
     };
 }
 

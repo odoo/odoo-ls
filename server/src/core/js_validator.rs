@@ -3,7 +3,7 @@ use tracing::trace;
 
 use crate::{Sy, constants::{BuildStatus, DiagnosticSource, MissingDataSource}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::{FileInfo, FileMgr, JsImport}}, features::xml_ast_utils::XmlAstUtils};
 use crate::{
-    constants::{BuildSteps, OYarn, DEBUG_STEPS},
+    constants::{BuildSteps, DEBUG_STEPS},
     core::{
         symbols::{ModuleSymbol, symbol_keys::JsFileKey},
     },

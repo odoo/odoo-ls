@@ -5,7 +5,7 @@ use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
 
 use crate::{
-    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource, MissingDataSource, OYarn}, core::{
+    Sy, constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource, MissingDataSource}, core::{
         diagnostics::{DiagnosticCode, create_diagnostic}, evaluation_utils::DeepFieldEvalWalker, file_mgr::{FileInfo, FileInfoKey, FileMgr}, symbols::{Buildable as _, symbol_keys::{CsvFileKey, ModuleKey}}
     }, features::csv_ast_utils::{CsvFieldIter, split_csv_xml_ids}, oyarn, threads::SessionInfo
 };
