@@ -8,7 +8,6 @@ use lsp_types::{
     CreateFilesParams, DeleteFilesParams, FileCreate, FileDelete, FileRename, RenameFilesParams,
     TextDocumentContentChangeEvent,
 };
-use odoo_ls_server::constants::OYarn;
 use odoo_ls_server::core::build_scheduler::BuildScheduler;
 use odoo_ls_server::core::config::ConfigKey;
 use odoo_ls_server::core::file_mgr::FileMgr;
