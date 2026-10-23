@@ -6,11 +6,12 @@ use ruff_source_file::{LineIndex, PositionEncoding};
 use tracing::info;
 
 use crate::core::build_scheduler::BuildScheduler;
-use crate::core::diagnostics::Diag;
+use crate::core::diagnostics::{Diag, create_diag};
 use crate::core::file_mgr::{FileInfoKey, FileMgr, position_to_offset_with_line_index};
 use crate::core::js_module_scope;
 use crate::core::js_utils::read_module_header;
 use crate::core::symbols::symbol_keys::JsFileKey;
+use crate::utils::range_to_text_range;
 use crate::{constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource}, core::{csv_arch_builder::CsvArchBuilder, data_hooks, diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPointMgr, file_mgr::FileInfo, symbols::{ModuleSymbol, SymbolTable, symbol_keys::{BuildableSymbolKey, ModuleKey, SourceFileKey, XmlFileKey}}, xml_arch_builder::XmlArchBuilder}, threads::SessionInfo, utils::PathSanitizer};
 
 const ASSET_FOLDERS: [&str; 3] = ["src", "tests", "lib"];
@@ -198,7 +199,7 @@ impl ModuleSymbol {
             Err(_) if data.is_empty() => {},
             Err(error) => {
                 let diag = build_syntax_diagnostic(session, file_info, &error);
-                session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::XML_SYNTAX, Vec::from_iter(diag.map(Diag::from)));
+                session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::XML_SYNTAX, Vec::from_iter(diag));
                 FileInfo::publish_diagnostics(session, file_info);
             }
         }
@@ -266,15 +267,10 @@ fn is_asset_file(path: &Path, is_lib: bool) -> bool {
     }
 }
 
-fn build_syntax_diagnostic(session: &SessionInfo, file_info: FileInfoKey, doc_error: &roxmltree::Error) -> Option<Diagnostic> {
-    let diagnostic = create_diagnostic(session, DiagnosticCode::OLS05000, &[&doc_error.to_string()])?; 
-    let ast = &session.file_mgr()[file_info].file_info_ast;
-    let text_document = ast.text_document.as_ref()?;
-    let std::ops::Range{ start, end } = xml_syntax_error_range(text_document.contents(), text_document.index(), doc_error.pos());
-    Some(Diagnostic {
-        range: Range::new(Position::new(start as u32, 0), Position::new(end as u32, 0)),
-        ..diagnostic
-    })
+fn build_syntax_diagnostic(session: &SessionInfo, file_info: FileInfoKey, doc_error: &roxmltree::Error) -> Option<Diag> {
+    let text_document = session.file_mgr()[file_info].file_info_ast.text_document.as_ref()?;
+    let range = xml_syntax_error_range(text_document.contents(), text_document.index(), doc_error.pos());
+    create_diag(session, DiagnosticCode::OLS05000, &[&doc_error.to_string()], range_to_text_range(range))
 }
 
 /// Converts a romxltree:TextPos to a byte range spanning one character
