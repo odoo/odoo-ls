@@ -985,13 +985,6 @@ impl FileMgr {
         self.file_arena.clear();
     }
 
-    #[allow(non_snake_case)]
-    pub fn textRange_to_temporary_Range(range: &TextRange) -> Range {
-        Range::new(
-            Position::new(range.start().to_u32(), 0),
-            Position::new(range.end().to_u32(), 0))
-    }
-
     pub fn get_file_info(&self, path: &str) -> Option<FileInfoKey> {
         if Self::is_untitled(path) {
             self.untitled_files.get(path).cloned()
