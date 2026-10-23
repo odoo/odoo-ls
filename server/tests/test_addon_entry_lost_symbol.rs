@@ -3,7 +3,6 @@ use std::fs;
 use std::path::Path;
 
 use lsp_types::{DidChangeWatchedFilesParams, FileChangeType, FileEvent};
-use odoo_ls_server::constants::OYarn;
 use odoo_ls_server::core::entry_point::EntryPointMgr;
 use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::{Odoo, SyncOdoo};

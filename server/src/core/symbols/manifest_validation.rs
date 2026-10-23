@@ -3,7 +3,7 @@ use std::{ffi::OsStr, path::Path};
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
 
-use crate::{Sy, constants::{BuildSteps, DEBUG_STEPS, DiagnosticSource, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileInfo, symbols::{ModuleSymbol, symbol_keys::ModuleKey}}, threads::SessionInfo, utils::PathSanitizer};
+use crate::{Sy, constants::{BuildSteps, DEBUG_STEPS, DiagnosticSource}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileInfo, symbols::{ModuleSymbol, symbol_keys::ModuleKey}}, threads::SessionInfo, utils::PathSanitizer};
 
 
 

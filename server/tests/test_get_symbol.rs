@@ -5,7 +5,6 @@ use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::odoo_version::OdooVersion;
 use odoo_ls_server::utils::{PathSanitizer, ToFilePath};
 use odoo_ls_server::Sy;
-use odoo_ls_server::constants::OYarn;
 use odoo_ls_server::threads::SessionInfo;
 use std::env;
 use std::path::Path;
