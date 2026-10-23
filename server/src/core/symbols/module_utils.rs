@@ -1,10 +1,9 @@
 use std::path::Path;
 
-use lsp_types::Diagnostic;
 use ruff_text_size::TextRange;
 use tracing::warn;
 
-use crate::{Sy, constants::{BuildSteps, DiagnosticSource, OYarn}, core::{build_scheduler::BuildScheduler, diagnostics::{Diag, DiagnosticCode, create_diagnostic}, file_mgr::FileMgr, import_resolver::create_module_from_name, symbols::{ModuleSymbol, SymbolTable, symbol_keys::{ModuleKey, NamespaceKey, SymbolKey}}}, threads::SessionInfo, utils::PathSanitizer};
+use crate::{Sy, constants::{BuildSteps, DiagnosticSource, OYarn}, core::{build_scheduler::BuildScheduler, diagnostics::{Diag, DiagnosticCode, create_diag}, import_resolver::create_module_from_name, symbols::{ModuleSymbol, SymbolTable, symbol_keys::{ModuleKey, NamespaceKey, SymbolKey}}}, threads::SessionInfo, utils::PathSanitizer};
 use crate::core::symbols::symbol_table_impl::CreateError;
 
 
@@ -21,18 +20,18 @@ impl ModuleSymbol {
         module.loaded = true;
         let manifest_path = Path::new(&module.root_path).join("__manifest__.py");
         let manifest_file_info = session.file_mgr().get_file_info(&manifest_path.sanitize_cow()).expect("file not found in cache");
-        session.file_mgr_mut()[manifest_file_info].replace_diagnostics(DiagnosticSource::PY_ARCH, diagnostics.into_iter().map(Diag::from).collect());
+        session.file_mgr_mut()[manifest_file_info].replace_diagnostics(DiagnosticSource::PY_ARCH, diagnostics);
     }
 
     /* ensure that all modules indicates in the module dependencies are well loaded.
     Returns list of diagnostics to publish in manifest file */
-    fn load_depends(symbol_key: ModuleKey, session: &mut SessionInfo, odoo_addons: NamespaceKey) -> (Vec<Diagnostic>, Vec<OYarn>) {
+    fn load_depends(symbol_key: ModuleKey, session: &mut SessionInfo, odoo_addons: NamespaceKey) -> (Vec<Diag>, Vec<OYarn>) {
         let module = &mut session.st_mut()[symbol_key];
         let name = module.name.clone();
         let all_depends = module.depends.iter().map(|(depend, _)| depend.clone()).collect::<Vec<_>>();
         module.all_depends.clear();
         module.all_depends.extend(all_depends);
-        let mut diagnostics: Vec<Diagnostic> = vec![];
+        let mut diagnostics: Vec<Diag> = vec![];
         let mut loaded: Vec<OYarn> = vec![];
         let dependencies = module.depends.clone();
         for (depend, range) in dependencies {
@@ -40,19 +39,15 @@ impl ModuleSymbol {
                 Some(SymbolKey::Module(dependency)) => {
                     // Dependency already in modules
                     BuildScheduler::build_now(session, dependency, BuildSteps::ARCH);
-                    if session.st()[dependency].all_depends.contains(&name)
-                        && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS04012, &[&depend]) {
-                            diagnostics.push(Diagnostic {
-                                range: FileMgr::textRange_to_temporary_Range(&range),
-                                ..diagnostic_base.clone()
-                            });
-                        }
+                    if session.st()[dependency].all_depends.contains(&name) {
+                        diagnostics.extend(create_diag(session, DiagnosticCode::OLS04012, &[&depend], range));
+                    }
                     ModuleSymbol::extend_dependencies(session.st_mut(), symbol_key, dependency);
                 },
                 Some(other) => {
                     // odoo addons has a child symbol with the same name but not a module
                     warn!("dependency '{depend}' of '{name}' is {:?} at {:?}", other.typ(), session.st().paths(other));
-                    Self::report_missing_dependency(session, &mut diagnostics, symbol_key, &name, &depend, &range);
+                    Self::report_missing_dependency(session, &mut diagnostics, symbol_key, &name, &depend, range);
                 },
                 None => match create_module_from_name(session, odoo_addons, &depend) {
                     Ok(dependency) => {
@@ -63,7 +58,7 @@ impl ModuleSymbol {
                     Err(CreateError::Existing(_)) => unreachable!("name checked vacant on odoo_addons above"),
                     Err(CreateError::NothingOnDisk) => {
                         // Dependency not found nor created
-                        Self::report_missing_dependency(session, &mut diagnostics, symbol_key, &name, &depend, &range);
+                        Self::report_missing_dependency(session, &mut diagnostics, symbol_key, &name, &depend, range);
                     }
                 }
             }
@@ -71,16 +66,11 @@ impl ModuleSymbol {
         (diagnostics, loaded)
     }
 
-    fn report_missing_dependency(session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>, module: ModuleKey, name: &OYarn, depend: &OYarn, range: &TextRange) {
+    fn report_missing_dependency(session: &mut SessionInfo, diagnostics: &mut Vec<Diag>, module: ModuleKey, name: &OYarn, depend: &OYarn, range: TextRange) {
         let entry = session.st().get_entry(module);
         session.ep_mgr_mut()[entry].not_found_symbols.insert(module.into());
         session.st_mut()[module].not_found_paths.push((BuildSteps::ARCH, vec![Sy!("odoo"), Sy!("addons"), depend.clone()]));
-        if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS04010, &[name, depend]) {
-            diagnostics.push(Diagnostic {
-                range: FileMgr::textRange_to_temporary_Range(range),
-                ..diagnostic_base
-            });
-        }
+        diagnostics.extend(create_diag(session, DiagnosticCode::OLS04010, &[name, depend], range));
     }
 
     fn extend_dependencies(symbol_table: &mut SymbolTable, symbol_key: ModuleKey, dependency: ModuleKey) {
