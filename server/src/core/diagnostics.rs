@@ -31,6 +31,11 @@ pub struct RelatedInfo {
 }
 
 impl Diag {
+    /// A diagnostic from an outside tool (oxc, tsserver), with no OLS code listed in DiagnosticCode enum.
+    pub fn external(code: String, message: String, range: TextRange, severity: DiagnosticSeverity) -> Self {
+        Self { code, message, severity, range, related_info: Vec::new(), tags: Vec::new() }
+    }
+    
     pub fn into_lsp(self, uri: &Uri, to_lsp_range: impl Fn(TextRange) -> Range) -> Diagnostic {
         let Self { range, severity, code, message, related_info, tags } = self;
         Diagnostic {
@@ -64,6 +69,10 @@ impl Diag {
 
     pub fn set_range(&mut self, range: TextRange) {
         self.range = range;
+    }
+
+    pub fn add_related_info(&mut self, message: String, range: TextRange) {
+        self.related_info.push(RelatedInfo { message, range });
     }
 }
 

@@ -1,60 +1,45 @@
-use oxc::diagnostics::OxcDiagnostic;
+use oxc::diagnostics::{LabeledSpan, OxcDiagnostic};
+use ruff_text_size::TextRange;
 
-use crate::{S, constants::EXTENSION_NAME};
+use crate::core::diagnostics::Diag;
+use crate::utils::range_to_text_range;
 
 use std::io::Read;
 use std::path::Path;
 use std::sync::LazyLock;
 use regex::Regex;
 
-pub fn oxc_diagnostic_to_lsp_diagnostic(diag: &OxcDiagnostic, uri: &lsp_types::Uri) -> Option<lsp_types::Diagnostic> {
+pub fn oxc_diagnostic_to_diag(diag: &OxcDiagnostic) -> Option<Diag> {
     let labels = diag.labels.as_ref()?;
-    let first_label = labels.first().unwrap();
-    let range = lsp_types::Range {
-        start: lsp_types::Position { line: first_label.offset() as u32, character: 0 },
-        end: lsp_types::Position { line: first_label.offset() as u32 + first_label.len() as u32, character: 0 },
+    let first_label = labels.first()?;
+    // LabeledSpan uses byte offsets
+    let range_of_label = |label: &LabeledSpan| -> TextRange {
+        let start = label.offset();
+        let end = start + label.len();
+        range_to_text_range(start..end)
     };
-    let related_information = labels.iter().skip(1)
-        .filter_map(|label| {
-            let msg = label.label()?.to_string();
-            let start = label.offset();
-            let end   = start + label.len();
-            Some(lsp_types::DiagnosticRelatedInformation {
-                location: lsp_types::Location {
-                    uri: uri.clone(),
-                    range: lsp_types::Range {
-                        start: lsp_types::Position { line: start as u32, character: 0 },
-                        end:   lsp_types::Position { line: end   as u32, character: 0 },
-                    },
-                },
-                message: msg,
-            })
-        })
-        .collect::<Vec<_>>();
+    let range = range_of_label(first_label);
     let message = match first_label.label() {
-        Some(label) => format!("{} - {}", diag.message.clone(), label),
-        None => diag.message.clone().to_string(),
+        Some(label) => format!("{} - {}", diag.message, label),
+        None => diag.message.to_string(),
     };
     let code = if diag.code.is_some() {
         format!("oxc_{}", diag.code)
     } else {
         "oxc_syntax".to_string()
     };
-    Some(lsp_types::Diagnostic {
-        range,
-        severity: Some(match diag.severity {
-            oxc::diagnostics::Severity::Error => lsp_types::DiagnosticSeverity::ERROR,
-            oxc::diagnostics::Severity::Warning => lsp_types::DiagnosticSeverity::WARNING,
-            oxc::diagnostics::Severity::Advice => lsp_types::DiagnosticSeverity::INFORMATION,
-        }),
-        code: Some(lsp_types::NumberOrString::String(code)),
-        code_description: None,
-        source: Some(S!(EXTENSION_NAME)),
-        message,
-        related_information: if related_information.is_empty() { None } else { Some(related_information) },
-        tags: None,
-        data: None,
-    })
+    let severity = match diag.severity {
+        oxc::diagnostics::Severity::Error => lsp_types::DiagnosticSeverity::ERROR,
+        oxc::diagnostics::Severity::Warning => lsp_types::DiagnosticSeverity::WARNING,
+        oxc::diagnostics::Severity::Advice => lsp_types::DiagnosticSeverity::INFORMATION,
+    };
+    let mut diagnostic = Diag::external(code, message, range, severity);
+    for label in labels.iter().skip(1) {
+        let Some(label_msg) = label.label() else { continue };
+        let range = range_of_label(label);
+        diagnostic.add_related_info(label_msg.to_string(), range);
+    }
+    Some(diagnostic)
 }
 
 /// Ported from `ODOO_MODULE_RE` (`odoo/tools/js_transpiler.py`) 
@@ -114,7 +99,6 @@ pub fn is_headed_odoo_module(contents: &str) -> bool {
 mod tests {
     use crate::S;
     use oxc::span::Span;
-    use std::str::FromStr;
 
     use super::*;
 
@@ -150,9 +134,8 @@ mod tests {
         assert!(!is_headed_odoo_module("const a = 1;\n/** @odoo-module */\n"));
     }
 
-    fn lsp_code_of(diag: OxcDiagnostic) -> Option<lsp_types::NumberOrString> {
-        let uri = lsp_types::Uri::from_str("/a/b/c.js").unwrap();
-        oxc_diagnostic_to_lsp_diagnostic(&diag, &uri).unwrap().code
+    fn code_of(diag: OxcDiagnostic) -> String {
+        oxc_diagnostic_to_diag(&diag).unwrap().code().to_string()
     }
 
     #[test]
@@ -160,15 +143,12 @@ mod tests {
         // Parser diags have an empty `OxcCode`, which would render as the bare `oxc_`.
         // So we call them "oxc_syntax"
         let syntax = OxcDiagnostic::error("Unexpected token").with_label(Span::new(0, 3));
-        assert_eq!(lsp_code_of(syntax), Some(lsp_types::NumberOrString::String(S!("oxc_syntax"))));
+        assert_eq!(code_of(syntax), "oxc_syntax");
 
         // Lint diags keep `scope(number)`.
         let lint = OxcDiagnostic::warn("`a` is never reassigned")
             .with_error_code("eslint", "no-const-assign")
             .with_label(Span::new(0, 3));
-        assert_eq!(
-            lsp_code_of(lint),
-            Some(lsp_types::NumberOrString::String(S!("oxc_eslint(no-const-assign)")))
-        );
+        assert_eq!(code_of(lint), "oxc_eslint(no-const-assign)");
     }
 }

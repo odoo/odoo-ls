@@ -546,11 +546,10 @@ impl FileInfo {
             js_reexports: parsed.reexports,
             has_exports: parsed.has_exports,
         });
-        let uri = FileMgr::pathname2uri(&session.file_mgr()[key].uri);
-        let to_lsp_diag = |diags: Vec<OxcDiagnostic>|
-            diags.iter().flat_map(|d| js_utils::oxc_diagnostic_to_lsp_diagnostic(d, &uri)).map(Diag::from).collect();
-        session.file_mgr_mut()[key].replace_diagnostics(DiagnosticSource::JS_OXC_SYNTAX, to_lsp_diag(parsed.syntax_diagnostics));
-        session.file_mgr_mut()[key].replace_diagnostics(DiagnosticSource::JS_OXC_LINT, to_lsp_diag(parsed.lint_diagnostics));
+        let to_diag = |diags: Vec<OxcDiagnostic>|
+            diags.iter().filter_map(js_utils::oxc_diagnostic_to_diag).collect();
+        session.file_mgr_mut()[key].replace_diagnostics(DiagnosticSource::JS_OXC_SYNTAX, to_diag(parsed.syntax_diagnostics));
+        session.file_mgr_mut()[key].replace_diagnostics(DiagnosticSource::JS_OXC_LINT, to_diag(parsed.lint_diagnostics));
     }
 
     fn collect_js_imports(parser_module_record: &oxc::syntax::module_record::ModuleRecord) -> ParsedJsImports {
