@@ -12,7 +12,7 @@ use crate::core::symbols::storage::{FileSystemSymbolParent, JsFileParent, Symbol
 use crate::core::symbols::storage::metrics::{log_slotmap_capacities, log_symbol_counts, log_memory_usage};
 use crate::core::symbols::symbol_keys::{BuildableSymbolKey, FileSystemSymbolKey, FunctionKey, ModuleKey, NamespaceKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlTemplateKey};
 use crate::core::symbols::symbol_table_impl::CreateError;
-use crate::core::tsserver_bridge::{TsServerBridge};
+use crate::core::tsserver_bridge::{TsDiagnostic, TsServerBridge};
 use crate::core::tsserver_paths::generate_paths_map;
 use crate::features::tsserver_completion::TsCompletionResolveData;
 use crate::features::owl_virtual;
@@ -30,7 +30,7 @@ use crate::progress_reporter::ProgressReporterPercentage;
 use crate::threads::{send_notification_via, SessionInfo, ThreadMessage, TsServerDiagnostics};
 use crate::features::semantic_tokens::SemanticTokensFeature;
 use crate::weak_collections::{WeakMap, WeakSet};
-use crate::utils::{HashMap, is_dir_cs, is_file_cs};
+use crate::utils::{HashMap, is_dir_cs, is_file_cs, range_to_text_range};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -2491,21 +2491,18 @@ impl Odoo {
         if let Some(file_info) = file_mgr.get_file_info(&file_path) {
             //as we receive line and character from tsserver, transform into offset to store in (offset, 0) structure
             //TODO maybe find a way to handle it properly as XML is doing the same
-            let diagnostics: Vec<Diagnostic> = msg.diagnostics.iter().map(|d| {
-                let mut new_d = d.clone();
-                new_d.range = Range{
-                    start: Position {
-                        line: session.file_mgr()[file_info].position_to_offset(d.range.start.line, d.range.start.character, session.sync_odoo.encoding) as u32,
-                        character: 0
-                    },
-                    end: Position {
-                        line: session.file_mgr()[file_info].position_to_offset(d.range.end.line, d.range.end.character, session.sync_odoo.encoding) as u32,
-                        character: 0
-                    },
+            let diagnostics: Vec<Diag> = msg.diagnostics.into_iter().map(|d| {
+                let TsDiagnostic { range, severity, code, message } = d;
+                let text_range = {
+                    let fi = &session.file_mgr()[file_info];
+                    // @todo: fix decoding error (it comes from tsserver, which is utf-16)
+                    let start = fi.position_to_offset(range.start.line, range.start.character, session.sync_odoo.encoding);
+                    let end = fi.position_to_offset(range.end.line, range.end.character, session.sync_odoo.encoding);
+                    range_to_text_range(start..end)
                 };
-                new_d
+                Diag::external(code, message, text_range, severity)
             }).collect();
-            session.file_mgr_mut()[file_info].replace_diagnostics(msg.diagnostic_level, diagnostics.into_iter().map(Diag::from).collect()); //TsServer will alwayse use ARCH/ARCH_EVAL and VALIDATION level to store diagnostics, while SYNTAX is reserved to OXC
+            session.file_mgr_mut()[file_info].replace_diagnostics(msg.diagnostic_level, diagnostics); //TsServer will alwayse use ARCH/ARCH_EVAL and VALIDATION level to store diagnostics, while SYNTAX is reserved to OXC
             FileInfo::publish_diagnostics(session, file_info);
         } else {
             warn!("Received diagnostics for unknown file: {}", msg.file);

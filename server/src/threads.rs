@@ -8,7 +8,7 @@ use lsp_types::{CompletionItem, CompletionResponse, DocumentSymbolResponse, Goto
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tracing::{error, info, warn};
-use crate::{constants::{DiagnosticSource, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::{build_scheduler::BuildScheduler, entry_point::EntryPointMgr, file_mgr::FileMgr, model::ModelMgr, symbols::storage::SymbolTable}, create_session, lsp_types_custom::{ConfigDiagnosticAction, ConfigDiagnosticMessage}};
+use crate::{constants::{DiagnosticSource, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::{build_scheduler::BuildScheduler, entry_point::EntryPointMgr, file_mgr::FileMgr, model::ModelMgr, symbols::storage::SymbolTable, tsserver_bridge::TsDiagnostic}, create_session, lsp_types_custom::{ConfigDiagnosticAction, ConfigDiagnosticMessage}};
 
 use crate::{core::{file_mgr::NoqaInfo, odoo::{Odoo, OdooNotification, SyncOdoo}}, server::ServerError, utils::PathSanitizer, S};
 
@@ -279,7 +279,7 @@ pub struct UpdateFileIndexData {
 pub struct TsServerDiagnostics {
     pub file: String,
     pub diagnostic_level: DiagnosticSource,
-    pub diagnostics: Vec<lsp_types::Diagnostic>,
+    pub diagnostics: Vec<TsDiagnostic>,
 }
 
 pub enum ThreadMessage {
