@@ -10,7 +10,7 @@ use std::path::Path;
 mod setup;
 mod test_utils;
 
-fn csv_test_paths() -> (String, String, String, String, String) {
+fn csv_test_paths() -> (String, String, String, String, String, String, String) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("data")
@@ -25,6 +25,12 @@ fn csv_test_paths() -> (String, String, String, String, String) {
     let duplicate_column = test_addons_path
         .join("module_csv").join("data").join("csv_duplicate_column").join("res.country.state.csv")
         .sanitize();
+    let unknown_model = test_addons_path
+        .join("module_csv").join("data").join("csv_unknown_model").join("not.a.model.csv")
+        .sanitize();
+    let unknown_model_empty = test_addons_path
+        .join("module_csv").join("data").join("csv_unknown_model_empty").join("not.a.model.csv")
+        .sanitize();
     let valid_csv = test_addons_path
         .join("module_for_diagnostics").join("data").join("bike_parts.wheel.csv")
         .sanitize();
@@ -32,11 +38,11 @@ fn csv_test_paths() -> (String, String, String, String, String) {
         .join("module_for_diagnostics").join("data").join("bikes.bike.csv")
         .sanitize();
 
-    for path in [&field_mismatch, &invalid_xml_id, &duplicate_column, &valid_csv, &relational_ids] {
+    for path in [&field_mismatch, &invalid_xml_id, &duplicate_column, &unknown_model, &unknown_model_empty, &valid_csv, &relational_ids] {
         assert!(Path::new(path).exists(), "Test file does not exist: {}", path);
     }
 
-    (field_mismatch, invalid_xml_id, duplicate_column, valid_csv, relational_ids)
+    (field_mismatch, invalid_xml_id, duplicate_column, unknown_model, unknown_model_empty, valid_csv, relational_ids)
 }
 
 fn collect_all_csv_diagnostics(session: &mut SessionInfo, paths: &[&str]) -> HashMap<String, Vec<Diagnostic>> {
@@ -60,17 +66,19 @@ fn test_csv_diagnostics() {
     let (mut odoo, config) = setup::setup::setup_server(true);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
-    let (field_mismatch, invalid_xml_id, duplicate_column, valid_csv, relational_ids) = csv_test_paths();
+    let (field_mismatch, invalid_xml_id, duplicate_column, unknown_model, unknown_model_empty, valid_csv, relational_ids) = csv_test_paths();
 
     // Collect all diagnostics in one pass (consuming the message queue once)
     let all_diags = collect_all_csv_diagnostics(
         &mut session,
-        &[&field_mismatch, &invalid_xml_id, &duplicate_column, &valid_csv, &relational_ids],
+        &[&field_mismatch, &invalid_xml_id, &duplicate_column, &unknown_model, &unknown_model_empty, &valid_csv, &relational_ids],
     );
 
     test_field_count_mismatch(get_diags_for(&all_diags, &field_mismatch));
     test_xml_id_format(get_diags_for(&all_diags, &invalid_xml_id));
     test_duplicate_column(get_diags_for(&all_diags, &duplicate_column));
+    test_unknown_model(get_diags_for(&all_diags, &unknown_model), 12);
+    test_unknown_model(get_diags_for(&all_diags, &unknown_model_empty), 0);
     test_valid_file_no_errors(get_diags_for(&all_diags, &valid_csv));
     test_relational_id_column(get_diags_for(&all_diags, &relational_ids), &relational_ids);
 }
@@ -175,6 +183,24 @@ fn test_duplicate_column(diagnostics: &[Diagnostic]) {
     // The overwritten column is the first "name", at characters 17..21 of the header
     assert_eq!(diag.range.start, lsp_types::Position::new(0, 17));
     assert_eq!(diag.range.end, lsp_types::Position::new(0, 21));
+}
+
+/// OLS05056: the file name is not a known model, the diagnostic spans the header row
+/// File: csv_unknown_model/not.a.model.csv
+///   Line 0: id,name,code
+/// File: csv_unknown_model_empty/not.a.model.csv is empty, so the range is 0..0
+fn test_unknown_model(diagnostics: &[Diagnostic], end: u32) {
+    let model_diags: Vec<_> = diagnostics.iter().filter(|d| has_code(d, "OLS05056")).collect();
+    assert_eq!(model_diags.len(), 1, "Expected a single OLS05056, got: {:?}", diagnostics);
+
+    let diag = model_diags[0];
+    assert!(
+        diag.message.contains("not.a.model"),
+        "OLS05056 message should name the model, got: {}",
+        diag.message
+    );
+    assert_eq!(diag.range.start, lsp_types::Position::new(0, 0));
+    assert_eq!(diag.range.end, lsp_types::Position::new(0, end));
 }
 
 /// Well-formed CSV: no error-level diagnostics expected
