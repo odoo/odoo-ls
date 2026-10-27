@@ -10,7 +10,7 @@ use super::string_resolution::{find_model_symbols, SegmentPick, StringResolution
 
 /// What a string given to a parameter of a field class names.
 #[derive(Clone, Copy)]
-pub(super) enum FieldParam {
+pub enum FieldParam {
     /// The model of a relational field, e.g. `comodel_name='res.partner'`
     Comodel,
     /// The field path the field is related to, e.g. `related='partner_id.name'`
@@ -25,7 +25,7 @@ pub(super) enum FieldParam {
 
 impl FieldParam {
     /// The kind of the field class parameter `name`, whatever the field class.
-    pub(super) fn of_name(session: &SessionInfo, name: &str) -> Option<Self> {
+    pub fn of_name(session: &SessionInfo, name: &str) -> Option<Self> {
         match name {
             "comodel_name" => Some(FieldParam::Comodel),
             "related" => Some(FieldParam::Related),
@@ -40,7 +40,7 @@ impl FieldParam {
 
     /// Whether `field_class` takes this parameter: a comodel only for the relational fields, an
     /// inverse field only for a One2many.
-    pub(super) fn is_taken_by(self, session: &SessionInfo, field_class: SymbolKey) -> bool {
+    pub fn is_taken_by(self, session: &SessionInfo, field_class: SymbolKey) -> bool {
         match self {
             FieldParam::Comodel => SymbolTable::is_specific_field_class(session, field_class, &["Many2one", "One2many", "Many2many"]),
             FieldParam::ComodelField => SymbolTable::is_specific_field_class(session, field_class, &["One2many"]),
@@ -70,23 +70,28 @@ impl FieldParam {
     }
 }
 
+/// The comodel given to a relational field class, e.g. `res.partner` in
+/// `fields.One2many('res.partner', 'parent_id')`: its first argument, or its `comodel_name`.
+pub fn field_comodel_name(call_expr: &ExprCall) -> Option<&str> {
+    match call_expr.arguments.args.first() {
+        Some(Expr::StringLiteral(expr)) => Some(expr.value.to_str()),
+        _ => call_expr.arguments.keywords.iter()
+            .find(|kw| kw.arg.as_ref().is_some_and(|arg| arg.id == "comodel_name"))
+            .and_then(|kw| match &kw.value {
+                Expr::StringLiteral(expr) => Some(expr.value.to_str()),
+                _ => None
+            }),
+    }
+}
+
 fn find_inverse_name_field_symbol(
     session: &mut SessionInfo,
     from_module: Option<ModuleKey>,
     field_value: &str,
     call_expr: &ExprCall,
 ) -> Vec<SymbolKey> {
-    let model_name = if let Some(Expr::StringLiteral(expr)) = call_expr.arguments.args.first() {
-        expr.value.to_str()
-    } else {
-        let Some(model_name) = call_expr.arguments.keywords.iter().find(|kw| kw.arg.as_ref().map(|arg| arg.id == "comodel_name").unwrap_or(false))
-            .and_then(|kw| match &kw.value {
-                Expr::StringLiteral(expr) => Some(expr.value.to_str()),
-                _ => None
-            }) else {
-                return vec![];
-            };
-        model_name
+    let Some(model_name) = field_comodel_name(call_expr) else {
+        return vec![];
     };
     let Some(model) = session.model_mgr().get_model_key(model_name) else {
         return vec![];

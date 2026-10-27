@@ -9,12 +9,12 @@ use crate::core::file_mgr::FileInfoKey;
 use crate::core::import_resolver;
 use crate::core::python_odoo_builder::ACCESS_OPERATOR_OPTIONS;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
-use crate::core::symbols::{FunctionSymbol, ModuleSymbol};
+use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey, SourceFileKey, SymbolKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::features::ast_utils::AstUtils;
 use crate::features::features_utils;
-use crate::features::features_utils::{ApiDecorator, OrderItem};
+use crate::features::features_utils::{ApiDecorator, FieldParam, OrderItem};
 use crate::threads::SessionInfo;
 use crate::{Sy, S};
 use itertools::Itertools;
@@ -588,141 +588,78 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
     let callable_eval_sym_ptrs = callable_evals.iter().flat_map(|callable_eval|
         SymbolTable::follow_ref(&callable_eval.symbol.get_symbol(session, None, &mut vec![], None), session, None, false, false, None, None)
     ).collect::<Vec<_>>();
-    if let Some((arg_index, arg)) = expr_call.arguments.args.iter().find_position(|arg|
+    // The argument under the cursor: its index, keyword arguments coming after the positional ones, its
+    // value, and its name if it is a keyword argument
+    let (arg_index, value, keyword_name) = if let Some((index, arg)) = expr_call.arguments.args.iter().find_position(|arg|
         offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize())
     {
-        for callable_eval in callable_eval_sym_ptrs.iter() {
-            let EvaluationSymbolPtr::WEAK(callable) = callable_eval else {
-                continue;
-            };
-            let Some(callable_sym) = callable.weak.upgrade(session.st())  else {continue};
-            if ![SymType::FUNCTION, SymType::CLASS].contains(&callable_sym.typ()){
-                continue;
-            }
-            if callable_sym.typ() == SymType::CLASS
-                && arg_index == 0
-            {
-                // Relational fields first argument is a model name.
-                if SymbolTable::is_specific_field_class(session, callable_sym, &["Many2one", "One2many", "Many2many"]) {
-                    return complete_expr(arg, session, file, offset, is_param, &[ExpectedType::MODEL_NAME]);
-                }
-                // Selection and Reference fields first argument is a method name.
-                if SymbolTable::is_specific_field_class(session, callable_sym, &["Selection", "Reference"]) {
-                    return complete_expr(arg, session, file, offset, is_param, &[ExpectedType::METHOD_NAME]);
-                }
-            }
-            // if class get __init__ method, we need to get the argument from there
-            let func_key = if callable_sym.typ() == SymType::CLASS {
-                if let Some(&SymbolKey::Function(init_method)) = SymbolTable::get_member_symbol(session, callable_sym, "__init__", from_module, false, false, true, false, false).0.first() {
-                    init_method
-                } else {
-                    continue;
-                }
-            } else {
-                callable_sym.unwrap_function_key()
-            };
-            let is_on_instance = if callable_sym.typ() == SymType::CLASS {
-                Some(true)
-            } else {
-                callable.context.get(ContextKey::IsAttrOfInstance).map(|v| v.as_bool())
-            };
-            let Some(func_arg_sym) = FunctionSymbol::get_indexed_arg_in_call(
-                session.st(),
-                func_key,
-                expr_call,
-                arg_index as u32,
-                is_on_instance)
-                .and_then(|func_arg| func_arg.symbol.upgrade(session.st())) else {
-                continue;
-            };
-            let mut expected_type = vec![];
-            if session.st()[func_arg_sym].name == "inverse_name"
-                && callable_sym.typ() == SymType::CLASS
-                && SymbolTable::is_specific_field_class(session, callable_sym, &["One2many"]) {
-                let comodel_name_option = match expr_call.arguments.args.first() {
-                    Some(Expr::StringLiteral(expr)) => Some(ExpectedType::EXTERNAL_FIELD(Sy!(expr.value.to_string()))),
-                    _ => expr_call
-                        .arguments
-                        .keywords
-                        .iter()
-                        .find(|kw|
-                            kw.arg.as_ref().map(|arg| arg.id == "comodel_name").unwrap_or(false)
-                        )
-                        .and_then(|kw| match &kw.value {
-                            Expr::StringLiteral(expr) => Some(ExpectedType::EXTERNAL_FIELD(Sy!(expr.value.to_string()))),
-                            _ => None
-                        })
-                };
-                if let Some(comodel_name) = comodel_name_option {
-                    expected_type.push(comodel_name);
-                }
-            } else {
-                for evaluation in session.st()[func_arg_sym].evaluations.clone() {
-                    match evaluation.symbol.get_symbol_ptr() {
-                        EvaluationSymbolPtr::WEAK(_weak) => {
-                            //if weak, use get_symbol
-                            let symbol =  evaluation.symbol.get_symbol_as_weak(session, None, &mut vec![], None);
-                            if let Some(evaluation) = symbol.weak.upgrade(session.st())
-                                && let SymbolKey::Class(class) = evaluation {
-                                    expected_type.push(ExpectedType::CLASS(class));
-                                }
-                        },
-                        EvaluationSymbolPtr::DOMAIN => {
-                            if let Some(parent) = callable.context.get(ContextKey::BaseAttr)
-                                .and_then(|parent_value| parent_value.as_symbol().upgrade(session.st())) {
-                                expected_type.push(ExpectedType::DOMAIN(parent));
-                            }
-                            return complete_expr(arg, session, file, offset, is_param, &expected_type);
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            return complete_expr(arg, session, file, offset, is_param, &expected_type);
-        }
-        //if we didn't find anything, still try to complete
-        return complete_expr(arg, session, file, offset, is_param, &[]);
-    }
-    let keyword = expr_call.arguments.keywords.iter().find(|arg| {
-        offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize()
-    })?;
-    for callable_eval_sym_ptr in callable_eval_sym_ptrs.iter() {
-        let callable_option = callable_eval_sym_ptr.upgrade_weak(session.st());
-        let Some(callable_sym) = callable_option else {continue};
-        if callable_sym.typ() != SymType::CLASS || !SymbolTable::is_field_class(session, callable_sym){
-            continue;
-        }
-        let Some(expected_type) = keyword.arg.as_ref().and_then(|kw_arg_id|
-            match kw_arg_id.id.as_str() {
-                "related" => Some(vec![ExpectedType::NESTED_FIELD(Some(session.st().name(callable_sym).clone()))]),
-                "comodel_name" => if SymbolTable::is_specific_field_class(session, callable_sym, &["Many2one", "One2many", "Many2many"]) {
-                        Some(vec![ExpectedType::MODEL_NAME])
-                    } else {
-                        None
-                    },
-                "inverse_name" => {
-                    if let Some(Expr::StringLiteral(expr)) = expr_call.arguments.args.first() {
-                        Some(vec![ExpectedType::EXTERNAL_FIELD(Sy!(expr.value.to_string()))])
-                    } else {
-                        expr_call.arguments.keywords.iter().find(|kw| kw.arg.as_ref().map(|arg| arg.id == "comodel_name").unwrap_or(false))
-                        .and_then(|kw| match &kw.value {
-                            Expr::StringLiteral(expr) => Some(vec![ExpectedType::EXTERNAL_FIELD(Sy!(expr.value.to_string()))]),
-                            _ => None
-                        })
-                    }
-                },
-                "inverse" | "search" | "compute" | "group_expand" | "selection" => Some(vec![ExpectedType::METHOD_NAME]),
-                "compute_sql" if session.sync_odoo.version >= (19, 1) => Some(vec![ExpectedType::METHOD_NAME]),
-                "init_storage" if session.sync_odoo.version >= (20, 0) => Some(vec![ExpectedType::METHOD_NAME]),
-                "depends" => Some(vec![ExpectedType::NESTED_FIELD(None)]),
-                _ => None,
-            }
-        ) else {
+        (index, arg, None)
+    } else {
+        let (index, keyword) = expr_call.arguments.keywords.iter().find_position(|keyword|
+            offset > keyword.range().start().to_usize() && offset <= keyword.range().end().to_usize())?;
+        // `**kwargs` is given to no parameter
+        let Some(name) = keyword.arg.as_ref() else {
+            return complete_expr(&keyword.value, session, file, offset, is_param, &[]);
+        };
+        (expr_call.arguments.args.len() + index, &keyword.value, Some(name.id.as_str()))
+    };
+    // Expected by all the callables, e.g. an override and its base method
+    let mut expected_type = vec![];
+    for callable_eval in callable_eval_sym_ptrs.iter() {
+        let EvaluationSymbolPtr::WEAK(callable) = callable_eval else {
             continue;
         };
-        return complete_expr(&keyword.value, session, file, offset, is_param, &expected_type);
+        let Some(callable_sym) = callable.weak.upgrade(session.st())  else {continue};
+        if ![SymType::FUNCTION, SymType::CLASS].contains(&callable_sym.typ()){
+            continue;
+        }
+        let param = features_utils::find_call_param(session, from_module, callable, callable_sym, expr_call, arg_index);
+        // Field classes do not declare most of their parameters: a keyword is known by its name
+        if SymbolTable::is_field_class(session, callable_sym) {
+            let param_name = param.map(|param| session.st()[param].name.clone());
+            if let Some(field_expected_type) = keyword_name.or(param_name.as_ref().map(|name| name.as_str()))
+                .and_then(|name| field_param_expected_type(session, callable_sym, name, expr_call)) {
+                return complete_expr(value, session, file, offset, is_param, &[field_expected_type]);
+            }
+        }
+        let Some(param) = param else {
+            continue;
+        };
+        for evaluation in session.st()[param].evaluations.clone() {
+            match evaluation.symbol.get_symbol_ptr() {
+                EvaluationSymbolPtr::WEAK(_weak) => {
+                    //if weak, use get_symbol
+                    let symbol =  evaluation.symbol.get_symbol_as_weak(session, None, &mut vec![], None);
+                    if let Some(evaluation) = symbol.weak.upgrade(session.st())
+                        && let SymbolKey::Class(class) = evaluation {
+                            expected_type.push(ExpectedType::CLASS(class));
+                        }
+                },
+                // A marked parameter of the base method: what the other callables expect does not matter
+                EvaluationSymbolPtr::DOMAIN => {
+                    if let Some(parent) = callable.context.get(ContextKey::BaseAttr)
+                        .and_then(|parent_value| parent_value.as_symbol().upgrade(session.st())) {
+                        return complete_expr(value, session, file, offset, is_param, &[ExpectedType::DOMAIN(parent)]);
+                    }
+                }
+                _ => {}
+            }
+        }
     }
-    complete_expr(&keyword.value, session, file, offset, is_param, &[])
+    complete_expr(value, session, file, offset, is_param, &expected_type)
+}
+
+/// What a string given to the parameter `name` of the field class `field_class` is expected to be.
+fn field_param_expected_type(session: &SessionInfo, field_class: SymbolKey, name: &str, expr_call: &ruff_python_ast::ExprCall) -> Option<ExpectedType> {
+    match FieldParam::of_name(session, name).filter(|field_param| field_param.is_taken_by(session, field_class))? {
+        FieldParam::Comodel => Some(ExpectedType::MODEL_NAME),
+        // Ending on a field of the type of the field class
+        FieldParam::Related => Some(ExpectedType::NESTED_FIELD(Some(session.st().name(field_class).clone()))),
+        FieldParam::Depends => Some(ExpectedType::NESTED_FIELD(None)),
+        FieldParam::ComodelField => features_utils::field_comodel_name(expr_call)
+            .map(|comodel_name| ExpectedType::EXTERNAL_FIELD(Sy!(comodel_name.to_string()))),
+        FieldParam::ModelMethod => Some(ExpectedType::METHOD_NAME),
+    }
 }
 
 fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_string_literal: &ruff_python_ast::ExprStringLiteral, offset: usize, _is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {

@@ -58,7 +58,7 @@ fn find_callables(
 
 /// The parameter of the callable that the argument at `arg_index` of `call_expr` is given to, the
 /// keyword arguments being indexed after the positional ones.
-fn find_call_param(
+pub fn find_call_param(
     session: &mut SessionInfo,
     from_module: Option<ModuleKey>,
     callable: &EvaluationSymbolWeak,

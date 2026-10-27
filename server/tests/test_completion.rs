@@ -28,6 +28,7 @@ fn test_completions() {
     test_lambda_is_not_a_member(&mut session);
     test_compute_sql_kwarg_method_completion(&mut session);
     test_selection_field_method_completion(&mut session);
+    test_call_argument_completion(&mut session);
     test_init_storage_kwarg_method_completion(&mut session);
     test_order_completion_with_escape(&mut session);
     test_order_completion_by_word(&mut session);
@@ -130,6 +131,46 @@ fn test_selection_field_method_completion(session: &mut SessionInfo) {
     }
     let label_labels = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, 87, 29));
     assert!(!label_labels.iter().any(|l| l == "_selection_state"), "The label of a Char is not a method name, got: {:?}", label_labels);
+}
+
+/// A string given to a call is completed by what its parameter expects, whether it is given by
+/// position or by keyword
+fn test_call_argument_completion(session: &mut SessionInfo) {
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
+    let content = std::fs::read_to_string(&test_file).expect("Test file does not exist");
+
+    let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    let mut failures = vec![];
+    // (text right before the cursor, labels that must be offered, labels that must not)
+    let cases: [(&str, &[&str], &[&str]); 7] = [
+        // A model name
+        (r#"Many2one("module_1.order_esc"#, &["module_1.order_escape_model"], &[]),
+        (r#"Many2one(comodel_name="module_1.order_esc"#, &["module_1.order_escape_model"], &[]),
+        // A field of the comodel
+        (r#""module_1.call_arguments_model", "par"#, &["parent_id"], &["name"]),
+        (r#"inverse_name="par"#, &["parent_id"], &["name"]),
+        // A field path ending on a field of the type of the field class
+        (r#"related="parent_id.na"#, &["name"], &["name_count"]),
+        // A domain on the model searched
+        (r#"self.search([("na"#, &["name", "name_count"], &[]),
+        (r#"self.search(domain=[("na"#, &["name", "name_count"], &[]),
+    ];
+    for (before_cursor, offered, not_offered) in cases {
+        let (line, text) = content.lines().enumerate().find(|(_, text)| text.contains(before_cursor)).unwrap();
+        let character = (text.find(before_cursor).unwrap() + before_cursor.len()) as u32;
+        let labels = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, line as u32, character));
+        let missing: Vec<_> = offered.iter().filter(|label| !labels.iter().any(|l| l == *label)).collect();
+        let unexpected: Vec<_> = not_offered.iter().filter(|label| labels.iter().any(|l| l == *label)).collect();
+        if !missing.is_empty() || !unexpected.is_empty() {
+            failures.push(format!("after `{before_cursor}`: missing {missing:?}, unexpected {unexpected:?}"));
+        }
+    }
+    assert!(failures.is_empty(), "call argument completion:\n{}", failures.join("\n"));
 }
 
 /// `init_storage="..."` offers method completion, but only from 20.0 on
