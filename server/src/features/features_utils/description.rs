@@ -14,7 +14,7 @@ use crate::core::evaluation_context::{ContextKey, ContextValue};
 use crate::threads::SessionInfo;
 use crate::S;
 
-use super::string_resolution::{resolve_string_members, SegmentPick};
+use super::string_resolution::{resolve_string_in_context, SegmentPick, StringResolution};
 use super::type_info::{get_inferred_types, represent_return_types, CallableSignature, TypeInfo};
 
 #[derive(Clone)]
@@ -66,8 +66,11 @@ pub fn build_markdown_description(
             }
             let from_module = file_symbol.and_then(|fs| session.st().find_module(fs));
             if let (Some(string_ctx_val), Some(file_sym), Some(offset)) = (string_ctx, file_symbol, offset){
-                let special_string_syms: Vec<SymbolKey> = resolve_string_members(session, file_sym, expr, string_ctx_val, SegmentPick::Cursor(offset))
-                    .into_iter().map(|(sym, _)| sym).collect();
+                // A model is described below, as any model name
+                let special_string_syms: Vec<SymbolKey> = match resolve_string_in_context(session, file_sym, expr, string_ctx_val, SegmentPick::Cursor(offset)) {
+                    Some(StringResolution::Members(members)) => members.into_iter().map(|(sym, _)| sym).collect(),
+                    _ => vec![],
+                };
                 // Inject `base_attr` to get descriptor type on follow_ref in features
                 if !special_string_syms.is_empty() {
                     inject_base_attr(session, &special_string_syms);

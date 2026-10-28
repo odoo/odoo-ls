@@ -1,6 +1,6 @@
 use itertools::Itertools;
 use ruff_python_ast::{Arguments, Expr, ExprCall, ExprStringLiteral};
-use ruff_text_size::{Ranged, TextRange};
+use ruff_text_size::Ranged;
 use crate::core::symbols::symbol_keys::{ModelSymbolKey, ModuleKey, SymbolKey, VariableKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::FunctionSymbol;
@@ -11,9 +11,9 @@ use crate::core::evaluation_context::ContextKey;
 use crate::threads::SessionInfo;
 
 use super::api_decorators::{api_decorator, find_decorator_arg_symbols};
-use super::field_params::{find_field_param_symbols, FieldParam};
+use super::field_params::{find_field_param_resolution, FieldParam};
 use super::field_paths;
-use super::string_resolution::SegmentPick;
+use super::string_resolution::{SegmentPick, StringResolution};
 
 /// What the callee of `call_expr` refers to, each as its weak evaluation and its symbol.
 fn find_callables(
@@ -133,13 +133,15 @@ impl ParamKind {
             Some(name) => name,
             None => session.st()[param?].name.as_str(),
         };
-        FieldParam::of(session, name, value, string).map(ParamKind::Field)
+        FieldParam::of(session, callable_sym, name, value, string).map(ParamKind::Field)
     }
 
     /// Whether the keyword argument `name` can be of a kind, known before evaluating the callee: only
-    /// the `domain` parameter of `search` is marked as a domain, see its hook.
+    /// the `domain` parameter of `search` is marked as a domain, see its hook, and whether the field
+    /// class takes the parameter is checked once known.
     fn can_be_keyword(session: &SessionInfo, name: &str, value: &Expr, string: &ExprStringLiteral) -> bool {
-        name == "domain" || FieldParam::of(session, name, value, string).is_some()
+        name == "domain"
+            || FieldParam::of_name(session, name).is_some_and(|field_param| field_param.is_in_value(value, string))
     }
 }
 
@@ -166,44 +168,39 @@ pub(super) fn find_argument_symbols(
     string: &ExprStringLiteral,
     call_expr: &ExprCall,
     pick: SegmentPick,
-) -> Vec<(SymbolKey, TextRange)> {
-    let Some((arg_index, value, keyword_name)) = find_argument(&call_expr.arguments, string) else {
-        return vec![];
-    };
+) -> Option<StringResolution> {
+    let (arg_index, value, keyword_name) = find_argument(&call_expr.arguments, string)?;
     // Skip a keyword argument that cannot be of a kind, without evaluating the callee
     if keyword_name.is_some_and(|name| !ParamKind::can_be_keyword(session, name, value, string)) {
-        return vec![];
+        return None;
     }
-    let mut arg_symbols = vec![];
+    let mut resolution: Option<StringResolution> = None;
     for (callable, callable_sym) in find_callables(session, scope, call_expr) {
         if let SymbolKey::Function(function_key) = callable_sym
             && session.st()[function_key].is_property {
             continue;
         }
-        if let Some(decorator) = api_decorator(session, callable_sym) {
-            arg_symbols.extend(
-                find_decorator_arg_symbols(session, scope, from_module, string, decorator, pick)
-            );
-            continue;
-        }
-        // Call parameter symbol corresponding to the argument
-        let param = find_call_param(session, from_module, &callable, callable_sym, call_expr, arg_index);
-        match ParamKind::of(session, callable_sym, param, keyword_name, value, string) {
-            Some(ParamKind::Domain) => {
-                if let Some(model) = model_called_on(session, &callable) {
-                    arg_symbols.extend(
-                        field_paths::find_domain_param_symbols(session, model, string, from_module, pick)
-                    );
-                }
-            },
-            Some(ParamKind::Field(field_param)) => {
-                arg_symbols.extend(
-                    find_field_param_symbols(session, scope, from_module, string, call_expr, field_param, pick)
-                );
-            },
-            None => {},
+        let callable_resolution = if let Some(decorator) = api_decorator(session, callable_sym) {
+            StringResolution::from_members(find_decorator_arg_symbols(session, scope, from_module, string, decorator, pick))
+        } else {
+            // Call parameter symbol corresponding to the argument
+            let param = find_call_param(session, from_module, &callable, callable_sym, call_expr, arg_index);
+            match ParamKind::of(session, callable_sym, param, keyword_name, value, string) {
+                Some(ParamKind::Domain) => model_called_on(session, &callable).and_then(|model|
+                    StringResolution::from_members(field_paths::find_domain_param_symbols(session, model, string, from_module, pick))
+                ),
+                Some(ParamKind::Field(field_param)) => {
+                    find_field_param_resolution(session, scope, from_module, string, call_expr, field_param, pick)
+                },
+                None => None,
+            }
+        };
+        if let Some(callable_resolution) = callable_resolution {
+            resolution = Some(match resolution {
+                Some(resolution) => resolution.merge(callable_resolution),
+                None => callable_resolution,
+            });
         }
     }
-
-    arg_symbols.into_iter().unique().collect()
+    resolution
 }

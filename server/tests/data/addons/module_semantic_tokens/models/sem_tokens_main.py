@@ -148,3 +148,12 @@ class SemTokensOrderModelNameInModel(models.Model):
     _inherit = 'sem.tokens.usage'
     # The model's `_order` only holds fields: a model name is not resolved as a model
     _order = 'sem.tokens.other'
+
+
+class SemTokensComodels(models.Model):
+    _inherit = 'sem.tokens.usage'
+
+    keyword_other_id = fields.Many2one(comodel_name='sem.tokens.other')
+    usage_ids = fields.One2many('sem.tokens.usage', 'other_id')
+    # Only a One2many takes the inverse field on its comodel
+    other_ids = fields.Many2many('sem.tokens.other', inverse_name='other_name')

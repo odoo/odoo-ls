@@ -52,6 +52,7 @@ fn test_semantic_tokens_python() {
     check_names_left_to_the_grammar(&main);
     check_decorators_left_to_the_grammar(&main);
     check_model_string_tokens(&main);
+    check_inverse_name_tokens(&main);
     check_field_path_string_tokens(&main);
     check_xml_id_string_tokens(&main);
     check_import_shim_tokens(&main);
@@ -162,6 +163,15 @@ fn check_model_string_tokens(main: &TokenFile) {
     check(main, 29, "'sem.tokens.usage'", Some((CLASS, &[])));
     check(main, 33, "'sem.tokens.other'", Some((CLASS, &[])));
     check(main, 80, "'sem.tokens.other'", Some((CLASS, &[])));
+    // The comodel given by keyword, as by position
+    check(main, 156, "'sem.tokens.other'", Some((CLASS, &[])));
+}
+
+/// The inverse of a One2many is a field of its comodel, coloured over the whole literal, quotes
+/// included; other fields take no inverse.
+fn check_inverse_name_tokens(main: &TokenFile) {
+    check(main, 157, "'other_id'", Some((PROPERTY, &[])));
+    check(main, 159, "'other_name'", None);
 }
 
 /// Field paths are coloured per dotted segment, past the quote; a method named by `compute=`

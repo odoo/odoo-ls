@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use ruff_python_ast::ExprStringLiteral;
 use ruff_text_size::TextRange;
 use crate::core::odoo::SyncOdoo;
@@ -18,6 +19,25 @@ pub enum StringResolution {
     XmlId(Vec<XmlId>),
 }
 
+impl StringResolution {
+    /// Members, if there are any
+    pub(super) fn from_members(members: Vec<(SymbolKey, TextRange)>) -> Option<Self> {
+        (!members.is_empty()).then_some(StringResolution::Members(members))
+    }
+
+    /// Add what another callee resolves the same string to. A string names a single kind of
+    /// thing: a resolution of another kind is dropped, the first callee wins.
+    pub(super) fn merge(self, other: Self) -> Self {
+        match (self, other) {
+            (StringResolution::Members(members), StringResolution::Members(others)) =>
+                StringResolution::Members(members.into_iter().chain(others).unique().collect()),
+            (StringResolution::Model(models), StringResolution::Model(others)) =>
+                StringResolution::Model(models.into_iter().chain(others).unique().collect()),
+            (resolution, _) => resolution,
+        }
+    }
+}
+
 /// Which dotted segments of a field path to return: the one under a byte offset
 /// (definition/hover) or every segment (semantic tokens).
 #[derive(Clone, Copy)]
@@ -26,15 +46,15 @@ pub enum SegmentPick {
     All,
 }
 
-/// Resolve the given string and its expression to the field or method symbols it refers to.
-/// Returns the symbols and their corresponding text ranges.
-pub(super) fn resolve_string_members(
+/// What a string refers to given its syntactic context: field/method symbols with the sub-range
+/// each covers, or a model.
+pub(super) fn resolve_string_in_context(
     session: &mut SessionInfo,
     file_symbol: SourceFileKey,
     string: &ExprStringLiteral,
     string_ctx: &StringContext,
     pick: SegmentPick,
-) -> Vec<(SymbolKey, TextRange)> {
+) -> Option<StringResolution> {
     let from_module = session.st().find_module(file_symbol);
     // Any byte inside the string works for the scope.
     let offset = string.range.start().to_usize() + 1;
@@ -44,16 +64,22 @@ pub(super) fn resolve_string_members(
             find_argument_symbols(session, scope, from_module, string, call_expr, pick)
         },
         StringContext::ModelOrder => {
-            let Some(model_class) = order_model_class(session, scope) else {
-                return vec![];
-            };
-            find_order_fields(session, model_class, from_module, string, pick)
+            let model_class = order_model_class(session, scope)?;
+            StringResolution::from_members(find_order_fields(session, model_class, from_module, string, pick))
         },
     }
 }
 
+/// The symbols of the model `name`, as seen from `from_module`.
+pub(super) fn find_model_symbols(session: &SessionInfo, name: &str, from_module: Option<ModuleKey>) -> Vec<ModelSymbolKey> {
+    let Some(model) = session.model_mgr().get_model_key(name) else {
+        return vec![];
+    };
+    session.model_mgr()[model].get_model_symbols(session.st(), from_module).collect()
+}
+
 /// Resolve a model-related string to its symbols/category, in this order:
-/// field/method → module → model → xml id.
+/// what its context names (field/method or model) → module → model → xml id.
 /// `SegmentPick::All` returns every dotted segment (tokens) instead of just
 /// the one under the cursor.
 pub fn resolve_string_symbols(
@@ -67,9 +93,8 @@ pub fn resolve_string_symbols(
     let from_module = session.st().find_module(file_symbol);
     let string_val = string.value.to_str();
     if let Some(string_ctx) = string_ctx {
-        let members = resolve_string_members(session, file_symbol, string, string_ctx, pick);
-        if !members.is_empty() {
-            return Some(StringResolution::Members(members));
+        if let Some(resolution) = resolve_string_in_context(session, file_symbol, string, string_ctx, pick) {
+            return Some(resolution);
         }
         // The `_order` of a model only holds fields: not a module, a model or an XML id. Anywhere
         // else, `_order` is a variable like any other.
@@ -90,11 +115,9 @@ pub fn resolve_string_symbols(
             return Some(StringResolution::Module(module));
         }
     }
-    if let Some(model) = session.model_mgr().get_model_key(string_val) {
-        let model_syms: Vec<_> = session.model_mgr()[model].get_model_symbols(session.st(), from_module).collect();
-        if !model_syms.is_empty() {
-            return Some(StringResolution::Model(model_syms));
-        }
+    let model_syms = find_model_symbols(session, string_val, from_module);
+    if !model_syms.is_empty() {
+        return Some(StringResolution::Model(model_syms));
     }
     let xml_ids = SyncOdoo::get_xml_ids(session, file_symbol, string_val, &std::ops::Range{start: 0, end: 0}, &mut vec![]);
     let xml_syms: Vec<_> = xml_ids.iter_valid(session.st()).collect();
