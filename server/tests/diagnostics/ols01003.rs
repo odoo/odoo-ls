@@ -1,3 +1,4 @@
+use crate::setup::shared::with_shared_session;
 use std::env;
 
 use lsp_types::{DiagnosticSeverity, NumberOrString};
@@ -7,19 +8,19 @@ use crate::setup::setup::*;
 
 #[test]
 fn test_ols01003() {
-    let (mut odoo, config) = setup_server(false);
-    let mut session = create_init_session(&mut odoo, config);
-    let path = env::current_dir().unwrap().join("tests/data/python/diagnostics/ols01003.py").sanitize();
-    prepare_custom_entry_point(&mut session, &path);
-    let diagnostics = get_diagnostics_for_path(&mut session, &path);
-    assert_eq!(diagnostics.len(), 1);
-    let diag = &diagnostics[0];
-    assert!(diag.code.is_some());
-    let code = match &diag.code {
-        Some(NumberOrString::String(code)) => code,
-        Some(NumberOrString::Number(num)) => panic!("Unexpected numeric code: {}", num),
-        None => panic!("Diagnostic code is None"),
-    };
-    assert!(code == &S!("OLS01003"));
-    assert!(diag.severity.is_some_and(|s| s == DiagnosticSeverity::WARNING));
+    with_shared_session(false, |session| {
+        let path = env::current_dir().unwrap().join("tests/data/python/diagnostics/ols01003.py").sanitize();
+        prepare_custom_entry_point(session, &path);
+        let diagnostics = get_diagnostics_for_path(session, &path);
+        assert_eq!(diagnostics.len(), 1);
+        let diag = &diagnostics[0];
+        assert!(diag.code.is_some());
+        let code = match &diag.code {
+            Some(NumberOrString::String(code)) => code,
+            Some(NumberOrString::Number(num)) => panic!("Unexpected numeric code: {}", num),
+            None => panic!("Diagnostic code is None"),
+        };
+        assert!(code == &S!("OLS01003"));
+        assert!(diag.severity.is_some_and(|s| s == DiagnosticSeverity::WARNING));
+    });
 }
