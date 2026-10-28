@@ -610,7 +610,14 @@ impl PythonArchEval {
         if !self.file_mode {
             deps.push(vec![]);
         }
-        let (base_evaluations, _) = Evaluation::eval_from_ast(session, &attr_expr.value, scope, &attr_expr.range.start(), false, &mut deps);
+        let (mut base_evaluations, _) = Evaluation::eval_from_ast(session, &attr_expr.value, scope, &attr_expr.range.start(), false, &mut deps);
+        // `form.field = ...` sets a field of the model of the Form: it is not an attribute of the Form
+        base_evaluations.retain(|evaluation| {
+            let symbol = evaluation.symbol.get_symbol(session, None, &mut vec![], None);
+            !SymbolTable::follow_ref(&symbol, session, None, false, false, None, None).iter().any(|followed|
+                followed.has_weak() && PythonArchEvalHooks::get_form_field(session, &followed.get_weak().context, &attr_expr.attr.id).is_some()
+            )
+        });
         let targets = SymbolTable::evaluated_ext_targets(session, &base_evaluations);
         if targets.is_empty() {
             return;
@@ -1024,7 +1031,14 @@ impl PythonArchEval {
                                     let _enter_ = session.st().get_symbol(symbol, (&[], &["__enter__"]), u32::MAX);
                                     if let Some(&SymbolKey::Function(_enter_)) = _enter_.last() {
                                         SyncOdoo::ensure_func_evaluations(session, _enter_);
-                                        enter_evals.extend(session.st()[_enter_].evaluations.clone());
+                                        for enter_eval in session.st()[_enter_].evaluations.clone() {
+                                            // `return self`: keep the context manager evaluation, with its context (ex: the model of a Form)
+                                            if enter_eval.symbol.is_self() {
+                                                enter_evals.push(context_mgr_eval.clone());
+                                            } else {
+                                                enter_evals.push(enter_eval);
+                                            }
+                                        }
                                     }
                                 }
                             }

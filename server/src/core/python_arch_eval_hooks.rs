@@ -473,6 +473,25 @@ static arch_eval_function_hooks: LazyLock<Vec<PythonArchEvalFunctionHook>> = Laz
         }];
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
+                        tree: vec![((0, 0), (17, 0), (&["odoo", "tests", "common"], &["Form", "__init__"])),
+                        ((17, 0), (999, 0), (&["odoo", "tests", "form"], &["Form", "__init__"]))],
+                        if_exist_only: true,
+                        func: |odoo: &mut SyncOdoo, _entry_point: EntryPointKey, symbol: FunctionKey| {
+        let Some(form_class_sym) = odoo.symbol_table.get_in_parents(symbol.into(), &[SymType::CLASS], true) else {
+            return;
+        };
+        odoo.symbol_table[symbol].evaluations = vec![Evaluation {
+            symbol: EvaluationSymbol::new_with_symbol(
+                form_class_sym.into(),
+                Some(true),
+                Context::default(),
+                Some(GetSymbolHook{callable: PythonArchEvalHooks::eval_form_init, name: HookName::EvalFormInit})
+            ),
+            value: None,
+            range: None,
+        }];
+    }},
+    PythonArchEvalFunctionHook {odoo_entry: true,
                         tree: vec![((0, 0), (18, 1), (&["odoo", "fields"], &["Boolean", "__init__"])),
                         ((18, 1), (999, 0), (&["odoo", "orm", "fields_misc"], &["Boolean", "__init__"]))],
                         if_exist_only: true,
@@ -1341,6 +1360,62 @@ impl PythonArchEvalHooks {
             instance: Some(true),
             is_super: false
         }))
+    }
+
+    /// `Form(record)`: an instance of the Form class, keeping the model class of `record` in its context (FormModel),
+    /// so that the fields of the model can be accessed on the form
+    fn eval_form_init(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: Option<&Context>, _diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {
+        let form_class = match maybe_context.and_then(|context| context.get(ContextKey::ConstructingClass)) {
+            Some(ContextValue::SYMBOL(class)) => *class,
+            _ => evaluation_sym.get_weak().weak,
+        };
+        let mut result = EvaluationSymbolWeak::new(form_class, Some(true), false);
+        let (Some(context), Some(file_symbol)) = (maybe_context, file_symbol) else {
+            return Some(EvaluationSymbolPtr::WEAK(result));
+        };
+        let Some(record) = context.get(ContextKey::Parameters).and_then(|ps| ps.as_arguments().args.first().cloned()) else {
+            return Some(EvaluationSymbolPtr::WEAK(result));
+        };
+        let Some(range) = context.get(ContextKey::Range).map(|r| r.as_text_range()) else {
+            return Some(EvaluationSymbolPtr::WEAK(result));
+        };
+        let parent = session.st().get_scope_symbol(file_symbol, range.start().to_u32(), false);
+        let (record_evals, _) = Evaluation::eval_from_ast(session, &record, parent, &range.start(), false, &mut vec![]);
+        for record_eval in record_evals.iter() {
+            let record_sym = record_eval.symbol.get_symbol(session, None, &mut vec![], None);
+            for followed in SymbolTable::follow_ref(&record_sym, session, None, false, false, None, None) {
+                if let Some(SymbolKey::Class(model_class)) = followed.upgrade_weak(session.st())
+                    && session.st()[model_class]._model.is_some() {
+                    result.context.insert(ContextKey::FormModel, ContextValue::SYMBOL(SymbolKey::from(model_class).into()));
+                    return Some(EvaluationSymbolPtr::WEAK(result));
+                }
+            }
+        }
+        Some(EvaluationSymbolPtr::WEAK(result))
+    }
+
+    /// The model class and the field `name` of this model, if `context` is the context of a `Form` (see eval_form_init)
+    pub fn get_form_field(session: &mut SessionInfo, context: &Context, name: &str) -> Option<(SymbolKey, SymbolKey)> {
+        let Some(ContextValue::SYMBOL(model_class)) = context.get(ContextKey::FormModel) else {
+            return None;
+        };
+        let model_class = model_class.upgrade(session.st())?;
+        let from_module = session.st().find_module(model_class);
+        let (fields, _) = SymbolTable::get_member_symbol(session, model_class, name, from_module, false, true, false, false, false);
+        fields.first().map(|&field| (model_class, field))
+    }
+
+    /// The class (O2MProxy or M2MProxy, declared next to the Form class) returned by a Form for an x2many `field`
+    pub fn get_form_x2many_proxy(session: &mut SessionInfo, form_class: SymbolKey, field: SymbolKey) -> Option<SymbolKey> {
+        let proxy_name = if SymbolTable::is_specific_field(session, field, &["One2many"]) {
+            "O2MProxy"
+        } else if SymbolTable::is_specific_field(session, field, &["Many2many"]) {
+            "M2MProxy"
+        } else {
+            return None;
+        };
+        let form_file = session.st().get_file(form_class)?;
+        session.st().get_sub_symbol(form_file.into(), proxy_name, u32::MAX).symbols.first().copied()
     }
 
     fn eval_init(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: Option<&Context>, diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>) -> Option<EvaluationSymbolPtr> {

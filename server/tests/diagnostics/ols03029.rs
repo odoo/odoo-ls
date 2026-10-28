@@ -1,9 +1,11 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use lsp_types::{DiagnosticSeverity, NumberOrString};
+use odoo_ls_server::core::file_mgr::FileMgr;
+use odoo_ls_server::core::odoo::{Odoo, SyncOdoo};
 use odoo_ls_server::utils::PathSanitizer;
 
-use crate::{setup::setup::*, test_utils::diag_on_line};
+use crate::{setup::setup::*, test_utils::{diag_on_line, get_hover_markdown}};
 
 /// OLS03029: assigning on a recordset an attribute that is not a field nor a member of the model
 /// (`self.cache = {}`). Reported on the declaration, not on the usages.
@@ -121,4 +123,55 @@ fn test_ols02003_union_of_candidates() {
         "expected OLS02003, got: {:?}",
         on_line[0].code
     );
+}
+
+/// `Form(record)` keeps the model of `record`: the fields of the model are found on the form (the x2many ones
+/// as `M2MProxy` / `O2MProxy`), and assigning them does not declare attributes on the Form class.
+#[test]
+fn test_ols02003_form_fields() {
+    let (mut odoo, config) = setup_server(true);
+    let mut session = create_init_session(&mut odoo, config);
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("data")
+        .join("addons")
+        .join("module_1")
+        .join("tests")
+        .join("test_form_proxy.py")
+        .sanitize();
+    // test files are not loaded by the initial build: open it
+    let did_open_params = lsp_types::DidOpenTextDocumentParams {
+        text_document: lsp_types::TextDocumentItem {
+            uri: FileMgr::pathname2uri(&path),
+            language_id: "python".to_string(),
+            version: 1,
+            text: std::fs::read_to_string(&path).expect("Test file does not exist"),
+        }
+    };
+    Odoo::handle_did_open(&mut session, did_open_params);
+    let diagnostics = get_diagnostics_for_path(&mut session, &path);
+    let not_found: Vec<_> = diagnostics.iter()
+        .filter(|d| matches!(&d.code, Some(NumberOrString::String(c)) if c == "OLS02003"))
+        .collect();
+    assert!(not_found.is_empty(), "expected no OLS02003 on the fields of a Form, got: {:?}", not_found);
+
+    // Lines 9 and 10: `model_form.partner_ids = ...`, `model_form.parent_id = ...` set fields of the model
+    let odoo_path = Path::new(&std::env::var("COMMUNITY_PATH").unwrap()).sanitize();
+    let form_class = session.sync_odoo.get_symbol(&odoo_path, (&["odoo", "tests", "form"], &["Form"]), u32::MAX);
+    assert_eq!(form_class.len(), 1, "Form not found");
+    for field_name in ["partner_ids", "parent_id"] {
+        assert!(session.st().get_ext_symbol(form_class[0], field_name).is_empty(), "{field_name} should not be declared on Form");
+    }
+
+    // Line 11: `model_form.partner_ids` is a M2MProxy
+    let file_info = session.file_mgr().get_file_info(&path).unwrap();
+    let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&path)).unwrap();
+    let hover = get_hover_markdown(&mut session, file_symbol, file_info, 11, 22).unwrap_or_default();
+    assert!(hover.contains("M2MProxy"), "expected model_form.partner_ids to be a M2MProxy, got: {hover}");
+
+    // Lines 18 and 22: `with Form(...) as f` keeps the model
+    let hover = get_hover_markdown(&mut session, file_symbol, file_info, 18, 16).unwrap_or_default();
+    assert!(hover.contains("M2MProxy"), "expected f.partner_ids to be a M2MProxy, got: {hover}");
+    let hover = get_hover_markdown(&mut session, file_symbol, file_info, 22, 20).unwrap_or_default();
+    assert!(hover.contains("O2MProxy"), "expected f.child_ids to be a O2MProxy, got: {hover}");
 }

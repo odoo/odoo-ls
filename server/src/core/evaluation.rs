@@ -3,6 +3,7 @@ use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use crate::core::odoo::SyncOdoo;
+use crate::core::python_arch_eval_hooks::PythonArchEvalHooks;
 use crate::core::python_odoo_builder::ACCESS_OPERATOR_OPTIONS;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::symbol_keys::{FunctionKey, KeyValidator, ModuleKey, SourceFileKey, SymbolKey, Wk};
@@ -165,6 +166,7 @@ pub enum HookName {
     EvalEnvRef,
     EvalEnvUser,
     EvalEnvCompany,
+    EvalFormInit,
 }
 
 
@@ -1107,7 +1109,18 @@ impl Evaluation {
                     let bases = SymbolTable::follow_ref(&base_ref, session, Some(context), false, false, None, None);
                     for ibase in bases.iter() {
                         let base_is_self = matches!(ibase, EvaluationSymbolPtr::SELF(_));
-                        let base_loc = ibase.upgrade_weak(session.st());
+                        let mut base_loc = ibase.upgrade_weak(session.st());
+                        // The fields of the model of a Form are accessed on the form, the x2many ones as proxies (O2MProxy, M2MProxy)
+                        if let Some(form_class) = base_loc
+                            && ibase.has_weak()
+                            && let Some((model_class, field)) = PythonArchEvalHooks::get_form_field(session, &ibase.get_weak().context, &expr.attr) {
+                            if let Some(proxy_class) = PythonArchEvalHooks::get_form_x2many_proxy(session, form_class, field) {
+                                attribute_found = true;
+                                evals.push(Evaluation::eval_from_symbol(session.st(), proxy_class, Some(true)));
+                                continue;
+                            }
+                            base_loc = Some(model_class);
+                        }
                         if let Some(base_loc) = base_loc {
                             let file = session.st().get_file(base_loc);
                             if let Some(base_loc_file) = file {
@@ -2116,6 +2129,10 @@ impl EvaluationSymbol {
             sym: EvaluationSymbolPtr::SELF(EvaluationSymbolWeak{weak: base, context: Context::default(), instance, is_super: false}),
             get_symbol_hook,
         }
+    }
+
+    pub fn is_self(&self) -> bool {
+        matches!(self.sym, EvaluationSymbolPtr::SELF(_))
     }
 
     pub fn is_instance(&self) -> Option<bool> {

@@ -36,6 +36,8 @@ pub enum ContextKey {
     Default,
     Delegate,
     FieldParent,
+    // model class of the record given to a `Form`
+    FormModel,
     GroupExpand,
     GroupExpandArgRange,
     InitStorage,
@@ -79,6 +81,7 @@ impl ContextKey {
             | ContextKey::Default
             | ContextKey::Delegate
             | ContextKey::FieldParent
+            | ContextKey::FormModel
             | ContextKey::GroupExpand
             | ContextKey::InitStorage
             | ContextKey::IsAttrOfInstance
