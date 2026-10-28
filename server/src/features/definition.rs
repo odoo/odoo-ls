@@ -19,7 +19,7 @@ impl DefinitionFeature {
         line: u32,
         character: u32
     ) -> Option<GotoDefinitionResponse> {
-        let ast_kind = session.file_mgr()[file_info].file_info_ast.borrow().ast.kind();
+        let ast_kind = session.file_mgr()[file_info].file_info_ast.ast.kind();
         let definitions_sources = match ast_kind {
             AstKind::Pending => return None,
             AstKind::PythonAst => GotoUtils::get_symbols(session, GotoRequest::Definition, file_symbol, file_info, line, character),
@@ -83,7 +83,7 @@ impl DefinitionFeature {
         character: u32,
     ) -> Option<GotoDefinitionResponse> {
         let encoding = session.sync_odoo.encoding;
-        let data = session.file_mgr()[file_info].file_info_ast.borrow()
+        let data = session.file_mgr()[file_info].file_info_ast
             .text_document.as_ref()?.contents().to_string();
         let offset = session.file_mgr()[file_info].position_to_offset(line, character, encoding);
         let document = roxmltree::Document::parse(&data).ok()?;

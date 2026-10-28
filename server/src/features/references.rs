@@ -10,6 +10,7 @@ use crate::core::symbols::storage::SymbolTable;
 use crate::features::definition::DefinitionFeature;
 use crate::features::goto_utils::{GotoRequest, GotoSourceType, GotoUtils};
 use crate::features::js_references;
+use crate::features::node_index_ast::IndexedModule;
 use crate::features::references_csv::CsvAstReferenceVisitor;
 use crate::features::references_xml::XmlAstReferenceVisitor;
 use crate::{
@@ -28,6 +29,7 @@ use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::error;
 use crate::utils::HashSet;
 use std::path::Path;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub enum ReferenceTarget {
@@ -54,12 +56,12 @@ impl ReferenceFeature {
      */
     /// TODO: Odoo specific (XML field refs, string-based model refs)
     pub fn get_references(session: &mut SessionInfo, file_symbol: SourceFileKey, file_info: FileInfoKey, line: u32, character: u32) -> Option<Vec<Location>> {
-        if matches!(session.file_mgr()[file_info].file_info_ast.borrow().ast, Ast::JsAst(_)) {
+        if matches!(session.file_mgr()[file_info].file_info_ast.ast, Ast::JsAst(_)) {
             return ReferenceFeature::get_reference_js(session, file_info, line, character);
         }
         //We want to search for references of the definition, and not the current symbol. Let's use definition feature for that
         BuildScheduler::process_rebuilds(session, false);
-        let ast_kind = session.file_mgr()[file_info].file_info_ast.borrow().ast.kind();
+        let ast_kind = session.file_mgr()[file_info].file_info_ast.ast.kind();
         let def_sources = match ast_kind {
             AstKind::Pending => return None,
             AstKind::PythonAst => {
@@ -150,7 +152,7 @@ impl ReferenceFeature {
                             continue;
                         };
                         // A reference spells the target's name, so skip the files that never contain it. Classes are exceptions, as a `self.env['my.class']` reference it without spelling it, so they are excluded here
-                        if target_typ != SymType::CLASS && !session.file_mgr()[dep_file_info].file_info_ast.borrow().text_document.as_ref().is_some_and(|td| td.contents().contains(target_name.as_str())) {
+                        if target_typ != SymType::CLASS && !session.file_mgr()[dep_file_info].file_info_ast.text_document.as_ref().is_some_and(|td| td.contents().contains(target_name.as_str())) {
                             continue;
                         }
                         if !matches!(file, SourceFileKey::CsvFile(_)) && !visited_files.insert(file) {
@@ -161,7 +163,7 @@ impl ReferenceFeature {
                                 locations.extend(ReferenceFeature::references_in_file(session, file, dep_file_info, &target));
                             },
                             SourceFileKey::XmlFile(xml_file) => {
-                                let data = session.file_mgr()[dep_file_info].file_info_ast.borrow().text_document.as_ref()?.contents().to_string();
+                                let data = session.file_mgr()[dep_file_info].file_info_ast.text_document.as_ref()?.contents().to_string();
                                 let document = roxmltree::Document::parse(&data);
                                 if let Ok(document) = document {
                                     let root = document.root_element();
@@ -170,7 +172,7 @@ impl ReferenceFeature {
                             },
                             SourceFileKey::CsvFile(csv_file) => {
                                 if SymbolTable::is_field(session, definition_source) {
-                                    let data = session.file_mgr()[dep_file_info].file_info_ast.borrow().text_document.as_ref()?.contents().to_string();
+                                    let data = session.file_mgr()[dep_file_info].file_info_ast.text_document.as_ref()?.contents().to_string();
                                     let mut csv_reader = csv::ReaderBuilder::new().from_reader(data.as_bytes());
                                     let model_class = session.st().get_in_parents(definition_source, &[SymType::CLASS], true);
                                     if let Some(SymbolKey::Class(model_class)) = model_class
@@ -237,7 +239,7 @@ impl ReferenceFeature {
                                     locations.extend(ReferenceFeature::references_in_file(session, source_file, file_info, &ReferenceTarget::String(full_xml_id)));
                                 },
                                 SourceFileKey::XmlFile(xml_file) => {
-                                    let data = session.file_mgr()[file_info].file_info_ast.borrow().text_document.as_ref()?.contents().to_string();
+                                    let data = session.file_mgr()[file_info].file_info_ast.text_document.as_ref()?.contents().to_string();
                                     let document = roxmltree::Document::parse(&data);
                                     if let Ok(document) = document {
                                         let root = document.root_element();
@@ -245,7 +247,7 @@ impl ReferenceFeature {
                                     }
                                 },
                                 SourceFileKey::CsvFile(csv_file) => {
-                                    let data = session.file_mgr()[file_info].file_info_ast.borrow().text_document.as_ref()?.contents().to_string();
+                                    let data = session.file_mgr()[file_info].file_info_ast.text_document.as_ref()?.contents().to_string();
                                     let mut csv_reader = csv::ReaderBuilder::new().from_reader(data.as_bytes());
                                     locations.extend(CsvAstReferenceVisitor::search_target(session, csv_file, &mut csv_reader, None, &ReferenceTarget::String(full_xml_id), &data));
                                 },
@@ -264,7 +266,7 @@ impl ReferenceFeature {
         // finds nothing there: a template-name value → template-name references; a
         // `this.member` expression → component-member references (disjoint attribute sets).
         if locations.is_empty()
-            && matches!(session.file_mgr()[file_info].file_info_ast.borrow().ast, Ast::XmlAst)
+            && matches!(session.file_mgr()[file_info].file_info_ast.ast, Ast::XmlAst)
         {
             if let Some(owl_refs) = Self::references_xml_owl(session, file_info, line, character) {
                 return Some(owl_refs);
@@ -309,7 +311,7 @@ impl ReferenceFeature {
     /// `t-call` / `t-inherit` value); defers to [`collect_template_name_references`].
     fn references_xml_owl(session: &mut SessionInfo, file_info: FileInfoKey, line: u32, character: u32) -> Option<Vec<Location>> {
         let encoding = session.sync_odoo.encoding;
-        let data = session.file_mgr()[file_info].file_info_ast.borrow()
+        let data = session.file_mgr()[file_info].file_info_ast
             .text_document.as_ref()?.contents().to_string();
         let offset = session.file_mgr()[file_info].position_to_offset(line, character, encoding);
 
@@ -379,16 +381,15 @@ impl ReferenceFeature {
     }
 
     fn references_in_file(session: &mut SessionInfo, file_symbol: SourceFileKey, file_info: FileInfoKey, reference_target: &ReferenceTarget) -> Vec<Location> {
-        let file_info_ast = session.file_mgr()[file_info].file_info_ast.clone();
-        if file_info_ast.borrow().get_stmts().is_none() { //filter modules with only manifest or file outside of workspace
+        let Some(py_ast) = session.file_mgr()[file_info].file_info_ast.ast.as_py_ast().cloned() else { //filter modules with only manifest or file outside of workspace
             return vec![];
-        }
+        };
         let mut visitor = ReferenceVisitor {
             sym_stack: vec![],
         };
         session.sync_odoo.evaluation_locations = vec![];
         session.sync_odoo.evaluation_search = Some(reference_target.clone());
-        visitor.browse_file(session, file_symbol, file_info_ast.borrow().get_stmts().as_ref().unwrap());
+        visitor.browse_file(session, file_symbol, py_ast.get_stmts());
         session.sync_odoo.evaluation_search = None;
         let mut locations = std::mem::take(&mut session.sync_odoo.evaluation_locations);
         // Innermost expressions are analyzed first, so stable-sort by position
@@ -400,33 +401,35 @@ impl ReferenceFeature {
         locations
     }
 
+    fn get_manifest_ast(session: &SessionInfo, module: ModuleKey) -> Option<(String, Arc<IndexedModule>)> {
+        let manifest_path = Path::new(&session.st()[module].path).join("__manifest__.py").sanitize();
+        let file_info = session.file_mgr().get_file_info(&manifest_path)?;
+        session.file_mgr()[file_info].file_info_ast.ast.as_py_ast().cloned().map(|py_ast| (manifest_path, py_ast))
+    }
+
     //the name inside the manifest will be different, so we only search for the key in this module and return the location with the range
     fn find_name_in_manifest(session: &mut SessionInfo, module: ModuleKey) -> Vec<Location> {
         let mut locations = Vec::new();
-        let manifest = Path::new(&session.st()[module].path).join("__manifest__.py").sanitize();
-        let file_info = session.file_mgr().get_file_info(&manifest);
-        if let Some(file_info) = file_info {
-            let file_info_ast = session.file_mgr()[file_info].file_info_ast.clone();
-            let file_info_ast = file_info_ast.borrow();
-            if let Some(stmts) = file_info_ast.get_stmts() {
-                if stmts.len() != 1 {
-                    return locations;
-                }
-                let Stmt::Expr(e) = &stmts[0] else {return locations;};
-                let Expr::Dict(d) = &*e.value else {return locations;};
-                for dict_item in d.items.iter() {
-                    let Some(key) = dict_item.key.as_ref() else {continue;};
-                    let value = &dict_item.value;
-                    let Expr::StringLiteral(key_s) = key else {continue;};
-                    let Expr::StringLiteral(value_s) = value else {continue;};
-                    if key_s.value.to_str() == "name" {
-                        let range = FileMgr::text_range_to_range(session, &manifest, value_s.range());
-                        locations.push(Location {
-                            uri: FileMgr::pathname2uri(&manifest),
-                            range,
-                        });
-                    }
-                }
+        let Some((manifest_path, py_ast)) = Self::get_manifest_ast(session, module) else {
+            return locations;
+        };
+        let stmts = py_ast.get_stmts();
+        if stmts.len() != 1 {
+            return locations;
+        }
+        let Stmt::Expr(e) = &stmts[0] else {return locations;};
+        let Expr::Dict(d) = &*e.value else {return locations;};
+        for dict_item in d.items.iter() {
+            let Some(key) = dict_item.key.as_ref() else {continue;};
+            let value = &dict_item.value;
+            let Expr::StringLiteral(key_s) = key else {continue;};
+            let Expr::StringLiteral(value_s) = value else {continue;};
+            if key_s.value.to_str() == "name" {
+                let range = FileMgr::text_range_to_range(session, &manifest_path, value_s.range());
+                locations.push(Location {
+                    uri: FileMgr::pathname2uri(&manifest_path),
+                    range,
+                });
             }
         }
         locations
@@ -434,33 +437,29 @@ impl ReferenceFeature {
 
     fn find_depend_in_manifest(session: &mut SessionInfo, module: ModuleKey, module_name: &str) -> Vec<Location> {
         let mut locations = Vec::new();
-        let manifest = Path::new(&session.st()[module].path).join("__manifest__.py").sanitize();
-        let file_info = session.file_mgr().get_file_info(&manifest);
-        if let Some(file_info) = file_info {
-            let file_info_ast = session.file_mgr()[file_info].file_info_ast.clone();
-            let file_info_ast = file_info_ast.borrow();
-            if let Some(stmts) = file_info_ast.get_stmts() {
-                if stmts.len() != 1 {
-                    return locations;
-                }
-                let Stmt::Expr(e) = &stmts[0] else {return locations;};
-                let Expr::Dict(d) = &*e.value else {return locations;};
-                for dict_item in d.items.iter() {
-                    let Some(key) = dict_item.key.as_ref() else {continue;};
-                    let value = &dict_item.value;
-                    let Expr::StringLiteral(key_s) = key else {continue;};
-                    let Expr::List(depends_d) = value else {continue;};
-                    if key_s.value.to_str() == "depends" {
-                        for value in depends_d.elts.iter() {
-                            let Expr::StringLiteral(value_s) = value else {continue;};
-                            if value_s.value.to_str() == module_name {
-                                let range = FileMgr::text_range_to_range(session, &manifest, value_s.range());
-                                locations.push(Location {
-                                    uri: FileMgr::pathname2uri(&manifest),
-                                    range,
-                                });
-                            }
-                        }
+        let Some((manifest_path, py_ast)) = Self::get_manifest_ast(session, module) else {
+            return locations;
+        };
+        let stmts = py_ast.get_stmts();
+        if stmts.len() != 1 {
+            return locations;
+        }
+        let Stmt::Expr(e) = &stmts[0] else {return locations;};
+        let Expr::Dict(d) = &*e.value else {return locations;};
+        for dict_item in d.items.iter() {
+            let Some(key) = dict_item.key.as_ref() else {continue;};
+            let value = &dict_item.value;
+            let Expr::StringLiteral(key_s) = key else {continue;};
+            let Expr::List(depends_d) = value else {continue;};
+            if key_s.value.to_str() == "depends" {
+                for value in depends_d.elts.iter() {
+                    let Expr::StringLiteral(value_s) = value else {continue;};
+                    if value_s.value.to_str() == module_name {
+                        let range = FileMgr::text_range_to_range(session, &manifest_path, value_s.range());
+                        locations.push(Location {
+                            uri: FileMgr::pathname2uri(&manifest_path),
+                            range,
+                        });
                     }
                 }
             }

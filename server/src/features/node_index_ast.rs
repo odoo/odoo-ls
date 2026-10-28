@@ -241,4 +241,9 @@ impl IndexedModule {
         // long as the reference to `IndexedModule` is alive.
         self.index[index as usize]
     }
+
+    /// Returns the module's top-level statements.
+    pub fn get_stmts(&self) -> &[Stmt] {
+        self.parsed.syntax().body.as_slice()
+    }
 }
