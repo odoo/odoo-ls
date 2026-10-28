@@ -67,7 +67,7 @@ impl ModuleSymbol {
                     .expect("path should not already exist, as checked above");
                 Self::on_data_file_load(&session.sync_odoo.symbol_table, &mut session.sync_odoo.entry_point_mgr, csv_sym.into());
                 session.st_mut().add_dependency(symbol_key.into(), csv_sym.into(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
-                let Some(data) = session.file_mgr()[file_info].file_info_ast.borrow().text_document.as_ref().map(|td| td.contents().to_string()) else {
+                let Some(data) = session.file_mgr()[file_info].file_info_ast.text_document.as_ref().map(|td| td.contents().to_string()) else {
                     // File can be invalid (not valid UTF-8 and so text_document is empty)
                     continue;
                 };
@@ -173,7 +173,7 @@ impl ModuleSymbol {
             session.st_mut().add_dependency(module.into(), xml_sym.into(), BuildSteps::ARCH_EVAL, BuildSteps::ARCH);
             let (_, file_info) = FileMgr::update_file_info(session, file_path_str.as_ref(), None, None, false); //create ast if not in cache
             FileInfo::publish_diagnostics(session, file_info);
-            if session.file_mgr()[file_info].file_info_ast.borrow().text_document.as_ref().is_none() { // File can be invalid (not valid UTF-8 and so text_document is empty)
+            if session.file_mgr()[file_info].file_info_ast.text_document.as_ref().is_none() { // File can be invalid (not valid UTF-8 and so text_document is empty)
                 continue;
             }
             ModuleSymbol::load_xml_arch(session, xml_sym, file_info, true);
@@ -181,7 +181,7 @@ impl ModuleSymbol {
     }
 
     fn load_xml_arch(session: &mut SessionInfo, xml_sym: XmlFileKey, file_info: FileInfoKey, web_asset: bool) {
-        let Some(data) = session.file_mgr()[file_info].file_info_ast.borrow().text_document.as_ref().map(|td| td.contents().to_string()) else {
+        let Some(data) = session.file_mgr()[file_info].file_info_ast.text_document.as_ref().map(|td| td.contents().to_string()) else {
             // File can be invalid (not valid UTF-8 and so text_document is empty)
             return;
         };
@@ -267,7 +267,7 @@ fn is_asset_file(path: &Path, is_lib: bool) -> bool {
 
 fn build_syntax_diagnostic(session: &SessionInfo, file_info: FileInfoKey, doc_error: &roxmltree::Error) -> Option<Diagnostic> {
     let diagnostic = create_diagnostic(session, DiagnosticCode::OLS05000, &[&doc_error.to_string()])?; 
-    let ast = session.file_mgr()[file_info].file_info_ast.borrow();
+    let ast = &session.file_mgr()[file_info].file_info_ast;
     let text_document = ast.text_document.as_ref()?;
     let std::ops::Range{ start, end } = xml_syntax_error_range(text_document.contents(), text_document.index(), doc_error.pos());
     Some(Diagnostic {

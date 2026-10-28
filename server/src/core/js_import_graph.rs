@@ -30,7 +30,7 @@ impl ImportGraph {
             .iter_file_keys()
             .filter_map(|file_info_key| {
                 let file_info = &session.file_mgr()[*file_info_key];
-                let ast = file_info.file_info_ast.borrow();
+                let ast = &file_info.file_info_ast;
                 matches!(ast.ast, Ast::JsAst(_)).then(|| {
                     // TODO: review these expensive clones
                     (file_info.uri.clone(), ast.ast.as_js_ast().js_imports.clone(), ast.ast.as_js_ast().js_reexports.clone())

@@ -1595,11 +1595,11 @@ impl Odoo {
             }
             let file_info = session.file_mgr().get_file_info(&path);
             if let Some(file_info) = file_info {
-                if !session.file_mgr()[file_info].file_info_ast.borrow().ast.is_built() {
+                if !session.file_mgr()[file_info].file_info_ast.ast.is_built() {
                     FileInfo::prepare_ast(session, file_info);
                 }
                 let file_mgr = session.file_mgr();
-                let ast_kind = file_mgr[file_info].file_info_ast.borrow().ast.kind();
+                let ast_kind = file_mgr[file_info].file_info_ast.ast.kind();
                 match ast_kind {
                     AstKind::Pending => return Ok(None),
                     AstKind::PythonAst => {
@@ -1654,11 +1654,11 @@ impl Odoo {
         if let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, &file_path_buf) {
             let file_info = session.file_mgr().get_file_info(&path);
             if let Some(file_info) = file_info {
-                if !session.file_mgr()[file_info].file_info_ast.borrow().ast.is_built() {
+                if !session.file_mgr()[file_info].file_info_ast.ast.is_built() {
                     FileInfo::prepare_ast(session, file_info);
                 }
                 let file_mgr = session.file_mgr();
-                let ast_kind = file_mgr[file_info].file_info_ast.borrow().ast.kind();
+                let ast_kind = file_mgr[file_info].file_info_ast.ast.kind();
                 match ast_kind {
                     AstKind::PythonAst => {
                         if session.sync_odoo.config.is_semantic_tokens_python_disabled() {
@@ -1738,7 +1738,7 @@ impl Odoo {
             }
             let file_info = session.file_mgr().get_file_info(&path);
             if let Some(file_info) = file_info {
-                if !session.file_mgr()[file_info].file_info_ast.borrow().ast.is_built() {
+                if !session.file_mgr()[file_info].file_info_ast.ast.is_built() {
                     FileInfo::prepare_ast(session, file_info);
                 }
                 return match is_declaration {
@@ -1779,7 +1779,7 @@ impl Odoo {
             let file_mgr = session.file_mgr();
             let file_info = file_mgr.get_file_info(&path);
             if let Some(file_info) = file_info {
-                if !file_mgr[file_info].file_info_ast.borrow().ast.is_built() {
+                if !file_mgr[file_info].file_info_ast.ast.is_built() {
                     FileInfo::prepare_ast(session, file_info);
                 }
                 return Ok(ReferenceFeature::get_references(session, file_symbol, file_info, params.text_document_position.position.line, params.text_document_position.position.character));
@@ -1826,12 +1826,12 @@ impl Odoo {
 
             let file_info = session.file_mgr().get_file_info(&path);
             if let Some(file_info) = file_info {
-                if schema != "untitled" && !session.file_mgr()[file_info].file_info_ast.borrow().ast.is_built() {
+                if schema != "untitled" && !session.file_mgr()[file_info].file_info_ast.ast.is_built() {
                     FileInfo::prepare_ast(session, file_info);
                 }
                 let trigger_kind = params.context.as_ref()
                     .map_or(CompletionTriggerKind::INVOKED, |context| context.trigger_kind);
-                let ast_kind = session.file_mgr()[file_info].file_info_ast.borrow().ast.kind();
+                let ast_kind = session.file_mgr()[file_info].file_info_ast.ast.kind();
                 match ast_kind {
                     AstKind::JsAst => {
                         let module_scope = js_module_scope::importable_module_prefixes(session, &path);
@@ -2400,7 +2400,7 @@ impl Odoo {
         };
         let file_info = session.file_mgr().get_file_info(&path);
         if let Some(file_info) = file_info {
-            if schema != "untitled" && !session.file_mgr()[file_info].file_info_ast.borrow().ast.is_built() {
+            if schema != "untitled" && !session.file_mgr()[file_info].file_info_ast.ast.is_built() {
                 FileInfo::prepare_ast(session, file_info);
             }
             return Ok(DocumentSymbolFeature::get_symbols(session, file_info));

@@ -14,7 +14,7 @@ impl DocumentSymbolFeature {
 
         // JS/TS: delegate to tsserver navtree.
         let is_js = matches!(
-            session.file_mgr()[file_info].file_info_ast.borrow().ast,
+            session.file_mgr()[file_info].file_info_ast.ast,
             Ast::JsAst(_)
         );
         if is_js {
@@ -26,8 +26,9 @@ impl DocumentSymbolFeature {
         }
 
         let file_info_bw = &session.file_mgr()[file_info];
-        let file_info_ast = file_info_bw.file_info_ast.borrow();
-        if let Some(ast) = &file_info_ast.get_stmts() {
+        let file_info_ast = &file_info_bw.file_info_ast;
+        if let Some(py_ast) = file_info_ast.ast.as_py_ast() {
+            let ast = py_ast.get_stmts();
             for stmt in ast.iter() {
                 DocumentSymbolFeature::visit_stmt(session, stmt, &mut results, file_info);
             }

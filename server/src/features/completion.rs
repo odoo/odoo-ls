@@ -60,9 +60,8 @@ impl CompletionFeature {
         character: u32
     ) -> Option<CompletionResponse> {
         let offset = session.file_mgr()[file_info].position_to_offset(line, character, session.sync_odoo.encoding);
-        let file_info_ast = session.file_mgr()[file_info].file_info_ast.clone();
-        let file_info_ast = file_info_ast.borrow();
-        let ast = file_info_ast.get_stmts().unwrap();
+        let py_ast = session.file_mgr()[file_info].file_info_ast.ast.as_py_ast().cloned()?;
+        let ast = py_ast.get_stmts();
         let is_completion_invoked = completion_context.as_ref().is_none_or(|context| {
             context.trigger_kind == lsp_types::CompletionTriggerKind::INVOKED
         });

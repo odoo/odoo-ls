@@ -268,7 +268,7 @@ pub fn semantic_tokens_xml(session: &mut SessionInfo, file_info: FileInfoKey) ->
     // 1. Template-name tokens. Independent of tsserver: we only need to parse the XML.
     let xml = {
         let fi = &session.file_mgr()[file_info];
-        let fia = fi.file_info_ast.borrow();
+        let fia = &fi.file_info_ast;
         fia.text_document.as_ref().map(|td| td.contents().to_string())
     };
     if let Some(xml) = xml.as_deref() && let Ok(document) = roxmltree::Document::parse(xml)
@@ -563,7 +563,7 @@ pub(crate) fn build_virtual_docs(session: &mut SessionInfo, file_info: FileInfoK
     // 1. XML content.
     let xml = {
         let fi = &session.file_mgr()[file_info];
-        let fia = fi.file_info_ast.borrow();
+        let fia = &fi.file_info_ast;
         match fia.text_document.as_ref() {
             Some(td) => td.contents().to_string(),
             None => return vec![],
@@ -941,7 +941,7 @@ pub(crate) fn read_real_js(session: &mut SessionInfo, file_path: &str) -> Option
     let file_info = session.file_mgr().get_file_info(file_path);
     if let Some(file_info) = file_info {
         let fi = &session.file_mgr()[file_info];
-        let fia = fi.file_info_ast.borrow();
+        let fia = &fi.file_info_ast;
         if let Some(td) = fia.text_document.as_ref() {
             return Some(td.contents().to_string());
         }
