@@ -212,6 +212,10 @@ pub fn resolve_symbol_types(session: &mut SessionInfo, symbol: SymbolKey) -> Vec
     resolve_evaluation_types(session, &evals)
 }
 
+/// Get resolved symbols at a specific position in a source file. This follows references
+/// and returns the final types of the evaluations found at the given line and character.
+///
+/// File must be pointing to a python file, otherwise it panics.
 pub fn get_resolved_symbols_at_position(
     session: &mut SessionInfo,
     file_symbol: SourceFileKey,
@@ -222,10 +226,9 @@ pub fn get_resolved_symbols_at_position(
     // Get evaluations at the given position
     let offset = session.file_mgr()[file_info]
         .position_to_offset(line, character, session.sync_odoo.encoding);
-    let file_info_ast_clone = session.file_mgr()[file_info].file_info_ast.clone();
-    let file_info_ast_ref = file_info_ast_clone.borrow();
+    let py_ast = session.file_mgr()[file_info].file_info_ast.ast.as_py_ast().cloned().expect("Expected Python AST");
     let (analyse_ast_result, _, _, _) =
-        AstUtils::get_symbols(session, &file_info_ast_ref, file_symbol, offset as u32);
+        AstUtils::get_symbols(session, &py_ast, file_symbol, offset as u32);
     let evals = analyse_ast_result.evaluations;
     assert!(
         !evals.is_empty(),

@@ -72,22 +72,19 @@ impl PythonValidator {
                 }
                 session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
                 session.file_mgr_mut()[file_info_key].replace_diagnostics(DiagnosticSource::PY_VALIDATION, vec![]);
-                if !session.file_mgr()[file_info_key].file_info_ast.borrow().ast.is_built() {
+                if !session.file_mgr()[file_info_key].file_info_ast.ast.is_built() {
                     FileInfo::prepare_ast(session, file_info_key);
                 }
-                if session.file_mgr()[file_info_key].file_info_ast.borrow().text_hash != session.st().get_processed_text_hash(source_file_key) {
+                if session.file_mgr()[file_info_key].file_info_ast.text_hash != session.st().get_processed_text_hash(source_file_key) {
                     session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION, BuildStatus::INVALID);
                     return;
                 }
-                let file_info_ast_rc = session.file_mgr()[file_info_key].file_info_ast.clone();
-                let file_info_ast = file_info_ast_rc.borrow();
-                if let Ast::PythonAst(_) = &file_info_ast.ast {
+                if let Some(py_ast) = session.file_mgr()[file_info_key].file_info_ast.ast.as_py_ast().cloned() {
                     let old_noqa = session.current_noqa.clone();
                     session.current_noqa = session.st().get_noqas(symbol);
-                    self.validate_body(session, file_info_ast.get_stmts().as_ref().unwrap());
+                    self.validate_body(session, py_ast.get_stmts());
                     session.current_noqa = old_noqa;
                 }
-                drop(file_info_ast);
                 let symbol = self.sym_stack[0];
                 if let SymbolKey::Module(m) = symbol {
                     ModuleSymbol::validate_manifest(m, session);
@@ -102,7 +99,7 @@ impl PythonValidator {
                 let Some(parent_file) = session.st().get_file(symbol) else {
                     panic!("Parent file not found on validating function")
                 };
-                let text_hash = session.file_mgr()[file_info_key].file_info_ast.borrow().text_hash;
+                let text_hash = session.file_mgr()[file_info_key].file_info_ast.text_hash;
                 if text_hash != session.st_mut().get_processed_text_hash(parent_file) {
                     session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION, BuildStatus::INVALID);
                     return;
@@ -112,16 +109,13 @@ impl PythonValidator {
                 }
                 self.diagnostics = vec![];
                 session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
-                if !session.file_mgr()[file_info_key].file_info_ast.borrow().ast.is_built() {
+                if !session.file_mgr()[file_info_key].file_info_ast.ast.is_built() {
                     FileInfo::prepare_ast(session, file_info_key);
                 }
-                let file_info_ast_rc = session.file_mgr()[file_info_key].file_info_ast.clone();
-                let file_info_ast = file_info_ast_rc.borrow();
-                if let Ast::PythonAst(py_ast) = &file_info_ast.ast {
-                    let indexed_module = &py_ast.indexed_module;
+                if let Some(py_ast) = session.file_mgr()[file_info_key].file_info_ast.ast.as_py_ast().cloned() {
                     let func_index = session.st()[f].node_index.load();
                     if func_index != NodeIndex::NONE {
-                        let stmt = indexed_module.get_by_index(func_index);
+                        let stmt = py_ast.get_by_index(func_index);
                         let body = match stmt {
                             AnyRootNodeRef::Stmt(Stmt::FunctionDef(s)) => {
                                 &s.body
@@ -166,20 +160,18 @@ impl PythonValidator {
                     let manifest_path = Path::new(&session.st()[m].path).join("__manifest__.py");
                     if let Some(manifest_file) = session.file_mgr().get_file_info(&manifest_path.sanitize_cow())
                         && !session.file_mgr()[manifest_file].opened {
-                            let manifest_file = &session.file_mgr()[manifest_file];
-                            let mut fi_ast = manifest_file.file_info_ast.borrow_mut();
-                            fi_ast.ast = Ast::Pending;
-                            fi_ast.text_document = None;
-                            fi_ast.text_hash = 0;
+                            let manifest_file = &mut session.file_mgr_mut()[manifest_file];
+                            manifest_file.file_info_ast.ast = Ast::Pending;
+                            manifest_file.file_info_ast.text_document = None;
+                            manifest_file.file_info_ast.text_hash = 0;
                         }
                 }
                 if let Some(file) = self.file_info
                     && ! session.file_mgr()[file].opened {
-                        let f = &session.file_mgr()[file];
-                        let mut fi_ast = f.file_info_ast.borrow_mut();
-                        fi_ast.ast = Ast::Pending;
-                        fi_ast.text_document = None;
-                        fi_ast.text_hash = 0;
+                        let f = &mut session.file_mgr_mut()[file];
+                        f.file_info_ast.ast = Ast::Pending;
+                        f.file_info_ast.text_document = None;
+                        f.file_info_ast.text_hash = 0;
                     }
             }
         }

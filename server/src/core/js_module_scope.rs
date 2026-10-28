@@ -131,7 +131,7 @@ fn collect_type_files(dir: &Path, out: &mut Vec<String>) {
 /// `None` when the file is not cached, or is not JS.
 fn js_has_exports(file_mgr: &FileMgr, path: &str) -> Option<bool> {
     let file_info = file_mgr.get_file_info(path)?;
-    match &file_mgr[file_info].file_info_ast.borrow().ast {
+    match &file_mgr[file_info].file_info_ast.ast {
         Ast::JsAst(js_ast) => Some(js_ast.has_exports),
         _ => None,
     }

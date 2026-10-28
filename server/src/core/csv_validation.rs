@@ -40,7 +40,7 @@ impl CsvValidator {
             session.st_mut()[csv_symbol].set_build_status(BuildSteps::VALIDATION, BuildStatus::INVALID);
             return;
         }
-        let Some(data) = session.file_mgr()[file_info].file_info_ast.borrow().text_document.as_ref().map(|td| td.contents().to_string()) else {
+        let Some(data) = session.file_mgr()[file_info].file_info_ast.text_document.as_ref().map(|td| td.contents().to_string()) else {
             // File can be invalid (not valid UTF-8 and so text_document is empty)
             return;
         };

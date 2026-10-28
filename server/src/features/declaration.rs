@@ -17,7 +17,7 @@ impl DeclarationFeature {
         line: u32,
         character: u32
     ) -> Option<GotoDeclarationResponse> {
-        let ast_kind = session.file_mgr()[file_info].file_info_ast.borrow().ast.kind();
+        let ast_kind = session.file_mgr()[file_info].file_info_ast.ast.kind();
         let definitions_sources = match ast_kind {
             AstKind::Pending => return None,
             AstKind::PythonAst => GotoUtils::get_symbols(session, GotoRequest::Declaration, file_symbol, file_info, line, character),

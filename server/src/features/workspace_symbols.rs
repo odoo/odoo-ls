@@ -69,7 +69,7 @@ impl WorkspaceSymbolFeature {
         {
             for file_info in file_mgr.iter_file_keys() {
                 let file_info = &session.file_mgr()[*file_info];
-                let file_info_ast = file_info.file_info_ast.borrow();
+                let file_info_ast = &file_info.file_info_ast;
                 let Ast::JsAst(js_ast) = &file_info_ast.ast else {
                     continue;
                 };

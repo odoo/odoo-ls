@@ -4,7 +4,7 @@ use crate::core::evaluation::{AnalyzeAstResult, Evaluation, ExprOrIdent};
 use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
 use crate::core::symbols::symbol_keys::{SourceFileKey, SymbolKey};
 use crate::core::import_resolver::{resolve_from_stmt, resolve_import_stmt};
-use crate::core::file_mgr::FileInfoAst;
+use crate::features::node_index_ast::IndexedModule;
 use crate::threads::SessionInfo;
 use crate::S;
 use ruff_python_ast::name::Name;
@@ -18,10 +18,10 @@ pub struct AstUtils {}
 impl AstUtils {
 
 
-    pub fn get_symbols<'a>(session: &mut SessionInfo, file_info_ast: &'a FileInfoAst, file_symbol: SourceFileKey, offset: u32) -> (AnalyzeAstResult, Option<TextRange>, Option<ExprOrIdent<'a>>, Option<ExprCall>) {
+    pub fn get_symbols<'a>(session: &mut SessionInfo, py_ast: &'a IndexedModule, file_symbol: SourceFileKey, offset: u32) -> (AnalyzeAstResult, Option<TextRange>, Option<ExprOrIdent<'a>>, Option<ExprCall>) {
         let mut expr: Option<ExprOrIdent<'a>> = None;
         let mut call_expr: Option<ExprCall> = None;
-        for stmt in file_info_ast.get_stmts().unwrap().iter() {
+        for stmt in py_ast.get_stmts().iter() {
             //we have to handle imports differently as symbols are not visible in file.
             if let Some((result, range)) = Self::get_symbol_in_import(session, file_symbol, offset, stmt) {
                 return (result, range, None, None);
