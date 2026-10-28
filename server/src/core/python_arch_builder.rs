@@ -16,7 +16,6 @@ use crate::core::build_scheduler::BuildScheduler;
 use crate::core::entry_point::EntryPointKey;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::file_mgr::FileInfoKey;
-use crate::core::file_mgr::Ast;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 use crate::core::python_utils;
@@ -86,7 +85,7 @@ impl PythonArchBuilder {
             ModuleSymbol::load_module_arch(m, session, odoo_addons);
         }
         let (file_info_key, _) = FileMgr::get_or_recreate_file_info(session, self.file);
-        if self.file_mode && !session.file_mgr()[file_info_key].file_info_ast.borrow().ast.is_built() {
+        if self.file_mode && !session.file_mgr()[file_info_key].file_info_ast.ast.is_built() {
             FileInfo::prepare_ast(session, file_info_key);
         }
         self.file_info = file_info_key;
@@ -94,27 +93,25 @@ impl PythonArchBuilder {
             //diagnostics for functions are stored directly on funcs
             session.file_mgr_mut()[file_info_key].replace_diagnostics(DiagnosticSource::PY_ARCH, self.diagnostics.clone());
         }
-        let file_info_ast_rc = session.file_mgr()[file_info_key].file_info_ast.clone();
         let file_noqa = if self.file_mode {
              session.file_mgr()[file_info_key].noqas_blocs.get(&0).cloned()
         } else {
             None
         };
-        let file_info_ast= file_info_ast_rc.borrow();
-        if let Ast::PythonAst(py_ast) = &file_info_ast.ast {
-            let indexed_module = &py_ast.indexed_module;
+        if let Some(py_ast) = session.file_mgr()[file_info_key].file_info_ast.ast.as_py_ast().cloned() {
+            let initial_text_hash = session.file_mgr()[file_info_key].file_info_ast.text_hash;
             let ast = if self.file_mode {
-                file_info_ast.get_stmts().unwrap()
+                py_ast.get_stmts()
             } else {
                 //  If the file has been re-parsed since, those indexes address another tree.
-                if file_info_ast.text_hash != session.st().get_processed_text_hash(self.file) {
+                if initial_text_hash != session.st().get_processed_text_hash(self.file) {
                     session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::ARCH, BuildStatus::INVALID);
                     return;
                 }
                 let f = self.sym_stack[0].unwrap_function_key();
                 let ast_index = session.st()[f].node_index.load();
                 if ast_index.as_u32().is_some() {
-                    let func = indexed_module.get_by_index(ast_index);
+                    let func = py_ast.get_by_index(ast_index);
                     match func {
                         AnyRootNodeRef::Stmt(Stmt::FunctionDef(func_stmt)) => {
                             func_stmt.body.as_slice()
@@ -136,7 +133,7 @@ impl PythonArchBuilder {
                 session.st_mut().set_noqas(symbol, new_noqa.clone()); //only set for file, functions are set in visit_func_def
                 let old = session.current_noqa.clone();
                 session.current_noqa = new_noqa;
-                session.st_mut().set_processed_text_hash(self.file, file_info_ast.text_hash);
+                session.st_mut().set_processed_text_hash(self.file, initial_text_hash);
                 old
             } else {
                 let noqas = session.st().get_noqas(symbol);

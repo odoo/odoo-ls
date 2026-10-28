@@ -86,7 +86,7 @@ fn test_stale_node_index_on_method_does_not_panic() {
     );
     assert!(updated, "the file should have been re-parsed");
     assert_ne!(
-        session.file_mgr()[file_info].file_info_ast.borrow().text_hash,
+        session.file_mgr()[file_info].file_info_ast.text_hash,
         session.st().get_processed_text_hash(file),
         "the re-parse should have left the file symbol's hash stale"
     );

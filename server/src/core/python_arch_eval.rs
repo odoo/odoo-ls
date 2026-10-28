@@ -1,6 +1,5 @@
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
-use crate::core::file_mgr::Ast;
 use std::vec;
 
 use ruff_text_size::{Ranged, TextRange, TextSize};
@@ -66,28 +65,30 @@ impl PythonArchEval {
             trace!("ARCH_EVAL  - PYTHON {} - {}", session.st().path(self.file), session.st().name(symbol));
         }
         session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::ARCH_EVAL, BuildStatus::IN_PROGRESS);
-        let file_info_ast = {
+        let (py_ast, text_hash) = {
             let (file_info_key, _) = FileMgr::get_or_recreate_file_info(session, self.file);
-            if !session.file_mgr()[file_info_key].file_info_ast.borrow().ast.is_built() {
+            if !session.file_mgr()[file_info_key].file_info_ast.ast.is_built() {
                 FileInfo::prepare_ast(session, file_info_key);
             }
-            session.file_mgr()[file_info_key].file_info_ast.clone()
+            (
+                session.file_mgr()[file_info_key].file_info_ast.ast.as_py_ast().cloned(),
+                session.file_mgr()[file_info_key].file_info_ast.text_hash,
+            )
         };
         if let SymbolKey::Module(m) = symbol  {
             ModuleSymbol::load_data(m, session);
             ModuleSymbol::load_assets(m, session);
         }
-        if matches!(file_info_ast.borrow().ast, Ast::PythonAst(_)) {
-            let file_info_ast_bw  = file_info_ast.borrow();
+        if let Some(py_ast) = py_ast {
             //  If the file has been re-parsed since, those indexes address another tree.
-            if file_info_ast_bw.text_hash != session.st().get_processed_text_hash(self.file) {
+            if text_hash != session.st().get_processed_text_hash(self.file) {
                 session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::ARCH_EVAL, BuildStatus::INVALID);
                 return;
             }
             let old_noqa = session.current_noqa.clone();
             session.current_noqa = session.st().get_noqas(symbol);
             let (ast, maybe_func_stmt) = match self.file_mode {
-                true => (file_info_ast_bw.get_stmts().unwrap(), None),
+                true => (py_ast.get_stmts(), None),
                 false => {
                     let f = self.sym_stack[0].unwrap_function_key();
                     let fun_index = session.st()[f].node_index.load();
@@ -95,7 +96,7 @@ impl PythonArchEval {
                         // Function has no body or is dynamically created from a hook
                         (Default::default(), None) // essentially skip evaluation
                     } else {
-                        let func_stmt = file_info_ast_bw.ast.as_py_ast().indexed_module.get_by_index(fun_index);
+                        let func_stmt = py_ast.get_by_index(fun_index);
                         match func_stmt {
                             AnyRootNodeRef::Stmt(Stmt::FunctionDef(func_stmt)) => {
                                 (func_stmt.body.as_slice(), Some(func_stmt))

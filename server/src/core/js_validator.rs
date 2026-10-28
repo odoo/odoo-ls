@@ -37,20 +37,18 @@ impl JsValidator {
             session.st_mut().set_build_status(self.js_symbol.into(), BuildSteps::VALIDATION, BuildStatus::INVALID);
             return;
         }
-        if !session.file_mgr()[file_info].file_info_ast.borrow().ast.is_built() {
+        if !session.file_mgr()[file_info].file_info_ast.ast.is_built() {
             // JS Symbols do not go through the arch step,
             // Custom JS files may not have been built yet, so we need to build the AST first before validating
             FileInfo::prepare_ast(session, file_info);
-            if !session.file_mgr()[file_info].file_info_ast.borrow().ast.is_built() {
+            if !session.file_mgr()[file_info].file_info_ast.ast.is_built() {
                 // Still not built, something went wrong, we cannot validate this file
                 session.st_mut().set_build_status(self.js_symbol.into(), BuildSteps::VALIDATION, BuildStatus::INVALID);
                 return;
             }
         }
-        let file_info_ast = session.file_mgr()[file_info].file_info_ast.borrow();
         let template_refs: Vec<_> = session.sync_odoo.component_mgr.template_refs_by_file(&session.file_mgr()[file_info].uri).cloned().collect();
-        let js_imports = file_info_ast.ast.as_js_ast().js_imports.clone();
-        drop(file_info_ast);
+        let js_imports = session.file_mgr()[file_info].file_info_ast.ast.as_js_ast().js_imports.clone();
 
         if session.sync_odoo.entry_point_mgr[session.sync_odoo.symbol_table.get_entry(self.js_symbol)].is_main() {
             for template_ref in template_refs.iter() {

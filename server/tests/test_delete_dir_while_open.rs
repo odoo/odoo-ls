@@ -80,7 +80,7 @@ fn test_delete_open_file_then_edit_it() {
 
     let file_info = session.file_mgr().get_file_info(&point_path)
         .expect("FileInfo must still exist after the incremental edit");
-    let contents = session.file_mgr()[file_info].file_info_ast.borrow().text_document.as_ref()
+    let contents = session.file_mgr()[file_info].file_info_ast.text_document.as_ref()
         .expect("text_document must be populated after the incremental edit")
         .contents().to_string();
     assert!(contents.starts_with("xclass Thing"), "edit should have applied against the live symbol, got: {contents:?}");
@@ -219,7 +219,7 @@ fn test_delete_open_file_then_recreate_it_keeps_it() {
     });
     let edited_content = session.file_mgr()[
         session.file_mgr().get_file_info(&point_path).unwrap()
-        ].file_info_ast.borrow().text_document.as_ref().unwrap().contents().to_string();
+        ].file_info_ast.text_document.as_ref().unwrap().contents().to_string();
 
     // 3. The user saves the buffer, recreating the file on disk.
     std::fs::write(&point_path, &edited_content).unwrap();

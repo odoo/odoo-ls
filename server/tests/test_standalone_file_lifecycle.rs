@@ -68,7 +68,7 @@ fn test_standalone_python_create_open_close_lifecycle() {
     let file_info = session.file_mgr().get_file_info(&py_path)
         .expect("FileInfo should exist after open");
     assert!(
-        session.file_mgr()[file_info].file_info_ast.borrow().ast.is_built(),
+        session.file_mgr()[file_info].file_info_ast.ast.is_built(),
         "ast should be built after open"
     );
 
@@ -187,7 +187,7 @@ fn test_hover_on_unopened_standalone_file_builds_lazily() {
     let file_info = session.file_mgr().get_file_info(&py_path)
         .expect("FileInfo should exist after hover");
     assert!(
-        session.file_mgr()[file_info].file_info_ast.borrow().ast.is_built(),
+        session.file_mgr()[file_info].file_info_ast.ast.is_built(),
         "ast should be built lazily by the hover request"
     );
 

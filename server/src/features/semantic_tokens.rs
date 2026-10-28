@@ -120,9 +120,7 @@ impl SemanticTokensFeature {
         // collect first, then sort by (line, char) and delta-encode at the end.
         let mut raw: Vec<(Range, u32, u32)> = vec![];
 
-        let file_info_ast = session.file_mgr()[file_info].file_info_ast.clone();
-        let file_info_ast_ref = file_info_ast.borrow();
-        if let Some(stmts) = file_info_ast_ref.get_stmts() {
+        if let Some(py_ast) = session.file_mgr()[file_info].file_info_ast.ast.as_py_ast().cloned() {
             let uri = session.file_mgr()[file_info].uri.clone();
             let mut visitor = SemanticTokenVisitor {
                 session,
@@ -133,11 +131,11 @@ impl SemanticTokensFeature {
                 file_path: uri,
                 enclosing_call: None,
             };
+            let stmts = py_ast.get_stmts();
             for stmt in stmts.iter() {
                 visitor.visit_stmt(stmt);
             }
         }
-        drop(file_info_ast_ref);
 
         Self::encode(raw)
     }
@@ -154,7 +152,7 @@ impl SemanticTokensFeature {
         // must not hold the borrow across the `&mut session` bridge call below.
         let content = {
             let fi = &session.file_mgr()[file_info];
-            let fia = fi.file_info_ast.borrow();
+            let fia = &fi.file_info_ast;
             fia.text_document.as_ref().map(|td| td.contents().to_string())
         };
 

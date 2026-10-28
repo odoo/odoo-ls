@@ -160,9 +160,10 @@ impl GotoUtils {
         character: u32
     ) -> Vec<GotoSource> {
         let offset = session.file_mgr()[file_info].position_to_offset(line, character, session.sync_odoo.encoding);
-        let file_info_ast_clone = session.file_mgr()[file_info].file_info_ast.clone();
-        let file_info_ast_ref = file_info_ast_clone.borrow();
-        let (analyse_ast_result, _range, expr, call_expr) = AstUtils::get_symbols(session, &file_info_ast_ref, file_symbol, offset as u32);
+        let Some(py_ast) = session.file_mgr()[file_info].file_info_ast.ast.as_py_ast().cloned() else {
+            return vec![];
+        };
+        let (analyse_ast_result, _range, expr, call_expr) = AstUtils::get_symbols(session, &py_ast, file_symbol, offset as u32);
         if analyse_ast_result.evaluations.is_empty() {
             return vec![];
         }
@@ -184,7 +185,6 @@ impl GotoUtils {
         if let Some(expr) = expr && dislay_name_found {
             GotoUtils::add_display_name_compute_methods(session, &mut definition_sources, &expr, file_symbol, offset);
         }
-        drop(file_info_ast_ref);
         let mut index = 0;
         while index < evaluations.len() {
             let eval = &evaluations[index];
@@ -234,7 +234,7 @@ impl GotoUtils {
         character: u32
     ) -> Vec<GotoSource> {
         let offset = session.file_mgr()[file_info].position_to_offset(line, character, session.sync_odoo.encoding);
-        let Some(data) = session.file_mgr()[file_info].file_info_ast.borrow().text_document.as_ref().map(|td| td.contents().to_string()) else {
+        let Some(data) = session.file_mgr()[file_info].file_info_ast.text_document.as_ref().map(|td| td.contents().to_string()) else {
             // File can be invalid (not valid UTF-8 and so text_document is empty)
             return vec![];
         };
@@ -265,7 +265,7 @@ impl GotoUtils {
         let model_name_pb = Path::new(session.st().path(file_symbol));
         let model_name = Sy!(model_name_pb.file_stem().unwrap().to_str().unwrap().to_string());
         let offset = session.file_mgr()[file_info].position_to_offset(line, character, session.sync_odoo.encoding);
-        let Some(data) = session.file_mgr()[file_info].file_info_ast.borrow().text_document.as_ref().map(|td| td.contents().to_string()) else {
+        let Some(data) = session.file_mgr()[file_info].file_info_ast.text_document.as_ref().map(|td| td.contents().to_string()) else {
             // File can be invalid (not valid UTF-8 and so text_document is empty)
             return vec![];
         };
