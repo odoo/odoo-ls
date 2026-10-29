@@ -341,7 +341,7 @@ impl Server {
                     continue;
                 }
                 if e.is_disconnected() {
-                    warn!("Channel disconnected. Exiting program.");
+                    self.shutdown_threads("Channel disconnected. Exiting program.");
                     break;
                 }
             }
