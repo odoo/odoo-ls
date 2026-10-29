@@ -266,12 +266,8 @@ pub fn semantic_tokens_xml(session: &mut SessionInfo, file_info: FileInfoKey) ->
     let mut raw_tokens: Vec<(Range, u32, u32)> = vec![];
 
     // 1. Template-name tokens. Independent of tsserver: we only need to parse the XML.
-    let xml = {
-        let fi = &session.file_mgr()[file_info];
-        let fia = &fi.file_info_ast;
-        fia.text_document.as_ref().map(|td| td.contents().to_string())
-    };
-    if let Some(xml) = xml.as_deref() && let Ok(document) = roxmltree::Document::parse(xml)
+    let xml = session.file_mgr()[file_info].file_info_ast.text_document.as_ref().map(|td| td.contents());
+    if let Some(xml) = xml && let Ok(document) = roxmltree::Document::parse(xml)
     {
         let mut names = vec![];
         collect_template_names(document.root_element(), &mut names);
