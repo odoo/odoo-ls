@@ -9,7 +9,7 @@ use crate::threads::SessionInfo;
 use crate::S;
 use ruff_python_ast::name::Name;
 use ruff_python_ast::visitor::{Visitor, walk_expr, walk_stmt, walk_alias, walk_except_handler, walk_parameter, walk_keyword, walk_pattern_keyword, walk_type_param, walk_pattern};
-use ruff_python_ast::{Alias, AtomicNodeIndex, ExceptHandler, Expr, ExprCall, Identifier, Keyword, Parameter, Pattern, PatternKeyword, Stmt, TypeParam};
+use ruff_python_ast::{Alias, AtomicNodeIndex, ExceptHandler, Expr, ExprCall, ExprStringLiteral, Identifier, Keyword, Parameter, Pattern, PatternKeyword, Stmt, StringLiteral, TypeParam};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::warn;
 
@@ -18,15 +18,15 @@ pub struct AstUtils {}
 impl AstUtils {
 
 
-    pub fn get_symbols<'a>(session: &mut SessionInfo, py_ast: &'a IndexedModule, file_symbol: SourceFileKey, offset: u32) -> (AnalyzeAstResult, Option<TextRange>, Option<ExprOrIdent<'a>>, Option<ExprCall>) {
+    pub fn get_symbols<'a>(session: &mut SessionInfo, py_ast: &'a IndexedModule, file_symbol: SourceFileKey, offset: u32) -> (AnalyzeAstResult, Option<TextRange>, Option<ExprOrIdent<'a>>, Option<StringContext<'a>>) {
         let mut expr: Option<ExprOrIdent<'a>> = None;
-        let mut call_expr: Option<ExprCall> = None;
+        let mut string_ctx: Option<StringContext<'a>> = None;
         for stmt in py_ast.get_stmts().iter() {
             //we have to handle imports differently as symbols are not visible in file.
             if let Some((result, range)) = Self::get_symbol_in_import(session, file_symbol, offset, stmt) {
                 return (result, range, None, None);
             }
-            (expr, call_expr) = ExprFinderVisitor::find_expr_at(stmt, offset);
+            (expr, string_ctx) = ExprFinderVisitor::find_expr_at(stmt, offset);
             if expr.is_some() {
                 break;
             }
@@ -36,7 +36,7 @@ impl AstUtils {
             return (AnalyzeAstResult::default(), None, None, None);
         };
         let (result, range) = Self::get_symbol_from_expr(session, file_symbol, &expr, offset);
-        (result, range, Some(expr), call_expr)
+        (result, range, Some(expr), string_ctx)
     }
 
     pub fn get_symbol_from_expr<'a>(session: &mut SessionInfo, file_symbol: SourceFileKey, expr: &ExprOrIdent<'a>, offset: u32) -> (AnalyzeAstResult, Option<TextRange>) {
@@ -78,6 +78,69 @@ impl AstUtils {
         BuildScheduler::build_now(session, scope_to_test, BuildSteps::ARCH_EVAL);
     }
 
+    /// Given a string literal expression, and an offset in the file, returns the corresponding index in the string.
+    /// Returns `None` if the offset lies between the string parts,
+    /// or on the quotes, or not written as-is, but not on the text of the string itself.
+    pub fn index_in_string(string: &ExprStringLiteral, offset: TextSize) -> Option<usize> {
+        let mut index = 0;
+        for part in string.value.iter() {
+            let text = part.content_range();
+            if text.contains_inclusive(offset) && Self::is_written_as_is(part) {
+                return Some(index + (offset - text.start()).to_usize());
+            }
+            index += part.as_str().len();
+        }
+        None
+    }
+
+    /// Returns the range in the file corresponding to the substring `string[start..end]` if it is contiguous and written as-is.
+    pub fn range_in_file(string: &ExprStringLiteral, start: usize, end: usize) -> Option<TextRange> {
+        let mut index = 0;
+        for part in string.value.iter() {
+            let len = part.as_str().len();
+            if index <= start && end <= index + len && Self::is_written_as_is(part) {
+                let text_start = part.content_range().start();
+                return Some(TextRange::new(text_start + TextSize::new((start - index) as u32), text_start + TextSize::new((end - index) as u32)));
+            }
+            index += len;
+        }
+        None
+    }
+
+    /// Whether `part` holds exactly the text written between its quotes. Escapes like `\t` are
+    /// replaced by the character they stand for, which always makes the string shorter.
+    fn is_written_as_is(part: &StringLiteral) -> bool {
+        part.content_range().len().to_usize() == part.as_str().len()
+    }
+
+    /// Given an identifier and an offset in the file, returns the corresponding index in the name.
+    /// Returns `None` if the offset is outside the name or if the name is written differently in the file.
+    ///
+    /// See `index_in_string` for the equivalent function for string literals.
+    pub fn index_in_name(name: &Identifier, offset: TextSize) -> Option<usize> {
+        let range = name.range();
+        if !range.contains_inclusive(offset) || range.len().to_usize() != name.id.len() {
+            return None;
+        }
+        let index = (offset - range.start()).to_usize();
+        name.id.is_char_boundary(index).then_some(index)
+    }
+
+
+    /// Given an identifier and an offset in the file,
+    /// returns the string of the prefix up to the first `'.'` after the offset, with its range
+    ///
+    /// Example: for `foo.bar.baz` and an offset within `bar`, it would return `bar` and its range.
+    /// Assuming the identifier is a dotted name, i.e. `foo.bar.baz`.
+    fn dotted_prefix_at(name: &Identifier, offset: u32) -> Option<(&str, TextRange)> {
+        let cursor = Self::index_in_name(name, TextSize::new(offset))?;
+        let end = cursor + name.id[cursor..].find('.')?;
+        let text = &name.id[..end];
+        let segment_start = text.rfind('.').map_or(0, |dot| dot + 1);
+        let start = name.range().start();
+        Some((text, TextRange::new(start + TextSize::new(segment_start as u32), start + TextSize::new(end as u32))))
+    }
+
     fn get_symbol_in_import(session: &mut SessionInfo, file_symbol: SourceFileKey, offset: u32, stmt: &Stmt) -> Option<(AnalyzeAstResult, Option<TextRange>)> {
         match stmt {
             //for all imports, the idea will be to check if we are on the last name of the import (then it has been imported already and we can fallback on it),
@@ -87,12 +150,8 @@ impl AstUtils {
                     if alias.range().contains(TextSize::new(offset)) {
                         let mut is_last = false;
                         let (to_analyze, range) = if alias.name.range().contains(TextSize::new(offset)) {
-                            let next_dot_offset = alias.name.id.as_str()[offset as usize - alias.name.range().start().to_usize()..].find(".");
-                            if let Some(next_dot_offset) = next_dot_offset {
-                                let end = offset as usize + next_dot_offset;
-                                let text = &alias.name.id.as_str()[..end - alias.name.range().start().to_usize()];
-                                let start_range = text.rfind(".").map(|p| p+1).unwrap_or(0) + alias.name.range().start().to_usize();
-                                (text, TextRange::new(TextSize::new(start_range as u32), TextSize::new(end as u32)))
+                            if let Some(prefix) = Self::dotted_prefix_at(&alias.name, offset) {
+                                prefix
                             } else {
                                 is_last = true;
                                 (alias.name.id.as_str(), alias.name.range())
@@ -143,15 +202,7 @@ impl AstUtils {
                 //only check module as names are already supported by default ast walking and name resolution
                 if let Some(module) = stmt.module.as_ref() && module.range().contains(TextSize::new(offset)) {
                     let (to_analyze, range) = if module.range().contains(TextSize::new(offset)) {
-                        let next_dot_offset = module.id.as_str()[offset as usize - module.range().start().to_usize()..].find(".");
-                        if let Some(next_dot_offset) = next_dot_offset {
-                            let end = offset as usize + next_dot_offset;
-                            let text = &module.id.as_str()[..end - module.range().start().to_usize()];
-                            let start_range = text.rfind(".").map(|p| p+1).unwrap_or(0) + module.range().start().to_usize();
-                            (text, TextRange::new(TextSize::new(start_range as u32), TextSize::new(end as u32)))
-                        } else {
-                            (module.id.as_str(), module.range())
-                        }
+                        Self::dotted_prefix_at(module, offset).unwrap_or((module.id.as_str(), module.range()))
                     } else {
                         return None;
                     };
@@ -175,40 +226,75 @@ impl AstUtils {
     }
 }
 
+/// Narrowest context around a string expression in the AST
+/// Used for features that need to know info about the encapsuling expression or statement
+pub enum StringContext<'a> {
+    /// The innermost call whose arguments contain the string
+    CallArgument(&'a ExprCall),
+    /// Whether the current expression is a string expression under an (annotated) assign statement setting `_order`
+    ///  i.e. `_order = "..."` or `_order: str = "..."`
+    ModelOrder,
+}
+
+impl<'a> StringContext<'a> {
+    /// Try to find a `CallArgument` `StringContext` at the current statement
+    /// Looks for an (annotated) assignment to `_order` with the value being a string literal
+    /// Returns the `StringContext::ModelOrder` value, alongside the string expression
+    pub fn try_to_model_order(stmt: &Stmt) -> Option<(Self, &ExprStringLiteral)> {
+        let (target, value) = match stmt {
+            Stmt::Assign(assign) => match assign.targets.as_slice() {
+                [target] => (target, assign.value.as_ref()),
+                _ => return None,
+            },
+            Stmt::AnnAssign(assign) => (assign.target.as_ref(), assign.value.as_deref()?),
+            _ => return None,
+        };
+        if let Expr::StringLiteral(expr) = value
+            && let Expr::Name(name) = target
+            && name.id == "_order"
+        {
+            return Some((StringContext::ModelOrder, expr));
+        }
+        None
+    }
+}
 
 pub struct ExprFinderVisitor<'a> {
     offset: TextSize,
     expr: Option<ExprOrIdent<'a>>,
-    last_call_expr: Option<&'a ExprCall>,
+    string_ctx: Option<StringContext<'a>>,
 }
 
 impl<'a> ExprFinderVisitor<'a> {
     /*
     Find expr from `stmt` at the given `offset`
-    Returns: (expr, last_call_expr)
+    Returns: (expr, string_ctx)
         expr: the expr being searched for
-        last_call_expr: The last call expr preceding the expr we are searching for
+        string_ctx: the narrowest context around the string at `offset`, see `StringContext`
      */
-    pub fn find_expr_at(stmt: &'a Stmt, offset: u32) -> (Option<ExprOrIdent<'a>>, Option<ExprCall>) {
+    pub fn find_expr_at(stmt: &'a Stmt, offset: u32) -> (Option<ExprOrIdent<'a>>, Option<StringContext<'a>>) {
         let mut visitor = Self {
             offset: TextSize::new(offset),
             expr: None,
-            last_call_expr: None
+            string_ctx: None,
         };
         visitor.visit_stmt(stmt);
-        (visitor.expr, visitor.last_call_expr.cloned())
+        (visitor.expr, visitor.string_ctx)
     }
 
 }
 
 impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
-
     fn visit_expr(&mut self, expr: &'a Expr) {
+        if self.expr.is_some() {
+            return;
+        }
         if expr.range().contains(self.offset) {
             if let Expr::Call(expr_call) = expr
-                && expr_call.arguments.range().contains(self.offset){
-                    self.last_call_expr = Some(expr_call);
-                }
+                && expr_call.arguments.range().contains(self.offset)
+            {
+                self.string_ctx = Some(StringContext::CallArgument(expr_call));
+            }
             walk_expr(self, expr);
             if self.expr.is_none() {
                 self.expr = Some(ExprOrIdent::Expr(expr));
@@ -313,6 +399,13 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
     }
 
     fn visit_stmt(&mut self, stmt: &'a Stmt) {
+        if self.expr.is_some(){
+            return;
+        }
+        self.string_ctx = match StringContext::try_to_model_order(stmt) {
+            Some((ctx, expr)) if expr.range().contains(self.offset) => Some(ctx),
+            _ => None,
+        };
         walk_stmt(self, stmt);
         if self.expr.is_none() {
             let idents = match stmt {
@@ -330,5 +423,60 @@ impl<'a> Visitor<'a> for ExprFinderVisitor<'a> {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AstUtils;
+    use ruff_python_ast::{Expr, ExprStringLiteral, Identifier};
+    use ruff_text_size::{TextRange, TextSize};
+
+    fn parse_string(code: &str) -> ExprStringLiteral {
+        match ruff_python_parser::parse_expression(code).unwrap().into_expr() {
+            Expr::StringLiteral(string) => string,
+            other => panic!("not a string: {other:?}"),
+        }
+    }
+
+    /// Text found in the file for `needle`, a piece of the string written in `code`
+    fn text_in_file<'a>(code: &'a str, needle: &str) -> Option<&'a str> {
+        let string = parse_string(code);
+        let start = string.value.to_str().find(needle).unwrap();
+        AstUtils::range_in_file(&string, start, start + needle.len()).map(|range| &code[range])
+    }
+
+    #[test]
+    fn test_range_in_file() {
+        assert_eq!(text_in_file("'other_id.other_name'", "other_name"), Some("other_name"));
+        assert_eq!(text_in_file("r'other_id.other_name'", "other_name"), Some("other_name"));
+        assert_eq!(text_in_file("'''other_id.other_name'''", "other_name"), Some("other_name"));
+        assert_eq!(text_in_file("('other_id' # é\n '.other_name')", "other_name"), Some("other_name"));
+        assert_eq!(text_in_file("'other_id' '.other_name'", "id.other"), None, "split between parts");
+        assert_eq!(text_in_file(r"'other_id\x2eother_name'", "other_name"), None, "escape");
+        assert_eq!(text_in_file(r"'other\qid'", "id"), Some("id"), "unknown escapes stay as written");
+    }
+
+    #[test]
+    fn test_index_in_string() {
+        let code = "('other_id' # é\n '.other_name')";
+        let string = parse_string(code);
+        let index_at = |needle: &str| AstUtils::index_in_string(&string, TextSize::new(code.find(needle).unwrap() as u32));
+        assert_eq!(index_at("other_name"), Some(9));
+        assert_eq!(index_at("'other_id'"), None, "on a quote");
+        assert_eq!(index_at("#"), None, "between the parts");
+
+        let code = r"'name,\tid'";
+        let string = parse_string(code);
+        assert_eq!(AstUtils::index_in_string(&string, TextSize::new(code.find("id").unwrap() as u32)), None, "escape");
+    }
+
+    #[test]
+    fn test_index_in_name() {
+        let name = |id: &str, start: u32, end: u32| Identifier::new(id, TextRange::new(TextSize::new(start), TextSize::new(end)));
+        // `import os`
+        assert_eq!(AstUtils::index_in_name(&name("os", 7, 9), TextSize::new(8)), Some(1));
+        // `import ｏｓ`: written with 6 bytes in the file, for the 2 bytes of the name `os`
+        assert_eq!(AstUtils::index_in_name(&name("os", 7, 13), TextSize::new(10)), None);
     }
 }
