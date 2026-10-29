@@ -7,6 +7,7 @@ use crate::core::build_scheduler::BuildScheduler;
 use crate::utils::HashMap;
 use crate::utils::HashSet;
 use std::collections::VecDeque;
+use std::rc::Rc;
 
 use crate::constants::OYarn;
 use crate::core::symbols::symbol_keys::ModelSymbolKey;
@@ -292,7 +293,11 @@ impl Model {
     }
 
     /// Gets all class symbols of current model and its inherited models
-    pub fn get_full_model_classes(model_key: ModelKey, session: &SessionInfo, from_module: Option<ModuleKey>) -> HashSet<ClassKey> {
+    pub fn get_full_model_classes(model_key: ModelKey, session: &mut SessionInfo, from_module: Option<ModuleKey>) -> Rc<HashSet<ClassKey>> {
+        let cache_key = (model_key, from_module);
+        if let Some(cached) = session.sync_odoo.model_classes_cache.get(&cache_key) {
+            return cached.clone();
+        }
         let st = &session.sync_odoo.symbol_table;
         let model_mgr = &session.sync_odoo.model_mgr;
         let mut symbol_set  = HashSet::default();
@@ -313,6 +318,8 @@ impl Model {
             }
             symbol_set.extend(symbols);
         }
+        let symbol_set = Rc::new(symbol_set);
+        session.sync_odoo.model_classes_cache.insert(cache_key, symbol_set.clone());
         symbol_set
     }
 
@@ -321,7 +328,10 @@ impl Model {
         let st = &session.sync_odoo.symbol_table;
         let mut res = vec![];
         let mut already_in = HashSet::default();
-        let symbols = Self::filter_by_module(self.get_python_symbols(st), st, from_module);
+        // Most classes declare no `_inherits`, drop them before the costly module filter
+        let with_inherits = self.get_python_symbols(st)
+            .filter(|&key| st[key]._model.as_ref().is_some_and(|model_data| !model_data.inherits.is_empty()));
+        let symbols = Self::filter_by_module(with_inherits, st, from_module);
         for symbol_key in symbols {
             let Some(model_data) = &st[symbol_key]._model else {
                 continue;

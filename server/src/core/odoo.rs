@@ -10,7 +10,7 @@ use crate::core::pre_parser::{PreParseCache, PreParser};
 use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::storage::{FileSystemSymbolParent, JsFileParent, SymbolTable};
 use crate::core::symbols::storage::metrics::{log_slotmap_capacities, log_symbol_counts, log_memory_usage};
-use crate::core::symbols::symbol_keys::{BuildableSymbolKey, FileSystemSymbolKey, FunctionKey, ModuleKey, NamespaceKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlTemplateKey};
+use crate::core::symbols::symbol_keys::{BuildableSymbolKey, ClassKey, FileSystemSymbolKey, FunctionKey, ModuleKey, NamespaceKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlTemplateKey};
 use crate::core::symbols::symbol_table_impl::CreateError;
 use crate::core::tsserver_bridge::{TsServerBridge};
 use crate::core::tsserver_paths::generate_paths_map;
@@ -34,6 +34,7 @@ use crate::utils::{HashMap, is_dir_cs, is_file_cs};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
+use std::rc::Rc;
 use lsp_server::{ErrorCode, RequestId, ResponseError};
 use lsp_types::request::GotoDeclarationResponse;
 use lsp_types::*;
@@ -54,7 +55,7 @@ use super::config::{self, DEFAULT_PROFILE_NAME, get_configuration, ConfigEntry, 
 use super::entry_point::{EntryPoint, EntryPointMgr};
 use super::file_mgr::FileMgr;
 use super::import_resolver::ImportCache;
-use crate::core::model::{Model, ModelMgr};
+use crate::core::model::{Model, ModelKey, ModelMgr};
 use crate::core::python_arch_builder::PythonArchBuilder;
 use crate::utils::{PathSanitizer, ToFilePath as _, expand_language_code};
 use crate::S;
@@ -177,6 +178,7 @@ pub struct SyncOdoo {
     pub file_mgr: FileMgr,
     pub modules: HashMap<OYarn, Wk<ModuleKey>>,
     pub model_mgr: ModelMgr,
+    pub model_classes_cache: HashMap<(ModelKey, Option<ModuleKey>), Rc<HashSet<ClassKey>>>,
     pub interrupt_rebuild: Arc<AtomicBool>,
     pub terminate_rebuild: Arc<AtomicBool>,
     pub current_request_id: Option<RequestId>,
@@ -237,6 +239,7 @@ impl SyncOdoo {
             stdlib_dir: SyncOdoo::default_stdlib(),
             modules: HashMap::default(),
             model_mgr: ModelMgr::new(),
+            model_classes_cache: HashMap::default(),
             interrupt_rebuild: Arc::new(AtomicBool::new(false)),
             terminate_rebuild: Arc::new(AtomicBool::new(false)),
             current_request_id: None,
@@ -277,6 +280,7 @@ impl SyncOdoo {
         session.sync_odoo.stdlib_dir = SyncOdoo::default_stdlib();
         session.sync_odoo.modules = HashMap::default();
         session.sync_odoo.model_mgr.clear_models();
+        session.sync_odoo.model_classes_cache.clear();
         session.sync_odoo.build_scheduler = BuildScheduler::new();
         session.sync_odoo.state_init = InitState::NOT_READY;
         session.sync_odoo.load_odoo_addons = true;
@@ -932,6 +936,7 @@ impl SyncOdoo {
 
     /// Side effects of unloading a symbol
     pub fn on_unload(session: &mut SessionInfo, symbol: SymbolKey) {
+        session.sync_odoo.model_classes_cache.clear();
         // Invalidate dependents
         if let Some(source_file) = symbol.as_source_file_key() {
             if DEBUG_MEMORY {
