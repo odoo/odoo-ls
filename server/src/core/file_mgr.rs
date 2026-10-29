@@ -281,12 +281,6 @@ impl Ast {
             _ => None,
         }
     }
-    pub fn as_js_ast(&self) -> &JsAst {
-        match self {
-            Ast::JsAst(js_ast) => js_ast,
-            _ => panic!("Expected JsAst, found {:?}", self),
-        }
-    }
     pub fn is_built(&self) -> bool {
         !matches!(self, Ast::Pending)
     }
