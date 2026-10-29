@@ -46,6 +46,16 @@ impl FileContentParent {
         }
     }
     
+    pub(super) fn reset_sections(self, st: &mut SymbolTable) {
+        match self {
+            Self::File(f) => st[f].reset_sections(),
+            Self::PythonPackage(p) => st[p].reset_sections(),
+            Self::Module(m) => st[m].reset_sections(),
+            Self::Class(c) => st[c].reset_sections(),
+            Self::Function(f) => st[f].reset_sections(),
+        }
+    }
+
     pub(super) fn add_child(self, st: &mut SymbolTable, name: &str, child: SymbolKey, position: u32) {
         let section = self.as_symbol_mgr(st).get_section_for(position).index;
         let name = oyarn!("{}", name);
