@@ -1,7 +1,7 @@
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::trace;
 
-use crate::{Sy, constants::{BuildStatus, DiagnosticSource, MissingDataSource}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::{FileInfo, FileMgr, JsImport}}, features::xml_ast_utils::XmlAstUtils};
+use crate::{Sy, constants::{BuildStatus, DiagnosticSource, MissingDataSource}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::{Ast, FileInfo, FileMgr, JsImport}}, features::xml_ast_utils::XmlAstUtils};
 use crate::{
     constants::{BuildSteps, OYarn, DEBUG_STEPS},
     core::{
@@ -41,14 +41,14 @@ impl JsValidator {
             // JS Symbols do not go through the arch step,
             // Custom JS files may not have been built yet, so we need to build the AST first before validating
             FileInfo::prepare_ast(session, file_info);
-            if !session.file_mgr()[file_info].file_info_ast.ast.is_built() {
-                // Still not built, something went wrong, we cannot validate this file
-                session.st_mut().set_build_status(self.js_symbol.into(), BuildSteps::VALIDATION, BuildStatus::INVALID);
-                return;
-            }
         }
+        let Ast::JsAst(js_ast) = &session.file_mgr()[file_info].file_info_ast.ast else {
+            // Still not built or not a JS AST, something went wrong, we cannot validate this file
+            session.st_mut().set_build_status(self.js_symbol.into(), BuildSteps::VALIDATION, BuildStatus::INVALID);
+            return;
+        };
         let template_refs: Vec<_> = session.sync_odoo.component_mgr.template_refs_by_file(&session.file_mgr()[file_info].uri).cloned().collect();
-        let js_imports = session.file_mgr()[file_info].file_info_ast.ast.as_js_ast().js_imports.clone();
+        let js_imports = js_ast.js_imports.clone();
 
         if session.sync_odoo.entry_point_mgr[session.sync_odoo.symbol_table.get_entry(self.js_symbol)].is_main() {
             for template_ref in template_refs.iter() {
