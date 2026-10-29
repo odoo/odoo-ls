@@ -84,9 +84,9 @@ impl DefinitionFeature {
     ) -> Option<GotoDefinitionResponse> {
         let encoding = session.sync_odoo.encoding;
         let data = session.file_mgr()[file_info].file_info_ast
-            .text_document.as_ref()?.contents().to_string();
+            .text_document.as_ref()?.contents();
         let offset = session.file_mgr()[file_info].position_to_offset(line, character, encoding);
-        let document = roxmltree::Document::parse(&data).ok()?;
+        let document = roxmltree::Document::parse(data).ok()?;
 
         // A template-name value (an xml_id): `t-name` → the component class; `t-call` /
         // `t-inherit` → the `<t t-name>` declaration. A dynamic name (`t-call="{{tpl}}"`)

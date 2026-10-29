@@ -312,10 +312,10 @@ impl ReferenceFeature {
     fn references_xml_owl(session: &mut SessionInfo, file_info: FileInfoKey, line: u32, character: u32) -> Option<Vec<Location>> {
         let encoding = session.sync_odoo.encoding;
         let data = session.file_mgr()[file_info].file_info_ast
-            .text_document.as_ref()?.contents().to_string();
+            .text_document.as_ref()?.contents();
         let offset = session.file_mgr()[file_info].position_to_offset(line, character, encoding);
 
-        let document = roxmltree::Document::parse(&data).ok()?;
+        let document = roxmltree::Document::parse(data).ok()?;
         let (_attr_name, template_name, _range) =
             DefinitionFeature::find_template_name_attr(document.root_element(), offset)?;
 

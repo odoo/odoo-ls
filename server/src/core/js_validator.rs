@@ -48,7 +48,7 @@ impl JsValidator {
             return;
         };
         let template_refs: Vec<_> = session.sync_odoo.component_mgr.template_refs_by_file(&session.file_mgr()[file_info].uri).cloned().collect();
-        let js_imports = js_ast.js_imports.clone();
+        self.validate_import_scope(session, &js_ast.js_imports, &mut diagnostics);
 
         if session.sync_odoo.entry_point_mgr[session.sync_odoo.symbol_table.get_entry(self.js_symbol)].is_main() {
             for template_ref in template_refs.iter() {
@@ -70,7 +70,6 @@ impl JsValidator {
                 }
             }
         }
-        self.validate_import_scope(session, &js_imports, &mut diagnostics);
         session.file_mgr_mut()[file_info].replace_diagnostics(DiagnosticSource::JS_VALIDATION, diagnostics);
         FileInfo::publish_diagnostics(session, file_info);
         session.st_mut().set_build_status(self.js_symbol.into(), BuildSteps::VALIDATION, BuildStatus::DONE);
