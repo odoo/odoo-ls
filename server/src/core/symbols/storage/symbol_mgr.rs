@@ -34,32 +34,10 @@ pub trait SymbolMgr {
     fn get_section_for(&self, position: u32) -> SectionRange;
     fn get_last_index(&self) -> u32;
     fn add_section(&mut self, range_start: TextSize, maybe_previous_indexes: Option<SectionIndex>) -> SectionRange;
-    fn change_parent(&mut self, new_parent: SectionIndex, section: &mut SectionRange);
     fn _init_symbol_mgr(&mut self);
 }
 
 
-/* Note on how to declare sections for an if:
-
-given:
-i = IfStmt
-ei = ElifStmt
-
-old_last_section = last_section
-i_body = i.body)
-    visit_body
-ei_condition = add_section(ei.condition)
-    visit_condition
-ei_body = add_section(ei.body)
-    visit_body
-else_body = add_section(Range_none) //needed to have the possibility  to have ei_condition evaluated but not body
-next_sections = last_section
-
-change_parent(old_last_section, ei_condition)
-change_parent(ei_condition, ei_body)
-change_parent(ei_condition, else_body)
-change_parent(SectionIndex::Or(old_last_section | ei_body | else_body), next_sections)
-    */
 
 #[duplicate_item(
     name;
@@ -107,10 +85,6 @@ impl SymbolMgr for name {
         };
         self.sections.push(new_section.clone());
         new_section
-    }
-
-    fn change_parent(&mut self, new_parent: SectionIndex, section: &mut SectionRange) {
-        section.previous_indexes = new_parent;
     }
 }
 
