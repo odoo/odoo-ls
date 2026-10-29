@@ -148,13 +148,8 @@ impl SemanticTokensFeature {
         // 1. Template-name tokens. Independent of tsserver: the ranges come from our own AST pass.
         let mut raw: Vec<(Range, u32, u32)> = Self::template_ref_tokens(session, file_info);
 
-        // Snapshot the content first: we need it to map offsets to positions, and we
-        // must not hold the borrow across the `&mut session` bridge call below.
-        let content = {
-            let fi = &session.file_mgr()[file_info];
-            let fia = &fi.file_info_ast;
-            fia.text_document.as_ref().map(|td| td.contents().to_string())
-        };
+        // Borrow only the `file_mgr` field, so the bridge call below can borrow `tsserver_bridge` mutably
+        let content = session.sync_odoo.file_mgr[file_info].file_info_ast.text_document.as_ref().map(|td| td.contents());
 
         // 2. tsserver's classifier. Without a bridge (CLI / most tests) we keep only the
         //    template-name tokens above and let the client's grammar handle the rest.
@@ -167,7 +162,7 @@ impl SemanticTokensFeature {
             // Spans arrive in ascending order, so one monotone pass converts them to bytes;
             // the file's own line index then encodes positions in the session encoding.
             let encoding = session.sync_odoo.encoding;
-            let mut conv = U16ToByte::new(&content);
+            let mut conv = U16ToByte::new(content);
             for (start, length, token_type, modifiers) in spans {
                 let b_start = conv.advance_to(start) as u32;
                 let b_end = conv.advance_to(start + length) as u32;
