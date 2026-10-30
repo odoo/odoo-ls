@@ -390,11 +390,12 @@ static arch_eval_function_hooks: LazyLock<Vec<PythonArchEvalFunctionHook>> = Laz
                         func: |odoo: &mut SyncOdoo, _entry_point: EntryPointKey, symbol: FunctionKey| {
         let base_model = get_base_model_symbol(odoo);
         odoo.symbol_table[symbol].evaluations = vec![Evaluation::new_self(base_model.unwrap(), Some(true))];
-        PythonArchEvalHooks::mark_params(odoo, symbol, &[ParamRole::Domain]);
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
                         tree: vec![((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "search"])),
                         ((18, 1), (999, 0), (&["odoo", "orm", "models"], &["BaseModel", "search"])),
+                        ((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "search_count"])),
+                        ((18, 1), (999, 0), (&["odoo", "orm", "models"], &["BaseModel", "search_count"])),
                         ((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "search_fetch"])),
                         ((18, 1), (999, 0), (&["odoo", "orm", "models"], &["BaseModel", "search_fetch"])),
                         ((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "search_read"])),
@@ -405,7 +406,27 @@ static arch_eval_function_hooks: LazyLock<Vec<PythonArchEvalFunctionHook>> = Laz
                         ((0, 0), (999, 0), (&["odoo", "addons", "web", "models", "models"], &["Base", "web_search_read"]))],
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: EntryPointKey, symbol: FunctionKey| {
-        PythonArchEvalHooks::mark_params(odoo, symbol, &[ParamRole::Order]);
+        PythonArchEvalHooks::mark_params(odoo, symbol, &[ParamRole::Domain, ParamRole::Order]);
+    }},
+    PythonArchEvalFunctionHook {odoo_entry: true,
+                        tree: vec![((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "filtered_domain"])),
+                        ((18, 1), (999, 0), (&["odoo", "orm", "models"], &["BaseModel", "filtered_domain"])),
+                        ((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "name_search"])),
+                        ((18, 1), (999, 0), (&["odoo", "orm", "models"], &["BaseModel", "name_search"])),
+                        ((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "read_group"])),
+                        ((18, 1), (999, 0), (&["odoo", "orm", "models"], &["BaseModel", "read_group"])),
+                        ((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "_read_group"])),
+                        ((18, 1), (999, 0), (&["odoo", "orm", "models"], &["BaseModel", "_read_group"])),
+                        ((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "_where_calc"])),
+                        ((18, 1), (999, 0), (&["odoo", "orm", "models"], &["BaseModel", "_where_calc"])),
+                        ((0, 0), (999, 0), (&["odoo", "addons", "web", "models", "models"], &["Base", "web_name_search"])),
+                        ((0, 0), (999, 0), (&["odoo", "addons", "web", "models", "models"], &["Base", "web_read_group"])),
+                        ((0, 0), (999, 0), (&["odoo", "addons", "web", "models", "models"], &["Base", "formatted_read_group"])),
+                        ((0, 0), (999, 0), (&["odoo", "addons", "web", "models", "models"], &["Base", "read_progress_bar"]))],
+                        if_exist_only: true,
+                        func: |odoo: &mut SyncOdoo, _entry_point: EntryPointKey, symbol: FunctionKey| {
+        // The order of the group methods also takes aggregates (`amount:sum desc`): not marked
+        PythonArchEvalHooks::mark_params(odoo, symbol, &[ParamRole::Domain]);
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
                         tree: vec![((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "browse"])),

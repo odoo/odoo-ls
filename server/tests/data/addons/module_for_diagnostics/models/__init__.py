@@ -3,3 +3,4 @@ from . import access_operator
 from . import compute_sql
 from . import model_order
 from . import search_order
+from . import search_domain

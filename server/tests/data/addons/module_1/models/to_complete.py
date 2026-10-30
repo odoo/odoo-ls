@@ -46,6 +46,19 @@ class CallArgumentsModel(models.Model):
         self.search([("na", "=", "x")])
         return self.search(domain=[("na", "=", "x")])
 
+    def search_by_domain_other_methods(self):
+        # The domain of the other search methods, by position or by keyword
+        self.search_count([("na", "=", "x")])
+        self.search_fetch([("na", "=", "x")], ["name"])
+        self.search_read(domain=[("na", "=", "x")])
+        return self._search([("na", "=", "x")])
+
+    def other_domain_methods(self):
+        # The domain of the other methods taking one
+        self.filtered_domain([("na", "=", "x")])
+        self._read_group([("na", "=", "x")], ["name"])
+        return self.name_search("x", [("na", "=", "x")])
+
 
 class OrderEscapeModel(models.Model):
     _name = "module_1.order_escape_model"
