@@ -28,8 +28,7 @@ fn test_self_returning_chain_hooks() {
     assert!(Path::new(&test_file).exists(), "Test file does not exist: {}", test_file);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file)) else {
         panic!("Failed to get file symbol for {}", test_file);
     };
@@ -56,7 +55,7 @@ fn test_self_returning_chain_hooks() {
         (22, 8, "search"),
     ];
     for &(line, character, method) in cases {
-        let resolved = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, line, character);
+        let resolved = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, line, character);
         assert!(
             resolved.contains(&arch_eval_hooks_model),
             "`{}()` should keep evaluating to `ArchEvalHooksModel` (self-returning hook). Got: {:?}",
@@ -68,7 +67,7 @@ fn test_self_returning_chain_hooks() {
     // `BaseModel.__iter__`: reuses the pre-existing `for var in self:` loop in
     // module_1/models/base_test_models.py (line 23, 0-indexed 22)
     let base_test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
-    let base_file_info = file_mgr.borrow().get_file_info(&base_test_file).unwrap();
+    let base_file_info = session.file_mgr().get_file_info(&base_test_file).unwrap();
     let Some(base_file_symbol) = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&base_test_file)) else {
         panic!("Failed to get file symbol for {}", base_test_file);
     };
@@ -76,7 +75,7 @@ fn test_self_returning_chain_hooks() {
     assert_eq!(base_test_model.len(), 1, "Expected to find the `BaseTestModel` class");
     let base_test_model = base_test_model[0];
 
-    let resolved_iter_var = test_utils::get_resolved_symbols_at_position(&mut session, base_file_symbol, &base_file_info, 22, 13);
+    let resolved_iter_var = test_utils::get_resolved_symbols_at_position(&mut session, base_file_symbol, base_file_info, 22, 13);
     assert!(
         resolved_iter_var.contains(&base_test_model),
         "`for var in self:` should type `var` as `BaseTestModel` (BaseModel.__iter__ hook). Got: {:?}",
@@ -96,8 +95,7 @@ fn test_registry_hooks() {
     let odoo_path = Path::new(&odoo_path).sanitize();
     let partner_class_name = test_utils::PARTNER_CLASS_NAME(session.sync_odoo.version);
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file)) else {
         panic!("Failed to get file symbol for {}", test_file);
     };
@@ -111,7 +109,7 @@ fn test_registry_hooks() {
     let registry_class = registry_class[0];
 
     // `registry_getitem_res = self.env.registry["res.partner"]` (line 24, 0-indexed 23)
-    let resolved_getitem = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, 26, 8);
+    let resolved_getitem = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 26, 8);
     assert!(
         resolved_getitem.contains(&partner_class),
         "`self.env.registry[\"res.partner\"]` should evaluate to the `{}` model class. Got: {:?}",
@@ -120,7 +118,7 @@ fn test_registry_hooks() {
     );
 
     // `registry_prop_res = self.env.registry` (line 25, 0-indexed 24)
-    let resolved_prop = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, 27, 8);
+    let resolved_prop = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 27, 8);
     assert!(resolved_prop.len() == 1);
     assert!(
         resolved_prop.contains(&registry_class),
@@ -137,8 +135,7 @@ fn test_ids_and_id_field_hooks() {
     let test_file = test_addons_path.join("module_1").join("models").join("arch_eval_hooks_model.py").sanitize();
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file)) else {
         panic!("Failed to get file symbol for {}", test_file);
     };
@@ -151,7 +148,7 @@ fn test_ids_and_id_field_hooks() {
     let int_type = int_type[0];
 
     // `ids_res = self.ids` (line 32, 0-indexed 30)
-    let resolved_ids = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, 31, 8);
+    let resolved_ids = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 31, 8);
     assert!(resolved_ids.len() == 1);
     assert!(
         resolved_ids.contains(&list_type),
@@ -160,7 +157,7 @@ fn test_ids_and_id_field_hooks() {
     );
 
     // `id_res = self.id` (line 31, 0-indexed 30)
-    let resolved_id = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, 32, 8);
+    let resolved_id = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 32, 8);
     assert!(
         resolved_id.contains(&int_type),
         "`self.id` should evaluate to `int` (Id.__get__ hook). Got: {:?}",
@@ -183,8 +180,7 @@ fn test_odoo_init_symbol_hooks() {
     let odoo_path = env::var("COMMUNITY_PATH").unwrap();
     let odoo_path = Path::new(&odoo_path).sanitize();
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file)) else {
         panic!("Failed to get file symbol for {}", test_file);
     };
@@ -208,7 +204,7 @@ fn test_odoo_init_symbol_hooks() {
         }
         assert!(!expected.is_empty(), "Expected `odoo.init.{}` to resolve to a type", init_name);
 
-        let actual = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, line, character);
+        let actual = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, line, character);
         assert!(
             expected.iter().any(|sym| actual.contains(sym)),
             "`odoo.{}` usage at {}:{} should evaluate like `odoo.init.{}`. Expected one of {:?}, got {:?}",
@@ -276,8 +272,7 @@ fn test_base_model_env_hook() {
     let odoo_path = env::var("COMMUNITY_PATH").unwrap();
     let odoo_path = Path::new(&odoo_path).sanitize();
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file)) else {
         panic!("Failed to get file symbol for {}", test_file);
     };
@@ -292,7 +287,7 @@ fn test_base_model_env_hook() {
     let env_class = env_class[0];
 
     // `env_res = self.env` (line 69, 0-indexed 68)
-    let resolved = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, 68, 8);
+    let resolved = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 68, 8);
     assert!(
         resolved.contains(&env_class),
         "`self.env` should evaluate to the `Environment` class (BaseModel.env hook). Got: {:?}",
@@ -312,8 +307,7 @@ fn test_scalar_field_get_hooks() {
     let test_file = test_addons_path.join("module_1").join("models").join("arch_eval_hooks_model.py").sanitize();
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file)) else {
         panic!("Failed to get file symbol for {}", test_file);
     };
@@ -341,7 +335,7 @@ fn test_scalar_field_get_hooks() {
         assert_eq!(expected.len(), 1, "Expected to find the `{}` type", expected_tree.1.last().unwrap());
         let expected = expected[0];
 
-        let resolved = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, line, character);
+        let resolved = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, line, character);
         assert!(
             resolved.contains(&expected),
             "`{}` field access should evaluate to `{}` ({}.__get__ hook). Got: {:?}",
@@ -365,8 +359,7 @@ fn test_relational_field_get_hooks() {
     let odoo_path = Path::new(&odoo_path).sanitize();
     let partner_class_name = test_utils::PARTNER_CLASS_NAME(session.sync_odoo.version);
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file)) else {
         panic!("Failed to get file symbol for {}", test_file);
     };
@@ -380,7 +373,7 @@ fn test_relational_field_get_hooks() {
     let partner_class = partner_class[0];
 
     // `child_ids_res = self.child_ids` (line 93, 0-indexed 92): One2many("...ArchEvalHooksModel...", "parent_id")
-    let resolved_child_ids = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, 92, 8);
+    let resolved_child_ids = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 92, 8);
     assert!(
         resolved_child_ids.contains(&arch_eval_hooks_model),
         "`self.child_ids` (One2many) should evaluate to the `ArchEvalHooksModel` comodel class. Got: {:?}",
@@ -388,7 +381,7 @@ fn test_relational_field_get_hooks() {
     );
 
     // `partner_ids_res = self.partner_ids` (line 94, 0-indexed 93): Many2many("res.partner")
-    let resolved_partner_ids = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, &file_info, 93, 8);
+    let resolved_partner_ids = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 93, 8);
     assert!(
         resolved_partner_ids.contains(&partner_class),
         "`self.partner_ids` (Many2many) should evaluate to the `{}` comodel class. Got: {:?}",
