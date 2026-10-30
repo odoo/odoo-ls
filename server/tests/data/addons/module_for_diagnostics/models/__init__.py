@@ -3,3 +3,4 @@ from . import access_operator
 from . import compute_sql
 from . import magic_fields
 from . import domain_operators
+from . import model_order
