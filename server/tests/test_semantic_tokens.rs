@@ -61,6 +61,7 @@ fn test_semantic_tokens_python() {
     check_concatenated_field_path_tokens(&main);
     check_quoted_field_path_tokens(&main);
     check_escaped_field_path_tokens(&main);
+    check_model_order_tokens(&main);
     check_non_ascii_concatenated_tokens(&non_ascii);
 }
 
@@ -163,14 +164,14 @@ fn check_model_string_tokens(main: &TokenFile) {
     check(main, 33, "'sem.tokens.other'", Some((CLASS, &[])));
     check(main, 80, "'sem.tokens.other'", Some((CLASS, &[])));
     // The comodel given by keyword, as by position
-    check(main, 101, "'sem.tokens.other'", Some((CLASS, &[])));
+    check(main, 156, "'sem.tokens.other'", Some((CLASS, &[])));
 }
 
 /// The inverse of a One2many is a field of its comodel, coloured over the whole literal, quotes
 /// included; other fields take no inverse.
 fn check_inverse_name_tokens(main: &TokenFile) {
-    check(main, 102, "'other_id'", Some((PROPERTY, &[])));
-    check(main, 104, "'other_name'", None);
+    check(main, 157, "'other_id'", Some((PROPERTY, &[])));
+    check(main, 159, "'other_name'", None);
 }
 
 /// Field paths are coloured per dotted segment, past the quote; a method named by `compute=`
@@ -207,6 +208,30 @@ fn check_quoted_field_path_tokens(main: &TokenFile) {
 fn check_escaped_field_path_tokens(main: &TokenFile) {
     check_exact_or_none(main, 95, "other_id", (PROPERTY, &[]));
     check_exact_or_none(main, 95, "other_name", (PROPERTY, &[]));
+}
+
+/// `_order` colours the field of each comma-separated item, not its direction. `id` is also
+/// found inside `other_id`: it must be coloured after it, not over it.
+fn check_model_order_tokens(main: &TokenFile) {
+    check(main, 98, "other_id", Some((PROPERTY, &[])));
+    check(main, 98, "name", Some((PROPERTY, &[])));
+    check(main, 98, "desc", None);
+    // A field split between the parts of `'other_' 'id'` is not found in the file: no token
+    check(main, 104, "'other_'", None);
+    check(main, 104, "'id'", None);
+    // `.id` is a property of `other_record`: the `id` field of its comodel
+    check(main, 112, "other_record", Some((PROPERTY, &[])));
+    check(main, 112, "id", Some((PROPERTY, &[])));
+    // Annotated assignment: same as `_order = ...`
+    check(main, 118, "other_id", Some((PROPERTY, &[])));
+    check(main, 118, "desc", None);
+    // Not a model's `_order`: a plain class attribute, or a local variable in a method
+    check(main, 123, "other_id", None);
+    check(main, 131, "other_id", None);
+    // A model name in `_order`: coloured as a model like in any string, except in a model's `_order`
+    check(main, 136, "'sem.tokens.other'", Some((CLASS, &[])));
+    check(main, 144, "'sem.tokens.other'", Some((CLASS, &[])));
+    check(main, 150, "sem.tokens.other", None);
 }
 
 /// A non-ASCII comment between concatenated parts: no segment may end inside one of its
