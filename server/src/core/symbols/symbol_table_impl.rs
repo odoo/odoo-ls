@@ -2177,6 +2177,7 @@ impl SymbolTable {
             if let Some(model) = model {
                 // from_module: None means no dependency filtering (return everything)
                 let model_symbols = Model::get_full_model_classes(model, session, from_module);
+                let inherits_symbols = Model::get_inherits_classes(model, &model_symbols, session, from_module);
                 for model_symbol in model_symbols {
                     if target == model_symbol || search.visited_classes.contains(&model_symbol) {
                         continue;
@@ -2193,23 +2194,20 @@ impl SymbolTable {
                         }
                     }
                 }
-                for model_inherits_symbol in Model::get_inherits_models(model, session, from_module) {
-                    //only fields are visible on inherits, not methods
-                    let model_symbols = Model::get_full_model_classes(model_inherits_symbol, session, from_module);
-                    for model_symbol in model_symbols {
-                        if target == model_symbol || search.visited_classes.contains(&model_symbol) {
-                            continue;
-                        }
-                        search.visited_classes.insert(model_symbol);
-                        let member_from_module = session.st().find_module(model_symbol);
-                        let (attributs, att_diagnostic) = Self::get_member_symbol_helper(session, model_symbol.into(), name, member_from_module, true, true, only_methods, all, false, search);
-                        diagnostics.extend(att_diagnostic);
-                        if all {
-                            extend_result(attributs, &mut result, &mut visited_symbols);
-                        } else {
-                            if !attributs.is_empty() {
-                                return (attributs, diagnostics);
-                            }
+                //only fields are visible on inherits, not methods
+                for model_symbol in inherits_symbols {
+                    if target == model_symbol || search.visited_classes.contains(&model_symbol) {
+                        continue;
+                    }
+                    search.visited_classes.insert(model_symbol);
+                    let member_from_module = session.st().find_module(model_symbol);
+                    let (attributs, att_diagnostic) = Self::get_member_symbol_helper(session, model_symbol.into(), name, member_from_module, true, true, only_methods, all, false, search);
+                    diagnostics.extend(att_diagnostic);
+                    if all {
+                        extend_result(attributs, &mut result, &mut visited_symbols);
+                    } else {
+                        if !attributs.is_empty() {
+                            return (attributs, diagnostics);
                         }
                     }
                 }

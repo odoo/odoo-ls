@@ -316,23 +316,36 @@ impl Model {
         symbol_set
     }
 
-    /// Gets all models that are inherited using "inherits" mechanism, by the model or by the models it
-    /// inherits from (ex: a mixin declaring `_inherits`).
-    pub fn get_inherits_models(model_key: ModelKey, session: &SessionInfo, from_module: Option<ModuleKey>) -> Vec<ModelKey> {
-        let symbols = Self::get_full_model_classes(model_key, session, from_module).into_iter().sorted();
+    /// Gets recursively the classes of all models that are inherited using "inherits" mechanism, by the model,
+    /// by the models it inherits from (ex: a mixin declaring `_inherits`), or by the inherits models themselves.
+    /// `model_classes` are the classes of the model, as given by `get_full_model_classes`.
+    /// Classes are grouped by model, in breadth-first order of the inherits chain.
+    pub fn get_inherits_classes(model_key: ModelKey, model_classes: &HashSet<ClassKey>, session: &SessionInfo, from_module: Option<ModuleKey>) -> Vec<ClassKey> {
         let st = &session.sync_odoo.symbol_table;
         let mut res = vec![];
-        let mut already_in = HashSet::default();
-        for symbol_key in symbols {
-            let Some(model_data) = &st[symbol_key]._model else {
-                continue;
-            };
-            for (model_name, _field) in model_data.inherits.iter() {
-                if let Some(model_key) = session.model_mgr().get_model_key(model_name)
-                    && !already_in.contains(&model_key) {
-                        res.push(model_key);
-                        already_in.insert(model_key);
+        let mut seen_classes = model_classes.clone();
+        let mut already_in = HashSet::from_iter([model_key]);
+        let mut queue = VecDeque::from([model_classes.iter().copied().sorted().collect::<Vec<_>>()]);
+        while let Some(classes) = queue.pop_front() {
+            for class_key in classes {
+                let Some(model_data) = &st[class_key]._model else {
+                    continue;
+                };
+                for (model_name, _field) in model_data.inherits.iter() {
+                    let Some(inherits_key) = session.model_mgr().get_model_key(model_name) else {
+                        continue;
+                    };
+                    if !already_in.insert(inherits_key) {
+                        continue;
                     }
+                    let inherits_classes = Self::get_full_model_classes(inherits_key, session, from_module)
+                        .into_iter()
+                        .filter(|c| seen_classes.insert(*c))
+                        .sorted()
+                        .collect::<Vec<_>>();
+                    res.extend(inherits_classes.iter().copied());
+                    queue.push_back(inherits_classes);
+                }
             }
         }
         res
