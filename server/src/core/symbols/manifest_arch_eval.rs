@@ -1,16 +1,17 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use lsp_types::{Diagnostic, Position, Range};
 use ruff_source_file::{LineIndex, PositionEncoding};
 use tracing::info;
 
 use crate::core::build_scheduler::BuildScheduler;
+use crate::core::diagnostics::{Diag, DiagnosticCode, create_diag};
 use crate::core::file_mgr::{FileInfoKey, FileMgr, position_to_offset_with_line_index};
 use crate::core::js_module_scope;
 use crate::core::js_utils::read_module_header;
 use crate::core::symbols::symbol_keys::JsFileKey;
-use crate::{constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource}, core::{csv_arch_builder::CsvArchBuilder, data_hooks, diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPointMgr, file_mgr::FileInfo, symbols::{ModuleSymbol, SymbolTable, symbol_keys::{BuildableSymbolKey, ModuleKey, SourceFileKey, XmlFileKey}}, xml_arch_builder::XmlArchBuilder}, threads::SessionInfo, utils::PathSanitizer};
+use crate::utils::range_to_text_range;
+use crate::{constants::{BuildStatus, BuildSteps, DEBUG_STEPS, DiagnosticSource}, core::{csv_arch_builder::CsvArchBuilder, data_hooks, entry_point::EntryPointMgr, file_mgr::FileInfo, symbols::{ModuleSymbol, SymbolTable, symbol_keys::{BuildableSymbolKey, ModuleKey, SourceFileKey, XmlFileKey}}, xml_arch_builder::XmlArchBuilder}, threads::SessionInfo, utils::PathSanitizer};
 
 const ASSET_FOLDERS: [&str; 3] = ["src", "tests", "lib"];
 
@@ -39,20 +40,10 @@ impl ModuleSymbol {
                 session.st_mut()[symbol_key].not_found_data.insert(path_string.clone(), BuildSteps::ARCH_EVAL);
                 let entry = session.st().get_entry(symbol_key);
                 session.ep_mgr_mut()[entry].not_found_symbols.insert(symbol_key.into());
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05049, &[&path_string]) {
-                    diagnostics.push(Diagnostic {
-                        range: Range::new(Position::new(data_range.start().to_u32(), 0), Position::new(data_range.end().to_u32(), 0)),
-                        ..diagnostic.clone()
-                    });
-                }
+                diagnostics.extend(create_diag(session, DiagnosticCode::OLS05049, &[&path_string], *data_range));
                 continue;
             } else if path.extension().is_none_or(|ext| !["xml", "csv", "sql"].contains(&ext.to_str().unwrap_or(""))) {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05050, &[&path_string]) {
-                    diagnostics.push(Diagnostic {
-                        range: Range::new(Position::new(data_range.start().to_u32(), 0), Position::new(data_range.end().to_u32(), 0)),
-                        ..diagnostic.clone()
-                    });
-                }
+                diagnostics.extend(create_diag(session, DiagnosticCode::OLS05050, &[&path_string], *data_range));
                 continue;
             }
             let (_, file_info) = FileMgr::update_file_info(session, &path_string, None, None, false); //create ast if not in cache
@@ -265,15 +256,10 @@ fn is_asset_file(path: &Path, is_lib: bool) -> bool {
     }
 }
 
-fn build_syntax_diagnostic(session: &SessionInfo, file_info: FileInfoKey, doc_error: &roxmltree::Error) -> Option<Diagnostic> {
-    let diagnostic = create_diagnostic(session, DiagnosticCode::OLS05000, &[&doc_error.to_string()])?; 
-    let ast = &session.file_mgr()[file_info].file_info_ast;
-    let text_document = ast.text_document.as_ref()?;
-    let std::ops::Range{ start, end } = xml_syntax_error_range(text_document.contents(), text_document.index(), doc_error.pos());
-    Some(Diagnostic {
-        range: Range::new(Position::new(start as u32, 0), Position::new(end as u32, 0)),
-        ..diagnostic
-    })
+fn build_syntax_diagnostic(session: &SessionInfo, file_info: FileInfoKey, doc_error: &roxmltree::Error) -> Option<Diag> {
+    let text_document = session.file_mgr()[file_info].file_info_ast.text_document.as_ref()?;
+    let range = xml_syntax_error_range(text_document.contents(), text_document.index(), doc_error.pos());
+    create_diag(session, DiagnosticCode::OLS05000, &[&doc_error.to_string()], range_to_text_range(range))
 }
 
 /// Converts a romxltree:TextPos to a byte range spanning one character

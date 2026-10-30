@@ -8,7 +8,7 @@ use crate::{
             symbol_keys::{ModuleKey, SourceFileKey, SymbolKey, XmlId},
         },
     },
-    threads::SessionInfo,
+    threads::SessionInfo, utils::range_to_text_range,
 };
 use roxmltree::{Attribute, Node};
 use std::ops::Range;
@@ -307,7 +307,7 @@ impl XmlAstUtils {
     }
 
     fn add_xml_id_result(session: &mut SessionInfo, xml_id: &str, file_symbol: SourceFileKey, range: Range<usize>, results: &mut (Vec<SymbolKey>, Option<Range<usize>>), on_dep_only: bool) {
-        let xml_ids = SyncOdoo::get_xml_ids(session, file_symbol, xml_id, &range, &mut vec![]);
+        let xml_ids = SyncOdoo::get_xml_ids(session, file_symbol, xml_id, range_to_text_range(range), &mut vec![]);
 
         for xml_id in xml_ids.iter_valid(session.st()) {
             if on_dep_only

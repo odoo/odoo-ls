@@ -1,6 +1,5 @@
-use lsp_types::{CompletionItemKind, CompletionList, CompletionTriggerKind, Diagnostic, DiagnosticSeverity, DocumentSymbol, Location, NumberOrString, Position, Range, SymbolKind};
+use lsp_types::{CompletionItemKind, CompletionList, CompletionTriggerKind, DiagnosticSeverity, DocumentSymbol, Location, Position, Range, SymbolKind};
 use serde_json::{Value, json};
-use crate::S;
 use crate::features::tsserver_completion::{TsCompletionDetails, entry_to_completion_item, is_valid_completion_entry, response_to_completion_details};
 use crate::utils::{HashMap, HashSet, PathSanitizer};
 use tracing::{debug, info, warn};
@@ -11,7 +10,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::constants::{DiagnosticSource, EXTENSION_NAME};
+use crate::constants::DiagnosticSource;
 use crate::core::file_mgr::FileMgr;
 use crate::threads::{TsServerDiagnostics, ThreadMessage};
 
@@ -70,6 +69,16 @@ pub struct TsServerBridge {
 /// end_char)`, 0-based (LSP convention). The raw form of an LSP [`Location`];
 /// [`ts_to_lsp_location`] converts one into a `Location`.
 pub type TsLocation = (String, u32, u32, u32, u32);
+
+/// 0-based line, column in UTF-16 units.
+pub struct Utf16Position { pub line: u32, pub character: u32 }
+
+pub struct TsDiagnostic {
+    pub range: std::ops::Range<Utf16Position>,
+    pub severity: DiagnosticSeverity,
+    pub code: String,
+    pub message: String,
+}
 
 /// The two tsserver goto commands taking a position and answering with file spans.
 #[derive(Debug, Clone, Copy)]
@@ -957,11 +966,12 @@ fn match_diag_to_diagnostic_level(category: &str) -> DiagnosticSource {
     }
 }
 
-fn ts_diag_event_to_diagnostics(body: &Value) -> Option<(String, Vec<Diagnostic>)> {
+/// tsserver positions are 1-based UTF-16
+fn ts_diag_event_to_diagnostics(body: &Value) -> Option<(String, Vec<TsDiagnostic>)> {
     let file = body.get("file").and_then(Value::as_str)?;
     let diags = body.get("diagnostics").and_then(Value::as_array)?;
 
-    let diagnostics: Vec<Diagnostic> = diags.iter().filter_map(|d| {
+    let diagnostics: Vec<TsDiagnostic> = diags.iter().filter_map(|d| {
         let text = d.get("text").and_then(Value::as_str)?;
         let start = d.get("start")?;
         let end = d.get("end")?;
@@ -971,23 +981,21 @@ fn ts_diag_event_to_diagnostics(body: &Value) -> Option<(String, Vec<Diagnostic>
         let end_offset   = end.get("offset").and_then(Value::as_u64)? as u32;
         let code = d.get("code")
             .and_then(Value::as_u64)
-            .map(|c| NumberOrString::String(format!("tsserver_{}", c)));
+            .map_or_else(|| "tsserver".to_string(), |c| format!("tsserver_{c}"));
         let severity = match d.get("category").and_then(Value::as_str) {
             Some("error")      => DiagnosticSeverity::ERROR,
             Some("warning")    => DiagnosticSeverity::WARNING,
             Some("suggestion") => DiagnosticSeverity::HINT,
             _                  => DiagnosticSeverity::INFORMATION,
         };
-        Some(Diagnostic {
-            range: Range {
-                start: Position { line: start_line - 1,   character: start_offset - 1 },
-                end:   Position { line: end_line   - 1,   character: end_offset   - 1 },
+        Some(TsDiagnostic {
+            range: std::ops::Range {
+                start: Utf16Position { line: start_line - 1,   character: start_offset - 1 },
+                end:   Utf16Position { line: end_line   - 1,   character: end_offset   - 1 },
             },
-            severity: Some(severity),
+            severity,
             code,
-            source: Some(S!(EXTENSION_NAME)),
             message: text.to_string(),
-            ..Diagnostic::default()
         })
     }).collect();
 

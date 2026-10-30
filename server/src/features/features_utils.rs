@@ -497,7 +497,7 @@ impl FeaturesUtils {
                 return Some(StringResolution::Model(model_syms));
             }
         }
-        let xml_ids = SyncOdoo::get_xml_ids(session, file_symbol, string_val, &std::ops::Range{start: 0, end: 0}, &mut vec![]);
+        let xml_ids = SyncOdoo::get_xml_ids(session, file_symbol, string_val, TextRange::default(), &mut vec![]);
         let xml_syms: Vec<_> = xml_ids.iter_valid(session.st()).collect();
         if !xml_syms.is_empty() {
             return Some(StringResolution::XmlId(xml_syms));
@@ -619,7 +619,7 @@ impl FeaturesUtils {
                     string_handled = true;
                 }
                 if let Some(file_sym) = file_symbol {
-                    let xml_ids = SyncOdoo::get_xml_ids(session, file_sym, str, &std::ops::Range { start: 0, end: 0 }, &mut vec![]);
+                    let xml_ids = SyncOdoo::get_xml_ids(session, file_sym, str, TextRange::default(), &mut vec![]);
                     for xml_id in xml_ids.iter_valid(session.st()) {
                         if let XmlId::XmlRecord(record_key) = xml_id
                             && let Some(xml_block) = FeaturesUtils::format_xml_record_block(session, record_key) {

@@ -1,10 +1,92 @@
 
-use lsp_types::{Diagnostic, DiagnosticSeverity};
+use lsp_types::{Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, DiagnosticTag, Location, NumberOrString, Range, Uri};
+use ruff_text_size::TextRange;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::sync::LazyLock;
 
-use crate::{constants::EXTENSION_NAME, core::file_mgr::NoqaInfo, S};
+use crate::{constants::EXTENSION_NAME, core::file_mgr::NoqaInfo};
+
+/// A simplified version of lsp_types::Diagnostic, with important differences:
+/// - range is stored as byte offsets (so, encoding-agnostic)
+/// - related information applies to same file only
+#[derive(Debug, Clone)]
+pub struct Diag {
+    /// byte offsets
+    range: TextRange,
+    severity: DiagnosticSeverity,
+    code: String,
+    message: String,
+    related_info: Vec<RelatedInfo>,
+    tags: Vec<DiagnosticTag>,
+}
+
+/// Equivalent to lsp_types::DiagnosticRelatedInformation, but:
+/// - applies to same file only (so, no uri)
+/// - range is a byte offset
+#[derive(Debug, Clone)]
+pub struct RelatedInfo {
+    range: TextRange,
+    message: String,
+}
+
+impl Diag {
+    /// A diagnostic from an outside tool (oxc, tsserver), with no OLS code listed in DiagnosticCode enum.
+    pub fn external(code: String, message: String, range: TextRange, severity: DiagnosticSeverity) -> Self {
+        Self { code, message, severity, range, related_info: Vec::new(), tags: Vec::new() }
+    }
+    
+    pub fn into_lsp(self, uri: &Uri, to_lsp_range: impl Fn(TextRange) -> Range) -> Diagnostic {
+        let Self { range, severity, code, message, related_info, tags } = self;
+        Diagnostic {
+            range: to_lsp_range(range),
+            severity: Some(severity),
+            code: Some(NumberOrString::String(code)),
+            source: Some(EXTENSION_NAME.to_string()),
+            message,
+            related_information: if related_info.is_empty() {
+                None
+            } else {
+                Some(
+                    related_info.into_iter()
+                        .map(|r| r.into_lsp(uri, &to_lsp_range))
+                        .collect()
+                )
+            },
+            tags: if tags.is_empty() { None } else { Some(tags) },
+            code_description: None,
+            data: None,
+        }
+    }
+
+    pub fn code(&self) -> &str {
+        &self.code
+    }
+
+    pub fn add_tag(&mut self, tag: DiagnosticTag) {
+        self.tags.push(tag);
+    }
+
+    pub fn set_range(&mut self, range: TextRange) {
+        self.range = range;
+    }
+
+    pub fn add_related_info(&mut self, message: String, range: TextRange) {
+        self.related_info.push(RelatedInfo { message, range });
+    }
+}
+
+impl RelatedInfo {
+    pub fn into_lsp(self, uri: &Uri, to_lsp_range: impl Fn(TextRange) -> Range) -> DiagnosticRelatedInformation {
+        let Self { range, message } = self;
+        DiagnosticRelatedInformation {
+            location: Location {
+                uri: uri.clone(),
+                range: to_lsp_range(range),
+            },
+            message, 
+        }
+    }
+}
 
 #[macro_export]
 macro_rules! diagnostic_codes {
@@ -63,11 +145,6 @@ mod diagnostic_codes_list;
 pub use diagnostic_codes_list::*;
 
 
-pub static DEFAULT_DIAGNOSTIC: LazyLock<Diagnostic> = LazyLock::new(|| Diagnostic {
-    source: Some(S!(EXTENSION_NAME)),
-    ..Default::default()
-});
-
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 pub enum DiagnosticSetting {
     Error,
@@ -114,24 +191,25 @@ pub fn format_message(code: DiagnosticCode, params:&[&str]) -> String {
 
 /// Create a diagnostic, using the session's config for overrides
 /// returns None if the diagnostic is disabled by the session's noqa config or user config
-pub fn create_diagnostic(
+pub fn create_diag(
     session: &SessionInfo,
     code: DiagnosticCode,
     params: &[&str],
-) -> Option<Diagnostic> {
+    range: TextRange,
+) -> Option<Diag> {
+    let code_string = code.to_string();
     match &session.current_noqa {
         NoqaInfo::All => return None,
-        NoqaInfo::Codes(codes) => if codes.contains(&code.to_string()) {return None},
+        NoqaInfo::Codes(codes) => if codes.contains(&code_string) {return None},
         NoqaInfo::None => {}
     }
-    let severity = match get_severity(code, session) {
-        None => return None,
-        severity => severity,
-    };
-    Some(Diagnostic {
+    let severity = get_severity(code, session)?;
+    Some(Diag {
+        range,
         severity,
         message: format_message(code, params),
-        code: Some(lsp_types::NumberOrString::String(code.to_string())),
-        ..DEFAULT_DIAGNOSTIC.clone()
+        code: code_string,
+        related_info: Vec::new(),
+        tags: Vec::new(),
     })
 }

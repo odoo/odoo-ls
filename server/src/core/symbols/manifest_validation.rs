@@ -1,9 +1,8 @@
 use std::{ffi::OsStr, path::Path};
 
-use lsp_types::{Diagnostic, Position, Range};
 use tracing::info;
 
-use crate::{Sy, constants::{BuildSteps, DEBUG_STEPS, DiagnosticSource, OYarn}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::FileInfo, symbols::{ModuleSymbol, symbol_keys::ModuleKey}}, threads::SessionInfo, utils::PathSanitizer};
+use crate::{Sy, constants::{BuildSteps, DEBUG_STEPS, DiagnosticSource, OYarn}, core::{diagnostics::{DiagnosticCode, create_diag}, file_mgr::FileInfo, symbols::{ModuleSymbol, symbol_keys::ModuleKey}}, threads::SessionInfo, utils::PathSanitizer};
 
 
 
@@ -30,12 +29,7 @@ impl ModuleSymbol {
             let maybe_model = session.model_mgr().get_model(&model_name);
             let model_exists = maybe_model.map(|m| m.has_symbols(session.st())).unwrap_or(false);
             if !model_exists {
-                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS05056, &[&model_name]) {
-                    diagnostics.push(Diagnostic {
-                        range: Range::new(Position::new(data_range.start().to_u32(), 0), Position::new(data_range.end().to_u32(), 0)),
-                        ..diagnostic.clone()
-                    });
-                }
+                diagnostics.extend(create_diag(session, DiagnosticCode::OLS05056, &[&model_name], *data_range));
                 session.st_mut()[module_key].not_found_models.insert(model_name.clone(), BuildSteps::VALIDATION);
                 let main_entry = session.sync_odoo.get_main_entry();
                 session.ep_mgr_mut()[main_entry].not_found_symbols_for_models.insert(module_key.into());
