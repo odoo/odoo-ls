@@ -14,6 +14,7 @@ use crate::threads::SessionInfo;
 use super::api_decorators::{api_decorator, find_decorator_arg_symbols};
 use super::field_params::{resolve_field_param, FieldParam};
 use super::field_paths;
+use super::order;
 use super::string_resolution::{SegmentPick, StringResolution};
 
 /// What the callee of `call_expr` refers to, each as its weak evaluation and its symbol.
@@ -106,6 +107,8 @@ pub enum ParamKind {
     /// A domain on the model the method is called on, e.g. `search(domain=[('name', '=', 'x')])`.
     /// Without the model, only its structure is known.
     Domain(Option<ModelSymbolKey>),
+    /// An order on the model the method is called on, e.g. `search(order='name desc')`
+    Order(ModelSymbolKey),
     /// A parameter of a field class, e.g. `fields.Char(related='partner_id.name')`
     Field(FieldParam),
 }
@@ -125,6 +128,7 @@ impl ParamKind {
             // A declared parameter: only its role tells
             return match param.role? {
                 ParamRole::Domain => Some(ParamKind::Domain(model)),
+                ParamRole::Order => model.map(ParamKind::Order),
                 ParamRole::Comodel => Some(ParamKind::Field(FieldParam::Comodel)),
                 ParamRole::InverseField => Some(ParamKind::Field(FieldParam::InverseField)),
                 ParamRole::Selection => Some(ParamKind::Field(FieldParam::ModelMethod)),
@@ -143,6 +147,8 @@ impl ParamKind {
         match self {
             // Any string of it, e.g. the field path of a leaf
             ParamKind::Domain(_) => true,
+            // The order is the string itself, not an item of it
+            ParamKind::Order(_) => matches!(value, Expr::StringLiteral(value_string) if value_string.range == string.range),
             ParamKind::Field(field_param) => field_param.is_in_value(value, string),
         }
     }
@@ -220,6 +226,9 @@ fn resolve_for_callable(
     match ParamKind::of(session, callable_sym, param, keyword_name, model).filter(|kind| kind.is_in_value(value, string)) {
         Some(ParamKind::Domain(Some(model))) => {
             StringResolution::from_members(field_paths::find_nested_fields(session, model, from_module, string, pick))
+        },
+        Some(ParamKind::Order(model)) => {
+            StringResolution::from_members(order::find_order_fields(session, model, from_module, string, pick))
         },
         Some(ParamKind::Field(field_param)) => {
             resolve_field_param(session, scope, from_module, string, call_expr, field_param, pick)
