@@ -26,6 +26,7 @@ fn test_completions() {
     let mut session = setup::setup::create_init_session(&mut odoo, config);
     test_depends_kwarg_nested_field_completion(&mut session);
     test_lambda_is_not_a_member(&mut session);
+    test_ext_symbols_completion(&mut session);
     test_compute_sql_kwarg_method_completion(&mut session);
     test_selection_field_method_completion(&mut session);
     test_init_storage_kwarg_method_completion(&mut session);
@@ -38,15 +39,15 @@ fn test_depends_kwarg_nested_field_completion(session: &mut SessionInfo) {
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
     assert!(Path::new(&test_file).exists(), "Test file does not exist: {}", test_file);
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let file_mgr = session.file_mgr();
+    let file_info = file_mgr.get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
         panic!("Failed to get file symbol");
     };
 
     // Line `    partner_display_name_dep = fields.Char(compute="_compute_partner_display_name_dep", depends=["partner_id.disp"])`
     // (0-indexed line 79), cursor right after "disp" inside the string.
-    let response = CompletionFeature::autocomplete(session, file_symbol, &file_info, None, 79, 113);
+    let response = CompletionFeature::autocomplete(session, file_symbol, file_info, None, 79, 113);
     let labels = labels(response);
     assert!(labels.iter().any(|l| l == "display_name"), "Expected display_name to be suggested for the 'disp' prefix, got: {:?}", labels);
     assert!(!labels.iter().any(|l| l == "create_uid"), "create_uid does not match the 'disp' prefix, got: {:?}", labels);
@@ -72,16 +73,50 @@ fn test_lambda_is_not_a_member(session: &mut SessionInfo) {
     };
     Odoo::handle_did_open(session, did_open_params);
 
-    let file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&test_file).unwrap();
+    let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
         panic!("Failed to get file symbol");
     };
 
     // `return self.` is line 25 of the fixture (0-indexed 24), cursor after the dot.
-    let response = CompletionFeature::autocomplete(session, file_symbol, &file_info, None, 24, 20);
+    let response = CompletionFeature::autocomplete(session, file_symbol, file_info, None, 24, 20);
     let labels = labels(response);
     assert!(labels.iter().any(|l| l == "company_id"), "Expected the model fields to be suggested after 'self.', got: {:?}", labels);
     assert!(!labels.iter().any(|l| l == "<lambda>"), "<lambda> is not a member and must not be suggested, got: {:?}", labels);
+}
+
+/// `odoo/init.py` (>= 18.1) injects `_`, `_lt`, `Command` and `SUPERUSER_ID` into the `odoo`
+/// namespace as ext symbols: they must be offered both in `from odoo import` and after `odoo.`.
+fn test_ext_symbols_completion(session: &mut SessionInfo) {
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
+    let disk_text = std::fs::read_to_string(&test_file).expect("Test file does not exist");
+
+    let did_open_params = lsp_types::DidOpenTextDocumentParams {
+        text_document: lsp_types::TextDocumentItem {
+            uri: FileMgr::pathname2uri(&test_file),
+            language_id: "python".to_string(),
+            version: 2,
+            text: disk_text.replace("        return self\n", "        import odoo\n        return odoo.Comm\n"),
+        }
+    };
+    Odoo::handle_did_open(session, did_open_params);
+
+    let file_info = session.sync_odoo.file_mgr.get_file_info(&test_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    // `from odoo import api, fields, models, _, tools`: cursor right after `_`
+    let response = CompletionFeature::autocomplete(session, file_symbol, file_info, None, 0, 39);
+    let import_labels = labels(response);
+    assert!(import_labels.iter().any(|l| l == "_"), "Expected '_' to be suggested in 'from odoo import', got: {:?}", import_labels);
+    assert!(import_labels.iter().any(|l| l == "_lt"), "Expected '_lt' to be suggested in 'from odoo import', got: {:?}", import_labels);
+
+    // `        return odoo.Comm` (0-indexed line 25), cursor after `Comm`
+    let response = CompletionFeature::autocomplete(session, file_symbol, file_info, None, 25, 24);
+    let attr_labels = labels(response);
+    assert!(attr_labels.iter().any(|l| l == "Command"), "Expected 'Command' to be suggested after 'odoo.', got: {:?}", attr_labels);
 }
 
 /// `fields.Integer(compute_sql="...")`: the kwarg offers method completion, but only from 19.1 on
@@ -89,8 +124,8 @@ fn test_compute_sql_kwarg_method_completion(session: &mut SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let file_mgr = session.file_mgr();
+    let file_info = file_mgr.get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
         panic!("Failed to get file symbol");
     };
@@ -98,10 +133,10 @@ fn test_compute_sql_kwarg_method_completion(session: &mut SessionInfo) {
     // Cursor inside the compute_sql value of `test_int = fields.Integer(..., compute_sql="...")`
     let initial_version = session.sync_odoo.version;
     session.sync_odoo.version = OdooVersion::new(19, 1, 0);
-    let gated_in = labels(CompletionFeature::autocomplete(session, file_symbol, &file_info, None, 8, 80));
+    let gated_in = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, 8, 80));
     assert!(gated_in.iter().any(|l| l == "_compute_something"), "Expected _compute_something to be suggested for compute_sql, got: {:?}", gated_in);
     session.sync_odoo.version = OdooVersion::new(19, 0, 0);
-    let gated_out = labels(CompletionFeature::autocomplete(session, file_symbol, &file_info, None, 8, 80));
+    let gated_out = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, 8, 80));
     assert!(!gated_out.iter().any(|l| l == "_compute_something"), "Expected no method completion for compute_sql before 19.1, got: {:?}", gated_out);
     // The session is shared with the other completion tests, leave the version as it was found
     session.sync_odoo.version = initial_version;
@@ -112,18 +147,18 @@ fn test_selection_field_method_completion(session: &mut SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let file_mgr = session.file_mgr();
+    let file_info = file_mgr.get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
         panic!("Failed to get file symbol");
     };
 
     // Cursor after the 4-char prefix of each string on the `state`, `kind` and `label` field lines
     for (line, column, method) in [(85, 34, "_selection_state"), (85, 67, "_expand_states"), (86, 43, "_selection_state")] {
-        let labels = labels(CompletionFeature::autocomplete(session, file_symbol, &file_info, None, line, column));
+        let labels = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, line, column));
         assert!(labels.iter().any(|l| l == method), "Expected {method} to be suggested at {line}:{column}, got: {:?}", labels);
     }
-    let label_labels = labels(CompletionFeature::autocomplete(session, file_symbol, &file_info, None, 87, 29));
+    let label_labels = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, 87, 29));
     assert!(!label_labels.iter().any(|l| l == "_selection_state"), "The label of a Char is not a method name, got: {:?}", label_labels);
 }
 
@@ -132,18 +167,18 @@ fn test_init_storage_kwarg_method_completion(session: &mut SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+    let file_mgr = session.file_mgr();
+    let file_info = file_mgr.get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
         panic!("Failed to get file symbol");
     };
 
     let initial_version = session.sync_odoo.version;
     session.sync_odoo.version = OdooVersion::new(20, 0, 0);
-    let gated_in = labels(CompletionFeature::autocomplete(session, file_symbol, &file_info, None, 86, 76));
+    let gated_in = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, 86, 76));
     assert!(gated_in.iter().any(|l| l == "_init_column_kind"), "Expected _init_column_kind to be suggested for init_storage, got: {:?}", gated_in);
     session.sync_odoo.version = OdooVersion::new(19, 4, 0);
-    let gated_out = labels(CompletionFeature::autocomplete(session, file_symbol, &file_info, None, 86, 76));
+    let gated_out = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, 86, 76));
     assert!(!gated_out.iter().any(|l| l == "_init_column_kind"), "Expected no method completion for init_storage before 20.0, got: {:?}", gated_out);
     // The session is shared with the other completion tests, leave the version as it was found
     session.sync_odoo.version = initial_version;

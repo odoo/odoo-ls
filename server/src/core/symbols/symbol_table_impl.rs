@@ -1,44 +1,39 @@
 use std::{
-    cell::RefCell, collections::{VecDeque, hash_map}, path::Path, rc::Rc,
+    collections::{VecDeque, hash_map}, path::Path,
 };
 
 use lsp_types::{Diagnostic, DiagnosticTag, Range, SymbolKind};
 use ruff_text_size::TextRange;
 
 use crate::{
-    constants::{BuildStatus, BuildSteps, MissingDataSource, OYarn, PackageType, SymType, LAMBDA_NAME},
-    core::{
+    Sy, constants::{
+        BuildStatus, BuildSteps, LAMBDA_NAME, MissingDataSource, OYarn, PackageType, SymType,
+    }, core::{
         build_scheduler::BuildScheduler,
-        diagnostics::{create_diagnostic, DiagnosticCode},
-        entry_point::EntryPoint,
+        diagnostics::{DiagnosticCode, create_diagnostic},
+        entry_point::EntryPointKey,
         evaluation::{Evaluation, EvaluationSymbolPtr},
         evaluation_context::{Context, ContextKey, ContextValue},
         file_mgr::{FileInfo, FileMgr, NoqaInfo},
-        model::Model,
+        model::{Model, ModelKey},
         odoo::SyncOdoo,
         python_arch_eval_hooks::get_base_model_symbol,
         symbols::{
+            Buildable, Dependencies, ModuleSymbol,
             storage::{
+                FileContentParent, FileSystemSymbolParent, SymbolTable,
                 buildable::ResettableBuildable as _,
                 dependency_mgr::{DependenciesTable, DependentsTable},
                 lifecycle::NameTakenError,
                 xml::xml_field_symbol::XmlFieldName,
-                FileContentParent, FileSystemSymbolParent, SymbolTable,
             },
             symbol_keys::{
                 BuildableSymbolKey, ClassKey, FunctionKey, KeyValidator, ModuleKey, NamespaceKey,
                 RootKey, SourceFileKey, SymbolKey, VariableKey, XmlDataKey, XmlRecordKey,
             },
-            symbol_mgr::{iter_symbol_keys, ContentSymbols, SectionIndex, SectionRange, SymbolMgr},
-            Buildable, Dependencies, ModuleSymbol,
+            symbol_mgr::{ContentSymbols, SectionIndex, SectionRange, SymbolMgr, iter_symbol_keys},
         },
-    },
-    oyarn,
-    threads::SessionInfo,
-    tree::{OYarnExt, Tree},
-    utils::{HashMap, HashSet, PathSanitizer},
-    weak_collections::WeakSet,
-    Sy,
+    }, oyarn, threads::SessionInfo, tree::{OYarnExt, Tree}, utils::{HashMap, HashSet, PathSanitizer}, weak_collections::WeakSet,
 };
 #[derive(Debug)]
 pub enum CreateError {
@@ -48,6 +43,15 @@ pub enum CreateError {
 
 impl From<NameTakenError> for CreateError {
     fn from(e: NameTakenError) -> Self { Self::Existing(e.0) }
+}
+
+/// State of a get_member_symbol search, shared by the classes it goes through
+#[derive(Default)]
+struct MemberSearch {
+    visited_classes: HashSet<ClassKey>,
+    /// ext symbols of the visited classes, grouped by class in the visit order: only used if
+    /// no declared member is found in the whole hierarchy
+    ext_symbols: Vec<Vec<SymbolKey>>,
 }
 
 impl SymbolTable {
@@ -291,15 +295,15 @@ impl SymbolTable {
 
     /* 
     * Return the header range of a class or function, by substracting the body of the element from the full range.
-    * Require a fileInfo to use the lineIndex and get the line before the body, or a less precise end range will be returned
+    * Require a fileInfo key to use the lineIndex and get the line before the body, or a less precise end range will be returned
     */
-    pub fn header_range(&self, target: SymbolKey, file_info: Option<Rc<RefCell<FileInfo>>>) -> Option<TextRange> {
+    pub fn header_range(&self, target: SymbolKey, file_info: Option<&FileInfo>) -> Option<TextRange> {
         let range = self.range(target);
         if let Some(body_range) = self.body_range(target)
         && body_range.start() > range.start() {
             let end = match file_info {
                 Some(file_info)=> {
-                    file_info.borrow().prev_line_end(body_range.start())
+                    file_info.prev_line_end(body_range.start())
                         .filter(|&end| end > range.start())
                         .unwrap_or(body_range.start())
                 },
@@ -721,7 +725,7 @@ impl SymbolTable {
         {
             //js file created here is because of js in a custom entrypoint, and that should be created under a diskdir.
             //JS files under a Module should be created by the module loading, through load_assets
-            let js_file = session.st_mut().add_new_js_file(d.into(), &name, &path_str)?;
+            let js_file = session.sync_odoo.symbol_table.add_new_js_file(&mut session.sync_odoo.entry_point_mgr, d.into(), &name, &path_str)?;
             return Ok(js_file.into());
         }
         let main_entry_tree = session.sync_odoo.get_main_entry_tree(parent);
@@ -794,9 +798,9 @@ impl SymbolTable {
         self.get_tree_helper(symbol_key.into()).0
     }
 
-    pub fn get_tree_and_entry(&self, symbol_key: SymbolKey) -> (Tree, Rc<RefCell<EntryPoint>>) {
+    pub fn get_tree_and_entry(&self, symbol_key: SymbolKey) -> (Tree, EntryPointKey) {
         let (tree, root_key) = self.get_tree_helper(symbol_key);
-        let entry = self[root_key].entry_point().clone();
+        let entry = self[root_key].entry_point();
         (tree, entry)
     }
 
@@ -806,9 +810,9 @@ impl SymbolTable {
      * otherwise return the full tree, even if it is related to an entrypoint.
      * Which is possible due to relative imports e.g. `from ..module import X`.
      */
-    pub fn get_local_tree(&self, symbol_key: SymbolKey) -> Tree {
-        let (mut tree, entry) = self.get_tree_and_entry(symbol_key);
-        let entry_tree = &entry.borrow().tree;
+    pub fn get_local_tree(session: &SessionInfo, symbol_key: SymbolKey) -> Tree {
+        let (mut tree, entry) = session.st().get_tree_and_entry(symbol_key);
+        let entry_tree = &session.ep_mgr()[entry].tree();
         if tree.0.starts_with(entry_tree) {
             tree.0.drain(0..entry_tree.len());
         }
@@ -879,10 +883,14 @@ impl SymbolTable {
         } else {
             ContentSymbols::default()
         };
-        let ext_sym = self.get_ext_symbol(target, name);
-        if ext_sym.len() > 1 {
-            content.symbols.extend(ext_sym.into_iter().map(SymbolKey::from));
-            content.always_defined = true;
+        // ext symbols of a class are instance attributes, not names of its body: they are handled by get_member_symbol.
+        // Functions are not modules either: their ext symbols are attributes of the function object (see get_sub_symbol)
+        if matches!(target, SymbolKey::File(_) | SymbolKey::Module(_) | SymbolKey::PythonPackage(_)) {
+            let ext_sym = self.get_ext_symbol(target, name);
+            if !ext_sym.is_empty() {
+                content.symbols.extend(ext_sym.into_iter().map(SymbolKey::from));
+                content.always_defined = true;
+            }
         }
         content
     }
@@ -905,6 +913,12 @@ impl SymbolTable {
 
             if !content.symbols.is_empty() {
                 result.insert(name.clone(), content.symbols);
+            }
+        }
+        // only ext symbols injected into a file are names of its body (see get_content_symbol)
+        if matches!(target, SymbolKey::File(_)) {
+            for (name, ext_symbols) in self.get_all_ext_symbols(target, name_prefix) {
+                result.entry(name).or_default().extend(ext_symbols.into_iter().map(SymbolKey::from));
             }
         }
         result
@@ -1002,82 +1016,39 @@ impl SymbolTable {
         self.dependents_as_mut(dependency)[level_i][step_i - level_i].insert(target);
     }
 
-    pub fn add_model_dependencies(&mut self, target: SourceFileKey, model: &Rc<RefCell<Model>>) {
-        let model_dependencies = match target {
-            SourceFileKey::Module(m) => &mut self[m].model_dependencies,
-            SourceFileKey::PythonPackage(p) => &mut self[p].model_dependencies,
-            SourceFileKey::File(f) => &mut self[f].model_dependencies,
-            SourceFileKey::XmlFile(x) => &mut self[x].model_dependencies,
-            SourceFileKey::CsvFile(c) => &mut self[c].model_dependencies,
-            SourceFileKey::JsFile(j) => &mut self[j].model_dependencies,
-        };
-        model_dependencies.insert(model.clone());
-        model.borrow_mut().add_dependent(target);
-    }
-
     /**
      * reset the step of the symbol to given step and status to pending.
      * It will signal the change to all dependents
      */
     pub fn invalidate(session: &mut SessionInfo, symbol: SourceFileKey, step: BuildSteps) {
-        if step == BuildSteps::VALIDATION {
-            SymbolTable::invalidate_sub_functions(session, symbol);
-        }
+        // whatever the step, the functions are evaluated again before the validation of the file
+        SymbolTable::invalidate_sub_functions(session, symbol);
         session.st_mut().reset_build_status(symbol.into(), step, BuildStatus::PENDING);
         let mut vec_to_invalidate = VecDeque::from([symbol]);
         while let Some(ref_to_inv) = vec_to_invalidate.pop_front() {
             let in_workspace = session.st().in_workspace(ref_to_inv.into());
-            if step == BuildSteps::ARCH && in_workspace {
-                let arch_dependents = &session.st().dependents(ref_to_inv)[BuildSteps::ARCH as usize];
+            // every level from `step` is not reached anymore: dependents have to rebuild the step that depends on it
+            for level in (step as usize)..=(BuildSteps::VALIDATION as usize) {
+                if !in_workspace {
+                    break;
+                }
+                let dependents = &session.st().dependents(ref_to_inv)[level];
                 let mut build_queue = vec![];
-                for (index, hashset) in arch_dependents.iter().enumerate() {
+                for (offset, hashset) in dependents.iter().enumerate() {
                     for sym in hashset.iter_valid(session.st()) {
                         if !session.st().is_symbol_in_parents(sym.into(), ref_to_inv.into()) {
-                            build_queue.push((index, sym));
+                            build_queue.push((BuildSteps::from((level + offset) as i32), sym));
                         }
                     }
                 }
-                for (index, sym) in build_queue {
-                    if index == BuildSteps::VALIDATION as usize {
-                        SymbolTable::invalidate_sub_functions(session, sym);
-                    }
-                    session.st_mut().reset_build_status(sym.into(), BuildSteps::from(index as i32), BuildStatus::PENDING);
+                for (dep_step, sym) in build_queue {
+                    SymbolTable::invalidate_sub_functions(session, sym);
+                    session.st_mut().reset_build_status(sym.into(), dep_step, BuildStatus::PENDING);
                     BuildScheduler::queue(session, sym);
                 }
-            }
-            if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL].contains(&step) && in_workspace {
-                let arch_eval_dependents = &session.st().dependents(ref_to_inv)[BuildSteps::ARCH_EVAL as usize];
-                let mut build_queue = vec![];
-                for (index, hashset) in arch_eval_dependents.iter().enumerate() {
-                    for sym in hashset.iter_valid(session.st()) {
-                        if !session.st().is_symbol_in_parents(sym.into(), ref_to_inv.into()) {
-                            build_queue.push((index, sym));
-                        }
-                    }
-                }
-                for (index, sym) in build_queue {
-                    if index + 1 == BuildSteps::ARCH_EVAL as usize {
-                        session.st_mut().reset_build_status(sym.into(), BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
-                        BuildScheduler::queue(session, sym);
-                    } else if index + 1 == BuildSteps::VALIDATION as usize {
-                        SymbolTable::invalidate_sub_functions(session, sym);
-                        session.st_mut().reset_build_status(sym.into(), BuildSteps::VALIDATION, BuildStatus::PENDING);
-                        BuildScheduler::queue(session, sym);
-                    }
-                }
-                for (model, from_module) in session.st().iter_all_model_keys(session, ref_to_inv.into()) {
-                    model.borrow().add_dependents_to_validation(session, from_module);
-                }
-            }
-            if [BuildSteps::ARCH, BuildSteps::ARCH_EVAL, BuildSteps::VALIDATION].contains(&step) && in_workspace {
-                let validation_dependents = &session.st().dependents(ref_to_inv)[BuildSteps::VALIDATION as usize];
-                for sym in validation_dependents.iter()
-                        .flat_map(|s| s.iter_valid(session.st()))
-                        .collect::<Vec<_>>() {
-                    if !session.st_mut().is_symbol_in_parents(sym.into(), ref_to_inv.into()) {
-                        SymbolTable::invalidate_sub_functions(session, sym);
-                        session.st_mut().reset_build_status(sym.into(), BuildSteps::VALIDATION, BuildStatus::PENDING);
-                        BuildScheduler::queue(session, sym);
+                if level == BuildSteps::ARCH_EVAL as usize {
+                    for (model, from_module) in session.st().iter_all_model_keys(session, ref_to_inv.into()) {
+                        Model::add_dependents_to_validation(session, model, from_module);
                     }
                 }
             }
@@ -1105,6 +1076,8 @@ impl SymbolTable {
         }
     }
 
+    /// Reset the functions of `target` back to ARCH_EVAL, clearing their evaluations. They are built
+    /// again by the function queues of the BuildScheduler once `target` is queued for its validation.
     pub fn invalidate_sub_functions(session: &mut SessionInfo, target: SourceFileKey) {
         if let Some(deferred) = &mut session.sync_odoo.deferred_subfunc_invalidation {
             deferred.insert(target);
@@ -1249,9 +1222,9 @@ impl SymbolTable {
         current.unwrap_root_key()
     }
 
-    pub fn get_entry(&self, target: impl Into<SymbolKey>) -> Rc<RefCell<EntryPoint>> {
+    pub fn get_entry(&self, target: impl Into<SymbolKey>) -> EntryPointKey {
         let root = self.get_root(target.into());
-        self[root].entry_point().clone()
+        self[root].entry_point()
     }
 
     pub fn has_in_parents(&self, symbol: SymbolKey, to_test: SymbolKey, stop_same_file: bool) -> bool {
@@ -1724,16 +1697,16 @@ impl SymbolTable {
                     }
                 }
                 let model_option = session.st()[class_key]._model.as_ref().and_then(|model_data|
-                    session.sync_odoo.models.get(&model_data.name).cloned()
+                    session.model_mgr().get_model(&model_data.name)
                 );
                 if let Some(model) = model_option && with_co_models {
                     // no recursion because it is handled in all_symbols_inherits
-                    let (model_symbols, model_inherits_symbols) = model.borrow().all_symbols_inherits(session, from_module);
-                    for (model_key, dependency) in model_symbols {
-                        if dependency.is_some() || class_key == model_key {
+                    let (model_symbols, model_inherits_symbols) = model.all_symbols_inherits(session, from_module);
+                    for (model_class_key, dependency) in model_symbols {
+                        if dependency.is_some() || class_key == model_class_key {
                             continue;
                         }
-                        let model_sym = &session.st()[model_key];
+                        let model_sym = &session.st()[model_class_key];
                         let all_symbols: Vec<_> = iter_symbol_keys(model_sym).copied().collect();
                         for s in all_symbols {
                             if (only_fields && !Self::is_field(session, s)) || (only_methods && !matches!(s, SymbolKey::Function(_))) {
@@ -1743,11 +1716,11 @@ impl SymbolTable {
                             append_result(name, s);
                         }
                     }
-                    for (model_key, dependency) in model_inherits_symbols {
-                        if dependency.is_some() || class_key == model_key {
+                    for (model_class_key, dependency) in model_inherits_symbols {
+                        if dependency.is_some() || class_key == model_class_key {
                             continue;
                         }
-                        let model_sym = &session.st()[model_key];
+                        let model_sym = &session.st()[model_class_key];
                         // for inherits symbols, we only add fields
                         let all_symbols: Vec<_> = iter_symbol_keys(model_sym).copied().collect();
                         let fields = all_symbols.into_iter().filter(|&s| Self::is_field(session, s)).collect::<Vec<_>>();
@@ -1772,8 +1745,7 @@ impl SymbolTable {
                 let Some(model) = SymbolTable::get_xml_defined_model(session, xml_record_key) else {
                     return;
                 };
-                let model_ref = model.borrow();
-                let fields = model_ref.get_xml_model_field_symbols(session.st(), from_module);
+                let fields = session.model_mgr()[model].get_xml_model_field_symbols(session.st(), from_module);
                 let fields_with_names = fields.filter_map(|f_key| {
                     let field_name =
                         session.st()[f_key].get_field_text(XmlFieldName::Name, session.st())?;
@@ -1794,6 +1766,12 @@ impl SymbolTable {
                         append_result(name, s);
                     }
                 )
+            }
+        }
+        // Add Ext variables
+        if !only_fields && !only_methods && !(is_super && matches!(symbol_key, SymbolKey::Class(_))) {
+            for (name, ext_symbols) in session.st().get_all_ext_symbols(symbol_key, "") {
+                result.entry(name).or_default().extend(ext_symbols.into_iter().map(SymbolKey::from));
             }
         }
     }
@@ -2078,8 +2056,22 @@ impl SymbolTable {
         all: bool,
         is_super: bool
     ) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
-        let mut visited_classes: HashSet<ClassKey> = HashSet::default();
-        Self::get_member_symbol_helper(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super, &mut visited_classes)
+        let mut search = MemberSearch::default();
+        let (mut result, diagnostics) = Self::get_member_symbol_helper(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super, &mut search);
+        // Add Ext symbols as results only as a fallback, if we found nothing else
+        if result.is_empty() {
+            for class_ext_symbols in search.ext_symbols {
+                for symbol in class_ext_symbols {
+                    if !result.contains(&symbol) {
+                        result.push(symbol);
+                    }
+                }
+                if !all {
+                    break;
+                }
+            }
+        }
+        (result, diagnostics)
     }
 
     fn get_member_symbol_helper(
@@ -2092,7 +2084,7 @@ impl SymbolTable {
         only_methods: bool,
         all: bool,
         is_super: bool,
-        visited_classes: &mut HashSet<ClassKey>
+        search: &mut MemberSearch,
     ) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
         let mut result: Vec<SymbolKey> = vec![];
         let mut visited_symbols: HashSet<SymbolKey> = HashSet::default();
@@ -2143,8 +2135,7 @@ impl SymbolTable {
         if let SymbolKey::XmlRecord(xml_record_key) = target
             && let Some(model) = SymbolTable::get_xml_defined_model(session, xml_record_key)
         {
-            let model_ref = model.borrow();
-            let fields = model_ref.get_xml_model_field_symbols(session.st(), from_module);
+            let fields = session.model_mgr()[model].get_xml_model_field_symbols(session.st(), from_module);
             let matching_fields = fields.filter_map(|f_key| {
                 let field_name =
                     session.st()[f_key].get_field_text(XmlFieldName::Name, session.st())?;
@@ -2182,17 +2173,17 @@ impl SymbolTable {
         };
         let model_data = &session.st()[c]._model;
         if model_data.is_some() && !prevent_comodel {
-            let model = session.sync_odoo.models.get(&model_data.as_ref().unwrap().name).cloned();
+            let model = session.model_mgr().get_model_key(&model_data.as_ref().unwrap().name);
             if let Some(model) = model {
                 // from_module: None means no dependency filtering (return everything)
-                let model_symbols = Model::get_full_model_classes(model.clone(), session, from_module);
+                let model_symbols = Model::get_full_model_classes(model, session, from_module);
                 for model_symbol in model_symbols {
-                    if target == model_symbol || visited_classes.contains(&model_symbol) {
+                    if target == model_symbol || search.visited_classes.contains(&model_symbol) {
                         continue;
                     }
-                    visited_classes.insert(model_symbol);
+                    search.visited_classes.insert(model_symbol);
                     let member_from_module = session.st().find_module(model_symbol);
-                    let (attributs, att_diagnostic) = Self::get_member_symbol_helper(session, model_symbol.into(), name, member_from_module, true, only_fields, only_methods, all, false, visited_classes);
+                    let (attributs, att_diagnostic) = Self::get_member_symbol_helper(session, model_symbol.into(), name, member_from_module, true, only_fields, only_methods, all, false, search);
                     diagnostics.extend(att_diagnostic);
                     if all {
                         extend_result(attributs, &mut result, &mut visited_symbols);
@@ -2202,16 +2193,16 @@ impl SymbolTable {
                         }
                     }
                 }
-                for model_inherits_symbol in model.clone().borrow().get_inherits_models(session, from_module) {
+                for model_inherits_symbol in session.model_mgr()[model].get_inherits_models(session, from_module) {
                     //only fields are visible on inherits, not methods
                     let model_symbols = Model::get_full_model_classes(model_inherits_symbol, session, from_module);
                     for model_symbol in model_symbols {
-                        if target == model_symbol || visited_classes.contains(&model_symbol) {
+                        if target == model_symbol || search.visited_classes.contains(&model_symbol) {
                             continue;
                         }
-                        visited_classes.insert(model_symbol);
+                        search.visited_classes.insert(model_symbol);
                         let member_from_module = session.st().find_module(model_symbol);
-                        let (attributs, att_diagnostic) = Self::get_member_symbol_helper(session, model_symbol.into(), name, member_from_module, true, true, only_methods, all, false, visited_classes);
+                        let (attributs, att_diagnostic) = Self::get_member_symbol_helper(session, model_symbol.into(), name, member_from_module, true, true, only_methods, all, false, search);
                         diagnostics.extend(att_diagnostic);
                         if all {
                             extend_result(attributs, &mut result, &mut visited_symbols);
@@ -2228,11 +2219,13 @@ impl SymbolTable {
             let class_sym = &session.st()[c];
             let bases = class_sym.bases.iter().filter_map(|w| w.upgrade(session.st())).collect::<Vec<_>>();
             for base in bases {
-                if visited_classes.contains(&base){
+                if search.visited_classes.contains(&base){
                     continue;
                 }
-                visited_classes.insert(base);
-                let (s, s_diagnostic) = Self::get_member_symbol(session, base.into(), name, from_module, prevent_comodel, only_fields, only_methods, all, false);
+                search.visited_classes.insert(base);
+                let mut base_search = MemberSearch { visited_classes: HashSet::default(), ext_symbols: std::mem::take(&mut search.ext_symbols) };
+                let (s, s_diagnostic) = Self::get_member_symbol_helper(session, base.into(), name, from_module, prevent_comodel, only_fields, only_methods, all, false, &mut base_search);
+                search.ext_symbols = base_search.ext_symbols;
                     diagnostics.extend(s_diagnostic);
                 if !s.is_empty() {
                     if all {
@@ -2243,7 +2236,32 @@ impl SymbolTable {
                 }
             }
         }
+        // Only add ext symbols if result is empty, to not pollute "official" values
+        if !is_super && !only_fields && !only_methods && result.is_empty() {
+            let class_ext_symbols: Vec<SymbolKey> = session.st().get_ext_symbol(target, name).into_iter().map(SymbolKey::from).collect();
+            if !class_ext_symbols.is_empty() {
+                search.ext_symbols.push(class_ext_symbols);
+            }
+        }
         (result, diagnostics)
+    }
+
+    /// The symbols that `evaluations` evaluate to and that can host an attribute assigned from outside
+    /// (`base.x = ...`): classes (or class instances), namespaces, packages, files and functions
+    pub fn evaluated_ext_targets(session: &mut SessionInfo, evaluations: &[Evaluation]) -> Vec<SymbolKey> {
+        let mut targets = vec![];
+        for evaluation in evaluations.iter() {
+            let symbol = evaluation.symbol.get_symbol(session, None, &mut vec![], None);
+            for followed in SymbolTable::follow_ref(&symbol, session, None, false, false, None, None) {
+                if let Some(target) = followed.upgrade_weak(session.st())
+                    && matches!(target, SymbolKey::Class(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_)
+                        | SymbolKey::Module(_) | SymbolKey::File(_) | SymbolKey::Function(_))
+                    && !targets.contains(&target) {
+                        targets.push(target);
+                    }
+            }
+        }
+        targets
     }
 
     /**
@@ -2331,23 +2349,23 @@ impl SymbolTable {
         &self,
         session: &SessionInfo,
         key: SymbolKey,
-    ) -> Vec<(Rc<RefCell<Model>>, Option<ModuleKey>)> {
+    ) -> Vec<(ModelKey, Option<ModuleKey>)> {
         let mut res = vec![];
 
         fn iter_recursive(
             session: &SessionInfo,
             key: SymbolKey,
-            res: &mut Vec<(Rc<RefCell<Model>>, Option<ModuleKey>)>,
+            res: &mut Vec<(ModelKey, Option<ModuleKey>)>,
         ) {
             let table = session.st();
             match key {
                 SymbolKey::Class(class) => {
-                    if let Some(model_data) =
+                    if let Some(model_key) =
                         session.st()[class]._model.as_ref().and_then(|model_data| {
-                            session.sync_odoo.models.get(&model_data.name).cloned()
+                            session.model_mgr().get_model_key(&model_data.name)
                         })
                     {
-                        res.push((model_data, session.st().find_module(class)));
+                        res.push((model_key, session.st().find_module(class)));
                     }
                     let class_sym = &table[class];
                     for child_key in iter_symbol_keys(class_sym) {
@@ -2439,31 +2457,24 @@ impl SymbolTable {
     pub fn debug_path(&self, target: SymbolKey) -> String {
         self.paths(target).first().cloned().unwrap_or(self.name(target).to_string())
     }
-
-    pub fn get_xml_defined_model(session: &SessionInfo, xml_record_key: XmlRecordKey) -> Option<Rc<RefCell<Model>>> {
+    pub fn get_xml_defined_model(session: &SessionInfo, xml_record_key: XmlRecordKey) -> Option<ModelKey> {
         let model_name = session.st().get_declared_model(xml_record_key)?;
-        session.sync_odoo.models.get(model_name).cloned()
+        session.model_mgr().get_model_key(model_name)
     }
 }
 
 #[cfg(test)]
 mod get_symbol_tests {
     use super::*;
-    use crate::core::entry_point::{EntryPoint, EntryPointType};
+    use crate::core::entry_point::EntryPointMgr;
     use ruff_text_size::TextSize;
 
     /// Build an empty symbol table with a single root and return `(table, root_key)`.
     fn empty_table_with_root() -> (SymbolTable, RootKey) {
         let mut st = SymbolTable::new();
-        let entry = EntryPoint::new(
-            &mut st,
-            "/test".to_string(),
-            vec![],
-            EntryPointType::MAIN,
-            None,
-            None,
-        );
-        let root = entry.borrow().root;
+        let mut ep_mgr = EntryPointMgr::new();
+        let entry_key = ep_mgr.create_main_entry_for_test(&mut st, "/test");
+        let root = ep_mgr[entry_key].root();
         (st, root)
     }
 

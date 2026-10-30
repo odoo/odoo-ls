@@ -1,12 +1,13 @@
 use oxc::{allocator::Allocator, diagnostics::OxcDiagnostic, parser::Parser, semantic::SemanticBuilder, span::SourceType};
 use oxc_linter::{ConfigStore, ConfigStoreBuilder, ContextSubHost, ExternalPluginStore, LintOptions, ModuleRecord};
 use oxc::syntax::module_record::{ExportExportName, ImportImportName};
-use ruff_python_ast::{ModModule, PySourceType, Stmt, token::{Token, TokenKind}};
+use ruff_python_ast::{ModModule, PySourceType, token::{Token, TokenKind}};
 use ruff_python_parser::Parsed;
 use lsp_types::{Diagnostic, DiagnosticSeverity, MessageType, NumberOrString, Position, PublishDiagnosticsParams, Range, TextDocumentContentChangeEvent, Uri};
 use lsp_types::notification::{Notification, PublishDiagnostics};
 use ruff_source_file::{LineIndex, OneIndexed, PositionEncoding, SourceLocation};
 use rustc_hash::FxHasher;
+use slotmap::{SlotMap, new_key_type};
 use tracing::{error, warn};
 use std::path::Path;
 use crate::core::js_arch_builder::{ImportSource, JsImportKind, JsDeclaration, JsExportKind, span_to_range};
@@ -23,8 +24,6 @@ use crate::features::node_index_ast::IndexedModule;
 use crate::core::symbols::symbol_keys::SourceFileKey;
 use crate::threads::SessionInfo;
 use crate::utils::PathSanitizer;
-use std::rc::Rc;
-use std::cell::RefCell;
 use crate::S;
 use crate::constants::*;
 use ruff_text_size::{Ranged, TextRange, TextSize};
@@ -241,25 +240,6 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
     ParsedJs { component_descriptors, decls, imports, reexports, has_exports, syntax_diagnostics, lint_diagnostics }
 }
 
-#[derive(Debug, Clone)]
-pub struct PythonAst {
-    pub indexed_module: Option<Arc<IndexedModule>>,
-}
-
-impl Default for PythonAst {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl PythonAst {
-    pub fn new() -> Self {
-        Self {
-            indexed_module: None,
-        }
-    }
-}
-
 /// One module specifier as written by a JS file, and where it is written. A specifier
 /// requested by several statements yields one entry per statement.
 #[derive(Debug, Clone)]
@@ -284,65 +264,30 @@ pub struct JsAst {
     pub has_exports: bool,
 }
 
-impl Default for JsAst {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl JsAst {
-    pub fn new() -> Self {
-        Self {
-            js_decls: Vec::new(),
-            js_imports: Vec::new(),
-            js_reexports: Vec::new(),
-            has_exports: false,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum Ast {
-    PythonAst(PythonAst),
+    Pending,
+    PythonAst(Arc<IndexedModule>),
     XmlAst,
     CsvAst,
     JsAst(JsAst),
 }
 
 impl Ast {
-    pub fn as_py_ast(&self) -> &PythonAst {
+    /// The Python AST, if this is one. Clone the `Arc` to keep it across `&mut SessionInfo` calls
+    pub fn as_py_ast(&self) -> Option<&Arc<IndexedModule>> {
         match self {
-            Ast::PythonAst(py_ast) => py_ast,
-            _ => panic!("Expected PythonAst, found {:?}", self),
-        }
-    }
-    pub fn as_py_ast_mut(&mut self) -> &mut PythonAst {
-        match self {
-            Ast::PythonAst(py_ast) => py_ast,
-            _ => panic!("Expected PythonAst, found {:?}", self),
-        }
-    }
-    pub fn as_js_ast(&self) -> &JsAst {
-        match self {
-            Ast::JsAst(js_ast) => js_ast,
-            _ => panic!("Expected JsAst, found {:?}", self),
-        }
-    }
-    pub fn as_js_ast_mut(&mut self) -> &mut JsAst {
-        match self {
-            Ast::JsAst(js_ast) => js_ast,
-            _ => panic!("Expected JsAst, found {:?}", self),
+            Ast::PythonAst(py_ast) => Some(py_ast),
+            _ => None,
         }
     }
     pub fn is_built(&self) -> bool {
-        match self {
-            Ast::PythonAst(py_ast) => py_ast.indexed_module.is_some(),
-            Ast::JsAst(_) | Ast::XmlAst | Ast::CsvAst => true,
-        }
+        !matches!(self, Ast::Pending)
     }
     /// Read the AST kind for matching on type only without cloning
     pub fn kind(&self) -> AstKind {
         match self {
+            Ast::Pending => AstKind::Pending,
             Ast::PythonAst(_) => AstKind::PythonAst,
             Ast::XmlAst => AstKind::XmlAst,
             Ast::CsvAst => AstKind::CsvAst,
@@ -353,30 +298,19 @@ impl Ast {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AstKind {
+    Pending,
     PythonAst,
     XmlAst,
     CsvAst,
     JsAst,
 }
 
-/* Structure that hold ast and text_document for FileInfo. It allows Fileinfo to hold it with a Rc<RefCell<>> to allow mutability and build on-the-fly
- */
+/// Holds the text document of a [`FileInfo`] and its AST
 #[derive(Debug)]
 pub struct FileInfoAst {
     pub text_hash: u64,
     pub text_document: Option<TextDocument>,
     pub ast: Ast,
-}
-
-impl FileInfoAst {
-    pub fn get_stmts(&self) -> Option<&[Stmt]> {
-        match &self.ast {
-            Ast::PythonAst(python_ast) => {
-                python_ast.indexed_module.as_ref().map(|module| module.parsed.syntax().body.as_slice())
-            },
-            _ => None
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -386,7 +320,7 @@ pub struct FileInfo {
     pub valid: bool, // indicates if the file contains syntax error or not
     pub opened: bool,
     need_push: bool,
-    pub file_info_ast: Rc<RefCell<FileInfoAst>>,
+    pub file_info_ast: FileInfoAst,
     diagnostics: HashMap<DiagnosticSource, Vec<Diagnostic>>,
     pub noqas_blocs: HashMap<u32, NoqaInfo>,
     noqas_lines: HashMap<u32, NoqaInfo>,
@@ -396,18 +330,18 @@ pub struct FileInfo {
 }
 
 impl FileInfo {
-    fn new(uri: String) -> Self {
+    pub fn new(uri: String) -> Self {
         Self {
             version: None,
             uri,
             valid: true,
             opened: false,
             need_push: false,
-            file_info_ast: Rc::new(RefCell::new(FileInfoAst {
+            file_info_ast: FileInfoAst {
                 text_hash: 0,
                 text_document: None,
-                ast: Ast::PythonAst(PythonAst::new()),
-            })),
+                ast: Ast::Pending,
+            },
             diagnostics: HashMap::default(),
             noqas_blocs: HashMap::default(),
             noqas_lines: HashMap::default(),
@@ -415,7 +349,7 @@ impl FileInfo {
             diag_test_comments: vec![],
         }
     }
-    pub fn update(&mut self, session: &mut SessionInfo, path: &str, content: Option<&[TextDocumentContentChangeEvent]>, version: Option<i32>, is_external: bool, force: bool, is_untitled: bool) -> bool {
+    pub fn update(session: &mut SessionInfo, key: FileInfoKey, path: &str, content: Option<&[TextDocumentContentChangeEvent]>, version: Option<i32>, is_external: bool, force: bool, is_untitled: bool) -> bool {
         // update the file info with the given information.
         // path: indicates the path of the file
         // content: if content is given, it will be used to update the ast and text_rope, if not, the loading will be from the disk
@@ -423,33 +357,38 @@ impl FileInfo {
         // -100 can be given as version number to indicates that the file has not been opened yet, and that we have to load it ourself
         // See https://github.com/Microsoft/language-server-protocol/issues/177
         // Return true if the update has been done and not discarded
-        match version {
-            // -100, Set version to -100 later only if no failure occurs
-            Some(-100) => if self.opened && !force {
-                // Opened files can only receive version -100 if forced, abort
-                return false;
-            },
-            // normal version number, we update if higher, and set to opened anyway
-            Some(version) => {
-                self.opened = true;
-                if self.version.map(|v| version <= v).unwrap_or(false) && !force {
-                    // If the version is not higher, we do not update the file
+        {
+            let file = &mut session.file_mgr_mut()[key];
+            match version {
+                // -100, Set version to -100 later only if no failure occurs
+                Some(-100) => if file.opened && !force {
+                    // Opened files can only receive version -100 if forced, abort
                     return false;
+                },
+                // normal version number, we update if higher, and set to opened anyway
+                Some(version) => {
+                    file.opened = true;
+                    if file.version.map(|v| version <= v).unwrap_or(false) && !force {
+                        // If the version is not higher, we do not update the file
+                        return false;
+                    }
+                    file.version = Some(version);
                 }
-                self.version = Some(version);
+                // no version provided, we update only if the file is not opened or on force
+                None if file.version.is_some() && !force => return false,
+                _ => {},
             }
-            // no version provided, we update only if the file is not opened or on force
-            None if self.version.is_some() && !force => return false,
-            _ => {},
         }
         if let Some(content) = content {
             // If we are in did open, we create a new text_document
             // I.E. we have one content change event with no range
             // See [`Odoo:handle_did_open`]
+            let encoding = session.sync_odoo.encoding;
+            let file = &mut session.file_mgr_mut()[key];
             if content.len() == 1 && content[0].range.is_none() {
-                self.file_info_ast.borrow_mut().text_document = Some(TextDocument::new(content[0].text.clone(), self.version.expect("Expected version on file did Open")));
+                file.file_info_ast.text_document = Some(TextDocument::new(content[0].text.clone(), file.version.expect("Expected version on file did Open")));
             } else {
-                self.file_info_ast.borrow_mut().text_document.as_mut().unwrap().apply_changes(content, version.unwrap(), session.sync_odoo.encoding);
+                file.file_info_ast.text_document.as_mut().unwrap().apply_changes(content, version.unwrap(), encoding);
             }
         } else if is_untitled {
             session.log_message(MessageType::ERROR, format!("Attempt to update untitled file {}, without changes", path));
@@ -462,18 +401,19 @@ impl FileInfo {
             let sanitized_path = Path::new(path).sanitize_cow();
             if let Some(preloaded) = SyncOdoo::take_preloaded(session, &sanitized_path) {
                 // no need to gate on hash change: pre-parser only runs on first build
-                self.apply_preloaded(session, preloaded);
-                if version == Some(-100) && !self.opened {
-                    self.version = Some(-100);
+                Self::apply_preloaded(session, key, preloaded);
+                if version == Some(-100) && !session.file_mgr()[key].opened {
+                    session.file_mgr_mut()[key].version = Some(-100);
                 }
                 return true;
             }
             match fs::read_to_string(path) {
                 Ok(content) => {
-                    if version == Some(-100) && !self.opened {
-                        self.version = Some(-100);
+                    if version == Some(-100) && !session.file_mgr()[key].opened {
+                        session.file_mgr_mut()[key].version = Some(-100);
                     }
-                    self.file_info_ast.borrow_mut().text_document = Some(TextDocument::new(content, self.version.unwrap_or(-1)));
+                    let file = &mut session.file_mgr_mut()[key];
+                    file.file_info_ast.text_document = Some(TextDocument::new(content, file.version.unwrap_or(-1)));
                 },
                 Err(e) => {
                     session.log_message(MessageType::ERROR, format!("Failed to read file {}, with error {}", path, e));
@@ -481,50 +421,55 @@ impl FileInfo {
                 },
             };
         }
-        let old_hash = self.file_info_ast.borrow().text_hash;
-        let new_hash = hash_text_document(self.file_info_ast.borrow().text_document.as_ref().unwrap());
+        let (old_hash, new_hash) = {
+            let file = &session.file_mgr()[key];
+            let old_hash = file.file_info_ast.text_hash;
+            let new_hash = hash_text_document(file.file_info_ast.text_document.as_ref().unwrap());
+            (old_hash, new_hash)
+        };
         if old_hash == new_hash {
             return false;
         }
-        self.file_info_ast.borrow_mut().text_hash = new_hash;
-        self.clear_diagnostics();
-        self._build_ast(session, is_external);
+        session.file_mgr_mut()[key].file_info_ast.text_hash = new_hash;
+        session.file_mgr_mut()[key].clear_diagnostics();
+        Self::_build_ast(session, key, is_external);
         true
     }
 
-    pub fn _build_ast(&mut self, session: &mut SessionInfo, is_external: bool) {
-        match Path::new(&self.uri).extension().and_then(|s| s.to_str()) {
+    pub fn _build_ast(session: &mut SessionInfo, key: FileInfoKey, is_external: bool) {
+        let ext = Path::new(&session.file_mgr()[key].uri).extension().and_then(|s| s.to_str()).map(|s| s.to_string());
+        match ext.as_deref() {
             Some("xml") => {
-                self.file_info_ast.borrow_mut().ast = Ast::XmlAst;
+                session.file_mgr_mut()[key].file_info_ast.ast = Ast::XmlAst;
             }
             Some("csv") => {
-                self.file_info_ast.borrow_mut().ast = Ast::CsvAst;
+                session.file_mgr_mut()[key].file_info_ast.ast = Ast::CsvAst;
             }
             Some("js") | Some("ts") => {
-                self.file_info_ast.borrow_mut().ast = Ast::JsAst(JsAst::new());
-                self.build_js_ast(session, is_external);
+                FileInfo::build_js_ast(session, key, is_external);
             }
             _ => {
-                self.build_python_ast(session, is_external);
+                FileInfo::build_python_ast(session, key, is_external);
             }
         }
     }
 
-    fn build_python_ast(&mut self, session: &mut SessionInfo, is_external: bool) {
-        let source_type = python_source_type(&self.uri);
+    fn build_python_ast(session: &mut SessionInfo, key: FileInfoKey, is_external: bool) {
+        let source_type = python_source_type(&session.file_mgr()[key].uri);
         let parsed = {
-            let fia = self.file_info_ast.borrow();
-            parse_python(fia.text_document.as_ref().unwrap(), source_type, session.sync_odoo.encoding, session.sync_odoo.test_mode, is_external)
+            let file = &session.file_mgr()[key];
+            parse_python(file.file_info_ast.text_document.as_ref().unwrap(), source_type, session.sync_odoo.encoding, session.sync_odoo.test_mode, is_external)
         };
         if !is_external {
-            self.noqas_blocs = parsed.noqas_blocs;
-            self.noqas_lines = parsed.noqas_lines;
-            self.diag_test_comments.extend(parsed.diag_test_comments);
+            let file = &mut session.file_mgr_mut()[key];
+            file.noqas_blocs = parsed.noqas_blocs;
+            file.noqas_lines = parsed.noqas_lines;
+            file.diag_test_comments.extend(parsed.diag_test_comments);
         }
         let (valid, diagnostics) = Self::syntax_diagnostics(session, &parsed.indexed_module.parsed);
-        self.valid = valid;
-        self.file_info_ast.borrow_mut().ast.as_py_ast_mut().indexed_module = Some(parsed.indexed_module);
-        self.replace_diagnostics(DiagnosticSource::PY_SYNTAX, diagnostics);
+        session.file_mgr_mut()[key].valid = valid;
+        session.file_mgr_mut()[key].file_info_ast.ast = Ast::PythonAst(parsed.indexed_module);
+        session.file_mgr_mut()[key].replace_diagnostics(DiagnosticSource::PY_SYNTAX, diagnostics);
     }
 
     /// Build the SYNTAX-step diagnostics (OLS01000) for a parsed Python module.
@@ -553,46 +498,48 @@ impl FileInfo {
     /// the file inline. For Python this mirrors the Python branch of
     /// [`Self::_build_ast`] — syntax diagnostics are built here because they
     /// depend on the session's diagnostic config.
-    fn apply_preloaded(&mut self, session: &mut SessionInfo, preloaded: PreloadedFile) {
+    fn apply_preloaded(session: &mut SessionInfo, key: FileInfoKey, preloaded: PreloadedFile) {
         match preloaded {
             PreloadedFile::Python { text_hash, text_document, parsed } => {
                 let (valid, diagnostics) = Self::syntax_diagnostics(session, &parsed.indexed_module.parsed);
-                self.valid = valid;
-                self.noqas_blocs = parsed.noqas_blocs;
-                self.noqas_lines = parsed.noqas_lines;
-                self.diag_test_comments = parsed.diag_test_comments;
                 {
-                    let mut fia = self.file_info_ast.borrow_mut();
+                    let file = &mut session.file_mgr_mut()[key];
+                    file.valid = valid;
+                    file.noqas_blocs = parsed.noqas_blocs;
+                    file.noqas_lines = parsed.noqas_lines;
+                    file.diag_test_comments = parsed.diag_test_comments;
+                }
+                {
+                    let fia = &mut session.file_mgr_mut()[key].file_info_ast;
                     fia.text_hash = text_hash;
                     fia.text_document = Some(text_document);
-                    fia.ast = Ast::PythonAst(PythonAst { indexed_module: Some(parsed.indexed_module) });
+                    fia.ast = Ast::PythonAst(parsed.indexed_module);
                 }
-                self.replace_diagnostics(DiagnosticSource::PY_SYNTAX, diagnostics);
+                session.file_mgr_mut()[key].replace_diagnostics(DiagnosticSource::PY_SYNTAX, diagnostics);
             }
             PreloadedFile::DataFile { text_hash, text_document, ast } => {
-                let mut fia = self.file_info_ast.borrow_mut();
+                let fia = &mut session.file_mgr_mut()[key].file_info_ast;
                 fia.text_hash = text_hash;
                 fia.text_document = Some(text_document);
                 fia.ast = ast;
             }
             PreloadedFile::Js { text_hash, text_document, parsed } => {
                 {
-                    let mut fia = self.file_info_ast.borrow_mut();
+                    let fia = &mut session.file_mgr_mut()[key].file_info_ast;
                     fia.text_hash = text_hash;
                     fia.text_document = Some(text_document);
-                    fia.ast = Ast::JsAst(JsAst::new());
                 }
-                self.apply_parsed_js(session, parsed);
+                FileInfo::apply_parsed_js(session, key, parsed);
             }
         }
     }
 
-    fn build_js_ast(&mut self, session: &mut SessionInfo, _is_external: bool) {
+    fn build_js_ast(session: &mut SessionInfo, key: FileInfoKey, _is_external: bool) {
         let parsed = {
-            let fia = self.file_info_ast.borrow();
-            parse_js(fia.text_document.as_ref().unwrap().contents(), &self.uri)
+            let contents = session.file_mgr()[key].file_info_ast.text_document.as_ref().unwrap().contents();
+            parse_js(contents, &session.file_mgr()[key].uri)
         };
-        self.apply_parsed_js(session, parsed);
+        FileInfo::apply_parsed_js(session, key, parsed);
     }
 
     /// Store a [`ParsedJs`] on this `FileInfo` and feed the OWL maps with it. This is
@@ -600,23 +547,19 @@ impl FileInfo {
     /// the file was parsed inline ([`Self::build_js_ast`]) or by a pre-parse worker
     /// ([`Self::apply_preloaded`]), so `js_arch_builder::build` keeps seeing files in
     /// build order either way.
-    ///
-    /// Expects [`Ast::JsAst`] to be in place already.
-    fn apply_parsed_js(&mut self, session: &mut SessionInfo, parsed: ParsedJs) {
-        session.sync_odoo.component_mgr.index_file(&self.uri, parsed.component_descriptors);
-        {
-            let mut fia = self.file_info_ast.borrow_mut();
-            let js_ast = fia.ast.as_js_ast_mut();
-            js_ast.js_decls = parsed.decls;
-            js_ast.js_imports = parsed.imports;
-            js_ast.js_reexports = parsed.reexports;
-            js_ast.has_exports = parsed.has_exports;
-        }
-        let uri = FileMgr::pathname2uri(&self.uri);
+    fn apply_parsed_js(session: &mut SessionInfo, key: FileInfoKey, parsed: ParsedJs) {
+        session.sync_odoo.component_mgr.index_file(&session.file_mgr()[key].uri.clone(), parsed.component_descriptors);
+        session.file_mgr_mut()[key].file_info_ast.ast = Ast::JsAst(JsAst {
+            js_decls: parsed.decls,
+            js_imports: parsed.imports,
+            js_reexports: parsed.reexports,
+            has_exports: parsed.has_exports,
+        });
+        let uri = FileMgr::pathname2uri(&session.file_mgr()[key].uri);
         let to_lsp_diag = |diags: Vec<OxcDiagnostic>|
             diags.iter().flat_map(|d| js_utils::oxc_diagnostic_to_lsp_diagnostic(d, &uri)).collect();
-        self.replace_diagnostics(DiagnosticSource::JS_OXC_SYNTAX, to_lsp_diag(parsed.syntax_diagnostics));
-        self.replace_diagnostics(DiagnosticSource::JS_OXC_LINT, to_lsp_diag(parsed.lint_diagnostics));
+        session.file_mgr_mut()[key].replace_diagnostics(DiagnosticSource::JS_OXC_SYNTAX, to_lsp_diag(parsed.syntax_diagnostics));
+        session.file_mgr_mut()[key].replace_diagnostics(DiagnosticSource::JS_OXC_LINT, to_lsp_diag(parsed.lint_diagnostics));
     }
 
     fn collect_js_imports(parser_module_record: &oxc::syntax::module_record::ModuleRecord) -> ParsedJsImports {
@@ -676,22 +619,21 @@ impl FileInfo {
     }
 
     /* if ast has been set to none to lower memory usage, try to reload it */
-    pub fn prepare_ast(&mut self, session: &mut SessionInfo) {
-        if self.file_info_ast.borrow_mut().text_document.is_none() { //can already be set in xml files
-            match fs::read_to_string(&self.uri) {
+    pub fn prepare_ast(session: &mut SessionInfo, key: FileInfoKey) {
+        let file = &mut session.file_mgr_mut()[key];
+        if file.file_info_ast.text_document.is_none() { //can already be set in xml files
+            match fs::read_to_string(&file.uri) {
                 Ok(content) => {
-                    self.file_info_ast.borrow_mut().text_document = Some(TextDocument::new(content, self.version.unwrap_or(-1)));
+                    file.file_info_ast.text_document = Some(TextDocument::new(content, file.version.unwrap_or(-1)));
                 },
                 Err(_) => {
                     return;
                 },
             };
         }
-        {
-            let mut fia = self.file_info_ast.borrow_mut();
-            fia.text_hash = hash_text_document(fia.text_document.as_ref().unwrap());
-        }
-        self._build_ast(session, session.sync_odoo.get_file_mgr().borrow().is_in_workspace(&self.uri));
+        file.file_info_ast.text_hash = hash_text_document(file.file_info_ast.text_document.as_ref().unwrap());
+        let is_external = FileMgr::is_external_path(session, &session.file_mgr()[key].uri);
+        FileInfo::_build_ast(session, key, is_external);
     }
 
     /// Scan a parsed module's comment tokens for `noqa` directives and (in test mode)
@@ -801,17 +743,19 @@ impl FileInfo {
         }
         diagnostic
     }
-    pub fn update_diagnostic_filters(&mut self, session: &SessionInfo) {
-        self.diagnostic_filters = session.sync_odoo.config.diagnostic_filters().iter().filter(|filter| {
+    pub fn update_diagnostic_filters(session: &mut SessionInfo, key: FileInfoKey) {
+        let uri = session.file_mgr()[key].uri.clone();
+        let filters = session.sync_odoo.config.diagnostic_filters().iter().filter(|filter| {
             match filter.path_type {
                 DiagnosticFilterPathType::In => {
-                    filter.paths.iter().any(|p| p.matches(&self.uri))
+                    filter.paths.iter().any(|p| p.matches(&uri))
                 }
                 DiagnosticFilterPathType::NotIn => {
-                    !filter.paths.iter().any(|p| p.matches(&self.uri))
+                    !filter.paths.iter().any(|p| p.matches(&uri))
                 }
             }
         }).cloned().collect::<Vec<_>>();
+        session.file_mgr_mut()[key].diagnostic_filters = filters;
     }
 
     fn js_diagnostics(&self) -> Vec<Diagnostic> {
@@ -840,85 +784,88 @@ impl FileInfo {
         diagnostics
     }
 
-    pub fn publish_diagnostics(&mut self, session: &mut SessionInfo) {
-        if self.need_push {
+    pub fn publish_diagnostics(session: &mut SessionInfo, key: FileInfoKey) {
+        if session.file_mgr()[key].need_push {
             let mut all_diagnostics = Vec::new();
+            {
+                let file = &session.file_mgr()[key];
+                let is_js = file.file_info_ast.ast.kind() == AstKind::JsAst;
+                let diagnostics = if is_js {
+                    Self::js_diagnostics(file)
+                } else {
+                    file.diagnostics.values().flatten().cloned().collect::<Vec<_>>()
+                };
 
-            let is_js = self.file_info_ast.borrow().ast.kind() == AstKind::JsAst;
-            let diagnostics = if is_js {
-                Self::js_diagnostics(self)
-            } else {
-                self.diagnostics.values().flatten().cloned().collect()
-            };
-
-            'diagnostics: for d in diagnostics {
-                //check noqa lines
-                let updated = self.update_range(d, session.sync_odoo.encoding);
-                let updated_line = updated.range.start.line;
-                if let Some(noqa_line) = self.noqas_lines.get(&updated_line) {
-                    match noqa_line {
-                        NoqaInfo::None => {},
-                        NoqaInfo::All => {
-                            continue;
-                        }
-                        NoqaInfo::Codes(codes) => {
-                            match &updated.code {
-                                None => {continue;},
-                                Some(NumberOrString::Number(n)) => {
-                                    if codes.contains(&n.to_string()) {
-                                        continue;
-                                    }
-                                },
-                                Some(NumberOrString::String(s)) => {
-                                    if codes.contains(s) {
-                                        continue;
+                'diagnostics: for d in diagnostics {
+                    //check noqa lines
+                    let updated = file.update_range(d, session.sync_odoo.encoding);
+                    let updated_line = updated.range.start.line;
+                    if let Some(noqa_line) = file.noqas_lines.get(&updated_line) {
+                        match noqa_line {
+                            NoqaInfo::None => {},
+                            NoqaInfo::All => {
+                                continue;
+                            }
+                            NoqaInfo::Codes(codes) => {
+                                match &updated.code {
+                                    None => {continue;},
+                                    Some(NumberOrString::Number(n)) => {
+                                        if codes.contains(&n.to_string()) {
+                                            continue;
+                                        }
+                                    },
+                                    Some(NumberOrString::String(s)) => {
+                                        if codes.contains(s) {
+                                            continue;
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
-                for filter in self.diagnostic_filters.iter() {
-                    if !filter.codes.is_empty(){
-                        // we pass the filter if we do not have code, or does it not match the filter
-                        let Some(updated_code) = &updated.code else {
-                            continue;
-                        };
-                        let updated_code = match updated_code {
-                            NumberOrString::Number(n) => n.to_string(),
-                            NumberOrString::String(s) => s.clone(),
-                        };
-                        if !filter.codes.iter().any(|re| re.is_match(&updated_code)) {
-                            continue;
+                    for filter in file.diagnostic_filters.iter() {
+                        if !filter.codes.is_empty(){
+                            // we pass the filter if we do not have code, or does it not match the filter
+                            let Some(updated_code) = &updated.code else {
+                                continue;
+                            };
+                            let updated_code = match updated_code {
+                                NumberOrString::Number(n) => n.to_string(),
+                                NumberOrString::String(s) => s.clone(),
+                            };
+                            if !filter.codes.iter().any(|re| re.is_match(&updated_code)) {
+                                continue;
+                            }
                         }
-                    }
-                    if !filter.types.is_empty() {
-                        // we pass the filter if we do not have severity, or does it not match the filter
-                        let Some(severity) = &updated.severity else {
-                            continue;
-                        };
-                        if !filter.types.iter().any(|t| {
-                            matches!(
-                                (t, severity),
-                                (DiagnosticSetting::Error, &DiagnosticSeverity::ERROR)
-                                    | (DiagnosticSetting::Warning, &DiagnosticSeverity::WARNING)
-                                    | (DiagnosticSetting::Info, &DiagnosticSeverity::INFORMATION)
-                                    | (DiagnosticSetting::Hint, &DiagnosticSeverity::HINT)
-                            )
-                        }) {
-                            continue;
+                        if !filter.types.is_empty() {
+                            // we pass the filter if we do not have severity, or does it not match the filter
+                            let Some(severity) = &updated.severity else {
+                                continue;
+                            };
+                            if !filter.types.iter().any(|t| {
+                                matches!(
+                                    (t, severity),
+                                    (DiagnosticSetting::Error, &DiagnosticSeverity::ERROR)
+                                        | (DiagnosticSetting::Warning, &DiagnosticSeverity::WARNING)
+                                        | (DiagnosticSetting::Info, &DiagnosticSeverity::INFORMATION)
+                                        | (DiagnosticSetting::Hint, &DiagnosticSeverity::HINT)
+                                )
+                            }) {
+                                continue;
+                            }
                         }
+                        continue 'diagnostics;
                     }
-                    continue 'diagnostics;
+                    all_diagnostics.push(updated);
                 }
-                all_diagnostics.push(updated);
             }
+            let file = &session.file_mgr()[key];
             session.send_notification(PublishDiagnostics::METHOD, PublishDiagnosticsParams{
-                uri: FileMgr::pathname2uri(&self.uri),
+                uri: FileMgr::pathname2uri(&file.uri),
                 diagnostics: all_diagnostics,
-                version: self.version,
+                version: file.version,
             });
-            self.need_push = false;
+            session.file_mgr_mut()[key].need_push = false;
         }
     }
 
@@ -934,11 +881,11 @@ impl FileInfo {
     }
 
     pub fn offset_to_position(&self, offset: u32, encoding: PositionEncoding) -> Position {
-        FileInfo::offset_to_position_with_text_document(self.file_info_ast.borrow().text_document.as_ref().expect("no text_document provided"), offset, encoding)
+        FileInfo::offset_to_position_with_text_document(self.file_info_ast.text_document.as_ref().expect("no text_document provided"), offset, encoding)
     }
 
     fn try_offset_to_position(&self, offset: u32, encoding: PositionEncoding) -> Option<Position> {
-        FileInfo::try_offset_to_position_with_text_document(self.file_info_ast.borrow().text_document.as_ref()?, offset, encoding)
+        FileInfo::try_offset_to_position_with_text_document(self.file_info_ast.text_document.as_ref()?, offset, encoding)
     }
 
     pub fn text_range_to_range(&self, range: TextRange, encoding: PositionEncoding) -> Range {
@@ -967,14 +914,13 @@ impl FileInfo {
     }
 
     pub fn position_to_offset(&self, line: u32, char: u32, encoding: PositionEncoding) -> usize {
-        FileInfo::position_to_offset_with_text_document(self.file_info_ast.borrow().text_document.as_ref().expect("no text_document provided"), line, char, encoding)
+        FileInfo::position_to_offset_with_text_document(self.file_info_ast.text_document.as_ref().expect("no text_document provided"), line, char, encoding)
     }
 
     /// Returns the offset of the end of the line preceding the line that `offset` is on
     /// (excluding the newline character), using the document's `LineIndex`.
     pub fn prev_line_end(&self, offset: TextSize) -> Option<TextSize> {
-        let ast_ref = self.file_info_ast.borrow();
-        let td = ast_ref.text_document.as_ref()?;
+        let td = self.file_info_ast.text_document.as_ref()?;
         let index = td.index();
         let line = index.line_index(offset);
         let prev_line = line.checked_sub(OneIndexed::new(1).unwrap()).unwrap_or(line);
@@ -982,16 +928,34 @@ impl FileInfo {
     }
 }
 
+new_key_type! {
+    pub struct FileInfoKey;
+}
+
 #[derive(Debug)]
 pub struct FileMgr {
-    pub files: HashMap<String, Rc<RefCell<FileInfo>>>,
-    untitled_files: HashMap<String, Rc<RefCell<FileInfo>>>, // key: untitled URI or unique name
+    files: HashMap<String, FileInfoKey>,
+    untitled_files: HashMap<String, FileInfoKey>, // key: untitled URI or unique name
     workspace_folders: HashSet<(String, Uri)>,
+    file_arena: SlotMap<FileInfoKey, FileInfo>,
 }
 
 impl Default for FileMgr {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl std::ops::Index<FileInfoKey> for FileMgr {
+    type Output = FileInfo;
+    fn index(&self, k: FileInfoKey) -> &FileInfo {
+        &self.file_arena[k]
+    }
+}
+
+impl std::ops::IndexMut<FileInfoKey> for FileMgr {
+    fn index_mut(&mut self, k: FileInfoKey) -> &mut FileInfo {
+        &mut self.file_arena[k]
     }
 }
 
@@ -1020,7 +984,26 @@ impl FileMgr {
             files: HashMap::default(),
             untitled_files: HashMap::default(),
             workspace_folders: HashSet::default(),
+            file_arena: SlotMap::with_key(),
         }
+    }
+
+    pub fn add_or_get_file_info(&mut self, uri: String, is_untitled: bool) -> FileInfoKey {
+        let entry = if is_untitled {
+            self.untitled_files.entry(uri.to_string())
+        } else {
+            self.files.entry(uri.to_string())
+        };
+        *entry.or_insert_with(|| self.file_arena.insert(FileInfo::new(uri)))
+    }
+
+    /// Private to keep deletion safe and localized
+    fn drop_file_info(&mut self, file_info: FileInfoKey) {
+        self.file_arena.remove(file_info);
+    }
+
+    fn clear_file_infos(&mut self) {
+        self.file_arena.clear();
     }
 
     #[allow(non_snake_case)]
@@ -1030,7 +1013,7 @@ impl FileMgr {
             Position::new(range.end().to_u32(), 0))
     }
 
-    pub fn get_file_info(&self, path: &str) -> Option<Rc<RefCell<FileInfo>>> {
+    pub fn get_file_info(&self, path: &str) -> Option<FileInfoKey> {
         if Self::is_untitled(path) {
             self.untitled_files.get(path).cloned()
         } else {
@@ -1038,17 +1021,29 @@ impl FileMgr {
         }
     }
 
-    pub fn text_range_to_range(&self, session: &mut SessionInfo, path: &str, range: TextRange) -> Range {
-        let file = if Self::is_untitled(path) {
-            self.untitled_files.get(path)
+    pub fn iter_file_keys(&self) -> impl Iterator<Item = &FileInfoKey> {
+        self.files.values()
+    }
+
+    pub fn contains_path(&self, path: &str) -> bool {
+        if Self::is_untitled(path) {
+            self.untitled_files.contains_key(path)
         } else {
-            self.files.get(path)
+            self.files.contains_key(path)
+        }
+    }
+
+    pub fn text_range_to_range(session: &mut SessionInfo, path: &str, range: TextRange) -> Range {
+        let file = if Self::is_untitled(path) {
+            session.file_mgr().untitled_files.get(path)
+        } else {
+            session.file_mgr().files.get(path)
         };
-        if let Some(file) = file {
-            if file.borrow().file_info_ast.borrow().text_document.is_none() {
-                file.borrow_mut().prepare_ast(session);
+        if let Some(&file) = file {
+            if session.file_mgr()[file].file_info_ast.text_document.is_none() {
+                FileInfo::prepare_ast(session, file);
             }
-            return file.borrow().text_range_to_range(range, session.sync_odoo.encoding);
+            return session.file_mgr()[file].text_range_to_range(range, session.sync_odoo.encoding);
         }
         // For untitled, never try to read from disk
         if Self::is_untitled(path) {
@@ -1070,17 +1065,17 @@ impl FileMgr {
     }
 
 
-    pub fn std_range_to_range(&self, session: &mut SessionInfo, path: &str, range: &std::ops::Range<usize>) -> Range {
+    pub fn std_range_to_range(session: &mut SessionInfo, path: &str, range: &std::ops::Range<usize>) -> Range {
         let file = if Self::is_untitled(path) {
-            self.untitled_files.get(path)
+            session.file_mgr().untitled_files.get(path)
         } else {
-            self.files.get(path)
+            session.file_mgr().files.get(path)
         };
-        if let Some(file) = file {
-            if file.borrow().file_info_ast.borrow().text_document.is_none() {
-                file.borrow_mut().prepare_ast(session);
+        if let Some(&file) = file {
+            if session.file_mgr()[file].file_info_ast.text_document.is_none() {
+                FileInfo::prepare_ast(session, file);
             }
-            return file.borrow().std_range_to_range(range, session.sync_odoo.encoding);
+            return session.file_mgr()[file].std_range_to_range(range, session.sync_odoo.encoding);
         }
         // For untitled, never try to read from disk
         if Self::is_untitled(path) {
@@ -1107,30 +1102,26 @@ impl FileMgr {
         path.starts_with("untitled:")
     }
 
-    pub fn update_file_info(&mut self, session: &mut SessionInfo, uri: &str, content: Option<&[TextDocumentContentChangeEvent]>, version: Option<i32>, force: bool) -> (bool, Rc<RefCell<FileInfo>>) {
+    /// External = owned by a `public` entry point only, not by any entry the user actually owns.
+    pub fn is_external_path(session: &SessionInfo, uri: &str) -> bool {
+        let ep_mgr = &session.sync_odoo.entry_point_mgr;
+        !ep_mgr.iter_all_but_public().any(|entry| Path::new(uri).starts_with(ep_mgr[entry].path()))
+    }
+
+    pub fn update_file_info(session: &mut SessionInfo, uri: &str, content: Option<&[TextDocumentContentChangeEvent]>, version: Option<i32>, force: bool) -> (bool, FileInfoKey) {
         let is_untitled = Self::is_untitled(uri);
-        let entry = if is_untitled {
-            self.untitled_files.entry(uri.to_string())
-        } else {
-            self.files.entry(uri.to_string())
-        };
-        let file_info = entry.or_insert_with(|| {
-            let mut file_info = FileInfo::new(uri.to_string());
-            file_info.update_diagnostic_filters(session);
-            Rc::new(RefCell::new(file_info))
-        });
-        let return_info = file_info.clone();
+        let is_new = if is_untitled { !session.file_mgr().untitled_files.contains_key(uri) } else { !session.file_mgr().files.contains_key(uri) };
+        let file_key = session.file_mgr_mut().add_or_get_file_info(uri.to_string(), is_untitled);
+        if is_new {
+            FileInfo::update_diagnostic_filters(session, file_key);
+        }
         //Do not modify the file if a version is not given but the file is opened
         let mut updated: bool = false;
-        if (version.is_some() && version.unwrap() != -100) || !file_info.borrow().opened || force {
-            let mut file_info_mut = (*return_info).borrow_mut();
-            let ep_mgr = session.sync_odoo.entry_point_mgr.borrow();
-            let is_part_of_ep = ep_mgr.iter_all_but_public().any(|entry| uri.starts_with(&entry.borrow().path));
-            drop(ep_mgr);
-            updated = file_info_mut.update(session, uri, content, version, !is_part_of_ep, force, is_untitled);
-            drop(file_info_mut);
+        if (version.is_some() && version.unwrap() != -100) || !session.file_mgr()[file_key].opened || force {
+            let is_external = Self::is_external_path(session, uri);
+            updated = FileInfo::update(session, file_key, uri, content, version, is_external, force, is_untitled);
         }
-        (updated, return_info)
+        (updated, file_key)
     }
 
     /// Get the cached file info for `symbol`, recreating it from disk if it was
@@ -1141,68 +1132,94 @@ impl FileMgr {
     /// treat a failure as invalid/pending; callers that can tolerate an
     /// absent file (e.g. arch building a module that has no `__init__.py`)
     /// can ignore it.
-    pub fn get_or_recreate_file_info(session: &mut SessionInfo, symbol: SourceFileKey) -> (Rc<RefCell<FileInfo>>, bool) {
+    pub fn get_or_recreate_file_info(session: &mut SessionInfo, symbol: SourceFileKey) -> (FileInfoKey, bool) {
         let path = session.sync_odoo.symbol_table.file_path(symbol).to_string();
-        let maybe_file_info = session.sync_odoo.get_file_mgr().borrow().get_file_info(&path);
+        let maybe_file_info = session.file_mgr().get_file_info(&path);
         match maybe_file_info {
-            Some(file_info) => (file_info, true),
+            Some(file_info_key) => (file_info_key, true),
             None => {
-                let (loaded, file_info) = session.sync_odoo.get_file_mgr().borrow_mut().update_file_info(session, &path, None, Some(-100), true);
+                let (loaded, file_info_key) = Self::update_file_info(session, &path, None, Some(-100), true);
                 if !loaded {
                     warn!("File info not found for {} at path {}", session.sync_odoo.symbol_table.name(symbol), path);
                 }
-                (file_info, loaded)
+                (file_info_key, loaded)
             }
         }
     }
 
-    pub fn update_all_file_diagnostic_filters(&mut self, session: &SessionInfo) {
-        for file_info in self.files.values() {
-            file_info.borrow_mut().update_diagnostic_filters(session);
+    pub fn update_all_file_diagnostic_filters(session: &mut SessionInfo) {
+        let file_keys = session.file_mgr().files.values().copied().collect::<Vec<_>>();
+        for key in file_keys {
+            FileInfo::update_diagnostic_filters(session, key);
         }
     }
 
-    pub fn delete_path(session: &mut SessionInfo, uri: &str) {
+    /// Deletes all files that match the given URI or are in its subdirectories.
+    /// Note: FileInfoKeys will become invalid after deletion.
+    pub fn delete_path_recursive(session: &mut SessionInfo, uri: &str) {
         //delete all files that are the uri or in subdirectory
-        let matching_keys: Vec<String> = session.sync_odoo.get_file_mgr().borrow_mut().files.keys().filter(|&k| Path::new(k).starts_with(uri)).cloned().collect();
+        let matching_keys: Vec<String> = session.file_mgr_mut().files.keys().filter(|&k| Path::new(k).starts_with(uri)).cloned().collect();
+        let publish_diagnostics = SyncOdoo::is_in_workspace_or_entry(session, uri);
         for key in matching_keys {
-            Self::delete_entry(session, &key, uri);
+            Self::delete_entry_by_path(session, &key, publish_diagnostics);
         }
     }
 
-    /// Unlike `delete_path`, this function only deletes the file with the exact uri, and not files in subdirectories.
-    pub fn delete_file_path(session: &mut SessionInfo, uri: &str) {
-        Self::delete_entry(session, uri, uri);
+    /// Deletes only the file with the exact URI, not files in subdirectories.
+    /// Note: FileInfoKeys will become invalid after deletion.
+    pub fn delete_file_path(session: &mut SessionInfo, uri: &str) -> bool{
+        Self::delete_entry_by_path(session, uri, SyncOdoo::is_in_workspace_or_entry(session, uri))
+    }
+
+    fn delete_entry_by_path(session: &mut SessionInfo, file_path: &str, publish_diagnostics: bool) -> bool{
+        let file_mgr = session.file_mgr();
+        let Some(file_info) = file_mgr.get_file_info(file_path) else {
+            return false;
+        };
+        if file_mgr[file_info].opened {
+            // Do not delete an opened file's cache; handle_did_close decides whether to clear it on close.
+            return false;
+        }
+        Self::delete_entry(session, file_path, file_info, publish_diagnostics)
+    }
+
+    pub fn delete_entry_by_key(session: &mut SessionInfo, file_info: FileInfoKey, publish_diagnostics: bool) -> bool{
+        let file_mgr = session.file_mgr();
+        if file_mgr[file_info].opened {
+            return false;
+        }
+        let file_path = &file_mgr[file_info].uri.clone();
+        Self::delete_entry(session, file_path, file_info, publish_diagnostics)
     }
 
     /// Helper for delete_path and delete_file_path
-    fn delete_entry(session: &mut SessionInfo, key: &str, uri: &str) {
-        // Do not delete an opened file's cache; handle_did_close decides whether to clear it on close.
-        if let Some(file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(key)
-            && file_info.borrow().opened {
-                return;
+    ///
+    /// Keyed by file_path, and deletes the corresponding FileInfo and clears diagnostics if necessary.
+    fn delete_entry(session: &mut SessionInfo, file_path: &str, file_info: FileInfoKey, publish_diagnostics: bool) -> bool{
+        if Self::is_untitled(file_path){
+            session.file_mgr_mut().untitled_files.remove(file_path);
+        } else {
+            session.file_mgr_mut().files.remove(file_path);
+            if publish_diagnostics {
+                session.file_mgr_mut()[file_info].clear_diagnostics();
+                FileInfo::publish_diagnostics(session, file_info);
             }
-        let to_del = session.sync_odoo.get_file_mgr().borrow_mut().files.remove(key);
-        session.sync_odoo.component_mgr.forget_file(key);
-        if let Some(to_del) = to_del
-            && SyncOdoo::is_in_workspace_or_entry(session, uri) {
-                let mut to_del = (*to_del).borrow_mut();
-                to_del.clear_diagnostics();
-                to_del.publish_diagnostics(session)
-            }
+        }
+        session.file_mgr_mut().drop_file_info(file_info);
+        session.sync_odoo.component_mgr.forget_file(file_path);
+        true
     }
 
     pub fn clear(session: &mut SessionInfo) {
-        let file_mgr = session.sync_odoo.get_file_mgr();
-        let file_mgr = file_mgr.borrow();
-        for file in file_mgr.files.values().clone() {
-            if !file_mgr.is_in_workspace(&file.borrow().uri) {
+        let files = session.file_mgr().files.values().copied().collect::<Vec<_>>();
+        for file in files {
+            let file_mgr = session.file_mgr();
+            if !file_mgr.is_in_workspace(&file_mgr[file].uri) {
                 continue;
             }
             let mut found = false;
-            for entry in session.sync_odoo.entry_point_mgr.borrow().custom_entry_points.iter() {
-                let entry = entry.borrow();
-                if file.borrow().uri == entry.path {
+            for &entry in session.sync_odoo.entry_point_mgr.custom_entry_points().iter() {
+                if file_mgr[file].uri == session.sync_odoo.entry_point_mgr[entry].path() {
                     found = true;
                     break;
                 }
@@ -1210,12 +1227,12 @@ impl FileMgr {
             if !found {
                 continue;
             }
-            let mut to_del = file.borrow_mut();
-            to_del.clear_diagnostics();
-            to_del.publish_diagnostics(session)
+            session.file_mgr_mut()[file].clear_diagnostics();
+            FileInfo::publish_diagnostics(session, file);
         }
-        drop(file_mgr);
-        session.sync_odoo.get_file_mgr().borrow_mut().files.clear();
+        session.file_mgr_mut().clear_file_infos();
+        session.file_mgr_mut().files.clear();
+        session.file_mgr_mut().untitled_files.clear();
     }
 
     /// Add workspace folder by name and uri

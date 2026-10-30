@@ -26,30 +26,25 @@ struct ImportGraph {
 impl ImportGraph {
     /// Scan every parsed JS file and resolve its recorded specifiers against the workspace.
     fn build(session: &SessionInfo) -> Self {
-        let js_files: Vec<(String, Vec<JsImport>, Vec<String>)> = session
-            .sync_odoo
-            .get_file_mgr()
-            .borrow()
-            .files
-            .values()
-            .filter_map(|file_info| {
-                let file_info = file_info.borrow();
-                let ast = file_info.file_info_ast.borrow();
-                matches!(ast.ast, Ast::JsAst(_)).then(|| {
-                    // TODO: review these expensive clones
-                    (file_info.uri.clone(), ast.ast.as_js_ast().js_imports.clone(), ast.ast.as_js_ast().js_reexports.clone())
-                })
+        let js_files: Vec<(&str, &[JsImport], &[String])> = session.file_mgr()
+            .iter_file_keys()
+            .filter_map(|file_info_key| {
+                let file_info = &session.file_mgr()[*file_info_key];
+                let Ast::JsAst(js_ast) = &file_info.file_info_ast.ast else { return None };
+                Some(
+                    (file_info.uri.as_str(), js_ast.js_imports.as_slice(), js_ast.js_reexports.as_slice())
+                )
             })
             .collect();
 
-        let known: HashSet<String> = js_files.iter().map(|(path, _, _)| path.clone()).collect();
+        let known: HashSet<&str> = js_files.iter().map(|(path, _, _)| *path).collect();
         let module_src = module_src_dirs(session);
         let get_module_src = |module_name: &str| module_src.get(module_name).cloned();
         let is_known = |path: &str| known.contains(path);
 
         let mut importers: HashMap<String, HashSet<String>> = HashMap::default();
         let mut reexporters: HashMap<String, HashSet<String>> = HashMap::default();
-        for (path, imports, reexports) in js_files.iter() {
+        for (path, imports, reexports) in js_files {
             let reexported: HashSet<&str> = reexports.iter().map(String::as_str).collect();
             for import in imports {
                 let specifier = &import.specifier;
@@ -57,9 +52,9 @@ impl ImportGraph {
                     continue; // npm package, `/static/lib/` file, or an alias we do not model
                 };
                 if reexported.contains(specifier.as_str()) {
-                    reexporters.entry(target.clone()).or_default().insert(path.clone());
+                    reexporters.entry(target.clone()).or_default().insert(path.to_string());
                 }
-                importers.entry(target).or_default().insert(path.clone());
+                importers.entry(target).or_default().insert(path.to_string());
             }
         }
         ImportGraph { importers, reexporters }
@@ -109,7 +104,7 @@ pub fn resolve_import_specifier(session: &SessionInfo, specifier: &str, importer
         let src = PathBuf::from(&session.st()[module].path).join("static").join("src");
         Some(src.sanitize())
     };
-    let is_known = |path: &str| session.sync_odoo.get_file_mgr().borrow().files.contains_key(path);
+    let is_known = |path: &str| session.file_mgr().contains_path(path);
     resolve_specifier(specifier, importer, module_src,  is_known)
 }
 

@@ -247,8 +247,8 @@ impl AnalyzeAstResult {
 fn record_evaluation_hit(session: &mut SessionInfo, parent: SymbolKey, range: TextRange) -> bool {
     let Some(file) = session.st().get_file(parent) else { return false };
     let file_path = session.st().file_path(file).to_string();
-    let Some(file_info) = session.sync_odoo.get_file_mgr().borrow().get_file_info(&file_path) else { return false };
-    let transformed_range = file_info.borrow().text_range_to_range(range, session.sync_odoo.encoding);
+    let Some(file_info) = session.file_mgr().get_file_info(&file_path) else { return false };
+    let transformed_range = session.file_mgr()[file_info].text_range_to_range(range, session.sync_odoo.encoding);
     let uri = FileMgr::pathname2uri(&file_path);
     session.sync_odoo.evaluation_locations.push(Location { uri, range: transformed_range });
     true
@@ -684,9 +684,14 @@ impl Evaluation {
         let mut found_one_reference = false;
 
         let parent_file_or_func = session.st().parent_file_or_function(parent).unwrap();
+        // in validation, or in the ARCH/ARCH_EVAL of a function, for what is evaluated in its file (its decorators).
+        // Not its body: it is evaluated again by the function validation, that would report the same diagnostics.
         let is_in_validation = match parent_file_or_func.typ() {
             SymType::FILE | SymType::PACKAGE(_) | SymType::FUNCTION => {
                 session.st().build_status(parent_file_or_func.unwrap_buildable_key(), BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
+                || session.sync_odoo.functions_in_build.last().is_some_and(|&function| {
+                    session.st().get_file(function.into()).is_some_and(|file| parent_file_or_func == SymbolKey::from(file))
+                })
             },
             _ => {false}
         };

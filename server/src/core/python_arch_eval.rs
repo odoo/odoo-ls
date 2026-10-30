@@ -1,16 +1,14 @@
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
-use std::rc::Rc;
-use std::cell::RefCell;
 use std::vec;
 
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use ruff_python_ast::{Alias, AnyRootNodeRef, ExceptHandler, Expr, ExprNamed, FStringPart, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
+use ruff_python_ast::{Alias, AnyRootNodeRef, ExceptHandler, Expr, ExprAttribute, ExprNamed, FStringPart, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{debug, trace, warn};
 
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
-use crate::core::entry_point::EntryPointType;
+use crate::core::entry_point::{EntryPointKey, EntryPointType};
 use crate::core::symbols::{ModuleSymbol, SymbolMgr};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::symbol_keys::{BuildableSymbolKey, ClassKey, FunctionKey, ModuleKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey, VariableKey};
@@ -24,9 +22,8 @@ use crate::features::ast_utils::AstUtils;
 use crate::threads::SessionInfo;
 
 use super::config::DiagMissingImportsMode;
-use super::entry_point::EntryPoint;
 use super::evaluation::{EvaluationSymbolPtr, EvaluationSymbolWeak};
-use super::file_mgr::FileMgr;
+use super::file_mgr::{FileInfo, FileMgr};
 use super::import_resolver::ImportResult;
 use super::python_arch_eval_hooks::PythonArchEvalHooks;
 use super::python_odoo_builder::PythonOdooBuilder;
@@ -35,7 +32,7 @@ use super::symbols::function_symbol::FunctionSymbol;
 
 #[derive(Debug, Clone)]
 pub struct PythonArchEval {
-    entry_point: Rc<RefCell<EntryPoint>>,
+    entry_point: EntryPointKey,
     file: SourceFileKey,
     file_mode: bool,
     current_step: BuildSteps,
@@ -45,7 +42,7 @@ pub struct PythonArchEval {
 }
 
 impl PythonArchEval {
-    pub fn new(symbol_table: &SymbolTable, entry_point: Rc<RefCell<EntryPoint>>, symbol: PythonBuildableSymbolKey) -> Option<Self> {
+    pub fn new(symbol_table: &SymbolTable, entry_point: EntryPointKey, symbol: PythonBuildableSymbolKey) -> Option<Self> {
         let file = symbol_table.get_file(symbol.into()).unwrap();
         let file_mode = SymbolKey::from(symbol) == SymbolKey::from(file);
         Some(PythonArchEval {
@@ -68,28 +65,32 @@ impl PythonArchEval {
             trace!("ARCH_EVAL  - PYTHON {} - {}", session.st().path(self.file), session.st().name(symbol));
         }
         session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::ARCH_EVAL, BuildStatus::IN_PROGRESS);
-        let (file_info_rc, _) = FileMgr::get_or_recreate_file_info(session, self.file);
-        if !file_info_rc.borrow().file_info_ast.borrow().ast.is_built() {
-            file_info_rc.borrow_mut().prepare_ast(session);
-        }
-        let file_info = (*file_info_rc).borrow();
-        let file_info_ast = file_info.file_info_ast.clone();
-        drop(file_info);
+        // attributes injected by the previous evaluation (see eval_attribute_ext_symbol)
+        session.st_mut().remove_ext_symbols(symbol);
+        let (py_ast, text_hash) = {
+            let (file_info_key, _) = FileMgr::get_or_recreate_file_info(session, self.file);
+            if !session.file_mgr()[file_info_key].file_info_ast.ast.is_built() {
+                FileInfo::prepare_ast(session, file_info_key);
+            }
+            (
+                session.file_mgr()[file_info_key].file_info_ast.ast.as_py_ast().cloned(),
+                session.file_mgr()[file_info_key].file_info_ast.text_hash,
+            )
+        };
         if let SymbolKey::Module(m) = symbol  {
             ModuleSymbol::load_data(m, session);
             ModuleSymbol::load_assets(m, session);
         }
-        if file_info_ast.borrow().ast.as_py_ast().indexed_module.is_some() {
-            let file_info_ast_bw  = file_info_ast.borrow();
+        if let Some(py_ast) = py_ast {
             //  If the file has been re-parsed since, those indexes address another tree.
-            if file_info_ast_bw.text_hash != session.st().get_processed_text_hash(self.file) {
+            if text_hash != session.st().get_processed_text_hash(self.file) {
                 session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::ARCH_EVAL, BuildStatus::INVALID);
                 return;
             }
             let old_noqa = session.current_noqa.clone();
             session.current_noqa = session.st().get_noqas(symbol);
             let (ast, maybe_func_stmt) = match self.file_mode {
-                true => (file_info_ast_bw.get_stmts().unwrap(), None),
+                true => (py_ast.get_stmts(), None),
                 false => {
                     let f = self.sym_stack[0].unwrap_function_key();
                     let fun_index = session.st()[f].node_index.load();
@@ -97,7 +98,7 @@ impl PythonArchEval {
                         // Function has no body or is dynamically created from a hook
                         (Default::default(), None) // essentially skip evaluation
                     } else {
-                        let func_stmt = file_info_ast_bw.ast.as_py_ast().indexed_module.as_ref().unwrap().get_by_index(fun_index);
+                        let func_stmt = py_ast.get_by_index(fun_index);
                         match func_stmt {
                             AnyRootNodeRef::Stmt(Stmt::FunctionDef(func_stmt)) => {
                                 (func_stmt.body.as_slice(), Some(func_stmt))
@@ -118,26 +119,36 @@ impl PythonArchEval {
             }
             session.current_noqa = old_noqa;
         }
+        let file_path = self.file_path(session);
         if self.file_mode {
-            file_info_rc.borrow_mut().replace_diagnostics(DiagnosticSource::PY_ARCH_EVAL, self.diagnostics.clone());
-            PythonArchEvalHooks::on_file_eval(session, &self.entry_point, self.file);
+            if let Some(file_info_key) = session.file_mgr().get_file_info(&file_path) {
+                session.file_mgr_mut()[file_info_key].replace_diagnostics(DiagnosticSource::PY_ARCH_EVAL, self.diagnostics.clone());
+            }
+            PythonArchEvalHooks::on_file_eval(session, self.entry_point, self.file);
         } else {
             //then Symbol must be a function
             let f = symbol.unwrap_function_key();
             session.st_mut()[f].replace_diagnostics(BuildSteps::ARCH_EVAL, self.diagnostics.clone());
-            PythonArchEvalHooks::on_function_eval(session, &self.entry_point, f);
+            PythonArchEvalHooks::on_function_eval(session, self.entry_point, f);
         }
         session.st_mut().set_build_status(self.sym_stack[0].unwrap_buildable_key(), BuildSteps::ARCH_EVAL, BuildStatus::DONE);
-        if session.st().is_external(self.sym_stack[0]) && (!self.file_mode  || !file_info_rc.borrow().opened) {
-            if self.file_mode {
-                let file_path = session.st().file_path(self.file).to_string();
-                FileMgr::delete_file_path(session, &file_path);
-            }
-        } else {
-            if self.file_mode {
-                BuildScheduler::queue(session, self.sym_stack[0].unwrap_buildable_key());
-            }
+        if !self.file_mode {
+            return;
         }
+        if session.st().is_external(self.sym_stack[0])
+        && let Some(file_info_key) = session.file_mgr().get_file_info(&file_path)
+        && FileMgr::delete_entry_by_key(session, file_info_key, SyncOdoo::is_in_workspace_or_entry(session, &file_path))
+        {
+            // File is external, and deleted, early exit
+            return;
+        }
+        if session.file_mgr().contains_path(&file_path) {
+            BuildScheduler::queue(session, self.sym_stack[0].unwrap_buildable_key());
+        }
+    }
+
+    fn file_path(&self, session: &SessionInfo) -> String {
+        session.st().file_path(self.file).to_string()
     }
 
     fn visit_stmt(&mut self, session: &mut SessionInfo, stmt: &Stmt) {
@@ -410,7 +421,7 @@ impl PythonArchEval {
                         let mut file_tree = import_result.file_tree.clone();
                         file_tree.extend(import_result.name.split(".").map(|s| oyarn!("{}", s)));
                         session.st_mut().not_found_paths_mut(self.file).push((self.current_step, file_tree.clone()));
-                        self.entry_point.borrow_mut().not_found_symbols.insert(self.file);
+                        session.ep_mgr_mut()[self.entry_point].not_found_symbols.insert(self.file);
                         if self._match_diag_config(session.sync_odoo, import_sym)
                             && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS02002, &[&file_tree.clone().join(".")]) {
                                 self.diagnostics.push(Diagnostic {
@@ -429,7 +440,7 @@ impl PythonArchEval {
                 }
                 if !self.safe_import.last().unwrap() {
                     session.st_mut().not_found_paths_mut(self.file).push((self.current_step, file_tree.clone()));
-                    self.entry_point.borrow_mut().not_found_symbols.insert(self.file);
+                    session.ep_mgr_mut()[self.entry_point].not_found_symbols.insert(self.file);
                     for &import_sym in import_result.symbols.iter() {
                         if self._match_diag_config(session.sync_odoo, import_sym)
                             && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS02001, &[&file_tree.clone().join(".")]) {
@@ -526,6 +537,7 @@ impl PythonArchEval {
                     }
                 },
                 AssignTargetType::Attribute(ref attr_expr) => {
+                    self.eval_attribute_ext_symbol(session, assign, attr_expr, range);
                     // Validation for compute methods, only in function mode
                     if self.file_mode {
                         continue;
@@ -540,12 +552,12 @@ impl PythonArchEval {
                     let Some(model_data) = session.st()[c]._model.as_ref() else {
                         continue;
                     };
-                    let Some(model) = session.sync_odoo.models.get(&model_data.name).cloned() else {
+                    let Some(model) = session.model_mgr().get_model_key(&model_data.name) else {
                         continue;
                     };
                     let fn_name = session.st().name(self.sym_stack[0]).clone();
                     let module = session.st().find_module(parent_class);
-                    let allowed_fields = model.borrow().get_method_computed_field_names(session, module, &fn_name);
+                    let allowed_fields = session.model_mgr()[model].get_method_computed_field_names(session, module, &fn_name);
                     if allowed_fields.is_empty() {
                         continue;
                     }
@@ -585,6 +597,42 @@ impl PythonArchEval {
                         }
                 }
             }
+        }
+    }
+
+    /// `base.x = ...`: inject `x` into each symbol `base` evaluates to (`self` in a method, an instance
+    /// or a class anywhere, but also a namespace, a package, a file or a function, like `odoo._ = _`),
+    /// as an ext symbol owned by the evaluated symbol (file or function).
+    fn eval_attribute_ext_symbol(&mut self, session: &mut SessionInfo, assign: &Assign, attr_expr: &ExprAttribute, range: &TextRange) {
+        let owner = self.sym_stack[0];
+        let scope = *self.sym_stack.last().unwrap();
+        let mut deps = vec![vec![], vec![]];
+        if !self.file_mode {
+            deps.push(vec![]);
+        }
+        let (base_evaluations, _) = Evaluation::eval_from_ast(session, &attr_expr.value, scope, &attr_expr.range.start(), false, &mut deps);
+        let targets = SymbolTable::evaluated_ext_targets(session, &base_evaluations);
+        if targets.is_empty() {
+            return;
+        }
+        // evaluate the value before creating the symbols, so that `self.x = self.x + 1` can't evaluate to itself
+        let evaluations = if assign.index.is_some() { //the value is the indexed element of an iterable, so its evaluation would be wrong
+            vec![]
+        } else if let Some(annotation) = assign.annotation.as_ref() {
+            let (evaluations, diags) = Evaluation::eval_from_ast(session, annotation, scope, &range.start(), true, &mut deps);
+            self.diagnostics.extend(diags);
+            evaluations
+        } else if let Some(value) = assign.value.as_ref() {
+            let (evaluations, diags) = Evaluation::eval_from_ast(session, value, scope, &range.start(), false, &mut deps);
+            self.diagnostics.extend(diags);
+            evaluations
+        } else {
+            vec![]
+        };
+        session.st_mut().insert_dependencies(self.file, &deps, self.current_step);
+        for target in targets {
+            let variable = session.st_mut().add_new_ext_symbol(target, &attr_expr.attr.id, attr_expr.attr.range, owner);
+            session.st_mut()[variable].evaluations = evaluations.clone();
         }
     }
 
@@ -690,7 +738,7 @@ impl PythonArchEval {
         self.sym_stack.push(class_key);
         self.visit_sub_stmts(session, &class_stmt.body);
         self.sym_stack.pop();
-        if !session.st().is_external(self.sym_stack[0]) && session.st().get_entry(self.sym_stack[0]).borrow().typ == EntryPointType::MAIN {
+        if !session.st().is_external(self.sym_stack[0]) && session.ep_mgr()[session.st().get_entry(self.sym_stack[0])].typ() == EntryPointType::MAIN {
             if session.st().get_in_parents(class_key, &[SymType::FUNCTION], true).is_some() {
                 if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03024, &[]) {
                     self.diagnostics.push(Diagnostic {
