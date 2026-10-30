@@ -45,6 +45,8 @@ fn test_ols03029_model_order() {
         // A constant is not validated: no diagnostic on `_order`, nor on the constant's string
         ("_order = ORDER", None),
         ("ORDER = 'unknown_field'", None),
+        // `# noqa: OLS03014` on the class: only the wrong direction is reported
+        ("_order = 'unknown_noqa_field dsc'", Some(("OLS03029", "dsc"))),
     ];
     let failures = case_failures("model_order.py", cases);
     assert!(failures.is_empty(), "_order diagnostics:\n{}", failures.join("\n"));
