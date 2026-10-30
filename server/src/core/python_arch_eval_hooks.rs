@@ -10,7 +10,6 @@ use ruff_python_ast::Expr;
 use ruff_python_ast::StmtFunctionDef;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
-use tracing::warn;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation::GetSymbolHook;
 use crate::core::evaluation::GetSymbolHookCallable;
@@ -47,6 +46,7 @@ pub fn get_base_model_symbol(odoo: &mut SyncOdoo) -> Option<SymbolKey> {
     let base_model_symbol = odoo.get_symbol(odoo.config.odoo_path().as_ref().unwrap(), base_model_tree, u32::MAX);
     base_model_symbol.first().copied()
 }
+
 pub struct PythonArchEvalFileHook {
     pub odoo_entry: bool,
     pub trees: Vec<(Version, Version, TreeStrSlice<'static>)>, //if tree content is set, will provide symbol in file content instead of the file symbol to func
@@ -389,15 +389,6 @@ static arch_eval_function_hooks: LazyLock<Vec<PythonArchEvalFunctionHook>> = Laz
                         func: |odoo: &mut SyncOdoo, _entry_point: EntryPointKey, symbol: FunctionKey| {
         let base_model = get_base_model_symbol(odoo);
         odoo.symbol_table[symbol].evaluations = vec![Evaluation::new_self(base_model.unwrap(), Some(true))];
-        let func = &odoo.symbol_table[symbol];
-        if func.args.len() > 1
-            && let Some(arg_symbol) = func.args.get(1).unwrap().symbol.upgrade(&odoo.symbol_table) {
-                if odoo.symbol_table.name(arg_symbol) == "domain" {
-                    odoo.symbol_table[arg_symbol].evaluations = vec![Evaluation::new_domain(odoo)];
-                } else {
-                    warn!("domain not found on search signature")
-                }
-            }
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
                         tree: vec![((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "browse"])),
@@ -578,6 +569,7 @@ static arch_eval_function_hooks: LazyLock<Vec<PythonArchEvalFunctionHook>> = Laz
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: EntryPointKey, symbol: FunctionKey| {
         PythonArchEvalHooks::update_field_init_func_level(&mut odoo.symbol_table, symbol, None);
+        PythonArchEvalHooks::inherit_selection_init_args(odoo, symbol);
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
                         tree: vec![((0, 0), (18, 1), (&["odoo", "fields"], &["Json", "__init__"])),
@@ -1180,6 +1172,36 @@ impl PythonArchEvalHooks {
         odoo.symbol_table[function].args = field_get_args;
     }
 
+    /// Copy the parameters of `Selection.__init__` to the `__init__` the arch builder hooks add to `Reference`.
+    /// In Odoo, `Reference` inherits them, but the added `__init__` hides them.
+    /// Skipped if `Reference.__init__` already has parameters.
+    fn inherit_selection_init_args(odoo: &mut SyncOdoo, function: FunctionKey) {
+        if !odoo.symbol_table[function].args.is_empty() {
+            return;
+        }
+        let selection_init_tree: TreeStrSlice = if odoo.version < (18, 1) {
+            (&["odoo", "fields"], &["Selection", "__init__"])
+        } else {
+            (
+                &["odoo", "orm", "fields_selection"],
+                &["Selection", "__init__"],
+            )
+        };
+        let Some(SymbolKey::Function(selection_init)) = odoo
+            .get_symbol(
+                odoo.config.odoo_path().as_ref().unwrap(),
+                selection_init_tree,
+                u32::MAX,
+            )
+            .first()
+            .copied()
+        else {
+            return;
+        };
+        let selection_init_args = odoo.symbol_table[selection_init].args.clone();
+        odoo.symbol_table[function].args = selection_init_args;
+    }
+
     fn update_field_init_func_level(symbol_table: &mut SymbolTable, function: FunctionKey, relational: Option<OYarn>) {
         let Some(class_sym) = symbol_table.get_in_parents(function.into(), &[SymType::CLASS], true) else {
             return;
@@ -1305,12 +1327,20 @@ impl PythonArchEvalHooks {
             ("inverse", "str", ContextKey::Inverse, ContextKey::InverseArgRange),
             ("search", "str", ContextKey::Search, ContextKey::SearchArgRange),
             ("group_expand", "str", ContextKey::GroupExpand, ContextKey::GroupExpandArgRange),
-            ("selection", "str", ContextKey::Selection, ContextKey::SelectionArgRange),
             ("inverse_name", "str", ContextKey::InverseName, ContextKey::InverseNameArgRange),
             ("delegate", "bool", ContextKey::Delegate, ContextKey::EMPTY), // No arg range
             ("required", "bool", ContextKey::Required, ContextKey::EMPTY),
             ("default", "bool", ContextKey::Default, ContextKey::EMPTY),
         ];
+        // only the selection fields accept a selection
+        if selection_field {
+            context_arguments.push((
+                "selection",
+                "str",
+                ContextKey::Selection,
+                ContextKey::SelectionArgRange,
+            ));
+        }
         // fields only accept compute_sql from 19.1 on
         if session.sync_odoo.version >= (19, 1) {
             context_arguments.push(("compute_sql", "str", ContextKey::ComputeSql, ContextKey::ComputeSqlArgRange));
