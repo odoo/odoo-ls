@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
 use duplicate::duplicate_item;
-use odoo_ls_macros::{From, IntoKey, IntoSymbolKey, SymbolKeySubset, Validator};
+use odoo_ls_macros::{From, IntoKey, IntoSymbolKey, SymbolKeySubset, TryFromSymbolKey, Validator};
 use slotmap::{Key, new_key_type};
 
 use crate::constants::{OYarn, PackageType, SymType};
@@ -390,7 +390,7 @@ pub enum XmlId {
     XmlDelete(XmlDeleteKey),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, From, IntoSymbolKey, Validator)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, From, IntoSymbolKey, TryFromSymbolKey, Validator)]
 pub enum ModelSymbolKey {
     // [Partial]Ord is implemented to sort ClassKeys before XmlRecordKeys
     Class(ClassKey),
@@ -410,6 +410,12 @@ impl ModelSymbolKey {
             ModelSymbolKey::XmlRecord(k) => Some(*k),
             _ => None,
         }
+    }
+}
+
+impl SymbolKey {
+    pub fn as_model_symbol_key(&self) -> Option<ModelSymbolKey> {
+        ModelSymbolKey::try_from(*self).ok()
     }
 }
 
