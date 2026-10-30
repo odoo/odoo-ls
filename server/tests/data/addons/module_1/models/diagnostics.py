@@ -33,7 +33,7 @@ class ModelWithDiagnostics(models.Model):
     test_method_search_8 = fields.Selection(selection="_selection_2") # OLS03018
     test_method_search_9 = fields.Selection([], group_expand="_group_expand_2") # OLS03018
     test_method_search_10 = fields.Char("_selection_2")
-
+    test_method_search_11 = fields.Char(selection="_selection_2")
     date = fields.Date()
 
     to_compute = fields.Integer(compute="_compute_field")

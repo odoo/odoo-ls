@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use ruff_python_ast::ExprStringLiteral;
 use ruff_text_size::TextRange;
 use crate::core::odoo::SyncOdoo;
@@ -5,7 +6,7 @@ use crate::core::symbols::symbol_keys::{ModelSymbolKey, ModuleKey, SourceFileKey
 use crate::features::ast_utils::StringContext;
 use crate::threads::SessionInfo;
 
-use super::call_args::{find_argument_symbols, find_kwarg_methods_symbols};
+use super::call_args::resolve_call_argument;
 
 /// What a model-related string literal resolves to. Shared by go-to-definition and
 /// semantic tokens.
@@ -17,6 +18,28 @@ pub enum StringResolution {
     XmlId(Vec<XmlId>),
 }
 
+impl StringResolution {
+    /// Construct a `StringResolution` from a list of member symbols.
+    /// Returns `None` if the list is empty.
+    pub(super) fn from_members(members: Vec<(SymbolKey, TextRange)>) -> Option<Self> {
+        (!members.is_empty()).then_some(StringResolution::Members(members))
+    }
+
+    /// Merge the resolution of another callable for the same string.
+    /// If the two resolutions are of different variants, keep the first one.
+    pub(super) fn merge(self, other: Self) -> Self {
+        match (self, other) {
+            (StringResolution::Members(members), StringResolution::Members(others)) => {
+                StringResolution::Members(members.into_iter().chain(others).unique().collect())
+            }
+            (StringResolution::Model(models), StringResolution::Model(others)) => {
+                StringResolution::Model(models.into_iter().chain(others).unique().collect())
+            }
+            (resolution, _) => resolution,
+        }
+    }
+}
+
 /// Which dotted segments of a field path to return: the one under a byte offset
 /// (definition/hover) or every segment (semantic tokens).
 #[derive(Clone, Copy)]
@@ -25,36 +48,43 @@ pub enum SegmentPick {
     All,
 }
 
-/// Resolve the given string and its expression to the field or method symbols it refers to.
-/// Returns the symbols and their corresponding text ranges.
-pub(super) fn resolve_string_members(
+/// Resolve a string using its syntactic context, e.g. a call argument.
+/// Returns the fields/methods with the sub-range each covers, or a model.
+pub(super) fn resolve_string_in_context(
     session: &mut SessionInfo,
     file_symbol: SourceFileKey,
     string: &ExprStringLiteral,
     string_ctx: &StringContext,
     pick: SegmentPick,
-) -> Vec<(SymbolKey, TextRange)> {
+) -> Option<StringResolution> {
     let from_module = session.st().find_module(file_symbol);
-    // Any byte inside the string works for scope/kwarg location.
+    // Get the scope from an offset inside the string, after the opening quote
     let offset = string.range.start().to_usize() + 1;
     let scope = session.st().get_scope_symbol(file_symbol, offset as u32, false);
     match string_ctx {
         StringContext::CallArgument(call_expr) => {
-            let members = find_argument_symbols(session, scope, from_module, string, call_expr, pick);
-            if !members.is_empty() {
-                return members;
-            }
-            find_kwarg_methods_symbols(session, scope, from_module, string.value.to_str(), call_expr, &offset)
-                .into_iter().map(|s| (s, string.range)).collect()
+            resolve_call_argument(session, scope, from_module, string, call_expr, pick)
         },
-        StringContext::ModelOrder => {
-            vec![]
-        },
+        StringContext::ModelOrder => None,
     }
 }
 
+/// The symbols of the model `name`, as seen from `from_module`.
+pub(super) fn find_model_symbols(
+    session: &SessionInfo,
+    name: &str,
+    from_module: Option<ModuleKey>,
+) -> Vec<ModelSymbolKey> {
+    let Some(model) = session.model_mgr().get_model_key(name) else {
+        return vec![];
+    };
+    session.model_mgr()[model]
+        .get_model_symbols(session.st(), from_module)
+        .collect()
+}
+
 /// Resolve a model-related string to its symbols/category, in this order:
-/// field/method → module → model → xml id.
+/// its context (field/method or model) → module → model → xml id.
 /// `SegmentPick::All` returns every dotted segment (tokens) instead of just
 /// the one under the cursor.
 pub fn resolve_string_symbols(
@@ -67,11 +97,9 @@ pub fn resolve_string_symbols(
 ) -> Option<StringResolution> {
     let from_module = session.st().find_module(file_symbol);
     let string_val = string.value.to_str();
-    if let Some(string_ctx) = string_ctx {
-        let members = resolve_string_members(session, file_symbol, string, string_ctx, pick);
-        if !members.is_empty() {
-            return Some(StringResolution::Members(members));
-        }
+    if let Some(string_ctx) = string_ctx
+        && let Some(resolution) = resolve_string_in_context(session, file_symbol, string, string_ctx, pick) {
+        return Some(resolution);
     }
     if let SourceFileKey::Module(module_key) = file_symbol && file_path.ends_with("__manifest__.py") {
         let dir_alias = {
@@ -83,11 +111,9 @@ pub fn resolve_string_symbols(
             return Some(StringResolution::Module(module));
         }
     }
-    if let Some(model) = session.model_mgr().get_model_key(string_val) {
-        let model_syms: Vec<_> = session.model_mgr()[model].get_model_symbols(session.st(), from_module).collect();
-        if !model_syms.is_empty() {
-            return Some(StringResolution::Model(model_syms));
-        }
+    let model_syms = find_model_symbols(session, string_val, from_module);
+    if !model_syms.is_empty() {
+        return Some(StringResolution::Model(model_syms));
     }
     let xml_ids = SyncOdoo::get_xml_ids(session, file_symbol, string_val, &std::ops::Range{start: 0, end: 0}, &mut vec![]);
     let xml_syms: Vec<_> = xml_ids.iter_valid(session.st()).collect();

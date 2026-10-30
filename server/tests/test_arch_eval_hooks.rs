@@ -389,3 +389,37 @@ fn test_relational_field_get_hooks() {
         names(&session, &resolved_partner_ids)
     );
 }
+
+/// The parameters marked by the hooks of the search methods keep the type they are declared with,
+/// e.g. the `domain` of `search`.
+/// Can only be tested on Odoo versions >= 18.1, where these parameters are annotated in `odoo.orm`.
+#[test]
+fn test_marked_params_keep_declared_type() {
+    let (mut odoo, config) = setup::setup::setup_server(true);
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    if session.sync_odoo.version < (18, 1) {
+        warn!("Skipping test marked_params_keep_declared_type because Odoo version is < 18.1, where the parameters are not annotated.");
+        return;
+    }
+
+    let odoo_path = env::var("COMMUNITY_PATH").unwrap();
+    let odoo_path = Path::new(&odoo_path).sanitize();
+
+    let search = session.sync_odoo.get_symbol(&odoo_path, (&["odoo", "orm", "models"], &["BaseModel", "search"]), u32::MAX);
+    assert_eq!(search.len(), 1, "Expected to find `BaseModel.search`");
+    let SymbolKey::Function(search) = search[0] else {
+        panic!("Expected `BaseModel.search` to be a function");
+    };
+    let domain = session.st()[search].args.iter()
+        .filter_map(|arg| arg.symbol.upgrade(session.st()))
+        .find(|&param| session.st().name(param) == "domain");
+    let Some(domain) = domain else {
+        panic!("Expected `BaseModel.search` to declare `domain`");
+    };
+    let resolved = test_utils::resolve_symbol_types(&mut session, domain.into());
+    assert!(
+        names(&session, &resolved).iter().any(|name| name == "DomainType"),
+        "`domain` of `BaseModel.search` should keep its declared type `DomainType`. Got: {:?}",
+        names(&session, &resolved)
+    );
+}

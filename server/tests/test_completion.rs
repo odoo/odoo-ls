@@ -28,6 +28,7 @@ fn test_completions() {
     test_lambda_is_not_a_member(&mut session);
     test_compute_sql_kwarg_method_completion(&mut session);
     test_selection_field_method_completion(&mut session);
+    test_call_argument_completion(&mut session);
     test_init_storage_kwarg_method_completion(&mut session);
     test_import_completion_with_normalized_name(&mut session);
 }
@@ -60,17 +61,26 @@ fn test_lambda_is_not_a_member(session: &mut SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
     let disk_text = std::fs::read_to_string(&test_file).expect("Test file does not exist");
+    // The line that is exactly `return self`, as other lines of the fixture start with it (`return self.search(...)`).
     // Don't match on the line ending: the fixture may be checked out with CRLF (git autocrlf on Windows).
-    assert_eq!(disk_text.matches("return self").count(), 1, "Expected a single 'return self' in {}", test_file);
+    let return_lines: Vec<usize> = disk_text.lines().enumerate()
+        .filter(|(_, line)| line.trim() == "return self")
+        .map(|(index, _)| index)
+        .collect();
+    assert_eq!(return_lines.len(), 1, "Expected a single 'return self' line in {}", test_file);
+    let return_line = return_lines[0];
 
     // Open the buffer with the dot typed after `return self`: the completed attribute name is
     // then empty, so every member of LambdaDefaultModel is offered.
+    let text: String = disk_text.split_inclusive('\n').enumerate()
+        .map(|(index, line)| if index == return_line { line.replacen("return self", "return self.", 1) } else { line.to_string() })
+        .collect();
     let did_open_params = lsp_types::DidOpenTextDocumentParams {
         text_document: lsp_types::TextDocumentItem {
             uri: FileMgr::pathname2uri(&test_file),
             language_id: "python".to_string(),
             version: 1,
-            text: disk_text.replace("return self", "return self."),
+            text,
         }
     };
     Odoo::handle_did_open(session, did_open_params);
@@ -80,8 +90,9 @@ fn test_lambda_is_not_a_member(session: &mut SessionInfo) {
         panic!("Failed to get file symbol");
     };
 
-    // `return self.` is line 25 of the fixture (0-indexed 24), cursor after the dot.
-    let response = CompletionFeature::autocomplete(session, file_symbol, file_info, None, 24, 20);
+    // Cursor after the dot of `return self.`
+    let column = disk_text.lines().nth(return_line).unwrap().find("return self").unwrap() + "return self.".len();
+    let response = CompletionFeature::autocomplete(session, file_symbol, file_info, None, return_line as u32, column as u32);
     let labels = labels(response);
     assert!(labels.iter().any(|l| l == "company_id"), "Expected the model fields to be suggested after 'self.', got: {:?}", labels);
     assert!(!labels.iter().any(|l| l == "<lambda>"), "<lambda> is not a member and must not be suggested, got: {:?}", labels);
@@ -110,7 +121,7 @@ fn test_compute_sql_kwarg_method_completion(session: &mut SessionInfo) {
     session.sync_odoo.version = initial_version;
 }
 
-/// `group_expand=`, `selection=` and the first positional argument of a Selection offer methods
+/// `group_expand=`, `selection=` and the first positional argument of a Selection or a Reference offer methods
 fn test_selection_field_method_completion(session: &mut SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
@@ -121,13 +132,56 @@ fn test_selection_field_method_completion(session: &mut SessionInfo) {
         panic!("Failed to get file symbol");
     };
 
-    // Cursor after the 4-char prefix of each string on the `state`, `kind` and `label` field lines
-    for (line, column, method) in [(85, 34, "_selection_state"), (85, 67, "_expand_states"), (86, 43, "_selection_state")] {
+    // Cursor after the 4-char prefix of each string on the `state`, `kind`, `reference` and `reference_pos` field lines
+    for (line, column, method) in [(85, 34, "_selection_state"), (85, 67, "_expand_states"), (86, 43, "_selection_state"), (97, 48, "_selection_state"), (98, 42, "_selection_state")] {
         let labels = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, line, column));
         assert!(labels.iter().any(|l| l == method), "Expected {method} to be suggested at {line}:{column}, got: {:?}", labels);
     }
     let label_labels = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, 87, 29));
     assert!(!label_labels.iter().any(|l| l == "_selection_state"), "The label of a Char is not a method name, got: {:?}", label_labels);
+    // A Char takes no `selection`: given by keyword, it is not a method name either
+    let note_labels = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, 88, 38));
+    assert!(!note_labels.iter().any(|l| l == "_selection_state"), "The `selection` of a Char is not a method name, got: {:?}", note_labels);
+}
+
+/// A string given to a call is completed by what its parameter expects, whether it is given by
+/// position or by keyword
+fn test_call_argument_completion(session: &mut SessionInfo) {
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
+    let content = std::fs::read_to_string(&test_file).expect("Test file does not exist");
+
+    let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    let mut failures = vec![];
+    // (text right before the cursor, labels that must be offered, labels that must not)
+    let cases: [(&str, &[&str], &[&str]); 7] = [
+        // A model name
+        (r#"Many2one("module_1.lambda_def"#, &["module_1.lambda_default_model"], &[]),
+        (r#"Many2one(comodel_name="module_1.lambda_def"#, &["module_1.lambda_default_model"], &[]),
+        // A field of the comodel
+        (r#""module_1.call_arguments_model", "par"#, &["parent_id"], &["name"]),
+        (r#"inverse_name="par"#, &["parent_id"], &["name"]),
+        // A field path ending on a field of the type of the field class
+        (r#"related="parent_id.na"#, &["name"], &["name_count"]),
+        // A domain on the model searched
+        (r#"self.search([("na"#, &["name", "name_count"], &[]),
+        (r#"self.search(domain=[("na"#, &["name", "name_count"], &[]),
+    ];
+    for (before_cursor, offered, not_offered) in cases {
+        let (line, text) = content.lines().enumerate().find(|(_, text)| text.contains(before_cursor)).unwrap();
+        let character = (text.find(before_cursor).unwrap() + before_cursor.len()) as u32;
+        let labels = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, line as u32, character));
+        let missing: Vec<_> = offered.iter().filter(|label| !labels.iter().any(|l| l == *label)).collect();
+        let unexpected: Vec<_> = not_offered.iter().filter(|label| labels.iter().any(|l| l == *label)).collect();
+        if !missing.is_empty() || !unexpected.is_empty() {
+            failures.push(format!("after `{before_cursor}`: missing {missing:?}, unexpected {unexpected:?}"));
+        }
+    }
+    assert!(failures.is_empty(), "call argument completion:\n{}", failures.join("\n"));
 }
 
 /// `init_storage="..."` offers method completion, but only from 20.0 on
