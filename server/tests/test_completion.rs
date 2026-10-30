@@ -32,6 +32,7 @@ fn test_completions() {
     test_init_storage_kwarg_method_completion(&mut session);
     test_order_completion_with_escape(&mut session);
     test_order_completion_by_word(&mut session);
+    test_order_kwarg_completion(&mut session);
     test_order_completion_annotated(&mut session);
     test_order_completion_outside_model(&mut session);
     test_import_completion_with_normalized_name(&mut session);
@@ -256,6 +257,49 @@ fn test_order_completion_by_word(session: &mut SessionInfo) {
         }
     }
     assert!(failures.is_empty(), "`_order` completion:\n{}", failures.join("\n"));
+}
+
+/// `search([], order="name d")`: the order of a search method is completed like `_order`, given by
+/// keyword or by position, with the fields of the model searched.
+fn test_order_kwarg_completion(session: &mut SessionInfo) {
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
+    let content = std::fs::read_to_string(&test_file).expect("Test file does not exist");
+
+    let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    let mut failures = vec![];
+    // (text right before the cursor, labels that must be offered, labels that must not)
+    let cases: [(&str, &[&str], &[&str]); 8] = [
+        (r#"search([], order="na"#, &["name"], &["desc"]),
+        (r#"search([], order="name d"#, &["desc"], &["asc", "name"]),
+        // By position, after a many2one and a `.`
+        (r#"search([], 0, None, "escape_id."#, &["id"], &["name", "escape_id"]),
+        // The fields of the model searched, not of the class the call is in
+        (r#"search_read([], order=""#, &["name"], &["escape_id"]),
+        // Not a search method
+        (r#"with_context(order="na"#, &[], &["name"]),
+        // An override that takes the order in `*args` by position, or in `**kwargs` by keyword: the
+        // base method declares it
+        (r#"_search([], 0, None, "na"#, &["name"], &[]),
+        (r#"_search([], order="na"#, &["name"], &[]),
+        // An override that declares `order` with a default order: the base method marks it
+        (r#"search_read([], None, 0, None, "na"#, &["name"], &[]),
+    ];
+    for (before_cursor, offered, not_offered) in cases {
+        let (line, text) = content.lines().enumerate().find(|(_, text)| text.contains(before_cursor)).unwrap();
+        let character = (text.find(before_cursor).unwrap() + before_cursor.len()) as u32;
+        let labels = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, line as u32, character));
+        let missing: Vec<_> = offered.iter().filter(|label| !labels.iter().any(|l| l == *label)).collect();
+        let unexpected: Vec<_> = not_offered.iter().filter(|label| labels.iter().any(|l| l == *label)).collect();
+        if !missing.is_empty() || !unexpected.is_empty() {
+            failures.push(format!("after `{before_cursor}`: missing {missing:?}, unexpected {unexpected:?}"));
+        }
+    }
+    assert!(failures.is_empty(), "`order=` completion:\n{}", failures.join("\n"));
 }
 
 /// `_order: str = "name, "`: an annotated assignment is completed like `_order = ...`

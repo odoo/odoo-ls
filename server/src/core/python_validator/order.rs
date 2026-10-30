@@ -1,13 +1,29 @@
 use lsp_types::Diagnostic;
-use ruff_python_ast::ExprStringLiteral;
+use ruff_python_ast::{Expr, ExprStringLiteral};
 use ruff_text_size::Ranged;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use crate::core::file_mgr::FileMgr;
-use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey};
+use crate::core::symbols::symbol_keys::{ClassKey, ModelSymbolKey, ModuleKey};
 use crate::features::ast_utils::AstUtils;
 use crate::features::features_utils::OrderItem;
 use crate::threads::SessionInfo;
+
+/// Diagnostics of the argument `value` given to the order of a search method, on the `model` it is
+/// called on: a string literal, on a model class
+pub(crate) fn validate_order_arg(
+    session: &mut SessionInfo<'_>,
+    model: ModelSymbolKey,
+    from_module: Option<ModuleKey>,
+    value: &Expr,
+) -> Vec<Diagnostic> {
+    if let Expr::StringLiteral(order_string) = value
+        && let Some(model_class) = model.as_class_key()
+    {
+        return validate_order(session, model_class, from_module, order_string);
+    }
+    vec![]
+}
 
 /// Diagnostics of an order on the model of `class`, e.g. `_order = "name desc"`: its empty items,
 /// then the field, property and keywords of each item.

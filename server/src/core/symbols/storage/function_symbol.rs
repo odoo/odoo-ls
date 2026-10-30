@@ -27,6 +27,8 @@ pub enum ArgumentType {
 pub enum ParamRole {
     /// A domain on the model the method is called on, e.g. the `domain` of `search`
     Domain,
+    /// An order on the model the method is called on, e.g. the `order` of `search`
+    Order,
     /// The model of a relational field, e.g. the `comodel_name` of `Many2one`
     Comodel,
     /// The inverse field of a One2many on its comodel, e.g. the `inverse_name` of `One2many`
@@ -40,6 +42,7 @@ impl ParamRole {
     pub fn of_param_name(name: &str) -> Option<Self> {
         match name {
             "domain" => Some(ParamRole::Domain),
+            "order" => Some(ParamRole::Order),
             "comodel_name" => Some(ParamRole::Comodel),
             "inverse_name" => Some(ParamRole::InverseField),
             "selection" => Some(ParamRole::Selection),

@@ -646,6 +646,7 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
 fn expected_type_of(session: &SessionInfo, kind: ParamKind, callable_sym: SymbolKey, expr_call: &ruff_python_ast::ExprCall) -> Option<ExpectedType> {
     match kind {
         ParamKind::Domain(model) => model.map(|model| ExpectedType::DOMAIN(model.into())),
+        ParamKind::Order(model) => model.as_class_key().map(ExpectedType::ORDER),
         ParamKind::Field(FieldParam::Comodel) => Some(ExpectedType::MODEL_NAME),
         // Ending on a field of the type of the field class
         ParamKind::Field(FieldParam::Related) => Some(ExpectedType::NESTED_FIELD(Some(session.st().name(callable_sym).clone()))),

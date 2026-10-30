@@ -80,3 +80,35 @@ class OrderLocalModel(models.Model):
     def local_order(self):
         # A local variable, not the model's `_order`
         _order = "name "
+
+
+class OrderSearchModel(models.Model):
+    _inherit = "module_1.order_keywords_model"
+
+    def search_by_order(self):
+        # An order given to a search method, by keyword or by position, on the model searched
+        self.search([], order="name d")
+        self.search([], 0, None, "escape_id.")
+        self.env["module_1.order_escape_model"].search_read([], order="")
+        # The order of a method that is not a search method
+        return self.with_context(order="na")
+
+
+class OrderSearchOverrideModel(models.Model):
+    _name = "module_1.order_search_override_model"
+    _description = "Order Search Override Model"
+
+    name = fields.Char()
+
+    def _search(self, domain, offset=0, limit=None, *args, **kwargs):
+        # An override that takes the order in `*args`, or in `**kwargs` by keyword
+        return super()._search(domain, offset, limit, *args, **kwargs)
+
+    def search_read(self, domain=None, fields=None, offset=0, limit=None, order="id", **read_kwargs):
+        # An override that declares `order` too, with a default order
+        return super().search_read(domain, fields, offset, limit, order, **read_kwargs)
+
+    def search_by_order_override(self):
+        self._search([], 0, None, "na")
+        self._search([], order="na")
+        self.search_read([], None, 0, None, "na")

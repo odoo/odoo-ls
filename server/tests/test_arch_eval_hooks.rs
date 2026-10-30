@@ -391,7 +391,7 @@ fn test_relational_field_get_hooks() {
 }
 
 /// The parameters marked by the hooks of the search methods keep the type they are declared with,
-/// e.g. the `domain` of `search`.
+/// e.g. the `domain` of `search`. The `order` ones are declared `str | None`, which is not evaluated.
 /// Can only be tested on Odoo versions >= 18.1, where these parameters are annotated in `odoo.orm`.
 #[test]
 fn test_marked_params_keep_declared_type() {

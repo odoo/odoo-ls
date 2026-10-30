@@ -278,6 +278,16 @@ fn check_call_context_tokens(calls: &TokenFile) {
     // A domain given to `search` by keyword is resolved as one given by position
     check(calls, 14, "other_id", Some((PROPERTY, &[])));
     check(calls, 14, "other_name", Some((PROPERTY, &[])));
+    // The order of a search method: fields of the model searched, by keyword or by position
+    check(calls, 18, "other_id", Some((PROPERTY, &[])));
+    check(calls, 18, "desc", None);
+    check(calls, 18, "name", Some((PROPERTY, &[])));
+    check(calls, 19, "other_id", Some((PROPERTY, &[])));
+    check(calls, 20, "other_name", Some((PROPERTY, &[])));
+    check(calls, 22, "mirrored", None);
+    // An override that takes the order in `**kwargs` or `*args`: the base method declares it
+    check(calls, 33, "other_id", Some((PROPERTY, &[])));
+    check(calls, 34, "name", Some((PROPERTY, &[])));
 }
 
 /// One decoded semantic token: absolute position, and the legend entries its indices name.
