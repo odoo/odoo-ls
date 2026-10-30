@@ -139,3 +139,10 @@ class OrderCheckConstant(models.Model):
     _inherit = 'order_check.record'
     # Not a string written here: not validated, neither here nor where `ORDER` is defined
     _order = ORDER
+
+
+# noqa: OLS03014
+class OrderCheckClassNoqa(models.Model):
+    _inherit = 'order_check.record'
+    # The class's noqa silences the unknown field, not the wrong direction
+    _order = 'unknown_noqa_field dsc'
