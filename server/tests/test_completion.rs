@@ -29,6 +29,7 @@ fn test_completions() {
     test_compute_sql_kwarg_method_completion(&mut session);
     test_selection_field_method_completion(&mut session);
     test_init_storage_kwarg_method_completion(&mut session);
+    test_magic_field_comodel_completion(&mut session);
 }
  
 /// `fields.Char(compute="...", depends=["partner_id.disp"])`: the `depends` kwarg should
@@ -147,4 +148,23 @@ fn test_init_storage_kwarg_method_completion(session: &mut SessionInfo) {
     assert!(!gated_out.iter().any(|l| l == "_init_column_kind"), "Expected no method completion for init_storage before 20.0, got: {:?}", gated_out);
     // The session is shared with the other completion tests, leave the version as it was found
     session.sync_odoo.version = initial_version;
+}
+
+/// `self.create_uid.log`: `create_uid` is added to every model as a many2one to `res.users`, so its
+/// attributes are those of `res.users`.
+fn test_magic_field_comodel_completion(session: &mut SessionInfo) {
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
+    let content = std::fs::read_to_string(&test_file).expect("Test file does not exist");
+
+    let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    let before_cursor = "self.create_uid.log";
+    let (line, text) = content.lines().enumerate().find(|(_, text)| text.contains(before_cursor)).unwrap();
+    let character = (text.find(before_cursor).unwrap() + before_cursor.len()) as u32;
+    let labels = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, line as u32, character));
+    assert!(labels.iter().any(|l| l == "login"), "Expected `login` of `res.users` after `{before_cursor}`, got: {:?}", labels);
 }
