@@ -4,3 +4,4 @@ from . import compute_sql
 from . import magic_fields
 from . import domain_operators
 from . import model_order
+from . import search_order
