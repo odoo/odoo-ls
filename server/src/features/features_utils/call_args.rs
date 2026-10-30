@@ -14,6 +14,7 @@ use crate::threads::SessionInfo;
 use super::api_decorators::{classify_api_decorator, find_decorator_arg_symbols};
 use super::field_params::{resolve_field_param, FieldParam};
 use super::field_paths;
+use super::order;
 use super::string_resolution::{SegmentPick, StringResolution};
 
 /// Evaluate and follow the refs of the function being called in `call_expr`.
@@ -144,6 +145,8 @@ pub enum SpecialArg {
     /// A domain on the model the method is called on, e.g. `search(domain=[('name', '=', 'x')])`.
     /// If the model is unknown, only the domain structure can be validated.
     Domain(Option<ModelSymbolKey>),
+    /// An order on the model the method is called on, e.g. `search(order='name desc')`
+    Order(ModelSymbolKey),
     /// A parameter of a field class, e.g. `fields.Char(related='partner_id.name')`
     Field(FieldParam),
 }
@@ -161,6 +164,7 @@ impl SpecialArg {
             // The parameter is declared, so use its role
             return match param.role? {
                 ParamRole::Domain => Some(SpecialArg::Domain(model)),
+                ParamRole::Order => model.map(SpecialArg::Order),
                 ParamRole::Comodel => Some(SpecialArg::Field(FieldParam::Comodel)),
                 ParamRole::InverseField => Some(SpecialArg::Field(FieldParam::InverseField)),
                 ParamRole::Selection => Some(SpecialArg::Field(FieldParam::ModelMethod)),
@@ -180,6 +184,10 @@ impl SpecialArg {
         match self {
             // Any string inside the domain, e.g. the field path of a leaf
             SpecialArg::Domain(_) => true,
+            // The order is the string itself, not an item of it
+            SpecialArg::Order(_) => {
+                matches!(value, Expr::StringLiteral(value_string) if value_string.range == string.range)
+            }
             SpecialArg::Field(field_param) => field_param.is_in_value(value, string),
         }
     }
@@ -296,6 +304,13 @@ fn resolve_string_argument(
         Some(SpecialArg::Domain(Some(model))) => {
             StringResolution::from_members(field_paths::find_nested_fields(session, model, from_module, string, pick))
         },
+        Some(SpecialArg::Order(model)) => StringResolution::from_members(order::find_order_fields(
+            session,
+            model,
+            from_module,
+            string,
+            pick,
+        )),
         Some(SpecialArg::Field(field_param)) => {
             resolve_field_param(session, scope, from_module, string, call_expr, field_param, pick)
         },
