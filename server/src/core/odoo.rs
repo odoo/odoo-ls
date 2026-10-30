@@ -434,7 +434,17 @@ impl SyncOdoo {
         }
         if let Some(handle) = tsserver_handle {
             match handle.join() {
-                Ok(Some(bridge)) => session.sync_odoo.tsserver_bridge = Some(bridge),
+                Ok(Some(bridge)) => {
+                    if bridge.major_version().is_some_and(|major| major < 6) {
+                        session.send_config_diagnostic(ConfigDiagnosticAction::EXTEND, &[
+                            ConfigDiagnosticMessage {
+                                level: ConfigDiagnosticMessageLevel::WARNING,
+                                message: format!("tsserver version {} detected. OdooLS supports TypeScript 6; some javascript features may not work with this version. You can install it with 'npm install -g typescript@6'.", bridge.version().unwrap_or_default()),
+                            }
+                        ]);
+                    }
+                    session.sync_odoo.tsserver_bridge = Some(bridge);
+                },
                 Ok(None) => {
                     let tsserver_command = session.sync_odoo.config.tsserver_command();
                     if !tsserver_command.is_empty() { //if command is empty, do not show diagnostic, as the user probably wanted to disable tsserver
