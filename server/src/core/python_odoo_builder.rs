@@ -13,8 +13,8 @@ use crate::threads::SessionInfo;
 use crate::tree::TreeStrSlice;
 use crate::{oyarn, Sy, S};
 
-use super::evaluation::{Evaluation, EvaluationSymbolPtr, EvaluationValue};
-use super::evaluation_context::ContextValue;
+use super::evaluation::{Evaluation, EvaluationSymbol, EvaluationSymbolPtr, EvaluationValue};
+use super::evaluation_context::{Context, ContextValue};
 
 pub const MAGIC_FIELDS: [&str; 6] = [
     "id",
@@ -302,12 +302,18 @@ impl PythonOdooBuilder {
             }
         }
         //These magic fields are added at odoo step, but it should be ok as most usage will be done in functions, not outside.
-        let mut magic_fields = vec![("id", "Id"), ("display_name", "Char")];
+        // (name, field class, comodel of a relational field)
+        let mut magic_fields = vec![("id", "Id", None), ("display_name", "Char", None)];
         if session.st()[symbol]._model.as_ref().unwrap().log_access {
-            magic_fields.extend([("create_uid", "Many2one"), ("create_date", "Datetime"), ("write_uid", "Many2one"), ("write_date", "Datetime")]);
+            magic_fields.extend([
+                ("create_uid", "Many2one", Some("res.users")),
+                ("create_date", "Datetime", None),
+                ("write_uid", "Many2one", Some("res.users")),
+                ("write_date", "Datetime", None),
+            ]);
         }
         let range = session.st()[symbol].range;
-        for (name, field_class) in magic_fields {
+        for (name, field_class, comodel) in magic_fields {
             //reuse the variable created by a previous evaluation of the class, if any
             let existing = session.st()[symbol].symbols().get(name)
                 .and_then(|sections| sections.values().flatten().find_map(|&s| match s {
@@ -316,8 +322,22 @@ impl PythonOdooBuilder {
                 }));
             let variable = existing.unwrap_or_else(|| session.st_mut().add_new_variable(symbol, name, range));
             let field = session.sync_odoo.get_symbol(session.sync_odoo.config.odoo_path().as_ref().unwrap(), (&["odoo", "fields"], &[field_class]), u32::MAX);
-            session.st_mut()[variable].evaluations = field.last()
-                .map(|&field| vec![Evaluation::eval_from_symbol(session.st(), field, Some(true))])
+            let field_class = field.last().and_then(|&field| {
+                // on >= 18.1, `odoo.fields` imports the field classes.
+                let field_eval = Evaluation::eval_from_symbol(session.st(), field, Some(true));
+                SymbolTable::follow_imported_ref(field_eval.symbol.get_symbol_ptr(), session, None)
+                    .into_iter()
+                    .find_map(|followed| followed.upgrade_weak(session.st()))
+            });
+            let context = comodel
+                .map(|comodel| Context::from_iter([(ContextKey::ComodelName, ContextValue::STRING(S!(comodel)))]))
+                .unwrap_or_default();
+            session.st_mut()[variable].evaluations = field_class
+                .map(|field_class| vec![Evaluation {
+                    symbol: EvaluationSymbol::new_with_symbol(field_class.into(), Some(true), context, None),
+                    value: None,
+                    range: None,
+                }])
                 .unwrap_or_default();
         }
     }
