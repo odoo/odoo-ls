@@ -14,7 +14,7 @@ use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey, SourceFileKey, Symb
 use crate::core::symbols::storage::SymbolTable;
 use crate::features::ast_utils::AstUtils;
 use crate::features::features_utils;
-use crate::features::features_utils::{ApiDecorator, FieldParam, SpecialArg};
+use crate::features::features_utils::{ApiDecorator, FieldParam, OrderItem, SpecialArg};
 use crate::threads::SessionInfo;
 use crate::{Sy, S};
 use itertools::Itertools;
@@ -45,6 +45,7 @@ pub enum ExpectedType {
     EXTERNAL_FIELD(OYarn), // Like in inverse_name='field_name', we attach the comodel_name
     METHOD_NAME,
     INHERITS,
+    ORDER(ClassKey), // An order on the fields of the model, like `_order = "name desc"`
 }
 
 pub struct CompletionFeature;
@@ -171,17 +172,43 @@ fn complete_delete_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt
     complete_expr( target, session, file, offset, false, &[])
 }
 
-fn complete_assign_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_assign: &ruff_python_ast::StmtAssign, offset: usize) -> Option<CompletionResponse> {
-    let mut expected_type = vec![];
-    if stmt_assign.targets.len() == 1
-        && let Some(target_name) = stmt_assign.targets.first().unwrap().as_name_expr() {
-            match target_name.id.as_str() {
-                "_inherit" => expected_type.push(ExpectedType::MODEL_NAME),
-                "_inherits" => expected_type.push(ExpectedType::INHERITS),
-                _ => {}
-            }
+/// Returns the expected types of the `value` assigned to `target`, based on the target name.
+/// e.g. model names for `_inherit`
+fn expected_types_of_target(
+    session: &mut SessionInfo,
+    file: SourceFileKey,
+    target: &Expr,
+    value: &Expr,
+) -> Vec<ExpectedType> {
+    let Some(target_name) = target.as_name_expr() else {
+        return vec![];
+    };
+    match target_name.id.as_str() {
+        "_inherit" => vec![ExpectedType::MODEL_NAME],
+        "_inherits" => vec![ExpectedType::INHERITS],
+        // An order on the model whose class body contains the assignment
+        "_order" => {
+            let scope = get_and_build_scope(session, file, value.range().start().to_u32(), true);
+            features_utils::order_model_class(session, scope)
+                .map(ExpectedType::ORDER)
+                .into_iter()
+                .collect()
         }
+        _ => vec![],
+    }
+}
+
+fn complete_assign_stmt(
+    session: &mut SessionInfo<'_>,
+    file: SourceFileKey,
+    stmt_assign: &ruff_python_ast::StmtAssign,
+    offset: usize,
+) -> Option<CompletionResponse> {
     if offset > stmt_assign.value.range().start().to_usize() && offset <= stmt_assign.value.range().end().to_usize() {
+        let expected_type = match stmt_assign.targets.as_slice() {
+            [target] => expected_types_of_target(session, file, target, &stmt_assign.value),
+            _ => vec![],
+        };
         return complete_expr( &stmt_assign.value, session, file, offset, false, &expected_type);
     }
     None
@@ -197,7 +224,8 @@ fn complete_aug_assign_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, 
 fn complete_ann_assign_stmt(session: &mut SessionInfo<'_>, file: SourceFileKey, stmt_ann_assign: &ruff_python_ast::StmtAnnAssign, offset: usize) -> Option<CompletionResponse> {
     if let Some(expr) = stmt_ann_assign.value.as_ref()
         && offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize() {
-            return complete_expr( expr, session, file, offset, false, &[]);
+        let expected_type = expected_types_of_target(session, file, &stmt_ann_assign.target, expr);
+            return complete_expr( expr, session, file, offset, false, &expected_type);
         }
     None
 }
@@ -671,7 +699,7 @@ fn expected_type_of(
     }
 }
 
-fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_string_literal: &ruff_python_ast::ExprStringLiteral, _offset: usize, _is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
+fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_string_literal: &ruff_python_ast::ExprStringLiteral, offset: usize, _is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     let mut items = vec![];
     let current_module = session.st().find_module(file);
     for expected_type in expected_type.iter() {
@@ -805,6 +833,14 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
                     add_model_attributes(session, &mut items, current_module, class_key.into(), false, true, false, expr_string_literal.value.to_str(), &Some(Sy!("Many2one")))
                 });
             },
+            &ExpectedType::ORDER(model_class) => complete_model_order(
+                session,
+                model_class,
+                expr_string_literal,
+                offset,
+                current_module,
+                &mut items,
+            ),
             ExpectedType::CLASS(_) => {},
             ExpectedType::INHERITS => {},
         }
@@ -1221,6 +1257,120 @@ fn get_completion_item_kind(typ: &SymType) -> CompletionItemKind {
         SymType::XML_DELETE => CompletionItemKind::CONSTANT,
         SymType::JS_FILE => CompletionItemKind::FILE,
     }
+}
+
+/// Complete an order on `model_class`, e.g. `_order = "name desc nulls last, partner_id.id"`.
+/// Offers a field, the `id` of a many2one, or the direction and nulls keywords,
+/// depending on the word of the item under the cursor.
+fn complete_model_order(
+    session: &mut SessionInfo,
+    model_class: ClassKey,
+    order_string: &ruff_python_ast::ExprStringLiteral,
+    offset: usize,
+    current_module: Option<ModuleKey>,
+    items: &mut Vec<CompletionItem>,
+) {
+    let order = order_string.value.to_str();
+    // No completion outside the string, between its parts, or in a part with escapes
+    let Some(cursor) = AstUtils::index_in_string(order_string, TextSize::new(offset as u32)) else {
+        return;
+    };
+    let Some(item) = OrderItem::order_items(order)
+        .into_iter()
+        .find(|item| item.contains(cursor))
+    else {
+        return;
+    };
+    // Split the words of the item before the cursor into the typed ones and the one being typed
+    let before_cursor = &order[item.start..cursor];
+    let (typed, current) = before_cursor
+        .rsplit_once(char::is_whitespace)
+        .unwrap_or(("", before_cursor));
+    let typed: Vec<&str> = typed.split_whitespace().collect();
+    match typed.split_first() {
+        // Typing the field (`<current>`) or its property (`<field>.<current>`)
+        None => match current.split_once('.') {
+            Some((field, property)) => {
+                add_order_property(session, items, current_module, model_class, field, property)
+            }
+            None => add_model_attributes(
+                session,
+                items,
+                current_module,
+                model_class.into(),
+                false,
+                true,
+                false,
+                current,
+                &None,
+            ),
+        },
+        // Typing a keyword after the field (`<field> <keywords> <current>`).
+        // `nulls` is offered together with where nulls go, e.g. `nulls last`
+        Some((_field, keywords)) => {
+            let next: Vec<&str> = OrderItem::next_keywords(keywords)
+                .iter()
+                .flat_map(|&keyword| {
+                    if keyword == "nulls" {
+                        vec!["nulls first", "nulls last"]
+                    } else {
+                        vec![keyword]
+                    }
+                })
+                .collect();
+            add_order_keywords(items, &next, current);
+        }
+    }
+}
+
+/// Offer the `id` of the many2one `field`, the only property an order accepts, e.g. `partner_id.id`.
+fn add_order_property(
+    session: &mut SessionInfo,
+    items: &mut Vec<CompletionItem>,
+    current_module: Option<ModuleKey>,
+    parent_class: ClassKey,
+    field: &str,
+    property: &str,
+) {
+    if !"id".starts_with(property) {
+        return;
+    }
+    let mut walker = DeepFieldEvalWalker::new(parent_class.into(), current_module);
+    let Some(model) = walker.get_model_symbol(session) else {
+        return;
+    };
+    let _ = walker.get_model_fields(session, model, field);
+    if !walker.last_field_is_many2one(session) {
+        return;
+    }
+    let Some(comodel) = walker.get_model_symbol(session) else {
+        return;
+    };
+    if let Some(&id) = walker.get_model_fields(session, comodel, "id").first() {
+        let context =
+            Context::from_iter([(ContextKey::BaseAttr, ContextValue::SYMBOL(comodel.into()))]);
+        items.push(build_completion_item_from_symbol(
+            session,
+            vec![id],
+            "id",
+            context,
+        ));
+    }
+}
+
+/// Offer the `keywords` that start with the word being typed, e.g. `desc` for `de`.
+fn add_order_keywords(items: &mut Vec<CompletionItem>, keywords: &[&str], current: &str) {
+    let current = current.to_ascii_lowercase();
+    items.extend(
+        keywords
+            .iter()
+            .filter(|keyword| keyword.starts_with(&current))
+            .map(|keyword| CompletionItem {
+                label: keyword.to_string(),
+                kind: Some(lsp_types::CompletionItemKind::KEYWORD),
+                ..Default::default()
+            }),
+    );
 }
 
 fn get_and_build_scope(
