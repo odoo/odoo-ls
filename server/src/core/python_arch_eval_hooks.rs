@@ -10,7 +10,6 @@ use ruff_python_ast::Expr;
 use ruff_python_ast::StmtFunctionDef;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
-use tracing::warn;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::evaluation::GetSymbolHook;
 use crate::core::evaluation::GetSymbolHookCallable;
@@ -19,6 +18,7 @@ use crate::core::evaluation_context::Context;
 use crate::constants::*;
 use crate::tree::OYarnExt;
 use crate::tree::Tree;
+use crate::core::symbols::function_symbol::ParamRole;
 use crate::core::symbols::symbol_keys::FunctionKey;
 use crate::core::symbols::symbol_keys::SourceFileKey;
 use crate::core::symbols::symbol_keys::SymbolKey;
@@ -47,6 +47,7 @@ pub fn get_base_model_symbol(odoo: &mut SyncOdoo) -> Option<SymbolKey> {
     let base_model_symbol = odoo.get_symbol(odoo.config.odoo_path().as_ref().unwrap(), base_model_tree, u32::MAX);
     base_model_symbol.first().copied()
 }
+
 pub struct PythonArchEvalFileHook {
     pub odoo_entry: bool,
     pub trees: Vec<(Version, Version, TreeStrSlice<'static>)>, //if tree content is set, will provide symbol in file content instead of the file symbol to func
@@ -389,15 +390,7 @@ static arch_eval_function_hooks: LazyLock<Vec<PythonArchEvalFunctionHook>> = Laz
                         func: |odoo: &mut SyncOdoo, _entry_point: EntryPointKey, symbol: FunctionKey| {
         let base_model = get_base_model_symbol(odoo);
         odoo.symbol_table[symbol].evaluations = vec![Evaluation::new_self(base_model.unwrap(), Some(true))];
-        let func = &odoo.symbol_table[symbol];
-        if func.args.len() > 1
-            && let Some(arg_symbol) = func.args.get(1).unwrap().symbol.upgrade(&odoo.symbol_table) {
-                if odoo.symbol_table.name(arg_symbol) == "domain" {
-                    odoo.symbol_table[arg_symbol].evaluations = vec![Evaluation::new_domain(odoo)];
-                } else {
-                    warn!("domain not found on search signature")
-                }
-            }
+        PythonArchEvalHooks::mark_params(odoo, symbol, &[ParamRole::Domain]);
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
                         tree: vec![((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "browse"])),
@@ -571,6 +564,7 @@ static arch_eval_function_hooks: LazyLock<Vec<PythonArchEvalFunctionHook>> = Laz
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: EntryPointKey, symbol: FunctionKey| {
         PythonArchEvalHooks::update_field_init_func_level(&mut odoo.symbol_table, symbol, None);
+        PythonArchEvalHooks::mark_params(odoo, symbol, &[ParamRole::Selection]);
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
                         tree: vec![((0, 0), (18, 1), (&["odoo", "fields"], &["Reference", "__init__"])),
@@ -578,6 +572,8 @@ static arch_eval_function_hooks: LazyLock<Vec<PythonArchEvalFunctionHook>> = Laz
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: EntryPointKey, symbol: FunctionKey| {
         PythonArchEvalHooks::update_field_init_func_level(&mut odoo.symbol_table, symbol, None);
+        PythonArchEvalHooks::inherit_selection_init_args(odoo, symbol);
+        PythonArchEvalHooks::mark_params(odoo, symbol, &[ParamRole::Selection]);
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
                         tree: vec![((0, 0), (18, 1), (&["odoo", "fields"], &["Json", "__init__"])),
@@ -606,6 +602,7 @@ static arch_eval_function_hooks: LazyLock<Vec<PythonArchEvalFunctionHook>> = Laz
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: EntryPointKey, symbol: FunctionKey| {
         PythonArchEvalHooks::update_field_init_func_level(&mut odoo.symbol_table, symbol, Some(oyarn!("Many2one")));
+        PythonArchEvalHooks::mark_params(odoo, symbol, &[ParamRole::Comodel]);
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
                         tree: vec![((0, 0), (18, 1), (&["odoo", "fields"], &["One2many", "__init__"])),
@@ -613,6 +610,7 @@ static arch_eval_function_hooks: LazyLock<Vec<PythonArchEvalFunctionHook>> = Laz
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: EntryPointKey, symbol: FunctionKey| {
         PythonArchEvalHooks::update_field_init_func_level(&mut odoo.symbol_table, symbol, Some(oyarn!("One2many")));
+        PythonArchEvalHooks::mark_params(odoo, symbol, &[ParamRole::Comodel, ParamRole::InverseField]);
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
                         tree: vec![((0, 0), (18, 1), (&["odoo", "fields"], &["Many2many", "__init__"])),
@@ -620,6 +618,7 @@ static arch_eval_function_hooks: LazyLock<Vec<PythonArchEvalFunctionHook>> = Laz
                         if_exist_only: true,
                         func: |odoo: &mut SyncOdoo, _entry_point: EntryPointKey, symbol: FunctionKey| {
         PythonArchEvalHooks::update_field_init_func_level(&mut odoo.symbol_table, symbol, Some(oyarn!("Many2many")));
+        PythonArchEvalHooks::mark_params(odoo, symbol, &[ParamRole::Comodel]);
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
                         tree: vec![((0, 0), (18, 1), (&["odoo", "fields"], &["Many2one", "__get__"])),
@@ -975,6 +974,21 @@ impl PythonArchEvalHooks {
         }];
     }
 
+    /// Mark the parameters of `symbol` that have one of `roles`, by their name, e.g. the `domain` of
+    /// `search`, wherever it is in the signature
+    fn mark_params(odoo: &mut SyncOdoo, symbol: FunctionKey, roles: &[ParamRole]) {
+        let st = &odoo.symbol_table;
+        let marked = st[symbol].args.iter().enumerate()
+            .filter_map(|(index, arg)| {
+                let role = ParamRole::of_param_name(st.name(arg.symbol.upgrade(st)?))?;
+                roles.contains(&role).then_some((index, role))
+            })
+            .collect::<Vec<_>>();
+        for (index, role) in marked {
+            odoo.symbol_table[symbol].args[index].role = Some(role);
+        }
+    }
+
     /// Make the file of `scope` depend on the definitions of `model`, unless it is an orm file
     /// itself, as that would create a self-dependency.
     fn add_model_dependencies_outside_orm(session: &mut SessionInfo, scope: Option<SymbolKey>, model: ModelKey) {
@@ -1180,6 +1194,25 @@ impl PythonArchEvalHooks {
         odoo.symbol_table[function].args = field_get_args;
     }
 
+    /// Give the `__init__` made for `Reference` (see the arch builder hooks) the parameters of the
+    /// `Selection.__init__` it inherits, unless it declares its own
+    fn inherit_selection_init_args(odoo: &mut SyncOdoo, function: FunctionKey) {
+        if !odoo.symbol_table[function].args.is_empty() {
+            return;
+        }
+        let selection_init_tree: TreeStrSlice = if odoo.version < (18, 1) {
+            (&["odoo", "fields"], &["Selection", "__init__"])
+        } else {
+            (&["odoo", "orm", "fields_selection"], &["Selection", "__init__"])
+        };
+        let Some(SymbolKey::Function(selection_init)) = odoo.get_symbol(odoo.config.odoo_path().as_ref().unwrap(), selection_init_tree, u32::MAX).first().copied()
+        else {
+            return;
+        };
+        let selection_init_args = odoo.symbol_table[selection_init].args.clone();
+        odoo.symbol_table[function].args = selection_init_args;
+    }
+
     fn update_field_init_func_level(symbol_table: &mut SymbolTable, function: FunctionKey, relational: Option<OYarn>) {
         let Some(class_sym) = symbol_table.get_in_parents(function.into(), &[SymType::CLASS], true) else {
             return;
@@ -1305,12 +1338,15 @@ impl PythonArchEvalHooks {
             ("inverse", "str", ContextKey::Inverse, ContextKey::InverseArgRange),
             ("search", "str", ContextKey::Search, ContextKey::SearchArgRange),
             ("group_expand", "str", ContextKey::GroupExpand, ContextKey::GroupExpandArgRange),
-            ("selection", "str", ContextKey::Selection, ContextKey::SelectionArgRange),
             ("inverse_name", "str", ContextKey::InverseName, ContextKey::InverseNameArgRange),
             ("delegate", "bool", ContextKey::Delegate, ContextKey::EMPTY), // No arg range
             ("required", "bool", ContextKey::Required, ContextKey::EMPTY),
             ("default", "bool", ContextKey::Default, ContextKey::EMPTY),
         ];
+        // only the selection fields accept a selection
+        if selection_field {
+            context_arguments.push(("selection", "str", ContextKey::Selection, ContextKey::SelectionArgRange));
+        }
         // fields only accept compute_sql from 19.1 on
         if session.sync_odoo.version >= (19, 1) {
             context_arguments.push(("compute_sql", "str", ContextKey::ComputeSql, ContextKey::ComputeSqlArgRange));

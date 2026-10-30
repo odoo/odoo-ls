@@ -86,7 +86,7 @@ class DisplayNameRelatedModel(models.Model):
     state = fields.Selection("_selection_state", group_expand="_expand_states")
     kind = fields.Selection(selection="_selection_state", init_storage="_init_column_kind")
     label = fields.Char("_selection_state")
-
+    note = fields.Char(selection="_selection_state")
     def _selection_state(self):
         return []
 
@@ -95,8 +95,8 @@ class DisplayNameRelatedModel(models.Model):
 
     def _init_column_kind(self):
         pass
-
-
+    reference = fields.Reference(selection="_selection_state")
+    reference_pos = fields.Reference("_selection_state")
 ref_probe = 1
 
 

@@ -20,6 +20,34 @@ pub enum ArgumentType {
     KWORD_ONLY,
 }
 
+/// What the value of a declared parameter names, when features need to know it. Set by hooks on
+/// Odoo's own definitions only: an override declaring the same parameter is not marked, so each
+/// check runs once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParamRole {
+    /// A domain on the model the method is called on, e.g. the `domain` of `search`
+    Domain,
+    /// The model of a relational field, e.g. the `comodel_name` of `Many2one`
+    Comodel,
+    /// The inverse field of a One2many on its comodel, e.g. the `inverse_name` of `One2many`
+    InverseField,
+    /// The values of a selection field, or the method returning them, e.g. the `selection` of `Selection`
+    Selection,
+}
+
+impl ParamRole {
+    /// The role of a parameter named `name` of a marked function
+    pub fn of_param_name(name: &str) -> Option<Self> {
+        match name {
+            "domain" => Some(ParamRole::Domain),
+            "comodel_name" => Some(ParamRole::Comodel),
+            "inverse_name" => Some(ParamRole::InverseField),
+            "selection" => Some(ParamRole::Selection),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Argument {
     pub symbol: Wk<VariableKey>,
@@ -27,6 +55,8 @@ pub struct Argument {
     pub default_value: Option<Evaluation>,
     pub arg_type: ArgumentType,
     pub annotation: Option<Box<Expr>>,
+    /// Set by a hook, see `ParamRole`
+    pub role: Option<ParamRole>,
 }
 
 #[derive(Debug)]
