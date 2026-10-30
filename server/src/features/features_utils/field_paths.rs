@@ -4,14 +4,11 @@ use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use crate::core::symbols::symbol_keys::{ModelSymbolKey, ModuleKey, SymbolKey};
 use crate::features::ast_utils::AstUtils;
 
-use crate::constants::SymType;
-use crate::core::evaluation::EvaluationSymbolWeak;
-use crate::core::evaluation_context::ContextKey;
 use crate::threads::SessionInfo;
 
 use super::string_resolution::SegmentPick;
 
-fn find_nested_fields(
+pub(super) fn find_nested_fields(
     session: &mut SessionInfo,
     base_symbol: ModelSymbolKey,
     from_module: Option<ModuleKey>,
@@ -67,35 +64,4 @@ fn find_nested_fields(
         }
     }
     results
-}
-
-pub(super) fn find_nested_fields_in_class(
-    session: &mut SessionInfo,
-    scope: SymbolKey,
-    from_module: Option<ModuleKey>,
-    string: &ExprStringLiteral,
-    pick: SegmentPick,
-) ->  Vec<(SymbolKey, TextRange)>{
-    let Some(SymbolKey::Class(parent_class)) = session.st().get_in_parents(scope, &[SymType::CLASS], true) else {
-        return vec![];
-    };
-    find_nested_fields(session, parent_class.into(), from_module, string, pick)
-}
-
-pub(super) fn find_domain_param_symbols(
-    session: &mut SessionInfo,
-    callable: &EvaluationSymbolWeak,
-    string: &ExprStringLiteral,
-    from_module: Option<ModuleKey>,
-    pick: SegmentPick,
-) -> Vec<(SymbolKey, TextRange)> {
-    let Some(base_sym) = callable.context.get(ContextKey::BaseAttr).and_then(|parent_object| parent_object.as_symbol().upgrade(session.st())) else {
-        return vec![];
-    };
-    let model_sym = match base_sym {
-        SymbolKey::Class(class_key) => class_key.into(),
-        SymbolKey::XmlRecord(xml_rec_key) => xml_rec_key.into(),
-        _ => return vec![],
-    };
-    find_nested_fields(session, model_sym, from_module, string, pick)
 }

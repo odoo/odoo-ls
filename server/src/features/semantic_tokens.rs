@@ -315,7 +315,7 @@ impl<'a, 'b, 's> SemanticTokenVisitor<'a, 'b, 's> {
                     continue;
                 }
                 {
-                    // ARG / DOMAIN / NONE / ANY, or an expired weak → ambiguous/unresolvable.
+                    // Not a weak symbol (ARG, NONE, ANY) or expired, so it can't be resolved
                     let key = followed.upgrade_weak(session.st())?;
                     if found.is_some() {
                         // More than one real evaluation → ambiguous.
