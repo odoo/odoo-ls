@@ -1,303 +1,304 @@
-use ruff_python_ast::{Expr, ExprCall, ExprStringLiteral, Keyword};
-use ruff_text_size::{Ranged, TextRange};
-use crate::core::odoo::SyncOdoo;
-use crate::core::symbols::symbol_keys::{ModuleKey, SymbolKey};
+use itertools::Itertools;
+use ruff_python_ast::{Arguments, Expr, ExprCall, ExprStringLiteral};
+use ruff_text_size::Ranged;
+use crate::core::symbols::symbol_keys::{ModelSymbolKey, ModuleKey, SymbolKey, VariableKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::FunctionSymbol;
-use crate::tree::OYarnExt;
+use crate::core::symbols::function_symbol::ParamRole;
 
 use crate::constants::SymType;
-use crate::constants::OYarn;
-use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr};
+use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr, EvaluationSymbolWeak};
 use crate::core::evaluation_context::ContextKey;
 use crate::threads::SessionInfo;
-use crate::Sy;
 
-use super::field_paths::{find_domain_param_symbols, find_nested_fields_in_class};
-use super::string_resolution::SegmentPick;
+use super::api_decorators::{classify_api_decorator, find_decorator_arg_symbols};
+use super::field_params::{resolve_field_param, FieldParam};
+use super::field_paths;
+use super::string_resolution::{SegmentPick, StringResolution};
 
-pub(super) fn find_kwarg_methods_symbols(
+/// Evaluate and follow the refs of the function being called in `call_expr`.
+/// Returns the `EvaluationSymbolWeak` and its corresponding `SymbolKey` for each callable found.
+fn resolve_callables(
     session: &mut SessionInfo,
     scope: SymbolKey,
-    from_module: Option<ModuleKey>,
-    field_value: &str,
     call_expr: &ExprCall,
-    offset: &usize,
-) -> Vec<SymbolKey>{
-    if let Some(keyword) = call_expr.arguments.keywords.iter().find(|arg|
-        *offset > arg.range().start().to_usize() && *offset <= arg.range().end().to_usize()
-    ){
-        let Some(ref arg_id) = keyword.arg else {
-            return vec![];
-        };
-        if arg_id.as_str() == "inverse_name" {
-            return find_inverse_name_field_symbol(session, from_module, field_value, call_expr);
-        }
-        if !(["compute", "group_expand", "inverse", "search", "selection"].contains(&arg_id.as_str())
-            || (arg_id.as_str() == "compute_sql" && session.sync_odoo.version >= (19, 1))
-            || (arg_id.as_str() == "init_storage" && session.sync_odoo.version >= (20, 0))){
-            return vec![];
-        }
-    } else {
-        return vec![];
-    }
-    let Some(SymbolKey::Class(parent_class)) = session.st().get_in_parents(scope, &[SymType::CLASS], true) else {
-        return vec![];
-    };
-    if session.st()[parent_class]._model.is_none(){
-        return vec![];
-    }
-    let evaluations = Evaluation::eval_from_ast(session, &call_expr.func, scope, &call_expr.func.range().start(), false, &mut vec![]).0;
-    let mut followed_evals = vec![];
+) -> Vec<(EvaluationSymbolWeak, SymbolKey)> {
+    let evaluations = Evaluation::eval_from_ast(
+        session,
+        &call_expr.func,
+        scope,
+        &call_expr.func.range().start(),
+        false,
+        &mut vec![],
+    )
+    .0;
+    let mut callables = vec![];
     for eval in evaluations {
-        followed_evals.extend(
-            SymbolTable::follow_ref(
-                &eval.symbol.get_symbol(session, None, &mut vec![], None),
-                session,
-                None,
-                true,
-                false,
-                None,
-                None,
-            )
+        let followed_evals = SymbolTable::follow_ref(
+            &eval.symbol.get_symbol(session, None, &mut vec![], None),
+            session,
+            None,
+            true,
+            false,
+            None,
+            None,
         );
+        callables.extend(followed_evals.into_iter().filter_map(|followed_eval| {
+            match followed_eval {
+                EvaluationSymbolPtr::SELF(callable) | EvaluationSymbolPtr::WEAK(callable) => {
+                    callable
+                        .weak
+                        .upgrade(session.st())
+                        .map(|callable_sym| (callable, callable_sym))
+                }
+                _ => None,
+            }
+        }));
     }
-    if !followed_evals.iter().any(|eval|
-        eval.has_weak() && eval.get_weak().weak.upgrade(session.st()).map(|sym| SymbolTable::is_field_class(session, sym)).unwrap_or(false)
-    ) {
-        return vec![];
-    }
-    SymbolTable::get_member_symbol(session, parent_class.into(), field_value, from_module, false, false, true, true, false).0
+    callables
 }
 
-fn find_inverse_name_field_symbol(
-    session: &mut SessionInfo,
-    from_module: Option<ModuleKey>,
-    field_value: &str,
-    call_expr: &ExprCall,
-) -> Vec<SymbolKey> {
-    let model_name = if let Some(Expr::StringLiteral(expr)) = call_expr.arguments.args.first() {
-        expr.value.to_str()
-    } else {
-        let Some(model_name) = call_expr.arguments.keywords.iter().find(|kw| kw.arg.as_ref().map(|arg| arg.id == "comodel_name").unwrap_or(false))
-            .and_then(|kw| match &kw.value {
-                Expr::StringLiteral(expr) => Some(expr.value.to_str()),
-                _ => None
-            }) else {
-                return vec![];
-            };
-        model_name
-    };
-    let Some(model) = session.model_mgr().get_model_key(model_name) else {
-        return vec![];
-    };
-    let main_syms = session.model_mgr()[model].get_main_symbols(session, from_module).collect::<Vec<_>>();
-    main_syms.iter().flat_map(|&main_sym| SymbolTable::get_member_symbol(session, main_sym.into(), field_value, from_module, false, true, false, true, false).0).collect()
+/// The parameter an argument is given to, see `find_call_param`.
+/// The parameter symbol as an upgraded variable key, and its role if it has one.
+///
+/// Thin copiable type, that holds what we want from [crate::core::symbols::function_symbol::Argument]
+#[derive(Clone, Copy)]
+pub struct CallParam {
+    pub symbol: VariableKey,
+    pub role: Option<ParamRole>,
 }
 
-fn find_simple_decorator_field_symbol(
+/// Find the Call Parameter for the argument at `arg_index` in `call_expr`.
+/// `arg_index` counts the keyword arguments after the positional ones.
+pub fn find_call_param(
     session: &mut SessionInfo,
-    scope: SymbolKey,
     from_module: Option<ModuleKey>,
-    field_name: &str,
-) -> Vec<SymbolKey> {
-    let Some(SymbolKey::Class(parent_class)) = session.st().get_in_parents(scope, &[SymType::CLASS], true) else {
-        return vec![];
-    };
-    if session.st()[parent_class]._model.is_none() {
-        return vec![];
-    }
-    SymbolTable::get_member_symbol(session, parent_class.into(), field_name, from_module, false, true, false, true, false).0
-}
-
-fn find_positional_argument_symbols(
-    session: &mut SessionInfo,
-    scope: SymbolKey,
-    from_module: Option<ModuleKey>,
-    string: &ExprStringLiteral,
+    callable: &EvaluationSymbolWeak,
+    callable_sym: SymbolKey,
     call_expr: &ExprCall,
     arg_index: usize,
-    arg_expr: &Expr,
-    pick: SegmentPick,
-) -> Vec<(SymbolKey, TextRange)> {
-    let mut arg_symbols: Vec<(SymbolKey, TextRange)> = vec![];
-    let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope, &call_expr.func.range().start(), false, &mut vec![]).0;
-    let mut followed_evals = vec![];
-    for eval in callable_evals {
-        followed_evals.extend(
-            SymbolTable::follow_ref(
-                &eval.symbol.get_symbol(session, None, &mut vec![], None),
-                session,
-                None,
-                true,
-                false,
-                None,
-                None,
-            )
-        );
-    }
-    for callable_eval in followed_evals {
-        let EvaluationSymbolPtr::WEAK(callable) = callable_eval else {
-            continue;
-        };
-        let Some(callable_sym) = callable.weak.upgrade(session.st()) else {
-            continue;
-        };
-        if ![SymType::FUNCTION, SymType::CLASS].contains(&callable_sym.typ()) {
-            continue;
-        }
-        if let SymbolKey::Function(function_key) = callable_sym {
-            if session.st()[function_key].is_property {
-                continue;
-            }
-            // Check if we are in api.onchange/constrains/depends
-            let func_sym_tree = session.st().get_tree(callable_sym);
-            // TODO: account for change in tree after 18.1 odoo.orm.decorators
-            let is_18_1_or_later = session.sync_odoo.version >= (18, 1);
-            if (!is_18_1_or_later && func_sym_tree.0.ends_with_strs(&["odoo", "api"])) ||
-                (is_18_1_or_later && func_sym_tree.0.ends_with_strs(&["odoo", "orm", "decorators"])) {
-                if [vec![Sy!("onchange")], vec![Sy!("constrains")]].contains(&func_sym_tree.1) && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0) {
-                    arg_symbols.extend(
-                        find_simple_decorator_field_symbol(session, scope, from_module, string.value.to_str())
-                        .into_iter().map(|symbol| (symbol, string.range))
-                    );
-                    continue;
-                } else if func_sym_tree.1 == ["depends"] && SyncOdoo::is_in_main_entry(session, &func_sym_tree.0){
-                    arg_symbols.extend(
-                        find_nested_fields_in_class(session, scope, from_module, string, pick)
-                    );
-                    continue;
-                }
-            }
-        }
+) -> Option<CallParam> {
+    let func_key = match callable_sym {
+        SymbolKey::Function(function_key) => function_key,
         // if class get __init__ method, we need to get the argument from there
-        let func_key = if callable_sym.typ() == SymType::CLASS {
-            if let Some(&SymbolKey::Function(init_method)) = SymbolTable::get_member_symbol(session, callable_sym, "__init__", from_module, false, false, true, false, false).0.first() {
-                init_method
-            } else {
-                continue;
-            }
-        } else {
-            callable_sym.unwrap_function_key()
-        };
-        let is_on_instance = if callable_sym.typ() == SymType::CLASS {
-            // skip self on __init__
-            Some(true)
-        } else {
-            callable.context.get(ContextKey::IsAttrOfInstance).map(|v| v.as_bool())
-        };
-
-        let func_arg = FunctionSymbol::get_indexed_arg_in_call(
-            session.st(),
-            func_key,
-            call_expr,
-            arg_index as u32,
-            is_on_instance);
-        let Some(func_arg_sym) = func_arg.and_then(|func_arg| func_arg.symbol.upgrade(session.st())) else {
-            continue
-        };
-
-
-        if session.st()[func_arg_sym].name == "inverse_name"
-            && callable_sym.typ() == SymType::CLASS
-            && SymbolTable::is_specific_field_class(session, callable_sym, &["One2many"]) {
-            let Some(value) = Evaluation::expr_to_str(session, arg_expr, scope, &call_expr.range().end(), false, &mut vec![]).0 else {
-                continue;
-            };
-            arg_symbols.extend(
-                find_inverse_name_field_symbol(session, from_module, &value, call_expr)
-                .into_iter().map(|res| (res, arg_expr.range()))
-            );
-            continue;
-        }
-        if session.st()[func_arg_sym].name == "selection"
-            && callable_sym.typ() == SymType::CLASS
-            && SymbolTable::is_field_class(session, callable_sym)
-            && let Some(SymbolKey::Class(parent_class)) = session.st().get_in_parents(scope, &[SymType::CLASS], true) {
-            arg_symbols.extend(
-                SymbolTable::get_member_symbol(session, parent_class.into(), string.value.to_str(), from_module, false, false, true, true, false).0
-                .into_iter().map(|res| (res, arg_expr.range()))
-            );
-            continue;
-        }
-        for evaluation in session.st()[func_arg_sym].evaluations.clone() {
-            if matches!(evaluation.symbol.get_symbol_ptr(), EvaluationSymbolPtr::DOMAIN) {
-                arg_symbols.extend(
-                    find_domain_param_symbols(session, &callable, string, from_module, pick)
-                );
-            }
-        }
-
-    }
-    //Process kwargs related/comodel_name
-    arg_symbols
-}
-
-fn find_keyword_argument_symbols(
-    session: &mut SessionInfo,
-    scope: SymbolKey,
-    from_module: Option<ModuleKey>,
-    string: &ExprStringLiteral,
-    call_expr: &ExprCall,
-    keyword: &Keyword,
-    pick: SegmentPick,
-) -> Vec<(SymbolKey, TextRange)> {
-    // We only process the `related` and `depends` keyword arguments
-    if keyword.arg.as_ref().filter(|kw_arg| ["related", "depends"].contains(&kw_arg.id.as_str())).is_none(){
-        return vec![];
-    }
-    let mut arg_symbols = vec![];
-    let callable_evals = Evaluation::eval_from_ast(session, &call_expr.func, scope, &call_expr.func.range().start(), false, &mut vec![]).0;
-    let mut followed_evals = vec![];
-    for eval in callable_evals {
-        followed_evals.extend(
-            SymbolTable::follow_ref(
-                &eval.symbol.get_symbol(session, None, &mut vec![], None),
+        SymbolKey::Class(_) => {
+            let Some(&SymbolKey::Function(init_method)) = SymbolTable::get_member_symbol(
                 session,
-                None,
+                callable_sym,
+                "__init__",
+                from_module,
+                false,
+                false,
                 true,
                 false,
-                None,
-                None,
+                false,
             )
-        );
-    }
-    for callable_eval in followed_evals {
-        let EvaluationSymbolPtr::WEAK(callable) = callable_eval else {
-            continue;
-        };
-        let Some(callable_sym) = callable.weak.upgrade(session.st()) else {
-            continue;
-        };
-        if !SymbolTable::is_field_class(session, callable_sym) {
-            continue;
+            .0
+            .first() else {
+                return None;
+            };
+            init_method
         }
-        arg_symbols.extend(
-            find_nested_fields_in_class(session, scope, from_module, string, pick)
-        );
-    }
-    arg_symbols
+        _ => return None,
+    };
+    let is_on_instance = if callable_sym.typ() == SymType::CLASS {
+        // skip self on __init__
+        Some(true)
+    } else {
+        callable.context.get(ContextKey::IsAttrOfInstance).map(|v| v.as_bool())
+    };
+    FunctionSymbol::get_indexed_arg_in_call(
+        session.st(),
+        func_key,
+        call_expr,
+        arg_index as u32,
+        is_on_instance,
+    )
+    .and_then(|func_arg| {
+        Some(CallParam {
+            symbol: func_arg.symbol.upgrade(session.st())?,
+            role: func_arg.role,
+        })
+    })
 }
 
-pub(super) fn find_argument_symbols(
+/// The model the callable is called on, e.g. `res.partner` in `self.env['res.partner'].search(...)`.
+/// Tries to fetch the model from the `BaseAttr` context of the callable.
+pub fn model_called_on(
+    session: &SessionInfo,
+    callable: &EvaluationSymbolWeak,
+) -> Option<ModelSymbolKey> {
+    callable
+        .context
+        .get(ContextKey::BaseAttr)?
+        .as_symbol()
+        .upgrade(session.st())?
+        .as_model_symbol_key()
+}
+
+/// A call argument with a special meaning in odoo context, e.g. a domain or a field parameter.
+/// Computed for each call, from the `ParamRole` of its parameter, or from its keyword name for field classes.
+/// e.g. a domain on `res.partner` in `self.env['res.partner'].search([...])`
+#[derive(Clone, Copy)]
+pub enum SpecialArg {
+    /// A domain on the model the method is called on, e.g. `search(domain=[('name', '=', 'x')])`.
+    /// If the model is unknown, only the domain structure can be validated.
+    Domain(Option<ModelSymbolKey>),
+    /// A parameter of a field class, e.g. `fields.Char(related='partner_id.name')`
+    Field(FieldParam),
+}
+
+impl SpecialArg {
+    /// Classifies the call argument as a special argument, based on the parameter, keyword name, and model.
+    pub fn classify_call_argument(
+        session: &SessionInfo,
+        callable_sym: SymbolKey,
+        param: Option<CallParam>,
+        keyword_name: Option<&str>,
+        model: Option<ModelSymbolKey>,
+    ) -> Option<Self> {
+        if let Some(param) = param {
+            // The parameter is declared, so use its role
+            return match param.role? {
+                ParamRole::Domain => Some(SpecialArg::Domain(model)),
+                ParamRole::Comodel => Some(SpecialArg::Field(FieldParam::Comodel)),
+                ParamRole::InverseField => Some(SpecialArg::Field(FieldParam::InverseField)),
+                ParamRole::Selection => Some(SpecialArg::Field(FieldParam::ModelMethod)),
+            };
+        }
+        // Field classes take most parameters through `**kwargs`, so use the keyword name
+        let name = keyword_name?;
+        if !SymbolTable::is_field_class(session, callable_sym) {
+            return None;
+        }
+        FieldParam::from_kwarg_name(session.sync_odoo.version, name).map(SpecialArg::Field)
+    }
+
+    /// Whether `string` is in the correct expected position in the `value` expression
+    /// of the current SpecialArg.
+    fn is_in_value(self, value: &Expr, string: &ExprStringLiteral) -> bool {
+        match self {
+            // Any string inside the domain, e.g. the field path of a leaf
+            SpecialArg::Domain(_) => true,
+            SpecialArg::Field(field_param) => field_param.is_in_value(value, string),
+        }
+    }
+
+    /// Cheap check if the given `name` can be a keyword argument with a special value in odoo context.
+    fn can_be_special_keyword(
+        session: &SessionInfo,
+        name: &str,
+        value: &Expr,
+        string: &ExprStringLiteral,
+    ) -> bool {
+        ParamRole::of_param_name(name).is_some()
+            || FieldParam::from_kwarg_name(session.sync_odoo.version, name)
+                .is_some_and(|field_param| field_param.is_in_value(value, string))
+    }
+}
+
+/// Find the argument containing `string`.
+/// Returns its index (keyword arguments are counted after the positional ones), its value,
+/// and its name if it is a keyword argument.
+fn find_argument<'a>(
+    arguments: &'a Arguments,
+    string: &ExprStringLiteral,
+) -> Option<(usize, &'a Expr, Option<&'a str>)> {
+    if let Some((index, arg)) = arguments
+        .args
+        .iter()
+        .find_position(|arg| arg.range().contains_range(string.range))
+    {
+        Some((index, arg, None))
+    } else if let Some((index, keyword)) = arguments.keywords.iter()
+        .find_position(|keyword| keyword.range().contains_range(string.range))
+        // `**kwargs` has no name
+        && let Some(name) = keyword.arg.as_ref()
+    {
+        Some((
+            arguments.args.len() + index,
+            &keyword.value,
+            Some(name.as_str()),
+        ))
+    } else {
+        None
+    }
+}
+
+/// Resolve `string` in an argument of `call_expr`, merging the results of all the callables.
+pub(super) fn resolve_call_argument(
     session: &mut SessionInfo,
     scope: SymbolKey,
     from_module: Option<ModuleKey>,
     string: &ExprStringLiteral,
     call_expr: &ExprCall,
     pick: SegmentPick,
-) -> Vec<(SymbolKey, TextRange)>{
-    // Any byte inside the string picks the same call arg, so locate it from the range.
-    let offset = string.range.start().to_usize() + 1;
-    if let Some((arg_index, arg_expr)) = call_expr.arguments.args.iter().enumerate().find(|(_, arg)|
-        offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize()
-    ){
-        find_positional_argument_symbols(session, scope, from_module, string, call_expr, arg_index, arg_expr, pick)
-    } else if let Some((_, keyword)) = call_expr.arguments.keywords.iter().enumerate().find(|(_, arg)|
-        offset > arg.range().start().to_usize() && offset <= arg.range().end().to_usize()
-    ){
-        find_keyword_argument_symbols(session, scope, from_module, string, call_expr, keyword, pick)
-    } else {
-        vec![]
+) -> Option<StringResolution> {
+    let argument = find_argument(&call_expr.arguments, string)?;
+    let (_, value, keyword_name) = argument;
+    // Skip a keyword argument that cannot be special, without evaluating the callee
+    if keyword_name
+        .is_some_and(|name| !SpecialArg::can_be_special_keyword(session, name, value, string))
+    {
+        return None;
+    }
+    // A call can have several callables, e.g. an override and its base method
+    resolve_callables(session, scope, call_expr)
+        .into_iter()
+        .filter_map(|(callable, callable_sym)| {
+            resolve_string_argument(
+                session,
+                scope,
+                from_module,
+                string,
+                call_expr,
+                argument,
+                &callable,
+                callable_sym,
+                pick,
+            )
+        })
+        .reduce(StringResolution::merge)
+}
+
+/// Try to resolve the meaning of the `string` argument in the context of the callable.
+/// e.g. a domain or a field in an Odoo model.
+fn resolve_string_argument(
+    session: &mut SessionInfo,
+    scope: SymbolKey,
+    from_module: Option<ModuleKey>,
+    string: &ExprStringLiteral,
+    call_expr: &ExprCall,
+    (arg_index, value, keyword_name): (usize, &Expr, Option<&str>),
+    callable: &EvaluationSymbolWeak,
+    callable_sym: SymbolKey,
+    pick: SegmentPick,
+) -> Option<StringResolution> {
+    if let SymbolKey::Function(function_key) = callable_sym
+        && session.st()[function_key].is_property
+    {
+        return None;
+    }
+    if let Some(decorator) = classify_api_decorator(session, callable_sym) {
+        return StringResolution::from_members(find_decorator_arg_symbols(session, scope, from_module, string, decorator, pick));
+    }
+
+    let param = find_call_param(
+        session,
+        from_module,
+        callable,
+        callable_sym,
+        call_expr,
+        arg_index,
+    );
+    let model = model_called_on(session, callable);
+    match SpecialArg::classify_call_argument(session, callable_sym, param, keyword_name, model).filter(|special_arg| special_arg.is_in_value(value, string)) {
+        Some(SpecialArg::Domain(Some(model))) => {
+            StringResolution::from_members(field_paths::find_nested_fields(session, model, from_module, string, pick))
+        },
+        Some(SpecialArg::Field(field_param)) => {
+            resolve_field_param(session, scope, from_module, string, call_expr, field_param, pick)
+        },
+        Some(SpecialArg::Domain(None)) | None => None,
     }
 }

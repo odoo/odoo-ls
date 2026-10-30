@@ -345,8 +345,8 @@ fn test_definition() {
     let range_m2 = FileMgr::text_range_to_range(&mut session, &module2_test_file, range_m2);
     assert!(compute_kwarg_locs.iter().any(|loc| range_m2 == loc.target_range), "Expected _compute_something to be at the same location as the compute keyword argument in module_2");
 
-    // group_expand, selection and the first positional argument of a Selection name a method
-    for (line, column, method) in [(85, 34, "_selection_state"), (85, 67, "_expand_states"), (86, 43, "_selection_state")] {
+    // group_expand, selection and the first positional argument of a Selection or a Reference name a method
+    for (line, column, method) in [(85, 34, "_selection_state"), (85, 67, "_expand_states"), (86, 43, "_selection_state"), (97, 48, "_selection_state"), (98, 42, "_selection_state")] {
         let locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, line, column);
         assert_eq!(locs.len(), 1, "Expected 1 location for method '{method}' at {line}:{column}");
         let sym = session.st().get_symbol(m1_tf_file_symbol.into(), (&[], &["DisplayNameRelatedModel", method]), u32::MAX);
@@ -358,6 +358,9 @@ fn test_definition() {
     // The first positional argument of a Char is its label, not a method name
     let label_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 87, 29);
     assert!(label_locs.is_empty(), "Expected no location for the label of a Char field, got: {:?}", label_locs);
+    // A Char takes no `selection`: given by keyword, it is not a method name either
+    let note_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 88, 38);
+    assert!(note_locs.is_empty(), "Expected no location for the `selection` of a Char field, got: {:?}", note_locs);
 
     // Now test go to def of `partner_id.country_id.phone_code` on each field.
     let partner_id_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 33, 25);
