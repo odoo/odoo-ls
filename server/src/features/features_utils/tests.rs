@@ -94,7 +94,9 @@ fn test_special_params_named() {
     let v19_1 = OdooVersion::new(19, 1, 0);
     let v20_0 = OdooVersion::new(20, 0, 0);
     let model_method = SpecialArg::Field(FieldParam::ModelMethod);
-    assert_eq!(kinds(v19_0, "domain"), [SpecialArg::Domain]);
+    // Of the model methods, and of the ones `web` adds to all the models
+    assert_eq!(kinds(v19_0, "domain"), [SpecialArg::Domain; 2]);
+    assert_eq!(kinds(v19_0, "args"), [SpecialArg::Domain]);
     assert_eq!(
         kinds(v19_0, "comodel_name"),
         [SpecialArg::Field(FieldParam::Comodel)]
