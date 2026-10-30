@@ -32,3 +32,19 @@ class SemTokensSearchOverride(models.Model):
     def _search_override_orders(self):
         self._search([], order='other_id')
         return self._search([], 0, None, 'name')
+
+
+class SemTokensSearchDomains(models.Model):
+    _inherit = 'sem.tokens.usage'
+
+    def _search_other_domains(self):
+        # The domain of the other search methods names fields of the model searched, by position or by keyword
+        self.search_count([('other_id.other_name', '=', False)])
+        self.search_fetch([('other_id', '=', False)], ['name'])
+        return self.search_read(domain=[('other_id.other_name', '=', False)])
+
+    def _other_domains(self):
+        # The domain of the other methods taking one names fields of the model they are called on
+        self.filtered_domain([('other_id.other_name', '=', False)])
+        self._read_group([('other_id', '=', False)], ['name'])
+        return self.name_search('x', [('other_id.other_name', '=', False)])

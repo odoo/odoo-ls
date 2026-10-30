@@ -151,7 +151,7 @@ fn test_call_argument_completion(session: &mut SessionInfo) {
 
     let mut failures = vec![];
     // (text right before the cursor, labels that must be offered, labels that must not)
-    let cases: [(&str, &[&str], &[&str]); 7] = [
+    let cases: [(&str, &[&str], &[&str]); 14] = [
         // A model name
         (r#"Many2one("module_1.lambda_def"#, &["module_1.lambda_default_model"], &[]),
         (r#"Many2one(comodel_name="module_1.lambda_def"#, &["module_1.lambda_default_model"], &[]),
@@ -163,6 +163,15 @@ fn test_call_argument_completion(session: &mut SessionInfo) {
         // A domain on the model searched
         (r#"self.search([("na"#, &["name", "name_count"], &[]),
         (r#"self.search(domain=[("na"#, &["name", "name_count"], &[]),
+        // A domain on the model searched, by the other search methods
+        (r#"self.search_count([("na"#, &["name", "name_count"], &[]),
+        (r#"self.search_fetch([("na"#, &["name", "name_count"], &[]),
+        (r#"self.search_read(domain=[("na"#, &["name", "name_count"], &[]),
+        (r#"self._search([("na"#, &["name", "name_count"], &[]),
+        // A domain on the model, by the other methods taking one
+        (r#"self.filtered_domain([("na"#, &["name", "name_count"], &[]),
+        (r#"self._read_group([("na"#, &["name", "name_count"], &[]),
+        (r#"self.name_search("x", [("na"#, &["name", "name_count"], &[]),
     ];
     for (before_cursor, offered, not_offered) in cases {
         let (line, text) = content.lines().enumerate().find(|(_, text)| text.contains(before_cursor)).unwrap();

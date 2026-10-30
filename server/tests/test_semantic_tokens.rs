@@ -288,6 +288,18 @@ fn check_call_context_tokens(calls: &TokenFile) {
     // An override that takes the order in `**kwargs` or `*args`: the base method declares it
     check(calls, 33, "other_id", Some((PROPERTY, &[])));
     check(calls, 34, "name", Some((PROPERTY, &[])));
+    // The domain of the other search methods: fields of the model searched, by position or by keyword
+    check(calls, 42, "other_id", Some((PROPERTY, &[])));
+    check(calls, 42, "other_name", Some((PROPERTY, &[])));
+    check(calls, 43, "other_id", Some((PROPERTY, &[])));
+    check(calls, 44, "other_id", Some((PROPERTY, &[])));
+    check(calls, 44, "other_name", Some((PROPERTY, &[])));
+    // The domain of the other methods taking one: fields of the model they are called on
+    check(calls, 48, "other_id", Some((PROPERTY, &[])));
+    check(calls, 48, "other_name", Some((PROPERTY, &[])));
+    check(calls, 49, "other_id", Some((PROPERTY, &[])));
+    check(calls, 50, "other_id", Some((PROPERTY, &[])));
+    check(calls, 50, "other_name", Some((PROPERTY, &[])));
 }
 
 /// One decoded semantic token: absolute position, and the legend entries its indices name.

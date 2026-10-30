@@ -1,9 +1,4 @@
-use std::path::PathBuf;
-
-use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString};
-use odoo_ls_server::utils::PathSanitizer;
-
-use crate::{setup::setup::*, test_utils::diag_on_line};
+use super::case_failures;
 
 /// OLS03014 and OLS03029 on `_order`: each case is a class of `model_order.py`, found by its
 /// `_order` line. An invalid `_order` gets exactly one Error, pointing at the given text.
@@ -89,60 +84,4 @@ fn test_ols03029_search_order() {
     ];
     let failures = case_failures("search_order.py", cases);
     assert!(failures.is_empty(), "search order diagnostics:\n{}", failures.join("\n"));
-}
-
-/// Failures of `cases` in `file` of `module_for_diagnostics/models`: each case is a statement as
-/// written, found by its line, then the expected code and the text it points at if invalid, as the
-/// only Error of that line.
-fn case_failures(file: &str, cases: &[(&str, Option<(&str, &str)>)]) -> Vec<String> {
-    let (mut odoo, config) = setup_server(true);
-    let mut session = create_init_session(&mut odoo, config);
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("data")
-        .join("addons")
-        .join("module_for_diagnostics")
-        .join("models")
-        .join(file)
-        .sanitize();
-    let diagnostics = get_diagnostics_for_path(&mut session, &path);
-    let lines: Vec<String> = std::fs::read_to_string(&path).unwrap().lines().map(str::to_string).collect();
-    let mut failures = vec![];
-    for &(statement, expected) in cases {
-        let Some(line) = lines.iter().position(|text| text.trim() == statement) else {
-            failures.push(format!("{statement}: no such line in {file}"));
-            continue;
-        };
-        let text = &lines[line];
-        let found = diag_on_line(&diagnostics, line as u32);
-        let as_expected = match expected {
-            None => found.is_empty(),
-            Some((code, pointed)) => matches!(found.as_slice(), [diagnostic]
-                if matches!(&diagnostic.code, Some(NumberOrString::String(c)) if c == code)
-                && diagnostic.severity == Some(DiagnosticSeverity::ERROR)
-                && pointed_text(diagnostic, text) == Some(pointed)),
-        };
-        if !as_expected {
-            let found: Vec<_> = found.iter().map(|diagnostic| describe(diagnostic, text)).collect();
-            failures.push(format!("{statement}: expected {expected:?}, got {found:?}"));
-        }
-    }
-    failures
-}
-
-/// Text of `line` under a diagnostic on that line only.
-fn pointed_text<'a>(diagnostic: &Diagnostic, line: &'a str) -> Option<&'a str> {
-    let range = diagnostic.range;
-    if range.start.line != range.end.line {
-        return None;
-    }
-    line.get(range.start.character as usize..range.end.character as usize)
-}
-
-fn describe(diagnostic: &Diagnostic, line: &str) -> String {
-    let code = match &diagnostic.code {
-        Some(NumberOrString::String(code)) => code.clone(),
-        other => format!("{other:?}"),
-    };
-    format!("{code} {:?} on {:?}: {}", diagnostic.severity, pointed_text(diagnostic, line), diagnostic.message)
 }
