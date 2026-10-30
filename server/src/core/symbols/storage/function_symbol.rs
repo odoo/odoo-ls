@@ -41,7 +41,8 @@ impl ParamRole {
     /// The role of a parameter named `name` of a marked function
     pub fn of_param_name(name: &str) -> Option<Self> {
         match name {
-            "domain" => Some(ParamRole::Domain),
+            // `name_search` names its domain `args` before 19.0
+            "domain" | "args" => Some(ParamRole::Domain),
             "order" => Some(ParamRole::Order),
             "comodel_name" => Some(ParamRole::Comodel),
             "inverse_name" => Some(ParamRole::InverseField),
