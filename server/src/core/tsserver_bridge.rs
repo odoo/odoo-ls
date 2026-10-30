@@ -63,6 +63,7 @@ pub struct TsServerBridge {
     permanent_roots: HashSet<String>,
     project_open: bool,
     ts_check: bool,
+    version: Option<String>,
 }
 
 
@@ -169,12 +170,21 @@ impl TsServerBridge {
             permanent_roots: HashSet::default(),
             project_open: false,
             ts_check,
+            version: None,
         };
 
         bridge.wait_for_startup(tsserver_path, &stderr_history)?;
         bridge.configure();
 
         Ok(bridge)
+    }
+
+    pub fn version(&self) -> Option<&str> {
+        self.version.as_deref()
+    }
+
+    pub fn major_version(&self) -> Option<u32> {
+        self.version.as_deref()?.split('.').next()?.parse().ok()
     }
 
     /// Confirm tsserver actually came up by performing a real protocol
@@ -217,8 +227,9 @@ impl TsServerBridge {
 
         match self.responses.lock().unwrap().remove(&request_seq) {
             Some(response) if response.get("success").and_then(Value::as_bool).unwrap_or(false) => {
-                let version = response.get("body").and_then(|b| b.get("version")).and_then(Value::as_str).unwrap_or("unknown");
-                info!("tsserver handshake succeeded (version {})", version);
+                let version = response.get("body").and_then(|b| b.get("version")).and_then(Value::as_str);
+                info!("tsserver handshake succeeded (version {})", version.unwrap_or("unknown"));
+                self.version = version.map(str::to_string);
                 Ok(())
             }
             Some(response) => Err(std::io::Error::other(format!(
