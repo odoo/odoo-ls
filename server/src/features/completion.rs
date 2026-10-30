@@ -14,7 +14,7 @@ use crate::core::symbols::{FunctionSymbol, ModuleSymbol};
 use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey, SourceFileKey, SymbolKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::features::ast_utils::AstUtils;
-use crate::features::features_utils::FeaturesUtils;
+use crate::features::features_utils;
 use crate::threads::SessionInfo;
 use crate::tree::OYarnExt;
 use crate::{Sy, S};
@@ -1215,7 +1215,7 @@ fn build_completion_item_from_symbols(session: &mut SessionInfo, symbols: Vec<Sy
     let type_details = sym_evals
         .into_iter()
         .map(|(eval, symbol_type)| {
-            FeaturesUtils::get_inferred_types(session, &eval, Some(&context_of_symbol), symbol_type)
+            features_utils::get_inferred_types(session, &eval, Some(&context_of_symbol), symbol_type)
         })
         .unique()
         .collect::<Vec<_>>();
@@ -1240,7 +1240,7 @@ fn build_completion_item_from_symbols(session: &mut SessionInfo, symbols: Vec<Sy
         documentation: Some(
             lsp_types::Documentation::MarkupContent(MarkupContent {
                 kind: lsp_types::MarkupKind::Markdown,
-                value: FeaturesUtils::build_markdown_description(session, None, None, &symbols.iter().map(|&symbol|
+                value: features_utils::build_markdown_description(session, None, None, &symbols.iter().map(|&symbol|
                     Evaluation {
                         symbol: EvaluationSymbol::new_with_symbol(symbol.into(), None,
                             context_of_symbol.clone(),
