@@ -21,6 +21,8 @@ This is the description of the module CSV
         'data/csv_field_mismatch/res.country.state.csv',
         'data/csv_invalid_xml_id/res.country.state.csv',
         'data/csv_duplicate_column/res.country.state.csv',
+        'data/csv_unknown_model/not.a.model.csv',
+        'data/csv_unknown_model_empty/not.a.model.csv',
     ],
     'installable': True,
     'application': True,

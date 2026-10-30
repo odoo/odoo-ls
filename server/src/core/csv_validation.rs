@@ -48,12 +48,9 @@ impl CsvValidator {
         let csv_module = session.st().find_module(csv_symbol);
         let mut rdr = csv::ReaderBuilder::new().from_reader(data.as_bytes());
         let Some(model_key) = session.model_mgr().get_model_key(model_name) else {
-            let mut max_range = 1;
-            if let Ok(headers) = rdr.headers() {
-                max_range = headers.len();
-            }
-            // @todo: fix-me: assuming the idea was to make the diag span the first line, using headers.len() does not do that!
-            let range = range_to_text_range(0..max_range);
+            // End of first line, or end of file as fallback
+            let first_line_end = data.find(['\n', '\r']).unwrap_or(data.len());
+            let range = range_to_text_range(0..first_line_end);
             diagnostics.extend(create_diag(session, DiagnosticCode::OLS05056, &[model_name], range));
             self.finalize_validation(session, csv_symbol, file_info, diagnostics);
             return;

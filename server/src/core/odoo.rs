@@ -2489,15 +2489,12 @@ impl Odoo {
         let file_mgr = session.file_mgr();
         let file_path = Path::new(&msg.file).sanitize();
         if let Some(file_info) = file_mgr.get_file_info(&file_path) {
-            //as we receive line and character from tsserver, transform into offset to store in (offset, 0) structure
-            //TODO maybe find a way to handle it properly as XML is doing the same
             let diagnostics: Vec<Diag> = msg.diagnostics.into_iter().map(|d| {
                 let TsDiagnostic { range, severity, code, message } = d;
                 let text_range = {
                     let fi = &session.file_mgr()[file_info];
-                    // @todo: fix decoding error (it comes from tsserver, which is utf-16)
-                    let start = fi.position_to_offset(range.start.line, range.start.character, session.sync_odoo.encoding);
-                    let end = fi.position_to_offset(range.end.line, range.end.character, session.sync_odoo.encoding);
+                    let start = fi.position_to_offset(range.start.line, range.start.character, PositionEncoding::Utf16);
+                    let end = fi.position_to_offset(range.end.line, range.end.character, PositionEncoding::Utf16);
                     range_to_text_range(start..end)
                 };
                 Diag::external(code, message, text_range, severity)
