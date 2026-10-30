@@ -23,6 +23,8 @@ use super::file_mgr::{FileInfo, FileMgr};
 use super::import_resolver::manual_import;
 use super::python_arch_eval::PythonArchEval;
 
+mod order;
+
 #[derive(Debug)]
 pub struct PythonValidator {
     entry_point: EntryPointKey,
@@ -267,9 +269,10 @@ impl PythonValidator {
     fn visit_class_def(&mut self, session: &mut SessionInfo, c: &StmtClassDef) {
         let sym = session.st().get_positioned_symbol(*self.sym_stack.last().unwrap(), &c.name, &c.range);
         if let Some(sym) = sym {
-            self._check_model(session, sym.unwrap_class_key());
             let old_noqa = session.current_noqa.clone();
+            // The class's noqa also applies to the checks of the model it defines (e.g. `_order`)
             session.current_noqa = session.st().get_noqas(sym).clone();
+            self.check_model(session, sym.unwrap_class_key());
             self.sym_stack.push(sym);
             self.validate_body(session, &c.body);
             self.sym_stack.pop();
@@ -368,7 +371,7 @@ impl PythonValidator {
         self.validate_body(session, &stmt_with.body);
     }
 
-    fn _check_model(&mut self, session: &mut SessionInfo, class: ClassKey) {
+    fn check_model(&mut self, session: &mut SessionInfo, class: ClassKey) {
         let Some(model_data) = session.st()[class]._model.as_ref() else {
             return;
         };
@@ -667,6 +670,7 @@ impl PythonValidator {
                 }
             }
         }
+        self.check_model_order(session, class, maybe_from_module);
         // Check name for shadowing warning
         let Some(model) = session.model_mgr().get_model_key(&model_name) else {
             return;
@@ -729,6 +733,35 @@ impl PythonValidator {
                 }
             }
         }
+    }
+
+    /// Validation for the _order attribute of the model
+    fn check_model_order(
+        &mut self,
+        session: &mut SessionInfo,
+        class: ClassKey,
+        maybe_from_module: Option<ModuleKey>,
+    ) {
+        let model_order_syms = session
+            .st()
+            .get_symbol(class.into(), (&[], &["_order"]), u32::MAX);
+        // Normally it is one symbol, take the last to account for shadowing
+        let Some(&model_order) = model_order_syms.last() else {
+            return;
+        };
+        let order_string = session
+            .st()
+            .evaluations(model_order)
+            .cloned()
+            .into_iter()
+            .flatten()
+            .flat_map(|eval| eval.value)
+            .find_map(|ev| ev.as_string_literal().cloned());
+
+        let Some(order_string) = order_string else {
+            return;
+        };
+        self.diagnostics.extend(order::validate_order(session, class, maybe_from_module, &order_string));
     }
 
     fn _check_module_dependency(&mut self, session: &mut SessionInfo, class_key: ClassKey, model_name: &str, range: &TextRange) {

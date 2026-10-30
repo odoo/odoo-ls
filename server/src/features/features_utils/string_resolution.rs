@@ -7,6 +7,7 @@ use crate::features::ast_utils::StringContext;
 use crate::threads::SessionInfo;
 
 use super::call_args::resolve_call_argument;
+use super::order::{find_order_fields, order_model_class};
 
 /// What a model-related string literal resolves to. Shared by go-to-definition and
 /// semantic tokens.
@@ -62,7 +63,10 @@ pub(super) fn resolve_string_in_context(
         StringContext::CallArgument(call_expr) => {
             resolve_call_argument(session, scope, from_module, string, call_expr, pick)
         },
-        StringContext::ModelOrder => None,
+        StringContext::ModelOrder => {
+            let model_class = order_model_class(session, scope)?;
+            StringResolution::from_members(find_order_fields(session, model_class.into(), from_module, string, pick))
+        },
     }
 }
 
@@ -88,9 +92,18 @@ pub fn resolve_string_symbols(
 ) -> Option<StringResolution> {
     let from_module = session.st().find_module(file_symbol);
     let string_val = string.value.to_str();
-    if let Some(string_ctx) = string_ctx
-        && let Some(resolution) = resolve_string_in_context(session, file_symbol, string, string_ctx, pick) {
-        return Some(resolution);
+    if let Some(string_ctx) = string_ctx {
+        if let Some(resolution) = resolve_string_in_context(session, file_symbol, string, string_ctx, pick) {
+            return Some(resolution);
+        }
+        // The `_order` of a model only holds fields: not a module, a model or an XML id. Anywhere
+        // else, `_order` is a variable like any other.
+        if matches!(string_ctx, StringContext::ModelOrder) {
+            let scope = session.st().get_scope_symbol(file_symbol, string.range.start().to_u32() + 1, false);
+            if order_model_class(session, scope).is_some() {
+                return None;
+            }
+        }
     }
     if let SourceFileKey::Module(module_key) = file_symbol && file_path.ends_with("__manifest__.py") {
         let dir_alias = {
