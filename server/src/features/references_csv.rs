@@ -22,7 +22,7 @@ impl CsvAstReferenceVisitor {
         if csv_reader.has_headers()
             && let Ok(header) = csv_reader.headers()
         {
-            for (start, end, h) in CsvFieldIter::new(header, content).unwrap() {
+            for (range, h) in CsvFieldIter::new(header, content).unwrap() {
                 headers.push(oyarn!("{}", h));
                 if h.is_empty() { continue; }
                 let header_elts = h.splitn(2, [':', '/']).collect::<Vec<_>>();
@@ -36,10 +36,7 @@ impl CsvAstReferenceVisitor {
                     if symbols.iter().any(|sym| target_syms.contains(sym)) {
                         results.push(Location {
                             uri: uri.clone(),
-                            range: FileMgr::std_range_to_range(session, &path, &std::ops::Range {
-                                start,
-                                end,
-                            }),
+                            range: FileMgr::text_range_to_range(session, &path, range),
                         });
                     }
                     let Some(next_base) = deep_field_walker.get_model_symbol(session) else {
@@ -50,10 +47,7 @@ impl CsvAstReferenceVisitor {
                     if sub_symbols.iter().any(|sym| target_syms.contains(sym)) {
                         results.push(Location {
                             uri: uri.clone(),
-                            range: FileMgr::std_range_to_range(session, &path, &std::ops::Range {
-                                start,
-                                end,
-                            }),
+                            range: FileMgr::text_range_to_range(session, &path, range),
                         });
                     }
                 }
@@ -71,7 +65,7 @@ impl CsvAstReferenceVisitor {
         let Some(field_iter) = CsvFieldIter::new(record, content) else { return vec![]; };
         let mut locations = vec![];
         let module_name = module.map(|m| session.st()[m].name.clone()).unwrap_or_else(|| Sy!(""));
-        for (idx, (start, end, field)) in field_iter.enumerate() {
+        for (idx, (range, field)) in field_iter.enumerate() {
             let field_name = headers.get(idx).unwrap().clone();
             if field_name == "id" || field_name.ends_with(":id") {
                 let xml_id = if field.contains(".") {
@@ -83,10 +77,7 @@ impl CsvAstReferenceVisitor {
                 if xml_id == *search_str {
                     locations.push(Location {
                         uri: uri.clone(),
-                        range: FileMgr::std_range_to_range(session, path, &std::ops::Range {
-                            start,
-                            end,
-                        }),
+                        range: FileMgr::text_range_to_range(session, path, range),
                     })
                 }
             }

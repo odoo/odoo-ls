@@ -70,20 +70,20 @@ impl<'a> CsvFieldIter<'a> {
 }
 
 impl<'a> Iterator for CsvFieldIter<'a> {
-    // byte offsets
-    type Item = (usize, usize, &'a str);
+    type Item = (TextRange, &'a str);
 
     fn next(&mut self) -> Option<Self::Item> {
         let field = self.fields.next()?;
         let start = self.start;
         let (len, consumed) = self.read_raw_field();
         self.start += consumed;
-        Some((start, start + len, field))
+        Some((range_to_text_range(start..start + len), field))
     }
 }
 
 /// Each non-empty xml id of a comma separated `/id` cell, with its byte range in `content`.
-pub fn split_csv_xml_ids<'a>(field: &'a str, content: &str, cell_start: usize) -> impl Iterator<Item = (&'a str, usize, usize)> {
+pub fn split_csv_xml_ids<'a>(field: &'a str, content: &str, cell_start: TextSize) -> impl Iterator<Item = (&'a str, TextRange)> {
+    let cell_start = cell_start.to_usize();
     // the cell spans its quotes when it carries them, the ids inside it do not
     let value_start = cell_start + usize::from(is_quoted(content, cell_start));
     let mut offset = 0;
@@ -91,7 +91,7 @@ pub fn split_csv_xml_ids<'a>(field: &'a str, content: &str, cell_start: usize) -
         let start = value_start + offset + segment.len() - segment.trim_start().len();
         offset += segment.len() + 1;
         let xml_id = segment.trim();
-        (!xml_id.is_empty()).then_some((xml_id, start, start + xml_id.len()))
+        (!xml_id.is_empty()).then(|| (xml_id, range_to_text_range(start..start + xml_id.len())))
     })
 }
 
@@ -162,8 +162,9 @@ impl CsvAstUtils {
         }
         let file_info = session.file_mgr().get_file_info(session.st().file_path(file_symbol.into())).unwrap();
         let Ok(header) = csv_reader.headers() else { return results;};
-        for (h_start, end, h) in CsvFieldIter::new(header, content).unwrap() {
+        for (range, h) in CsvFieldIter::new(header, content).unwrap() {
             headers.push(oyarn!("{}", h));
+            let (h_start, end) = (range.start().to_usize(), range.end().to_usize());
             if offset >= h_start && offset <= end {
                 let has_quotes = is_quoted(content, h_start);
                 let header_elts = h.splitn(2, [':', '/']).collect::<Vec<_>>();
@@ -251,10 +252,11 @@ impl CsvAstUtils {
         file_info: FileInfoKey,
     ) {
         let Some(field_iter) = CsvFieldIter::new(record, content) else { return; };
+        let cursor = TextSize::new(offset as u32);
         //Search for selected field
-        let Some((idx, (start, end, field))) = field_iter
+        let Some((idx, (field_range, field))) = field_iter
             .enumerate()
-            .find(|(_, (start, end, _))| *start <= offset && *end >= offset)
+            .find(|(_, (range, _))| range.contains_inclusive(cursor))
         else { return; };
         let field_data = oyarn!("{}", field);
         if headers.len() <= idx {
@@ -262,7 +264,6 @@ impl CsvAstUtils {
         }
         let field_elts = headers.get(idx).unwrap().splitn(2, [':', '/']).collect::<Vec<_>>();
         let field_name = field_elts[0];
-        let field_range = TextRange::new(TextSize::new(start as u32), TextSize::new(end as u32));
         let relational_field = field_elts.get(1);
         //if the selected field is "id", return the xml_id record with the same id from the same csv file
         if field_name == "id" {
@@ -291,15 +292,12 @@ impl CsvAstUtils {
             let Some(_) = deep_field_walker.get_model_symbol(session) else {
                 return;
             };
-            let Some((xml_id, id_start, id_end)) = split_csv_xml_ids(field, content, start)
-                .find(|(_, id_start, id_end)| offset >= *id_start && offset <= *id_end)
+            let Some((xml_id, id_range)) = split_csv_xml_ids(field, content, field_range.start())
+                .find(|(_, range)| range.contains_inclusive(cursor))
             else {
                 return;
             };
-            let id_range = Range {
-                start: session.file_mgr()[file_info].offset_to_position(id_start as u32, session.sync_odoo.encoding),
-                end: session.file_mgr()[file_info].offset_to_position(id_end as u32, session.sync_odoo.encoding),
-            };
+            let id_range = session.file_mgr()[file_info].text_range_to_range(id_range, session.sync_odoo.encoding);
             // We found the relational model referred to, we can lookup the xml_id now
             results.extend(
                 SyncOdoo::get_xml_ids(
@@ -327,7 +325,7 @@ mod tests {
         let mut reader = csv::ReaderBuilder::new().has_headers(false).flexible(true).from_reader(content.as_bytes());
         reader.records().map(|record| {
             let record = record.unwrap();
-            CsvFieldIter::new(&record, content).unwrap().map(|(start, end, _)| &content[start..end]).collect()
+            CsvFieldIter::new(&record, content).unwrap().map(|(range, _)| &content[range]).collect()
         }).collect()
     }
 

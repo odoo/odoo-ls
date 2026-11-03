@@ -69,7 +69,7 @@ impl CsvValidator {
         };
         if rdr.has_headers() && let Ok(header) = rdr.headers() {
             let mut header_is_xml = vec![false; header.len()];
-            for (idx, (start, end, h)) in CsvFieldIter::new(header, &data).unwrap().enumerate() {
+            for (idx, (range, h)) in CsvFieldIter::new(header, &data).unwrap().enumerate() {
                 let header_elts = h.splitn(2, [':', '/']).collect::<Vec<_>>();
                 let field_name = header_elts[0].split("@").next().unwrap(); //remove translation if exists
                 let mut deep_field_walker =
@@ -81,7 +81,6 @@ impl CsvValidator {
                 );
                 if member_symbols.is_empty() {
                     header_is_xml[idx] = false;
-                    let range = range_to_text_range(start..end);
                     diagnostics.extend(create_diag(session, DiagnosticCode::OLS05057, &[h, model_name], range));
                 } else {
                     header_is_xml[idx] = header_elts.len() == 2
@@ -106,12 +105,12 @@ impl CsvValidator {
 
     fn validate_record(&self, session: &mut SessionInfo, csv_module: ModuleKey, headers_is_xml: &[bool], record: &StringRecord, diagnostics: &mut Vec<Diag>, data: &str) {
         let Some(field_iter) = CsvFieldIter::new(record, data) else { return; };
-        for (idx, (start, _end, field)) in field_iter.enumerate() {
+        for (idx, (range, field)) in field_iter.enumerate() {
             let Some(&should_be_xml_id) = headers_is_xml.get(idx) else { break;};
             if !should_be_xml_id {
                 continue;
             }
-            for (xml_id, id_start, id_end) in split_csv_xml_ids(field, data, start) {
+            for (xml_id, id_range) in split_csv_xml_ids(field, data, range.start()) {
                 //check that field_data is a valid xml id
                 let id_split = xml_id.split(".").collect::<Vec<&str>>();
                 let mut module_name = session.st().name(csv_module).as_str();
@@ -122,8 +121,7 @@ impl CsvValidator {
                     continue;
                 }
                 let Some(&module_symbol) = session.sync_odoo.modules.get(module_name) else {
-                    let range = range_to_text_range(id_start..id_end);
-                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS05003, &[], range));
+                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS05003, &[], id_range));
                     continue;
                 };
                 let complete_id = oyarn!("{}.{}", module_name, id_split.last().unwrap());
@@ -132,8 +130,7 @@ impl CsvValidator {
                     session.st_mut()[csv_module].not_found_data_ids.insert(MissingDataSource::XML_ID(complete_id), BuildSteps::VALIDATION);
                     let main_entry = session.sync_odoo.get_main_entry();
                     session.ep_mgr_mut()[main_entry].not_found_data_ids.insert(csv_module.into());
-                    let range = range_to_text_range(id_start..id_end);
-                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS05001, &[], range));
+                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS05001, &[], id_range));
                 }
             }
         }
