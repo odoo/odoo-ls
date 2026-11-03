@@ -293,48 +293,12 @@ impl Model {
 
     /// Gets all class symbols of current model and its inherited models
     pub fn get_full_model_classes(model_key: ModelKey, session: &SessionInfo, from_module: Option<ModuleKey>) -> HashSet<ClassKey> {
-        let st = &session.sync_odoo.symbol_table;
-        let model_mgr = &session.sync_odoo.model_mgr;
-        let mut symbol_set  = HashSet::default();
-        let mut already_in = HashSet::default();
-        let mut queue = VecDeque::from([model_key]);
-        while let Some(current_model_key) = queue.pop_front() {
-            let current_model_ref = &model_mgr[current_model_key];
-            let symbols: HashSet<_> = Self::filter_by_module(current_model_ref.get_python_symbols(st), st, from_module).collect();
-            for &key in symbols.iter() {
-                let Some(model_data) = &st[key]._model else {continue};
-                for inherit in model_data.inherit.iter() {
-                    if let Some(model_key) = session.model_mgr().get_model_key(inherit)
-                        && !already_in.contains(&model_key) {
-                            already_in.insert(model_key);
-                            queue.push_back(model_key);
-                        }
-                }
-            }
-            symbol_set.extend(symbols);
+        let mut symbol_set = HashSet::default();
+        let mut walker = ModelClassesWalker::new(model_key, false);
+        while let Some((classes, _)) = walker.next_model(session, from_module) {
+            symbol_set.extend(classes);
         }
         symbol_set
-    }
-
-    /// Gets recursively all models that are inherited using "inherits" mechanism.
-    pub fn get_inherits_models(&self, session: &SessionInfo, from_module: Option<ModuleKey>) -> Vec<ModelKey> {
-        let st = &session.sync_odoo.symbol_table;
-        let mut res = vec![];
-        let mut already_in = HashSet::default();
-        let symbols = Self::filter_by_module(self.get_python_symbols(st), st, from_module);
-        for symbol_key in symbols {
-            let Some(model_data) = &st[symbol_key]._model else {
-                continue;
-            };
-            for (model_name, _field) in model_data.inherits.iter() {
-                if let Some(model_key) = session.model_mgr().get_model_key(model_name)
-                    && !already_in.contains(&model_key) {
-                        res.push(model_key);
-                        already_in.insert(model_key);
-                    }
-            }
-        }
-        res
     }
 
     pub fn has_symbols(&self, symbol_table: &SymbolTable) -> bool {
@@ -495,5 +459,68 @@ impl Model {
             false
         }
         inner(self, session, base, &mut HashSet::default())
+    }
+}
+
+/// Lazily browses the classes of a model, one model at a time: first the classes of the model and of all the models
+/// it inherits from with `_inherit`, then, if `follow_inherits`, the classes of the models delegated with `_inherits`,
+/// whether `_inherits` is declared by the model, by a model it inherits from (ex: a mixin), or by an `_inherits` model itself.
+pub struct ModelClassesWalker {
+    inherit_queue: VecDeque<ModelKey>,
+    inherits_queue: VecDeque<ModelKey>,
+    visited: HashSet<ModelKey>,
+    follow_inherits: bool,
+    through_inherits: bool,
+}
+
+impl ModelClassesWalker {
+    pub fn new(model_key: ModelKey, follow_inherits: bool) -> Self {
+        Self {
+            inherit_queue: VecDeque::from([model_key]),
+            inherits_queue: VecDeque::new(),
+            visited: HashSet::default(),
+            follow_inherits,
+            through_inherits: false,
+        }
+    }
+
+    /// Returns the classes of the next model, and whether this model is reached through `_inherits`
+    /// (in which case only its fields are visible).
+    /// Models reached with `_inherit` are always returned before the ones reached through `_inherits`.
+    pub fn next_model(&mut self, session: &SessionInfo, from_module: Option<ModuleKey>) -> Option<(Vec<ClassKey>, bool)> {
+        let st = &session.sync_odoo.symbol_table;
+        let model_mgr = &session.sync_odoo.model_mgr;
+        // visited is checked on pop, so that a model reached with both `_inherit` and `_inherits` is kept in the `_inherit` part
+        let model_key = loop {
+            let model_key = match self.inherit_queue.pop_front() {
+                Some(model_key) => model_key,
+                None => {
+                    self.through_inherits = true;
+                    self.inherits_queue.pop_front()?
+                }
+            };
+            if self.visited.insert(model_key) {
+                break model_key;
+            }
+        };
+        let classes = Model::filter_by_module(model_mgr[model_key].get_python_symbols(st), st, from_module).collect::<Vec<_>>();
+        for &class_key in classes.iter() {
+            let Some(model_data) = &st[class_key]._model else {continue};
+            for inherit in model_data.inherit.iter() {
+                if let Some(inherit_key) = model_mgr.get_model_key(inherit)
+                    && !self.visited.contains(&inherit_key) {
+                        self.inherit_queue.push_back(inherit_key);
+                    }
+            }
+            if self.follow_inherits {
+                for (inherits, _field) in model_data.inherits.iter() {
+                    if let Some(inherits_key) = model_mgr.get_model_key(inherits)
+                        && !self.visited.contains(&inherits_key) {
+                            self.inherits_queue.push_back(inherits_key);
+                        }
+                }
+            }
+        }
+        Some((classes, self.through_inherits))
     }
 }
