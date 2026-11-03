@@ -1411,7 +1411,7 @@ impl PythonArchEvalHooks {
             }
             return diagnostics
         };
-        session.st_mut()[func_sym].evaluations = vec![Evaluation::eval_from_symbol(session.st(), main_model_sym, Some(false))];
+        session.st_mut()[func_sym].evaluations = vec![Evaluation::eval_from_symbol(session.st(), main_model_sym, Some(true))];
         diagnostics
     }
 
