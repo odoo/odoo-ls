@@ -101,6 +101,7 @@ impl CsvArchBuilder {
 
     fn extract_record(&self, session: &mut SessionInfo, file_symbol: CsvFileKey, model_name: OYarn, record: &StringRecord, content: &str) -> Option<XmlRecordKey> {
         let fields: Vec<_> = CsvFieldIter::new(record, content)?.collect();
+        let first_start = fields.first().map_or(0, |(start, _, _)| *start);
         let last_end = fields.last().map_or(0, |(_, end, _)| *end);
         let mut xml_id = None;
         let record_key = session.st_mut().add_new_xml_record(
@@ -136,7 +137,7 @@ impl CsvArchBuilder {
         }
         let rec = &mut session.st_mut()[record_key];
         rec.xml_id = xml_id;
-        rec.range = TextRange::new(TextSize::new(record.position().unwrap().byte() as u32), TextSize::new(last_end as u32));
+        rec.range = range_to_text_range(first_start..last_end);
         Some(record_key)
     }
 }

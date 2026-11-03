@@ -1,4 +1,5 @@
 use csv::{Reader, StringRecord};
+use csv_core::ReadFieldResult;
 use lsp_types::Range;
 use ruff_text_size::{TextRange, TextSize};
 
@@ -18,37 +19,53 @@ use crate::{
     threads::SessionInfo,
 };
 
+/// `Position::byte()` can point at the BOM, or at line ends left over from the previous record.
+fn record_start(content: &str, byte: usize) -> usize {
+    let mut start = if byte == 0 && content.starts_with('\u{feff}') { 3 } else { byte };
+    while matches!(content.as_bytes().get(start), Some(b'\r' | b'\n')) {
+        start += 1;
+    }
+    start
+}
+
+/// A CSV field is quoted when its first raw byte is `"`.
+fn is_quoted(content: &str, field_start: usize) -> bool {
+    content.as_bytes().get(field_start) == Some(&b'"')
+}
+
+/// Each field of `record` with its raw byte range in `content`, quotes and `""` escapes included.
 pub struct CsvFieldIter<'a> {
     content: &'a str,
-    record: &'a StringRecord,
-    field_idx: usize,
+    fields: csv::StringRecordIter<'a>,
+    reader: csv_core::Reader,
     start: usize,
 }
 
 impl<'a> CsvFieldIter<'a> {
     pub fn new(record: &'a StringRecord, content: &'a str) -> Option<Self> {
-        let position = record.position()?;
-        let mut start = position.byte() as usize;
-        // Account for CRLF (\r\n) as line break
-        // Lines with CRLF will have an extra byte compared to LF (\n)
-        if content.as_bytes().get(start) == Some(&b'\n') {
-            start += 1;
-        }
-        Some(Self { content, record, field_idx: 0, start })
+        let start = record_start(content, record.position()?.byte() as usize);
+        Some(Self { content, fields: record.iter(), reader: csv_core::Reader::new(), start })
     }
 
-    /// Accounts for outer double quotes in the field length, for positioning purposes.
-    /// E.g.: `"abc",def,ghi` in a csv line, the first field has len 5 while the
-    /// other two have len 3 each.
-    fn field_len(field: &str, data_src: &str, offset: usize) -> usize {
-        let mut len = field.len();
-        if data_src.as_bytes().get(offset) == Some(&b'"') {
-            len += 1;
+    /// Returns (raw field length, bytes consumed including the delimiter or line end).
+    fn read_raw_field(&mut self) -> (usize, usize) {
+        let input = &self.content.as_bytes()[self.start..];
+        // the decoded value is not needed, but an empty buffer never advances
+        let mut output = [0u8; 256];
+        let mut consumed = 0;
+        loop {
+            let (result, nin, _) = self.reader.read_field(&input[consumed..], &mut output);
+            consumed += nin;
+            if matches!(result, ReadFieldResult::Field { .. } | ReadFieldResult::End) {
+                break;
+            }
         }
-        if data_src.as_bytes().get(offset + len) == Some(&b'"') {
-            len += 1;
-        }
-        len
+        // the bytes read end with the `,` or line end that closed the field, except at end of file
+        let len = match input[..consumed].last() {
+            Some(b',' | b'\r' | b'\n') => consumed - 1,
+            _ => consumed,
+        };
+        (len, consumed)
     }
 }
 
@@ -57,19 +74,18 @@ impl<'a> Iterator for CsvFieldIter<'a> {
     type Item = (usize, usize, &'a str);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let field = self.record.get(self.field_idx)?;
-        let end = self.start + Self::field_len(field, self.content, self.start);
+        let field = self.fields.next()?;
         let start = self.start;
-        self.start = end + 1;
-        self.field_idx += 1;
-        Some((start, end, field))
+        let (len, consumed) = self.read_raw_field();
+        self.start += consumed;
+        Some((start, start + len, field))
     }
 }
 
 /// Each non-empty xml id of a comma separated `/id` cell, with its byte range in `content`.
 pub fn split_csv_xml_ids<'a>(field: &'a str, content: &str, cell_start: usize) -> impl Iterator<Item = (&'a str, usize, usize)> {
     // the cell spans its quotes when it carries them, the ids inside it do not
-    let value_start = cell_start + usize::from(content.as_bytes().get(cell_start) == Some(&b'"'));
+    let value_start = cell_start + usize::from(is_quoted(content, cell_start));
     let mut offset = 0;
     field.split(',').filter_map(move |segment| {
         let start = value_start + offset + segment.len() - segment.trim_start().len();
@@ -105,13 +121,11 @@ impl<'a> Iterator for CsvRecordIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let record = self.first_record.take()?;
-        let mut start = match record {
-            Ok(ref rec) => rec.position()?.byte() as u32,
-            Err(ref err) => err.position()?.byte() as u32,
+        let position = match record {
+            Ok(ref rec) => rec.position()?.byte(),
+            Err(ref err) => err.position()?.byte(),
         };
-        if self.content.as_bytes().get(start as usize) == Some(&b'\n') {
-            start += 1;
-        }
+        let start = record_start(self.content, position as usize) as u32;
         let end = match self.second_record {
             Some(Ok(ref rec)) => rec.position()?.byte() as u32,
             Some(Err(ref err)) => err.position()?.byte() as u32,
@@ -151,7 +165,7 @@ impl CsvAstUtils {
         for (h_start, end, h) in CsvFieldIter::new(header, content).unwrap() {
             headers.push(oyarn!("{}", h));
             if offset >= h_start && offset <= end {
-                let has_quotes = end - h_start - h.len() == 2; // Range is bigger than field length by 2, meaning field is quoted
+                let has_quotes = is_quoted(content, h_start);
                 let header_elts = h.splitn(2, [':', '/']).collect::<Vec<_>>();
                 let mut deep_field_walker = DeepFieldEvalWalker::new(main_symbol.into(), module);
                 let symbols =
@@ -302,5 +316,66 @@ impl CsvAstUtils {
                 }),
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CsvFieldIter, CsvRecordIter};
+
+    fn raw_fields(content: &str) -> Vec<Vec<&str>> {
+        let mut reader = csv::ReaderBuilder::new().has_headers(false).flexible(true).from_reader(content.as_bytes());
+        reader.records().map(|record| {
+            let record = record.unwrap();
+            CsvFieldIter::new(&record, content).unwrap().map(|(start, end, _)| &content[start..end]).collect()
+        }).collect()
+    }
+
+    #[test]
+    fn double_quote_escapes() {
+        assert_eq!(raw_fields("\"a \"\"b\"\" ç\",x\n"), [["\"a \"\"b\"\" ç\"", "x"]]);
+    }
+
+    #[test]
+    fn text_after_closing_quote() {
+        assert_eq!(raw_fields("\"ab\"cd,x"), [["\"ab\"cd", "x"]]);
+    }
+
+    #[test]
+    fn newline_in_quoted_field() {
+        assert_eq!(raw_fields("\"a\nb\",x\ny,z\n"), [["\"a\nb\"", "x"], ["y", "z"]]);
+    }
+
+    #[test]
+    fn bom() {
+        assert_eq!(raw_fields("\u{feff}id,name\nç,b\n"), [["id", "name"], ["ç", "b"]]);
+        assert_eq!(raw_fields("\u{feff}\"id\",name\n"), [["\"id\"", "name"]]);
+    }
+
+    #[test]
+    fn crlf_and_blank_lines() {
+        assert_eq!(raw_fields("a,b\r\n\r\nc,\"d\"\r\n"), [["a", "b"], ["c", "\"d\""]]);
+        assert_eq!(raw_fields("a,b\n\n\nc,d"), [["a", "b"], ["c", "d"]]);
+        assert_eq!(raw_fields("a,b\rc,d\r"), [["a", "b"], ["c", "d"]]);
+    }
+
+    #[test]
+    fn empty_fields() {
+        assert_eq!(raw_fields("a,,\n,b\n"), [vec!["a", "", ""], vec!["", "b"]]);
+    }
+
+    #[test]
+    fn field_longer_than_output_buffer() {
+        let long = format!("\"{}\"", "é".repeat(300));
+        let content = format!("{long},y\n");
+        assert_eq!(raw_fields(&content), [[long.as_str(), "y"]]);
+    }
+
+    #[test]
+    fn record_ranges_skip_bom_and_line_ends() {
+        let content = "\u{feff}a,b\r\n\r\nc,d\r\n";
+        let mut reader = csv::ReaderBuilder::new().has_headers(false).from_reader(content.as_bytes());
+        let starts: Vec<u32> = CsvRecordIter::new(&mut reader, content).map(|(range, _)| range.start().into()).collect();
+        assert_eq!(starts, [3, 10]);
     }
 }
