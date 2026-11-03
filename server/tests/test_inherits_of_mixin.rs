@@ -1,7 +1,10 @@
 mod setup;
 mod test_utils;
 
-use odoo_ls_server::core::odoo::SyncOdoo;
+use lsp_types::CompletionResponse;
+use odoo_ls_server::core::file_mgr::FileMgr;
+use odoo_ls_server::core::odoo::{Odoo, SyncOdoo};
+use odoo_ls_server::features::completion::CompletionFeature;
 use odoo_ls_server::utils::PathSanitizer;
 use std::path::Path;
 
@@ -30,6 +33,15 @@ fn test_inherits_of_mixin() {
     assert!(Path::new(&test_file).exists(), "Test file does not exist: {test_file}");
     let content = std::fs::read_to_string(&test_file).unwrap();
     let mut session = setup::setup::create_init_session(&mut odoo, config);
+    // opened, as completion needs the AST of the file
+    Odoo::handle_did_open(&mut session, lsp_types::DidOpenTextDocumentParams {
+        text_document: lsp_types::TextDocumentItem {
+            uri: FileMgr::pathname2uri(&test_file),
+            language_id: "python".to_string(),
+            version: 2,
+            text: content.clone(),
+        },
+    });
     let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file))
         .expect("Failed to get file symbol");
@@ -66,4 +78,27 @@ fn test_inherits_of_mixin() {
         !lines.contains(&method_decl),
         "self.target_method should not be visible through _inherits, got lines: {lines:?}"
     );
+
+    // completion at the end of `return self.<attribute>` in the method `method`
+    let mut completion_labels = |method: &str, attribute: &str| -> Vec<String> {
+        let needle = format!("return self.{attribute}");
+        let (line, character) = find_position(&content, &format!("def {method}"), &needle);
+        let response = CompletionFeature::autocomplete(&mut session, file_symbol, file_info, None, line, character + needle.len() as u32);
+        let items = match response {
+            Some(CompletionResponse::Array(items)) => items,
+            Some(CompletionResponse::List(list)) => list.items,
+            None => vec![],
+        };
+        items.into_iter().map(|i| i.label).collect()
+    };
+
+    // only fields are completed through `_inherits`
+    let labels = completion_labels("use_target_value", "target_value");
+    assert!(labels.iter().any(|l| l == "target_value"), "target_value should be completed through _inherits, got: {labels:?}");
+    let labels = completion_labels("use_target_method", "target_method");
+    assert!(!labels.iter().any(|l| l == "target_method"), "target_method should not be completed through _inherits, got: {labels:?}");
+
+    // a model given by `_inherits` (through the mixin) then by `_inherit` is fully inherited
+    let labels = completion_labels("use_inherited_target_method", "target_method");
+    assert!(labels.iter().any(|l| l == "target_method"), "target_method should be completed through _inherit, got: {labels:?}");
 }
