@@ -1702,36 +1702,27 @@ impl SymbolTable {
                     }
                 }
                 let model_option = session.st()[class_key]._model.as_ref().and_then(|model_data|
-                    session.model_mgr().get_model(&model_data.name)
+                    session.model_mgr().get_model_key(&model_data.name)
                 );
                 if let Some(model) = model_option && with_co_models {
-                    // no recursion because it is handled in all_symbols_inherits
-                    let (model_symbols, model_inherits_symbols) = model.all_symbols_inherits(session, from_module);
-                    for (model_class_key, dependency) in model_symbols {
-                        if dependency.is_some() || class_key == model_class_key {
-                            continue;
-                        }
-                        let model_sym = &session.st()[model_class_key];
-                        let all_symbols: Vec<_> = iter_symbol_keys(model_sym).copied().collect();
-                        for s in all_symbols {
-                            if (only_fields && !Self::is_field(session, s)) || (only_methods && !matches!(s, SymbolKey::Function(_))) {
+                    // no recursion because the walker browses the whole inheritance
+                    let mut walker = ModelClassesWalker::new(model, true);
+                    while let Some((model_classes, through_inherits)) = walker.next_model(session, from_module) {
+                        //only fields are visible on inherits, not methods
+                        let only_fields = only_fields || through_inherits;
+                        for model_class_key in model_classes {
+                            if class_key == model_class_key {
                                 continue;
                             }
-                            let name = session.st().name(s).clone();
-                            append_result(name, s);
-                        }
-                    }
-                    for (model_class_key, dependency) in model_inherits_symbols {
-                        if dependency.is_some() || class_key == model_class_key {
-                            continue;
-                        }
-                        let model_sym = &session.st()[model_class_key];
-                        // for inherits symbols, we only add fields
-                        let all_symbols: Vec<_> = iter_symbol_keys(model_sym).copied().collect();
-                        let fields = all_symbols.into_iter().filter(|&s| Self::is_field(session, s)).collect::<Vec<_>>();
-                        for s in fields {
-                            let name = session.st().name(s).clone();
-                            append_result(name, s);
+                            let model_sym = &session.st()[model_class_key];
+                            let all_symbols: Vec<_> = iter_symbol_keys(model_sym).copied().collect();
+                            for s in all_symbols {
+                                if (only_fields && !Self::is_field(session, s)) || (only_methods && !matches!(s, SymbolKey::Function(_))) {
+                                    continue;
+                                }
+                                let name = session.st().name(s).clone();
+                                append_result(name, s);
+                            }
                         }
                     }
                 }

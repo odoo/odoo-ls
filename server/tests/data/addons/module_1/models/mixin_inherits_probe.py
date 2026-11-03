@@ -42,3 +42,14 @@ class InheritsConcreteProbe(models.Model):
 
     def use_target_method(self):
         return self.target_method
+
+
+# the mixin gives `inherits_target_probe` through `_inherits` before `_inherit` gives it directly:
+# it must still be fully inherited, methods included
+class InheritsThenInheritProbe(models.Model):
+    _name = "module_1.inherits_then_inherit_probe"
+    _inherit = ["module_1.inherits_mixin_probe", "module_1.inherits_target_probe"]
+    _description = "Inherits Then Inherit Probe"
+
+    def use_inherited_target_method(self):
+        return self.target_method

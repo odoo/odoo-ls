@@ -1,5 +1,4 @@
 use itertools::Itertools;
-use lsp_types::MessageType;
 use slotmap::SlotMap;
 use slotmap::new_key_type;
 use crate::constants::BuildSteps;
@@ -364,60 +363,6 @@ impl Model {
         })
         .flatten()
         .collect()
-    }
-
-    pub fn all_symbols_inherits(&self, session: &SessionInfo, from_module: Option<ModuleKey>) -> (Vec<ClassWithModule>, Vec<ClassWithModule>) {
-        let mut visited_models = HashSet::default();
-        self.all_inherits_helper(session, from_module, &mut visited_models)
-    }
-
-    fn all_inherits_helper(&self, session: &SessionInfo, from_module: Option<ModuleKey>, visited_models: &mut HashSet<OYarn>) -> (Vec<ClassWithModule>, Vec<ClassWithModule>) {
-        if visited_models.contains(&self.name) {
-            return (Vec::new(), Vec::new());
-        }
-        visited_models.insert(self.name.clone());
-        let st = &session.sync_odoo.symbol_table;
-        let mut symbols = Vec::new();
-        let mut inherits_symbols = Vec::new();
-        for s in self.symbols.iter_valid(st) {
-            let ModelSymbolKey::Class(class_key) = s else { continue };
-            if let Some(from_module) = from_module {
-                let module = st.find_module(class_key);
-                if let Some(module) = module {
-                    let dir_name = &st[module].dir_name;
-                    if ModuleSymbol::is_in_deps(st, from_module, dir_name) {
-                        symbols.push((class_key, None));
-                    } else {
-                        symbols.push((class_key, Some(dir_name.clone())));
-                    }
-                } else {
-                    session.log_message(MessageType::WARNING, "A model should be declared in a module.".to_string());
-                }
-            } else {
-                symbols.push((class_key, None));
-            }
-            // First get results from normal inherit
-            // To make sure we visit all of inherit before inherits, since it is DFS
-            // Only inherits in the tree that are not already visited will be processed in the next iteration
-            let model_data = st[class_key]._model.as_ref().unwrap();
-            for inherited_model in &model_data.inherit {
-                if let Some(model_key) = session.model_mgr().get_model_key(inherited_model) {
-                    let (main_result, inherits_result) = session.model_mgr()[model_key].all_inherits_helper(session, from_module, visited_models);
-                    symbols.extend(main_result);
-                    inherits_symbols.extend(inherits_result);
-                }
-            }
-            for (inherits_model, _) in &model_data.inherits {
-                if let Some(model_key) = session.model_mgr().get_model_key(inherits_model) {
-                    let (main_result, inherits_result) = session.model_mgr()[model_key].all_inherits_helper(session, from_module, visited_models);
-                    // Everything that is in inherits should be added to inherits_symbols, regardless of whether
-                    // it was in inherit or inherits. Since we need that distinction to later only get fields
-                    inherits_symbols.extend(main_result);
-                    inherits_symbols.extend(inherits_result);
-                }
-            }
-        }
-        (symbols, inherits_symbols)
     }
 
     pub fn add_dependent(&mut self, symbol: SourceFileKey) {
