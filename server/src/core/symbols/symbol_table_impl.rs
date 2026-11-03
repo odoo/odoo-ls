@@ -1706,7 +1706,7 @@ impl SymbolTable {
                 );
                 if let Some(model) = model_option && with_co_models {
                     // no recursion because the walker browses the whole inheritance
-                    let mut walker = ModelClassesWalker::new(model, true);
+                    let mut walker = ModelClassesWalker::new(model);
                     while let Some((model_classes, through_inherits)) = walker.next_model(session, from_module) {
                         //only fields are visible on inherits, not methods
                         let only_fields = only_fields || through_inherits;
@@ -2180,7 +2180,7 @@ impl SymbolTable {
         if model_data.is_some() && !prevent_comodel {
             let model = session.model_mgr().get_model_key(&model_data.as_ref().unwrap().name);
             if let Some(model) = model {
-                let mut walker = ModelClassesWalker::new(model, true);
+                let mut walker = ModelClassesWalker::new(model);
                 while let Some((model_symbols, through_inherits)) = walker.next_model(session, from_module) {
                     for model_symbol in model_symbols {
                         if target == model_symbol || search.visited_classes.contains(&model_symbol) {

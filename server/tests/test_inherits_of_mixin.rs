@@ -5,7 +5,7 @@ use lsp_types::CompletionResponse;
 use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::{Odoo, SyncOdoo};
 use odoo_ls_server::features::completion::CompletionFeature;
-use odoo_ls_server::utils::PathSanitizer;
+use odoo_ls_server::utils::{PathSanitizer, ToFilePath};
 use std::path::Path;
 
 /// Returns the (line, character) of the first occurrence of `needle` in `content`, after `after`
@@ -101,4 +101,53 @@ fn test_inherits_of_mixin() {
     // a model given by `_inherits` (through the mixin) then by `_inherit` is fully inherited
     let labels = completion_labels("use_inherited_target_method", "target_method");
     assert!(labels.iter().any(|l| l == "target_method"), "target_method should be completed through _inherit, got: {labels:?}");
+}
+
+/// In XML, `<field name="..."/>` resolves the fields given by `_inherits` (through a mixin, and recursively),
+/// in views as in records. `<button name="..."/>` does not resolve methods given by `_inherits`.
+#[test]
+fn test_inherits_of_mixin_xml() {
+    let (mut odoo, config) = setup::setup::setup_server(true);
+    let module_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("data")
+        .join("addons")
+        .join("module_1");
+    let py_file = module_path.join("models").join("mixin_inherits_probe.py").sanitize();
+    let xml_file = module_path.join("records").join("mixin_inherits_probe.xml").sanitize();
+    let py_content = std::fs::read_to_string(&py_file).unwrap();
+    let xml_content = std::fs::read_to_string(&xml_file).unwrap();
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let file_info = session.file_mgr().get_file_info(&xml_file).unwrap();
+    let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&xml_file))
+        .expect("Failed to get file symbol");
+
+    // lines of the definitions in the python file, for the `name` attribute value `needle`, first occurrence after `after`
+    let mut definition_lines = |after: &str, needle: &str| -> Vec<u32> {
+        let (line, character) = find_position(&xml_content, after, needle);
+        test_utils::get_definition_locs(&mut session, file_symbol, file_info, line, character + "name=\"".len() as u32 + 1)
+            .into_iter()
+            .filter(|l| l.target_uri.to_file_path().unwrap().sanitize() == py_file)
+            .map(|l| l.target_range.start.line)
+            .collect()
+    };
+
+    let (target_decl, _) = find_position(&py_content, "class InheritsTargetProbe", "target_value =");
+    let lines = definition_lines("<form>", "name=\"target_value\"");
+    assert!(lines.contains(&target_decl), "target_value in the view should lead to the field given by _inherits, got lines: {lines:?}");
+
+    let (deep_decl, _) = find_position(&py_content, "class InheritsDeepProbe", "deep_value =");
+    let lines = definition_lines("<form>", "name=\"deep_value\"");
+    assert!(lines.contains(&deep_decl), "deep_value in the view should lead to the field given by the nested _inherits, got lines: {lines:?}");
+
+    let (method_decl, _) = find_position(&py_content, "class InheritsTargetProbe", "def target_method");
+    let lines = definition_lines("<form>", "name=\"target_method\"");
+    assert!(!lines.contains(&method_decl), "target_method should not be visible through _inherits, got lines: {lines:?}");
+
+    let (own_method_decl, _) = find_position(&py_content, "class InheritsConcreteProbe", "def use_target_value");
+    let lines = definition_lines("<form>", "name=\"use_target_value\"");
+    assert!(lines.contains(&own_method_decl), "use_target_value should lead to the method of the model, got lines: {lines:?}");
+
+    let lines = definition_lines("id=\"inherits_concrete_probe_record\"", "name=\"target_value\"");
+    assert!(lines.contains(&target_decl), "target_value in the record should lead to the field given by _inherits, got lines: {lines:?}");
 }

@@ -290,16 +290,6 @@ impl Model {
             .is_some()
     }
 
-    /// Gets all class symbols of current model and its inherited models
-    pub fn get_full_model_classes(model_key: ModelKey, session: &SessionInfo, from_module: Option<ModuleKey>) -> HashSet<ClassKey> {
-        let mut symbol_set = HashSet::default();
-        let mut walker = ModelClassesWalker::new(model_key, false);
-        while let Some((classes, _)) = walker.next_model(session, from_module) {
-            symbol_set.extend(classes);
-        }
-        symbol_set
-    }
-
     pub fn has_symbols(&self, symbol_table: &SymbolTable) -> bool {
         !self.symbols.is_empty(symbol_table)
     }
@@ -408,23 +398,21 @@ impl Model {
 }
 
 /// Lazily browses the classes of a model, one model at a time: first the classes of the model and of all the models
-/// it inherits from with `_inherit`, then, if `follow_inherits`, the classes of the models delegated with `_inherits`,
+/// it inherits from with `_inherit`, then the classes of the models delegated with `_inherits`,
 /// whether `_inherits` is declared by the model, by a model it inherits from (ex: a mixin), or by an `_inherits` model itself.
 pub struct ModelClassesWalker {
     inherit_queue: VecDeque<ModelKey>,
     inherits_queue: VecDeque<ModelKey>,
     visited: HashSet<ModelKey>,
-    follow_inherits: bool,
     through_inherits: bool,
 }
 
 impl ModelClassesWalker {
-    pub fn new(model_key: ModelKey, follow_inherits: bool) -> Self {
+    pub fn new(model_key: ModelKey) -> Self {
         Self {
             inherit_queue: VecDeque::from([model_key]),
             inherits_queue: VecDeque::new(),
             visited: HashSet::default(),
-            follow_inherits,
             through_inherits: false,
         }
     }
@@ -457,13 +445,11 @@ impl ModelClassesWalker {
                         self.inherit_queue.push_back(inherit_key);
                     }
             }
-            if self.follow_inherits {
-                for (inherits, _field) in model_data.inherits.iter() {
-                    if let Some(inherits_key) = model_mgr.get_model_key(inherits)
-                        && !self.visited.contains(&inherits_key) {
-                            self.inherits_queue.push_back(inherits_key);
-                        }
-                }
+            for (inherits, _field) in model_data.inherits.iter() {
+                if let Some(inherits_key) = model_mgr.get_model_key(inherits)
+                    && !self.visited.contains(&inherits_key) {
+                        self.inherits_queue.push_back(inherits_key);
+                    }
             }
         }
         Some((classes, self.through_inherits))
