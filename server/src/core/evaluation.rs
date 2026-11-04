@@ -5,9 +5,10 @@ use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use crate::core::odoo::SyncOdoo;
 use crate::core::python_odoo_builder::ACCESS_OPERATOR_OPTIONS;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
-use crate::core::symbols::symbol_keys::{FunctionKey, KeyValidator, ModuleKey, SourceFileKey, SymbolKey, Wk};
+use crate::core::symbols::symbol_keys::{FunctionKey, KeyValidator, ModelSymbolKey, ModuleKey, SourceFileKey, SymbolKey, Wk};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::FunctionSymbol;
+use crate::features::features_utils::{CallParam, SpecialArg};
 use crate::features::references::ReferenceTarget;
 use crate::threads::SessionInfo;
 use crate::{constants::*, Sy};
@@ -213,7 +214,6 @@ pub enum EvaluationSymbolPtr {
     SELF(EvaluationSymbolWeak),
     // Weak symbol is the current symbol pointed to self. Under subclasses this would get overridden on evaluation
     ARG(u32),
-    DOMAIN,
     NONE,
     UNBOUND(OYarn),
     #[default]
@@ -345,17 +345,6 @@ impl Evaluation {
             },
             value: None,
             range: Some(range)
-        }
-    }
-
-    pub fn new_domain(_odoo: &mut SyncOdoo) -> Evaluation {
-        Evaluation {
-            symbol: EvaluationSymbol {
-                sym: EvaluationSymbolPtr::DOMAIN,
-                get_symbol_hook: None
-            },
-            value: None,
-            range: None
         }
     }
 
@@ -1610,6 +1599,9 @@ impl Evaluation {
         }
         let mut diagnostics = vec![];
         let function_name = function.name.clone();
+        let model = on_object
+            .upgrade(session.st())
+            .and_then(|on_object| on_object.as_model_symbol_key());
         //validate pos args first
         let mut arg_index = 0;
         let mut number_pos_arg = 0;
@@ -1688,7 +1680,7 @@ impl Evaluation {
             }
             if function_arg.unwrap().arg_type != ArgumentType::VARARG {
                 //positional or arg
-                diagnostics.extend(Evaluation::validate_func_arg(session, &function_arg.unwrap().clone(), arg, on_object, from_module));
+                diagnostics.extend(Evaluation::validate_func_arg(session, function_key, &function_arg.unwrap().clone(), arg, model, from_module));
             }
             arg_index += 1;
         }
@@ -1713,7 +1705,7 @@ impl Evaluation {
                 for func_arg in function.args.iter().skip(to_skip as usize).cloned() {
                     let func_arg_name  = session.st().name(func_arg.symbol.upgrade(session.st()).unwrap()).to_string();
                     if func_arg_name == arg_identifier.id {
-                        diagnostics.extend(Evaluation::validate_func_arg(session, &func_arg, &arg.value, on_object, from_module));
+                        diagnostics.extend(Evaluation::validate_func_arg(session, function_key, &func_arg, &arg.value, model, from_module));
                         if func_arg.arg_type == ArgumentType::ARG {
                             found_pos_arg_with_kw += 1;
                         } else if func_arg.arg_type == ArgumentType::KWORD_ONLY {
@@ -1812,7 +1804,7 @@ impl Evaluation {
         filtered_diagnostics
     }
 
-    fn validate_domain(session: &mut SessionInfo, on_object: Wk<SymbolKey>, from_module: Option<ModuleKey>, value: &Expr) -> Vec<Diagnostic> {
+    fn validate_domain(session: &mut SessionInfo, model: Option<ModelSymbolKey>, from_module: Option<ModuleKey>, value: &Expr) -> Vec<Diagnostic> {
         let mut diagnostics = vec![];
         if value.is_literal_expr() || matches!(value, Expr::Tuple(_)) {
             if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03006, &[]) {
@@ -1842,7 +1834,7 @@ impl Evaluation {
                             });
                         }
                     } else {
-                        Evaluation::validate_tuple_search_domain(session, on_object, from_module, &t.elts[0], &t.elts[1], &t.elts[2], &mut diagnostics);
+                        Evaluation::validate_tuple_search_domain(session, model, from_module, &t.elts[0], &t.elts[1], &t.elts[2], &mut diagnostics);
                     }
                 },
                 Expr::List(l) => {
@@ -1855,7 +1847,7 @@ impl Evaluation {
                             });
                         }
                     } else {
-                        Evaluation::validate_tuple_search_domain(session, on_object, from_module, &l.elts[0], &l.elts[1], &l.elts[2], &mut diagnostics);
+                        Evaluation::validate_tuple_search_domain(session, model, from_module, &l.elts[0], &l.elts[1], &l.elts[2], &mut diagnostics);
                     }
                 },
                 Expr::StringLiteral(s) => {
@@ -1895,7 +1887,7 @@ impl Evaluation {
         diagnostics
     }
 
-    fn validate_tuple_search_domain(session: &mut SessionInfo, on_object: Wk<SymbolKey>, from_module: Option<ModuleKey>, elt1: &Expr, elt2: &Expr, elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
+    fn validate_tuple_search_domain(session: &mut SessionInfo, model: Option<ModelSymbolKey>, from_module: Option<ModuleKey>, elt1: &Expr, elt2: &Expr, elt3: &Expr, diagnostics: &mut Vec<Diagnostic>) {
         //parameter 2
         let mut access_op = false;
         if let Expr::StringLiteral(s) = elt2 {
@@ -1925,11 +1917,11 @@ impl Evaluation {
             }
         }
         //parameter 1
-        if let Some(on_object) = on_object.upgrade(session.st()) //if weak is not set, we didn't manage to evalue base object. Do not validate in this case
+        if let Some(model) = model // without the model, only the structure is validated
             && let Expr::StringLiteral(s) = elt1 {
             let value = s.value.to_str();
             let mut date_mode = false;
-            let mut deep_field_walker = DeepFieldEvalWalker::new(on_object, from_module);
+            let mut deep_field_walker = DeepFieldEvalWalker::new(model.into(), from_module);
             let split_expr = value.split(".").collect::<Vec<_>>();
             'split_name: for (index, field_name) in split_expr.iter().enumerate() {
                 if date_mode {
@@ -2038,16 +2030,14 @@ impl Evaluation {
         }
     }
 
-    fn validate_func_arg(session: &mut SessionInfo<'_>, function_arg: &Argument, arg: &Expr, on_object: Wk<SymbolKey>, from_module: Option<ModuleKey>) -> Vec<Diagnostic> {
-        let st = &session.sync_odoo.symbol_table;
-        let mut diagnostics = vec![];
-        let Some(symbol) = function_arg.symbol.upgrade(st) else { return diagnostics; };
-        let evaluations = &st[symbol].evaluations;
-        if evaluations.len() == 1
-            && let EvaluationSymbolPtr::DOMAIN = evaluations[0].symbol.sym {
-                diagnostics.extend(Evaluation::validate_domain(session, on_object, from_module, arg));
-            }
-        diagnostics
+    /// Diagnostics of the argument `arg` given to `function_arg` of `function_key`, when called on `model`.
+    fn validate_func_arg(session: &mut SessionInfo<'_>, function_key: FunctionKey, function_arg: &Argument, arg: &Expr, model: Option<ModelSymbolKey>, from_module: Option<ModuleKey>) -> Vec<Diagnostic> {
+        let param = function_arg.symbol.upgrade(session.st()).map(|symbol| CallParam { symbol, role: function_arg.role });
+        match SpecialArg::classify_call_argument(session, function_key.into(), param, None, model) {
+            Some(SpecialArg::Domain(model)) => Evaluation::validate_domain(session, model, from_module, arg),
+            // Field class parameters are not validated here
+            Some(SpecialArg::Field(_)) | None => vec![],
+        }
     }
 
     fn search_reference_in_arg(session: &mut SessionInfo, expr_call: &ExprCall, parent: SymbolKey) {
@@ -2082,7 +2072,6 @@ impl EvaluationSymbol {
             EvaluationSymbolPtr::ARG(_) => None,
             EvaluationSymbolPtr::NONE => None,
             EvaluationSymbolPtr::UNBOUND(_) => None,
-            EvaluationSymbolPtr::DOMAIN => Some(false), //domain is always used for types
             EvaluationSymbolPtr::SELF(w) | EvaluationSymbolPtr::WEAK(w) => w.instance,
         }
     }
@@ -2111,8 +2100,7 @@ impl EvaluationSymbol {
             EvaluationSymbolPtr::ANY
             | EvaluationSymbolPtr::ARG(_)
             | EvaluationSymbolPtr::NONE
-            | EvaluationSymbolPtr::UNBOUND(_)
-            | EvaluationSymbolPtr::DOMAIN => EvaluationSymbolWeak{ weak: Wk::null(), context: Context::default(), instance: Some(false), is_super: false },
+            | EvaluationSymbolPtr::UNBOUND(_) => EvaluationSymbolWeak{ weak: Wk::null(), context: Context::default(), instance: Some(false), is_super: false },
             EvaluationSymbolPtr::SELF(_) => {
                 let class = context.
                 and_then(|context| context.get(ContextKey::ParentFor).or(context.get(ContextKey::BaseAttr)))
@@ -2136,7 +2124,6 @@ impl EvaluationSymbol {
             EvaluationSymbolPtr::ARG(_) => eval,
             EvaluationSymbolPtr::NONE => eval,
             EvaluationSymbolPtr::UNBOUND(_) => eval,
-            EvaluationSymbolPtr::DOMAIN => eval,
             EvaluationSymbolPtr::SELF(_) => {
                 let default = EvaluationSymbolPtr::WEAK(EvaluationSymbolWeak{weak: Wk::null(), context: Context::default(), instance: Some(false), is_super: false});
                 let class = context.as_ref().and_then(|context| context.get(ContextKey::BaseCall)).unwrap_or(&ContextValue::BOOLEAN(false));
