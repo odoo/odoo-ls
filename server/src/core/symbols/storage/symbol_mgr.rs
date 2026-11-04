@@ -36,6 +36,7 @@ pub trait SymbolMgr {
     fn add_section(&mut self, range_start: TextSize, maybe_previous_indexes: Option<SectionIndex>) -> SectionRange;
     fn change_parent(&mut self, new_parent: SectionIndex, section: &mut SectionRange);
     fn _init_symbol_mgr(&mut self);
+    fn reset_sections(&mut self);
 }
 
 
@@ -76,6 +77,11 @@ impl SymbolMgr for name {
             index: 0,
             previous_indexes: SectionIndex::NONE
         });
+    }
+
+    fn reset_sections(&mut self) {
+        self.sections.clear();
+        self._init_symbol_mgr();
     }
 
     fn get_sections(&self) -> &[SectionRange] {
