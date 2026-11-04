@@ -502,6 +502,12 @@ impl EntryPointMgr {
         path.sanitize()
     }
 
+    /// External = owned by a `public` entry point only, not by any entry the user actually owns.
+    pub fn is_public_only_path(session: &SessionInfo, uri: &str) -> bool {
+        let ep_mgr = &session.sync_odoo.entry_point_mgr;
+        !ep_mgr.iter_all_but_public().any(|entry| Path::new(uri).starts_with(ep_mgr[entry].path()))
+    }
+
 }
 
 #[derive(Debug, Clone, Copy,PartialEq)]
