@@ -1657,6 +1657,11 @@ impl SymbolTable {
         let mut result: HashMap<OYarn, Vec<SymbolKey>> = HashMap::default();
         let mut acc = HashSet::default();
         Self::_all_members(symbol, session, &mut result, with_co_models, only_fields, only_methods, from_module, &mut acc, is_super);
+        // Every class implicitly inherits from object, but this base is not stored in the bases list
+        if !only_fields && matches!(symbol, SymbolKey::Class(_))
+            && let Some(object) = session.sync_odoo.get_ts_object().upgrade(session.st()) {
+            Self::_all_members(object, session, &mut result, false, only_fields, only_methods, from_module, &mut acc, false);
+        }
         result
     }
 
@@ -2058,6 +2063,15 @@ impl SymbolTable {
     ) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
         let mut search = MemberSearch::default();
         let (mut result, diagnostics) = Self::get_member_symbol_helper(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super, &mut search);
+        // Every class implicitly inherits from object, but this base is not stored in the bases list
+        if result.is_empty() && !only_fields && matches!(target, SymbolKey::Class(_))
+            && let Some(object) = session.sync_odoo.get_ts_object().upgrade(session.st())
+            && object != target {
+            result = session.st().get_sub_symbol(object, name, u32::MAX).symbols;
+            if only_methods {
+                result.retain(|&x| Self::is_method(session, x));
+            }
+        }
         // Add Ext symbols as results only as a fallback, if we found nothing else
         if result.is_empty() {
             for class_ext_symbols in search.ext_symbols {
