@@ -52,6 +52,11 @@ impl<K: Eq + Hash + Copy> WeakSet<K> {
         self.set.get_mut().retain(|k| table.is_key_valid(*k) && f(k));
     }
 
+    /// Consumes the set, returning every key, valid or not
+    pub fn into_keys(self) -> impl Iterator<Item = K> {
+        self.set.into_inner().into_iter()
+    }
+
     pub fn drain_valid(&mut self, table: &impl KeyValidator<K>) -> IntoIter<K> {
         let valid: Vec<K> = self.set.get_mut().drain()
             .filter(|k| table.is_key_valid(*k))
