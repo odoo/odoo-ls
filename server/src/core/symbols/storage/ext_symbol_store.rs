@@ -72,13 +72,13 @@ impl ExtSymbolStore {
         // key as owner
         let mut orphaned = self.remove_owned(key);
 
-        // key as target
-        self.owners_by_target.remove(&key);
-        // key as target in symbols_by_owner
-        for decl in self.symbols_by_owner.values_mut() {
-            if let Some(named) = decl.remove(&key) {
-                for sections in named.into_values() {
-                    orphaned.extend(sections.into_values().flatten());
+        // key as target: only the owners listed for it in owners_by_target have it in symbols_by_owner
+        if let Some(owners_by_name) = self.owners_by_target.remove(&key) {
+            for owner in owners_by_name.into_values().flat_map(WeakSet::into_keys) {
+                if let Some(named) = self.symbols_by_owner.get_mut(&owner).and_then(|decl| decl.remove(&key)) {
+                    for sections in named.into_values() {
+                        orphaned.extend(sections.into_values().flatten());
+                    }
                 }
             }
         }
