@@ -12,7 +12,7 @@ This is the description of the module 1
     """,
     'category': 'Accounting/Accounting',
     'depends' : [],
-    'data': ['records/test_records.xml'],
+    'data': ['records/test_records.xml', 'records/mixin_inherits_probe.xml'],
     'assets': {
         'web.assets_backend': [
             'module_1/static/src/scoped/shared.js',

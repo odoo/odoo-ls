@@ -15,7 +15,7 @@ use crate::{
         evaluation::{Evaluation, EvaluationSymbolPtr},
         evaluation_context::{Context, ContextKey, ContextValue},
         file_mgr::{FileInfo, FileMgr, NoqaInfo},
-        model::{Model, ModelKey},
+        model::{Model, ModelClassesWalker, ModelKey},
         odoo::SyncOdoo,
         python_arch_eval_hooks::get_base_model_symbol,
         symbols::{
@@ -1702,36 +1702,27 @@ impl SymbolTable {
                     }
                 }
                 let model_option = session.st()[class_key]._model.as_ref().and_then(|model_data|
-                    session.model_mgr().get_model(&model_data.name)
+                    session.model_mgr().get_model_key(&model_data.name)
                 );
                 if let Some(model) = model_option && with_co_models {
-                    // no recursion because it is handled in all_symbols_inherits
-                    let (model_symbols, model_inherits_symbols) = model.all_symbols_inherits(session, from_module);
-                    for (model_class_key, dependency) in model_symbols {
-                        if dependency.is_some() || class_key == model_class_key {
-                            continue;
-                        }
-                        let model_sym = &session.st()[model_class_key];
-                        let all_symbols: Vec<_> = iter_symbol_keys(model_sym).copied().collect();
-                        for s in all_symbols {
-                            if (only_fields && !Self::is_field(session, s)) || (only_methods && !matches!(s, SymbolKey::Function(_))) {
+                    // no recursion because the walker browses the whole inheritance
+                    let mut walker = ModelClassesWalker::new(model);
+                    while let Some((model_classes, through_inherits)) = walker.next_model(session, from_module) {
+                        //only fields are visible on inherits, not methods
+                        let only_fields = only_fields || through_inherits;
+                        for model_class_key in model_classes {
+                            if class_key == model_class_key {
                                 continue;
                             }
-                            let name = session.st().name(s).clone();
-                            append_result(name, s);
-                        }
-                    }
-                    for (model_class_key, dependency) in model_inherits_symbols {
-                        if dependency.is_some() || class_key == model_class_key {
-                            continue;
-                        }
-                        let model_sym = &session.st()[model_class_key];
-                        // for inherits symbols, we only add fields
-                        let all_symbols: Vec<_> = iter_symbol_keys(model_sym).copied().collect();
-                        let fields = all_symbols.into_iter().filter(|&s| Self::is_field(session, s)).collect::<Vec<_>>();
-                        for s in fields {
-                            let name = session.st().name(s).clone();
-                            append_result(name, s);
+                            let model_sym = &session.st()[model_class_key];
+                            let all_symbols: Vec<_> = iter_symbol_keys(model_sym).copied().collect();
+                            for s in all_symbols {
+                                if (only_fields && !Self::is_field(session, s)) || (only_methods && !matches!(s, SymbolKey::Function(_))) {
+                                    continue;
+                                }
+                                let name = session.st().name(s).clone();
+                                append_result(name, s);
+                            }
                         }
                     }
                 }
@@ -2189,34 +2180,17 @@ impl SymbolTable {
         if model_data.is_some() && !prevent_comodel {
             let model = session.model_mgr().get_model_key(&model_data.as_ref().unwrap().name);
             if let Some(model) = model {
-                // from_module: None means no dependency filtering (return everything)
-                let model_symbols = Model::get_full_model_classes(model, session, from_module);
-                for model_symbol in model_symbols {
-                    if target == model_symbol || search.visited_classes.contains(&model_symbol) {
-                        continue;
-                    }
-                    search.visited_classes.insert(model_symbol);
-                    let member_from_module = session.st().find_module(model_symbol);
-                    let (attributs, att_diagnostic) = Self::get_member_symbol_helper(session, model_symbol.into(), name, member_from_module, true, only_fields, only_methods, all, false, search);
-                    diagnostics.extend(att_diagnostic);
-                    if all {
-                        extend_result(attributs, &mut result, &mut visited_symbols);
-                    } else {
-                        if !attributs.is_empty() {
-                            return (attributs, diagnostics);
-                        }
-                    }
-                }
-                for model_inherits_symbol in session.model_mgr()[model].get_inherits_models(session, from_module) {
-                    //only fields are visible on inherits, not methods
-                    let model_symbols = Model::get_full_model_classes(model_inherits_symbol, session, from_module);
+                let mut walker = ModelClassesWalker::new(model);
+                while let Some((model_symbols, through_inherits)) = walker.next_model(session, from_module) {
                     for model_symbol in model_symbols {
                         if target == model_symbol || search.visited_classes.contains(&model_symbol) {
                             continue;
                         }
                         search.visited_classes.insert(model_symbol);
                         let member_from_module = session.st().find_module(model_symbol);
-                        let (attributs, att_diagnostic) = Self::get_member_symbol_helper(session, model_symbol.into(), name, member_from_module, true, true, only_methods, all, false, search);
+                        //only fields are visible on inherits, not methods
+                        let only_fields = only_fields || through_inherits;
+                        let (attributs, att_diagnostic) = Self::get_member_symbol_helper(session, model_symbol.into(), name, member_from_module, true, only_fields, only_methods, all, false, search);
                         diagnostics.extend(att_diagnostic);
                         if all {
                             extend_result(attributs, &mut result, &mut visited_symbols);

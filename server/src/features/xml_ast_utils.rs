@@ -1,9 +1,10 @@
 use crate::{
     core::{
-        model::Model,
+        model::ModelClassesWalker,
         odoo::SyncOdoo,
         symbols::{
             ModuleSymbol,
+            storage::SymbolTable,
             storage::xml::xml_field_symbol::XmlFieldName,
             symbol_keys::{ModuleKey, SourceFileKey, SymbolKey, XmlId},
         },
@@ -100,21 +101,34 @@ impl XmlAstUtils {
     }
 
     /// Find a member named `name` on every class registered for `model_name`,
-    /// honoring `_inherit` chains. Returns the concrete Variable/Function
+    /// honoring `_inherit` chains, then the fields given by `_inherits` if the
+    /// model does not have it. Returns the concrete Variable/Function
     /// symbols. Drives goto-def / hover for `<field name="X"/>` and
     /// `<button name="X"/>` resolution.
     fn resolve_member_on_model(session: &mut SessionInfo, model_name: &str, member_name: &str, from_module: Option<ModuleKey>, on_dep_only: bool) -> Vec<SymbolKey> {
         let mut out = Vec::new();
         let Some(model) = session.model_mgr().get_model_key(model_name) else { return out };
         let from_module = if on_dep_only { from_module } else { None };
-        for class_key in Model::get_full_model_classes(model, session, from_module) {
-            let content = session.st().get_content_symbol(class_key.into(), member_name, u32::MAX);
-            out.extend(content.symbols);
-        }
         for xml_record_key in session.model_mgr()[model].get_xml_model_field_symbols(session.st(), from_module) {
             let field_name = session.st()[xml_record_key].get_field_text(XmlFieldName::Name, session.st());
             if field_name.as_deref() == Some(member_name) {
                 out.push(xml_record_key.into());
+            }
+        }
+        let mut walker = ModelClassesWalker::new(model);
+        while let Some((classes, through_inherits)) = walker.next_model(session, from_module) {
+            // a member of the model hides the ones given by `_inherits`
+            if through_inherits && !out.is_empty() {
+                break;
+            }
+            for class_key in classes {
+                let content = session.st().get_content_symbol(class_key.into(), member_name, u32::MAX);
+                for symbol in content.symbols {
+                    //only fields are visible on inherits, not methods
+                    if !through_inherits || SymbolTable::is_field(session, symbol) {
+                        out.push(symbol);
+                    }
+                }
             }
         }
         out
