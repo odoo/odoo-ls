@@ -83,8 +83,29 @@ impl<K: Eq + Hash + Copy, V> WeakMap<K, V> {
         self.map.entry(key)
     }
 
+    /// Returns the previous value of `key`, if any
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        self.map.insert(key, value)
+    }
+
     pub fn remove(&mut self, key: &K) -> Option<V> {
         self.map.remove(key)
+    }
+
+    /// Whether at least one key is valid
+    pub fn has_valid(&self, table: &impl KeyValidator<K>) -> bool {
+        self.map.keys().any(|k| table.is_key_valid(*k))
+    }
+
+    pub fn clear_invalid(&mut self, table: &impl KeyValidator<K>) {
+        self.map.retain(|k, _| table.is_key_valid(*k));
+    }
+
+    /// iterate over entries of valid keys. Invalid keys are skipped, not removed: see [`WeakMap::clear_invalid`]
+    pub fn iter_valid<'a>(&'a self, table: &'a impl KeyValidator<K>) -> impl Iterator<Item = (K, &'a V)> {
+        self.map.iter()
+            .filter(|(k, _)| table.is_key_valid(**k))
+            .map(|(k, v)| (*k, v))
     }
 
     /// iterate over values of valid keys
