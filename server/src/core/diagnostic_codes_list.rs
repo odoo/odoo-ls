@@ -19,7 +19,7 @@ diagnostic_codes! {
 /**
 See the error message to get the details from Ruff
 */
-OLS01000, DiagnosticSetting::Error, "Unable to parse file. Ruff_python_parser was unable to parse the file content. See the error message to get the details from Ruff",
+OLS01000, DiagnosticSetting::Error, "Unable to parse Python file: {0}",
 /**
 * The symbol you used as a base class can not be resolved.
 * Be sure that the symbol is referring to a valid python class.

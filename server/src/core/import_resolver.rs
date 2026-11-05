@@ -1,4 +1,4 @@
-use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
+use lsp_types::DiagnosticTag;
 use ruff_python_ast::name::Name;
 use tracing::error;
 use crate::core::build_scheduler::BuildScheduler;
@@ -12,7 +12,7 @@ use ruff_python_ast::{Alias, AtomicNodeIndex, Identifier};
 use crate::core::symbols::storage::{FileSystemSymbolParent, SymbolTable};
 use crate::core::symbols::symbol_keys::{ModuleKey, NamespaceKey, SourceFileKey, SymbolKey};
 use crate::{constants::*, oyarn, S};
-use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
+use crate::core::diagnostics::{Diag, DiagnosticCode, create_diag};
 use crate::threads::SessionInfo;
 use crate::utils::{is_dir_cs, PathSanitizer};
 
@@ -37,7 +37,7 @@ pub struct ImportCache {
     pub is_dir_cs: HashMap<String, bool>,
 }
 
-fn resolve_import_stmt_hook(alias: &Alias, from_symbols: &Option<Vec<SymbolKey>>, session: &mut SessionInfo, source_file_symbol: SymbolKey, from_stmt: Option<&Identifier>, level: u32, diagnostics: &mut Option<&mut Vec<Diagnostic>>) -> Option<ImportResult>{
+fn resolve_import_stmt_hook(alias: &Alias, from_symbols: &Option<Vec<SymbolKey>>, session: &mut SessionInfo, source_file_symbol: SymbolKey, from_stmt: Option<&Identifier>, level: u32, diagnostics: Option<&mut Vec<Diag>>) -> Option<ImportResult>{
     if !(session.sync_odoo.version.major >= 17 && alias.name.as_str() == "Form"){
         return None;
     }
@@ -45,14 +45,11 @@ fn resolve_import_stmt_hook(alias: &Alias, from_symbols: &Option<Vec<SymbolKey>>
         if session.sync_odoo.get_main_entry_tree(from_symbol).0 != ["odoo", "tests", "common"] {
             continue;
         }
-        let mut results = resolve_import_stmt(session, source_file_symbol, Some(&Identifier::new(S!("odoo.tests"), from_stmt.unwrap().range)), std::slice::from_ref(alias), level, &mut None);
-        if let Some(diagnostic) = diagnostics.as_mut()
-            && let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03301, &[]) {
-                diagnostic.push(Diagnostic {
-                    range: Range::new(Position::new(alias.range.start().to_u32(), 0), Position::new(alias.range.end().to_u32(), 0)),
-                    tags: Some(vec![DiagnosticTag::DEPRECATED]),
-                    ..diagnostic_base
-                });
+        let mut results = resolve_import_stmt(session, source_file_symbol, Some(&Identifier::new(S!("odoo.tests"), from_stmt.unwrap().range)), std::slice::from_ref(alias), level, None);
+        if let Some(diagnostic) = diagnostics
+            && let Some(mut diag) = create_diag(session, DiagnosticCode::OLS03301, &[], alias.range) {
+                diag.add_tag(DiagnosticTag::DEPRECATED);
+                diagnostic.push(diag);
             }
         return results.pop()
     }
@@ -62,7 +59,7 @@ fn resolve_import_stmt_hook(alias: &Alias, from_symbols: &Option<Vec<SymbolKey>>
 /**
  * Helper to manually import a symbol. Do not forget to use level instead of '.' in the from_stmt parameter.
  */
-pub fn manual_import(session: &mut SessionInfo, source_file_symbol: SymbolKey, from_stmt:Option<String>, name: &str, asname: Option<String>, level: u32, diagnostics: &mut Option<&mut Vec<Diagnostic>>) -> Vec<ImportResult> {
+pub fn manual_import(session: &mut SessionInfo, source_file_symbol: SymbolKey, from_stmt:Option<String>, name: &str, asname: Option<String>, level: u32, diagnostics: Option<&mut Vec<Diag>>) -> Vec<ImportResult> {
     let name_aliases = vec![Alias {
         name: Identifier { id: Name::new(name), range: TextRange::default(), node_index: AtomicNodeIndex::default() },
         asname: asname.map(|asname_inner| Identifier { id: Name::new(asname_inner), range: TextRange::default(), node_index: AtomicNodeIndex::default() }),
@@ -104,7 +101,7 @@ pub fn resolve_from_stmt(
 }
 
 // Despite its name, `source_file_symbol` is not necessarily a SourceFileKey. It could be a namespace, for example.
-pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: SymbolKey, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: u32, diagnostics: &mut Option<&mut Vec<Diagnostic>>) -> Vec<ImportResult> {
+pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: SymbolKey, from_stmt: Option<&Identifier>, name_aliases: &[Alias], level: u32, mut diagnostics: Option<&mut Vec<Diag>>) -> Vec<ImportResult> {
     //A: search base of different imports
     let source_root: SymbolKey = session.st().get_root(source_file_symbol).into();
     let entry = session.st().get_entry(source_root);
@@ -130,7 +127,7 @@ pub fn resolve_import_stmt(session: &mut SessionInfo, source_file_symbol: Symbol
     for alias in name_aliases.iter() {
         let name = alias.name.as_str();
         name_index += 1;
-        if let Some(hook_result) = resolve_import_stmt_hook(alias, &from_symbols, session, source_file_symbol, from_stmt, level,  diagnostics){
+        if let Some(hook_result) = resolve_import_stmt_hook(alias, &from_symbols, session, source_file_symbol, from_stmt, level, diagnostics.as_deref_mut()) {
             result[name_index as usize] = hook_result;
             continue;
         }

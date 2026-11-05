@@ -122,7 +122,7 @@ impl AstUtils {
                                     asname: Some(Identifier { id: Name::new("fake_name"), range: alias.name.range(), node_index: AtomicNodeIndex::default() }),
                                     range: alias.range(),
                                     node_index: AtomicNodeIndex::default()
-                                }], 0, &mut None);
+                                }], 0, None);
                             let res = res.into_iter().filter(|s| s.found).collect::<Vec<_>>();
                             if !res.is_empty() {
                                 let st = &session.sync_odoo.symbol_table;

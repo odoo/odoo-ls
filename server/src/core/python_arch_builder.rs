@@ -1,4 +1,3 @@
-use lsp_types::Diagnostic;
 use ruff_python_ast::{
     Alias, AnyRootNodeRef, CmpOp, Expr, ExprNamed, ExprTuple, FStringPart, Identifier, Parameters,
     Pattern, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf,
@@ -14,6 +13,7 @@ use crate::constants::{
 };
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::entry_point::EntryPointKey;
+use crate::core::diagnostics::Diag;
 use crate::core::evaluation::{Evaluation, EvaluationValue};
 use crate::core::file_mgr::FileInfoKey;
 use crate::core::import_resolver::resolve_import_stmt;
@@ -42,7 +42,7 @@ pub struct PythonArchBuilder {
     current_step: BuildSteps,
     sym_stack: Vec<SymbolKey>,
     __all_symbols_to_add: Vec<(String, TextRange)>,
-    diagnostics: Vec<Diagnostic>,
+    diagnostics: Vec<Diag>,
     file_info: FileInfoKey,
 }
 
@@ -178,7 +178,7 @@ impl PythonArchBuilder {
                     from_stmt,
                     name_aliases,
                     level,
-                    &mut None).remove(0); //we don't need the vector with this call as there will be 1 result.
+                    None).remove(0); //we don't need the vector with this call as there will be 1 result.
                 if !import_result.found {
                     session.ep_mgr_mut()[self.entry_point].not_found_symbols.insert(self.file);
                     session.st_mut().not_found_paths_mut(self.file).push((self.current_step, import_result.file_tree.clone()));

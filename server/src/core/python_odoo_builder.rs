@@ -1,9 +1,9 @@
 use ruff_python_ast::Expr;
-use lsp_types::Diagnostic;
 use tracing::error;
 
 use crate::constants::OYarn;
 use crate::core::entry_point::EntryPoint;
+use crate::core::diagnostics::Diag;
 use crate::core::evaluation_context::ContextKey;
 use crate::core::model::{Model, ModelData};
 use crate::core::symbols::{ClassSymbol, ModuleSymbol, SymbolMgr};
@@ -38,8 +38,8 @@ impl PythonOdooBuilder {
         }
     }
 
-    pub fn load(&mut self, session: &mut SessionInfo) -> Vec<Diagnostic> {
-        let mut diagnostics: Vec<Diagnostic> =  vec![];
+    pub fn load(&mut self, session: &mut SessionInfo) -> Vec<Diag> {
+        let mut diagnostics: Vec<Diag> = vec![];
         let sym = self.symbol;
         if !self.is_symbol_model(session, &mut diagnostics) {
             return diagnostics;
@@ -74,7 +74,7 @@ impl PythonOdooBuilder {
         diagnostics
     }
 
-    fn _load_class_inherit(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) {
+    fn _load_class_inherit(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diag>) {
         let symbol = self.symbol;
         let _inherit = session.st().get_symbol(symbol.into(), (&[], &["_inherit"]), u32::MAX);
         let Some(&SymbolKey::Variable(_inherit)) = _inherit.last() else { return };
@@ -110,7 +110,7 @@ impl PythonOdooBuilder {
         }
     }
 
-    fn _evaluate_name(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) -> OYarn {
+    fn _evaluate_name(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diag>) -> OYarn {
         let symbol = self.symbol;
         let _name = session.st().get_symbol(symbol.into(), (&[], &["_name"]), u32::MAX);
         if let Some(&_name) = _name.last() {
@@ -129,7 +129,7 @@ impl PythonOdooBuilder {
         session.st()[symbol].name.clone()
     }
 
-    fn _load_class_name(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) {
+    fn _load_class_name(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diag>) {
         let class_name = self._evaluate_name(session, diagnostics);
         let symbol = &mut session.sync_odoo.symbol_table[self.symbol];
         symbol._model.as_mut().unwrap().name = class_name;
@@ -142,7 +142,7 @@ impl PythonOdooBuilder {
         }
     }
 
-    fn _load_class_inherits(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) {
+    fn _load_class_inherits(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diag>) {
         let symbol = self.symbol;
         let _inherits = session.st().get_symbol(symbol.into(), (&[], &["_inherits"]), u32::MAX);
         if let Some(&SymbolKey::Variable(_inherits)) = _inherits.last()
@@ -191,7 +191,7 @@ impl PythonOdooBuilder {
         }
     }
 
-    fn _get_attribute(session: &mut SessionInfo, loc_sym: ClassKey, attr: &str, diagnostics: &mut Vec<Diagnostic>) -> Option<EvaluationValue> {
+    fn _get_attribute(session: &mut SessionInfo, loc_sym: ClassKey, attr: &str, diagnostics: &mut Vec<Diag>) -> Option<EvaluationValue> {
         let (attr_sym, _) = SymbolTable::get_member_symbol(session, loc_sym.into(), attr, None, true, false, false, false, false);
         let &attr_sym = attr_sym.first()?;
         for eval in session.st().evaluations(attr_sym).unwrap().clone() {
@@ -203,7 +203,7 @@ impl PythonOdooBuilder {
         None
     }
 
-    fn _load_class_attributes(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) {
+    fn _load_class_attributes(&mut self, session: &mut SessionInfo, diagnostics: &mut Vec<Diag>) {
         let symbol = self.symbol;
         let descr = PythonOdooBuilder::_get_attribute(session, symbol, "_description", diagnostics);
         if let Some(s) = descr.as_ref().and_then(EvaluationValue::as_string_literal) {
@@ -323,7 +323,7 @@ impl PythonOdooBuilder {
     }
 
     /* true if the symbol inherits from BaseModel, Model, TransientModel, or CachedModel. symbol must be the data of rc_symbol and must be a Class */
-    fn is_symbol_model(&self, session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>) -> bool {
+    fn is_symbol_model(&self, session: &mut SessionInfo, diagnostics: &mut Vec<Diag>) -> bool {
         let symbol = self.symbol;
         if session.st()[symbol].bases.is_empty() || session.st().find_module(symbol).is_none() {
             // We only consider symbols that has inheritance base or defined in modules as models

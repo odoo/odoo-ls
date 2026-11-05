@@ -1,11 +1,11 @@
 use std::path::Path;
 
-use lsp_types::{Diagnostic, DiagnosticTag, Position, Range};
+use lsp_types::DiagnosticTag;
 use ruff_python_ast::{Expr, ExprStringLiteral, Stmt};
-use ruff_text_size::Ranged;
+use ruff_text_size::{Ranged, TextRange};
 use tracing::info;
 
-use crate::{constants::{DEBUG_STEPS, DiagnosticSource}, core::{diagnostics::{DiagnosticCode, create_diagnostic}, file_mgr::{FileInfo, FileMgr}, symbols::{ModuleSymbol, symbol_keys::ModuleKey}}, features::node_index_ast::IndexedModule, oyarn, threads::SessionInfo, utils::{HashSet, PathSanitizer}};
+use crate::{constants::{DEBUG_STEPS, DiagnosticSource}, core::{diagnostics::{Diag, DiagnosticCode, create_diag}, file_mgr::{FileInfo, FileMgr}, symbols::{ModuleSymbol, symbol_keys::ModuleKey}}, features::node_index_ast::IndexedModule, oyarn, threads::SessionInfo, utils::{HashSet, PathSanitizer}};
 
 
 
@@ -32,16 +32,12 @@ impl ModuleSymbol {
 
     /* Load manifest to identify the module characteristics.
     Returns list of od diagnostics to publish in manifest file. */
-    fn load_manifest(session: &mut SessionInfo, module_key: ModuleKey, py_ast: &IndexedModule) -> Vec<Diagnostic> {
+    fn load_manifest(session: &mut SessionInfo, module_key: ModuleKey, py_ast: &IndexedModule) -> Vec<Diag> {
         let mut res = vec![];
         let ast = py_ast.get_stmts();
         if ast.len() != 1 || !matches!(ast.first(), Some(Stmt::Expr(expr)) if expr.value.is_dict_expr()) {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04001, &[]) {
-                res.push(Diagnostic {
-                    range: Range::new(Position::new(0, 0), Position::new(0, 1)),
-                    ..diagnostic
-                });
-            }
+            // @todo: decide the range in which to display diag (original one was ((0, 0), (0, 1)))
+            res.extend(create_diag(session, DiagnosticCode::OLS04001, &[], TextRange::default()));
             return res;
         }
         let mut visited_keys = HashSet::default();
@@ -53,12 +49,8 @@ impl ModuleSymbol {
                     match key {
                         Expr::StringLiteral(key_literal) => {
                             let key_str = key_literal.value.to_str();
-                            if visited_keys.contains(key_str)
-                            && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04002, &[]) {
-                                res.push(Diagnostic {
-                                    range: Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
-                                    ..diagnostic
-                                });
+                            if visited_keys.contains(key_str) {
+                                res.extend(create_diag(session, DiagnosticCode::OLS04002, &[], key_literal.range));
                             }
                             visited_keys.insert(key_str);
                             if key_str == "name" {
@@ -70,31 +62,19 @@ impl ModuleSymbol {
                             } else if key_str == "assets" {
                                 ModuleSymbol::load_manifest_assets(session, &mut res, key_literal, value);
                             } else if key_str == "active"
-                                && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS03302, &[]) {
-                                    res.push(Diagnostic {
-                                        range: Range::new(Position::new(key_literal.range().start().to_u32(), 0), Position::new(key_literal.range().end().to_u32(), 0)),
-                                        tags: Some(vec![DiagnosticTag::DEPRECATED]),
-                                        ..diagnostic
-                                    });
+                                && let Some(mut diagnostic) = create_diag(session, DiagnosticCode::OLS03302, &[], key_literal.range()) {
+                                    diagnostic.add_tag(DiagnosticTag::DEPRECATED);
+                                    res.push(diagnostic);
                                 }
                         }
                         _ => {
-                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04009, &[]) {
-                                    res.push(Diagnostic {
-                                        range: Range::new(Position::new(key.range().start().to_u32(), 0), Position::new(key.range().end().to_u32(), 0)),
-                                        ..diagnostic
-                                    });
-                            }
+                            res.extend(create_diag(session, DiagnosticCode::OLS04009, &[], key.range()));
                         }
                     }
                 },
                 None => {
-                    if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS04011, &[]) {
-                        res.push(Diagnostic {
-                            range: Range::new(Position::new(0, 0), Position::new(0, 1)),
-                            ..diagnostic_base.clone()
-                        });
-                    }
+                    // @todo: empty range?? (originally 0,0 - 0,1)
+                    res.extend(create_diag(session, DiagnosticCode::OLS04011, &[], TextRange::default()));
                     return res;
                 }
             }
@@ -102,47 +82,27 @@ impl ModuleSymbol {
         res
     }
 
-    fn load_manifest_name(session: &mut SessionInfo, module_key: ModuleKey, diagnostics: &mut Vec<Diagnostic>, key_literal: &ExprStringLiteral, value: &Expr) {
+    fn load_manifest_name(session: &mut SessionInfo, module_key: ModuleKey, diagnostics: &mut Vec<Diag>, key_literal: &ExprStringLiteral, value: &Expr) {
         if !value.is_string_literal_expr() {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04003, &[]) {
-                diagnostics.push(Diagnostic {
-                    range: Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
-                    ..diagnostic
-                });
-            }
+            diagnostics.extend(create_diag(session, DiagnosticCode::OLS04003, &[], key_literal.range));
         } else {
             let module = &mut session.st_mut()[module_key];
             module.module_name = oyarn!("{}", value.as_string_literal_expr().unwrap().value);
         }
     }
 
-    fn load_manifest_depends(session: &mut SessionInfo, module_key: ModuleKey, diagnostics: &mut Vec<Diagnostic>, key_literal: &ExprStringLiteral, value: &Expr) {
+    fn load_manifest_depends(session: &mut SessionInfo, module_key: ModuleKey, diagnostics: &mut Vec<Diag>, key_literal: &ExprStringLiteral, value: &Expr) {
         if !value.is_list_expr() {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04004, &[]) {
-                diagnostics.push(Diagnostic {
-                    range: Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
-                    ..diagnostic
-                });
-            }
+            diagnostics.extend(create_diag(session, DiagnosticCode::OLS04004, &[], key_literal.range));
         } else {
             for depend in value.as_list_expr().unwrap().elts.iter() {
                 if !depend.is_string_literal_expr() {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04005, &[]) {
-                        diagnostics.push(Diagnostic {
-                            range: Range::new(Position::new(depend.range().start().to_u32(), 0), Position::new(depend.range().end().to_u32(), 0)),
-                            ..diagnostic
-                        });
-                    }
+                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS04005, &[], depend.range()));
                 } else {
                     let depend_value = oyarn!("{}", depend.as_string_literal_expr().unwrap().value);
                     let module = &mut session.st_mut()[module_key];
                     if depend_value == module.dir_name {
-                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04006, &[]) {
-                            diagnostics.push(Diagnostic {
-                                range: Range::new(Position::new(depend.range().start().to_u32(), 0), Position::new(depend.range().end().to_u32(), 0)),
-                                ..diagnostic
-                            });
-                        }
+                        diagnostics.extend(create_diag(session, DiagnosticCode::OLS04006, &[], depend.range()));
                     } else {
                         module.depends.push((depend_value, depend.range()));
                     }
@@ -151,23 +111,13 @@ impl ModuleSymbol {
         }
     }
 
-    fn load_manifest_data(session: &mut SessionInfo, module_key: ModuleKey, diagnostics: &mut Vec<Diagnostic>, key_literal: &ExprStringLiteral, value: &Expr) {
+    fn load_manifest_data(session: &mut SessionInfo, module_key: ModuleKey, diagnostics: &mut Vec<Diag>, key_literal: &ExprStringLiteral, value: &Expr) {
         if !value.is_list_expr() {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04007, &[]) {
-                diagnostics.push(Diagnostic {
-                    range: Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
-                    ..diagnostic
-                });
-            }
+            diagnostics.extend(create_diag(session, DiagnosticCode::OLS04007, &[], key_literal.range));
         } else {
             for data in value.as_list_expr().unwrap().elts.iter() {
                 if !data.is_string_literal_expr() {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04008, &[]) {
-                        diagnostics.push(Diagnostic {
-                            range: Range::new(Position::new(data.range().start().to_u32(), 0), Position::new(data.range().end().to_u32(), 0)),
-                            ..diagnostic
-                        });
-                    }
+                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS04008, &[], data.range()));
                 } else {
                     let module = &mut session.st_mut()[module_key];
                     module.data.push((data.as_string_literal_expr().unwrap().value.to_string(), data.range()));
@@ -176,126 +126,68 @@ impl ModuleSymbol {
         }
     }
 
-    fn load_manifest_assets(session: &mut SessionInfo, diagnostics: &mut Vec<Diagnostic>, key_literal: &ExprStringLiteral, value: &Expr) {
+    fn load_manifest_assets(session: &mut SessionInfo, diagnostics: &mut Vec<Diag>, key_literal: &ExprStringLiteral, value: &Expr) {
         if !value.is_dict_expr() {
-            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04013, &[]) {
-                diagnostics.push(Diagnostic {
-                    range: Range::new(Position::new(key_literal.range.start().to_u32(), 0), Position::new(key_literal.range.end().to_u32(), 0)),
-                    ..diagnostic
-                });
-            }
+            diagnostics.extend(create_diag(session, DiagnosticCode::OLS04013, &[], key_literal.range));
         } else {
             for data in value.as_dict_expr().unwrap().items.iter() {
                 if data.key.is_none() {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04014, &[]) {
-                        diagnostics.push(Diagnostic {
-                            range: Range::new(Position::new(data.range().start().to_u32(), 0), Position::new(data.range().end().to_u32(), 0)),
-                            ..diagnostic
-                        });
-                    }
+                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS04014, &[], data.range()));
                     continue;
                 }
-                if !data.key.as_ref().unwrap().is_string_literal_expr()
-                    && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04015, &[]) {
-                        diagnostics.push(Diagnostic {
-                            range: Range::new(Position::new(data.range().start().to_u32(), 0), Position::new(data.range().end().to_u32(), 0)),
-                            ..diagnostic
-                        });
-                    }
+                if !data.key.as_ref().unwrap().is_string_literal_expr() {
+                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS04015, &[], data.range()));
+                }
                 if !data.value.is_list_expr() {
-                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04016, &[]) {
-                        diagnostics.push(Diagnostic {
-                            range: Range::new(Position::new(data.range().start().to_u32(), 0), Position::new(data.range().end().to_u32(), 0)),
-                            ..diagnostic
-                        });
-                    }
+                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS04016, &[], data.range()));
                     continue;
                 }
                 // Nothing is kept: asset discovery is a `static/` walk. Only the shape is checked.
                 for item in data.value.as_list_expr().unwrap().iter() {
                     if item.is_tuple_expr() {
                         if item.as_tuple_expr().unwrap().elts.is_empty() {
-                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04018, &[]) {
-                                diagnostics.push(Diagnostic {
-                                    range: Range::new(Position::new(item.range().start().to_u32(), 0), Position::new(item.range().end().to_u32(), 0)),
-                                    ..diagnostic
-                                });
-                            }
+                            diagnostics.extend(create_diag(session, DiagnosticCode::OLS04018, &[], item.range()));
                             continue;
                         }
                         let first_element = item.as_tuple_expr().unwrap().elts.first().unwrap();
                         if !first_element.is_string_literal_expr() {
-                            if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04018, &[]) {
-                                diagnostics.push(Diagnostic {
-                                    range: Range::new(Position::new(item.range().start().to_u32(), 0), Position::new(item.range().end().to_u32(), 0)),
-                                    ..diagnostic
-                                });
-                            }
+                            diagnostics.extend(create_diag(session, DiagnosticCode::OLS04018, &[], item.range()));
                             continue;
                         }
                         let first_element_str = first_element.as_string_literal_expr().unwrap().value.to_str();
                         match first_element_str {
                             "before" | "after" | "replace" => {
                                 if item.as_tuple_expr().unwrap().elts.len() != 3 {
-                                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04020, &["3"]) {
-                                        diagnostics.push(Diagnostic {
-                                            range: Range::new(Position::new(item.range().start().to_u32(), 0), Position::new(item.range().end().to_u32(), 0)),
-                                            ..diagnostic
-                                        });
-                                    }
+                                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS04020, &["3"], item.range()));
                                     continue;
                                 }
                                 for value in item.as_tuple_expr().unwrap().elts.iter().skip(1) {
                                     if !value.is_string_literal_expr() {
-                                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04018, &[]) {
-                                            diagnostics.push(Diagnostic {
-                                                range: Range::new(Position::new(value.range().start().to_u32(), 0), Position::new(value.range().end().to_u32(), 0)),
-                                                ..diagnostic
-                                            });
-                                        }
+                                        diagnostics.extend(create_diag(session, DiagnosticCode::OLS04018, &[], value.range()));
                                         continue;
                                     }
                                 }
                             },
                             "append" | "include" | "remove" | "prepend" => {
                                 if item.as_tuple_expr().unwrap().elts.len() != 2 {
-                                    if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04020, &["2"]) {
-                                        diagnostics.push(Diagnostic {
-                                            range: Range::new(Position::new(item.range().start().to_u32(), 0), Position::new(item.range().end().to_u32(), 0)),
-                                            ..diagnostic
-                                        });
-                                    }
+                                    diagnostics.extend(create_diag(session, DiagnosticCode::OLS04020, &["2"], item.range()));
                                     continue;
                                 }
                                 for value in item.as_tuple_expr().unwrap().elts.iter().skip(1) {
                                     if !value.is_string_literal_expr() {
-                                        if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04018, &[]) {
-                                            diagnostics.push(Diagnostic {
-                                                range: Range::new(Position::new(value.range().start().to_u32(), 0), Position::new(value.range().end().to_u32(), 0)),
-                                                ..diagnostic
-                                            });
-                                        }
+                                        diagnostics.extend(create_diag(session, DiagnosticCode::OLS04018, &[], value.range()));
                                         continue;
                                     }
                                 }
                             }
                             _ => {
-                                if let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04019, &[]) {
-                                    diagnostics.push(Diagnostic {
-                                        range: Range::new(Position::new(first_element.range().start().to_u32(), 0), Position::new(first_element.range().end().to_u32(), 0)),
-                                        ..diagnostic
-                                    });
-                                }
+                                diagnostics.extend(create_diag(session, DiagnosticCode::OLS04019, &[], first_element.range()));
                                 continue;
                             }
                         }
-                    } else if !item.is_string_literal_expr()
-                        && let Some(diagnostic) = create_diagnostic(session, DiagnosticCode::OLS04017, &[]) {
-                            diagnostics.push(Diagnostic {
-                                range: Range::new(Position::new(item.range().start().to_u32(), 0), Position::new(item.range().end().to_u32(), 0)),
-                                ..diagnostic
-                            });
-                        }
+                    } else if !item.is_string_literal_expr() {
+                        diagnostics.extend(create_diag(session, DiagnosticCode::OLS04017, &[], item.range()));
+                    }
                 }
             }
         }
