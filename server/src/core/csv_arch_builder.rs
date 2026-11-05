@@ -3,7 +3,7 @@ use crate::{
         build_scheduler::BuildScheduler, data_hooks, diagnostics::{Diag, DiagnosticCode, create_diag}, symbols::{
             Buildable, ModuleSymbol, symbol_keys::{CsvFileKey, XmlId, XmlRecordKey}
         },
-    }, features::csv_ast_utils::{CsvFieldIter, CsvRecordIter}, oyarn, threads::SessionInfo, utils::{HashSet, range_to_text_range}
+    }, features::csv_ast_utils::{CsvFieldIter, CsvRecordIter}, oyarn, threads::SessionInfo, utils::HashSet
 };
 use csv::StringRecord;
 use ruff_text_size::{TextRange, TextSize};
@@ -51,9 +51,9 @@ impl CsvArchBuilder {
                 // Look for duplicate column (field) names. Odoo keeps the last one, so we issue a warning for the one getting overridden.
                 let columns: Vec<_> = CsvFieldIter::new(header, content).into_iter().flatten().collect();
                 let mut seen = HashSet::default();
-                for (start, end, name) in columns.into_iter().rev() {
+                for (range, name) in columns.into_iter().rev() {
                     if !seen.insert(name) {
-                        diagnostics.extend(create_diag(session, DiagnosticCode::OLS05076, &[name], range_to_text_range(start..end)));
+                        diagnostics.extend(create_diag(session, DiagnosticCode::OLS05076, &[name], range));
                     }
                 }
             }
@@ -101,7 +101,8 @@ impl CsvArchBuilder {
 
     fn extract_record(&self, session: &mut SessionInfo, file_symbol: CsvFileKey, model_name: OYarn, record: &StringRecord, content: &str) -> Option<XmlRecordKey> {
         let fields: Vec<_> = CsvFieldIter::new(record, content)?.collect();
-        let last_end = fields.last().map_or(0, |(_, end, _)| *end);
+        let first_start = fields.first().map_or(TextSize::default(), |(range, _)| range.start());
+        let last_end = fields.last().map_or(TextSize::default(), |(range, _)| range.end());
         let mut xml_id = None;
         let record_key = session.st_mut().add_new_xml_record(
             file_symbol.into(),
@@ -114,13 +115,13 @@ impl CsvArchBuilder {
         );
         let headers = &session.st()[file_symbol].headers.clone();
         // Iterate in reverse order so that the last occurrence of a field is the one that is stored
-        for (idx, (start, end, field)) in fields.into_iter().enumerate().rev() {
+        for (idx, (range, field)) in fields.into_iter().enumerate().rev() {
             let field_name = headers.get(idx).unwrap();
             match session.st_mut().add_new_xml_field(record_key.into(),
                 field_name,
-                TextRange::new(TextSize::new(start as u32), TextSize::new(end as u32)),
+                range,
                 Some(field.to_string()),
-                Some(TextRange::new(TextSize::new(start as u32), TextSize::new(end as u32))),
+                Some(range),
                 None
             ) {
                 Ok(_) => {
@@ -136,7 +137,7 @@ impl CsvArchBuilder {
         }
         let rec = &mut session.st_mut()[record_key];
         rec.xml_id = xml_id;
-        rec.range = TextRange::new(TextSize::new(record.position().unwrap().byte() as u32), TextSize::new(last_end as u32));
+        rec.range = TextRange::new(first_start, last_end);
         Some(record_key)
     }
 }

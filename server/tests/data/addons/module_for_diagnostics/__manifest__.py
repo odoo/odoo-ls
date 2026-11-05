@@ -19,6 +19,8 @@ This is the description of the module for diagnostics
         "data/buttons.xml",
         "data/bike_parts.wheel.csv",
         "data/bikes.bike.csv",
+        "data/csv_escapes/bikes.bike.csv",
+        "data/csv_bom/bikes.bike.csv",
         "data/file.does.not.exist", # OLS05049
         "data/file.invalid", # OLS05050
     ],
