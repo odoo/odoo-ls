@@ -145,6 +145,17 @@ impl BuildScheduler {
         }
     }
 
+    /// Returns true if `symbol` is in the queue of its current build step
+    /// Do not pass a function
+    pub fn is_queued(session: &SessionInfo, symbol: impl Into<BuildableSymbolKey>) -> bool {
+        let symbol = symbol.into();
+        match session.st().get_current_build_step(symbol) {
+            BuildSteps::ARCH => bs!(session).rebuild_arch.contains(&symbol),
+            BuildSteps::ARCH_EVAL => bs!(session).rebuild_arch_eval.contains(&symbol),
+            BuildSteps::VALIDATION => bs!(session).rebuild_validation.contains(&symbol),
+        }
+    }
+
     pub fn get_rebuild_queue_size(session: &mut SessionInfo) -> usize {
         bs!(session).rebuild_arch.len() +
         bs!(session).rebuild_arch_eval.len() +

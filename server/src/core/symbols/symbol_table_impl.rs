@@ -1042,7 +1042,13 @@ impl SymbolTable {
                     }
                 }
                 for (dep_step, sym) in build_queue {
-                    SymbolTable::invalidate_sub_functions(session, sym);
+                    let already_queued = session.st().build_status(sym.into(), dep_step) == BuildStatus::PENDING
+                        && BuildScheduler::is_queued(session, sym);
+                    let functions_reset = SymbolTable::invalidate_sub_functions(session, sym);
+                    if already_queued && !functions_reset {
+                        // already waiting for `dep_step` with the same functions to build: nothing to reset or queue again
+                        continue;
+                    }
                     session.st_mut().reset_build_status(sym.into(), dep_step, BuildStatus::PENDING);
                     BuildScheduler::queue(session, sym);
                 }
@@ -1078,16 +1084,24 @@ impl SymbolTable {
 
     /// Reset the functions of `target` back to ARCH_EVAL, clearing their evaluations. They are built
     /// again by the function queues of the BuildScheduler once `target` is queued for its validation.
-    pub fn invalidate_sub_functions(session: &mut SessionInfo, target: SourceFileKey) {
+    /// Returns true if a function has been reset now (and so may have to be queued again). Always false if
+    /// the invalidation is deferred.
+    pub fn invalidate_sub_functions(session: &mut SessionInfo, target: SourceFileKey) -> bool {
         if let Some(deferred) = &mut session.sync_odoo.deferred_subfunc_invalidation {
             deferred.insert(target);
-            return;
+            return false;
         }
+        let mut reset = false;
         for func_key in session.st().iter_inner_functions(target.into()) {
             let func = &mut session.st_mut()[func_key];
+            if func.evaluations.is_empty() && func.get_build_status(BuildSteps::ARCH_EVAL) == BuildStatus::PENDING {
+                continue; // already reset
+            }
             func.evaluations.clear();
             func.reset_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
+            reset = true;
         }
+        reset
     }
 
     pub fn previous_step_done(&self, target: BuildableSymbolKey, step: BuildSteps) -> bool {
@@ -1710,7 +1724,7 @@ impl SymbolTable {
                     while let Some((model_classes, through_inherits)) = walker.next_model(session, from_module) {
                         //only fields are visible on inherits, not methods
                         let only_fields = only_fields || through_inherits;
-                        for model_class_key in model_classes {
+                        for (model_class_key, _) in model_classes {
                             if class_key == model_class_key {
                                 continue;
                             }
@@ -2182,12 +2196,11 @@ impl SymbolTable {
             if let Some(model) = model {
                 let mut walker = ModelClassesWalker::new(model);
                 while let Some((model_symbols, through_inherits)) = walker.next_model(session, from_module) {
-                    for model_symbol in model_symbols {
+                    for (model_symbol, member_from_module) in model_symbols {
                         if target == model_symbol || search.visited_classes.contains(&model_symbol) {
                             continue;
                         }
                         search.visited_classes.insert(model_symbol);
-                        let member_from_module = session.st().find_module(model_symbol);
                         //only fields are visible on inherits, not methods
                         let only_fields = only_fields || through_inherits;
                         let (attributs, att_diagnostic) = Self::get_member_symbol_helper(session, model_symbol.into(), name, member_from_module, true, only_fields, only_methods, all, false, search);

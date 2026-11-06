@@ -170,18 +170,21 @@ struct ModelClass {
     inherit: Vec<ModelKey>,
     /// Models of `_inherits`
     inherits: Vec<ModelKey>,
+    /// True if the class declares the model instead of extending it (see [`Model::get_main_symbols`])
+    is_main: bool,
 }
 
 impl ModelClass {
     fn new(session: &mut SessionInfo, class_key: ClassKey) -> Self {
         let st = session.st();
         let module = st.find_module(class_key).map(|module| (module, st[module].dir_name.clone()));
-        let (inherit, inherits) = match &st[class_key]._model {
+        let (inherit, inherits, is_main) = match &st[class_key]._model {
             Some(model_data) => (
                 model_data.inherit.clone(),
                 model_data.inherits.iter().map(|(model_name, _field)| model_name.clone()).collect::<Vec<_>>(),
+                !model_data.inherit.contains(&model_data.name),
             ),
-            None => (vec![], vec![]),
+            None => (vec![], vec![], false),
         };
         // models are never removed, so the keys stay valid, even for a model that has no class yet
         let model_mgr = session.model_mgr_mut();
@@ -189,6 +192,7 @@ impl ModelClass {
             module,
             inherit: inherit.iter().map(|model_name| model_mgr.add_or_get_model(model_name)).collect(),
             inherits: inherits.iter().map(|model_name| model_mgr.add_or_get_model(model_name)).collect(),
+            is_main,
         }
     }
 
@@ -334,15 +338,10 @@ impl Model {
 
     pub fn get_main_symbols(&self, session: &SessionInfo, from_module: Option<ModuleKey>) -> impl Iterator<Item = ModelSymbolKey> {
         let st = &session.sync_odoo.symbol_table;
-        let main_symbols = self
-            .get_all_symbols(st)
-            .filter(|key| match key {
-                ModelSymbolKey::Class(class_key) => {
-                    let model = st[*class_key]._model.as_ref().unwrap();
-                    !model.inherit.contains(&model.name)
-                }
-                ModelSymbolKey::XmlRecord(_) => true,
-            })
+        let main_symbols = self.classes.iter_valid(st)
+            .filter(|(_, model_class)| model_class.is_main)
+            .map(|(class_key, _)| ModelSymbolKey::from(class_key))
+            .chain(self.xml_symbols.iter_valid(st).map(ModelSymbolKey::from))
             .sorted(); // Sort to get Classes first
         Self::filter_by_module(main_symbols, st, from_module)
     }
@@ -479,10 +478,10 @@ impl ModelClassesWalker {
         }
     }
 
-    /// Returns the classes of the next model, and whether this model is reached through `_inherits`
+    /// Returns the classes of the next model with their module, and whether this model is reached through `_inherits`
     /// (in which case only its fields are visible).
     /// Models reached with `_inherit` are always returned before the ones reached through `_inherits`.
-    pub fn next_model(&mut self, session: &SessionInfo, from_module: Option<ModuleKey>) -> Option<(Vec<ClassKey>, bool)> {
+    pub fn next_model(&mut self, session: &SessionInfo, from_module: Option<ModuleKey>) -> Option<(Vec<(ClassKey, Option<ModuleKey>)>, bool)> {
         let st = &session.sync_odoo.symbol_table;
         let model_mgr = &session.sync_odoo.model_mgr;
         // visited is checked on pop, so that a model reached with both `_inherit` and `_inherits` is kept in the `_inherit` part
@@ -503,7 +502,7 @@ impl ModelClassesWalker {
             if !model_class.is_visible_from(st, from_module) {
                 continue;
             }
-            classes.push(class_key);
+            classes.push((class_key, model_class.module.as_ref().map(|(module, _)| *module)));
             for &inherit_key in model_class.inherit.iter() {
                 if !self.visited.contains(&inherit_key) {
                     self.inherit_queue.push_back(inherit_key);
