@@ -7,6 +7,7 @@ use crate::utils::HashSet;
 use std::collections::VecDeque;
 
 use crate::constants::OYarn;
+use crate::core::symbols::symbol_table_impl::MemberCache;
 use crate::core::symbols::symbol_keys::ModelSymbolKey;
 use crate::core::symbols::symbol_keys::SourceFileKey;
 use crate::core::symbols::symbol_keys::SymbolKey;
@@ -222,6 +223,7 @@ impl Model {
     }
 
     pub fn add_symbol(session: &mut SessionInfo, model_key: ModelKey, symbol: impl Into<ModelSymbolKey>) {
+        MemberCache::clear(session);
         let key = symbol.into();
         let is_new = match key {
             ModelSymbolKey::Class(class_key) => {
@@ -252,6 +254,7 @@ impl Model {
         model_key: ModelKey,
         xml_field_symbol: XmlRecordKey,
     ) {
+        MemberCache::clear(session);
         let model = &mut session.model_mgr_mut()[model_key];
         if model.xml_field_symbols.contains(&xml_field_symbol) {
             return;
@@ -267,6 +270,7 @@ impl Model {
         symbol: impl Into<ModelSymbolKey>,
         from_module: Option<ModuleKey>,
     ) {
+        MemberCache::clear(session);
         let key = symbol.into();
         let model = &mut session.sync_odoo.model_mgr[model_key];
         match key {

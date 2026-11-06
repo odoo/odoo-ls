@@ -9,6 +9,7 @@ use tracing::{debug, trace, warn};
 
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::{EntryPointKey, EntryPointType};
+use crate::core::symbols::symbol_table_impl::MemberCache;
 use crate::core::symbols::{ModuleSymbol, SymbolMgr};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::symbol_keys::{BuildableSymbolKey, ClassKey, FunctionKey, ModuleKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey, VariableKey};
@@ -57,6 +58,13 @@ impl PythonArchEval {
     }
 
     pub fn eval_arch(&mut self, session: &mut SessionInfo) {
+        // symbols change during the build: member lookups can not be cached
+        let member_cache = MemberCache::suspend(session);
+        self.eval_arch_impl(session);
+        MemberCache::resume(session, member_cache);
+    }
+
+    fn eval_arch_impl(&mut self, session: &mut SessionInfo) {
         let symbol = self.sym_stack[0];
         if !session.st().ready_for_step(self.sym_stack[0].unwrap_buildable_key(), BuildSteps::ARCH_EVAL) {
             return;

@@ -19,6 +19,7 @@ use crate::core::file_mgr::FileInfoKey;
 use crate::core::import_resolver::resolve_import_stmt;
 use crate::core::python_arch_builder_hooks::PythonArchBuilderHooks;
 use crate::core::python_utils;
+use crate::core::symbols::symbol_table_impl::MemberCache;
 use crate::core::symbols::Buildable;
 use crate::core::symbols::symbol_keys::{FunctionKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey};
 use crate::core::symbols::storage::SymbolTable;
@@ -65,6 +66,13 @@ impl PythonArchBuilder {
     }
 
     pub fn load_arch(&mut self, session: &mut SessionInfo) {
+        // symbols change during the build: member lookups can not be cached
+        let member_cache = MemberCache::suspend(session);
+        self.load_arch_impl(session);
+        MemberCache::resume(session, member_cache);
+    }
+
+    fn load_arch_impl(&mut self, session: &mut SessionInfo) {
         let symbol = self.sym_stack[0];
         if !session.st().ready_for_step(symbol.unwrap_buildable_key(), BuildSteps::ARCH) {
             return;

@@ -9,6 +9,7 @@ use crate::core::entry_point::EntryPointKey;
 use crate::core::evaluation_context::{ContextKey, ContextValue};
 use crate::core::file_mgr::FileInfoKey;
 use crate::core::file_mgr::Ast;
+use crate::core::symbols::symbol_table_impl::MemberCache;
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::symbol_keys::{ClassKey, ModelSymbolKey, ModuleKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey};
@@ -54,6 +55,13 @@ impl PythonValidator {
 
     /* Validate the symbol. The dependencies must be done before any validation. */
     pub fn validate(&mut self, session: &mut SessionInfo) {
+        // symbols do not change during the validation (except through builds, that suspend the cache)
+        let member_cache = MemberCache::start(session);
+        self.validate_impl(session);
+        MemberCache::end(session, member_cache);
+    }
+
+    fn validate_impl(&mut self, session: &mut SessionInfo) {
         let symbol = self.sym_stack[0];
         if !session.st().ready_for_step(symbol.unwrap_buildable_key(), BuildSteps::VALIDATION) {
             return;
