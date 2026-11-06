@@ -121,7 +121,7 @@ impl XmlAstUtils {
             if through_inherits && !out.is_empty() {
                 break;
             }
-            for class_key in classes {
+            for (class_key, _) in classes {
                 let content = session.st().get_content_symbol(class_key.into(), member_name, u32::MAX);
                 for symbol in content.symbols {
                     //only fields are visible on inherits, not methods

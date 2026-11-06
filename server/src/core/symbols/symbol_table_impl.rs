@@ -1106,7 +1106,13 @@ impl SymbolTable {
     /// again before its validation, and the ext symbols it injected if its ARCH_EVAL is reset, as it injects
     /// them again.
     fn reset(session: &mut SessionInfo, symbol: SourceFileKey, step: BuildSteps) {
-        Self::invalidate_sub_functions(session, symbol);
+        let already_queued = session.st().build_status(symbol.into(), step) == BuildStatus::PENDING
+            && BuildScheduler::is_queued(session, symbol);
+        let functions_reset = Self::invalidate_sub_functions(session, symbol);
+        if already_queued && !functions_reset {
+            // already waiting for `step` with the same functions to build: nothing to reset or queue again
+            return;
+        }
         if step <= BuildSteps::ARCH_EVAL {
             session.st_mut().remove_ext_symbols(symbol.into());
         }
@@ -1168,20 +1174,29 @@ impl SymbolTable {
     /// again by the function queues of the BuildScheduler once `target` is queued for its validation.
     /// Applied right away (unless held, see `BuildScheduler::hold_sub_functions_invalidations`): it must
     /// not be called while something is being built, see [`Self::invalidate`].
-    pub fn invalidate_sub_functions(session: &mut SessionInfo, target: SourceFileKey) {
+    /// Returns true if a function has been reset now (and so may have to be queued again). Always false if
+    /// the invalidation is held.
+    pub fn invalidate_sub_functions(session: &mut SessionInfo, target: SourceFileKey) -> bool {
         let pending = session.sync_odoo.build_scheduler.pending_invalidations();
         if pending.are_sub_functions_held() {
             pending.request_sub_functions_invalidation(target);
-            return;
+            return false;
         }
+        let mut reset = false;
         for func_key in session.st().iter_inner_functions(target.into()) {
+            let func = &session.st()[func_key];
+            if func.evaluations.is_empty() && func.get_build_status(BuildSteps::ARCH_EVAL) == BuildStatus::PENDING {
+                continue; // already reset: its ext symbols are already removed
+            }
             // the ext symbols injected by the function are created again by its ARCH_EVAL
             session.st_mut().remove_ext_symbols(func_key.into());
             let func = &mut session.st_mut()[func_key];
             func.evaluations.clear();
             func.reset_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
+            reset = true;
         }
         BuildScheduler::queue_functions(session, target);
+        reset
     }
 
     pub fn previous_step_done(&self, target: BuildableSymbolKey, step: BuildSteps) -> bool {
@@ -1804,7 +1819,7 @@ impl SymbolTable {
                     while let Some((model_classes, through_inherits)) = walker.next_model(session, from_module) {
                         //only fields are visible on inherits, not methods
                         let only_fields = only_fields || through_inherits;
-                        for model_class_key in model_classes {
+                        for (model_class_key, _) in model_classes {
                             if class_key == model_class_key {
                                 continue;
                             }
@@ -2273,12 +2288,11 @@ impl SymbolTable {
             if let Some(model) = model {
                 let mut walker = ModelClassesWalker::new(model);
                 while let Some((model_symbols, through_inherits)) = walker.next_model(session, from_module) {
-                    for model_symbol in model_symbols {
+                    for (model_symbol, member_from_module) in model_symbols {
                         if target == model_symbol || search.visited_classes.contains(&model_symbol) {
                             continue;
                         }
                         search.visited_classes.insert(model_symbol);
-                        let member_from_module = session.st().find_module(model_symbol);
                         //only fields are visible on inherits, not methods
                         let only_fields = only_fields || through_inherits;
                         let (attributs, att_diagnostic) = Self::get_member_symbol_helper(session, model_symbol.into(), name, member_from_module, true, only_fields, only_methods, all, false, search);
