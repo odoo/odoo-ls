@@ -1,5 +1,5 @@
 use std::{
-    collections::{VecDeque, hash_map}, path::Path,
+    collections::{VecDeque, hash_map}, path::Path, sync::atomic::{AtomicU64, Ordering},
 };
 
 use lsp_types::{Diagnostic, DiagnosticTag, Range, SymbolKind};
@@ -52,6 +52,60 @@ struct MemberSearch {
     /// ext symbols of the visited classes, grouped by class in the visit order: only used if
     /// no declared member is found in the whole hierarchy
     ext_symbols: Vec<Vec<SymbolKey>>,
+}
+
+/// Results of [`SymbolTable::get_member_symbol`], reused while the symbols can not change: the cache is only
+/// enabled during read-only work (validation of a python file, search of references, see [`MemberCache::start`])
+/// and is suspended during any ARCH or ARCH_EVAL build, and emptied when the classes of a model change or a symbol is unloaded.
+#[derive(Debug, Default)]
+pub struct MemberCache {
+    /// (target, from_module, flags) -> member name -> (result, diagnostics)
+    results: HashMap<(SymbolKey, Option<ModuleKey>, u8), HashMap<String, (Vec<SymbolKey>, Vec<Diagnostic>)>>,
+    /// Incremented each time the cache is emptied, so that a search during which symbols changed is not stored
+    generation: u64,
+}
+
+impl MemberCache {
+    /// Enables the cache if it is not already. Returns true if it was enabled by this call: [`MemberCache::end`] has then
+    /// to be called with this value once the read-only work is done.
+    pub fn start(session: &mut SessionInfo) -> bool {
+        if session.sync_odoo.member_cache.is_some() {
+            return false;
+        }
+        session.sync_odoo.member_cache = Some(MemberCache::default());
+        true
+    }
+
+    pub fn end(session: &mut SessionInfo, started: bool) {
+        if started {
+            session.sync_odoo.member_cache = None;
+        }
+    }
+
+    /// Disables the cache while symbols are built. Returns whether it was enabled, to give to [`MemberCache::resume`]
+    pub fn suspend(session: &mut SessionInfo) -> bool {
+        session.sync_odoo.member_cache.take().is_some()
+    }
+
+    /// Enables the cache again after [`MemberCache::suspend`], empty as symbols may have changed
+    pub fn resume(session: &mut SessionInfo, was_enabled: bool) {
+        if was_enabled {
+            session.sync_odoo.member_cache = Some(MemberCache { results: HashMap::default(), generation: Self::next_generation() });
+        }
+    }
+
+    /// Empties the cache, if enabled
+    pub fn clear(session: &mut SessionInfo) {
+        if let Some(cache) = &mut session.sync_odoo.member_cache {
+            cache.results.clear();
+            cache.generation = Self::next_generation();
+        }
+    }
+
+    fn next_generation() -> u64 {
+        static GENERATION: AtomicU64 = AtomicU64::new(1);
+        GENERATION.fetch_add(1, Ordering::Relaxed)
+    }
 }
 
 impl SymbolTable {
@@ -705,6 +759,8 @@ impl SymbolTable {
 
     ///Given a path, create the appropriated symbol and attach it to the given parent
     pub fn create_from_path(session: &mut SessionInfo, path: &Path, parent: FileSystemSymbolParent, require_module: bool) -> Result<SymbolKey, CreateError> {
+        // a new member of `parent`
+        MemberCache::clear(session);
         if require_module {
             let FileSystemSymbolParent::Namespace(addons) = parent else {
                 return Err(CreateError::NothingOnDisk);
@@ -2056,6 +2112,35 @@ impl SymbolTable {
     is the one that is overriding others.
     :param: from_module: optional, can change the from_module of the given class */
     pub fn get_member_symbol(
+        session: &mut SessionInfo,
+        target: SymbolKey,
+        name: &str,
+        from_module: Option<ModuleKey>,
+        prevent_comodel: bool,
+        only_fields: bool,
+        only_methods: bool,
+        all: bool,
+        is_super: bool
+    ) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
+        let flags = prevent_comodel as u8 | (only_fields as u8) << 1 | (only_methods as u8) << 2 | (all as u8) << 3 | (is_super as u8) << 4;
+        let cache_key = (target, from_module, flags);
+        let Some(cache) = session.sync_odoo.member_cache.as_ref() else {
+            return Self::get_member_symbol_uncached(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super);
+        };
+        if let Some(cached) = cache.results.get(&cache_key).and_then(|by_name| by_name.get(name)) {
+            return cached.clone();
+        }
+        let generation = cache.generation;
+        let result = Self::get_member_symbol_uncached(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super);
+        // not stored if symbols may have changed during the search (a build suspended or emptied the cache)
+        if let Some(cache) = &mut session.sync_odoo.member_cache
+            && cache.generation == generation {
+            cache.results.entry(cache_key).or_default().insert(name.to_string(), result.clone());
+        }
+        result
+    }
+
+    fn get_member_symbol_uncached(
         session: &mut SessionInfo,
         target: SymbolKey,
         name: &str,
