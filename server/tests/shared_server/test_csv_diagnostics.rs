@@ -1,5 +1,7 @@
 // Test CSV diagnostics: field count mismatches, parsing errors, and xml_id format validation
 
+use crate::setup;
+use crate::setup::shared::with_shared_session;
 use lsp_types::Diagnostic;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
@@ -7,8 +9,6 @@ use odoo_ls_server::utils::HashMap;
 use std::env;
 use std::path::Path;
 
-mod setup;
-mod test_utils;
 
 fn csv_test_paths() -> (String, String, String, String, String) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -57,22 +57,22 @@ fn has_code(diag: &Diagnostic, code: &str) -> bool {
 
 #[test]
 fn test_csv_diagnostics() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    with_shared_session(true, |session| {
 
-    let (field_mismatch, invalid_xml_id, duplicate_column, valid_csv, relational_ids) = csv_test_paths();
+        let (field_mismatch, invalid_xml_id, duplicate_column, valid_csv, relational_ids) = csv_test_paths();
 
-    // Collect all diagnostics in one pass (consuming the message queue once)
-    let all_diags = collect_all_csv_diagnostics(
-        &mut session,
-        &[&field_mismatch, &invalid_xml_id, &duplicate_column, &valid_csv, &relational_ids],
-    );
+        // Collect all diagnostics in one pass (consuming the message queue once)
+        let all_diags = collect_all_csv_diagnostics(
+            session,
+            &[&field_mismatch, &invalid_xml_id, &duplicate_column, &valid_csv, &relational_ids],
+        );
 
-    test_field_count_mismatch(get_diags_for(&all_diags, &field_mismatch));
-    test_xml_id_format(get_diags_for(&all_diags, &invalid_xml_id));
-    test_duplicate_column(get_diags_for(&all_diags, &duplicate_column));
-    test_valid_file_no_errors(get_diags_for(&all_diags, &valid_csv));
-    test_relational_id_column(get_diags_for(&all_diags, &relational_ids), &relational_ids);
+        test_field_count_mismatch(get_diags_for(&all_diags, &field_mismatch));
+        test_xml_id_format(get_diags_for(&all_diags, &invalid_xml_id));
+        test_duplicate_column(get_diags_for(&all_diags, &duplicate_column));
+        test_valid_file_no_errors(get_diags_for(&all_diags, &valid_csv));
+        test_relational_id_column(get_diags_for(&all_diags, &relational_ids), &relational_ids);
+    });
 }
 
 /// OLS05069: header has 4 fields, data row has 3

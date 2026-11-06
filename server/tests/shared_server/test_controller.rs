@@ -1,3 +1,5 @@
+use crate::test_utils;
+use crate::setup::shared::with_shared_session;
 use std::env;
 use std::path::Path;
 use std::cell::RefCell;
@@ -9,30 +11,28 @@ use odoo_ls_server::core::symbols::symbol_keys::SourceFileKey;
 use odoo_ls_server::utils::PathSanitizer;
 use odoo_ls_server::threads::SessionInfo;
 
-mod setup;
-mod test_utils;
 
 /// Test that odoo.http.request and request.env hooks work correctly.
 /// Tests hover and definition.
 #[test]
 fn test_controller() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    with_shared_session(true, |session| {
 
-    let test_file = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/data/addons/module_1/controllers/main.py")
-        .sanitize();
+        let test_file = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/data/addons/module_1/controllers/main.py")
+            .sanitize();
 
-    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file)) else {
-        panic!("Failed to get file symbol for {}", test_file);
-    };
+        let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
+            panic!("Failed to get file symbol for {}", test_file);
+        };
 
-    let file_mgr = session.sync_odoo.get_file_mgr();
-    let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
+        let file_mgr = session.sync_odoo.get_file_mgr();
+        let file_info = file_mgr.borrow().get_file_info(&test_file).unwrap();
 
-    test_request_type_hover(&mut session, file_symbol, &file_info);
-    test_request_env_definition(&mut session, file_symbol, &file_info);
-    test_request_env_subscript(&mut session, file_symbol, &file_info);
+        test_request_type_hover(session, file_symbol, &file_info);
+        test_request_env_definition(session, file_symbol, &file_info);
+        test_request_env_subscript(session, file_symbol, &file_info);
+    });
 }
 
 /// Test that hovering over 'request' shows Request class

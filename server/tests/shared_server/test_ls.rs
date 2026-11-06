@@ -1,43 +1,43 @@
 
 
+use crate::setup::shared::with_shared_session;
 use std::path::Path;
 use std::env;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod setup;
 
 #[test]
 fn test_structure() {
     /* First, let's launch the server. It will setup a SyncOdoo struct, with a SyncChannel, that we can use to get the messages that the client would receive. */
-    let (mut odoo, config) = setup::setup::setup_server(true);
-    let _ = setup::setup::create_init_session(&mut odoo, config);
-    let st = &odoo.symbol_table;
+    with_shared_session(true, |session| {
+        let st = &session.sync_odoo.symbol_table;
 
-    let odoo_path = env::var("COMMUNITY_PATH").unwrap();
-    let odoo_path = Path::new(&odoo_path).sanitize();
-    let odoo_path = odoo_path.as_str();
-    assert!(!odoo.get_symbol(odoo_path, (&["odoo"], &[]), u32::MAX).is_empty());
-    assert!(!odoo.get_symbol(odoo_path, (&["odoo", "addons"], &[]), u32::MAX).is_empty());
-    assert!(!odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1"], &[]), u32::MAX).is_empty());
-    assert!(!odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_2"], &[]), u32::MAX).is_empty());
-    assert!(odoo.get_symbol(odoo_path, (&["odoo", "addons", "not_a_module"], &[]), u32::MAX).is_empty());
+        let odoo_path = env::var("COMMUNITY_PATH").unwrap();
+        let odoo_path = Path::new(&odoo_path).sanitize();
+        let odoo_path = odoo_path.as_str();
+        assert!(!session.sync_odoo.get_symbol(odoo_path, (&["odoo"], &[]), u32::MAX).is_empty());
+        assert!(!session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons"], &[]), u32::MAX).is_empty());
+        assert!(!session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1"], &[]), u32::MAX).is_empty());
+        assert!(!session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_2"], &[]), u32::MAX).is_empty());
+        assert!(session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "not_a_module"], &[]), u32::MAX).is_empty());
 
-    assert!(odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "not_loaded"], &[]), u32::MAX).is_empty());
-    assert!(odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "not_loaded", "not_loaded_file"], &[]), u32::MAX).is_empty());
-    assert!(odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "not_loaded", "not_loaded_file"], &["NotLoadedClass"]), u32::MAX).is_empty());
-    assert!(odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "not_loaded", "not_loaded_file"], &["NotLoadedFunc"]), u32::MAX).is_empty());
+        assert!(session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "not_loaded"], &[]), u32::MAX).is_empty());
+        assert!(session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "not_loaded", "not_loaded_file"], &[]), u32::MAX).is_empty());
+        assert!(session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "not_loaded", "not_loaded_file"], &["NotLoadedClass"]), u32::MAX).is_empty());
+        assert!(session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "not_loaded", "not_loaded_file"], &["NotLoadedFunc"]), u32::MAX).is_empty());
 
-    let models = odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "models"], &[]), u32::MAX);
-    assert!(models.len() == 1);
-    assert!(st.get_symbol(models[0], (&["base_test_models"], &[]), u32::MAX).len() == 1);
-    assert!(st.get_symbol(models[0], (&[], &["base_test_models"]), u32::MAX).len() == 1);
-    assert!(st.get_symbol(models[0], (&["base_test_models"], &[]), u32::MAX)[0] !=
-            st.get_symbol(models[0], (&[], &["base_test_models"]), u32::MAX)[0]);
-    let module_1 = odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1"], &[]), u32::MAX);
-    assert!(module_1.len() == 1);
-    //assert!(compare_symbol_with_json(module_1, "tests/module_1_structure.json"))
-    test_imports(&odoo);
+        let models = session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1", "models"], &[]), u32::MAX);
+        assert!(models.len() == 1);
+        assert!(st.get_symbol(models[0], (&["base_test_models"], &[]), u32::MAX).len() == 1);
+        assert!(st.get_symbol(models[0], (&[], &["base_test_models"]), u32::MAX).len() == 1);
+        assert!(st.get_symbol(models[0], (&["base_test_models"], &[]), u32::MAX)[0] !=
+                st.get_symbol(models[0], (&[], &["base_test_models"]), u32::MAX)[0]);
+        let module_1 = session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1"], &[]), u32::MAX);
+        assert!(module_1.len() == 1);
+        //assert!(compare_symbol_with_json(module_1, "tests/module_1_structure.json"))
+        test_imports(session.sync_odoo);
+    });
 }
 
 fn test_imports(odoo: &SyncOdoo) {
