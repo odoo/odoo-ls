@@ -8,6 +8,7 @@ use crate::utils::HashSet;
 use std::collections::VecDeque;
 
 use crate::constants::OYarn;
+use crate::core::symbols::symbol_table_impl::MemberCache;
 use crate::core::symbols::symbol_keys::ModelSymbolKey;
 use crate::core::symbols::symbol_keys::SourceFileKey;
 use crate::core::symbols::symbol_keys::SymbolKey;
@@ -15,7 +16,7 @@ use crate::core::symbols::symbol_keys::XmlRecordKey;
 use crate::core::symbols::symbol_keys::{ClassKey, ClassWithModule, ModuleKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::threads::SessionInfo;
-use crate::weak_collections::WeakSet;
+use crate::weak_collections::{WeakMap, WeakSet};
 
 use super::symbols::ModuleSymbol;
 new_key_type! {
@@ -152,16 +153,67 @@ impl ModelData {
 #[derive(Debug)]
 pub struct Model {
     name: OYarn,
-    symbols: WeakSet<ModelSymbolKey>,
+    /// The python classes of the model, with what [`ModelClassesWalker`] needs to know about them
+    classes: WeakMap<ClassKey, ModelClass>,
+    /// The XML records declaring the model
+    xml_symbols: WeakSet<XmlRecordKey>,
     xml_field_symbols: WeakSet<XmlRecordKey>,
     pub dependents: WeakSet<SourceFileKey>,
+}
+
+/// A class of a model, with its module and the models it points to, resolved when the class is added to the model
+/// so that browsing the inheritance of a model does not have to look for them again.
+#[derive(Debug)]
+struct ModelClass {
+    /// The module declaring the class, with its directory name to check the dependencies
+    module: Option<(ModuleKey, OYarn)>,
+    /// Models of `_inherit`
+    inherit: Vec<ModelKey>,
+    /// Models of `_inherits`
+    inherits: Vec<ModelKey>,
+    /// True if the class declares the model instead of extending it (see [`Model::get_main_symbols`])
+    is_main: bool,
+}
+
+impl ModelClass {
+    fn new(session: &mut SessionInfo, class_key: ClassKey) -> Self {
+        let st = session.st();
+        let module = st.find_module(class_key).map(|module| (module, st[module].dir_name.clone()));
+        let (inherit, inherits, is_main) = match &st[class_key]._model {
+            Some(model_data) => (
+                model_data.inherit.clone(),
+                model_data.inherits.iter().map(|(model_name, _field)| model_name.clone()).collect::<Vec<_>>(),
+                !model_data.inherit.contains(&model_data.name),
+            ),
+            None => (vec![], vec![], false),
+        };
+        // models are never removed, so the keys stay valid, even for a model that has no class yet
+        let model_mgr = session.model_mgr_mut();
+        Self {
+            module,
+            inherit: inherit.iter().map(|model_name| model_mgr.add_or_get_model(model_name)).collect(),
+            inherits: inherits.iter().map(|model_name| model_mgr.add_or_get_model(model_name)).collect(),
+            is_main,
+        }
+    }
+
+    fn is_visible_from(&self, symbol_table: &SymbolTable, from_module: Option<ModuleKey>) -> bool {
+        match (from_module, &self.module) {
+            (None, _) => true,
+            (Some(from_module), Some((module, module_name))) => {
+                *module == from_module || ModuleSymbol::is_in_deps(symbol_table, from_module, module_name)
+            },
+            (Some(_), None) => false,
+        }
+    }
 }
 
 impl Model {
     pub fn new(name: OYarn) -> Self {
         Self {
             name,
-            symbols: WeakSet::new(),
+            classes: WeakMap::new(),
+            xml_symbols: WeakSet::new(),
             xml_field_symbols: WeakSet::new(),
             dependents: WeakSet::new(),
         }
@@ -172,12 +224,18 @@ impl Model {
     }
 
     pub fn add_symbol(session: &mut SessionInfo, model_key: ModelKey, symbol: impl Into<ModelSymbolKey>) {
+        MemberCache::clear(session);
         let key = symbol.into();
-        {
-            let model = &mut session.model_mgr_mut()[model_key];
-            if !model.symbols.insert(key) {
-                return;
-            }
+        let is_new = match key {
+            ModelSymbolKey::Class(class_key) => {
+                // set even if the class is already there, its `_inherit` and `_inherits` may have changed
+                let model_class = ModelClass::new(session, class_key);
+                session.model_mgr_mut()[model_key].classes.insert(class_key, model_class).is_none()
+            },
+            ModelSymbolKey::XmlRecord(xml_key) => session.model_mgr_mut()[model_key].xml_symbols.insert(xml_key),
+        };
+        if !is_new {
+            return;
         }
         let from_module = session.sync_odoo.symbol_table.find_module(key);
         Self::add_dependents_to_validation(session, model_key, from_module);
@@ -189,9 +247,7 @@ impl Model {
     }
 
     pub fn has_xml_symbols(&self, symbol_table: &SymbolTable) -> bool {
-        self.symbols
-            .iter_valid(symbol_table)
-            .any(|sym| sym.as_xml_record_key().is_some())
+        !self.xml_symbols.is_empty(symbol_table)
     }
 
     pub fn add_xml_field_symbol(
@@ -199,6 +255,7 @@ impl Model {
         model_key: ModelKey,
         xml_field_symbol: XmlRecordKey,
     ) {
+        MemberCache::clear(session);
         let model = &mut session.model_mgr_mut()[model_key];
         if model.xml_field_symbols.contains(&xml_field_symbol) {
             return;
@@ -214,9 +271,17 @@ impl Model {
         symbol: impl Into<ModelSymbolKey>,
         from_module: Option<ModuleKey>,
     ) {
+        MemberCache::clear(session);
         let key = symbol.into();
-        let model = &mut session.model_mgr_mut()[model_key];
-        model.symbols.remove(&key);
+        let model = &mut session.sync_odoo.model_mgr[model_key];
+        match key {
+            ModelSymbolKey::Class(class_key) => {
+                model.classes.remove(&class_key);
+                // drop the classes removed from the symbol table without going through this function
+                model.classes.clear_invalid(&session.sync_odoo.symbol_table);
+            },
+            ModelSymbolKey::XmlRecord(xml_key) => model.xml_symbols.remove(&xml_key),
+        }
         Self::add_dependents_to_validation(session, model_key, from_module);
     }
 
@@ -233,10 +298,17 @@ impl Model {
         )
     }
 
-    fn get_python_symbols(&self, symbol_table: &SymbolTable) -> impl Iterator<Item = ClassKey> {
-        self.symbols
-            .iter_valid(symbol_table)
-            .filter_map(|sym| sym.as_class_key())
+    fn get_python_symbols(&self, symbol_table: &SymbolTable) -> std::vec::IntoIter<ClassKey> {
+        self.classes.iter_valid(symbol_table).map(|(class_key, _)| class_key).collect::<Vec<_>>().into_iter()
+    }
+
+    /// Returns all model symbols, python classes first, then XML records
+    fn get_all_symbols(&self, symbol_table: &SymbolTable) -> std::vec::IntoIter<ModelSymbolKey> {
+        self.classes.iter_valid(symbol_table)
+            .map(|(class_key, _)| ModelSymbolKey::from(class_key))
+            .chain(self.xml_symbols.iter_valid(symbol_table).map(ModelSymbolKey::from))
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 
     fn filter_by_module<T: Into<SymbolKey> + Copy>(
@@ -262,7 +334,7 @@ impl Model {
         from_module: Option<ModuleKey>,
     ) -> impl Iterator<Item = ModelSymbolKey> {
         Self::filter_by_module(
-            self.symbols.iter_valid(symbol_table),
+            self.get_all_symbols(symbol_table),
             symbol_table,
             from_module,
         )
@@ -270,16 +342,10 @@ impl Model {
 
     pub fn get_main_symbols(&self, session: &SessionInfo, from_module: Option<ModuleKey>) -> impl Iterator<Item = ModelSymbolKey> {
         let st = &session.sync_odoo.symbol_table;
-        let main_symbols = self
-            .symbols
-            .iter_valid(st)
-            .filter(|key| match key {
-                ModelSymbolKey::Class(class_key) => {
-                    let model = st[*class_key]._model.as_ref().unwrap();
-                    !model.inherit.contains(&model.name)
-                }
-                ModelSymbolKey::XmlRecord(_) => true,
-            })
+        let main_symbols = self.classes.iter_valid(st)
+            .filter(|(_, model_class)| model_class.is_main)
+            .map(|(class_key, _)| ModelSymbolKey::from(class_key))
+            .chain(self.xml_symbols.iter_valid(st).map(ModelSymbolKey::from))
             .sorted(); // Sort to get Classes first
         Self::filter_by_module(main_symbols, st, from_module)
     }
@@ -291,7 +357,7 @@ impl Model {
     }
 
     pub fn has_symbols(&self, symbol_table: &SymbolTable) -> bool {
-        !self.symbols.is_empty(symbol_table)
+        self.classes.has_valid(symbol_table) || !self.xml_symbols.is_empty(symbol_table)
     }
 
     /// Return all (python) symbols that build this model.
@@ -378,8 +444,7 @@ impl Model {
             }
             checked.insert(this.name.clone());
             let symbol_table = &session.sync_odoo.symbol_table;
-            for symbol in this.symbols.iter_valid(symbol_table) {
-                let ModelSymbolKey::Class(class_key) = symbol else { continue };
+            for class_key in this.get_python_symbols(symbol_table) {
                 let Some(model_data) = &symbol_table[class_key]._model else {continue};
                 for inherit in model_data.inherit.iter() {
                     if inherit == &session.model_mgr()[base].name {
@@ -417,10 +482,10 @@ impl ModelClassesWalker {
         }
     }
 
-    /// Returns the classes of the next model, and whether this model is reached through `_inherits`
+    /// Returns the classes of the next model with their module, and whether this model is reached through `_inherits`
     /// (in which case only its fields are visible).
     /// Models reached with `_inherit` are always returned before the ones reached through `_inherits`.
-    pub fn next_model(&mut self, session: &SessionInfo, from_module: Option<ModuleKey>) -> Option<(Vec<ClassKey>, bool)> {
+    pub fn next_model(&mut self, session: &SessionInfo, from_module: Option<ModuleKey>) -> Option<(Vec<(ClassKey, Option<ModuleKey>)>, bool)> {
         let st = &session.sync_odoo.symbol_table;
         let model_mgr = &session.sync_odoo.model_mgr;
         // visited is checked on pop, so that a model reached with both `_inherit` and `_inherits` is kept in the `_inherit` part
@@ -436,20 +501,21 @@ impl ModelClassesWalker {
                 break model_key;
             }
         };
-        let classes = Model::filter_by_module(model_mgr[model_key].get_python_symbols(st), st, from_module).collect::<Vec<_>>();
-        for &class_key in classes.iter() {
-            let Some(model_data) = &st[class_key]._model else {continue};
-            for inherit in model_data.inherit.iter() {
-                if let Some(inherit_key) = model_mgr.get_model_key(inherit)
-                    && !self.visited.contains(&inherit_key) {
-                        self.inherit_queue.push_back(inherit_key);
-                    }
+        let mut classes = vec![];
+        for (class_key, model_class) in model_mgr[model_key].classes.iter_valid(st) {
+            if !model_class.is_visible_from(st, from_module) {
+                continue;
             }
-            for (inherits, _field) in model_data.inherits.iter() {
-                if let Some(inherits_key) = model_mgr.get_model_key(inherits)
-                    && !self.visited.contains(&inherits_key) {
-                        self.inherits_queue.push_back(inherits_key);
-                    }
+            classes.push((class_key, model_class.module.as_ref().map(|(module, _)| *module)));
+            for &inherit_key in model_class.inherit.iter() {
+                if !self.visited.contains(&inherit_key) {
+                    self.inherit_queue.push_back(inherit_key);
+                }
+            }
+            for &inherits_key in model_class.inherits.iter() {
+                if !self.visited.contains(&inherits_key) {
+                    self.inherits_queue.push_back(inherits_key);
+                }
             }
         }
         Some((classes, self.through_inherits))

@@ -1,5 +1,5 @@
 use std::{
-    collections::{VecDeque, hash_map}, path::Path,
+    collections::{VecDeque, hash_map}, path::Path, sync::atomic::{AtomicU64, Ordering},
 };
 
 use lsp_types::{Diagnostic, DiagnosticTag, Range, SymbolKind};
@@ -52,6 +52,60 @@ struct MemberSearch {
     /// ext symbols of the visited classes, grouped by class in the visit order: only used if
     /// no declared member is found in the whole hierarchy
     ext_symbols: Vec<Vec<SymbolKey>>,
+}
+
+/// Results of [`SymbolTable::get_member_symbol`], reused while the symbols can not change: the cache is only
+/// enabled during read-only work (validation of a python file, search of references, see [`MemberCache::start`])
+/// and is suspended during any ARCH or ARCH_EVAL build, and emptied when the classes of a model change or a symbol is unloaded.
+#[derive(Debug, Default)]
+pub struct MemberCache {
+    /// (target, from_module, flags) -> member name -> (result, diagnostics)
+    results: HashMap<(SymbolKey, Option<ModuleKey>, u8), HashMap<String, (Vec<SymbolKey>, Vec<Diagnostic>)>>,
+    /// Incremented each time the cache is emptied, so that a search during which symbols changed is not stored
+    generation: u64,
+}
+
+impl MemberCache {
+    /// Enables the cache if it is not already. Returns true if it was enabled by this call: [`MemberCache::end`] has then
+    /// to be called with this value once the read-only work is done.
+    pub fn start(session: &mut SessionInfo) -> bool {
+        if session.sync_odoo.member_cache.is_some() {
+            return false;
+        }
+        session.sync_odoo.member_cache = Some(MemberCache::default());
+        true
+    }
+
+    pub fn end(session: &mut SessionInfo, started: bool) {
+        if started {
+            session.sync_odoo.member_cache = None;
+        }
+    }
+
+    /// Disables the cache while symbols are built. Returns whether it was enabled, to give to [`MemberCache::resume`]
+    pub fn suspend(session: &mut SessionInfo) -> bool {
+        session.sync_odoo.member_cache.take().is_some()
+    }
+
+    /// Enables the cache again after [`MemberCache::suspend`], empty as symbols may have changed
+    pub fn resume(session: &mut SessionInfo, was_enabled: bool) {
+        if was_enabled {
+            session.sync_odoo.member_cache = Some(MemberCache { results: HashMap::default(), generation: Self::next_generation() });
+        }
+    }
+
+    /// Empties the cache, if enabled
+    pub fn clear(session: &mut SessionInfo) {
+        if let Some(cache) = &mut session.sync_odoo.member_cache {
+            cache.results.clear();
+            cache.generation = Self::next_generation();
+        }
+    }
+
+    fn next_generation() -> u64 {
+        static GENERATION: AtomicU64 = AtomicU64::new(1);
+        GENERATION.fetch_add(1, Ordering::Relaxed)
+    }
 }
 
 impl SymbolTable {
@@ -705,6 +759,8 @@ impl SymbolTable {
 
     ///Given a path, create the appropriated symbol and attach it to the given parent
     pub fn create_from_path(session: &mut SessionInfo, path: &Path, parent: FileSystemSymbolParent, require_module: bool) -> Result<SymbolKey, CreateError> {
+        // a new member of `parent`
+        MemberCache::clear(session);
         if require_module {
             let FileSystemSymbolParent::Namespace(addons) = parent else {
                 return Err(CreateError::NothingOnDisk);
@@ -1042,7 +1098,13 @@ impl SymbolTable {
                     }
                 }
                 for (dep_step, sym) in build_queue {
-                    SymbolTable::invalidate_sub_functions(session, sym);
+                    let already_queued = session.st().build_status(sym.into(), dep_step) == BuildStatus::PENDING
+                        && BuildScheduler::is_queued(session, sym);
+                    let functions_reset = SymbolTable::invalidate_sub_functions(session, sym);
+                    if already_queued && !functions_reset {
+                        // already waiting for `dep_step` with the same functions to build: nothing to reset or queue again
+                        continue;
+                    }
                     session.st_mut().reset_build_status(sym.into(), dep_step, BuildStatus::PENDING);
                     BuildScheduler::queue(session, sym);
                 }
@@ -1078,16 +1140,24 @@ impl SymbolTable {
 
     /// Reset the functions of `target` back to ARCH_EVAL, clearing their evaluations. They are built
     /// again by the function queues of the BuildScheduler once `target` is queued for its validation.
-    pub fn invalidate_sub_functions(session: &mut SessionInfo, target: SourceFileKey) {
+    /// Returns true if a function has been reset now (and so may have to be queued again). Always false if
+    /// the invalidation is deferred.
+    pub fn invalidate_sub_functions(session: &mut SessionInfo, target: SourceFileKey) -> bool {
         if let Some(deferred) = &mut session.sync_odoo.deferred_subfunc_invalidation {
             deferred.insert(target);
-            return;
+            return false;
         }
+        let mut reset = false;
         for func_key in session.st().iter_inner_functions(target.into()) {
             let func = &mut session.st_mut()[func_key];
+            if func.evaluations.is_empty() && func.get_build_status(BuildSteps::ARCH_EVAL) == BuildStatus::PENDING {
+                continue; // already reset
+            }
             func.evaluations.clear();
             func.reset_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
+            reset = true;
         }
+        reset
     }
 
     pub fn previous_step_done(&self, target: BuildableSymbolKey, step: BuildSteps) -> bool {
@@ -1710,7 +1780,7 @@ impl SymbolTable {
                     while let Some((model_classes, through_inherits)) = walker.next_model(session, from_module) {
                         //only fields are visible on inherits, not methods
                         let only_fields = only_fields || through_inherits;
-                        for model_class_key in model_classes {
+                        for (model_class_key, _) in model_classes {
                             if class_key == model_class_key {
                                 continue;
                             }
@@ -2052,6 +2122,35 @@ impl SymbolTable {
         all: bool,
         is_super: bool
     ) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
+        let flags = prevent_comodel as u8 | (only_fields as u8) << 1 | (only_methods as u8) << 2 | (all as u8) << 3 | (is_super as u8) << 4;
+        let cache_key = (target, from_module, flags);
+        let Some(cache) = session.sync_odoo.member_cache.as_ref() else {
+            return Self::get_member_symbol_uncached(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super);
+        };
+        if let Some(cached) = cache.results.get(&cache_key).and_then(|by_name| by_name.get(name)) {
+            return cached.clone();
+        }
+        let generation = cache.generation;
+        let result = Self::get_member_symbol_uncached(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super);
+        // not stored if symbols may have changed during the search (a build suspended or emptied the cache)
+        if let Some(cache) = &mut session.sync_odoo.member_cache
+            && cache.generation == generation {
+            cache.results.entry(cache_key).or_default().insert(name.to_string(), result.clone());
+        }
+        result
+    }
+
+    fn get_member_symbol_uncached(
+        session: &mut SessionInfo,
+        target: SymbolKey,
+        name: &str,
+        from_module: Option<ModuleKey>,
+        prevent_comodel: bool,
+        only_fields: bool,
+        only_methods: bool,
+        all: bool,
+        is_super: bool
+    ) -> (Vec<SymbolKey>, Vec<Diagnostic>) {
         let mut search = MemberSearch::default();
         let (mut result, diagnostics) = Self::get_member_symbol_helper(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super, &mut search);
         // Every class implicitly inherits from object, but this base is not stored in the bases list
@@ -2182,12 +2281,11 @@ impl SymbolTable {
             if let Some(model) = model {
                 let mut walker = ModelClassesWalker::new(model);
                 while let Some((model_symbols, through_inherits)) = walker.next_model(session, from_module) {
-                    for model_symbol in model_symbols {
+                    for (model_symbol, member_from_module) in model_symbols {
                         if target == model_symbol || search.visited_classes.contains(&model_symbol) {
                             continue;
                         }
                         search.visited_classes.insert(model_symbol);
-                        let member_from_module = session.st().find_module(model_symbol);
                         //only fields are visible on inherits, not methods
                         let only_fields = only_fields || through_inherits;
                         let (attributs, att_diagnostic) = Self::get_member_symbol_helper(session, model_symbol.into(), name, member_from_module, true, only_fields, only_methods, all, false, search);

@@ -2,6 +2,7 @@ use crate::constants::{BuildSteps, PackageType};
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::evaluation::{Evaluation, EvaluationSymbolPtr};
 use crate::core::file_mgr::{Ast, AstKind, FileInfoKey};
+use crate::core::symbols::symbol_table_impl::MemberCache;
 use crate::core::symbols::Dependencies;
 use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::storage::XmlDataParent;
@@ -56,6 +57,14 @@ impl ReferenceFeature {
      */
     /// TODO: Odoo specific (XML field refs, string-based model refs)
     pub fn get_references(session: &mut SessionInfo, file_symbol: SourceFileKey, file_info: FileInfoKey, line: u32, character: u32) -> Option<Vec<Location>> {
+        // symbols do not change during the search (except through builds, that suspend the cache)
+        let member_cache = MemberCache::start(session);
+        let result = ReferenceFeature::get_references_impl(session, file_symbol, file_info, line, character);
+        MemberCache::end(session, member_cache);
+        result
+    }
+
+    fn get_references_impl(session: &mut SessionInfo, file_symbol: SourceFileKey, file_info: FileInfoKey, line: u32, character: u32) -> Option<Vec<Location>> {
         if matches!(session.file_mgr()[file_info].file_info_ast.ast, Ast::JsAst(_)) {
             return ReferenceFeature::get_reference_js(session, file_info, line, character);
         }
