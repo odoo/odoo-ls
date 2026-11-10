@@ -23,3 +23,8 @@ class LambdaDefaultModel(models.Model):
 
     def _use_company(self):
         return self
+
+    def _use_company_list(self):
+        companies = [self.company_id]
+        company_pairs = (self.company_id, self.company_id)
+        return companies, company_pairs
