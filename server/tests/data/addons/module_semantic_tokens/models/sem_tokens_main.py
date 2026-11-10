@@ -93,3 +93,12 @@ class SemTokensUsage(models.Model):
     triple_quoted = fields.Char(related='''other_id.other_name''')
     # Field path whose separator is an escape sequence
     escaped_dot = fields.Char(related='other_id\x2eother_name')
+
+
+class SemTokensComodels(models.Model):
+    _inherit = 'sem.tokens.usage'
+
+    keyword_other_id = fields.Many2one(comodel_name='sem.tokens.other')
+    usage_ids = fields.One2many('sem.tokens.usage', 'other_id')
+    # Only a One2many takes the inverse field on its comodel
+    other_ids = fields.Many2many('sem.tokens.other', inverse_name='other_name')
