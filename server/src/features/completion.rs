@@ -1023,7 +1023,7 @@ fn complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, list_o
         }
     }
     if expected_type.is_empty()
-        && let Some(expr) = list_or_tuple_elts.iter().find(|expr| offset > expr.range().start().to_usize() && offset < expr.range().end().to_usize())
+        && let Some(expr) = list_or_tuple_elts.iter().find(|expr| offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize())
     {
         return complete_expr( expr, session, file, offset, is_param, expected_type);
     }
