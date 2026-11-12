@@ -25,6 +25,8 @@ fn test_completions() {
     let (mut odoo, config) = setup::setup::setup_server(true);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
     test_depends_kwarg_nested_field_completion(&mut session);
+    // Before `test_lambda_is_not_a_member`, which opens `to_complete.py` with a syntax error
+    test_list_element_completion(&mut session);
     test_lambda_is_not_a_member(&mut session);
     test_compute_sql_kwarg_method_completion(&mut session);
     test_selection_field_method_completion(&mut session);
@@ -51,6 +53,32 @@ fn test_depends_kwarg_nested_field_completion(session: &mut SessionInfo) {
     assert!(labels.iter().any(|l| l == "display_name"), "Expected display_name to be suggested for the 'disp' prefix, got: {:?}", labels);
     assert!(!labels.iter().any(|l| l == "create_uid"), "create_uid does not match the 'disp' prefix, got: {:?}", labels);
     assert!(!labels.iter().any(|l| l == "id"), "id does not match the 'disp' prefix, got: {:?}", labels);
+}
+
+/// The element of a list or a tuple is completed with the cursor at its end, when no type is expected.
+/// e.g. `companies = [self.company_id]`, with the cursor after `company_id`
+fn test_list_element_completion(session: &mut SessionInfo) {
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
+    let disk_text = std::fs::read_to_string(&test_file).expect("Test file does not exist");
+
+    let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    // The line holding the element, and the element, completed with the cursor at its end
+    let cases = [
+        ("companies = [self.company_id]", "self.company_id"),
+        // The first element of a tuple
+        ("company_pairs = (self.company_id, self.company_id)", "self.company_id"),
+    ];
+    for (line_text, element) in cases {
+        let (line, text) = disk_text.lines().enumerate().find(|(_, text)| text.contains(line_text)).unwrap();
+        let character = (text.find(element).unwrap() + element.len()) as u32;
+        let labels = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, line as u32, character));
+        assert!(labels.iter().any(|l| l == "company_id"), "Expected `company_id` after `{}` in `{}`, got: {:?}", element, line_text, labels);
+    }
 }
 
 /// `default=lambda self: ...` stores a `<lambda>` child on the class, but it is not a member:
