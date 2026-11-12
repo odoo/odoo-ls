@@ -418,6 +418,10 @@ fn merge_ws_profile(a: &Profile, b: &Profile, name: &str) -> Result<Profile, Str
         .collect();
     result.warnings.extend(extends_conflict);
     result.conflicted = a.conflicted.union(&b.conflicted).copied().collect();
+    result.addons_detected_by = match (&a.addons_detected_by, &b.addons_detected_by) {
+        (None, None) => None,
+        (x, y) => Some(x.iter().chain(y).flatten().cloned().collect()),
+    };
     for key in keys_union(a, b) {
         let merged = match (a.get(key), b.get(key)) {
             (Some(x), Some(y)) => merge_ws_value(key, x, y),
