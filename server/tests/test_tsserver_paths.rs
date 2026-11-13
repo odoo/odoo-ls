@@ -6,6 +6,32 @@ use std::path::PathBuf;
 use odoo_ls_server::core::tsserver_paths::generate_paths_map;
 use odoo_ls_server::utils::PathSanitizer as _;
 
+/// Only directories with a manifest file are addons. Other directories must not
+/// contribute source/test globs, library aliases, or special web declarations.
+#[test]
+fn non_addon_directories_are_not_mapped() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    for name in ["valid_addon", "no_manifest", "directory_manifest", "web"] {
+        let root = temp.path().join(name);
+        for relative in ["static/src/@types", "static/tests", "static/lib"] {
+            std::fs::create_dir_all(root.join(relative)).unwrap();
+        }
+        std::fs::write(root.join("static/lib/helper.js"), format!("/** @odoo-module alias=@fixture/{name} */\n")).unwrap();
+        std::fs::write(root.join("static/src/@types/owl.d.ts"), "").unwrap();
+        std::fs::write(root.join("static/src/@types/hoot.d.ts"), "").unwrap();
+    }
+    std::fs::write(temp.path().join("valid_addon/__manifest__.py"), "{}").unwrap();
+    std::fs::create_dir(temp.path().join("directory_manifest/__manifest__.py")).unwrap();
+
+    let paths = generate_paths_map(&[temp.path().to_path_buf()]);
+    let valid = temp.path().join("valid_addon");
+    assert_eq!(paths.get("@valid_addon/*"), Some(&vec![valid.join("static/src/*").sanitize()]));
+    assert_eq!(paths.get("@valid_addon/../tests/*"), Some(&vec![valid.join("static/tests/*").sanitize()]));
+    assert_eq!(paths.get("@valid_addon/../lib/helper"), Some(&vec![valid.join("static/lib/helper.js").sanitize()]));
+    assert_eq!(paths.get("@fixture/valid_addon"), Some(&vec![valid.join("static/lib/helper.js").sanitize()]));
+    assert_eq!(paths.len(), 4);
+}
+
 /// The fixture addons directory, the only input the map is built from.
 fn addons_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/addons")
