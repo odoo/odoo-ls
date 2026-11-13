@@ -32,3 +32,6 @@ class LambdaDefaultModel(models.Model):
         companies = [self.company_id]
         company_pairs = (self.company_id, self.company_id)
         return companies, company_pairs
+
+    def _search_company(self):
+        self.search([("company_id", "=", 1)])

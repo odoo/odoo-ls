@@ -1,28 +1,17 @@
 use std::path::{Path, PathBuf};
 
 use lsp_types::NumberOrString;
-use odoo_ls_server::constants::BuildSteps;
-use odoo_ls_server::core::build_scheduler::BuildScheduler;
 use odoo_ls_server::core::odoo::SyncOdoo;
-use odoo_ls_server::core::symbols::SymbolTable;
-use odoo_ls_server::core::symbols::symbol_keys::SourceFileKey;
 use odoo_ls_server::odoo_version::OdooVersion;
-use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
 use crate::setup::setup::*;
-use crate::test_utils::diag_on_line;
+use crate::test_utils::{diag_on_line, revalidate};
 
 const ACCESS_LINE: u32 = 20;
 const ACCESS_INVALID_FIELD_LINE: u32 = 23;
 const ACCESS_INVALID_VALUE_LINE: u32 = 26;
 const ACCESS_INVALID_FIELD_MULTI_CANDIDATE_LINE: u32 = 37;
-
-fn revalidate(session: &mut SessionInfo, file_sym: SourceFileKey) {
-    SymbolTable::invalidate(session, file_sym, BuildSteps::VALIDATION);
-    BuildScheduler::queue(session, file_sym);
-    BuildScheduler::process_rebuilds(session, false);
-}
 
 #[test]
 fn test_ols03025_to_27_access_operator() {
