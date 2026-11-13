@@ -85,10 +85,9 @@ fn collect_modules(addon_dirs: &[PathBuf]) -> Vec<(String, PathBuf)> {
         let Ok(entries) = std::fs::read_dir(addon_dir) else { continue };
         // iterate over module dirs
         for module_dir in entries.flatten() {
-            let is_dir = module_dir.file_type().is_ok_and(|typ| typ.is_dir());
-            if !is_dir { continue }
-            let name = module_dir.file_name().to_string_lossy().to_string();
             let path = module_dir.path();
+            if !path.is_dir() { continue }
+            let name = module_dir.file_name().to_string_lossy().to_string();
             modules.push((name, path))
         }
     }
