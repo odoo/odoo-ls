@@ -5,6 +5,8 @@ use odoo_ls_server::{
         evaluation::Evaluation, file_mgr::FileInfoKey, symbols::{storage::SymbolTable, symbol_keys::{SourceFileKey, SymbolKey}},
     }, features::ast_utils::AstUtils, odoo_version::OdooVersion, threads::SessionInfo
 };
+use odoo_ls_server::constants::BuildSteps;
+use odoo_ls_server::core::build_scheduler::BuildScheduler;
 use std::sync::LazyLock;
 use std::collections::{HashMap, HashSet};
 
@@ -252,4 +254,11 @@ pub fn get_resolved_symbols_at_position(
         .collect::<Vec<_>>()
         .iter().filter_map(|ev| ev.upgrade_weak(session.st()))
         .collect()
+}
+
+/// Validate `file_sym` again, e.g. after changing the Odoo version of the session.
+pub fn revalidate(session: &mut SessionInfo, file_sym: SourceFileKey) {
+    SymbolTable::invalidate(session, file_sym, BuildSteps::VALIDATION);
+    BuildScheduler::queue(session, file_sym);
+    BuildScheduler::process_rebuilds(session, false);
 }

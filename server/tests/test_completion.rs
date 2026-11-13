@@ -28,6 +28,7 @@ fn test_completions() {
     test_lambda_is_not_a_member(&mut session);
     test_compute_sql_kwarg_method_completion(&mut session);
     test_selection_field_method_completion(&mut session);
+    test_domain_operator_completion(&mut session);
     test_init_storage_kwarg_method_completion(&mut session);
 }
  
@@ -127,6 +128,42 @@ fn test_selection_field_method_completion(session: &mut SessionInfo) {
     }
     let label_labels = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, 87, 29));
     assert!(!label_labels.iter().any(|l| l == "_selection_state"), "The label of a Char is not a method name, got: {:?}", label_labels);
+}
+
+/// The operators offered in a domain leaf depend on the Odoo version.
+/// e.g. `not =like` and `not =ilike` from saas-18.2
+fn test_domain_operator_completion(session: &mut SessionInfo) {
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
+    let content = std::fs::read_to_string(&test_file).expect("Test file does not exist");
+
+    let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    // In the operator string of `self.search([("company_id", "=", 1)])`
+    let before_cursor = r#"self.search([("company_id", ""#;
+    let (line, text) = content.lines().enumerate().find(|(_, text)| text.contains(before_cursor)).unwrap();
+    let character = (text.find(before_cursor).unwrap() + before_cursor.len()) as u32;
+
+    // The version of the session is restored after the test, as the other tests share it
+    let version = session.sync_odoo.version;
+    let mut failures = vec![];
+    // (version, whether `not =like` and `not =ilike` are offered)
+    for (test_version, offered) in [(OdooVersion::new(18, 1, 0), false), (OdooVersion::new(18, 2, 0), true)] {
+        session.sync_odoo.version = test_version;
+        let labels = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, line as u32, character));
+        for operator in ["=like", "not =like", "not =ilike"] {
+            // `=like` is offered in every version
+            let expected = offered || operator == "=like";
+            if labels.iter().any(|l| l == operator) != expected {
+                failures.push(format!("{operator} on {test_version:?}: expected offered: {expected}, got {labels:?}"));
+            }
+        }
+    }
+    session.sync_odoo.version = version;
+    assert!(failures.is_empty(), "domain operator completion:\n{}", failures.join("\n"));
 }
 
 /// `init_storage="..."` offers method completion, but only from 20.0 on

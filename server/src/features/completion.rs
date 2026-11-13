@@ -794,12 +794,18 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
                     ("<", "e"), ("<=", "f"), ("=?", "g"),  ("like", "h"), ("=like", "i"), ("not like", "j"),
                     ("ilike", "k"), ("=ilike", "l"),  ("not ilike", "m"),  ("in", "n"),  ("not in", "o"),
                     ("child_of", "p"), ("parent_of", "q"), ("any", "r"), ("not any", "s")];
-                let extra: &[(&str, &str)] = if session.sync_odoo.version >= (19, 3) {
-                   &[("access", "t")]
-                } else {
-                    &[]
-                };
-                for (operator, sort_text) in BASE_OPERATORS.iter().chain(extra) {
+                const VERSIONED_OPERATORS: &[((u32, u32), &str, &str)] = &[
+                    ((18, 2), "not =like", "i1"),
+                    ((18, 2), "not =ilike", "l1"),
+                    ((19, 3), "access", "t"),
+                ];
+                let extra =
+                    VERSIONED_OPERATORS
+                        .iter()
+                        .filter_map(|&(version, operator, sort_text)| {
+                            (session.sync_odoo.version >= version).then_some((operator, sort_text))
+                        });
+                for (operator, sort_text) in BASE_OPERATORS.iter().copied().chain(extra) {
                     items.push(CompletionItem {
                         label: operator.to_string(),
                         insert_text: None,

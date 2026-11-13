@@ -1902,6 +1902,7 @@ impl Evaluation {
             match s.value.to_str() {
                 "=" | "!=" | ">" | ">=" | "<" | "<=" | "=?" | "=like" | "like" | "not like" | "ilike" |
                 "not ilike" | "=ilike" | "in" | "not in" | "child_of" | "parent_of" | "any" | "not any" => {},
+                "not =like" | "not =ilike" if session.sync_odoo.version >= (18, 2) => {},
                 "access" => {
                     if session.sync_odoo.version < (19, 3) {
                         if let Some(diagnostic_base) = create_diagnostic(session, DiagnosticCode::OLS03025, &[]) {

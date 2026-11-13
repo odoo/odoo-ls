@@ -23,3 +23,6 @@ class LambdaDefaultModel(models.Model):
 
     def _use_company(self):
         return self
+
+    def _search_company(self):
+        self.search([("company_id", "=", 1)])
