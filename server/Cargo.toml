@@ -6,11 +6,14 @@ authors = ["Odoo"]
 readme = "../README.md"
 repository = "https://github.com/odoo/odoo-ls"
 license = "../LICENSE"
-rust-version = "1.94"
+rust-version.workspace = true
 
 [workspace]
 members = ["macros"]
 resolver = "3"
+
+[workspace.package]
+rust-version = "1.94"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
