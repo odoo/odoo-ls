@@ -53,3 +53,29 @@ fn alias_adds_a_name_and_ignore_removes_them() {
     assert_eq!(paths.get("@fixture/opted_out"), None);
     assert_eq!(paths.get("@module_owl/../lib/opted_out/opted_out"), None);
 }
+
+/// Addons can be symlinked into an addons directory. Keep the exposed module
+/// name and paths, rather than silently omitting its JavaScript imports.
+#[cfg(unix)]
+#[test]
+fn symlinked_addon_directories_are_mapped() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let addons = temp.path().join("addons");
+    let real_addon = temp.path().join("actual_name");
+    std::fs::create_dir_all(&addons).unwrap();
+    std::fs::create_dir_all(real_addon.join("static/src")).unwrap();
+    std::fs::create_dir_all(real_addon.join("static/tests")).unwrap();
+    std::fs::create_dir_all(real_addon.join("static/lib")).unwrap();
+    std::fs::write(real_addon.join("__manifest__.py"), "{}").unwrap();
+    std::fs::write(real_addon.join("static/lib/helper.js"), "/** @odoo-module */\n").unwrap();
+    let link = addons.join("linked_addon");
+    std::os::unix::fs::symlink(&real_addon, &link).unwrap();
+    std::os::unix::fs::symlink(temp.path().join("missing"), addons.join("broken")).unwrap();
+    std::fs::write(addons.join("not_a_directory"), "").unwrap();
+
+    let paths = generate_paths_map(&[addons]);
+    assert_eq!(paths.get("@linked_addon/*"), Some(&vec![link.join("static/src/*").sanitize()]));
+    assert_eq!(paths.get("@linked_addon/../tests/*"), Some(&vec![link.join("static/tests/*").sanitize()]));
+    assert_eq!(paths.get("@linked_addon/../lib/helper"), Some(&vec![link.join("static/lib/helper.js").sanitize()]));
+    assert_eq!(paths.len(), 3);
+}
