@@ -113,6 +113,7 @@ OLS03008, DiagnosticSetting::Error, "A String value in search domain tuple shoul
 /**
 * Comparison operators in search domain tuples should be of one of these values:
 * "=", "!=", ">", ">=", "<", "<=", "=?", "=like", "like", "not like", "ilike", "not ilike", "=ilike", "in", "not in", "child_of", "parent_of", "any", "not any"
+* From saas-18.2, also "not =like" and "not =ilike"
 */
 OLS03009, DiagnosticSetting::Error, "Invalid comparison operator",
 /**
