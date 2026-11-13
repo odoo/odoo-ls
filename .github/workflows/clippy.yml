@@ -1,0 +1,43 @@
+name: Clippy
+
+on:
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      # read rust-version from cargo.toml, so we use clippy with same version
+      - name: Read MSRV
+        id: msrv
+        run: echo "version=$(sed -n 's/^rust-version *= *"\([^"]*\)".*/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          # select same rust version as the one from cargo
+          toolchain: ${{ steps.msrv.outputs.version }}
+          components: clippy
+
+      - name: Run Clippy
+        run: cargo clippy --no-default-features --all-targets -- -D warnings
