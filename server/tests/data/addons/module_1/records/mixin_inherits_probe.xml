@@ -1,0 +1,16 @@
+<odoo>
+    <record id="inherits_concrete_probe_view" model="ir.ui.view">
+        <field name="model">module_1.inherits_concrete_probe</field>
+        <field name="arch" type="xml">
+            <form>
+                <field name="target_value"/>
+                <field name="deep_value"/>
+                <button name="target_method" type="object"/>
+                <button name="use_target_value" type="object"/>
+            </form>
+        </field>
+    </record>
+    <record id="inherits_concrete_probe_record" model="module_1.inherits_concrete_probe">
+        <field name="target_value">1</field>
+    </record>
+</odoo>
