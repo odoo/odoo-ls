@@ -741,7 +741,6 @@ impl SyncOdoo {
         if let Some(mut files) = session.sync_odoo.deferred_subfunc_invalidation.take() {
             while let Some(file) = files.pop_front_valid(session.st()) {
                 SymbolTable::invalidate_sub_functions(session, file);
-                BuildScheduler::queue_functions(session, file);
             }
         }
         // Drain validation queue

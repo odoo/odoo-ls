@@ -65,8 +65,6 @@ impl PythonArchEval {
             trace!("ARCH_EVAL  - PYTHON {} - {}", session.st().path(self.file), session.st().name(symbol));
         }
         session.st_mut().set_build_status(symbol.unwrap_buildable_key(), BuildSteps::ARCH_EVAL, BuildStatus::IN_PROGRESS);
-        // attributes injected by the previous evaluation (see eval_attribute_ext_symbol)
-        session.st_mut().remove_ext_symbols(symbol);
         let (py_ast, text_hash) = {
             let (file_info_key, _) = FileMgr::get_or_recreate_file_info(session, self.file);
             if !session.file_mgr()[file_info_key].file_info_ast.ast.is_built() {

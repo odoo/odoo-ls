@@ -1023,6 +1023,9 @@ impl SymbolTable {
     pub fn invalidate(session: &mut SessionInfo, symbol: SourceFileKey, step: BuildSteps) {
         // whatever the step, the functions are evaluated again before the validation of the file
         SymbolTable::invalidate_sub_functions(session, symbol);
+        if step <= BuildSteps::ARCH_EVAL {
+            session.st_mut().remove_ext_symbols(symbol.into());
+        }
         session.st_mut().reset_build_status(symbol.into(), step, BuildStatus::PENDING);
         let mut vec_to_invalidate = VecDeque::from([symbol]);
         while let Some(ref_to_inv) = vec_to_invalidate.pop_front() {
@@ -1084,10 +1087,13 @@ impl SymbolTable {
             return;
         }
         for func_key in session.st().iter_inner_functions(target.into()) {
+            // the ext symbols injected by the function are created again by its ARCH_EVAL
+            session.st_mut().remove_ext_symbols(func_key.into());
             let func = &mut session.st_mut()[func_key];
             func.evaluations.clear();
             func.reset_build_status(BuildSteps::ARCH_EVAL, BuildStatus::PENDING);
         }
+        BuildScheduler::queue_functions(session, target);
     }
 
     pub fn previous_step_done(&self, target: BuildableSymbolKey, step: BuildSteps) -> bool {
@@ -2060,14 +2066,14 @@ impl SymbolTable {
         let (mut result, diagnostics) = Self::get_member_symbol_helper(session, target, name, from_module, prevent_comodel, only_fields, only_methods, all, is_super, &mut search);
         // Add Ext symbols as results only as a fallback, if we found nothing else
         if result.is_empty() {
-            for class_ext_symbols in search.ext_symbols {
+            'classes: for class_ext_symbols in search.ext_symbols {
                 for symbol in class_ext_symbols {
                     if !result.contains(&symbol) {
                         result.push(symbol);
+                        if !all {
+                            break 'classes;
+                        }
                     }
-                }
-                if !all {
-                    break;
                 }
             }
         }
@@ -2249,7 +2255,7 @@ impl SymbolTable {
     /// The symbols that `evaluations` evaluate to and that can host an attribute assigned from outside
     /// (`base.x = ...`): classes (or class instances), namespaces, packages, files and functions
     pub fn evaluated_ext_targets(session: &mut SessionInfo, evaluations: &[Evaluation]) -> Vec<SymbolKey> {
-        let mut targets = vec![];
+        let mut targets = HashSet::default();
         for evaluation in evaluations.iter() {
             let symbol = evaluation.symbol.get_symbol(session, None, &mut vec![], None);
             for followed in SymbolTable::follow_ref(&symbol, session, None, false, false, None, None) {
@@ -2257,11 +2263,11 @@ impl SymbolTable {
                     && matches!(target, SymbolKey::Class(_) | SymbolKey::Namespace(_) | SymbolKey::PythonPackage(_)
                         | SymbolKey::Module(_) | SymbolKey::File(_) | SymbolKey::Function(_))
                     && !targets.contains(&target) {
-                        targets.push(target);
+                        targets.insert(target);
                     }
             }
         }
-        targets
+        targets.into_iter().collect::<Vec<_>>()
     }
 
     /**
