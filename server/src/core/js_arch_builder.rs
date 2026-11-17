@@ -97,7 +97,7 @@ pub fn span_to_range(span: Span) -> TextRange {
 fn get_key_name(key: &PropertyKey<'_>) -> Option<String> {
     match key {
         PropertyKey::StaticIdentifier(ident) => Some(ident.name.to_string()),
-        PropertyKey::StringLiteral(lit) => Some(lit.value.to_string()),
+        PropertyKey::StringLiteral(lit) => lit.value.as_str().map(str::to_string),
         _ => None,
     }
 }
@@ -141,7 +141,7 @@ impl<'e> JSArchBuilderVisitor<'e> {
     }
 
     fn super_class(&self, class: &Class) -> Option<SuperClassRef> {
-        let Some(Expression::Identifier(id)) = &class.super_class else {
+        let Some(Expression::Identifier(id)) = class.heritage.as_ref().map(|h| &h.expression) else {
             return None
         };
         let local_name = id.name.to_string();
@@ -257,7 +257,7 @@ fn class_template(class: &Class) -> Option<JsTemplateRef> {
                 TextSize::new(lit.span.start + 1),
                 TextSize::new(lit.span.end.saturating_sub(1)),
             ),
-            t_name: lit.value.to_string(),
+            t_name: lit.value.display().to_string(),
         });
     }
     None 

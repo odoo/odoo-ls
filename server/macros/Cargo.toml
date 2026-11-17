@@ -2,7 +2,7 @@
 name = "odoo_ls_macros"
 version = "1.5.0"
 edition = "2024"
-rust-version = "1.94"
+rust-version.workspace = true
 authors = ["Odoo"]
 license-file = "../../LICENSE"
 publish = false

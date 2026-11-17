@@ -8,11 +8,11 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 pub fn oxc_diagnostic_to_lsp_diagnostic(diag: &OxcDiagnostic, uri: &lsp_types::Uri) -> Option<lsp_types::Diagnostic> {
-    let labels = diag.labels.as_ref()?;
-    let first_label = labels.first().unwrap();
+    let labels = &diag.labels;
+    let first_label = labels.first()?;
     let range = lsp_types::Range {
-        start: lsp_types::Position { line: first_label.offset() as u32, character: 0 },
-        end: lsp_types::Position { line: first_label.offset() as u32 + first_label.len() as u32, character: 0 },
+        start: lsp_types::Position { line: first_label.offset(), character: 0 },
+        end: lsp_types::Position { line: first_label.offset() + first_label.len(), character: 0 },
     };
     let related_information = labels.iter().skip(1)
         .filter_map(|label| {
@@ -23,8 +23,8 @@ pub fn oxc_diagnostic_to_lsp_diagnostic(diag: &OxcDiagnostic, uri: &lsp_types::U
                 location: lsp_types::Location {
                     uri: uri.clone(),
                     range: lsp_types::Range {
-                        start: lsp_types::Position { line: start as u32, character: 0 },
-                        end:   lsp_types::Position { line: end   as u32, character: 0 },
+                        start: lsp_types::Position { line: start, character: 0 },
+                        end:   lsp_types::Position { line: end, character: 0 },
                     },
                 },
                 message: msg,

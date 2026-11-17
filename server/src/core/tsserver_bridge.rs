@@ -856,7 +856,7 @@ impl TsServerBridge {
         // (format "2020") packs the type and modifiers: `type = (class >> 8) - 1`,
         // `modifiers = class & 0xFF`.
         spans
-            .chunks_exact(3)
+            .as_chunks::<3>().0.iter()
             .filter_map(|triple| {
                 let start = triple[0].as_u64()? as u32;
                 let length = triple[1].as_u64()? as u32;
