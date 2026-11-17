@@ -24,7 +24,9 @@ use super::import_resolver::manual_import;
 use super::python_arch_eval::PythonArchEval;
 
 mod order;
+mod record_values;
 pub(crate) use order::validate_order_arg;
+pub(crate) use record_values::validate_record_values_arg;
 
 #[derive(Debug)]
 pub struct PythonValidator {

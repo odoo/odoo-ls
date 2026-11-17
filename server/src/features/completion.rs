@@ -10,7 +10,7 @@ use crate::core::import_resolver;
 use crate::core::python_odoo_builder::ACCESS_OPERATOR_OPTIONS;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::ModuleSymbol;
-use crate::core::symbols::symbol_keys::{ClassKey, ModuleKey, SourceFileKey, SymbolKey};
+use crate::core::symbols::symbol_keys::{ClassKey, ModelSymbolKey, ModuleKey, SourceFileKey, SymbolKey};
 use crate::core::symbols::storage::SymbolTable;
 use crate::features::ast_utils::AstUtils;
 use crate::features::features_utils;
@@ -45,6 +45,9 @@ pub enum ExpectedType {
     METHOD_NAME,
     INHERITS,
     ORDER(ClassKey), // An order on the fields of the model, like `_order = "name desc"`
+    RECORD_VALUES(ModelSymbolKey), // The field values of the model, like in `write({'name': 'x'})`
+    RECORD_VALUES_LIST(ModelSymbolKey), // A list (or values directly for Backwards compatibility) of field values of the model for `create`
+    MODEL_FIELD(ModelSymbolKey), // A field of the model, like the keys of the values given to `write({'name': 'x'})`
 }
 
 pub struct CompletionFeature;
@@ -418,7 +421,7 @@ fn complete_expr(expr: &Expr, session: &mut SessionInfo, file: SourceFileKey, of
         Expr::If(expr_if) => complete_if_expr(session, file, expr_if, offset, is_param, expected_type),
         Expr::Dict(expr_dict) => complete_dict(session, file, expr_dict, offset, is_param, expected_type),
         Expr::Set(expr_set) => complete_set(session, file, expr_set, offset, is_param, expected_type),
-        Expr::ListComp(_) => None,
+        Expr::ListComp(expr_list_comp) => complete_list_comp(session, file, expr_list_comp, offset, is_param, expected_type),
         Expr::SetComp(_) => None,
         Expr::DictComp(_) => None,
         Expr::Generator(_) => None,
@@ -504,6 +507,7 @@ fn complete_dict(session: &mut SessionInfo, file: SourceFileKey, expr_dict: &ruf
         if offset > dict_item_key.range().start().to_usize() && offset <= dict_item_key.range().end().to_usize() {
             let expected_type= expected_type.iter().map(|e| match e {
                 ExpectedType::INHERITS => ExpectedType::MODEL_NAME,
+                &ExpectedType::RECORD_VALUES(model) | &ExpectedType::RECORD_VALUES_LIST(model) => ExpectedType::MODEL_FIELD(model),
                 _ => e.clone(),
             }).collect::<Vec<_>>();
             return Some(complete_expr( dict_item_key, session, file, offset, is_param, &expected_type));
@@ -511,9 +515,10 @@ fn complete_dict(session: &mut SessionInfo, file: SourceFileKey, expr_dict: &ruf
         if offset > dict_item.value.range().start().to_usize() && offset <= dict_item.value.range().end().to_usize() {
             // if expected type has model name, replace it with simple field
             // for _inherits completion
-            let expected_type = expected_type.iter().map(|e| match e {
-                ExpectedType::INHERITS => ExpectedType::SIMPLE_FIELD(Some(Sy!("Many2one"))),
-                _ => e.clone(),
+            let expected_type = expected_type.iter().filter_map(|e| match e {
+                ExpectedType::INHERITS => Some(ExpectedType::SIMPLE_FIELD(Some(Sy!("Many2one")))),
+                ExpectedType::RECORD_VALUES(_) | ExpectedType::RECORD_VALUES_LIST(_) => None,
+                _ => Some(e.clone()),
             }).collect::<Vec<_>>();
             return Some(complete_expr( &dict_item.value, session, file, offset, is_param, &expected_type));
         }
@@ -523,12 +528,26 @@ fn complete_dict(session: &mut SessionInfo, file: SourceFileKey, expr_dict: &ruf
 
 fn complete_set(session: &mut SessionInfo, file: SourceFileKey, expr_set: &ruff_python_ast::ExprSet, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
     let set_item = expr_set.elts.iter().find(|set_item| offset > set_item.range().start().to_usize() && offset <= set_item.range().end().to_usize())?;
-    // A set expression here is just starting to write the inherits dict
+    // A set expression here is just starting to write the inherits dict, or a dict of record values
     let expected_type= expected_type.iter().map(|e| match e {
         ExpectedType::INHERITS => ExpectedType::MODEL_NAME,
+        &ExpectedType::RECORD_VALUES(model) | &ExpectedType::RECORD_VALUES_LIST(model) => ExpectedType::MODEL_FIELD(model),
         _ => e.clone(),
     }).collect::<Vec<_>>();
     complete_expr(set_item, session, file, offset, is_param, &expected_type)
+}
+
+fn complete_list_comp(session: &mut SessionInfo, file: SourceFileKey, expr_list_comp: &ruff_python_ast::ExprListComp, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
+    // Currently only the item of a list of ExpectedType::RECORD_VALUES_LIST is completed
+    // TODO: Handle all list comp completions
+    let expected_type = expected_type.iter().filter_map(|e| match e {
+        &ExpectedType::RECORD_VALUES_LIST(model) => Some(ExpectedType::RECORD_VALUES(model)),
+        _ => None,
+    }).collect::<Vec<_>>();
+    if expected_type.is_empty() || !(offset > expr_list_comp.elt.range().start().to_usize() && offset <= expr_list_comp.elt.range().end().to_usize()) {
+        return None;
+    }
+    complete_expr(&expr_list_comp.elt, session, file, offset, is_param, &expected_type)
 }
 
 fn complete_yield(session: &mut SessionInfo, file: SourceFileKey, expr_yield: &ExprYield, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
@@ -696,6 +715,8 @@ fn expected_type_of(
                 .map(|comodel_name| ExpectedType::EXTERNAL_FIELD(Sy!(comodel_name.to_string())))
         }
         SpecialArg::Field(FieldParam::ModelMethod) => Some(ExpectedType::METHOD_NAME),
+        SpecialArg::RecordValuesList(model) => Some(ExpectedType::RECORD_VALUES_LIST(model)),
+        SpecialArg::RecordValues(model) => Some(ExpectedType::RECORD_VALUES(model)),
     }
 }
 
@@ -847,8 +868,11 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
                 current_module,
                 &mut items,
             ),
+            &ExpectedType::MODEL_FIELD(model) => add_model_attributes(
+                session, &mut items, current_module, model.into(), false, true, false, expr_string_literal.value.to_str(), &None),
             ExpectedType::CLASS(_) => {},
             ExpectedType::INHERITS => {},
+            ExpectedType::RECORD_VALUES(_) | ExpectedType::RECORD_VALUES_LIST(_) => {},
         }
     }
     Some(CompletionResponse::List(CompletionList {
@@ -1004,8 +1028,36 @@ fn complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, list_o
                 }
             }
             ExpectedType::NESTED_FIELD(field_type) => {
-                if let Some(Expr::StringLiteral(expr_string_literal)) = list_or_tuple_elts.iter().find(|expr| offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize()) {
-                    return complete_string_literal(session, file, expr_string_literal, offset, is_param, &[ExpectedType::NESTED_FIELD(field_type.clone())]);
+                if let Some(Expr::StringLiteral(expr_string_literal)) =
+                    list_or_tuple_elts.iter().find(|expr| {
+                        offset > expr.range().start().to_usize()
+                            && offset <= expr.range().end().to_usize()
+                    })
+                {
+                    return complete_string_literal(
+                        session,
+                        file,
+                        expr_string_literal,
+                        offset,
+                        is_param,
+                        &[ExpectedType::NESTED_FIELD(field_type.clone())],
+                    );
+                }
+            }
+            &ExpectedType::RECORD_VALUES_LIST(model) => {
+                // Each item is a dict of values
+                if let Some(expr) = list_or_tuple_elts.iter().find(|expr| {
+                    offset > expr.range().start().to_usize()
+                        && offset <= expr.range().end().to_usize()
+                }) {
+                    return complete_expr(
+                        expr,
+                        session,
+                        file,
+                        offset,
+                        is_param,
+                        &[ExpectedType::RECORD_VALUES(model)],
+                    );
                 }
             }
             _ => {}

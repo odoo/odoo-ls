@@ -35,6 +35,10 @@ pub enum ParamRole {
     InverseField,
     /// The values of a selection field, or the method returning them, e.g. the `selection` of `Selection`
     Selection,
+    /// The list of RecordValues used in `BaseModel.create`
+    RecordValuesList,
+    /// The individual RecordValues used in `BaseModel.create`, `BaseModel.write`, and `BaseModel.update`
+    RecordValues,
 }
 
 impl ParamRole {
@@ -47,6 +51,8 @@ impl ParamRole {
             "comodel_name" => Some(ParamRole::Comodel),
             "inverse_name" => Some(ParamRole::InverseField),
             "selection" => Some(ParamRole::Selection),
+            "values" | "vals" => Some(ParamRole::RecordValues),
+            "vals_list" => Some(ParamRole::RecordValuesList),
             _ => None,
         }
     }
