@@ -1,4 +1,4 @@
-use ruff_python_ast::{Expr, ExprStringLiteral};
+use ruff_python_ast::{Expr, ExprDict, ExprStringLiteral};
 
 use crate::core::symbols::storage::{FileContentParent, SymbolTable};
 use crate::core::symbols::symbol_keys::{ClassKey, SymbolKey, VariableKey};
@@ -7,7 +7,7 @@ use crate::threads::SessionInfo;
 
 use super::field_params::FieldParam;
 use FieldParam::{Comodel, Depends, InverseField, ModelMethod, Related};
-use SpecialArg::{Domain, Field, Order};
+use SpecialArg::{Domain, Field, Order, RecordValues, RecordValuesList};
 
 /// A call argument with a special meaning in odoo context, e.g. a domain or a field parameter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -16,6 +16,10 @@ pub enum SpecialArg {
     Domain,
     /// An order on the model the method is called on, e.g. `search(order='name desc')`
     Order,
+    /// A list of field values for the model the method is called on, e.g. `create([{'name': 'x'}])`
+    RecordValuesList,
+    /// The field values for the model the method is called on, e.g. `write({'name': 'x'})`
+    RecordValues,
     /// A parameter of a field class, e.g. `fields.Char(related='partner_id.name')`
     Field(FieldParam),
 }
@@ -54,7 +58,32 @@ impl SpecialArg {
                 matches!(value, Expr::StringLiteral(value_string) if value_string.range == string.range)
             }
             SpecialArg::Field(field_param) => field_param.is_in_value(value, string),
+            // A key of a dict of values, not a value
+            SpecialArg::RecordValuesList | SpecialArg::RecordValues => {
+                self.values_dicts(value).iter().any(|dict| {
+                    dict.iter_keys().flatten().any(|key| {
+                        matches!(key, Expr::StringLiteral(key_string) if key_string.range == string.range)
+                    })
+                })
+            }
         }
+    }
+
+    /// The dicts of field values in `value`, for `RecordValuesList` and `RecordValues`.
+    pub fn values_dicts(self, value: &Expr) -> Vec<&ExprDict> {
+        let items: Vec<&Expr> = match (self, value) {
+            (SpecialArg::RecordValuesList, Expr::List(list)) => list.elts.iter().collect(),
+            (SpecialArg::RecordValuesList, Expr::ListComp(list_comp)) => vec![&list_comp.elt],
+            (SpecialArg::RecordValuesList | SpecialArg::RecordValues, _) => vec![value],
+            _ => vec![],
+        };
+        items
+            .into_iter()
+            .filter_map(|item| match item {
+                Expr::Dict(dict) => Some(dict),
+                _ => None,
+            })
+            .collect()
     }
 
     /// Cheap check if the given `name` can be a keyword argument with a special value in odoo context.
@@ -115,6 +144,9 @@ const SPECIAL_PARAMS: &[SpecialParam] = &[
     // Not the group methods: their order also takes aggregates, e.g. `amount:sum desc`
     model_methods(SEARCH_METHODS, "order", Order),
     web_base_methods(&["web_search_read"], "order", Order),
+    model_methods(&["create"], "vals_list", RecordValuesList),
+    model_methods(&["write"], "vals", RecordValues),
+    model_methods(&["update"], "values", RecordValues),
     field_classes(RELATIONAL_FIELDS, "comodel_name", Field(Comodel)),
     field_classes(&["One2many"], "inverse_name", Field(InverseField)),
     field_classes(&["Selection", "Reference"], "selection", Field(ModelMethod)),
