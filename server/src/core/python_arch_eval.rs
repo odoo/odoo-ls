@@ -3,7 +3,7 @@ use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use std::vec;
 
 use ruff_text_size::{Ranged, TextRange, TextSize};
-use ruff_python_ast::{Alias, AnyRootNodeRef, ExceptHandler, Expr, ExprNamed, FStringPart, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
+use ruff_python_ast::{Alias, AnyRootNodeRef, ExceptHandler, Expr, ExprNamed, FStringPartRef, Identifier, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtExpr, StmtFor, StmtFunctionDef, StmtIf, StmtReturn, StmtTry, StmtWhile, StmtWith};
 use lsp_types::{Diagnostic, Position, Range};
 use tracing::{debug, trace, warn};
 
@@ -92,7 +92,7 @@ impl PythonArchEval {
                 false => {
                     let f = self.sym_stack[0].unwrap_function_key();
                     let fun_index = session.st()[f].node_index.load();
-                    if fun_index == NodeIndex::NONE{ // uninitialized node index
+                    if fun_index.as_u32().is_none() { // uninitialized node index
                         // Function has no body or is dynamically created from a hook
                         (Default::default(), None) // essentially skip evaluation
                     } else {
@@ -262,7 +262,9 @@ impl PythonArchEval {
                 self.visit_expr(session, &expr_set_comp.elt);
             },
             Expr::DictComp(expr_dict_comp) => {
-                self.visit_expr(session, &expr_dict_comp.key);
+                if let Some(key) = &expr_dict_comp.key {
+                    self.visit_expr(session, key);
+                }
                 self.visit_expr(session, &expr_dict_comp.value);
             },
             Expr::Await(expr_await) => {
@@ -275,7 +277,7 @@ impl PythonArchEval {
                 self.visit_expr(session, &expr_yield_from.value);
             },
             Expr::Compare(expr_compare) => {
-                expr_compare.comparators.iter().for_each(|comp_expr| self.visit_expr(session, comp_expr));
+                expr_compare.comparators().iter().for_each(|comp_expr| self.visit_expr(session, comp_expr));
             },
             Expr::Call(expr_call) => {
                 self.visit_expr(session, &expr_call.func);
@@ -285,10 +287,10 @@ impl PythonArchEval {
             Expr::FString(expr_fstring) => {
                 expr_fstring.value.iter().for_each(|fstring_part|{
                     match fstring_part{
-                        FStringPart::FString(fstr) => fstr.elements.interpolations().map(|interpolation| &interpolation.expression).for_each(
+                        FStringPartRef::FString(fstr) => fstr.elements.interpolations().map(|interpolation| &interpolation.expression).for_each(
                             |expression| self.visit_expr(session, expression)
                         ),
-                        FStringPart::Literal(_) => {},
+                        FStringPartRef::Literal(_) => {},
                     }
                 });
             },

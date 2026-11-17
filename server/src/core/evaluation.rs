@@ -15,7 +15,7 @@ use itertools::FoldWhile::{Continue, Done};
 use itertools::Itertools;
 use lsp_types::{Diagnostic, Location, Position, Range};
 use ruff_python_ast::{
-    Comprehension, Expr, ExprCall, FStringPart, Identifier, Number, Parameter, UnaryOp,
+    Comprehension, Expr, ExprCall, FStringPartRef, Identifier, Number, Parameter, UnaryOp,
 };
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use std::cmp::{max, min};
@@ -947,7 +947,7 @@ impl Evaluation {
                                             get_symbol_hook: None,
                                         },
                                         value: None,
-                                        range: Some(expr.range)
+                                        range: Some(expr.range())
                                     });
                                 }
                             } else {
@@ -987,7 +987,7 @@ impl Evaluation {
                                                 get_symbol_hook: None,
                                             },
                                             value: None,
-                                            range: Some(expr.range)
+                                            range: Some(expr.range())
                                         });
                                     }
                                     //It allows us to check parameters validity too if we are in validation step
@@ -1014,7 +1014,7 @@ impl Evaluation {
                                             get_symbol_hook: None,
                                         },
                                         value: None,
-                                        range: Some(expr.range)
+                                        range: Some(expr.range())
                                     });
                                 }
                             }
@@ -1070,7 +1070,7 @@ impl Evaluation {
                                     get_symbol_hook: None,
                                 },
                                 value: None,
-                                range: Some(expr.range)
+                                range: Some(expr.range())
                             });
                         }
                         // removing in reverse order is more efficient
@@ -1404,7 +1404,7 @@ impl Evaluation {
                     let exprs = f_string_expr
                     .value
                     .iter()
-                    .filter_map(|part|if let FStringPart::FString(expr) = part {Some(expr)} else {None})
+                    .filter_map(|part|if let FStringPartRef::FString(expr) = part {Some(expr)} else {None})
                     .flat_map(|expr| expr.elements.interpolations())
                     .map(|i| &i.expression);
                     for expr in exprs {
@@ -1442,11 +1442,11 @@ impl Evaluation {
             },
             ExprOrIdent::Expr(Expr::Compare(compare_expr)) => {
                 if is_in_validation || odoo.evaluation_search.is_some() {
-                    let (_, diags) = Evaluation::eval_from_ast(session, &compare_expr.left, parent, max_infer, false, required_dependencies);
+                    let (_, diags) = Evaluation::eval_from_ast(session, compare_expr.first_operand(), parent, max_infer, false, required_dependencies);
                         if is_in_validation {
                             diagnostics.extend(diags);
                         }
-                    for value in compare_expr.comparators.iter() {
+                    for value in compare_expr.comparators().iter() {
                         let (_, diags) = Evaluation::eval_from_ast(session, value, parent, max_infer, false, required_dependencies);
                         if is_in_validation {
                             diagnostics.extend(diags);
@@ -1546,9 +1546,11 @@ impl Evaluation {
             ExprOrIdent::Expr(Expr::DictComp(dict_comp_expr)) => {
                 evals.push(Evaluation::new_dict(odoo, None, dict_comp_expr.range));
                 if is_in_validation || odoo.evaluation_search.is_some() {
-                    let (_, diags) = Evaluation::eval_from_ast(session, &dict_comp_expr.key, parent, max_infer, false, required_dependencies);
-                    if is_in_validation {
-                        diagnostics.extend(diags);
+                    if let Some(key) = dict_comp_expr.key.as_ref() {
+                        let (_, diags) = Evaluation::eval_from_ast(session, key, parent, max_infer, false, required_dependencies);
+                        if is_in_validation {
+                            diagnostics.extend(diags);
+                        }
                     }
                     let (_, diags) = Evaluation::eval_from_ast(session, &dict_comp_expr.value, parent, max_infer, false, required_dependencies);
                     if is_in_validation {
@@ -2055,10 +2057,10 @@ impl Evaluation {
             if arg.is_starred_expr() {
                 continue;
             }
-            Evaluation::eval_from_ast(session, arg, parent, &expr_call.range.start(), false, &mut vec![]);
+            Evaluation::eval_from_ast(session, arg, parent, &expr_call.range().start(), false, &mut vec![]);
         }
         for arg in expr_call.arguments.keywords.iter() {
-            Evaluation::eval_from_ast(session, &arg.value, parent, &expr_call.range.start(), false, &mut vec![]);
+            Evaluation::eval_from_ast(session, &arg.value, parent, &expr_call.range().start(), false, &mut vec![]);
         }
     }
 }

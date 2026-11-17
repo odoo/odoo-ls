@@ -156,7 +156,7 @@ impl std::fmt::Display for OdooNotification {
 #[derive(Debug)]
 pub struct SyncOdoo {
     pub version: OdooVersion,
-    pub python_version: Vec<u32>,
+    pub python_version: Vec<u64>,
     /// Filename suffixes the configured Python interpreter accepts for C
     /// extension modules, in CPython's own probe order (the value of
     /// `importlib.machinery.EXTENSION_SUFFIXES`). Used to detect compiled
@@ -392,7 +392,6 @@ impl SyncOdoo {
                             .expect("Expected JSON array for version_info")
                             .iter()
                             .filter_map(|v| v.as_u64())
-                            .map(|v| v as u32)
                             .take(3)
                             .collect();
                         session.sync_odoo.python_ext_suffixes = info["ext_suffixes"].as_array()

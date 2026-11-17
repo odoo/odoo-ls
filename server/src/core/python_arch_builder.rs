@@ -1,6 +1,6 @@
 use lsp_types::Diagnostic;
 use ruff_python_ast::{
-    Alias, AnyRootNodeRef, CmpOp, Expr, ExprNamed, ExprTuple, FStringPart, Identifier, Parameters,
+    Alias, AnyRootNodeRef, CmpOp, Expr, ExprNamed, ExprTuple, FStringPartRef, Identifier, Parameters,
     Pattern, Stmt, StmtAnnAssign, StmtAssign, StmtClassDef, StmtFor, StmtFunctionDef, StmtIf,
     StmtMatch, StmtTry, StmtWhile, StmtWith,
 };
@@ -400,7 +400,9 @@ impl PythonArchBuilder {
                 self.visit_expr(session, &expr_set_comp.elt);
             },
             Expr::DictComp(expr_dict_comp) => {
-                self.visit_expr(session, &expr_dict_comp.key);
+                if let Some(key) = &expr_dict_comp.key {
+                    self.visit_expr(session, key);
+                }
                 self.visit_expr(session, &expr_dict_comp.value);
             },
             Expr::Await(expr_await) => {
@@ -413,7 +415,7 @@ impl PythonArchBuilder {
                 self.visit_expr(session, &expr_yield_from.value);
             },
             Expr::Compare(expr_compare) => {
-                expr_compare.comparators.iter().for_each(|comp_expr| self.visit_expr(session, comp_expr));
+                expr_compare.comparators().iter().for_each(|comp_expr| self.visit_expr(session, comp_expr));
             },
             Expr::Call(expr_call) => {
                 self.visit_expr(session, &expr_call.func);
@@ -423,10 +425,10 @@ impl PythonArchBuilder {
             Expr::FString(expr_fstring) => {
                 expr_fstring.value.iter().for_each(|fstring_part|{
                     match fstring_part{
-                        FStringPart::FString(fstr) => fstr.elements.interpolations().map(|interpolation| &interpolation.expression).for_each(
+                        FStringPartRef::FString(fstr) => fstr.elements.interpolations().map(|interpolation| &interpolation.expression).for_each(
                             |expression| self.visit_expr(session, expression)
                         ),
-                        FStringPart::Literal(_) => {},
+                        FStringPartRef::Literal(_) => {},
                     }
                 });
             },
@@ -823,20 +825,20 @@ impl PythonArchBuilder {
         }
     }
 
-    fn check_tuples(&self, version: &[u32], op: &CmpOp, tuple: &ExprTuple) -> bool {
+    fn check_tuples(&self, version: &[u64], op: &CmpOp, tuple: &ExprTuple) -> bool {
         let mut tuple = tuple.elts.iter().map(|elt| {
             if let Expr::NumberLiteral(num) = elt {
                 if num.value.is_int() {
-                    num.value.as_int().unwrap().as_u32().unwrap()
+                    num.value.as_int().unwrap().as_u64().unwrap()
                 } else {
-                    0_u32
+                    0_u64
                 }
             } else {
-                0_u32 // If not a number, treat as 0
+                0_u64 // If not a number, treat as 0
             }
-        }).collect::<Vec<u32>>();
+        }).collect::<Vec<u64>>();
         // ensure that the vec is sized of 3
-        tuple.resize(3, 0);
+        tuple.resize(3, 0_u64);
         match op {
             CmpOp::Gt => {
                 version[0] > tuple[0] ||
@@ -883,9 +885,9 @@ impl PythonArchBuilder {
             return (true, false); //unknown python version
         }
         if let Expr::Compare(expr_comp) = expr
-            && expr_comp.comparators.len() == 1 {
-                let p1 = expr_comp.left.as_ref();
-                let p2 = expr_comp.comparators.first().unwrap();
+            && expr_comp.comparators().len() == 1 {
+                let p1 = expr_comp.first_operand();
+                let p2 = expr_comp.comparators().first().unwrap();
                 if !p1.is_tuple_expr() && !p2.is_tuple_expr() {
                     return (true, false);
                 }
