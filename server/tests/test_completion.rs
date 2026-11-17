@@ -60,17 +60,26 @@ fn test_lambda_is_not_a_member(session: &mut SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
     let disk_text = std::fs::read_to_string(&test_file).expect("Test file does not exist");
+    // The line that is exactly `return self`, as other lines of the fixture start with it (`return self.create_uid.log`).
     // Don't match on the line ending: the fixture may be checked out with CRLF (git autocrlf on Windows).
-    assert_eq!(disk_text.matches("return self").count(), 1, "Expected a single 'return self' in {}", test_file);
+    let return_lines: Vec<usize> = disk_text.lines().enumerate()
+        .filter(|(_, line)| line.trim() == "return self")
+        .map(|(index, _)| index)
+        .collect();
+    assert_eq!(return_lines.len(), 1, "Expected a single 'return self' line in {}", test_file);
+    let return_line = return_lines[0];
 
     // Open the buffer with the dot typed after `return self`: the completed attribute name is
     // then empty, so every member of LambdaDefaultModel is offered.
+    let text: String = disk_text.split_inclusive('\n').enumerate()
+        .map(|(index, line)| if index == return_line { line.replacen("return self", "return self.", 1) } else { line.to_string() })
+        .collect();
     let did_open_params = lsp_types::DidOpenTextDocumentParams {
         text_document: lsp_types::TextDocumentItem {
             uri: FileMgr::pathname2uri(&test_file),
             language_id: "python".to_string(),
             version: 1,
-            text: disk_text.replace("return self", "return self."),
+            text,
         }
     };
     Odoo::handle_did_open(session, did_open_params);
@@ -80,8 +89,9 @@ fn test_lambda_is_not_a_member(session: &mut SessionInfo) {
         panic!("Failed to get file symbol");
     };
 
-    // `return self.` is line 25 of the fixture (0-indexed 24), cursor after the dot.
-    let response = CompletionFeature::autocomplete(session, file_symbol, file_info, None, 24, 20);
+    // Cursor after the dot of `return self.`
+    let column = disk_text.lines().nth(return_line).unwrap().find("return self").unwrap() + "return self.".len();
+    let response = CompletionFeature::autocomplete(session, file_symbol, file_info, None, return_line as u32, column as u32);
     let labels = labels(response);
     assert!(labels.iter().any(|l| l == "company_id"), "Expected the model fields to be suggested after 'self.', got: {:?}", labels);
     assert!(!labels.iter().any(|l| l == "<lambda>"), "<lambda> is not a member and must not be suggested, got: {:?}", labels);
