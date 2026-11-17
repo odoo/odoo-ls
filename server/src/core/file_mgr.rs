@@ -921,7 +921,11 @@ impl FileInfo {
         let index = td.index();
         let line = index.line_index(offset);
         let prev_line = line.checked_sub(OneIndexed::new(1).unwrap()).unwrap_or(line);
-        Some(index.line_end_exclusive(prev_line, td.contents()))
+        let contents = td.contents();
+        let end = index.line_end(prev_line, contents);
+        let line_text = &contents[..end.to_usize()];
+        let newline_len = if line_text.ends_with("\r\n") { 2 } else if line_text.ends_with('\n') || line_text.ends_with('\r') { 1 } else { 0 };
+        Some(end - TextSize::from(newline_len))
     }
 }
 

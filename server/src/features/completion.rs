@@ -507,10 +507,10 @@ fn complete_yield(session: &mut SessionInfo, file: SourceFileKey, expr_yield: &E
 }
 
 fn complete_compare(session: &mut SessionInfo, file: SourceFileKey, expr_compare: &ruff_python_ast::ExprCompare, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
-    if offset > expr_compare.left.range().start().to_usize() && offset <= expr_compare.left.range().end().to_usize() {
-        return complete_expr( &expr_compare.left, session, file, offset, is_param, expected_type);
+    if offset > expr_compare.first_operand().range().start().to_usize() && offset <= expr_compare.first_operand().range().end().to_usize() {
+        return complete_expr( expr_compare.first_operand(), session, file, offset, is_param, expected_type);
     }
-    let expr = expr_compare.comparators.iter().find(|expr| offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize())?;
+    let expr = expr_compare.comparators().iter().find(|expr| offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize())?;
     complete_expr( expr, session, file, offset, is_param, expected_type)
 }
 

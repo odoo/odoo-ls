@@ -1,4 +1,4 @@
-use ruff_python_ast::{Alias, AnyRootNodeRef, Expr, Identifier, NodeIndex, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtMatch, StmtRaise, StmtTry, StmtTypeAlias, StmtWith};
+use ruff_python_ast::{Alias, AnyRootNodeRef, Expr, Identifier, Stmt, StmtAnnAssign, StmtAssert, StmtAssign, StmtAugAssign, StmtClassDef, StmtMatch, StmtRaise, StmtTry, StmtTypeAlias, StmtWith};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use tracing::{trace, warn};
 use std::path::Path;
@@ -114,7 +114,7 @@ impl PythonValidator {
                 }
                 if let Some(py_ast) = session.file_mgr()[file_info_key].file_info_ast.ast.as_py_ast().cloned() {
                     let func_index = session.st()[f].node_index.load();
-                    if func_index != NodeIndex::NONE {
+                    if func_index.as_u32().is_some() {
                         let stmt = py_ast.get_by_index(func_index);
                         let body = match stmt {
                             AnyRootNodeRef::Stmt(Stmt::FunctionDef(s)) => {
