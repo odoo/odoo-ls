@@ -2001,10 +2001,7 @@ impl SymbolTable {
                     return true;
                 }
         }
-        if Self::is_inheriting_from_field(session, class_key) {
-            return true;
-        }
-        false
+        Self::is_inheriting_from_field(session, class_key)
     }
 
     pub fn is_specific_field_class(session: &SessionInfo, target: SymbolKey, field_names: &[&str]) -> bool {

@@ -6,11 +6,14 @@ authors = ["Odoo"]
 readme = "../README.md"
 repository = "https://github.com/odoo/odoo-ls"
 license = "../LICENSE"
-rust-version = "1.94"
+rust-version.workspace = true
 
 [workspace]
 members = ["macros"]
 resolver = "3"
+
+[workspace.package]
+rust-version = "1.100"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -45,8 +48,8 @@ roxmltree = "0.20.0"
 dirs = "5.0"
 toml = "0.9.12"
 schemars = "1.2.1"
-oxc = { git = "https://github.com/oxc-project/oxc", tag = "crates_v0.127.0", features = ["semantic", "ast_visit"] }
-oxc_linter = { git = "https://github.com/oxc-project/oxc", tag = "crates_v0.127.0" }
+oxc = { git = "https://github.com/oxc-project/oxc", tag = "crates_v0.159.0", features = ["semantic", "ast_visit"] }
+oxc_linter = { git = "https://github.com/oxc-project/oxc", tag = "crates_v0.159.0" }
 csv = "1.4.0"
 slotmap = "1.1.1"
 rustc-hash = "2.1"

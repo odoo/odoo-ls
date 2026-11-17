@@ -12,7 +12,7 @@ fn visit(source: &str) -> Vec<ComponentDescriptor> {
     let source_type = SourceType::from_path(path).unwrap_or_default();
     let allocator = Allocator::default();
     let ret = Parser::new(&allocator, source, source_type).parse();
-    assert!(ret.errors.is_empty(), "unexpected parse errors: {:?}", ret.errors);
+    assert!(ret.diagnostics.is_empty(), "unexpected parse errors: {:?}", ret.diagnostics);
     let program = allocator.alloc(ret.program);
     // No exported-symbol map needed here: these tests only assert template/class detection.
     let (descriptors, _decls) = visit_file(program, path, &HashMap::default(), &HashMap::default());

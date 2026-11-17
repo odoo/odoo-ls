@@ -1,5 +1,5 @@
 use oxc::{allocator::Allocator, diagnostics::OxcDiagnostic, parser::Parser, semantic::SemanticBuilder, span::SourceType};
-use oxc_linter::{ConfigStore, ConfigStoreBuilder, ContextSubHost, ExternalPluginStore, LintOptions, ModuleRecord};
+use oxc_linter::{ConfigStore, ConfigStoreBuilder, ContextSubHost, ContextSubHostOptions, ExternalPluginStore, LintOptions, ModuleRecord};
 use oxc::syntax::module_record::{ExportExportName, ImportImportName};
 use ruff_python_ast::{ModModule, PySourceType, token::{Token, TokenKind}};
 use ruff_python_parser::Parsed;
@@ -183,7 +183,7 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
     let source_type = SourceType::from_path(os_path).unwrap_or_default();
     let allocator = Allocator::default();
     let ret = Parser::new(&allocator, contents, source_type).parse();
-    let mut syntax_diagnostics: Vec<OxcDiagnostic> = ret.errors;
+    let mut syntax_diagnostics: Vec<OxcDiagnostic> = ret.diagnostics.into_vec();
     let parser_module_record = ret.module_record;
 
     let ParsedJsImports { imports, reexports, exports, import_bindings } =
@@ -208,11 +208,8 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
     }
 
     // Look for more synxtax errors
-    let semantic_ret = SemanticBuilder::new()
-        .with_cfg(true)
-        .with_check_syntax_error(true)
-        .build(program);
-    syntax_diagnostics.extend(semantic_ret.errors);
+    let semantic_ret = SemanticBuilder::new_linter().build(program);
+    syntax_diagnostics.extend(semantic_ret.diagnostics);
 
     if !syntax_diagnostics.is_empty() {
         return ParsedJs { component_descriptors, decls, imports, reexports, has_exports, syntax_diagnostics, lint_diagnostics: vec![] };
@@ -221,7 +218,7 @@ pub fn parse_js_inner(contents: &str, path: &str) -> ParsedJs {
     let semantic = semantic_ret.semantic;
     // Build the linter module record and context
     let module_record = Arc::new(ModuleRecord::new(os_path, &parser_module_record, &semantic));
-    let context_sub_host = ContextSubHost::new(semantic, module_record, 0);
+    let context_sub_host = ContextSubHost::new(semantic, module_record, 0, ContextSubHostOptions::default());
 
     // Create a linter with default (correctness) rules and run it
     let mut external_plugin_store = ExternalPluginStore::default();
