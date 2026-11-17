@@ -93,3 +93,6 @@ lto = false
 
 [lints.cargo]
 unused_dependencies = "allow"
+
+[profile.dev.package."*"]
+debug = "line-tables-only"
