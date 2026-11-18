@@ -6,3 +6,4 @@ from . import domain_operators
 from . import model_order
 from . import search_order
 from . import search_domain
+from . import record_values

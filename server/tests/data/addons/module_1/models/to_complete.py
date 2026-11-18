@@ -70,6 +70,24 @@ class CallArgumentsModel(models.Model):
         self._read_group([("na", "=", "x")], ["name"])
         return self.name_search("x", [("na", "=", "x")])
 
+    def record_values(self, names):
+        # The keys of the values given to create, write or update, on the model they are called on
+        self.create({"na": "na"})
+        self.sudo().create([{"na": "x"}])
+        self.env["module_1.call_arguments_model"].create([{"na": name} for name in names])
+        self.write({"na": "x"})
+        self.update({"na": "x"})
+        self.env["module_1.lambda_default_model"].create({"comp": "x"})
+        # The first key, before its `:`, is in a set
+        self.sudo().write({"na"})
+        self.with_context().create([{"na"}])
+        # The values given by keyword
+        self.create(vals_list=[{"na": "x"}])
+        self.write(vals={"na": "x"})
+        self.update(values={"na": "x"})
+        # `write` takes no list of values
+        return self.with_context().write([{"na": "x"}])
+
 
 class OrderEscapeModel(models.Model):
     _name = "module_1.order_escape_model"

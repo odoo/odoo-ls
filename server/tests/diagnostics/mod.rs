@@ -24,6 +24,7 @@ pub mod ols03009_operators;
 pub mod ols03018_compute_sql;
 pub mod ols03025_to_27;
 pub mod ols03011_search_methods;
+pub mod ols03014_record_values;
 pub mod ols03028;
 pub mod ols03029;
 pub mod ols03301;
