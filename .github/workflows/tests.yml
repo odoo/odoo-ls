@@ -1,0 +1,55 @@
+name: Tests
+
+on:
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
+jobs:
+  tests:
+    name: cargo test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: true
+
+      # tests do not load the top-level addons/ folder, so odoo/ is enough
+      - name: Checkout Odoo
+        uses: actions/checkout@v6
+        with:
+          repository: odoo/odoo
+          ref: master
+          path: community
+          persist-credentials: false
+          sparse-checkout: odoo
+
+      - name: Read MSRV
+        id: msrv
+        run: echo "version=$(sed -n 's/^rust-version *= *"\([^"]*\)".*/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+
+      - name: Run tests
+        env:
+          COMMUNITY_PATH: ${{ github.workspace }}/community
+        run: cargo test
