@@ -1,4 +1,4 @@
-name: Tests
+name: CI
 
 on:
   pull_request:
@@ -15,7 +15,7 @@ env:
 
 jobs:
   tests:
-    name: cargo test
+    name: clippy + tests
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -30,6 +30,19 @@ jobs:
           persist-credentials: false
           submodules: true
 
+      - name: Read MSRV
+        id: msrv
+        run: echo "version=$(sed -n 's/^rust-version *= *"\([^"]*\)".*/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+          components: clippy
+
+      - name: Clippy
+        run: cargo clippy --no-default-features --all-targets -- -D warnings
+
       # tests do not load the top-level addons/ folder, so odoo/ is enough
       - name: Checkout Odoo
         uses: actions/checkout@v6
@@ -39,15 +52,6 @@ jobs:
           path: community
           persist-credentials: false
           sparse-checkout: odoo
-
-      - name: Read MSRV
-        id: msrv
-        run: echo "version=$(sed -n 's/^rust-version *= *"\([^"]*\)".*/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ steps.msrv.outputs.version }}
 
       - name: Run tests
         env:
