@@ -38,6 +38,8 @@ pub enum ContextKey {
     FieldParent,
     GroupExpand,
     GroupExpandArgRange,
+    Groups,
+    GroupsArgRange,
     InitStorage,
     InitStorageArgRange,
     IsAttrOfInstance,
@@ -80,6 +82,7 @@ impl ContextKey {
             | ContextKey::Delegate
             | ContextKey::FieldParent
             | ContextKey::GroupExpand
+            | ContextKey::Groups
             | ContextKey::InitStorage
             | ContextKey::IsAttrOfInstance
             | ContextKey::IsInValidation
@@ -99,6 +102,7 @@ impl ContextKey {
             | ContextKey::ComputeArgRange
             | ContextKey::ComputeSqlArgRange
             | ContextKey::GroupExpandArgRange
+            | ContextKey::GroupsArgRange
             | ContextKey::InitStorageArgRange
             | ContextKey::InverseArgRange
             | ContextKey::InverseNameArgRange
