@@ -86,7 +86,7 @@ fn collect_modules(addon_dirs: &[PathBuf]) -> Vec<(String, PathBuf)> {
         // iterate over module dirs
         for module_dir in entries.flatten() {
             let path = module_dir.path();
-            if !path.is_dir() { continue }
+            if !path.join("__manifest__.py").is_file() { continue }
             let name = module_dir.file_name().to_string_lossy().to_string();
             modules.push((name, path))
         }
