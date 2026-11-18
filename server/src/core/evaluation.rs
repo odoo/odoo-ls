@@ -31,9 +31,9 @@ use super::symbols::symbol_mgr::SectionIndex;
 pub enum EvaluationValue {
     ANY(), //we don't know what it is, so it can be everything !
     CONSTANT(Box<ruff_python_ast::Expr>), //expr is a literal
-    DICT(Vec<(ruff_python_ast::Expr, ruff_python_ast::Expr)>), //expr is a literal
-    LIST(Vec<ruff_python_ast::Expr>), //expr is a literal
-    TUPLE(Vec<ruff_python_ast::Expr>) //expr is a literal
+    DICT(Vec<(ruff_python_ast::Expr, ruff_python_ast::Expr)>), //exprs pass `is_constant_expr`
+    LIST(Vec<ruff_python_ast::Expr>), //exprs pass `is_constant_expr`
+    TUPLE(Vec<ruff_python_ast::Expr>) //exprs pass `is_constant_expr`
 }
 
 impl EvaluationValue {
@@ -89,6 +89,20 @@ impl EvaluationValue {
             EvaluationValue::TUPLE(t) => t,
             _ => panic!("Not a tuple")
         }
+    }
+}
+
+/// Returns whether `expr` is a literal, or a list, tuple or dict holding only literals, at any depth.
+/// e.g.
+/// `[("draft", "Draft")]` is one, `[("draft", name)]` isn't.
+fn is_constant_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::List(list) => list.elts.iter().all(is_constant_expr),
+        Expr::Tuple(tuple) => tuple.elts.iter().all(is_constant_expr),
+        Expr::Dict(dict) => dict.iter().all(|item| {
+            item.key.as_ref().is_some_and(is_constant_expr) && is_constant_expr(&item.value)
+        }),
+        _ => expr.is_literal_expr(),
     }
 }
 
@@ -712,7 +726,7 @@ impl Evaluation {
                             diagnostics.extend(diags);
                         }
                     }
-                    if all_values && e.is_literal_expr() {
+                    if all_values && is_constant_expr(e) {
                         values.push(e.clone());
                     } else {
                         values = Vec::new();
@@ -734,7 +748,7 @@ impl Evaluation {
                             diagnostics.extend(diags);
                         }
                     }
-                    if all_values && e.is_literal_expr() {
+                    if all_values && is_constant_expr(e) {
                         values.push(e.clone());
                     } else {
                         values = Vec::new();
@@ -776,7 +790,7 @@ impl Evaluation {
                                     diagnostics.extend(diags);
                                 }
                             }
-                            if all_values && key.is_literal_expr() && dict_value.is_literal_expr() {
+                            if all_values && is_constant_expr(key) && is_constant_expr(dict_value) {
                                 values.push((key.clone(), dict_value.clone()));
                             } else {
                                 all_values = false;
