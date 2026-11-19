@@ -43,7 +43,7 @@ jobs:
       - name: Clippy
         run: cargo clippy --no-default-features --all-targets -- -D warnings
 
-      # tests do not load the top-level addons/ folder, so odoo/ is enough
+      # odoo-ls loads only odoo/; tsserver reads addons/web from disk
       - name: Checkout Odoo
         uses: actions/checkout@v6
         with:
@@ -51,7 +51,12 @@ jobs:
           ref: master
           path: community
           persist-credentials: false
-          sparse-checkout: odoo
+          sparse-checkout: |
+            odoo
+            addons/web
+
+      - name: Install TypeScript
+        run: npm install --global typescript@6
 
       - name: Install nextest
         uses: taiki-e/install-action@v2
@@ -64,6 +69,7 @@ jobs:
       - name: Run tests
         env:
           COMMUNITY_PATH: ${{ github.workspace }}/community
+          TSSERVER: tsserver
         run: cargo nextest run --profile ci
 
       - name: Upload test logs
