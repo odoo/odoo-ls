@@ -1,8 +1,14 @@
 use std::env;
 use std::path::Path;
 
-use odoo_ls_server::core::odoo::SyncOdoo;
-use odoo_ls_server::core::symbols::symbol_keys::SymbolKey;
+use lsp_types::{DidChangeTextDocumentParams, DidOpenTextDocumentParams, TextDocumentContentChangeEvent, TextDocumentItem, VersionedTextDocumentIdentifier};
+use odoo_ls_server::core::build_scheduler::BuildScheduler;
+use odoo_ls_server::core::evaluation::EvaluationSymbolPtr;
+use odoo_ls_server::core::evaluation_context::{ContextKey, ContextValue};
+use odoo_ls_server::core::file_mgr::FileMgr;
+use odoo_ls_server::core::odoo::{Odoo, SyncOdoo};
+use odoo_ls_server::core::selection;
+use odoo_ls_server::core::symbols::symbol_keys::{SourceFileKey, SymbolKey};
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::tree::TreeStrSlice;
 use odoo_ls_server::utils::PathSanitizer;
@@ -464,5 +470,168 @@ fn test_special_params_keep_declared_type() {
         names(&session, &resolved).iter().any(|name| name == "DomainType"),
         "`domain` of `BaseModel.search` should keep its declared type `DomainType`. Got: {:?}",
         names(&session, &resolved)
+    );
+}
+
+/// Returns the selection values a field's evaluation keeps under `key`.
+/// They're written as `key=label`, or `unknown`, or `absent`.
+fn selection_values_of(
+    session: &SessionInfo,
+    file_symbol: SourceFileKey,
+    class: &str,
+    field: &str,
+    key: ContextKey,
+) -> String {
+    let field_symbols =
+        session
+            .st()
+            .get_symbol(file_symbol.into(), (&[], &[class, field]), u32::MAX);
+    assert_eq!(field_symbols.len(), 1, "Expected to find `{class}.{field}`");
+    let evaluations = session.st().evaluations(field_symbols[0]).unwrap();
+    let EvaluationSymbolPtr::WEAK(weak) = evaluations[0].symbol.get_symbol_ptr() else {
+        panic!("Expected `{class}.{field}` to evaluate to its field class");
+    };
+    match weak.context.get(key) {
+        None => "absent".to_string(),
+        Some(ContextValue::SELECTION(selection::DeclaredSelection::Unknown)) => {
+            "unknown".to_string()
+        }
+        Some(ContextValue::SELECTION(selection::DeclaredSelection::Known(values))) => values
+            .iter()
+            .map(|selection::SelectionValue(key, label)| format!("{}={}", key, label))
+            .collect::<Vec<_>>()
+            .join(", "),
+        Some(other) => format!("{other:?}"),
+    }
+}
+
+/// `fields.Selection(...)` keeps the values of its `selection` and `selection_add` arguments in its context
+#[test]
+fn test_selection_values_hook() {
+    let (mut odoo, config) = setup::setup::setup_server(true);
+    let models_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("data")
+        .join("addons")
+        .join("module_1")
+        .join("models");
+    let test_file = models_path.join("selection_model.py").sanitize();
+    let constants_file = models_path.join("selection_constants.py").sanitize();
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let Some(file_symbol) =
+        SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file))
+    else {
+        panic!("Failed to get file symbol for {}", test_file);
+    };
+
+    // (class, field, context key, values)
+    let cases: &[(&str, &str, ContextKey, &str)] = &[
+        (
+            "SelectionModel",
+            "literal",
+            ContextKey::SelectionValues,
+            "a=A, b=B",
+        ),
+        (
+            "SelectionModel",
+            "keyword",
+            ContextKey::SelectionValues,
+            "a=A",
+        ),
+        (
+            "SelectionModel",
+            "constant",
+            ContextKey::SelectionValues,
+            "draft=Draft, done=Done",
+        ),
+        (
+            "SelectionModel",
+            "imported_constant",
+            ContextKey::SelectionValues,
+            "imported=Imported, kept=Kept",
+        ),
+        (
+            "SelectionModel",
+            "method",
+            ContextKey::SelectionValues,
+            "unknown",
+        ),
+        (
+            "SelectionModel",
+            "function",
+            ContextKey::SelectionValues,
+            "unknown",
+        ),
+        (
+            "SelectionModel",
+            "non_string_key",
+            ContextKey::SelectionValues,
+            "unknown",
+        ),
+        (
+            "SelectionModel",
+            "reference",
+            ContextKey::SelectionValues,
+            "absent",
+        ),
+        (
+            "SelectionModelExtension",
+            "literal",
+            ContextKey::SelectionValues,
+            "absent",
+        ),
+        (
+            "SelectionModelExtension",
+            "literal",
+            ContextKey::SelectionAdd,
+            "c=C",
+        ),
+    ];
+    for &(class, field, key, expected) in cases {
+        assert_eq!(
+            selection_values_of(&session, file_symbol, class, field, key),
+            expected,
+            "{key:?} of `{class}.{field}`"
+        );
+    }
+
+    // Editing the imported constant updates the field
+    let original_constants = std::fs::read_to_string(&constants_file).unwrap();
+    Odoo::handle_did_open(
+        &mut session,
+        DidOpenTextDocumentParams {
+            text_document: TextDocumentItem {
+                uri: FileMgr::pathname2uri(&constants_file),
+                language_id: "python".to_string(),
+                version: 1,
+                text: original_constants,
+            },
+        },
+    );
+    Odoo::handle_did_change(
+        &mut session,
+        DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier {
+                uri: FileMgr::pathname2uri(&constants_file),
+                version: 2,
+            },
+            content_changes: vec![TextDocumentContentChangeEvent {
+                range: None,
+                range_length: None,
+                text: "IMPORTED_STATES = [(\"changed\", \"Changed\")]\n".to_string(),
+            }],
+        },
+    );
+    BuildScheduler::process_rebuilds(&mut session, false);
+    assert_eq!(
+        selection_values_of(
+            &session,
+            file_symbol,
+            "SelectionModel",
+            "imported_constant",
+            ContextKey::SelectionValues
+        ),
+        "changed=Changed",
+        "SelectionValues of `SelectionModel.imported_constant` after editing the constant"
     );
 }

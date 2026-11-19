@@ -2,6 +2,7 @@ use crate::core::entry_point::EntryPointKey;
 use crate::core::evaluation_context::ContextKey;
 use crate::core::evaluation::HookName;
 use crate::core::model::ModelKey;
+use crate::core::selection;
 use crate::utils::HashMap;
 use lsp_types::Diagnostic;
 use std::sync::LazyLock;
@@ -1290,6 +1291,40 @@ impl PythonArchEvalHooks {
         })
     }
 
+    /// Look for context values for selection fields, and update the context if any is found
+    fn get_selection_context_values(session: &mut SessionInfo, parent: SymbolKey, evaluation_sym: &EvaluationSymbol, parameters: &Arguments, context: &mut Context) {
+        let is_selection = evaluation_sym
+            .get_weak()
+            .weak
+            .upgrade(session.st())
+            .is_some_and(|class| {
+                SymbolTable::is_specific_field_class(session, class, &["Selection"])
+            });
+        if is_selection {
+            let selection = parameters.args.first().or_else(|| {
+                PythonArchEvalHooks::find_special_arguments(parameters, "selection")
+                    .map(|(expr, _)| expr)
+            });
+            let selection_add =
+                PythonArchEvalHooks::find_special_arguments(parameters, "selection_add")
+                    .map(|(expr, _)| expr);
+            for (key, argument) in [
+                (ContextKey::SelectionValues, selection),
+                (ContextKey::SelectionAdd, selection_add),
+            ] {
+                if let Some(argument) = argument {
+                    let values = selection::DeclaredSelection::from_argument(
+                        session,
+                        argument,
+                        parent,
+                        &parameters.range.start(),
+                    );
+                    context.insert(key, ContextValue::SELECTION(values));
+                }
+            }
+        }
+    }
+
     fn eval_init_common(session: &mut SessionInfo, evaluation_sym: &EvaluationSymbol, maybe_context: Option<&Context>, _diagnostics: &mut Vec<Diagnostic>, file_symbol: Option<SymbolKey>, relational: bool, one2many: bool) -> Option<EvaluationSymbolPtr>
     {
         let context = maybe_context?;
@@ -1356,6 +1391,7 @@ impl PythonArchEvalHooks {
                 .map(|(field_name_expr, arg_range)| (arg_name_key, (field_name_expr, arg_range, only_str, arg_range_key)))
             )
         );
+        Self::get_selection_context_values(session, parent, evaluation_sym, &parameters, &mut result_context);
 
         for (arg_name, (field_name_expr, arg_range, bool_or_str, arg_range_key)) in contexts_to_add {
             match bool_or_str {
