@@ -16,28 +16,16 @@ use odoo_ls_server::utils::get_python_command;
 use odoo_ls_server::{core::{config::{ConfigKey, ConfigEntry}, entry_point::EntryPointMgr, odoo::SyncOdoo}, threads::{SessionInfo, ThreadMessage}, utils::PathSanitizer as _};
 
 use tracing::{info, level_filters::LevelFilter};
-use tracing_appender::rolling::RollingFileAppender;
-use tracing_subscriber::{fmt, layer::SubscriberExt, FmtSubscriber};
+use tracing_subscriber::FmtSubscriber;
 
 pub fn setup_server(with_odoo: bool) -> (SyncOdoo, ConfigEntry) {
 
-    let file_appender = RollingFileAppender::builder()
-        .max_log_files(20) // only the most recent 5 log files will be kept
-        .filename_prefix(format!("odoo_tests_logs_{}", std::process::id()))
-        .filename_suffix("log")
-        .build("./logs")
-        .expect("failed to initialize rolling file appender");
-    let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
     let subscriber = FmtSubscriber::builder()
-        .with_thread_ids(true)
-        .with_file(false)
         .with_max_level(LevelFilter::INFO)
         .with_ansi(false)
-        .with_writer(file_writer)
+        .with_test_writer()
         .finish();
-    let stdout_subscriber = fmt::layer().with_writer(std::io::stdout).with_ansi(true);
-    let _ = tracing::subscriber::set_global_default(subscriber.with(stdout_subscriber));
-
+    let _ = tracing::subscriber::set_global_default(subscriber);
 
     let community_path = if with_odoo {
         Some(env::var("COMMUNITY_PATH").expect("Please provide COMMUNITY_PATH environment variable with a valid path to your Odoo Community folder"))
