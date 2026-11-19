@@ -1,12 +1,12 @@
 /** @odoo-module **/
-import { Component, props, t } from "@odoo/owl";
+import { Component, useProps, t } from "@odoo/owl";
 import { clamp } from "@web/core/utils/numbers";
 import { capitalize } from "@web/core/utils/strings";
 
 export class Greeting extends Component {
     static template = "module_owl.Greeting";
 
-    props = props({
+    props = useProps({
         name: t.string(),
         exclamations: t.number().optional(1),
     });
