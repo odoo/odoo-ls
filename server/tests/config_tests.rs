@@ -1570,6 +1570,49 @@ fn auto_detect_addons_token_combines_manual_and_detected() {
     assert!(paths.contains(&canonicalized(ws.path())), "auto-detected workspace present");
 }
 
+/// The panel shows the `$autoDetectAddons` token that requested detection
+/// (implicit `$default` when unset, else its config file), and on a profile
+/// whose explicit list drops an ancestor's detection, a hint that it is not
+/// inherited. Runtime values are unchanged.
+#[test]
+fn auto_detect_addons_shown_in_panel() {
+    let mut c = Cfg::new();
+    let ws = c.ws("ws");
+    make_addon(&ws, "auto_module");
+    let custom = c.dir("custom_addons");
+    make_addon(&custom, "custom_module");
+    let cu_p = canonicalized(custom.path());
+    let token_row = "  &quot;$autoDetectAddons&quot;,";
+    let hint = "are not inherited";
+    let html_of = |c: &Cfg, name: &str| ConfigView::single(c.profile(name)).to_html_string();
+
+    // Unset in `default`: implicit token; `custom`'s explicit list drops it.
+    write_odools(&ws, &format!(
+        "[[config]]\nname = \"default\"\n\n[[config]]\nname = \"custom\"\nextends = \"default\"\naddons_paths = [\"{cu_p}\"]\n"
+    ));
+    let default_html = html_of(&c, "default");
+    assert!(default_html.contains(token_row), "implicit token row: {default_html}");
+    assert!(default_html.contains("implicit: addons_paths is unset"));
+    let custom_html = html_of(&c, "custom");
+    assert!(!custom_html.contains(token_row), "custom does not detect");
+    assert!(custom_html.contains("detected for &#39;default&#39; are not inherited"),
+        "not-inherited hint: {custom_html}");
+    assert!(!c.entry("custom").addons_paths().contains(&canonicalized(ws.path())),
+        "runtime unchanged: custom still does not detect");
+
+    // Explicit token in `default`: inherited by `custom`, shown with its file source.
+    write_odools(&ws, &format!(
+        "[[config]]\nname = \"default\"\naddons_paths = [\"$autoDetectAddons\"]\n\n[[config]]\nname = \"custom\"\nextends = \"default\"\naddons_paths = [\"{cu_p}\"]\n"
+    ));
+    let custom_html = html_of(&c, "custom");
+    assert!(custom_html.contains(token_row), "inherited token row: {custom_html}");
+    assert!(!custom_html.contains("implicit: addons_paths is unset"));
+    assert!(!custom_html.contains(hint));
+    // The token never reaches the JSON payload (clients read it as paths).
+    let json = serde_json::to_string(&c.view()).unwrap();
+    assert!(!json.contains("$autoDetectAddons"), "token leaked into JSON: {json}");
+}
+
 /// additional_stubs_merge: "override" drops the parent stub, default merge keeps both.
 #[test]
 fn additional_stubs_merge_override_vs_merge() {

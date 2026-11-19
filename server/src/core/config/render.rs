@@ -7,7 +7,10 @@ use crate::utils::HashSet;
 
 use crate::utils::HashMap;
 
-use super::value::{ConfigValue, ProfileSet, Scalar, Sourced, is_fs_path};
+use super::stages::AUTO_DETECT_ADDONS;
+use super::value::{
+    ConfigValue, DEFAULT_SOURCE, Profile, ProfileSet, Scalar, Sourced, is_fs_path,
+};
 
 // ---------------------------------------------------------------------------
 // ConfigView — render view of the resolved profiles (for the IDE config panel).
@@ -33,6 +36,49 @@ pub struct ProfileView {
     rejected: HashMap<ConfigKey, Vec<Sourced<String>>>,
     /// Parse-time notes not tied to a single field (e.g. an unknown key).
     warnings: Vec<String>,
+    /// How `addons_paths` auto-detection applies here (panel-only annotation).
+    addons_detection: AddonsDetectionView,
+}
+
+/// Panel annotation making `addons_paths` auto-detection visible: the
+/// `$autoDetectAddons` token is stripped from the resolved list (or never
+/// written, when the list is unset), so without this the panel shows detected
+/// paths with no hint of why — or why an extending profile lacks them.
+#[derive(Debug, Clone, Default)]
+enum AddonsDetectionView {
+    /// Nothing to show.
+    #[default]
+    Hidden,
+    /// Auto-detection ran, alongside with its sources.
+    Ran(HashSet<String>),
+    /// No auto-detection, but one ancestor in the extends chain does.
+    NotInherited(String),
+}
+
+impl AddonsDetectionView {
+    fn from_profile(profile: &Profile, profiles: &ProfileSet) -> Self {
+        if let Some(sources) = &profile.addons_detected_by {
+            return Self::Ran(sources.clone());
+        }
+        // Abstract profiles never detect; only an explicit list turns it off.
+        if profile.abstract_ || profile.get(ConfigKey::AddonsPaths).is_none() {
+            return Self::Hidden;
+        }
+        // Nearest ancestor that detects (cycles were rejected by `extends`
+        // resolution; `seen` is a cheap guard regardless).
+        let mut seen: HashSet<&str> = HashSet::default();
+        let mut next = profile.extends.as_deref();
+        while let Some(name) = next {
+            let Some(parent) = profiles.get(name).filter(|_| seen.insert(name)) else {
+                break;
+            };
+            if parent.addons_detected_by.is_some() {
+                return Self::NotInherited(name.to_string());
+            }
+            next = parent.extends.as_deref();
+        }
+        Self::Hidden
+    }
 }
 
 impl ProfileView {
@@ -337,6 +383,7 @@ impl ConfigView {
                 values: p.values.clone(),
                 rejected: p.rejected.clone(),
                 warnings: p.warnings.clone(),
+                addons_detection: AddonsDetectionView::from_profile(p, profiles),
             })
             .collect();
         ConfigView { configs }
@@ -349,7 +396,7 @@ impl ConfigView {
         let entry_htmls: Vec<String> = self
             .configs
             .iter()
-            .map(|entry| r.render_entry(&entry.to_json()))
+            .map(|entry| r.render_entry(entry))
             .collect();
 
         r.html
@@ -391,7 +438,8 @@ impl ConfigRenderer {
         self.html.push_str("<div class=\"toml-table\">\n");
     }
 
-    fn render_entry(&self, entry_val: &serde_json::Value) -> String {
+    fn render_entry(&self, entry: &ProfileView) -> String {
+        let entry_val = &entry.to_json();
         let mut html = String::new();
         // Profile-level warnings (not tied to a field) go on the header row.
         let warnings = entry_val["warnings"]
@@ -407,7 +455,12 @@ impl ConfigRenderer {
         html.push_str(&Self::row("<b>[[config]]</b>", &warnings));
         if let serde_json::Value::Object(map) = entry_val {
             for key in display_order() {
-                if let Some(val) = map.get(key) {
+                if key == ConfigKey::AddonsPaths.as_str()
+                    && let Some(rows) =
+                        Self::render_addons_paths(key, map.get(key), &entry.addons_detection)
+                {
+                    html.push_str(&rows);
+                } else if let Some(val) = map.get(key) {
                     html.push_str(&Self::render_field(key, val, 0));
                 }
             }
@@ -489,6 +542,33 @@ impl ConfigRenderer {
         }
         rows.push_str(&Self::row("]", ""));
         rows
+    }
+
+    /// `addons_paths` with its auto-detection made visible with a note to the user
+    fn render_addons_paths(
+        key: &str,
+        val: Option<&Value>,
+        detection: &AddonsDetectionView,
+    ) -> Option<String> {
+        let mut items = match val {
+            Some(Value::Array(items)) => items.clone(),
+            Some(other) => vec![other.clone()], // rejected bad input, wrap as array
+            None => Vec::new(),
+        };
+        let note = match detection {
+            AddonsDetectionView::Hidden => return None,
+            AddonsDetectionView::Ran(sources) => {
+                let token = Sourced::with_sources(AUTO_DETECT_ADDONS.to_string(), sources.clone());
+                items.insert(0, sourced_string_json(&token));
+                let implicit = sources.len() == 1 && sources.contains(DEFAULT_SOURCE);
+                if implicit { "implicit: addons_paths is unset".to_string() } else { String::new() }
+            }
+            AddonsDetectionView::NotInherited(ancestor) => format!(
+                "auto-detection is off: this profile sets addons_paths. Paths detected for \
+                 '{ancestor}' are not inherited; add \"{AUTO_DETECT_ADDONS}\" to include them"
+            ),
+        };
+        Some(Self::render_array(key, &Value::Array(items), &Self::render_note(&note), "", 0))
     }
 
     fn render_sourced_object(key: &str, val: &serde_json::Value, info: &str) -> String {
@@ -573,6 +653,14 @@ impl ConfigRenderer {
             .map(|s| format!("<span class=\"toml-info\">⚠ {}</span>", esc(s)))
             .unwrap_or_default()
     }
+
+    /// A neutral explanatory note (unlike `render_info`, not a warning).
+    fn render_note(note: &str) -> String {
+        if note.is_empty() {
+            return String::new();
+        }
+        format!("<span class=\"toml-note\">{}</span>", esc(note))
+    }
 }
 
 /// Escape text for safe interpolation into the config-panel HTML. Config values
@@ -631,6 +719,14 @@ const CSS: &str = r#"<style>
         margin-top: 2px;
         font-style: italic;
     }
+  .toml-note {
+    display: block;
+    text-align: left;
+    color: #6a9955;
+    font-size: 0.9em;
+    margin-top: 2px;
+    font-style: italic;
+  }
   .config-wiki-link {
     margin-bottom: 10px;
     display: block;

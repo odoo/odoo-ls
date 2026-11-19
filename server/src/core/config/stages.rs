@@ -15,10 +15,12 @@ use crate::{
 };
 
 use super::paths::{SymlinkPolicy, fill_template_path, has_template, resolve_path};
-use super::value::{ConfigValue, PipelineCtx, Profile, Sourced, config_dir, group_sourced_iters};
+use super::value::{
+    ConfigValue, PipelineCtx, Profile, Sourced, config_dir, default_sources, group_sourced_iters,
+};
 
 /// List token that requests auto-detection of `addons_paths` (see `infer_addons`).
-const AUTO_DETECT_ADDONS: &str = "$autoDetectAddons";
+pub(super) const AUTO_DETECT_ADDONS: &str = "$autoDetectAddons";
 
 // ---------------------------------------------------------------------------
 // PostMergeProcessing stage
@@ -341,16 +343,21 @@ pub(super) fn infer_addons(
     key: ConfigKey,
     ctx: &PipelineCtx,
 ) -> Result<(), String> {
-    let infer = match profile.get(key) {
-        None => true,
-        Some(ConfigValue::List(items)) => items.iter().any(|i| i.value() == AUTO_DETECT_ADDONS),
-        _ => false,
+    // What requests detection: an unset list (implicitly, as if it were
+    // `["$autoDetectAddons"]`), or the token written in the list.
+    profile.addons_detected_by = match profile.get(key) {
+        None => Some(default_sources()),
+        Some(ConfigValue::List(items)) => items
+            .iter()
+            .find(|i| i.value() == AUTO_DETECT_ADDONS)
+            .map(|i| i.sources().clone()),
+        _ => None,
     };
     // Strip the token regardless (it's not a real path).
     if let Some(ConfigValue::List(items)) = profile.values.get_mut(&key) {
         items.retain(|i| i.value() != AUTO_DETECT_ADDONS);
     }
-    if !infer {
+    if profile.addons_detected_by.is_none() {
         return Ok(());
     }
     let Some((ws_name, ws_path)) = ctx.current_ws else {

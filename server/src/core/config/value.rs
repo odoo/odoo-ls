@@ -422,6 +422,10 @@ pub(crate) struct Profile {
     /// Scalar keys with conflicting values across workspace folders: dropped, and
     /// any value a later workspace brings for them is rejected too.
     pub conflicted: HashSet<ConfigKey>,
+    /// Sources of the `$autoDetectAddons` request that triggered `addons_paths`
+    /// detection (`$default` when the list was unset); `None` when detection did
+    /// not run. Used only for the rendered HTML Config view
+    pub addons_detected_by: Option<HashSet<String>>,
 }
 
 impl Profile {
