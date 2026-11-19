@@ -53,7 +53,22 @@ jobs:
           persist-credentials: false
           sparse-checkout: odoo
 
+      - name: Install nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - name: Build tests
+        run: cargo nextest run --no-run
+
       - name: Run tests
         env:
           COMMUNITY_PATH: ${{ github.workspace }}/community
-        run: cargo test
+        run: cargo nextest run --profile ci
+
+      - name: Upload test logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-logs
+          path: server/target/nextest/ci/junit.xml
