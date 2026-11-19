@@ -5,4 +5,5 @@ from . import env_attr_probe
 from . import env_subscript_probe
 from . import models
 from . import reexport_usage
+from . import selection_model
 from . import to_complete
