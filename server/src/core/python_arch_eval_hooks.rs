@@ -1359,12 +1359,12 @@ impl PythonArchEvalHooks {
 
         for (arg_name, (field_name_expr, arg_range, bool_or_str, arg_range_key)) in contexts_to_add {
             match bool_or_str {
-                "str" => if let Some(related_string) = Evaluation::expr_to_str(session, field_name_expr, parent, &parameters.range.start(), false, &mut vec![]).0 {
+                "str" => if let Some(related_string) = Evaluation::expr_to_str(session, field_name_expr, parent, &parameters.range.start(), false, &mut vec![]) {
                     result_context.insert(arg_name, ContextValue::STRING(related_string.to_string()));
                     result_context.insert(arg_range_key, ContextValue::RANGE(arg_range));
                 },
                 "bool" => {
-                    let maybe_boolean = Evaluation::expr_to_bool(session, field_name_expr, parent, &parameters.range.start(), false, &mut vec![]).0;
+                    let maybe_boolean = Evaluation::expr_to_bool(session, field_name_expr, parent, &parameters.range.start(), false, &mut vec![]);
                     if let Some(boolean) = maybe_boolean {
                         result_context.insert(arg_name, ContextValue::BOOLEAN(boolean));
                     }
