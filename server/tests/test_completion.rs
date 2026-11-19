@@ -133,20 +133,6 @@ fn test_lambda_is_not_a_member(session: &mut SessionInfo) {
 fn test_ext_symbols_completion(session: &mut SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
-    // normalized, as the fixture is checked out with CRLF on Windows
-    let disk_text = std::fs::read_to_string(&test_file).expect("Test file does not exist").replace("\r\n", "\n");
-    let text = disk_text.replace("        return self\n", "        import odoo\n        return odoo.Comm\n");
-    assert_ne!(text, disk_text, "Expected '        return self' to be replaced in {}", test_file);
-
-    let did_open_params = lsp_types::DidOpenTextDocumentParams {
-        text_document: lsp_types::TextDocumentItem {
-            uri: FileMgr::pathname2uri(&test_file),
-            language_id: "python".to_string(),
-            version: 2,
-            text,
-        }
-    };
-    Odoo::handle_did_open(session, did_open_params);
 
     let file_info = session.sync_odoo.file_mgr.get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
@@ -160,7 +146,7 @@ fn test_ext_symbols_completion(session: &mut SessionInfo) {
     assert!(import_labels.iter().any(|l| l == "_lt"), "Expected '_lt' to be suggested in 'from odoo import', got: {:?}", import_labels);
 
     // `        return odoo.Comm` (0-indexed line 25), cursor after `Comm`
-    let response = CompletionFeature::autocomplete(session, file_symbol, file_info, None, 25, 24);
+    let response = CompletionFeature::autocomplete(session, file_symbol, file_info, None, 28, 24);
     let attr_labels = labels(response);
     assert!(attr_labels.iter().any(|l| l == "Command"), "Expected 'Command' to be suggested after 'odoo.', got: {:?}", attr_labels);
 }

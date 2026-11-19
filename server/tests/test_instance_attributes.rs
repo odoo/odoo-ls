@@ -107,17 +107,15 @@ fn test_instance_attributes_definition() {
     let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file))
         .expect("Failed to get file symbol");
 
-    // `paths.memo`: assigned in `AssetPaths.__init__`. Put its file back as if its methods were never
-    // evaluated (its validation is pending), as the rebuild done before a request has to evaluate them.
+    // `paths.memo`: assigned in `AssetPaths.__init__`. Invalidating the validation of its file puts its
+    // methods back as never evaluated (with their ext symbols removed), as the rebuild done before a
+    // request has to evaluate them.
     let odoo_path = Path::new(&env::var("COMMUNITY_PATH").unwrap()).sanitize();
     let asset_paths = session.sync_odoo.get_symbol(&odoo_path, (&["odoo", "addons", "base", "models", "ir_asset"], &["AssetPaths"]), u32::MAX);
     assert_eq!(asset_paths.len(), 1, "AssetPaths not found");
     let asset_paths = asset_paths[0];
     let ir_asset_file = session.st().get_file(asset_paths).unwrap();
     SymbolTable::invalidate(&mut session, ir_asset_file, BuildSteps::VALIDATION);
-    for method in session.st().iter_inner_functions(asset_paths) {
-        session.st_mut().remove_ext_symbols(method.into());
-    }
     assert!(session.st().get_ext_symbol(asset_paths, "memo").is_empty());
     BuildScheduler::queue(&mut session, ir_asset_file);
     // as done before a goto definition request

@@ -231,7 +231,7 @@ impl SymbolTable {
     }
 
     /// Remove the ext symbols injected by `owner`
-    pub fn remove_ext_symbols(&mut self, owner: SymbolKey) {
+    pub(in crate::core::symbols) fn remove_ext_symbols(&mut self, owner: SymbolKey) {
         for variable in self.ext_symbols.remove_owned(owner) {
             self.remove(variable.into());
         }
