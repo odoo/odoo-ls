@@ -1,9 +1,9 @@
 use std::path::Path;
 
-use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString};
-use odoo_ls_server::{S, utils::PathSanitizer};
+use lsp_types::DiagnosticSeverity;
+use odoo_ls_server::utils::PathSanitizer;
 
-use crate::{setup::setup::*, test_utils::{diag_on_line, verify_diagnostics_against_doc}};
+use crate::{setup::setup::*, test_utils::{check_xml_diagnostic, diag_on_line, verify_diagnostics_against_doc}};
 
 #[test]
 fn test_ols05000_2_3_py_file() {
@@ -15,20 +15,6 @@ fn test_ols05000_2_3_py_file() {
     let bikes_py_diagnostics = get_diagnostics_for_path(&mut session, &bikes_py_path.sanitize());
     let doc_diags = get_diagnostics_test_comments(&mut session, &bikes_py_path.sanitize());
     verify_diagnostics_against_doc(&bikes_py_diagnostics, &doc_diags); // OLS05002 & OLS05003 & OLS05051
-}
-
-fn check_xml_diagnostic(diagnostics: &[Diagnostic], ols_code: &str, line: u32, severity: DiagnosticSeverity) {
-    let line_diagnostics = diag_on_line(diagnostics, line);
-    assert_eq!(line_diagnostics.len(), 1);
-    let diag = &line_diagnostics[0];
-    assert!(diag.code.is_some());
-    let code = match &diag.code {
-        Some(NumberOrString::String(code)) => code,
-        Some(NumberOrString::Number(num)) => panic!("Unexpected numeric code: {}", num),
-        None => panic!("Diagnostic code is None"),
-    };
-    assert!(code == &S!(ols_code));
-    assert!(diag.severity.is_some_and(|s| s == severity));
 }
 
 #[test]

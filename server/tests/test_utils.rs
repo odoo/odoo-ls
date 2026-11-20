@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use lsp_types::{Diagnostic, NumberOrString};
+use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString};
 use odoo_ls_server::{
     S, core::{
         evaluation::Evaluation, file_mgr::FileInfoKey, symbols::{storage::SymbolTable, symbol_keys::{SourceFileKey, SymbolKey}},
@@ -179,6 +179,25 @@ pub fn verify_diagnostics_against_doc(
             }).collect::<Vec<String>>().join(", "),
         );
     }
+}
+
+#[track_caller]
+pub fn check_xml_diagnostic(diagnostics: &[Diagnostic], ols_code: &str, line: u32, severity: DiagnosticSeverity) {
+    let line_diagnostics = diag_on_line(diagnostics, line);
+    assert_eq!(
+        line_diagnostics.len(), 1,
+        "Expected exactly 1 diagnostic at line {line}, found {}: {:?}",
+        line_diagnostics.len(),
+        line_diagnostics
+    );
+    let diag = &line_diagnostics[0];
+    let code = match &diag.code {
+        Some(NumberOrString::String(code)) => code,
+        Some(NumberOrString::Number(num)) => panic!("Unexpected numeric code: {num}"),
+        None => panic!("Diagnostic code is None"),
+    };
+    assert_eq!(code, &S!(ols_code), "Expected code {ols_code} at line {line}, got {code}");
+    assert!(diag.severity.is_some_and(|s| s == severity), "Expected severity {severity:?} for {ols_code} at line {line}");
 }
 
 /// Resolves a list of evaluations to their final types, following references and
