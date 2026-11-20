@@ -366,6 +366,21 @@ static arch_eval_function_hooks: LazyLock<Vec<PythonArchEvalFunctionHook>> = Laz
                         func: |odoo: &mut SyncOdoo, _entry_point: EntryPointKey, symbol: FunctionKey| {
         let base_model = get_base_model_symbol(odoo);
         odoo.symbol_table[symbol].evaluations = vec![Evaluation::new_self(base_model.unwrap(), Some(true))];
+        PythonArchEvalHooks::mark_params(odoo, symbol, &[ParamRole::RecordValuesList]);
+    }},
+    PythonArchEvalFunctionHook {odoo_entry: true,
+                        tree: vec![((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "write"])),
+                        ((18, 1), (999, 0), (&["odoo", "orm", "models"], &["BaseModel", "write"]))],
+                        if_exist_only: true,
+                        func: |odoo: &mut SyncOdoo, _entry_point: EntryPointKey, symbol: FunctionKey| {
+        PythonArchEvalHooks::mark_params(odoo, symbol, &[ParamRole::RecordValues]);
+    }},
+    PythonArchEvalFunctionHook {odoo_entry: true,
+                        tree: vec![((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "update"])),
+                        ((18, 1), (999, 0), (&["odoo", "orm", "models"], &["BaseModel", "update"]))],
+                        if_exist_only: true,
+                        func: |odoo: &mut SyncOdoo, _entry_point: EntryPointKey, symbol: FunctionKey| {
+        PythonArchEvalHooks::mark_params(odoo, symbol, &[ParamRole::RecordValues]);
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
                         tree: vec![((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "filtered"])),

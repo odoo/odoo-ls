@@ -6,7 +6,6 @@ use crate::{
     },
     threads::SessionInfo,
 };
-
 /// Helper struct to walk through relational fields of a model in order to find the symbol of a nested field
 /// It follows the chain of relational fields using field string names
 /// It is used by alternating the call between get_model_symbol and get_model_fields,
@@ -126,29 +125,12 @@ impl DeepFieldEvalWalker {
         base_object: SymbolKey,
         name: &str,
     ) -> Vec<SymbolKey> {
-        let symbols = match base_object {
-            SymbolKey::XmlRecord(xml_record_key) => {
-                if let Some(model) = SymbolTable::get_xml_defined_model(session, xml_record_key) {
-                    session.model_mgr()[model]
-                        .get_xml_model_field_symbols(session.st(), self.from_module)
-                        .filter_map(|f_key| {
-                            let field_name = session.st()[f_key]
-                                .get_field_text(XmlFieldName::Name, session.st())?;
-                            if field_name == name {
-                                Some(SymbolKey::from(f_key))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                } else {
-                    vec![]
-                }
-            }
-            SymbolKey::Class(_) => {
-                let (symbols, _diagnostics) = SymbolTable::get_member_symbol(
+        let symbols = base_object
+            .as_model_symbol_key()
+            .map(|model| {
+                SymbolTable::get_member_symbol(
                     session,
-                    base_object,
+                    model.into(),
                     name,
                     self.from_module,
                     false,
@@ -156,11 +138,10 @@ impl DeepFieldEvalWalker {
                     false,
                     true,
                     false,
-                );
-                symbols
-            }
-            _ => Vec::new(),
-        };
+                )
+                .0
+            })
+            .unwrap_or_default();
         self.prev_field_symbols = Some(symbols.clone());
         symbols
     }

@@ -48,3 +48,25 @@ class SemTokensSearchDomains(models.Model):
         self.filtered_domain([('other_id.other_name', '=', False)])
         self._read_group([('other_id', '=', False)], ['name'])
         return self.name_search('x', [('other_id.other_name', '=', False)])
+
+
+class SemTokensRecordValues(models.Model):
+    _inherit = 'sem.tokens.usage'
+
+    def _record_values(self, values):
+        # The keys of the values given to create, write or update name fields of the model they are called on
+        self.create({'name': 'other_id'})
+        self.create([{'other_id': False}, {'total': 0}])
+        self.create([{'name': value} for value in values])
+        self.write({'other_id': False})
+        self.update({'total': 0})
+        self.env['sem.tokens.other'].create({'other_name': 'x'})
+        # `write` takes no list of values, and the update of a dict names nothing
+        self.write([{'name': 'x'}])
+        return {}.update({'name': 'x'})
+
+    def _record_values_keywords(self):
+        # The values given by keyword name fields too
+        self.create(vals_list=[{'name': 'x'}])
+        self.write(vals={'other_id': False})
+        return self.update(values={'total': 0})

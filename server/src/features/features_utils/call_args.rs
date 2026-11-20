@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use ruff_python_ast::{Arguments, Expr, ExprCall, ExprStringLiteral};
+use ruff_python_ast::{Arguments, Expr, ExprCall, ExprDict, ExprStringLiteral};
 use ruff_text_size::Ranged;
 use crate::core::symbols::symbol_keys::{ModelSymbolKey, ModuleKey, SymbolKey, VariableKey};
 use crate::core::symbols::storage::SymbolTable;
@@ -14,6 +14,7 @@ use crate::threads::SessionInfo;
 use super::api_decorators::{classify_api_decorator, find_decorator_arg_symbols};
 use super::field_params::{resolve_field_param, FieldParam};
 use super::field_paths;
+use super::model_members;
 use super::order;
 use super::string_resolution::{SegmentPick, StringResolution};
 
@@ -147,6 +148,10 @@ pub enum SpecialArg {
     Domain(Option<ModelSymbolKey>),
     /// An order on the model the method is called on, e.g. `search(order='name desc')`
     Order(ModelSymbolKey),
+    /// A list of field values for the model the method is called on, e.g. `create([{'name': 'x'}])`
+    RecordValuesList(ModelSymbolKey),
+    /// The field values for the model the method is called on, e.g. `write({'name': 'x'})`
+    RecordValues(ModelSymbolKey),
     /// A parameter of a field class, e.g. `fields.Char(related='partner_id.name')`
     Field(FieldParam),
 }
@@ -168,6 +173,8 @@ impl SpecialArg {
                 ParamRole::Comodel => Some(SpecialArg::Field(FieldParam::Comodel)),
                 ParamRole::InverseField => Some(SpecialArg::Field(FieldParam::InverseField)),
                 ParamRole::Selection => Some(SpecialArg::Field(FieldParam::ModelMethod)),
+                ParamRole::RecordValuesList => model.map(SpecialArg::RecordValuesList),
+                ParamRole::RecordValues => model.map(SpecialArg::RecordValues),
             };
         }
         // Field classes take most parameters through `**kwargs`, so use the keyword name
@@ -189,7 +196,32 @@ impl SpecialArg {
                 matches!(value, Expr::StringLiteral(value_string) if value_string.range == string.range)
             }
             SpecialArg::Field(field_param) => field_param.is_in_value(value, string),
+            // A key of a dict of values, not a value
+            SpecialArg::RecordValuesList(_) | SpecialArg::RecordValues(_) => {
+                self.values_dicts(value).iter().any(|dict| {
+                    dict.iter_keys().flatten().any(|key| {
+                        matches!(key, Expr::StringLiteral(key_string) if key_string.range == string.range)
+                    })
+                })
+            }
         }
+    }
+
+    /// The dicts of field values in `value`, for `RecordValuesList` and `RecordValues`.
+    pub fn values_dicts(self, value: &Expr) -> Vec<&ExprDict> {
+        let items: Vec<&Expr> = match (self, value) {
+            (SpecialArg::RecordValuesList(_), Expr::List(list)) => list.elts.iter().collect(),
+            (SpecialArg::RecordValuesList(_), Expr::ListComp(list_comp)) => vec![&list_comp.elt],
+            (SpecialArg::RecordValuesList(_) | SpecialArg::RecordValues(_), _) => vec![value],
+            _ => vec![],
+        };
+        items
+            .into_iter()
+            .filter_map(|item| match item {
+                Expr::Dict(dict) => Some(dict),
+                _ => None,
+            })
+            .collect()
     }
 
     /// Cheap check if the given `name` can be a keyword argument with a special value in odoo context.
@@ -314,6 +346,13 @@ fn resolve_string_argument(
         Some(SpecialArg::Field(field_param)) => {
             resolve_field_param(session, scope, from_module, string, call_expr, field_param, pick)
         },
+        Some(SpecialArg::RecordValuesList(model)) | Some(SpecialArg::RecordValues(model)) =>
+            StringResolution::from_members(
+                model_members::find_fields(session, model, from_module, string.value.to_str())
+                    .into_iter()
+                    .map(|symbol| (symbol, string.range))
+                    .collect()
+            ),
         Some(SpecialArg::Domain(None)) | None => None,
     }
 }
