@@ -1522,8 +1522,12 @@ impl SymbolTable {
             let next_ref_weak_instance = next_ref_weak.instance;
             match sym_key {
                 SymbolKey::Variable(v) => {
-                    // let sym = sym_key.borrow();
-                    // let var = sym.as_variable();
+                    if session.st()[v].evaluations.is_empty() && session.st()[v].name != "__all__" && can_eval_external {
+                        //no evaluation? let's check that the file has been evaluated
+                        if let Some(file_symbol) = session.st().get_file(sym_key) {
+                            BuildScheduler::build_now(session, file_symbol, BuildSteps::ARCH_EVAL);
+                        }
+                    }
                     let var = &session.st()[v];
                     if (stop_on_type && matches!(next_ref_weak.is_instance(), Some(false)) && !var.is_import_variable) ||
                         (stop_on_value && var.evaluations.len() == 1 && var.evaluations[0].value.is_some()) ||
@@ -1537,12 +1541,6 @@ impl SymbolTable {
                             results.push(current_eval);
                             continue;
                         }
-                    if var.evaluations.is_empty() && var.name != "__all__" && can_eval_external {
-                        //no evaluation? let's check that the file has been evaluated
-                        if let Some(file_symbol) = session.st().get_file(sym_key) {
-                            BuildScheduler::build_now(session, file_symbol, BuildSteps::ARCH_EVAL);
-                        }
-                    }
                     let next_sym_refs = Self::next_refs_variable(session, v, context, &next_ref_weak.context);
                     if next_sym_refs.is_empty() {
                         // keep current evaluation

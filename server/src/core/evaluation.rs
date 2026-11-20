@@ -31,9 +31,9 @@ use super::symbols::symbol_mgr::SectionIndex;
 pub enum EvaluationValue {
     ANY(), //we don't know what it is, so it can be everything !
     CONSTANT(Box<ruff_python_ast::Expr>), //expr is a literal
-    DICT(Vec<(ruff_python_ast::Expr, ruff_python_ast::Expr)>), //expr is a literal
-    LIST(Vec<ruff_python_ast::Expr>), //expr is a literal
-    TUPLE(Vec<ruff_python_ast::Expr>) //expr is a literal
+    DICT(Vec<(ruff_python_ast::Expr, ruff_python_ast::Expr)>), //exprs pass `is_constant_expr`
+    LIST(Vec<ruff_python_ast::Expr>), //exprs pass `is_constant_expr`
+    TUPLE(Vec<ruff_python_ast::Expr>) //exprs pass `is_constant_expr`
 }
 
 impl EvaluationValue {
@@ -89,6 +89,20 @@ impl EvaluationValue {
             EvaluationValue::TUPLE(t) => t,
             _ => panic!("Not a tuple")
         }
+    }
+}
+
+/// Returns whether `expr` is a literal, or a list, tuple or dict holding only literals, at any depth.
+/// e.g.
+/// `[("draft", "Draft")]` is one, `[("draft", name)]` isn't.
+fn is_constant_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::List(list) => list.elts.iter().all(is_constant_expr),
+        Expr::Tuple(tuple) => tuple.elts.iter().all(is_constant_expr),
+        Expr::Dict(dict) => dict.iter().all(|item| {
+            item.key.as_ref().is_some_and(is_constant_expr) && is_constant_expr(&item.value)
+        }),
+        _ => expr.is_literal_expr(),
     }
 }
 
@@ -593,54 +607,37 @@ impl Evaluation {
         (analyze_result.evaluations, analyze_result.diagnostics)
     }
 
+    pub fn expr_to_const(session: &mut SessionInfo, expr: &Expr, parent: SymbolKey, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diagnostic>) -> Option<EvaluationValue> {
+        let (evaluations, eval_diagnostics) = Self::eval_from_ast(
+            session, expr, parent, max_infer, for_annotation, &mut vec![]
+        );
+        diagnostics.extend_from_slice(&eval_diagnostics);
+        let [evaluation] = evaluations.as_slice() else {
+            return None;
+        };
+        evaluation.follow_ref_and_get_value(session, None, diagnostics)
+    }
+
     /* Given an Expr, try to return the represented String. None if it can't be achieved */
-    pub fn expr_to_str(session: &mut SessionInfo, ast: &Expr, parent: SymbolKey, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diagnostic>) -> (Option<String>, Vec<Diagnostic>) {
-        let from_module;
-        if let Some(module) = session.sync_odoo.symbol_table.find_module(parent) {
-            from_module = ContextValue::MODULE(module.into());
-        } else {
-            from_module = ContextValue::BOOLEAN(false);
-        }
-        let mut context = Context::from_iter([
-            (ContextKey::Module, from_module),
-            (ContextKey::Range, ContextValue::RANGE(ast.range()))
-        ]);
-        let value = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context, for_annotation, &mut vec![]);
-        if value.evaluations.len() == 1 { //only handle strict evaluations
-            let eval = &value.evaluations[0];
-            let v = eval.follow_ref_and_get_value(session, None, diagnostics);
-            if let Some(v) = v
-                && let EvaluationValue::CONSTANT(v) = v
-                    && let Expr::StringLiteral(s) = *v {
-                        return (Some(s.value.to_string()), value.diagnostics);
-                    }
-        }
-        (None, value.diagnostics)
+    pub fn expr_to_str(session: &mut SessionInfo, ast: &Expr, parent: SymbolKey, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diagnostic>) -> Option<String> {
+        if let Some(v) = Evaluation::expr_to_const(session, ast, parent, max_infer, for_annotation, diagnostics)
+            && let EvaluationValue::CONSTANT(v) = v
+            && let Expr::StringLiteral(s) = *v
+            {
+                return Some(s.value.to_string());
+            }
+        None
     }
 
     /* Given an Expr, try to return the represented Boolean. None if it can't be achieved */
-    pub fn expr_to_bool(session: &mut SessionInfo, ast: &Expr, parent: SymbolKey, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diagnostic>) -> (Option<bool>, Vec<Diagnostic>) {
-        let from_module;
-        if let Some(module) = session.sync_odoo.symbol_table.find_module(parent) {
-            from_module = ContextValue::MODULE(module.into());
-        } else {
-            from_module = ContextValue::BOOLEAN(false);
-        }
-        let mut context = Context::from_iter([
-            (ContextKey::Module, from_module),
-            (ContextKey::Range, ContextValue::RANGE(ast.range()))
-        ]);
-        let value = Evaluation::analyze_ast(session, &ExprOrIdent::Expr(ast), parent, max_infer, &mut context, for_annotation, &mut vec![]);
-        if value.evaluations.len() == 1 { //only handle strict evaluations
-            let eval = &value.evaluations[0];
-            let v = eval.follow_ref_and_get_value(session, None, diagnostics);
-            if let Some(v) = v
-                && let EvaluationValue::CONSTANT(v) = v
-                    && let Expr::BooleanLiteral(s) = *v {
-                        return (Some(s.value), value.diagnostics);
-                    }
-        }
-        (None, value.diagnostics)
+    pub fn expr_to_bool(session: &mut SessionInfo, ast: &Expr, parent: SymbolKey, max_infer: &TextSize, for_annotation: bool, diagnostics: &mut Vec<Diagnostic>) -> Option<bool> {
+        if let Some(v) = Evaluation::expr_to_const(session, ast, parent, max_infer, for_annotation, diagnostics)
+            && let EvaluationValue::CONSTANT(v) = v
+            && let Expr::BooleanLiteral(s) = *v
+            {
+                return Some(s.value);
+            }
+        None
     }
 
 
@@ -712,7 +709,7 @@ impl Evaluation {
                             diagnostics.extend(diags);
                         }
                     }
-                    if all_values && e.is_literal_expr() {
+                    if all_values && is_constant_expr(e) {
                         values.push(e.clone());
                     } else {
                         values = Vec::new();
@@ -734,7 +731,7 @@ impl Evaluation {
                             diagnostics.extend(diags);
                         }
                     }
-                    if all_values && e.is_literal_expr() {
+                    if all_values && is_constant_expr(e) {
                         values.push(e.clone());
                     } else {
                         values = Vec::new();
@@ -776,7 +773,7 @@ impl Evaluation {
                                     diagnostics.extend(diags);
                                 }
                             }
-                            if all_values && key.is_literal_expr() && dict_value.is_literal_expr() {
+                            if all_values && is_constant_expr(key) && is_constant_expr(dict_value) {
                                 values.push((key.clone(), dict_value.clone()));
                             } else {
                                 all_values = false;
@@ -1215,7 +1212,6 @@ impl Evaluation {
                 }
                 let bases = SymbolTable::follow_ref(base, session, None, false, false, None, None);
                 let value = Evaluation::expr_to_str(session, &sub.slice, parent, max_infer, false, &mut diagnostics);
-                diagnostics.extend(value.1);
                 for base in bases.iter() {
                     match base {
                         EvaluationSymbolPtr::WEAK(base_sym_weak_eval) if base_sym_weak_eval.instance == Some(false) => {
@@ -1263,7 +1259,7 @@ impl Evaluation {
                         };
                         for get_item_eval in evaluations.clone() {
                             if let Some(hook) = get_item_eval.symbol.get_symbol_hook.as_ref() {
-                                if let Some(value) = &value.0 {
+                                if let Some(value) = &value {
                                     context.insert(ContextKey::Args, ContextValue::STRING(value.clone()));
                                 }
                                 let old_range = context.remove(ContextKey::Range);
