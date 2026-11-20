@@ -393,6 +393,21 @@ static arch_eval_function_hooks: LazyLock<Vec<PythonArchEvalFunctionHook>> = Laz
         PythonArchEvalHooks::mark_params(odoo, symbol, &[ParamRole::Domain]);
     }},
     PythonArchEvalFunctionHook {odoo_entry: true,
+                        tree: vec![((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "search"])),
+                        ((18, 1), (999, 0), (&["odoo", "orm", "models"], &["BaseModel", "search"])),
+                        ((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "search_fetch"])),
+                        ((18, 1), (999, 0), (&["odoo", "orm", "models"], &["BaseModel", "search_fetch"])),
+                        ((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "search_read"])),
+                        ((18, 1), (999, 0), (&["odoo", "orm", "models"], &["BaseModel", "search_read"])),
+                        ((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "_search"])),
+                        ((18, 1), (999, 0), (&["odoo", "orm", "models"], &["BaseModel", "_search"])),
+                        ((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "_name_search"])),
+                        ((0, 0), (999, 0), (&["odoo", "addons", "web", "models", "models"], &["Base", "web_search_read"]))],
+                        if_exist_only: true,
+                        func: |odoo: &mut SyncOdoo, _entry_point: EntryPointKey, symbol: FunctionKey| {
+        PythonArchEvalHooks::mark_params(odoo, symbol, &[ParamRole::Order]);
+    }},
+    PythonArchEvalFunctionHook {odoo_entry: true,
                         tree: vec![((0, 0), (18, 1), (&["odoo", "models"], &["BaseModel", "browse"])),
                         ((18, 1), (999, 0), (&["odoo", "orm", "models"], &["BaseModel", "browse"]))],
                         if_exist_only: true,
