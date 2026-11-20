@@ -2,6 +2,8 @@ name: CI
 
 on:
   pull_request:
+  push:
+    branches: [release, alpha, alpha-1.7.0]
 
 permissions: {}
 
@@ -39,6 +41,18 @@ jobs:
         with:
           toolchain: ${{ steps.msrv.outputs.version }}
           components: clippy
+
+      # rust-cache hashes every installed toolchain, and the image's preinstalled stable changes weekly
+      - name: Remove other Rust toolchains
+        env:
+          MSRV: ${{ steps.msrv.outputs.version }}
+        run: rustup toolchain list --quiet | grep -v "^${MSRV}-" | xargs -r -n1 rustup toolchain uninstall
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+          save-if: ${{ github.event_name == 'push' }}
 
       - name: Fetch dependencies
         run: cargo fetch --target x86_64-unknown-linux-gnu
