@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString};
+use odoo_ls_server::core::diagnostics::{DIAGNOSTIC_INFOS, DiagnosticCode, DiagnosticSetting};
 use odoo_ls_server::utils::PathSanitizer;
 
 use crate::{setup::setup::*, test_utils::diag_on_line};
@@ -27,6 +28,7 @@ pub mod ols03011_search_methods;
 pub mod ols03014_record_values;
 pub mod ols03028;
 pub mod ols03029;
+pub mod ols03030_selection_values;
 pub mod ols03301;
 pub mod ols03302;
 pub mod ols04000_1_to_20;
@@ -38,7 +40,7 @@ pub mod panic_super_arg;
 
 /// Returns the failures of `cases` in `file` of `module_for_diagnostics/models`.
 /// Each case is a statement as written, found by its line, then the expected code and the text it
-/// points at if invalid, as the only Error of that line.
+/// points at if invalid, as the only diagnostic of that line, with the code's default severity.
 pub(crate) fn case_failures(file: &str, cases: &[(&str, Option<(&str, &str)>)]) -> Vec<String> {
     let (mut odoo, config) = setup_server(true);
     let mut session = create_init_session(&mut odoo, config);
@@ -68,7 +70,7 @@ pub(crate) fn case_failures(file: &str, cases: &[(&str, Option<(&str, &str)>)]) 
             None => found.is_empty(),
             Some((code, pointed)) => matches!(found.as_slice(), [diagnostic]
                 if matches!(&diagnostic.code, Some(NumberOrString::String(c)) if c == code)
-                && diagnostic.severity == Some(DiagnosticSeverity::ERROR)
+                && diagnostic.severity == default_severity(code)
                 && pointed_text(diagnostic, text) == Some(pointed)),
         };
         if !as_expected {
@@ -80,6 +82,18 @@ pub(crate) fn case_failures(file: &str, cases: &[(&str, Option<(&str, &str)>)]) 
         }
     }
     failures
+}
+
+/// The severity `code` has by default.
+fn default_severity(code: &str) -> Option<DiagnosticSeverity> {
+    let code = code.parse::<DiagnosticCode>().ok()?;
+    match DIAGNOSTIC_INFOS[&code].default_setting {
+        DiagnosticSetting::Error => Some(DiagnosticSeverity::ERROR),
+        DiagnosticSetting::Warning => Some(DiagnosticSeverity::WARNING),
+        DiagnosticSetting::Info => Some(DiagnosticSeverity::INFORMATION),
+        DiagnosticSetting::Hint => Some(DiagnosticSeverity::HINT),
+        DiagnosticSetting::Disabled => None,
+    }
 }
 
 /// The text of `line` under a diagnostic, if the diagnostic is on that line only.

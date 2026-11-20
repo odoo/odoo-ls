@@ -32,6 +32,7 @@ fn test_completions() {
     test_selection_field_method_completion(&mut session);
     test_domain_operator_completion(&mut session);
     test_call_argument_completion(&mut session);
+    test_selection_value_completion(&mut session);
     test_init_storage_kwarg_method_completion(&mut session);
     test_magic_field_comodel_completion(&mut session);
     test_order_completion_with_escape(&mut session);
@@ -244,6 +245,42 @@ fn test_call_argument_completion(session: &mut SessionInfo) {
         }
     }
     assert!(failures.is_empty(), "call argument completion:\n{}", failures.join("\n"));
+}
+
+/// The value of a Selection field given to `create`, `write` or `update` is completed by the field's
+/// values, merged from every class of the model
+fn test_selection_value_completion(session: &mut SessionInfo) {
+    let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
+    let test_file = test_addons_path.join("module_1").join("models").join("selection_model.py").sanitize();
+    let content = std::fs::read_to_string(&test_file).expect("Test file does not exist");
+
+    let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
+        panic!("Failed to get file symbol");
+    };
+
+    let mut failures = vec![];
+    // (text right before the cursor, labels that must be offered, labels that must not)
+    let cases: [(&str, &[&str], &[&str]); 4] = [
+        // The values of the declaration, and of `selection_add` in an extension
+        (r#"self.write({"literal": ""#, &["a", "b", "c"], &[]),
+        (r#"self.write({"keyword": ""#, &["a"], &["b", "c"]),
+        // The values of an imported constant
+        (r#"self.create({"imported_constant": ""#, &["imported", "kept"], &["a"]),
+        // Odoo builds the values of a method at runtime
+        (r#"self.update({"method": ""#, &[], &["a"]),
+    ];
+    for (before_cursor, offered, not_offered) in cases {
+        let (line, text) = content.lines().enumerate().find(|(_, text)| text.contains(before_cursor)).unwrap();
+        let character = (text.find(before_cursor).unwrap() + before_cursor.len()) as u32;
+        let labels = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, line as u32, character));
+        let missing: Vec<_> = offered.iter().filter(|label| !labels.iter().any(|l| l == *label)).collect();
+        let unexpected: Vec<_> = not_offered.iter().filter(|label| labels.iter().any(|l| l == *label)).collect();
+        if !missing.is_empty() || !unexpected.is_empty() {
+            failures.push(format!("after `{before_cursor}`: missing {missing:?}, unexpected {unexpected:?}"));
+        }
+    }
+    assert!(failures.is_empty(), "selection value completion:\n{}", failures.join("\n"));
 }
 
 /// The operators offered in a domain leaf depend on the Odoo version.
