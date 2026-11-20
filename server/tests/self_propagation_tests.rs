@@ -2,7 +2,7 @@ use std::path::Path;
 
 use odoo_ls_server::{core::{odoo::SyncOdoo, symbols::{symbol_keys::SymbolKey, storage::SymbolTable}}, utils::PathSanitizer};
 
-use crate::common;
+mod common;
 
 #[test]
 fn test_model_subscription() {
