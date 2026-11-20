@@ -1,4 +1,4 @@
-# Values of the Selection fields given to `create`, `write` and `update`, asserted by
+# Values of the Selection fields given to `create`, `write` and `update`, or compared in domains, asserted by
 # tests/diagnostics/ols03030_selection_values.rs: one case per call, found by its line, which must stay unique
 # and ASCII-only.
 from odoo import fields, models
@@ -38,6 +38,20 @@ class SelectionValuesRecord(models.Model):
         self.write({'state': False, 'added_state': value})
         # Not a Selection field
         self.write({'name': 'unknown_name'})
+
+    def selection_domains(self):
+        self.search([('state', '=', 'draft')])
+        self.search([('state', '=', 'unknown_domain')])
+        self.search([('state', 'in', ['done', 'unknown_in'])])
+        self.search([('state', 'not in', ('draft', 'unknown_not_in'))])
+        # A path through a relational field
+        self.search([('parent_id.state', '!=', 'unknown_path')])
+        # A path through a non relational field
+        self.search([('state.name', '=', 'unknown_after_selection')])
+        # Only the operators comparing values are checked
+        self.search([('state', 'ilike', 'unknown_ilike')])
+        # Odoo builds the values of a method at runtime
+        self.search([('method_state', '=', 'unknown_method_domain')])
 
 
 class SelectionValuesExtension(models.Model):

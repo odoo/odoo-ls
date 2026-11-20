@@ -17,6 +17,7 @@ class SelectionModel(models.Model):
     function = fields.Selection(lambda self: [("a", "A")])
     non_string_key = fields.Selection([(1, "One")])
     reference = fields.Reference(selection=[("res.partner", "Partner")])
+    parent_id = fields.Many2one("pygls.tests.selection_model")
 
     def _get_values(self):
         return [("a", "A")]
@@ -27,6 +28,13 @@ class SelectionModel(models.Model):
         self.write({"keyword": "a"})
         self.create({"imported_constant": "imported"})
         self.update({"method": "a"})
+
+    def _search_values(self):
+        # The values of the Selection fields compared in domains
+        self.search([("literal", "=", "a")])
+        self.search([("keyword", "in", ["a", "a"])])
+        self.search([("parent_id.literal", "!=", "a")])
+        self.search([("literal", "ilike", "a")])
 
 
 class SelectionModelExtension(models.Model):

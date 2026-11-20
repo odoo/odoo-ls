@@ -261,7 +261,7 @@ fn test_selection_value_completion(session: &mut SessionInfo) {
 
     let mut failures = vec![];
     // (text right before the cursor, labels that must be offered, labels that must not)
-    let cases: [(&str, &[&str], &[&str]); 4] = [
+    let cases: [(&str, &[&str], &[&str]); 8] = [
         // The values of the declaration, and of `selection_add` in an extension
         (r#"self.write({"literal": ""#, &["a", "b", "c"], &[]),
         (r#"self.write({"keyword": ""#, &["a"], &["b", "c"]),
@@ -269,6 +269,12 @@ fn test_selection_value_completion(session: &mut SessionInfo) {
         (r#"self.create({"imported_constant": ""#, &["imported", "kept"], &["a"]),
         // Odoo builds the values of a method at runtime
         (r#"self.update({"method": ""#, &[], &["a"]),
+        // The values compared in a domain, alone or in a list, at the end of a path
+        (r#"self.search([("literal", "=", ""#, &["a", "b", "c"], &[]),
+        (r#"self.search([("keyword", "in", ["a", ""#, &["a"], &["b", "c"]),
+        (r#"self.search([("parent_id.literal", "!=", ""#, &["a", "b", "c"], &[]),
+        // Only the operators comparing values
+        (r#"self.search([("literal", "ilike", ""#, &[], &["a", "b"]),
     ];
     for (before_cursor, offered, not_offered) in cases {
         let (line, text) = content.lines().enumerate().find(|(_, text)| text.contains(before_cursor)).unwrap();

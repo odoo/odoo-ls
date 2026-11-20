@@ -1,6 +1,6 @@
 use super::case_failures;
 
-/// Test OLS03030 on the values of Selection fields given to `create`, `write` and `update`.
+/// Test OLS03030 on the values of Selection fields given to `create`, `write` and `update`, or compared in domains.
 /// Each case is a call of `selection_values.py`, found by its line.
 #[test]
 fn test_ols03030_selection_values() {
@@ -22,6 +22,15 @@ fn test_ols03030_selection_values() {
         ("self.write({'state': False, 'added_state': value})", None),
         // Not a Selection field
         ("self.write({'name': 'unknown_name'})", None),
+        // Domains
+        ("self.search([('state', '=', 'draft')])", None),
+        ("self.search([('state', '=', 'unknown_domain')])", Some(("OLS03030", "'unknown_domain'"))),
+        ("self.search([('state', 'in', ['done', 'unknown_in'])])", Some(("OLS03030", "'unknown_in'"))),
+        ("self.search([('state', 'not in', ('draft', 'unknown_not_in'))])", Some(("OLS03030", "'unknown_not_in'"))),
+        ("self.search([('parent_id.state', '!=', 'unknown_path')])", Some(("OLS03030", "'unknown_path'"))),
+        ("self.search([('state.name', '=', 'unknown_after_selection')])", Some(("OLS03013", "'state.name'"))),
+        ("self.search([('state', 'ilike', 'unknown_ilike')])", None),
+        ("self.search([('method_state', '=', 'unknown_method_domain')])", None),
     ];
     let failures = case_failures("selection_values.py", cases);
     assert!(
