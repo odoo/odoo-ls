@@ -208,6 +208,12 @@ OLS03028, DiagnosticSetting::Warning, "'{0}' is only defined through indirect in
 */
 OLS03029, DiagnosticSetting::Error, "Invalid order: {0}",
 /**
+* The value given to a Selection field is not one of its values.
+* Either the value is wrong, or the module adding it is not in the dependencies of the current module.
+* The values Odoo builds at runtime, from a method or a lambda, are not checked.
+*/
+OLS03030, DiagnosticSetting::Warning, "'{0}' is not a value of the selection field '{1}' or not in dependencies",
+/**
 * Form is no longer available on odoo.tests.common, thus it should not be imported from there.
 */
 OLS03301, DiagnosticSetting::Warning, "Deprecation Warning: Since 17.0: odoo.tests.common.Form is deprecated, use odoo.tests.Form",

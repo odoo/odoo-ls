@@ -7,6 +7,7 @@ use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use crate::core::file_mgr::FileInfoKey;
 use crate::core::import_resolver;
+use crate::core::selection::{MergedSelection, SelectionValue};
 use crate::core::python_odoo_builder::ACCESS_OPERATOR_OPTIONS;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::ModuleSymbol;
@@ -18,7 +19,7 @@ use crate::features::ast_utils::AstUtils;
 use crate::features::features_utils;
 use crate::features::features_utils::{ApiDecorator, FieldParam, OrderItem, SpecialArg};
 use crate::threads::SessionInfo;
-use crate::{Sy, S};
+use crate::{oyarn, Sy, S};
 use itertools::Itertools;
 use lsp_types::{
     CompletionContext, CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionList, CompletionResponse, MarkupContent,
@@ -50,6 +51,7 @@ pub enum ExpectedType {
     RECORD_VALUES(ModelSymbolKey), // The field values of the model, like in `write({'name': 'x'})`
     RECORD_VALUES_LIST(ModelSymbolKey), // A list (or values directly for Backwards compatibility) of field values of the model for `create`
     MODEL_FIELD(ModelSymbolKey), // A field of the model, like the keys of the values given to `write({'name': 'x'})`
+    SELECTION_VALUE(ModelSymbolKey, OYarn), // A value of the Selection field of the model, like in `write({'state': 'draft'})`
 }
 
 pub struct CompletionFeature;
@@ -519,7 +521,11 @@ fn complete_dict(session: &mut SessionInfo, file: SourceFileKey, expr_dict: &ruf
             // for _inherits completion
             let expected_type = expected_type.iter().filter_map(|e| match e {
                 ExpectedType::INHERITS => Some(ExpectedType::SIMPLE_FIELD(Some(Sy!("Many2one")))),
-                ExpectedType::RECORD_VALUES(_) | ExpectedType::RECORD_VALUES_LIST(_) => None,
+                // The value of a field given by its name
+                &ExpectedType::RECORD_VALUES(model) | &ExpectedType::RECORD_VALUES_LIST(model) => match dict_item_key {
+                    Expr::StringLiteral(field_name) => Some(ExpectedType::SELECTION_VALUE(model, oyarn!("{}", field_name.value))),
+                    _ => None,
+                },
                 _ => Some(e.clone()),
             }).collect::<Vec<_>>();
             return Some(complete_expr( &dict_item.value, session, file, offset, is_param, &expected_type));
@@ -878,6 +884,22 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
             ExpectedType::CLASS(_) => {},
             ExpectedType::INHERITS => {},
             ExpectedType::RECORD_VALUES(_) | ExpectedType::RECORD_VALUES_LIST(_) => {},
+            ExpectedType::SELECTION_VALUE(model, field_name) => {
+                // The values known, even when they aren't all known
+                if let Some(selection) = MergedSelection::from_model_field(session, *model, field_name, current_module) {
+                    for SelectionValue(key, label) in selection.values {
+                        items.push(CompletionItem {
+                            label: key.to_string(),
+                            kind: Some(lsp_types::CompletionItemKind::ENUM_MEMBER),
+                            label_details: Some(CompletionItemLabelDetails {
+                                detail: None,
+                                description: Some(label.to_string()),
+                            }),
+                            ..Default::default()
+                        });
+                    }
+                }
+            }
         }
     }
     Some(CompletionResponse::List(CompletionList {

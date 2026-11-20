@@ -53,6 +53,7 @@ pub enum XmlFieldName {
     ModelId,
     Code,
     Id,
+    Selection,
 }
 
 impl XmlFieldName {
@@ -65,6 +66,7 @@ impl XmlFieldName {
             XmlFieldName::ModelId => "model_id",
             XmlFieldName::Code => "code",
             XmlFieldName::Id => "id",
+            XmlFieldName::Selection => "selection",
         }
     }
 }
