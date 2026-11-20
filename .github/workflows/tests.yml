@@ -13,7 +13,9 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_DEV_DEBUG: 0
+  # Cargo.toml's [profile.dev.package."*"] keeps line tables in deps, and std ships its own
+  CARGO_PROFILE_DEV_STRIP: debuginfo
 
 jobs:
   tests:
