@@ -16,6 +16,7 @@ fn test_setup() {
 }
 
 #[test]
+#[ignore = "example; every setup_server(true) test already covers it"]
 fn test_start_odoo_server() {
     /* First, let's launch the server. It will setup a SyncOdoo struct, with a SyncChannel, that we can use to get the messages that the client would receive. */
     let (mut odoo, config) = setup::setup::setup_server(true);
