@@ -668,6 +668,7 @@ impl PythonArchBuilder {
                 default_value: default,
                 arg_type: ArgumentType::POS_ONLY,
                 annotation: arg.parameter.annotation.clone(),
+                role: None,
             });
         }
         for arg in parameters.args.iter() {
@@ -682,6 +683,7 @@ impl PythonArchBuilder {
                 default_value: default,
                 arg_type: ArgumentType::ARG,
                 annotation: arg.parameter.annotation.clone(),
+                role: None,
             });
         }
         if let Some(arg) = &parameters.vararg {
@@ -692,6 +694,7 @@ impl PythonArchBuilder {
                 default_value: None,
                 arg_type: ArgumentType::VARARG,
                 annotation: arg.annotation.clone(),
+                role: None,
             });
         }
         for arg in parameters.kwonlyargs.iter() {
@@ -702,6 +705,7 @@ impl PythonArchBuilder {
                 default_value: arg.default.as_ref().map(|_default| Evaluation::new_none()),
                 arg_type: ArgumentType::KWORD_ONLY,
                 annotation: arg.parameter.annotation.clone(),
+                role: None,
             });
         }
         if let Some(arg) = &parameters.kwarg {
@@ -712,6 +716,7 @@ impl PythonArchBuilder {
                 default_value: None,
                 arg_type: ArgumentType::KWARG,
                 annotation: arg.annotation.clone(),
+                role: None,
             });
         }
     }
