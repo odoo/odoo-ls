@@ -18,4 +18,11 @@
         <field name="ttype">many2one</field>
         <field name="relation">x_test_model</field> <!-- model **NAME**-->
     </record>
+    <!-- ir.model.fields record of a selection field giving its values -->
+    <record id="selection_field" model="ir.model.fields">
+        <field name="model_id" ref="xml_test_model_m2o"/>
+        <field name="name">x_state</field>
+        <field name="ttype">selection</field>
+        <field name="selection">[('draft', 'Draft'), ('done', 'Done')]</field>
+    </record>
 </odoo>

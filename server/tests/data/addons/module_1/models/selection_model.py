@@ -21,6 +21,13 @@ class SelectionModel(models.Model):
     def _get_values(self):
         return [("a", "A")]
 
+    def _write_values(self):
+        # The values of the Selection fields given to create, write or update
+        self.write({"literal": "a"})
+        self.write({"keyword": "a"})
+        self.create({"imported_constant": "imported"})
+        self.update({"method": "a"})
+
 
 class SelectionModelExtension(models.Model):
     _inherit = "pygls.tests.selection_model"

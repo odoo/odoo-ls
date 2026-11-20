@@ -10,6 +10,8 @@ class DemoModel(models.Model):
         # The values of a model defined in XML only: its XML fields and the fields of BaseModel
         self.env["x_test_model_m2o"].create({"x_name": "x", "x_other_model": False, "display_name": "x"})
         self.env["x_test_model_m2o"].write({"x_unknown_field": "x"}) # OLS03014
+        # More values of a selection field defined in XML can come from other records, so a value isn't checked
+        self.env["x_test_model_m2o"].write({"x_state": "unknown_state"})
         # The fields of the delegated model are fields of the delegating model
         self.env["x_delegating_model"].create({"own_field": "x", "parent_only_field": "x", "parent_id": False})
         self.env["x_delegating_model"].write({"x_unknown_field": "x"}) # OLS03014
