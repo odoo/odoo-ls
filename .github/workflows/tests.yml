@@ -43,7 +43,6 @@ jobs:
       - name: Clippy
         run: cargo clippy --no-default-features --all-targets -- -D warnings
 
-      # odoo-ls loads only odoo/; tsserver reads addons/web from disk
       - name: Checkout Odoo
         uses: actions/checkout@v6
         with:
@@ -51,9 +50,13 @@ jobs:
           ref: master
           path: community
           persist-credentials: false
+          sparse-checkout-cone-mode: false
+          # the only addons we need are base and web (tsserver reads web from disk)
           sparse-checkout: |
-            odoo
-            addons/web
+            /odoo/
+            !/odoo/addons/*/
+            /odoo/addons/base/
+            /addons/web/
 
       - name: Install TypeScript
         run: npm install --global typescript@6
