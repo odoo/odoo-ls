@@ -3,6 +3,7 @@ use crate::{
     core::{
         evaluation::{Evaluation, EvaluationValue},
         evaluation_context::{Context, ContextKey, ContextValue},
+        evaluation_utils::DeepFieldEvalWalker,
         python_arch_eval::PythonArchEval,
         symbols::{
             SymbolTable,
@@ -17,6 +18,9 @@ use crate::{
 
 use ruff_python_ast::Expr;
 use ruff_text_size::TextSize;
+
+/// Domain operators testing whether a field equals one of the values, e.g. `('state', 'in', ['draft'])`.
+pub const EQUALITY_OPERATORS: [&str; 4] = ["=", "!=", "in", "not in"];
 
 /// `(key, label)`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -83,25 +87,19 @@ pub struct MergedSelection {
 }
 
 impl MergedSelection {
-    /// Returns `None` if `field_name` isn't a Selection field.
-    pub fn from_model_field(
+    /// Returns `None` if `path` (e.g. `state` or `partner_id.state`) isn't a Selection field.
+    pub fn from_field_path(
         session: &mut SessionInfo,
         model: ModelSymbolKey,
-        field_name: &str,
+        path: &str,
         from_module: Option<ModuleKey>,
     ) -> Option<Self> {
-        let declarations = SymbolTable::get_member_symbol(
-            session,
-            model.into(),
-            field_name,
-            from_module,
-            false,
-            true,
-            false,
-            true,
-            false,
-        )
-        .0;
+        let mut walker = DeepFieldEvalWalker::new(model.into(), from_module);
+        let mut declarations = vec![];
+        for name in path.split('.') {
+            let model = walker.get_model_symbol(session)?;
+            declarations = walker.get_model_fields(session, model, name);
+        }
         Self::from_declarations(session, &declarations, from_module, &mut HashSet::default())
     }
 

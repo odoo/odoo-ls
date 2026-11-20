@@ -24,6 +24,7 @@ use std::cmp::{max, min};
 use crate::utils::{HashMap, HashSet};
 
 use super::file_mgr::FileMgr;
+use super::selection::{self, MergedSelection};
 use super::symbols::function_symbol::{Argument, ArgumentType};
 use super::symbols::symbol_mgr::SectionIndex;
 
@@ -2027,6 +2028,35 @@ impl Evaluation {
                 ),
                 ..diagnostic_base
             });
+        }
+        // A string value of a Selection field must be one of its values, when they're all known
+        if let Some(model) = model
+            && let Expr::StringLiteral(path) = elt1
+            && let Expr::StringLiteral(operator) = elt2
+            && selection::EQUALITY_OPERATORS.contains(&operator.value.to_str())
+            && let Some(selection) =
+                MergedSelection::from_field_path(session, model, path.value.to_str(), from_module)
+            && selection.complete
+        {
+            let values = match elt3 {
+                Expr::List(list) => list.elts.as_slice(),
+                Expr::Tuple(tuple) => tuple.elts.as_slice(),
+                value => std::slice::from_ref(value),
+            };
+            for value in values.iter().filter_map(Expr::as_string_literal_expr) {
+                if !selection.contains(value.value.to_str())
+                    && let Some(diagnostic_base) = create_diagnostic(
+                        session,
+                        DiagnosticCode::OLS03030,
+                        &[value.value.to_str(), path.value.to_str()],
+                    )
+                {
+                    diagnostics.push(Diagnostic {
+                        range: FileMgr::textRange_to_temporary_Range(&value.range()),
+                        ..diagnostic_base
+                    });
+                }
+            }
         }
     }
 

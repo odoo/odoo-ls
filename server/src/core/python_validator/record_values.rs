@@ -54,7 +54,7 @@ pub(crate) fn validate_record_values_arg(
             }
             // A string value of a Selection field must be one of its values, when they're all known
             if let Expr::StringLiteral(value) = &item.value
-                && let Some(selection) = MergedSelection::from_model_field(
+                && let Some(selection) = MergedSelection::from_field_path(
                     session,
                     model,
                     field_name.value.to_str(),

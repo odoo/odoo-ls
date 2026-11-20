@@ -7,7 +7,7 @@ use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
 use crate::core::evaluation_utils::DeepFieldEvalWalker;
 use crate::core::file_mgr::FileInfoKey;
 use crate::core::import_resolver;
-use crate::core::selection::{MergedSelection, SelectionValue};
+use crate::core::selection::{self, MergedSelection, SelectionValue};
 use crate::core::python_odoo_builder::ACCESS_OPERATOR_OPTIONS;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::ModuleSymbol;
@@ -51,7 +51,7 @@ pub enum ExpectedType {
     RECORD_VALUES(ModelSymbolKey), // The field values of the model, like in `write({'name': 'x'})`
     RECORD_VALUES_LIST(ModelSymbolKey), // A list (or values directly for Backwards compatibility) of field values of the model for `create`
     MODEL_FIELD(ModelSymbolKey), // A field of the model, like the keys of the values given to `write({'name': 'x'})`
-    SELECTION_VALUE(ModelSymbolKey, OYarn), // A value of the Selection field of the model, like in `write({'state': 'draft'})`
+    SELECTION_VALUE(ModelSymbolKey, OYarn), // A value of the Selection field at a path of the model, like in `write({'state': 'draft'})` or `[('partner_id.state', '=', 'draft')]`
 }
 
 pub struct CompletionFeature;
@@ -884,9 +884,9 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
             ExpectedType::CLASS(_) => {},
             ExpectedType::INHERITS => {},
             ExpectedType::RECORD_VALUES(_) | ExpectedType::RECORD_VALUES_LIST(_) => {},
-            ExpectedType::SELECTION_VALUE(model, field_name) => {
+            ExpectedType::SELECTION_VALUE(model, path) => {
                 // The values known, even when they aren't all known
-                if let Some(selection) = MergedSelection::from_model_field(session, *model, field_name, current_module) {
+                if let Some(selection) = MergedSelection::from_field_path(session, *model, path, current_module) {
                     for SelectionValue(key, label) in selection.values {
                         items.push(CompletionItem {
                             label: key.to_string(),
@@ -1028,21 +1028,14 @@ fn complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, list_o
                                 }]
                             }))
                         }
-                let mut access_op = false;
                 for (index, expr) in list_or_tuple_elts.iter().enumerate() {
-                    access_op |= index == 1
-                        && session.sync_odoo.version >= (19, 3)
-                        && expr
-                            .as_string_literal_expr()
-                            .map(|expr_string_literal| {
-                                expr_string_literal.value.to_str() == "access"
-                            })
-                            .unwrap_or(false);
                     if offset > expr.range().start().to_usize() && offset <= expr.range().end().to_usize() {
                         let expected_type = match index {
                             0 => vec![ExpectedType::DOMAIN_FIELD(parent)],
                             1 => vec![ExpectedType::DOMAIN_COMPARATOR],
-                            2 if access_op => vec![ExpectedType::DOMAIN_ACCESS_VALUE],
+                            2 => domain_value_type(session, parent, list_or_tuple_elts)
+                                .into_iter()
+                                .collect(),
                             _ => vec![],
                         };
                         return complete_expr(expr, session, file, offset, is_param, &expected_type);
@@ -1071,6 +1064,22 @@ fn complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, list_o
                     );
                 }
             }
+            ExpectedType::SELECTION_VALUE(..) => {
+                // Each item is a value, e.g. with `in`
+                if let Some(expr) = list_or_tuple_elts.iter().find(|expr| {
+                    offset > expr.range().start().to_usize()
+                        && offset <= expr.range().end().to_usize()
+                }) {
+                    return complete_expr(
+                        expr,
+                        session,
+                        file,
+                        offset,
+                        is_param,
+                        std::slice::from_ref(expected_type),
+                    );
+                }
+            }
             &ExpectedType::RECORD_VALUES_LIST(model) => {
                 // Each item is a dict of values
                 if let Some(expr) = list_or_tuple_elts.iter().find(|expr| {
@@ -1096,6 +1105,25 @@ fn complete_list_or_tuple(session: &mut SessionInfo, file: SourceFileKey, list_o
         return complete_expr( expr, session, file, offset, is_param, expected_type);
     }
     None
+}
+
+/// Returns the expected type of the value of the domain leaf `(path, operator, value)` on `model`.
+fn domain_value_type(
+    session: &SessionInfo,
+    model: SymbolKey,
+    leaf: &[Expr],
+) -> Option<ExpectedType> {
+    match leaf.get(1)?.as_string_literal_expr()?.value.to_str() {
+        "access" if session.sync_odoo.version >= (19, 3) => Some(ExpectedType::DOMAIN_ACCESS_VALUE),
+        operator if selection::EQUALITY_OPERATORS.contains(&operator) => {
+            let path = leaf.first()?.as_string_literal_expr()?;
+            Some(ExpectedType::SELECTION_VALUE(
+                model.as_model_symbol_key()?,
+                oyarn!("{}", path.value),
+            ))
+        }
+        _ => None,
+    }
 }
 
 fn complete_slice(session: &mut SessionInfo, file: SourceFileKey, expr_slice: &ExprSlice, offset: usize, is_param: bool, expected_type: &[ExpectedType]) -> Option<CompletionResponse> {
