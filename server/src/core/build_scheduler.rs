@@ -1,15 +1,86 @@
-use std::{path::Path, sync::atomic::Ordering};
+use std::{collections::hash_map, path::Path, sync::atomic::Ordering};
 
 use lsp_types::MessageType;
 use tracing::{error, info, trace};
 
-use crate::{S, constants::{BuildStatus, BuildSteps, DEBUG_REBUILD_NOW, DEBUG_STEPS, DEBUG_THREADS, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::{csv_validation::CsvValidator, entry_point::EntryPointKey, import_resolver::ImportCache, js_validator::JsValidator, odoo::{InitState, OdooNotification}, python_arch_builder::PythonArchBuilder, python_arch_eval::PythonArchEval, python_validator::PythonValidator, symbols::{SymbolTable, symbol_keys::{BuildableSymbolKey, SymbolKey}, symbol_table_impl::CreateError}, xml_validation::XmlValidator}, fifo_ptr_weak_hash_set::FifoWeakHashSet, progress_reporter::ProgressReporterRemaining, threads::SessionInfo, tree::Tree, utils::HashSet};
+use crate::{S, constants::{BuildStatus, BuildSteps, DEBUG_REBUILD_NOW, DEBUG_STEPS, DEBUG_THREADS, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::{csv_validation::CsvValidator, entry_point::EntryPointKey, import_resolver::ImportCache, js_validator::JsValidator, odoo::{InitState, OdooNotification}, python_arch_builder::PythonArchBuilder, python_arch_eval::PythonArchEval, python_validator::PythonValidator, symbols::{SymbolTable, symbol_keys::{BuildableSymbolKey, KeyValidator, SourceFileKey, SymbolKey}, symbol_table_impl::CreateError}, xml_validation::XmlValidator}, fifo_ptr_weak_hash_set::FifoWeakHashSet, progress_reporter::ProgressReporterRemaining, threads::SessionInfo, tree::Tree, utils::{HashMap, HashSet}};
 
 #[derive(Debug)]
 pub struct BuildScheduler {
     rebuild_arch: FifoWeakHashSet<BuildableSymbolKey>,
     rebuild_arch_eval: FifoWeakHashSet<BuildableSymbolKey>,
+    /// Functions of the python files waiting for validation, whose ARCH has to be built. They
+    /// are built after the ARCH and ARCH_EVAL of all files, but before any validation (see `queue_functions`).
+    rebuild_func_arch: FifoWeakHashSet<BuildableSymbolKey>,
+    /// Same as `rebuild_func_arch`, for the ARCH_EVAL of the functions, once all their ARCH are built
+    rebuild_func_arch_eval: FifoWeakHashSet<BuildableSymbolKey>,
     rebuild_validation: FifoWeakHashSet<BuildableSymbolKey>,
+    /// Invalidations requested while something is being built (see `SymbolTable::invalidate`)
+    pending_invalidations: PendingInvalidations,
+}
+
+/// Invalidations requested by `SymbolTable::invalidate` while something is being built. They are applied by
+/// `SymbolTable::apply_pending_invalidations` once nothing is.
+#[derive(Debug, Default)]
+pub(crate) struct PendingInvalidations {
+    /// Number of builds (or other operations, see `BuildScheduler::defer_invalidations`) in progress, that defer
+    /// the invalidations
+    deferrals: u32,
+    /// Lowest step requested for each symbol to reset
+    resets: HashMap<SourceFileKey, BuildSteps>,
+    /// Keys of `resets`, in the request order
+    reset_order: Vec<SourceFileKey>,
+    /// Files whose sub functions have to be invalidated, while they are not reset themselves
+    sub_functions: FifoWeakHashSet<SourceFileKey>,
+    /// If set, the invalidations of sub functions wait in `sub_functions` (see `BuildScheduler::hold_sub_functions_invalidations`)
+    hold_sub_functions: bool,
+}
+
+impl PendingInvalidations {
+    /// Whether the invalidations have to be requested, rather than applied right away
+    pub(crate) fn are_deferred(&self) -> bool {
+        self.deferrals > 0
+    }
+
+    /// Request to reset `symbol` to `step`, or keep the lowest step if it is already requested
+    pub(crate) fn request_reset(&mut self, symbol: SourceFileKey, step: BuildSteps) {
+        match self.resets.entry(symbol) {
+            hash_map::Entry::Occupied(mut requested) => {
+                if step < *requested.get() {
+                    requested.insert(step);
+                }
+            },
+            hash_map::Entry::Vacant(entry) => {
+                entry.insert(step);
+                self.reset_order.push(symbol);
+            },
+        }
+    }
+
+    /// Take the requested resets, in the request order
+    pub(crate) fn take_resets(&mut self) -> Vec<(SourceFileKey, BuildSteps)> {
+        let mut resets = std::mem::take(&mut self.resets);
+        std::mem::take(&mut self.reset_order).into_iter()
+            .filter_map(|symbol| resets.remove(&symbol).map(|step| (symbol, step)))
+            .collect()
+    }
+
+    pub(crate) fn are_sub_functions_held(&self) -> bool {
+        self.hold_sub_functions
+    }
+
+    /// Request to invalidate the sub functions of `file`
+    pub(crate) fn request_sub_functions_invalidation(&mut self, file: SourceFileKey) {
+        self.sub_functions.insert(file);
+    }
+
+    /// Pop a file whose sub functions have to be invalidated, unless they are held
+    pub(crate) fn pop_sub_functions_invalidation(&mut self, table: &impl KeyValidator<SourceFileKey>) -> Option<SourceFileKey> {
+        if self.hold_sub_functions {
+            return None;
+        }
+        self.sub_functions.pop_front_valid(table)
+    }
 }
 
 macro_rules! bs {
@@ -29,13 +100,44 @@ impl BuildScheduler {
         BuildScheduler {
             rebuild_arch: FifoWeakHashSet::new(),
             rebuild_arch_eval: FifoWeakHashSet::new(),
+            rebuild_func_arch: FifoWeakHashSet::new(),
+            rebuild_func_arch_eval: FifoWeakHashSet::new(),
             rebuild_validation: FifoWeakHashSet::new(),
+            pending_invalidations: PendingInvalidations::default(),
         }
     }
 
-    /// Build one item from the build queues, preferably ARCH, then ARCH_EVAL, then VALIDATION if `validation` is `true`.
+    pub(crate) fn pending_invalidations(&mut self) -> &mut PendingInvalidations {
+        &mut self.pending_invalidations
+    }
+
+    /// Run `operation` while deferring the invalidations it requests, until the next call to
+    /// `SymbolTable::apply_pending_invalidations` (see `SymbolTable::invalidate`). Used for the builds, and for
+    /// operations that invalidate the same symbols many times.
+    pub fn defer_invalidations<R>(session: &mut SessionInfo, operation: impl FnOnce(&mut SessionInfo) -> R) -> R {
+        bs!(session).pending_invalidations.deferrals += 1;
+        let result = operation(session);
+        bs!(session).pending_invalidations.deferrals -= 1;
+        result
+    }
+
+    /// While `hold` is set, the invalidations of sub functions wait until it is unset, even when
+    /// `SymbolTable::apply_pending_invalidations` is called: the first build of the modules uses it, as the
+    /// functions built on demand meanwhile would be invalidated again and again.
+    pub fn hold_sub_functions_invalidations(session: &mut SessionInfo, hold: bool) {
+        bs!(session).pending_invalidations.hold_sub_functions = hold;
+    }
+
+    /// Build one item from the build queues, preferably ARCH, then ARCH_EVAL, then the functions and
+    /// VALIDATION if `validation` is `true`, after applying the invalidations requested by the previous builds.
     /// Returns true if an item was built, false if all queues are empty.
     pub fn build_one(session: &mut SessionInfo, entry: EntryPointKey, validation: bool) -> bool {
+        // nothing is being built between two items
+        SymbolTable::apply_pending_invalidations(session);
+        Self::defer_invalidations(session, |session| Self::build_one_impl(session, entry, validation))
+    }
+
+    fn build_one_impl(session: &mut SessionInfo, entry: EntryPointKey, validation: bool) -> bool {
         while let Some(symbol) = bs!(session).rebuild_arch.pop_front_valid(&session.sync_odoo.symbol_table) {
             if let Some(python_buildable) = symbol.as_python_buildable()
             && let Some(mut builder) = PythonArchBuilder::new(session.st(), entry, python_buildable) {
@@ -50,11 +152,69 @@ impl BuildScheduler {
                 return true;
             }
         }
-        if validation && let Some(symbol) = bs!(session).rebuild_validation.pop_front_valid(&session.sync_odoo.symbol_table) {
+        if !validation {
+            return false;
+        }
+        if Self::build_one_function(session) {
+            return true;
+        }
+        if let Some(symbol) = bs!(session).rebuild_validation.pop_front_valid(&session.sync_odoo.symbol_table) {
             Self::validate(session, symbol.into(), entry);
             return true;
         }
         false
+    }
+
+    /// Build the ARCH, or if all ARCH are done, the ARCH_EVAL, of one queued function.
+    /// Returns true if a function was built, false if the function queues are empty.
+    fn build_one_function(session: &mut SessionInfo) -> bool {
+        for step in [BuildSteps::ARCH, BuildSteps::ARCH_EVAL] {
+            loop {
+                let queue = match step {
+                    BuildSteps::ARCH => &mut bs!(session).rebuild_func_arch,
+                    _ => &mut bs!(session).rebuild_func_arch_eval,
+                };
+                let Some(function) = queue.pop_front_valid(&session.sync_odoo.symbol_table) else {
+                    break;
+                };
+                if !session.st().ready_for_step(function, step) {
+                    continue; // already built (by a dependent evaluation or the build of its parent function)
+                }
+                if DEBUG_STEPS {
+                    trace!("PROCESSING FUNCTION FROM {step:?} - {}", session.st().debug_path(function.into()));
+                }
+                BuildScheduler::build_now(session, function, step);
+                if step == BuildSteps::ARCH {
+                    Self::queue_function(session, function);
+                }
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Queue the functions of `file` that are not built yet, if `file` is waiting for its validation:
+    /// they have to be built (ARCH and ARCH_EVAL) before the validation of any file.
+    pub fn queue_functions(session: &mut SessionInfo, file: impl Into<BuildableSymbolKey>) {
+        let file = file.into();
+        if !bs!(session).rebuild_validation.contains(&file) || !matches!(file, BuildableSymbolKey::File(_) | BuildableSymbolKey::PythonPackage(_) | BuildableSymbolKey::Module(_)) {
+            return;
+        }
+        for function in session.st().iter_inner_functions(file.into()) {
+            Self::queue_function(session, function.into());
+        }
+    }
+
+    fn queue_function(session: &mut SessionInfo, function: BuildableSymbolKey) {
+        let current_step = session.st().get_current_build_step(function);
+        if session.st().build_status(function, current_step) != BuildStatus::PENDING {
+            return;
+        }
+        match current_step {
+            BuildSteps::ARCH => bs!(session).rebuild_func_arch.insert(function),
+            BuildSteps::ARCH_EVAL => bs!(session).rebuild_func_arch_eval.insert(function),
+            BuildSteps::VALIDATION => {}, // validated with its file
+        }
     }
 
     /**
@@ -72,18 +232,32 @@ impl BuildScheduler {
         match current_step {
             BuildSteps::ARCH => bs!(session).rebuild_arch.insert(symbol),
             BuildSteps::ARCH_EVAL => bs!(session).rebuild_arch_eval.insert(symbol),
-            BuildSteps::VALIDATION => bs!(session).rebuild_validation.insert(symbol)
+            BuildSteps::VALIDATION => {
+                bs!(session).rebuild_validation.insert(symbol);
+                Self::queue_functions(session, symbol);
+            }
         }
     }
 
     pub fn get_rebuild_queue_size(session: &mut SessionInfo) -> usize {
         bs!(session).rebuild_arch.len() +
         bs!(session).rebuild_arch_eval.len() +
+        Self::functions_queue_len(session) +
         bs!(session).rebuild_validation.len()
     }
 
+    fn functions_queue_len(session: &SessionInfo) -> usize {
+        bs!(session).rebuild_func_arch.len() + bs!(session).rebuild_func_arch_eval.len()
+    }
+
+    fn has_work(session: &SessionInfo) -> bool {
+        !bs!(session).rebuild_arch.is_empty() || !bs!(session).rebuild_arch_eval.is_empty()
+        || Self::functions_queue_len(session) > 0 || !bs!(session).rebuild_validation.is_empty()
+    }
+
+    /// Remaining validation work, including the functions to build before the validation
     pub fn validation_queue_len(session: &mut SessionInfo) -> usize {
-        bs!(session).rebuild_validation.len()
+        Self::functions_queue_len(session) + bs!(session).rebuild_validation.len()
     }
 
     fn pop_item(session: &mut SessionInfo, step: BuildSteps) -> Option<BuildableSymbolKey> {
@@ -170,25 +344,38 @@ impl BuildScheduler {
         }
     }
 
+    /// Build the queued symbols. The invalidations requested by a build are applied before the next one, and
+    /// queue again the symbols to rebuild (see `SymbolTable::invalidate`).
     pub fn process_rebuilds(session: &mut SessionInfo, no_validation: bool) -> bool {
+        Self::defer_invalidations(session, |session| Self::process_rebuilds_impl(session, no_validation))
+    }
+
+    fn process_rebuilds_impl(session: &mut SessionInfo, no_validation: bool) -> bool {
         session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
         if session.sync_odoo.watched_file_updates > MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART {
             return false;
         }
         BuildScheduler::add_from_self_reload(session);
         session.sync_odoo.import_cache = Some(ImportCache::default());
+        // invalidations requested by builds done out of this loop, for a request for example
+        SymbolTable::apply_pending_invalidations(session);
         let mut already_arch_rebuilt: HashSet<Tree> = HashSet::default();
         let mut already_arch_eval_rebuilt: HashSet<Tree> = HashSet::default();
 
         //workdone progress
-        let mut reporter = (!bs!(session).rebuild_arch.is_empty() || !bs!(session).rebuild_arch_eval.is_empty() || !bs!(session).rebuild_validation.is_empty())
+        let mut reporter = Self::has_work(session)
             .then(|| ProgressReporterRemaining::start(session, "Odoo: Indexing"));
-        trace!("Starting rebuild: {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), bs!(session).rebuild_validation.len());
-        while !session.sync_odoo.need_rebuild && (!bs!(session).rebuild_arch.is_empty() || !bs!(session).rebuild_arch_eval.is_empty() || !bs!(session).rebuild_validation.is_empty()) {
-            if DEBUG_THREADS {
-                trace!("remains: {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), bs!(session).rebuild_validation.len());
+        trace!("Starting rebuild: {:?} - {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), Self::functions_queue_len(session), bs!(session).rebuild_validation.len());
+        loop {
+            // nothing is being built here: apply the invalidations requested by the previous build
+            SymbolTable::apply_pending_invalidations(session);
+            if session.sync_odoo.need_rebuild || !Self::has_work(session) {
+                break;
             }
-            let queue_size = bs!(session).rebuild_arch.len() * 3 + bs!(session).rebuild_arch_eval.len() * 2 + bs!(session).rebuild_validation.len();
+            if DEBUG_THREADS {
+                trace!("remains: {:?} - {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), Self::functions_queue_len(session), bs!(session).rebuild_validation.len());
+            }
+            let queue_size = bs!(session).rebuild_arch.len() * 3 + bs!(session).rebuild_arch_eval.len() * 2 + Self::validation_queue_len(session);
             if let Some(reporter) = &mut reporter {
                 reporter.report_progress(queue_size);
             }
@@ -233,18 +420,24 @@ impl BuildScheduler {
                 };
                 continue;
             }
+            // a request is waiting: let it run. Not when building for a request (no_validation), as it needs the functions
+            if !no_validation
+            && session.sync_odoo.state_init == InitState::ODOO_READY
+            && session.sync_odoo.interrupt_rebuild.load(Ordering::SeqCst) {
+                session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
+                session.log_message(MessageType::INFO, S!("Rebuild interrupted"));
+                return true;
+            }
+            // functions are built even without validation: requests need them (instance attributes, return types...)
+            if Self::build_one_function(session) {
+                continue;
+            }
             if no_validation {
                 session.request_delayed_rebuild();
                 if let Some(reporter) = &mut reporter {
                     reporter.end();
                 }
                 break;
-            }
-            if session.sync_odoo.state_init == InitState::ODOO_READY
-            && session.sync_odoo.interrupt_rebuild.load(Ordering::SeqCst) {
-                session.sync_odoo.interrupt_rebuild.store(false, Ordering::SeqCst);
-                session.log_message(MessageType::INFO, S!("Rebuild interrupted"));
-                return true;
             }
             let sym = BuildScheduler::pop_item(session, BuildSteps::VALIDATION);
             if let Some(sym_key) = sym {
@@ -266,7 +459,7 @@ impl BuildScheduler {
         if let Some(reporter) = &mut reporter {
             reporter.end();
         }
-        trace!("Leaving rebuild with remaining tasks: {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), bs!(session).rebuild_validation.len());
+        trace!("Leaving rebuild with remaining tasks: {:?} - {:?} - {:?} - {:?}", bs!(session).rebuild_arch.len(), bs!(session).rebuild_arch_eval.len(), Self::functions_queue_len(session), bs!(session).rebuild_validation.len());
         true
     }
 
@@ -298,7 +491,8 @@ impl BuildScheduler {
     pub fn build_now(session: &mut SessionInfo, symbol: impl Into<BuildableSymbolKey>, step: BuildSteps) {
         // prevents dependency cycles
         let mut visited = HashSet::default();
-        Self::build_now_impl(session, symbol.into(), step, &mut visited)
+        let symbol = symbol.into();
+        Self::defer_invalidations(session, |session| Self::build_now_impl(session, symbol, step, &mut visited))
     }
 
     /// Helper for build_now. Mutually recursive with build_now_dependencies.
@@ -317,6 +511,10 @@ impl BuildScheduler {
         if session.st().ready_for_step(symbol, step) {
             Self::build_now_dependencies(session, symbol, step, visited);
             let entry_point = session.st().get_entry(symbol);
+            let function_build = matches!(symbol, BuildableSymbolKey::Function(_)) && step <= BuildSteps::ARCH_EVAL;
+            if let BuildableSymbolKey::Function(function) = symbol && function_build {
+                session.sync_odoo.functions_in_build.push(function);
+            }
             if let Some(python_buildable) = symbol.as_python_buildable() {
                 if step == BuildSteps::ARCH {
                     if let Some(mut builder) = PythonArchBuilder::new(session.st(), entry_point, python_buildable) {
@@ -330,6 +528,9 @@ impl BuildScheduler {
                     let mut validator = PythonValidator::new(session.st(), entry_point, python_buildable);
                     validator.validate(session);
                 }
+            }
+            if function_build {
+                session.sync_odoo.functions_in_build.pop();
             }
         } else if DEBUG_REBUILD_NOW {
             let current_step = session.st().get_current_build_step(symbol);

@@ -3,7 +3,6 @@ use lsp_types::MessageType;
 use slotmap::SlotMap;
 use slotmap::new_key_type;
 use crate::constants::BuildSteps;
-use crate::core::build_scheduler::BuildScheduler;
 use crate::utils::HashMap;
 use crate::utils::HashSet;
 use std::collections::VecDeque;
@@ -466,7 +465,6 @@ impl Model {
             let module = st.find_module(dep);
             if module_change.is_none() || module.is_none() || ModuleSymbol::is_in_deps(st, module.unwrap(), &st[module_change.unwrap()].dir_name) {
                 SymbolTable::invalidate(session, dep, BuildSteps::VALIDATION);
-                BuildScheduler::queue(session, dep);
             }
         }
     }
