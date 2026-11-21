@@ -5,8 +5,7 @@ use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod setup;
-mod test_utils;
+mod common;
 
 fn module_owl_path(rel: &[&str]) -> String {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -23,8 +22,8 @@ fn module_owl_path(rel: &[&str]) -> String {
 // shared setup
 #[test]
 fn test_owl_templates() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(true);
+    let mut session = common::create_init_session(&mut odoo, config);
     test_template_and_component_are_linked(&session);
     test_super_class_resolves_through_its_import(&session);
     test_goto_definition_from_js_template_to_xml(&mut session);
@@ -86,7 +85,7 @@ fn test_goto_definition_from_js_template_to_xml(session: &mut SessionInfo) {
     let file_info = session.file_mgr().get_file_info(&js_path).unwrap();
 
     // line 4: `    static template = "module_owl.Counter";` — cursor inside the string content.
-    let locs = test_utils::get_definition_locs(session, file_symbol, file_info, 4, 25);
+    let locs = common::get_definition_locs(session, file_symbol, file_info, 4, 25);
     assert!(!locs.is_empty(), "expected a definition for the OWL template string");
     assert!(
         locs[0].target_uri.to_string().ends_with("counter.xml"),

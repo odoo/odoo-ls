@@ -14,7 +14,7 @@ use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::{Odoo, SyncOdoo};
 use odoo_ls_server::utils::PathSanitizer;
 
-mod setup;
+mod common;
 
 const POINT_CONTENT: &str = "class Thing:\n    def method(self):\n        return 1\n";
 
@@ -34,8 +34,8 @@ fn write_point(temp: &TempDir) -> String {
 // stored flag.
 #[test]
 fn test_delete_open_file_then_edit_it() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let temp = TempDir::new().unwrap();
     let point_path = write_point(&temp);
@@ -88,8 +88,8 @@ fn test_delete_open_file_then_edit_it() {
 
 #[test]
 fn test_delete_open_file_then_close_it_clears_everything() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let temp = TempDir::new().unwrap();
     let point_path = write_point(&temp);
@@ -136,8 +136,8 @@ fn test_delete_open_file_then_close_it_clears_everything() {
 // not resurrect a phantom entry.
 #[test]
 fn test_feature_request_on_deleted_open_file_does_not_resurrect_a_phantom_entry() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let temp = TempDir::new().unwrap();
     let point_path = write_point(&temp);
@@ -180,8 +180,8 @@ fn test_feature_request_on_deleted_open_file_does_not_resurrect_a_phantom_entry(
 
 #[test]
 fn test_delete_open_file_then_recreate_it_keeps_it() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let temp = TempDir::new().unwrap();
     let point_path = write_point(&temp);
@@ -248,8 +248,8 @@ fn test_delete_open_file_then_recreate_it_keeps_it() {
 // open-aware). This asserts today's unchanged behavior: immediate teardown.
 #[test]
 fn test_directory_delete_with_nested_open_file_is_not_deferred() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let dir = env::current_dir().unwrap().join("tests/data/nested_dir_race/pkg").sanitize();
     let point_path = Path::new(&dir).join("models").join("point.py").sanitize();

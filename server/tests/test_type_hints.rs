@@ -1,5 +1,4 @@
-mod setup;
-mod test_utils;
+mod common;
 
 use odoo_ls_server::core::file_mgr::FileInfoKey;
 use odoo_ls_server::core::odoo::SyncOdoo;
@@ -8,7 +7,7 @@ use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 use std::env;
 use std::path::Path;
-use test_utils::get_resolved_symbols_at_position;
+use common::get_resolved_symbols_at_position;
 
 /// Sets up a session with `type_hints.py` loaded and resolves `MyClass`, then calls `f` with
 /// the session, file info, file symbol, and `MyClass` symbol.
@@ -16,13 +15,13 @@ fn with_type_hints_fixture<F>(f: F)
 where
     F: FnOnce(&mut SessionInfo, FileInfoKey, SourceFileKey, SymbolKey),
 {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
     let path = env::current_dir()
         .unwrap()
         .join("tests/data/python/expressions/type_hints.py")
         .sanitize();
-    setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
+    common::prepare_custom_entry_point(&mut session, path.as_str());
 
     let file_mgr = session.file_mgr();
     let file_info = file_mgr.get_file_info(&path).unwrap();

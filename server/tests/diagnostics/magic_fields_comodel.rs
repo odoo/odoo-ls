@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use lsp_types::NumberOrString;
 use odoo_ls_server::utils::PathSanitizer;
 
-use crate::{setup::setup::*, test_utils::diag_on_line};
+use crate::common::*;
 
 /// `create_uid` and `write_uid` are added to every model as many2one to `res.users`: a domain path
 /// goes through them to the fields of `res.users`. Each case is a call of `magic_fields.py`, found by

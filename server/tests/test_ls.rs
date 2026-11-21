@@ -5,13 +5,13 @@ use std::env;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod setup;
+mod common;
 
 #[test]
 fn test_structure() {
     /* First, let's launch the server. It will setup a SyncOdoo struct, with a SyncChannel, that we can use to get the messages that the client would receive. */
-    let (mut odoo, config) = setup::setup::setup_server(true);
-    let _ = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(true);
+    let _ = common::create_init_session(&mut odoo, config);
     let st = &odoo.symbol_table;
 
     let odoo_path = env::var("COMMUNITY_PATH").unwrap();

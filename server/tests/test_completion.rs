@@ -9,7 +9,7 @@ use odoo_ls_server::odoo_version::OdooVersion;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod setup;
+mod common;
 
 fn labels(response: Option<CompletionResponse>) -> Vec<String> {
     let items = match response {
@@ -22,8 +22,8 @@ fn labels(response: Option<CompletionResponse>) -> Vec<String> {
 
 #[test]
 fn test_completions() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(true);
+    let mut session = common::create_init_session(&mut odoo, config);
     test_depends_kwarg_nested_field_completion(&mut session);
     // Before `test_lambda_is_not_a_member`, which opens `to_complete.py` with a syntax error
     test_list_element_completion(&mut session);

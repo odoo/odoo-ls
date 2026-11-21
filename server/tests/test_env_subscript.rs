@@ -1,5 +1,4 @@
-mod setup;
-mod test_utils;
+mod common;
 
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::core::symbols::storage::SymbolTable;
@@ -12,7 +11,7 @@ use std::path::Path;
 const PROBE_FILE: &[&str] = &["odoo", "addons", "module_1", "models", "env_subscript_probe"];
 
 fn returned_models(session: &mut SessionInfo, function: FunctionKey) -> Vec<String> {
-    test_utils::resolve_symbol_types(session, function.into())
+    common::resolve_symbol_types(session, function.into())
         .into_iter()
         .filter_map(|s| match s {
             SymbolKey::Class(c) => session.st()[c]._model.as_ref().map(|m| m.name.to_string()),
@@ -24,8 +23,8 @@ fn returned_models(session: &mut SessionInfo, function: FunctionKey) -> Vec<Stri
 /// A function re-evaluated before `Environment.__getitem__` is rebuilt still resolves `env[model]`.
 #[test]
 fn test_env_subscript_after_getitem_invalidation() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(true);
+    let mut session = common::create_init_session(&mut odoo, config);
     let odoo_path = Path::new(&env::var("COMMUNITY_PATH").unwrap()).sanitize();
 
     let env_tree: &[&str] = if session.sync_odoo.version >= (18, 1) {

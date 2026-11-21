@@ -2,15 +2,15 @@ use std::env;
 
 use odoo_ls_server::utils::PathSanitizer as _;
 
-mod setup;
+mod common;
 
 
 #[test]
 fn test_unpack() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/for_loop_unpack.py").sanitize();
-    setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
+    common::prepare_custom_entry_point(&mut session, path.as_str());
     assert!(session.sync_odoo.entry_point_mgr.custom_entry_points().len() == 1);
     let st = &session.sync_odoo.symbol_table;
 

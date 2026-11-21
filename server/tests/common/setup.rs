@@ -1,15 +1,7 @@
-#![allow(dead_code)]
-use core::str;
 use odoo_ls_server::core::build_scheduler::BuildScheduler;
-use odoo_ls_server::utils::HashMap;
 use std::{env, fs};
-
 use std::path::Path;
-
-
-use lsp_server::Message;
-use lsp_types::{Diagnostic, PublishDiagnosticsParams, TextDocumentContentChangeEvent};
-use lsp_types::notification::{Notification, PublishDiagnostics};
+use lsp_types::TextDocumentContentChangeEvent;
 use odoo_ls_server::S;
 use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::utils::get_python_command;
@@ -84,41 +76,4 @@ pub fn prepare_custom_entry_point(session: &mut SessionInfo, path: &str){
     EntryPointMgr::create_new_custom_entry_for_path(session, &ep_path, &ep_path);
     let (_file_updated, _file_info) = FileMgr::update_file_info(session, path, content, Some(1), false);
     BuildScheduler::process_rebuilds(session, false);
-}
-
-pub fn get_diagnostics_for_path(session: &mut SessionInfo, path: &str) -> Vec<Diagnostic> {
-    let mut res = vec![];
-    while let Some(msg) = session._consume_message() {
-        if let Message::Notification(n) = msg
-            && n.method == PublishDiagnostics::METHOD {
-                let params: PublishDiagnosticsParams = serde_json::from_value(n.params).expect("Unable to parse PublishDiagnosticsParams");
-                let params_path = FileMgr::uri2pathname(params.uri.as_str());
-                if params_path == path {
-                    res.extend(params.diagnostics);
-                }
-            }
-    }
-    res
-}
-
-pub fn get_diagnostics_for_paths(session: &mut SessionInfo, paths: &[String]) -> HashMap<String, Vec<Diagnostic>> {
-    let mut res = HashMap::default();
-    while let Some(msg) = session._consume_message() {
-        if let Message::Notification(n) = msg
-            && n.method == PublishDiagnostics::METHOD {
-                let params: PublishDiagnosticsParams = serde_json::from_value(n.params).expect("Unable to parse PublishDiagnosticsParams");
-                let params_path = FileMgr::uri2pathname(params.uri.as_str());
-                if paths.contains(&params_path) {
-                    // publishDiagnostics carries the whole file each time, so the last one wins
-                    res.insert(params_path, params.diagnostics);
-                }
-            }
-    }
-    res
-}
-
-pub fn get_diagnostics_test_comments(session: &mut SessionInfo, path: &str) -> Vec<(u32, Vec<String>)> {
-    let file_mgr = session.file_mgr();
-    let file_info = file_mgr.get_file_info(&S!(path)).expect("File info not found");
-    session.file_mgr()[file_info].diag_test_comments.clone()
 }

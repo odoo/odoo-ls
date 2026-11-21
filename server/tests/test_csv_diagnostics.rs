@@ -7,8 +7,7 @@ use odoo_ls_server::utils::HashMap;
 use std::env;
 use std::path::Path;
 
-mod setup;
-mod test_utils;
+mod common;
 
 fn csv_test_paths() -> (String, String, String, String, String) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -41,7 +40,7 @@ fn csv_test_paths() -> (String, String, String, String, String) {
 
 fn collect_all_csv_diagnostics(session: &mut SessionInfo, paths: &[&str]) -> HashMap<String, Vec<Diagnostic>> {
     let paths_vec: Vec<_> = paths.iter().map(|s| s.to_string()).collect();
-    setup::setup::get_diagnostics_for_paths(session, &paths_vec)
+    common::get_diagnostics_for_paths(session, &paths_vec)
 }
 
 fn get_diags_for<'a>(all: &'a HashMap<String, Vec<Diagnostic>>, path: &str) -> &'a [Diagnostic] {
@@ -57,8 +56,8 @@ fn has_code(diag: &Diagnostic, code: &str) -> bool {
 
 #[test]
 fn test_csv_diagnostics() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(true);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let (field_mismatch, invalid_xml_id, duplicate_column, valid_csv, relational_ids) = csv_test_paths();
 

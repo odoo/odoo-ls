@@ -3,7 +3,7 @@ use std::path::Path;
 use lsp_types::DiagnosticSeverity;
 use odoo_ls_server::utils::PathSanitizer;
 
-use crate::{setup::setup::*, test_utils::{check_xml_diagnostic, diag_on_line, verify_diagnostics_against_doc}};
+use crate::common::*;
 
 #[test]
 fn test_ols05000_2_3_py_file() {

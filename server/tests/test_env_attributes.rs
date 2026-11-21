@@ -1,5 +1,4 @@
-mod setup;
-mod test_utils;
+mod common;
 
 use lsp_types::CompletionResponse;
 use odoo_ls_server::core::file_mgr::FileInfoKey;
@@ -10,7 +9,7 @@ use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 use std::env;
 use std::path::Path;
-use test_utils::get_resolved_symbols_at_position;
+use common::get_resolved_symbols_at_position;
 
 fn resolved_names(
     session: &mut SessionInfo,
@@ -29,7 +28,7 @@ fn resolved_names(
 /// attribute chain through them (`self.env.user.has_group(...)`) to the model's member.
 #[test]
 fn test_env_attributes_resolve() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
+    let (mut odoo, config) = common::setup_server(true);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path
         .join("module_1")
@@ -37,7 +36,7 @@ fn test_env_attributes_resolve() {
         .join("env_attr_probe.py")
         .sanitize();
     assert!(Path::new(&test_file).exists(), "Test file does not exist: {test_file}");
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
     let file_mgr = session.file_mgr();
     let file_info = file_mgr.get_file_info(&test_file).unwrap();
     let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file))
@@ -79,14 +78,14 @@ fn test_env_attributes_resolve() {
 /// just like the direct chain, by following the property mid-chain in `follow_ref`.
 #[test]
 fn test_env_user_through_variable_resolves() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
+    let (mut odoo, config) = common::setup_server(true);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path
         .join("module_1")
         .join("models")
         .join("env_attr_probe.py")
         .sanitize();
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
     let file_mgr = session.file_mgr();
     let file_info = file_mgr.get_file_info(&test_file).unwrap();
     let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file))
@@ -100,7 +99,7 @@ fn test_env_user_through_variable_resolves() {
     );
 
     // (b) its hover type presents the model class, and not `Any`
-    let hover = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 15, 8)
+    let hover = common::get_hover_markdown(&mut session, file_symbol, file_info, 15, 8)
         .unwrap_or_default();
     assert!(
         hover.contains(&format!("(variable) user: {}", user_var[0])) && !hover.contains(": Any"),

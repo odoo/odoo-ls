@@ -1,9 +1,9 @@
 use lsp_types::{TextDocumentContentChangeEvent, Position};
 use odoo_ls_server::core::file_mgr::FileMgr;
 
-use crate::setup::setup::{create_init_session, setup_server};
+use crate::common::{create_init_session, setup_server};
 
-mod setup;
+mod common;
 
 #[test]
 /// Simple test to verify that we can handle unicode characters in files.

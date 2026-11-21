@@ -7,13 +7,13 @@ use odoo_ls_server::utils::PathSanitizer;
 use ruff_python_ast::Expr;
 
 
-mod setup;
+mod common;
 
 #[test]
 fn test_no_main_entry() {
     /* First, let's launch the server. It will setup a SyncOdoo struct, with a SyncChannel, that we can use to get the messages that the client would receive. */
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let _ = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let _ = common::create_init_session(&mut odoo, config);
     assert!(!odoo.has_main_entry());
     assert!(!odoo.has_odoo_main_entry);
     assert!(odoo.entry_point_mgr.main_entry_point().is_none());
@@ -22,20 +22,20 @@ fn test_no_main_entry() {
 
 #[test]
 fn test_custom_entry_point() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/assign.py");
-    setup::setup::prepare_custom_entry_point(&mut session, path.sanitize().as_str());
+    common::prepare_custom_entry_point(&mut session, path.sanitize().as_str());
     assert!(odoo.entry_point_mgr.custom_entry_points().len() == 1);
 }
 
 
 #[test]
 fn test_assigns() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/assign.py").sanitize();
-    setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
+    common::prepare_custom_entry_point(&mut session, path.as_str());
     assert!(session.sync_odoo.entry_point_mgr.custom_entry_points().len() == 1);
     let st = &session.sync_odoo.symbol_table;
     let int_type = session.sync_odoo.get_symbol("", (&["builtins"], &["int"]), u32::MAX)[0];
@@ -278,10 +278,10 @@ fn test_ann_assign_invalid_target() {
     // guard on the Tuple/List fallback arm), so no variable is created for them - same
     // as if the (invalid) statement weren't there. A single annotated target with no
     // value is still valid and must keep working normally.
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/ann_assign_invalid_target.py").sanitize();
-    setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
+    common::prepare_custom_entry_point(&mut session, path.as_str());
     assert!(session.sync_odoo.entry_point_mgr.custom_entry_points().len() == 1);
     let int_type = session.sync_odoo.get_symbol("", (&["builtins"], &["int"]), u32::MAX)[0];
     let st = &session.sync_odoo.symbol_table;
@@ -312,10 +312,10 @@ fn test_ann_assign_invalid_target() {
 
 #[test]
 fn test_sections() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/sections.py").sanitize();
-    setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
+    common::prepare_custom_entry_point(&mut session, path.as_str());
     assert!(session.sync_odoo.entry_point_mgr.custom_entry_points().len() == 1);
     let st = &session.sync_odoo.symbol_table;
 
@@ -369,8 +369,8 @@ fn test_sections() {
 
 #[test]
 fn test_star_import_on_disk_dir_does_not_panic() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
     let path = env::current_dir().unwrap().join("tests/data/python/disk_dir_import/star_import.py").sanitize();
-    setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
+    common::prepare_custom_entry_point(&mut session, path.as_str());
 }

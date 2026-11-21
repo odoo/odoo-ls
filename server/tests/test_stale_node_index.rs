@@ -9,7 +9,7 @@ use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::core::symbols::storage::SymbolTable;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod setup;
+mod common;
 
 // `stale_file.py` re-parsed with content holding no function at all, so every node index
 // the old parse handed out now addresses something that is not a `Stmt::FunctionDef`.
@@ -38,8 +38,8 @@ eighth = 8
 // later function-mode build.
 #[test]
 fn test_stale_node_index_on_method_does_not_panic() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let module_dir = env::current_dir()
         .unwrap()

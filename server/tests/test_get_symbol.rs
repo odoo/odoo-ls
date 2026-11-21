@@ -12,22 +12,21 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
-mod setup;
-mod test_utils;
+mod common;
 
 #[test]
 fn test_hover_on_model_field_and_method() {
     // Setup server and session with test addons
-    let (mut odoo, config) = setup::setup::setup_server(true);
+    let (mut odoo, config) = common::setup_server(true);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
     // Ensure the test file exists
     assert!(Path::new(&test_file).exists(), "Test file does not exist: {}", test_file);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     // Use Lazy value for partner and country class names
-    let partner_class_name = test_utils::PARTNER_CLASS_NAME(session.sync_odoo.version);
-    let country_class_name = test_utils::COUNTRY_CLASS_NAME(session.sync_odoo.version);
+    let partner_class_name = common::PARTNER_CLASS_NAME(session.sync_odoo.version);
+    let country_class_name = common::COUNTRY_CLASS_NAME(session.sync_odoo.version);
     // Get file symbol and file info
     let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     // Use get_file_info().symbol instead of get_file_symbol
@@ -39,14 +38,14 @@ fn test_hover_on_model_field_and_method() {
     };
 
     // Hover on the model class name "BaseTestModel"
-    let hover_model = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 3, 6).unwrap_or_default();
+    let hover_model = common::get_hover_markdown(&mut session, file_symbol, file_info, 3, 6).unwrap_or_default();
     assert!(
         hover_model.contains("BaseTestModel"),
         "Hover on model class should show model name"
     );
 
     // Hover on the field "test_int"
-    let hover_field = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 8, 8).unwrap_or_default();
+    let hover_field = common::get_hover_markdown(&mut session, file_symbol, file_info, 8, 8).unwrap_or_default();
     assert!(
         hover_field.contains("test_int"),
         "Hover on field should show field name"
@@ -58,17 +57,17 @@ fn test_hover_on_model_field_and_method() {
     );
 
     // Hover on related field "partner_company_phone_code"
-    let hover_partner_id = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 10, 63).unwrap_or_default();
+    let hover_partner_id = common::get_hover_markdown(&mut session, file_symbol, file_info, 10, 63).unwrap_or_default();
     assert!(
         hover_partner_id.contains(&format!("partner_id: {}", partner_class_name)),
         "Hover on field_name in related field name should show field name and field type"
     );
-    let hover_country_id = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 10, 74).unwrap_or_default();
+    let hover_country_id = common::get_hover_markdown(&mut session, file_symbol, file_info, 10, 74).unwrap_or_default();
     assert!(
         hover_country_id.contains(&format!("country_id: {}", country_class_name)),
         "Hover on field_name in related field name should show field name and field type"
     );
-    let hover_phone_code = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 10, 86).unwrap_or_default();
+    let hover_phone_code = common::get_hover_markdown(&mut session, file_symbol, file_info, 10, 86).unwrap_or_default();
     assert!(
         hover_phone_code.contains("phone_code: int"),
         "Hover on field_name in related field name should show field name and field type"
@@ -76,24 +75,24 @@ fn test_hover_on_model_field_and_method() {
 
     // Hover on field names in the `depends` kwarg of `fields.Char(depends=[...])`
     // (as opposed to the `@api.depends(...)` decorator, already covered above).
-    let hover_partner_id_dep = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 79, 122).unwrap_or_default();
+    let hover_partner_id_dep = common::get_hover_markdown(&mut session, file_symbol, file_info, 79, 122).unwrap_or_default();
     assert!(
         hover_partner_id_dep.contains(&format!("partner_id: {}", partner_class_name)),
         "Hover on field_name in depends kwarg should show field name and field type"
     );
-    let hover_display_name_dep = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 79, 134).unwrap_or_default();
+    let hover_display_name_dep = common::get_hover_markdown(&mut session, file_symbol, file_info, 79, 134).unwrap_or_default();
     assert!(
         hover_display_name_dep.contains("display_name") && hover_display_name_dep.contains("Char"),
         "Hover on field_name in depends kwarg should show field name and field type, got: {:?}", hover_display_name_dep
     );
-    let hover_name_dep = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 79, 157).unwrap_or_default();
+    let hover_name_dep = common::get_hover_markdown(&mut session, file_symbol, file_info, 79, 157).unwrap_or_default();
     assert!(
         hover_name_dep.contains("name: str"),
         "Hover on field_name in depends kwarg should show field name and field type"
     );
 
     // Hover on the method "get_test_int"
-    let hover_method = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 14, 8).unwrap_or_default();
+    let hover_method = common::get_hover_markdown(&mut session, file_symbol, file_info, 14, 8).unwrap_or_default();
     assert!(
          hover_method.contains("get_test_int"),
         "Hover on method should show method name"
@@ -105,67 +104,67 @@ fn test_hover_on_model_field_and_method() {
     );
 
     // Hover on a reference to a constant (CONSTANT_1)
-    let hover_const = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 19, 23).unwrap_or_default();
+    let hover_const = common::get_hover_markdown(&mut session, file_symbol, file_info, 19, 23).unwrap_or_default();
     assert!(
         hover_const.contains("CONSTANT_1: int"),
         "Hover on constant should show constant name amd type int"
     );
 
     // Hover on onchange decorator
-    let hover_onchange = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 25, 22).unwrap_or_default();
+    let hover_onchange = common::get_hover_markdown(&mut session, file_symbol, file_info, 25, 22).unwrap_or_default();
     assert!(
         hover_onchange.contains("test_int: int"),
         "Hover on field_name in onchange should show field name and field type"
     );
 
     // Hover on depends decorator, on different sections
-    let hover_partner_id = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 29, 22).unwrap_or_default();
+    let hover_partner_id = common::get_hover_markdown(&mut session, file_symbol, file_info, 29, 22).unwrap_or_default();
     assert!(
         hover_partner_id.contains(&format!("partner_id: {}", partner_class_name)),
         "Hover on field_name in depends should show field name and field type"
     );
-    let hover_country_id = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 29, 35).unwrap_or_default();
+    let hover_country_id = common::get_hover_markdown(&mut session, file_symbol, file_info, 29, 35).unwrap_or_default();
     assert!(
         hover_country_id.contains(&format!("country_id: {}", country_class_name)),
         "Hover on field_name in depends should show field name and field type"
     );
-    let hover_code = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 29, 43).unwrap_or_default();
+    let hover_code = common::get_hover_markdown(&mut session, file_symbol, file_info, 29, 43).unwrap_or_default();
     assert!(
         hover_code.contains("code: str"),
         "Hover on field_name in depends should show field name and field type"
     );
 
     //Hover on self.env with res.partner and test model name
-    let hover_partner = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 31, 24).unwrap_or_default();
+    let hover_partner = common::get_hover_markdown(&mut session, file_symbol, file_info, 31, 24).unwrap_or_default();
     assert!(
         hover_partner.contains("Partner"),
         "Hover on self.env[\"res.partner\"] should show Partner model name"
     );
-    let hover_test_class = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 32, 24).unwrap_or_default();
+    let hover_test_class = common::get_hover_markdown(&mut session, file_symbol, file_info, 32, 24).unwrap_or_default();
     assert!(
         hover_test_class.contains("BaseTestModel"),
         "Hover on self.env[\"pygls.tests.base_test_model\"] should show Partner model name"
     );
 
     // Hover on domains, on different sections
-    let hover_partner_id = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 33, 25).unwrap_or_default();
+    let hover_partner_id = common::get_hover_markdown(&mut session, file_symbol, file_info, 33, 25).unwrap_or_default();
     assert!(
         hover_partner_id.contains(&format!("partner_id: {}", partner_class_name)),
         "Hover on field_name in search domain should show field name and field type"
     );
-    let hover_country_id = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 33, 39).unwrap_or_default();
+    let hover_country_id = common::get_hover_markdown(&mut session, file_symbol, file_info, 33, 39).unwrap_or_default();
     assert!(
         hover_country_id.contains(&format!("country_id: {}", country_class_name)),
         "Hover on field_name in search domain should show field name and field type"
     );
-    let hover_code = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 33, 48).unwrap_or_default();
+    let hover_code = common::get_hover_markdown(&mut session, file_symbol, file_info, 33, 48).unwrap_or_default();
     assert!(
         hover_code.contains("code: str"),
         "Hover on field_name in search domain should show field name and field type"
     );
 
     // Hover on a variable assignment (baseInstance1)
-    let hover_var = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 43, 0).unwrap_or_default();
+    let hover_var = common::get_hover_markdown(&mut session, file_symbol, file_info, 43, 0).unwrap_or_default();
     assert!(
         hover_var.contains("BaseTestModel"),
         "Hover on variable should show type info"
@@ -173,7 +172,7 @@ fn test_hover_on_model_field_and_method() {
 
     // Hover on a method returning a variable that is assigned to a relational field
     // To check that the descriptor is correctly resolved
-    let hover_var = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 38, 10).unwrap_or_default();
+    let hover_var = common::get_hover_markdown(&mut session, file_symbol, file_info, 38, 10).unwrap_or_default();
     assert!(
         hover_var.contains("ResPartner"),
         "Hover on variable should show type info"
@@ -184,12 +183,12 @@ fn test_hover_on_model_field_and_method() {
 #[test]
 fn test_hover_inverse_name_o2m(){
     // Setup server and session with test addons
-    let (mut odoo, config) = setup::setup::setup_server(true);
+    let (mut odoo, config) = common::setup_server(true);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("diagnostics.py").sanitize();
     // Ensure the test file exists
     assert!(Path::new(&test_file).exists(), "Test file does not exist: {}", test_file);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
     // Get file symbol and file info
     let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     // Use get_file_info().symbol instead of get_file_symbol
@@ -199,7 +198,7 @@ fn test_hover_inverse_name_o2m(){
     ) else {
         panic!("Failed to get file symbol");
     };
-    let hover_var = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 9, 73).unwrap_or_default();
+    let hover_var = common::get_hover_markdown(&mut session, file_symbol, file_info, 9, 73).unwrap_or_default();
     assert!(
         hover_var.contains("(variable) diagnostics_id: ModelWithDiagnostics"),
         "Hover on inverse o2m field should show correct type info"
@@ -210,12 +209,12 @@ fn test_hover_inverse_name_o2m(){
 #[test]
 fn test_hover_on_namespace_and_module() {
     // Setup server and session with test addons
-    let (mut odoo, config) = setup::setup::setup_server(true);
+    let (mut odoo, config) = common::setup_server(true);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
     // Ensure the test file exists
     assert!(Path::new(&test_file).exists(), "Test file does not exist: {}", test_file);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
     // Get file symbol and file info
     let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(
@@ -227,7 +226,7 @@ fn test_hover_on_namespace_and_module() {
 
     // Test hover on namespace: "odoo.addons" in line 2: from odoo.addons.module_1.constants import ...
     // Position: line 1 (0-indexed), character at "addons" (~10-16)
-    let hover_namespace = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 1, 12).unwrap_or_default();
+    let hover_namespace = common::get_hover_markdown(&mut session, file_symbol, file_info, 1, 12).unwrap_or_default();
 
     // Should show namespace symbol type
     assert!(
@@ -255,7 +254,7 @@ fn test_hover_on_namespace_and_module() {
 
     // Test hover on Odoo module: "module_1" in line 2: from odoo.addons.module_1.constants import ...
     // Position: line 1 (0-indexed), character at "module_1" (~17-24)
-    let hover_module = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 1, 20).unwrap_or_default();
+    let hover_module = common::get_hover_markdown(&mut session, file_symbol, file_info, 1, 20).unwrap_or_default();
 
     // Should show package type, module name and "Module" inferred type
     assert!(
@@ -277,7 +276,7 @@ fn test_definition() {
     let odoo_path = Path::new(&odoo_path).sanitize();
     let odoo_path = odoo_path.as_str();
 
-    let (mut odoo, config) = setup::setup::setup_server(true);
+    let (mut odoo, config) = common::setup_server(true);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let module1_test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
     let module2_test_file = test_addons_path.join("module_2").join("models").join("base_test_models.py").sanitize();
@@ -285,11 +284,11 @@ fn test_definition() {
     // Ensure the test file exists
     assert!(Path::new(&module1_test_file).exists(), "Test file does not exist: {}", module1_test_file);
     assert!(Path::new(&module2_test_file).exists(), "Test file does not exist: {}", module1_test_file);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     // Use Lazy value for partner and Country class names
-    let partner_class_name = test_utils::PARTNER_CLASS_NAME(session.sync_odoo.version);
-    let country_class_name = test_utils::COUNTRY_CLASS_NAME(session.sync_odoo.version);
+    let partner_class_name = common::PARTNER_CLASS_NAME(session.sync_odoo.version);
+    let country_class_name = common::COUNTRY_CLASS_NAME(session.sync_odoo.version);
 
     // Get file symbol and file info
     let m1_tf_file_info = session.file_mgr().get_file_info(&module1_test_file).unwrap();
@@ -311,7 +310,7 @@ fn test_definition() {
     };
 
     // Test definition for model class BaseTestModel compute something
-    let compute_arg_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 8, 50);
+    let compute_arg_locs = common::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 8, 50);
     assert_eq!(compute_arg_locs.len(), 1, "Expected 1 location for compute method '_compute_something'");
     assert_eq!(compute_arg_locs[0].target_uri.to_file_path().unwrap().sanitize(), module1_test_file, "Expected location to be in the same file");
     let sym_compute_something = session.st().get_symbol(m1_tf_file_symbol.into(), (&[], &["BaseTestModel", "_compute_something"]), u32::MAX);
@@ -321,7 +320,7 @@ fn test_definition() {
     assert_eq!(range, compute_arg_locs[0].target_range, "Expected _compute_something to be at the same location as the compute argument");
 
     // Test definition for model class BaseTestModel compute something in module_2, first on the super call
-    let compute_arg_locs = test_utils::get_definition_locs(&mut session, m2_tf_file_symbol, m2_tf_file_info, 10, 36);
+    let compute_arg_locs = common::get_definition_locs(&mut session, m2_tf_file_symbol, m2_tf_file_info, 10, 36);
     assert_eq!(compute_arg_locs.len(), 1, "Expected 1 location for compute method '_compute_something'");
     assert_eq!(compute_arg_locs[0].target_uri.to_file_path().unwrap().sanitize(), module1_test_file, "Expected location to be in module_1 file");
     let range = session.st().header_range(sym_compute_something[0], Some(&session.file_mgr()[m1_tf_file_info])).unwrap();
@@ -329,7 +328,7 @@ fn test_definition() {
     assert_eq!(range, compute_arg_locs[0].target_range, "Expected _compute_something to be at the same location as the compute argument");
 
     // Then on the compute keyword argument in module_2, it should point to both methods in module_1 and module_2
-    let compute_kwarg_locs = test_utils::get_definition_locs(&mut session, m2_tf_file_symbol, m2_tf_file_info, 6, 50);
+    let compute_kwarg_locs = common::get_definition_locs(&mut session, m2_tf_file_symbol, m2_tf_file_info, 6, 50);
     assert_eq!(compute_kwarg_locs.len(), 2, "Expected 2 locations for compute method '_compute_something'");
     assert!(compute_kwarg_locs.iter().any(|loc| loc.target_uri.to_file_path().unwrap().sanitize() == module1_test_file), "Expected one location to be in module_1 file");
     assert!(compute_kwarg_locs.iter().any(|loc| loc.target_uri.to_file_path().unwrap().sanitize() == module2_test_file), "Expected one location to be in module_2 file");
@@ -346,7 +345,7 @@ fn test_definition() {
 
     // group_expand, selection and the first positional argument of a Selection name a method
     for (line, column, method) in [(85, 34, "_selection_state"), (85, 67, "_expand_states"), (86, 43, "_selection_state")] {
-        let locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, line, column);
+        let locs = common::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, line, column);
         assert_eq!(locs.len(), 1, "Expected 1 location for method '{method}' at {line}:{column}");
         let sym = session.st().get_symbol(m1_tf_file_symbol.into(), (&[], &["DisplayNameRelatedModel", method]), u32::MAX);
         assert_eq!(sym.len(), 1, "Expected 1 symbol for {method}");
@@ -355,11 +354,11 @@ fn test_definition() {
         assert_eq!(range, locs[0].target_range, "Expected {method} to be at the location of the argument at {line}:{column}");
     }
     // The first positional argument of a Char is its label, not a method name
-    let label_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 87, 29);
+    let label_locs = common::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 87, 29);
     assert!(label_locs.is_empty(), "Expected no location for the label of a Char field, got: {:?}", label_locs);
 
     // Now test go to def of `partner_id.country_id.phone_code` on each field.
-    let partner_id_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 33, 25);
+    let partner_id_locs = common::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 33, 25);
     assert_eq!(partner_id_locs.len(), 1, "Expected 1 location for partner_id");
     assert_eq!(partner_id_locs[0].target_uri.to_file_path().unwrap().sanitize(), module1_test_file, "Expected location to be in the same file");
     let sym_partner_id = session.st().get_symbol(m1_tf_file_symbol.into(), (&[], &["BaseTestModel", "partner_id"]), u32::MAX);
@@ -367,7 +366,7 @@ fn test_definition() {
     let range = session.st().range(sym_partner_id[0]);
     assert_eq!(FileMgr::text_range_to_range(&mut session, &module1_test_file, range), partner_id_locs[0].target_range, "Expected partner_id to be at the same location as the field");
 
-    let country_id_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 10, 74);
+    let country_id_locs = common::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 10, 74);
     let country_id_field_sym = session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "base", "models", "res_partner"], &[partner_class_name, "country_id"]), u32::MAX);
     assert_eq!(country_id_field_sym.len(), 1, "Expected 1 location for country_id");
     let country_id_field_sym = country_id_field_sym[0];
@@ -378,7 +377,7 @@ fn test_definition() {
     assert!(country_id_locs.iter().any(|loc| loc.target_range == FileMgr::text_range_to_range(&mut session, &country_id_file, range)), "Expected country_id to be at the same location as the field");
 
     // now the same for phone_code
-    let phone_code_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 10, 86);
+    let phone_code_locs = common::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 10, 86);
     let phone_code_field_sym = session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "base", "models", "res_country"], &[country_class_name, "phone_code"]), u32::MAX);
     assert_eq!(phone_code_field_sym.len(), 1, "Expected 1 location for phone_code");
     let phone_code_field_sym = phone_code_field_sym[0];
@@ -390,7 +389,7 @@ fn test_definition() {
 
     // Go to definition on `display_name` in `related="partner_id.display_name"` is a magic field:
     // it should skip the synthetic field and include `_compute_display_name` override(s) instead.
-    let display_name_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 77, 65);
+    let display_name_locs = common::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 77, 65);
     assert!(!display_name_locs.is_empty(), "Expected at least one location for display_name");
     let partner_class_sym = session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "base", "models", "res_partner"], &[partner_class_name]), u32::MAX);
     assert_eq!(partner_class_sym.len(), 1, "Expected 1 symbol for the Partner class");
@@ -416,13 +415,13 @@ fn test_definition() {
 
     // Go to definition on `create_uid` in `related="partner_id.create_uid"` is also a magic field,
     // but has no compute override: it should be filtered out entirely (no synthetic-field location).
-    let create_uid_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 78, 66);
+    let create_uid_locs = common::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 78, 66);
     assert!(create_uid_locs.is_empty(), "Expected no location for the synthetic create_uid magic field, got {:?}", create_uid_locs.iter().map(|l| &l.target_uri).collect::<Vec<_>>());
 
     // The same magic-field redirect must also work through the `depends` kwarg of
     // `fields.Char(depends=["partner_id.disp", "partner_id.display_name", "partner_id.name"])`,
     // not just `related`.
-    let depends_display_name_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 79, 134);
+    let depends_display_name_locs = common::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 79, 134);
     assert!(!depends_display_name_locs.is_empty(), "Expected at least one location for display_name via depends");
     assert!(
         !depends_display_name_locs.iter().any(|loc| loc.target_uri.to_file_path().unwrap().sanitize() == partner_class_file && loc.target_range == partner_class_range),
@@ -435,7 +434,7 @@ fn test_definition() {
 
     // A plain (non-magic) field referenced through `depends` should resolve directly to its
     // own declaration, exactly like it already does through `related`.
-    let depends_name_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 79, 157);
+    let depends_name_locs = common::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 79, 157);
     let partner_name_field_sym = session.sync_odoo.get_symbol(odoo_path, (&["odoo", "addons", "base", "models", "res_partner"], &[partner_class_name, "name"]), u32::MAX);
     assert_eq!(partner_name_field_sym.len(), 1, "Expected 1 location for res.partner's name field");
     let partner_name_field_sym = partner_name_field_sym[0];
@@ -450,26 +449,26 @@ fn test_definition() {
 
     // compute_sql names a method the same way compute does, but only from 19.1 on
     session.sync_odoo.version = OdooVersion::new(19, 1, 0);
-    let compute_sql_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 8, 80);
+    let compute_sql_locs = common::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 8, 80);
     assert_eq!(compute_sql_locs.len(), 1, "Expected 1 location for compute_sql method '_compute_something'");
     let range = session.st().header_range(sym_compute_something[0], Some(&session.file_mgr()[m1_tf_file_info])).unwrap();
     let range = FileMgr::text_range_to_range(&mut session, &module1_test_file, range);
     assert_eq!(range, compute_sql_locs[0].target_range, "Expected _compute_something to be at the same location as the compute_sql argument");
     session.sync_odoo.version = OdooVersion::new(19, 0, 0);
-    let compute_sql_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 8, 80);
+    let compute_sql_locs = common::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 8, 80);
     assert!(compute_sql_locs.is_empty(), "Expected no location for compute_sql before 19.1, got {:?}", compute_sql_locs.iter().map(|l| &l.target_uri).collect::<Vec<_>>());
 
     // init_storage names a method the same way, but only from 20.0 on
     let sym_init_column_kind = session.st().get_symbol(m1_tf_file_symbol.into(), (&[], &["DisplayNameRelatedModel", "_init_column_kind"]), u32::MAX);
     assert_eq!(sym_init_column_kind.len(), 1, "Expected 1 symbol for _init_column_kind");
     session.sync_odoo.version = OdooVersion::new(20, 0, 0);
-    let init_storage_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 86, 76);
+    let init_storage_locs = common::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 86, 76);
     assert_eq!(init_storage_locs.len(), 1, "Expected 1 location for init_storage method '_init_column_kind'");
     let range = session.st().header_range(sym_init_column_kind[0], Some(&session.file_mgr()[m1_tf_file_info])).unwrap();
     let range = FileMgr::text_range_to_range(&mut session, &module1_test_file, range);
     assert_eq!(range, init_storage_locs[0].target_range, "Expected _init_column_kind to be at the same location as the init_storage argument");
     session.sync_odoo.version = OdooVersion::new(19, 4, 0);
-    let init_storage_locs = test_utils::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 86, 76);
+    let init_storage_locs = common::get_definition_locs(&mut session, m1_tf_file_symbol, m1_tf_file_info, 86, 76);
     assert!(init_storage_locs.is_empty(), "Expected no location for init_storage before 20.0, got {:?}", init_storage_locs.iter().map(|l| &l.target_uri).collect::<Vec<_>>());
 }
 
@@ -480,13 +479,13 @@ fn test_definition_csv() {
     let odoo_path = Path::new(&odoo_path).sanitize();
     let odoo_path = odoo_path.as_str();
 
-    let (mut odoo, config) = setup::setup::setup_server(true);
+    let (mut odoo, config) = common::setup_server(true);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let module_csv_test_file = test_addons_path.join("module_csv").join("data").join("res.country.state.csv").sanitize();
 
     // Ensure the test file exists
     assert!(Path::new(&module_csv_test_file).exists(), "Test file does not exist: {}", module_csv_test_file);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     // Get file symbol and file info
     let mcsv_tf_file_info = session.file_mgr().get_file_info(&module_csv_test_file).unwrap();
@@ -503,7 +502,7 @@ fn test_definition_csv() {
     assert!(res_country_file.len() == 1);
     let res_country_file = res_country_file[0];
     let path = session.st().file_path(res_country_file.as_source_file_key().unwrap()).to_string();
-    let country_id_loc = test_utils::get_definition_locs(&mut session, mcsv_tf_file_symbol, mcsv_tf_file_info, 0, 8);
+    let country_id_loc = common::get_definition_locs(&mut session, mcsv_tf_file_symbol, mcsv_tf_file_info, 0, 8);
     assert_eq!(country_id_loc.len(), 1, "Expected 1 location for header 'country_id_loc'");
     assert_eq!(country_id_loc[0].target_uri.to_file_path().unwrap().sanitize(), path, "Expected location to be in res_country.py file");
     let country_id_sym = session.st().get_symbol(res_country_file, (&[], &["ResCountryState", "country_id"]), u32::MAX);
@@ -516,7 +515,7 @@ fn test_definition_csv() {
     assert!(ir_model_file.len() == 1);
     let ir_model_file = ir_model_file[0];
     let path = session.st().file_path(ir_model_file.as_source_file_key().unwrap()).to_string();
-    let country_id_id_loc = test_utils::get_definition_locs(&mut session, mcsv_tf_file_symbol, mcsv_tf_file_info, 0, 19);
+    let country_id_id_loc = common::get_definition_locs(&mut session, mcsv_tf_file_symbol, mcsv_tf_file_info, 0, 19);
     assert!(!country_id_id_loc.is_empty(), "Expected at least 1 location for header 'country_id_id_loc'");
     let mut found_base = false;
     for loc in country_id_id_loc.iter() {
@@ -531,7 +530,7 @@ fn test_definition_csv() {
     assert!(found_base, "Expected to find a location for country_id:id that lead to Base (as id is magic field)");
 
     // Test definition for record state_au_1000
-    let state_loc = test_utils::get_definition_locs(&mut session, mcsv_tf_file_symbol, mcsv_tf_file_info, 1, 5);
+    let state_loc = common::get_definition_locs(&mut session, mcsv_tf_file_symbol, mcsv_tf_file_info, 1, 5);
     assert_eq!(state_loc.len(), 1, "Expected 1 location for record field 'state_au_1000'");
     assert_eq!(state_loc[0].target_uri.to_file_path().unwrap().sanitize(), module_csv_test_file, "Expected location to be in same file");
     assert_eq!(lsp_types::Range{start: lsp_types::Position { line: 1, character: 0 }, end: lsp_types::Position { line: 1, character: 13 }}, state_loc[0].target_range, "Expected code to be at the same location as the compute argument");
@@ -545,7 +544,7 @@ fn test_definition_csv() {
     let res_country_file = session.st()[base_module].data_file_symbols().get(&res_country_data_path).cloned();
     assert!(res_country_file.is_some());
     let res_country_file = res_country_file.unwrap();
-    let base_au = test_utils::get_definition_locs(&mut session, mcsv_tf_file_symbol, mcsv_tf_file_info, 1, 22);
+    let base_au = common::get_definition_locs(&mut session, mcsv_tf_file_symbol, mcsv_tf_file_info, 1, 22);
     assert!(!base_au.is_empty(), "Expected 1 location for record field 'base_au'");
     let path = session.st().file_path(res_country_file);
     assert_eq!(base_au[0].target_uri.to_file_path().unwrap().sanitize(), path, "Expected location to be at least in res_country_data.xml file");
@@ -576,7 +575,7 @@ fn test_definition_csv() {
     };
     // line 1 is bike_m2m_ok,Ok Bike,"bike_wheel_6,module_for_diagnostics.bike_wheel_6"
     for (character, id_start, id_end) in [(25, 21, 33), (40, 34, 69)] {
-        let locs = test_utils::get_definition_locs(&mut session, bikes_file_symbol, bikes_file_info, 1, character);
+        let locs = common::get_definition_locs(&mut session, bikes_file_symbol, bikes_file_info, 1, character);
         assert!(!locs.is_empty(), "Expected a location for the xml id at character {character}");
         assert_eq!(locs[0].target_uri.to_file_path().unwrap().sanitize(), wheels_csv, "Expected the definition to be in bike_parts.wheel.csv");
         let origin = locs[0].origin_selection_range.expect("Expected the clicked xml id to be the origin range");
@@ -587,8 +586,8 @@ fn test_definition_csv() {
 #[test]
 fn test_model_subscription() {
     // Setup: Get the symbol for BaseTestModel and verify its existence
-    let (mut odoo, config) = setup::setup::setup_server(true);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(true);
+    let mut session = common::create_init_session(&mut odoo, config);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(
@@ -600,7 +599,7 @@ fn test_model_subscription() {
     let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let base_test_model_sym = session.st().get_symbol(file_symbol.into(), (&[], &["BaseTestModel"]), u32::MAX);
     assert_eq!(base_test_model_sym.len(), 1, "Expected 1 symbol for BaseTestModel");
-    let resolved_syms = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 34, 10);
+    let resolved_syms = common::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 34, 10);
     assert!(
         resolved_syms.iter().any(|&sym| sym == base_test_model_sym[0]),
         "Resolving a subscript of a model should include the model symbol itself.
@@ -614,11 +613,11 @@ fn test_model_subscription() {
 /// should resolve to the lambda parameter (untyped), NOT to the outer `basic_var = 42`
 /// which has type `int`. This directly validates the lambda scoping added in the last commit.
 fn test_lambda_parameter_scoping() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
+    let (mut odoo, config) = common::setup_server(true);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
     assert!(Path::new(&test_file).exists(), "Test file does not exist: {}", test_file);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(
@@ -629,7 +628,7 @@ fn test_lambda_parameter_scoping() {
     };
 
     // Baseline: the outer `basic_var = 42` at line 52, col 0 should show type `int`.
-    let outer_hover = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 52, 0)
+    let outer_hover = common::get_hover_markdown(&mut session, file_symbol, file_info, 52, 0)
         .unwrap_or_default();
     assert!(
         outer_hover.contains("int"),
@@ -642,7 +641,7 @@ fn test_lambda_parameter_scoping() {
     //
     // The parameter shadows the outer variable: neither position should resolve
     // to the outer `basic_var: int`.
-    let param_hover = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 65, 22)
+    let param_hover = common::get_hover_markdown(&mut session, file_symbol, file_info, 65, 22)
         .unwrap_or_default();
     assert!(
         param_hover.contains("basic_var"),
@@ -653,7 +652,7 @@ fn test_lambda_parameter_scoping() {
         "Lambda parameter 'basic_var' should NOT carry outer type 'int', got: {param_hover}"
     );
 
-    let body_hover = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 65, 33)
+    let body_hover = common::get_hover_markdown(&mut session, file_symbol, file_info, 65, 33)
         .unwrap_or_default();
     assert!(
         body_hover.contains("basic_var"),
@@ -667,8 +666,8 @@ fn test_lambda_parameter_scoping() {
 
 #[test]
 fn test_csv_quoted_commas() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
-    let session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(true);
+    let session = common::create_init_session(&mut odoo, config);
 
     let module = session.sync_odoo.modules.get(&Sy!("module_csv"))
         .expect("module_csv not loaded")
@@ -686,8 +685,8 @@ fn test_csv_quoted_commas() {
 
 #[test]
 fn test_csv_field_ranges() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(true);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     test_csv_ranges_unquoted_lf(&mut session);
     test_csv_ranges_quoted_lf(&mut session);
@@ -716,7 +715,7 @@ fn test_csv_ranges_unquoted_lf(session: &mut SessionInfo) {
     //         0123456789012345678901234567
     // Field "country_id:id" spans bytes 3-16
     // When clicking on just "country_id" (before the colon), origin_selection_range should cover it
-    let country_id_click = test_utils::get_definition_locs(session, file_symbol, file_info, 0, 8);
+    let country_id_click = common::get_definition_locs(session, file_symbol, file_info, 0, 8);
     assert!(!country_id_click.is_empty(), "Expected at least 1 location for country_id field");
     assert!(country_id_click[0].origin_selection_range.is_some(), "origin_selection_range should be set for header field");
 
@@ -727,7 +726,7 @@ fn test_csv_ranges_unquoted_lf(session: &mut SessionInfo) {
     assert_eq!(origin_range.end.character as usize, 14, "country_id part should end at character 14");
 
     // Test header: click on "id" part (position 15 in "country_id:id")
-    let id_part_click = test_utils::get_definition_locs(session, file_symbol, file_info, 0, 15);
+    let id_part_click = common::get_definition_locs(session, file_symbol, file_info, 0, 15);
     assert!(!id_part_click.is_empty(), "Expected at least 1 location for id part in header");
     assert!(id_part_click[0].origin_selection_range.is_some(), "origin_selection_range should be set for id part");
 
@@ -738,7 +737,7 @@ fn test_csv_ranges_unquoted_lf(session: &mut SessionInfo) {
 
     // Test record: get_symbol on first record's id field
     // Line 1, char 5 should be in "state_unquoted_1" (positions 0-16)
-    let record_id_locs = test_utils::get_definition_locs(session, file_symbol, file_info, 1, 5);
+    let record_id_locs = common::get_definition_locs(session, file_symbol, file_info, 1, 5);
     assert_eq!(record_id_locs.len(), 1, "Expected 1 location for record id field");
     assert_eq!(record_id_locs[0].target_uri.to_file_path().unwrap().sanitize(), csv_file, "Expected location to be in same file");
 
@@ -781,7 +780,7 @@ fn test_csv_ranges_quoted_lf(session: &mut SessionInfo) {
     //               0123456789012345678901234567890
     // The quoted field "country_id:id" spans 5-19 (with quotes at 5 and 19)
     // Position 8 is 'u' in "country_id"
-    let country_id_click = test_utils::get_definition_locs(session, file_symbol, file_info, 0, 8);
+    let country_id_click = common::get_definition_locs(session, file_symbol, file_info, 0, 8);
     assert!(!country_id_click.is_empty(), "Expected at least 1 location for country_id in quoted header");
     assert!(country_id_click[0].origin_selection_range.is_some(), "origin_selection_range should be set");
 
@@ -793,7 +792,7 @@ fn test_csv_ranges_quoted_lf(session: &mut SessionInfo) {
     assert_eq!(origin_range.end.character as usize, 17, "country_id part should end at character 17");
 
     // Test header: click on "id" part (position 17 in "country_id:id", the 'i' after colon)
-    let id_part_click = test_utils::get_definition_locs(session, file_symbol, file_info, 0, 17);
+    let id_part_click = common::get_definition_locs(session, file_symbol, file_info, 0, 17);
     assert!(!id_part_click.is_empty(), "Expected at least 1 location for id part in quoted header");
     assert!(id_part_click[0].origin_selection_range.is_some(), "origin_selection_range should be set for id part");
 
@@ -804,7 +803,7 @@ fn test_csv_ranges_quoted_lf(session: &mut SessionInfo) {
 
     // Test record: get_symbol on first record's id field
     // Line 1: "state_quoted_1" - the entire field with quotes is 16 chars (positions 0-15)
-    let record_id_locs = test_utils::get_definition_locs(session, file_symbol, file_info, 1, 5);
+    let record_id_locs = common::get_definition_locs(session, file_symbol, file_info, 1, 5);
     assert_eq!(record_id_locs.len(), 1, "Expected 1 location for record id field");
     assert_eq!(record_id_locs[0].target_uri.to_file_path().unwrap().sanitize(), csv_file, "Expected location to be in same file");
 
@@ -844,7 +843,7 @@ fn test_csv_ranges_unquoted_crlf(session: &mut SessionInfo) {
     // Test header: click on "country_id" part (CRLF should be handled correctly)
     // Header format is same as LF: id,country_id:id,name,code (positions 0-26)
     // CRLF doesn't affect character positions, only affects how lines are split
-    let country_id_click = test_utils::get_definition_locs(session, file_symbol, file_info, 0, 8);
+    let country_id_click = common::get_definition_locs(session, file_symbol, file_info, 0, 8);
     assert!(!country_id_click.is_empty(), "Expected at least 1 location for country_id field (CRLF)");
     assert!(country_id_click[0].origin_selection_range.is_some(), "origin_selection_range should be set");
 
@@ -854,7 +853,7 @@ fn test_csv_ranges_unquoted_crlf(session: &mut SessionInfo) {
     assert_eq!(origin_range.end.character as usize, 14, "country_id part should end at character 14");
 
     // Test header: click on "id" part (after the colon)
-    let id_part_click = test_utils::get_definition_locs(session, file_symbol, file_info, 0, 15);
+    let id_part_click = common::get_definition_locs(session, file_symbol, file_info, 0, 15);
     assert!(!id_part_click.is_empty(), "Expected at least 1 location for id part in header (CRLF)");
     assert!(id_part_click[0].origin_selection_range.is_some(), "origin_selection_range should be set for id part");
 
@@ -865,7 +864,7 @@ fn test_csv_ranges_unquoted_crlf(session: &mut SessionInfo) {
 
     // Test record: get_symbol on first record's id field with CRLF line endings
     // Line 1, char 8 should be in "state_unquoted_crlf_1" (positions 0-20, the name is 21 chars)
-    let record_id_locs = test_utils::get_definition_locs(session, file_symbol, file_info, 1, 8);
+    let record_id_locs = common::get_definition_locs(session, file_symbol, file_info, 1, 8);
     assert_eq!(record_id_locs.len(), 1, "Expected 1 location for record id field (CRLF)");
     assert_eq!(record_id_locs[0].target_uri.to_file_path().unwrap().sanitize(), csv_file, "Expected location to be in same file");
 
@@ -909,7 +908,7 @@ fn test_csv_ranges_quoted_crlf(session: &mut SessionInfo) {
     //               0123456789012345678901234567890
     // The quoted field "country_id:id" spans 5-19 (with quotes at 5 and 19)
     // Position 8 is 'u' in "country_id"
-    let country_id_click = test_utils::get_definition_locs(session, file_symbol, file_info, 0, 8);
+    let country_id_click = common::get_definition_locs(session, file_symbol, file_info, 0, 8);
     assert!(!country_id_click.is_empty(), "Expected at least 1 location for country_id in quoted header (CRLF)");
     assert!(country_id_click[0].origin_selection_range.is_some(), "origin_selection_range should be set");
 
@@ -919,7 +918,7 @@ fn test_csv_ranges_quoted_crlf(session: &mut SessionInfo) {
     assert_eq!(origin_range.end.character as usize, 17, "country_id part should end at character 17");
 
     // Test header: click on "id" part (position 17, the 'i' after colon, with CRLF)
-    let id_part_click = test_utils::get_definition_locs(session, file_symbol, file_info, 0, 17);
+    let id_part_click = common::get_definition_locs(session, file_symbol, file_info, 0, 17);
     assert!(!id_part_click.is_empty(), "Expected at least 1 location for id part in quoted header (CRLF)");
     assert!(id_part_click[0].origin_selection_range.is_some(), "origin_selection_range should be set");
 
@@ -930,7 +929,7 @@ fn test_csv_ranges_quoted_crlf(session: &mut SessionInfo) {
 
     // Test record: get_symbol on first record's id field
     // Line 1: "state_quoted_crlf_1" - the entire field with quotes is 21 chars (positions 0-20)
-    let record_id_locs = test_utils::get_definition_locs(session, file_symbol, file_info, 1, 8);
+    let record_id_locs = common::get_definition_locs(session, file_symbol, file_info, 1, 8);
     assert_eq!(record_id_locs.len(), 1, "Expected 1 location for record id field (CRLF + quoted)");
     assert_eq!(record_id_locs[0].target_uri.to_file_path().unwrap().sanitize(), csv_file, "Expected location to be in same file");
 
@@ -956,8 +955,8 @@ fn test_csv_ranges_quoted_crlf(session: &mut SessionInfo) {
 /// also shows linked XML record blocks when ir.model / ir.model.fields data exist.
 #[test]
 fn test_xml_hover() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(true);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let xml_file_path = test_addons_path.join("module_1").join("records").join("test_records.xml").sanitize();
@@ -993,7 +992,7 @@ fn test_xml_hover() {
     // 1. Hover on the `id` attribute value of `xml_test_model` (line 2, char 20).
     //    `    <record id="xml_test_model" model="ir.model">`
     //    The id attr hover should emit an XML_DATA item for that record itself.
-    let hover_id_irmodel = test_utils::get_hover_xml_markdown(
+    let hover_id_irmodel = common::get_hover_xml_markdown(
         &mut session, xml_file_symbol, xml_file_info, 2, 20,
     ).unwrap_or_else(|| panic!("XML hover on id attr of xml_test_model returned None"));
     assert!(
@@ -1011,7 +1010,7 @@ fn test_xml_hover() {
 
     // 2. Hover on the `id` attribute value of `test_xml_test_record` (line 12, char 20).
     //    `    <record id="test_xml_test_record" model="pygls.tests.xml_test_model">`
-    let hover_id_data = test_utils::get_hover_xml_markdown(
+    let hover_id_data = common::get_hover_xml_markdown(
         &mut session, xml_file_symbol, xml_file_info, 12, 20,
     ).unwrap_or_else(|| panic!("XML hover on id attr of test_xml_test_record returned None"));
     assert!(
@@ -1031,7 +1030,7 @@ fn test_xml_hover() {
     //    `    <record id="test_xml_test_record" model="pygls.tests.xml_test_model">`
     //    pygls.tests.xml_test_model exists only in XML (no Python class), so expected:
     //    ir.model XML record block only.
-    let hover_model_attr = test_utils::get_hover_xml_markdown(
+    let hover_model_attr = common::get_hover_xml_markdown(
         &mut session, xml_file_symbol, xml_file_info, 12, 48,
     ).unwrap_or_else(|| panic!("XML hover on model attr returned None"));
     assert!(
@@ -1046,7 +1045,7 @@ fn test_xml_hover() {
     // 4. Hover on the `name` attribute value of the `partner_id` field (line 13, char 22).
     //    `        <field name="partner_id"/>`
     //    Expected: ir.model.fields XML record block.
-    let hover_field_name = test_utils::get_hover_xml_markdown(
+    let hover_field_name = common::get_hover_xml_markdown(
         &mut session, xml_file_symbol, xml_file_info, 13, 22,
     ).unwrap_or_else(|| panic!("XML hover on field name attr returned None"));
     assert!(
@@ -1070,7 +1069,7 @@ fn test_xml_hover() {
     //    `        self.env["pygls.tests.xml_test_model"]`
     //    pygls.tests.xml_test_model is an XML-only model (no Python class).
     //    Expected: ir.model XML record block (xml_test_model).
-    let hover_py_model_str = test_utils::get_hover_markdown(
+    let hover_py_model_str = common::get_hover_markdown(
         &mut session, py_file_symbol, py_file_info, 36, 24,
     ).unwrap_or_else(|| panic!("Python hover on model name string returned None"));
     assert!(
@@ -1085,7 +1084,7 @@ fn test_xml_hover() {
     // 6. Hover on `self.env.ref("module_1.xml_test_model")` (line 35, char 33).
     //    `        self.env.ref("module_1.xml_test_model")`
     //    Expected: the xml_test_model XML record block.
-    let hover_py_ref_str = test_utils::get_hover_markdown(
+    let hover_py_ref_str = common::get_hover_markdown(
         &mut session, py_file_symbol, py_file_info, 35, 33,
     ).unwrap_or_else(|| panic!("Python hover on xml_id ref string returned None"));
     assert!(
@@ -1101,8 +1100,8 @@ fn test_xml_hover() {
 /// Test go-to-definition for XML model name and ref attributes, and from Python model name strings.
 #[test]
 fn test_xml_definition() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(true);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let xml_file_path = test_addons_path.join("module_1").join("records").join("test_records.xml").sanitize();
@@ -1132,7 +1131,7 @@ fn test_xml_definition() {
     //    pygls.tests.xml_test_model has no Python class, so expected:
     //    only the ir.model XML record (xml_test_model) in test_records.xml.
     // ============================================================
-    let xml_model_attr_locs = test_utils::get_definition_locs(
+    let xml_model_attr_locs = common::get_definition_locs(
         &mut session, xml_file_symbol, xml_file_info, 12, 48,
     );
     assert!(!xml_model_attr_locs.is_empty(),
@@ -1150,7 +1149,7 @@ fn test_xml_definition() {
     //    (line 8, char 40 inside the ref attr value)
     // Expected: exactly the model_base_test_model record inside test_records.xml.
     // ============================================================
-    let xml_ref_locs = test_utils::get_definition_locs(
+    let xml_ref_locs = common::get_definition_locs(
         &mut session, xml_file_symbol, xml_file_info, 8, 40,
     );
     assert_eq!(xml_ref_locs.len(), 1,
@@ -1168,7 +1167,7 @@ fn test_xml_definition() {
     //    pygls.tests.xml_test_model is an XML-only model — no Python class.
     //    Expected: the ir.model XML record (xml_test_model) in test_records.xml.
     // ============================================================
-    let py_model_locs = test_utils::get_definition_locs(
+    let py_model_locs = common::get_definition_locs(
         &mut session, py_file_symbol, py_file_info, 35, 24,
     );
     assert!(!py_model_locs.is_empty(),
@@ -1187,7 +1186,7 @@ fn test_xml_definition() {
     //    `        self.env.ref("module_1.xml_test_model")`
     // Expected: the xml_test_model XML record in test_records.xml.
     // ============================================================
-    let py_ref_locs = test_utils::get_definition_locs(
+    let py_ref_locs = common::get_definition_locs(
         &mut session, py_file_symbol, py_file_info, 36, 35,
     );
     assert!(!py_ref_locs.is_empty(),
@@ -1207,10 +1206,10 @@ fn test_xml_definition() {
 /// run reports every failing case.
 #[test]
 fn test_decoded_values_vs_source_offsets() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
+    let (mut odoo, config) = common::setup_server(true);
     let models_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons")
         .join("module_semantic_tokens").join("models");
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
     let main = Fixture::open(&mut session, &models_path.join("sem_tokens_main.py").sanitize());
     let non_ascii = Fixture::open(&mut session, &models_path.join("sem_tokens_non_ascii.py").sanitize());
     let mut failures = vec![];
@@ -1308,11 +1307,11 @@ impl Fixture {
     }
 
     fn hover(&self, session: &mut SessionInfo, (line, character): (u32, u32)) -> String {
-        test_utils::get_hover_markdown(session, self.file_symbol, self.file_info, line, character).unwrap_or_default()
+        common::get_hover_markdown(session, self.file_symbol, self.file_info, line, character).unwrap_or_default()
     }
 
     fn definition(&self, session: &mut SessionInfo, (line, character): (u32, u32)) -> Vec<(lsp_types::Uri, lsp_types::Range)> {
-        test_utils::get_definition_locs(session, self.file_symbol, self.file_info, line, character)
+        common::get_definition_locs(session, self.file_symbol, self.file_info, line, character)
             .into_iter().map(|loc| (loc.target_uri, loc.target_range)).collect()
     }
 }

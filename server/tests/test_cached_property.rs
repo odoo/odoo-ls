@@ -1,24 +1,23 @@
-mod setup;
-mod test_utils;
+mod common;
 
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::core::symbols::symbol_keys::SymbolKey;
 use odoo_ls_server::utils::PathSanitizer;
 use std::env;
 use std::path::Path;
-use test_utils::get_resolved_symbols_at_position;
+use common::get_resolved_symbols_at_position;
 
 /// `cached_property`/`lazy_property`, bare or attribute-accessed, must be handled as properties.
 /// Odoo declares `Environment.user`, `Environment.company`, ... with them.
 #[test]
 fn test_cached_and_lazy_property_are_properties() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
     let path = env::current_dir()
         .unwrap()
         .join("tests/data/python/expressions/cached_property.py")
         .sanitize();
-    setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
+    common::prepare_custom_entry_point(&mut session, path.as_str());
 
     let file_mgr = session.file_mgr();
     let file_info = file_mgr.get_file_info(&path).unwrap();
@@ -46,7 +45,7 @@ fn test_cached_and_lazy_property_are_properties() {
     }
 
     // Hover presents a property, and not the signature of a method
-    let hover = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 35, 4)
+    let hover = common::get_hover_markdown(&mut session, file_symbol, file_info, 35, 4)
         .unwrap_or_default();
     assert!(
         hover.contains("(property)") && !hover.contains("def via_functools"),

@@ -9,8 +9,7 @@ use odoo_ls_server::utils::PathSanitizer;
 use tracing::warn;
 //use tracing::{warn};
 
-mod setup;
-mod test_utils;
+mod common;
 
 fn names(session: &SessionInfo, syms: &[SymbolKey]) -> Vec<String> {
     syms.iter().map(|&s| session.st().name(s).to_string()).collect()
@@ -22,11 +21,11 @@ fn names(session: &SessionInfo, syms: &[SymbolKey]) -> Vec<String> {
 /// `Evaluation::new_self`).
 #[test]
 fn test_self_returning_chain_hooks() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
+    let (mut odoo, config) = common::setup_server(true);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("arch_eval_hooks_model.py").sanitize();
     assert!(Path::new(&test_file).exists(), "Test file does not exist: {}", test_file);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file)) else {
@@ -55,7 +54,7 @@ fn test_self_returning_chain_hooks() {
         (22, 8, "search"),
     ];
     for &(line, character, method) in cases {
-        let resolved = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, line, character);
+        let resolved = common::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, line, character);
         assert!(
             resolved.contains(&arch_eval_hooks_model),
             "`{}()` should keep evaluating to `ArchEvalHooksModel` (self-returning hook). Got: {:?}",
@@ -75,7 +74,7 @@ fn test_self_returning_chain_hooks() {
     assert_eq!(base_test_model.len(), 1, "Expected to find the `BaseTestModel` class");
     let base_test_model = base_test_model[0];
 
-    let resolved_iter_var = test_utils::get_resolved_symbols_at_position(&mut session, base_file_symbol, base_file_info, 22, 13);
+    let resolved_iter_var = common::get_resolved_symbols_at_position(&mut session, base_file_symbol, base_file_info, 22, 13);
     assert!(
         resolved_iter_var.contains(&base_test_model),
         "`for var in self:` should type `var` as `BaseTestModel` (BaseModel.__iter__ hook). Got: {:?}",
@@ -86,14 +85,14 @@ fn test_self_returning_chain_hooks() {
 //Test self.env.registry hook
 #[test]
 fn test_registry_hooks() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
+    let (mut odoo, config) = common::setup_server(true);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("arch_eval_hooks_model.py").sanitize();
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let odoo_path = env::var("COMMUNITY_PATH").unwrap();
     let odoo_path = Path::new(&odoo_path).sanitize();
-    let partner_class_name = test_utils::PARTNER_CLASS_NAME(session.sync_odoo.version);
+    let partner_class_name = common::PARTNER_CLASS_NAME(session.sync_odoo.version);
 
     let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file)) else {
@@ -109,7 +108,7 @@ fn test_registry_hooks() {
     let registry_class = registry_class[0];
 
     // `registry_getitem_res = self.env.registry["res.partner"]` (line 24, 0-indexed 23)
-    let resolved_getitem = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 26, 8);
+    let resolved_getitem = common::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 26, 8);
     assert!(
         resolved_getitem.contains(&partner_class),
         "`self.env.registry[\"res.partner\"]` should evaluate to the `{}` model class. Got: {:?}",
@@ -118,7 +117,7 @@ fn test_registry_hooks() {
     );
 
     // `registry_prop_res = self.env.registry` (line 25, 0-indexed 24)
-    let resolved_prop = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 27, 8);
+    let resolved_prop = common::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 27, 8);
     assert!(resolved_prop.len() == 1);
     assert!(
         resolved_prop.contains(&registry_class),
@@ -130,10 +129,10 @@ fn test_registry_hooks() {
 /// Test hook on BaseModel.id and ids
 #[test]
 fn test_ids_and_id_field_hooks() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
+    let (mut odoo, config) = common::setup_server(true);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("arch_eval_hooks_model.py").sanitize();
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file)) else {
@@ -148,7 +147,7 @@ fn test_ids_and_id_field_hooks() {
     let int_type = int_type[0];
 
     // `ids_res = self.ids` (line 32, 0-indexed 30)
-    let resolved_ids = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 31, 8);
+    let resolved_ids = common::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 31, 8);
     assert!(resolved_ids.len() == 1);
     assert!(
         resolved_ids.contains(&list_type),
@@ -157,7 +156,7 @@ fn test_ids_and_id_field_hooks() {
     );
 
     // `id_res = self.id` (line 31, 0-indexed 30)
-    let resolved_id = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 32, 8);
+    let resolved_id = common::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 32, 8);
     assert!(
         resolved_id.contains(&int_type),
         "`self.id` should evaluate to `int` (Id.__get__ hook). Got: {:?}",
@@ -172,10 +171,10 @@ fn test_ids_and_id_field_hooks() {
 /// `odoo.<name>` attribute to the real symbol imported in `odoo/init.py`.
 #[test]
 fn test_odoo_init_symbol_hooks() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
+    let (mut odoo, config) = common::setup_server(true);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("arch_eval_hooks_model.py").sanitize();
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let odoo_path = env::var("COMMUNITY_PATH").unwrap();
     let odoo_path = Path::new(&odoo_path).sanitize();
@@ -195,16 +194,16 @@ fn test_odoo_init_symbol_hooks() {
     for &(init_name, line, character, is_call) in cases {
         let init_sym = session.sync_odoo.get_symbol(&odoo_path, (&["odoo", "init"], &[init_name]), u32::MAX);
         assert_eq!(init_sym.len(), 1, "Expected to find `odoo.init.{}`", init_name);
-        let mut expected = test_utils::resolve_symbol_types(&mut session, init_sym[0]);
+        let mut expected = common::resolve_symbol_types(&mut session, init_sym[0]);
         if is_call {
             // `init_sym` resolves to the function itself; resolve one more hop to get
             // what calling it returns.
             assert_eq!(expected.len(), 1, "Expected `odoo.init.{}` to resolve to a single function", init_name);
-            expected = test_utils::resolve_symbol_types(&mut session, expected[0]);
+            expected = common::resolve_symbol_types(&mut session, expected[0]);
         }
         assert!(!expected.is_empty(), "Expected `odoo.init.{}` to resolve to a type", init_name);
 
-        let actual = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, line, character);
+        let actual = common::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, line, character);
         assert!(
             expected.iter().any(|sym| actual.contains(sym)),
             "`odoo.{}` usage at {}:{} should evaluate like `odoo.init.{}`. Expected one of {:?}, got {:?}",
@@ -222,10 +221,10 @@ fn test_odoo_init_symbol_hooks() {
 /// Can only be tested on Odoo versions < 19.4, where the `ir.rule` model was still present.
 #[test]
 fn test_ir_rule_global_field_hook() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
+    let (mut odoo, config) = common::setup_server(true);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("arch_eval_hooks_model.py").sanitize();
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
     if session.sync_odoo.version >= (19, 4) {
         warn!("Skipping test ir_rule_global_field_hook because Odoo version is >= 19.4, which is not in the range of the hook.");
         return;
@@ -243,7 +242,7 @@ fn test_ir_rule_global_field_hook() {
     // ...and the eval hook should have wired its evaluation to the real `Boolean` field class.
     let boolean_class = session.sync_odoo.get_symbol(&odoo_path, (&["odoo", "orm", "fields_misc"], &["Boolean"]), u32::MAX);
     assert_eq!(boolean_class.len(), 1, "Expected to find the `Boolean` field class");
-    let resolved = test_utils::resolve_symbol_types(&mut session, global_sym[0]);
+    let resolved = common::resolve_symbol_types(&mut session, global_sym[0]);
     assert!(
         resolved.contains(&boolean_class[0]),
         "Expected `IrRule.global`'s evaluation to resolve to the `Boolean` field class. Got: {:?}",
@@ -252,8 +251,8 @@ fn test_ir_rule_global_field_hook() {
 
     // `self.env["ir.rule"].search([("global", "=", True)])` (line 41, 0-indexed 40)
     // should raise no diagnostic now that `global` is a recognized field.
-    let diagnostics = setup::setup::get_diagnostics_for_path(&mut session, &test_file);
-    let line_diagnostics = test_utils::diag_on_line(&diagnostics, 43);
+    let diagnostics = common::get_diagnostics_for_path(&mut session, &test_file);
+    let line_diagnostics = common::diag_on_line(&diagnostics, 43);
     assert!(
         line_diagnostics.is_empty(),
         "Expected no diagnostics on the `global` domain search, got: {:?}",
@@ -264,10 +263,10 @@ fn test_ir_rule_global_field_hook() {
 /// Test hook on `BaseModel.env`
 #[test]
 fn test_base_model_env_hook() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
+    let (mut odoo, config) = common::setup_server(true);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("arch_eval_hooks_model.py").sanitize();
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let odoo_path = env::var("COMMUNITY_PATH").unwrap();
     let odoo_path = Path::new(&odoo_path).sanitize();
@@ -287,7 +286,7 @@ fn test_base_model_env_hook() {
     let env_class = env_class[0];
 
     // `env_res = self.env` (line 69, 0-indexed 68)
-    let resolved = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 68, 8);
+    let resolved = common::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 68, 8);
     assert!(
         resolved.contains(&env_class),
         "`self.env` should evaluate to the `Environment` class (BaseModel.env hook). Got: {:?}",
@@ -302,10 +301,10 @@ fn test_base_model_env_hook() {
 /// `PythonArchEvalHooks`).
 #[test]
 fn test_scalar_field_get_hooks() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
+    let (mut odoo, config) = common::setup_server(true);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("arch_eval_hooks_model.py").sanitize();
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file)) else {
@@ -335,7 +334,7 @@ fn test_scalar_field_get_hooks() {
         assert_eq!(expected.len(), 1, "Expected to find the `{}` type", expected_tree.1.last().unwrap());
         let expected = expected[0];
 
-        let resolved = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, line, character);
+        let resolved = common::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, line, character);
         assert!(
             resolved.contains(&expected),
             "`{}` field access should evaluate to `{}` ({}.__get__ hook). Got: {:?}",
@@ -350,14 +349,14 @@ fn test_scalar_field_get_hooks() {
 /// context set up by `update_field_init_func_level`).
 #[test]
 fn test_relational_field_get_hooks() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
+    let (mut odoo, config) = common::setup_server(true);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("arch_eval_hooks_model.py").sanitize();
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let odoo_path = env::var("COMMUNITY_PATH").unwrap();
     let odoo_path = Path::new(&odoo_path).sanitize();
-    let partner_class_name = test_utils::PARTNER_CLASS_NAME(session.sync_odoo.version);
+    let partner_class_name = common::PARTNER_CLASS_NAME(session.sync_odoo.version);
 
     let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file)) else {
@@ -373,7 +372,7 @@ fn test_relational_field_get_hooks() {
     let partner_class = partner_class[0];
 
     // `child_ids_res = self.child_ids` (line 93, 0-indexed 92): One2many("...ArchEvalHooksModel...", "parent_id")
-    let resolved_child_ids = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 92, 8);
+    let resolved_child_ids = common::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 92, 8);
     assert!(
         resolved_child_ids.contains(&arch_eval_hooks_model),
         "`self.child_ids` (One2many) should evaluate to the `ArchEvalHooksModel` comodel class. Got: {:?}",
@@ -381,7 +380,7 @@ fn test_relational_field_get_hooks() {
     );
 
     // `partner_ids_res = self.partner_ids` (line 94, 0-indexed 93): Many2many("res.partner")
-    let resolved_partner_ids = test_utils::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 93, 8);
+    let resolved_partner_ids = common::get_resolved_symbols_at_position(&mut session, file_symbol, file_info, 93, 8);
     assert!(
         resolved_partner_ids.contains(&partner_class),
         "`self.partner_ids` (Many2many) should evaluate to the `{}` comodel class. Got: {:?}",
@@ -396,10 +395,10 @@ fn test_relational_field_get_hooks() {
 /// context). Non-relational fields are left untouched.
 #[test]
 fn test_relational_field_hover_shows_comodel() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
+    let (mut odoo, config) = common::setup_server(true);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("arch_eval_hooks_model.py").sanitize();
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file)) else {
@@ -413,7 +412,7 @@ fn test_relational_field_hover_shows_comodel() {
         (65, 4, "(res.partner) Many2many"),
     ];
     for &(line, character, expected) in cases {
-        let hover = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, line, character)
+        let hover = common::get_hover_markdown(&mut session, file_symbol, file_info, line, character)
             .unwrap_or_default();
         assert!(
             hover.contains(expected),
@@ -423,7 +422,7 @@ fn test_relational_field_hover_shows_comodel() {
     }
 
     // `test_int = fields.Integer()` (line 9, 0-indexed 8): no comodel prefix
-    let hover = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 8, 4)
+    let hover = common::get_hover_markdown(&mut session, file_symbol, file_info, 8, 4)
         .unwrap_or_default();
     assert!(
         hover.contains("Integer") && !hover.contains(") Integer"),

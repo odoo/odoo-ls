@@ -1,4 +1,4 @@
-mod setup;
+mod common;
 
 use odoo_ls_server::core::symbols::symbol_keys::KeyValidator;
 use odoo_ls_server::utils::PathSanitizer;
@@ -12,14 +12,14 @@ use std::env;
 /// removal call sites could leak one half while dropping the other.
 #[test]
 fn test_custom_entry_point_teardown_frees_entry_and_root() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let path = env::current_dir()
         .unwrap()
         .join("tests/data/python/expressions/follow_ref.py")
         .sanitize();
-    setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
+    common::prepare_custom_entry_point(&mut session, path.as_str());
 
     let entry_key = *session
         .sync_odoo

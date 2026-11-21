@@ -2,7 +2,7 @@ use std::env;
 
 use odoo_ls_server::utils::PathSanitizer;
 
-use crate::{setup::setup::*, test_utils::{verify_diagnostics_against_doc}};
+use crate::common::*;
 
 #[test]
 fn test_ols03302() {

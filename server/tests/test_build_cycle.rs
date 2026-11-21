@@ -9,7 +9,7 @@ use odoo_ls_server::core::symbols::symbol_keys::SymbolKey;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod setup;
+mod common;
 
 // Regression test for a stack overflow in SyncOdoo::build_now when three files form
 // an ARCH_EVAL dep cycle via mutual class-base references. The cycle guard in
@@ -17,8 +17,8 @@ mod setup;
 // build_now ↔ build_now_dependencies recurse until the stack is exhausted.
 #[test]
 fn test_build_now_arch_eval_cycle_does_not_overflow() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let module_dir = env::current_dir()
         .unwrap()

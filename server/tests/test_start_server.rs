@@ -3,7 +3,7 @@ use std::path::Path;
 
 use odoo_ls_server::utils::PathSanitizer;
 
-mod setup;
+mod common;
 
 /* This file tests that your setup is working, and show you how to write tests. */
 
@@ -19,8 +19,8 @@ fn test_setup() {
 #[ignore = "example; every setup_server(true) test already covers it"]
 fn test_start_odoo_server() {
     /* First, let's launch the server. It will setup a SyncOdoo struct, with a SyncChannel, that we can use to get the messages that the client would receive. */
-    let (mut odoo, config) = setup::setup::setup_server(true);
-    let _ = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(true);
+    let _ = common::create_init_session(&mut odoo, config);
 
     let odoo_path = Path::new(&env::var("COMMUNITY_PATH").unwrap()).sanitize();
 

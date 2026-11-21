@@ -6,8 +6,7 @@ use odoo_ls_server::features::completion::CompletionFeature;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::{PathSanitizer, ToFilePath};
 
-mod setup;
-mod test_utils;
+mod common;
 
 #[derive(Clone, Copy, Hash, Eq, PartialEq)]
 enum TestDataFiles {
@@ -35,7 +34,7 @@ fn get_test_data_file_paths() -> HashMap<TestDataFiles, String> {
 fn collect_diagnostics(session: &mut SessionInfo, file_paths: &HashMap<TestDataFiles, String>) -> HashMap<TestDataFiles, Vec<Diagnostic>> {
     let paths_to_files = file_paths.iter().map(|(k, v)| (v.as_str(), *k)).collect::<HashMap<_, _>>();
     let mut diagnostics_map = HashMap::new();
-    let diags = setup::setup::get_diagnostics_for_paths(session, &file_paths.values().cloned().collect::<Vec<_>>());
+    let diags = common::get_diagnostics_for_paths(session, &file_paths.values().cloned().collect::<Vec<_>>());
     for (path, diags) in diags {
         if let Some(&key) = paths_to_files.get(path.as_str()) {
             diagnostics_map.insert(key, diags);
@@ -79,8 +78,8 @@ fn py_test_source(model_expr: &str, domain_expr: &str) -> String {
 
 #[test]
 fn test_xml_fields() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(true);
+    let mut session = common::create_init_session(&mut odoo, config);
     let file_paths = get_test_data_file_paths();
 
     let diagnostics = collect_diagnostics(&mut session, &file_paths);
@@ -92,14 +91,14 @@ fn test_xml_fields() {
     assert!(diagnostics[&TestDataFiles::XTestModelM2oCsv].is_empty(), "Expected no diagnostics for x_test_model_m2o.csv, but found: {:?}", diagnostics[&TestDataFiles::XTestModelM2oCsv]);
 
     // Look for OLS03303 diagnostic on py_test_model.py
-    let doc_diags = setup::setup::get_diagnostics_test_comments(&mut session, &file_paths[&TestDataFiles::PyTestModel]);
-    test_utils::verify_diagnostics_against_doc(&diagnostics[&TestDataFiles::PyTestModel], &doc_diags);
+    let doc_diags = common::get_diagnostics_test_comments(&mut session, &file_paths[&TestDataFiles::PyTestModel]);
+    common::verify_diagnostics_against_doc(&diagnostics[&TestDataFiles::PyTestModel], &doc_diags);
 }
 
 #[test]
 fn test_xml_fields_def_hover_completion() {
-    let (mut odoo, config) = setup::setup::setup_server(true);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(true);
+    let mut session = common::create_init_session(&mut odoo, config);
     let file_paths = get_test_data_file_paths();
 
     let x_test_model_xml_path = Path::new(&file_paths[&TestDataFiles::XTestModelXml]);
@@ -123,7 +122,7 @@ fn test_xml_fields_def_hover_completion() {
     };
 
     // Header x_name should go to field definition in x_test_model.xml
-    let x_name_defs = test_utils::get_definition_locs(
+    let x_name_defs = common::get_definition_locs(
         &mut session,
         x_test_model_csv_symbol,
         x_test_model_csv_info,
@@ -143,7 +142,7 @@ fn test_xml_fields_def_hover_completion() {
     );
 
     // CSV xml_id should resolve to itself (same-file reference)
-    let test_record_defs = test_utils::get_definition_locs(
+    let test_record_defs = common::get_definition_locs(
         &mut session,
         x_test_model_csv_symbol,
         x_test_model_csv_info,
@@ -169,7 +168,7 @@ fn test_xml_fields_def_hover_completion() {
     };
 
     // Header x_name should go to field definition in x_test_model_m2o.xml
-    let x_name_m2o_defs = test_utils::get_definition_locs(
+    let x_name_m2o_defs = common::get_definition_locs(
         &mut session,
         x_test_model_m2o_csv_symbol,
         x_test_model_m2o_csv_info,
@@ -189,7 +188,7 @@ fn test_xml_fields_def_hover_completion() {
     );
 
     // CSV xml_id should resolve to itself (same-file reference)
-    let test_m2o_record_defs = test_utils::get_definition_locs(
+    let test_m2o_record_defs = common::get_definition_locs(
         &mut session,
         x_test_model_m2o_csv_symbol,
         x_test_model_m2o_csv_info,
@@ -220,27 +219,27 @@ fn test_xml_fields_def_hover_completion() {
     };
 
     // Hover model name in self.env["x_test_model_m2o"]
-    let hover_model = test_utils::get_hover_markdown(&mut session, py_file_symbol, py_file_info, 6, 24)
+    let hover_model = common::get_hover_markdown(&mut session, py_file_symbol, py_file_info, 6, 24)
         .unwrap_or_else(|| panic!("Expected hover content on model name"));
     assert!(hover_model.contains("x_test_model_m2o"), "Model hover should include x_test_model_m2o; got:\n{}", hover_model);
 
     // Hover on x_other_model and x_name in domain string
-    let hover_x_other_model = test_utils::get_hover_markdown(&mut session, py_file_symbol, py_file_info, 6, 52)
+    let hover_x_other_model = common::get_hover_markdown(&mut session, py_file_symbol, py_file_info, 6, 52)
         .unwrap_or_else(|| panic!("Expected hover content on x_other_model"));
     assert!(hover_x_other_model.contains("XML record"), "Hover on x_other_model should return an XML-backed record description; got:\n{}", hover_x_other_model);
     assert!(hover_x_other_model.contains("m2o_field"), "Hover on x_other_model should reference m2o_field; got:\n{}", hover_x_other_model);
 
-    let hover_x_name = test_utils::get_hover_markdown(&mut session, py_file_symbol, py_file_info, 6, 63)
+    let hover_x_name = common::get_hover_markdown(&mut session, py_file_symbol, py_file_info, 6, 63)
         .unwrap_or_else(|| panic!("Expected hover content on x_name"));
     assert!(hover_x_name.contains("XML record"), "Hover on x_name should return an XML-backed record description; got:\n{}", hover_x_name);
 
     // Hover on search() call itself should return something useful
-    let hover_search = test_utils::get_hover_markdown(&mut session, py_file_symbol, py_file_info, 6, 39)
+    let hover_search = common::get_hover_markdown(&mut session, py_file_symbol, py_file_info, 6, 39)
         .unwrap_or_else(|| panic!("Expected hover content on search"));
     assert!(hover_search.contains("search"), "Hover on search should mention search; got:\n{}", hover_search);
 
     // Definition from Python model and fields should resolve to XML model/field records
-    let py_model_defs = test_utils::get_definition_locs(&mut session, py_file_symbol, py_file_info, 6, 24);
+    let py_model_defs = common::get_definition_locs(&mut session, py_file_symbol, py_file_info, 6, 24);
     assert!(
         py_model_defs
             .iter()
@@ -253,7 +252,7 @@ fn test_xml_fields_def_hover_completion() {
             .collect::<Vec<_>>()
     );
 
-    let py_x_other_model_defs = test_utils::get_definition_locs(&mut session, py_file_symbol, py_file_info, 6, 52);
+    let py_x_other_model_defs = common::get_definition_locs(&mut session, py_file_symbol, py_file_info, 6, 52);
     assert!(
         py_x_other_model_defs
             .iter()
@@ -266,7 +265,7 @@ fn test_xml_fields_def_hover_completion() {
             .collect::<Vec<_>>()
     );
 
-    let py_x_name_defs = test_utils::get_definition_locs(&mut session, py_file_symbol, py_file_info, 6, 63);
+    let py_x_name_defs = common::get_definition_locs(&mut session, py_file_symbol, py_file_info, 6, 63);
     assert!(
         py_x_name_defs
             .iter()

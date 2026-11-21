@@ -3,9 +3,9 @@ use std::path::Path;
 use lsp_types::{Location, PartialResultParams, Position, WorkDoneProgressParams};
 use odoo_ls_server::{core::file_mgr::FileMgr, threads::SessionInfo, utils::PathSanitizer};
 
-use crate::setup::setup::{create_init_session, setup_server};
+use crate::common::{create_init_session, setup_server};
 
-mod setup;
+mod common;
 
 
 

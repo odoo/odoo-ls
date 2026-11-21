@@ -1,5 +1,4 @@
-mod setup;
-mod test_utils;
+mod common;
 use odoo_ls_server::core::file_mgr::FileInfoKey;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::core::symbols::symbol_keys::{SourceFileKey};
@@ -7,17 +6,17 @@ use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 use std::env;
 use std::path::Path;
-use test_utils::get_resolved_symbols_at_position;
+use common::get_resolved_symbols_at_position;
 
 #[test]
 fn test_follow_ref() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
     let path = env::current_dir()
         .unwrap()
         .join("tests/data/python/expressions/follow_ref.py")
         .sanitize();
-    setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
+    common::prepare_custom_entry_point(&mut session, path.as_str());
     assert!(session.sync_odoo.entry_point_mgr.custom_entry_points().len() == 1);
     let file_mgr = session.file_mgr();
     let file_info = file_mgr.get_file_info(&path).unwrap();

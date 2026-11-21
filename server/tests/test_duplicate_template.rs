@@ -13,7 +13,7 @@ use odoo_ls_server::core::odoo::Odoo;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod setup;
+mod common;
 
 const FIXTURE: &str = "module_duplicate_templates";
 
@@ -31,7 +31,7 @@ fn extension_xml(t_name: &str, t_inherit: &str) -> String {
 
 /// Whether each file was last published with a diagnostic of each code.
 fn has_codes<const N: usize, const C: usize>(session: &mut SessionInfo, paths: &[String; N], codes: [&str; C]) -> [[bool; C]; N] {
-    let diagnostics = setup::setup::get_diagnostics_for_paths(session, paths);
+    let diagnostics = common::get_diagnostics_for_paths(session, paths);
     paths.clone().map(|path| codes.map(|code| {
         diagnostics.get(&path).is_some_and(|diags| diags.iter().any(|d| d.code == Some(NumberOrString::String(S!(code)))))
     }))
@@ -60,11 +60,11 @@ fn test_ols05072_duplicate_template() {
     let codes = ["OLS05072", "OLS05077"];
     let fixture_path = fixture.path().sanitize();
 
-    let (mut odoo, mut config) = setup::setup::setup_server(true);
+    let (mut odoo, mut config) = common::setup_server(true);
     config.set_string_list(ConfigKey::AddonsPaths, [addons_path().sanitize(), fixture_path.clone()]);
     odoo.file_mgr
         .add_workspace_folder(S!("duplicate_templates_addons"), FileMgr::pathname2uri(&fixture_path));
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     assert_eq!(
         has_codes(&mut session, &paths, codes),

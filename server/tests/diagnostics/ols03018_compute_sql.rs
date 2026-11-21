@@ -8,7 +8,7 @@ use odoo_ls_server::odoo_version::OdooVersion;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
-use crate::{setup::setup::*, test_utils::diag_on_line};
+use crate::common::*;
 
 const VALID_COMPUTE_SQL_LINE: u32 = 7;
 const MISSING_COMPUTE_SQL_LINE: u32 = 8;

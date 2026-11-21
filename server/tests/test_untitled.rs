@@ -5,8 +5,8 @@ use odoo_ls_server::features::completion::CompletionFeature;
 use odoo_ls_server::features::hover::HoverFeature;
 use odoo_ls_server::features::definition::DefinitionFeature;
 
-use crate::setup::setup::{create_init_session, setup_server};
-mod setup;
+use crate::common::{create_init_session, setup_server};
+mod common;
 
 #[test]
 /// Simple test to verify LSP features on untitled files, open, change, hover, complete.

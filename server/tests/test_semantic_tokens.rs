@@ -11,9 +11,9 @@ use odoo_ls_server::features::semantic_tokens::SemanticTokensFeature;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
-use crate::setup::setup::{create_init_session, setup_server};
+use crate::common::{create_init_session, setup_server};
 
-mod setup;
+mod common;
 
 const CLASS: SemanticTokenType = SemanticTokenType::CLASS;
 const FUNCTION: SemanticTokenType = SemanticTokenType::FUNCTION;

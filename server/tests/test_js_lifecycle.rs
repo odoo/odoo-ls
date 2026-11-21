@@ -17,7 +17,7 @@ use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 use odoo_ls_server::{S, Sy};
 
-mod setup;
+mod common;
 
 /// One shared setup.
 /// `test_js_lib_file_no_oxc_diagnostics` drains the session channel, so it runs last.
@@ -26,11 +26,11 @@ fn test_js_lifecycle() {
     let fixture = build_fixture_addons();
     let fixture_path = fixture.path().sanitize();
 
-    let (mut odoo, mut config) = setup::setup::setup_server(true);
+    let (mut odoo, mut config) = common::setup_server(true);
     config.set_string_list(ConfigKey::AddonsPaths, [addons_path().sanitize(), fixture_path.clone()]);
     odoo.file_mgr
         .add_workspace_folder(S!("asset_events_addons"), FileMgr::pathname2uri(&fixture_path));
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     test_asset_events(&mut session, &fixture);
     test_component_index_lifecycle(&mut session, &fixture);
@@ -405,7 +405,7 @@ fn test_js_lib_file_no_oxc_diagnostics(session: &mut SessionInfo) {
 
     Odoo::handle_did_open(session, make_js_open_params(lib_uri.clone(), bad_js));
 
-    let diagnostics = setup::setup::get_diagnostics_for_path(session, &lib_path);
+    let diagnostics = common::get_diagnostics_for_path(session, &lib_path);
     let oxc_diagnostics: Vec<_> = diagnostics.iter().filter(|d| {
         matches!(&d.source, Some(s) if s.contains("oxc") || s.contains("OXC"))
     }).collect();

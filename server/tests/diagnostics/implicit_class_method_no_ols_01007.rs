@@ -1,7 +1,7 @@
 use odoo_ls_server::utils::PathSanitizer;
 use std::env;
 
-use crate::{setup::setup::*, test_utils::diag_on_line};
+use crate::common::*;
 
 #[test]
 fn implicit_class_method_no_ols_01007() {

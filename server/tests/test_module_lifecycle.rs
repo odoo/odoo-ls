@@ -11,7 +11,7 @@ use odoo_ls_server::utils::PathSanitizer;
 use std::fs;
 use std::path::Path;
 
-mod setup;
+mod common;
 
 /// A directory already indexed as a namespace must become a module when its `__manifest__.py`
 /// appears, and the namespace it replaces must be unloaded rather than left in the arena.
@@ -31,9 +31,9 @@ fn test_namespace_becomes_module_when_manifest_is_created() {
     // same string (on macOS the temp dir is behind a symlink).
     let addons_path = fs::canonicalize(temp.path()).unwrap();
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
-    let (mut odoo, mut config) = setup::setup::setup_server(true);
+    let (mut odoo, mut config) = common::setup_server(true);
     config.set_string_list(ConfigKey::AddonsPaths, [fixtures.sanitize(), addons_path.sanitize()]);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let addons = session.sync_odoo.addons_namespace().expect("odoo/addons namespace should exist");
     let child = session.st()[addons].get_child("foo");

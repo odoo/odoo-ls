@@ -1,4 +1,4 @@
-mod setup;
+mod common;
 
 use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::SyncOdoo;
@@ -11,14 +11,14 @@ use std::env;
 /// so the subsequent `session.st_mut()[to_del]` indexed an already-removed slotmap entry.
 #[test]
 fn test_delete_file_path_does_not_panic() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let path = env::current_dir()
         .unwrap()
         .join("tests/data/python/expressions/follow_ref.py")
         .sanitize();
-    setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
+    common::prepare_custom_entry_point(&mut session, path.as_str());
 
     // close the file so it gets actually deleted
     let file_info = session.file_mgr().get_file_info(&path).unwrap();

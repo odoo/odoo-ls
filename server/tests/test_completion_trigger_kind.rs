@@ -5,8 +5,8 @@ use odoo_ls_server::core::symbols::symbol_keys::{SourceFileKey};
 use odoo_ls_server::features::completion::CompletionFeature;
 use odoo_ls_server::threads::SessionInfo;
 
-use crate::setup::setup::{create_init_session, setup_server};
-mod setup;
+use crate::common::{create_init_session, setup_server};
+mod common;
 
 /// Open an untitled python buffer and return its file symbol + info.
 /// Untitled buffers don't need an Odoo install, which keeps these tests

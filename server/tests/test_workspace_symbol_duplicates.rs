@@ -5,7 +5,7 @@
 use lsp_types::WorkspaceSymbolResponse;
 use odoo_ls_server::features::workspace_symbols::WorkspaceSymbolFeature;
 
-mod setup;
+mod common;
 
 #[test]
 fn test_workspace_symbol_no_duplicates_for_entry_points_sharing_root() {
@@ -13,8 +13,8 @@ fn test_workspace_symbol_no_duplicates_for_entry_points_sharing_root() {
     // point for the test addons path (via `addons_paths`). The ADDON entry point shares its
     // root symbol with the MAIN entry point, so `iter_all()` yields two entry points pointing
     // at the same tree.
-    let (mut odoo, config) = setup::setup::setup_server(true);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(true);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     // "Module2CustomModel" is defined exactly once in the test addons (module_2/models/base_test_models.py).
     let response = WorkspaceSymbolFeature::get_workspace_symbols(&mut session, "Module2CustomModel".to_string())

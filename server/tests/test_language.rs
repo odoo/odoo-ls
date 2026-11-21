@@ -8,8 +8,8 @@ use odoo_ls_server::core::odoo::Odoo;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod setup;
-use setup::setup::{create_init_session, get_diagnostics_for_path, setup_server};
+mod common;
+use common::{create_init_session, get_diagnostics_for_path, setup_server};
 
 /// Helper to check if diagnostics contain a specific code
 fn has_diagnostic_code(diagnostics: &[lsp_types::Diagnostic], code: &str) -> bool {

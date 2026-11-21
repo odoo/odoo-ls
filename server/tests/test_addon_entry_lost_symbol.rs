@@ -10,7 +10,7 @@ use odoo_ls_server::core::symbols::symbol_keys::SymbolKey;
 use odoo_ls_server::utils::PathSanitizer;
 use odoo_ls_server::Sy;
 
-mod setup;
+mod common;
 
 // Regression test for the panic at odoo.rs:2414 (`Option::unwrap()` on `None`) in
 // `search_symbols_to_rebuild`'s `addons_entry_points` loop: deleting an addon's
@@ -20,8 +20,8 @@ mod setup;
 // (`restore_addon_entry`) if its path is created again.
 #[test]
 fn test_addon_entry_losing_its_symbol_does_not_panic() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
     let _ = session.test_drain_restart_notifications(); // discard whatever init itself sent
 
     let fixture_root = env::current_dir().unwrap().join("tests/data/addon_entry_lost_symbol").sanitize();

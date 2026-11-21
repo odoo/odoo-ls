@@ -11,11 +11,11 @@ use odoo_ls_server::core::symbols::symbol_keys::SymbolKey;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod setup;
+mod common;
 
 //build a module with a single file
 fn build_module(odoo: &mut SyncOdoo, config: ConfigEntry) -> (SessionInfo<'_>, String) {
-    let mut session = setup::setup::create_init_session(odoo, config);
+    let mut session = common::create_init_session(odoo, config);
 
     let module_dir = env::current_dir()
         .unwrap()
@@ -39,7 +39,7 @@ fn get_file(session: &SessionInfo, module_dir: &str, name: &str) -> SymbolKey {
 
 #[test]
 fn test_build_now_on_previous_step_is_noop() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
+    let (mut odoo, config) = common::setup_server(false);
     let (mut session, module_dir) = build_module(&mut odoo, config);
 
     let file_a = get_file(&session, &module_dir, "file_a").unwrap_buildable_key();
@@ -63,7 +63,7 @@ fn test_build_now_on_previous_step_is_noop() {
 
 #[test]
 fn test_set_build_status_on_previous_step_to_done_is_noop() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
+    let (mut odoo, config) = common::setup_server(false);
     let (mut session, module_dir) = build_module(&mut odoo, config);
 
     let file_a = get_file(&session, &module_dir, "file_a").unwrap_buildable_key();
@@ -81,7 +81,7 @@ fn test_set_build_status_on_previous_step_to_done_is_noop() {
 #[test]
 #[should_panic(expected = "A previous build step should not be changed to a non-DONE status")]
 fn test_set_build_status_on_previous_step_to_pending_panics() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
+    let (mut odoo, config) = common::setup_server(false);
     let (mut session, module_dir) = build_module(&mut odoo, config);
 
     let file_a = get_file(&session, &module_dir, "file_a").unwrap_buildable_key();
@@ -94,7 +94,7 @@ fn test_set_build_status_on_previous_step_to_pending_panics() {
 
 #[test]
 fn test_queue_is_noop_once_step_is_done() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
+    let (mut odoo, config) = common::setup_server(false);
     let (mut session, module_dir) = build_module(&mut odoo, config);
 
     let file_a = get_file(&session, &module_dir, "file_a").unwrap_buildable_key();
@@ -110,7 +110,7 @@ fn test_queue_is_noop_once_step_is_done() {
 
 #[test]
 fn test_buildsteps_steps() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
+    let (mut odoo, config) = common::setup_server(false);
     let (mut session, module_dir) = build_module(&mut odoo, config);
 
     let file_a = get_file(&session, &module_dir, "file_a").unwrap_buildable_key();

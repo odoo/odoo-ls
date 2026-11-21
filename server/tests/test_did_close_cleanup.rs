@@ -8,15 +8,15 @@ use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::Odoo;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod setup;
+mod common;
 
 // Closing a file whose symbols are shared with files that are still open must leave them
 // alone. Regression: goto-definition on `str` opens builtins.pyi, and closing that tab
 // unloaded builtins for the session - every later `get_ts_*` panicked on its unwrap.
 #[test]
 fn test_closing_builtins_pyi_keeps_builtins() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let builtins_path = Path::new(&session.sync_odoo.stdlib_dir).join("builtins.pyi").sanitize();
     assert!(
@@ -38,8 +38,8 @@ fn test_closing_builtins_pyi_keeps_builtins() {
 // unload. Its cache stays: the file is on disk, and nothing but its own entry served it.
 #[test]
 fn test_closing_a_standalone_file_still_releases_its_own_entry() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let point_path = env::current_dir().unwrap().join("tests/data/nested_dir_race/pkg/models/point.py").sanitize();
     let point_uri = FileMgr::pathname2uri(&point_path);
@@ -76,14 +76,14 @@ fn test_closing_a_standalone_file_still_releases_its_own_entry() {
 // to nothing is not external, or closing a standalone file would drop its cache too.
 #[test]
 fn test_is_external_path() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let builtins_path = Path::new(&session.sync_odoo.stdlib_dir).join("builtins.pyi").sanitize();
     assert!(session.sync_odoo.has_only_external_symbols(Path::new(&builtins_path)), "typeshed is external");
 
     let own_path = env::current_dir().unwrap().join("tests/data/nested_dir_race/pkg/models/point.py").sanitize();
-    setup::setup::prepare_custom_entry_point(&mut session, &own_path);
+    common::prepare_custom_entry_point(&mut session, &own_path);
     assert!(!session.sync_odoo.has_only_external_symbols(Path::new(&own_path)), "a file with an entry of its own is not");
 
     let unknown_path = env::current_dir().unwrap().join("tests/data/nothing_here.py").sanitize();
@@ -94,14 +94,14 @@ fn test_is_external_path() {
 // (site-packages, sys.path). Arch-eval would have dropped it, but skips files that are open.
 #[test]
 fn test_closing_an_external_file_drops_its_cache_but_keeps_its_symbols() {
-    let (mut odoo, config) = setup::setup::setup_server(false);
-    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let (mut odoo, config) = common::setup_server(false);
+    let mut session = common::create_init_session(&mut odoo, config);
 
     let lib_dir = env::current_dir().unwrap().join("tests/data/external_entry").sanitize();
     let lib_path = Path::new(&lib_dir).join("lib_module.py").sanitize();
     let client_path = env::current_dir().unwrap().join("tests/data/external_entry_client.py").sanitize();
     EntryPointMgr::add_entry_to_public(&mut session, lib_dir.clone());
-    setup::setup::prepare_custom_entry_point(&mut session, &client_path);
+    common::prepare_custom_entry_point(&mut session, &client_path);
 
     assert!(
         session.sync_odoo.has_only_external_symbols(Path::new(&lib_path)),
