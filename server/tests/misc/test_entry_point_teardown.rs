@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use odoo_ls_server::core::symbols::symbol_keys::KeyValidator;
 use odoo_ls_server::utils::PathSanitizer;

@@ -8,7 +8,7 @@ use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::Odoo;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod common;
+use crate::common;
 
 // Closing a file whose symbols are shared with files that are still open must leave them
 // alone. Regression: goto-definition on `str` opens builtins.pyi, and closing that tab

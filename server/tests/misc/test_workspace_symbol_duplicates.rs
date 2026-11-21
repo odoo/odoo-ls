@@ -5,7 +5,7 @@
 use lsp_types::WorkspaceSymbolResponse;
 use odoo_ls_server::features::workspace_symbols::WorkspaceSymbolFeature;
 
-mod common;
+use crate::common;
 
 #[test]
 fn test_workspace_symbol_no_duplicates_for_entry_points_sharing_root() {

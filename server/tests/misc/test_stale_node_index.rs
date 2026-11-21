@@ -9,7 +9,7 @@ use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::core::symbols::storage::SymbolTable;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod common;
+use crate::common;
 
 // `stale_file.py` re-parsed with content holding no function at all, so every node index
 // the old parse handed out now addresses something that is not a `Stmt::FunctionDef`.

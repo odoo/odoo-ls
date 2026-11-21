@@ -8,7 +8,7 @@ use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::Odoo;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod common;
+use crate::common;
 
 // `in_workspace` only checks a file's immediate parent, so a file under a
 // bare, `__init__.py`-less directory (e.g. `pkg/models/point.py`) ends up

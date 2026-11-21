@@ -5,7 +5,7 @@ use odoo_ls_server::core::build_scheduler::BuildScheduler;
 use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::{Odoo, SyncOdoo};
 
-mod common;
+use crate::common;
 
 // `handle_did_close` treats an untitled path as always "gone from disk"
 // (`FileMgr::is_untitled`), so closing one takes the unconditional-clear

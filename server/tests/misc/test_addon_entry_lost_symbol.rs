@@ -10,7 +10,7 @@ use odoo_ls_server::core::symbols::symbol_keys::SymbolKey;
 use odoo_ls_server::utils::PathSanitizer;
 use odoo_ls_server::Sy;
 
-mod common;
+use crate::common;
 
 // Regression test for the panic at odoo.rs:2414 (`Option::unwrap()` on `None`) in
 // `search_symbols_to_rebuild`'s `addons_entry_points` loop: deleting an addon's

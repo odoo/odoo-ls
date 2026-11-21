@@ -9,7 +9,7 @@ use odoo_ls_server::core::symbols::symbol_keys::SymbolKey;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod common;
+use crate::common;
 
 // Regression test for a stack overflow in SyncOdoo::build_now when three files form
 // an ARCH_EVAL dep cycle via mutual class-base references. The cycle guard in

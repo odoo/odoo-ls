@@ -4,7 +4,7 @@ use odoo_ls_server::core::build_scheduler::BuildScheduler;
 use odoo_ls_server::core::entry_point::EntryPointMgr;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod common;
+use crate::common;
 
 // Regression test: `PythonArchBuilder::load_arch` used to unwrap a `FileMgr` cache
 // entry that could already be evicted, panicking.
