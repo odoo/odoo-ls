@@ -17,7 +17,7 @@ use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 use odoo_ls_server::{S, Sy};
 
-mod common;
+use crate::common;
 
 /// One shared setup.
 /// `test_js_lib_file_no_oxc_diagnostics` drains the session channel, so it runs last.

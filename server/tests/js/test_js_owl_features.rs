@@ -3,7 +3,7 @@
 //! Most features require tsserver, so the suite is gated on a `TSSERVER` environment
 //! variable holding the command that starts one:
 //! 
-//! `TSSERVER=tsserver cargo test --test test_js_owl_features`
+//! `TSSERVER=tsserver cargo test --test js test_js_owl_features`
 //! 
 //! Without it the test skips instead of failing, so `cargo test`
 //! stays green on a machine with no TypeScript installed. `COMMUNITY_PATH` is required too.
@@ -12,11 +12,10 @@ use lsp_types::CompletionItemKind;
 use odoo_ls_server::core::config::ConfigKey;
 use odoo_ls_server::threads::SessionInfo;
 
-mod common;
-mod js_owl_helpers;
-use js_owl_helpers::fixture::*;
-use js_owl_helpers::requests::*;
-use js_owl_helpers::asserts::*;
+use crate::common;
+use crate::js_owl_helpers::fixture::*;
+use crate::js_owl_helpers::requests::*;
+use crate::js_owl_helpers::asserts::*;
 
 /// The command to start tsserver with, or `None` when the suite should be skipped.
 fn tsserver_command() -> Option<String> {

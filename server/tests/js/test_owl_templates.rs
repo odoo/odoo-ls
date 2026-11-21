@@ -5,7 +5,7 @@ use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod common;
+use crate::common;
 
 fn module_owl_path(rel: &[&str]) -> String {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

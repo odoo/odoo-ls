@@ -10,7 +10,6 @@ use odoo_ls_server::core::js_module_scope;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 use crate::common::{create_init_session, get_diagnostics_for_path, setup_server};
-mod common;
 
 /// `test_out_of_scope_import_is_flagged` drains the session channel, so it runs last.
 #[test]
