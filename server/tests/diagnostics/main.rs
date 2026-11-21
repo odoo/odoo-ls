@@ -1,3 +1,5 @@
+#[path = "../common/mod.rs"]
+mod common;
 
 pub mod ols01000;
 pub mod ols01001;
