@@ -13,7 +13,7 @@ use odoo_ls_server::core::odoo::Odoo;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod common;
+use crate::common;
 
 const FIXTURE: &str = "module_duplicate_templates";
 
