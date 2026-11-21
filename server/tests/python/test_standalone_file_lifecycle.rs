@@ -4,7 +4,7 @@ use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::Odoo;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod common;
+use crate::common;
 
 fn make_py_open_params(uri: lsp_types::Uri, content: &str) -> lsp_types::DidOpenTextDocumentParams {
     lsp_types::DidOpenTextDocumentParams {

@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use odoo_ls_server::core::file_mgr::FileInfoKey;
 use odoo_ls_server::core::odoo::SyncOdoo;

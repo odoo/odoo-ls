@@ -7,7 +7,7 @@ use odoo_ls_server::utils::PathSanitizer;
 use ruff_python_ast::Expr;
 
 
-mod common;
+use crate::common;
 
 #[test]
 fn test_no_main_entry() {

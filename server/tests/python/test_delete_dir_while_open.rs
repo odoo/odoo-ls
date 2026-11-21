@@ -14,7 +14,7 @@ use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::{Odoo, SyncOdoo};
 use odoo_ls_server::utils::PathSanitizer;
 
-mod common;
+use crate::common;
 
 const POINT_CONTENT: &str = "class Thing:\n    def method(self):\n        return 1\n";
 

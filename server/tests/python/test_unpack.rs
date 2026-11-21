@@ -2,7 +2,7 @@ use std::env;
 
 use odoo_ls_server::utils::PathSanitizer as _;
 
-mod common;
+use crate::common;
 
 
 #[test]
