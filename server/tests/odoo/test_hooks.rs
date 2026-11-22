@@ -4,7 +4,7 @@ use std::path::Path;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod common;
+use crate::common;
 
 #[test]
 fn test_search_eval_hook() {

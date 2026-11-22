@@ -6,7 +6,7 @@ use odoo_ls_server::features::completion::CompletionFeature;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::{PathSanitizer, ToFilePath};
 
-mod common;
+use crate::common;
 
 #[derive(Clone, Copy, Hash, Eq, PartialEq)]
 enum TestDataFiles {

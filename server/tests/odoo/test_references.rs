@@ -5,7 +5,6 @@ use odoo_ls_server::{core::file_mgr::FileMgr, threads::SessionInfo, utils::PathS
 
 use crate::common::{create_init_session, setup_server};
 
-mod common;
 
 
 

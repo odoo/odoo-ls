@@ -3,7 +3,7 @@ use std::path::Path;
 
 use odoo_ls_server::utils::PathSanitizer;
 
-mod common;
+use crate::common;
 
 /* This file tests that your setup is working, and show you how to write tests. */
 

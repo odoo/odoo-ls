@@ -12,7 +12,7 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
-mod common;
+use crate::common;
 
 #[test]
 fn test_hover_on_model_field_and_method() {

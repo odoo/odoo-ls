@@ -7,7 +7,7 @@ use odoo_ls_server::core::symbols::symbol_keys::{SourceFileKey};
 use odoo_ls_server::utils::PathSanitizer;
 use odoo_ls_server::threads::SessionInfo;
 
-mod common;
+use crate::common;
 
 /// Test that odoo.http.request and request.env hooks work correctly.
 /// Tests hover and definition.

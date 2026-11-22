@@ -11,7 +11,7 @@ use odoo_ls_server::utils::PathSanitizer;
 use std::fs;
 use std::path::Path;
 
-mod common;
+use crate::common;
 
 /// A directory already indexed as a namespace must become a module when its `__manifest__.py`
 /// appears, and the namespace it replaces must be unloaded rather than left in the arena.

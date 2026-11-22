@@ -9,7 +9,7 @@ use odoo_ls_server::utils::PathSanitizer;
 use tracing::warn;
 //use tracing::{warn};
 
-mod common;
+use crate::common;
 
 fn names(session: &SessionInfo, syms: &[SymbolKey]) -> Vec<String> {
     syms.iter().map(|&s| session.st().name(s).to_string()).collect()

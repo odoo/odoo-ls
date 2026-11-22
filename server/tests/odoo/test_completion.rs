@@ -9,7 +9,7 @@ use odoo_ls_server::odoo_version::OdooVersion;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
-mod common;
+use crate::common;
 
 fn labels(response: Option<CompletionResponse>) -> Vec<String> {
     let items = match response {

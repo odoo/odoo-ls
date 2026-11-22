@@ -13,7 +13,6 @@ use odoo_ls_server::utils::PathSanitizer;
 
 use crate::common::{create_init_session, setup_server};
 
-mod common;
 
 const CLASS: SemanticTokenType = SemanticTokenType::CLASS;
 const FUNCTION: SemanticTokenType = SemanticTokenType::FUNCTION;
