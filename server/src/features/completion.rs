@@ -52,6 +52,7 @@ pub enum ExpectedType {
     RECORD_VALUES_LIST(ModelSymbolKey), // A list (or values directly for Backwards compatibility) of field values of the model for `create`
     MODEL_FIELD(ModelSymbolKey), // A field of the model, like the keys of the values given to `write({'name': 'x'})`
     SELECTION_VALUE(ModelSymbolKey, OYarn), // A value of the Selection field at a path of the model, like in `write({'state': 'draft'})` or `[('partner_id.state', '=', 'draft')]`
+    SELECTION_DEFAULT(Vec<SelectionValue>), // The default of a Selection field, one of the values of its call, like in `fields.Selection([...], default='draft')`
 }
 
 pub struct CompletionFeature;
@@ -675,7 +676,7 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
         if let Some(special_expected_type) =
             SpecialArg::classify_call_argument(session, callable_sym, param, keyword_name).and_then(
                 |special_arg| {
-                    expected_type_of(session, special_arg, model, callable_sym, expr_call)
+                    expected_type_of(session, special_arg, model, callable_sym, expr_call, scope)
                 },
             )
         {
@@ -704,13 +705,14 @@ fn complete_call(session: &mut SessionInfo, file: SourceFileKey, expr_call: &ruf
 }
 
 /// Returns the expected type of a string in the special argument `special_arg` of `callable_sym`,
-/// called on `model`.
+/// called on `model`. `scope` is where `expr_call` is.
 fn expected_type_of(
-    session: &SessionInfo,
+    session: &mut SessionInfo,
     special_arg: SpecialArg,
     model: Option<ModelSymbolKey>,
     callable_sym: SymbolKey,
     expr_call: &ruff_python_ast::ExprCall,
+    scope: SymbolKey,
 ) -> Option<ExpectedType> {
     match special_arg {
         SpecialArg::Domain => model.map(|model| ExpectedType::DOMAIN(model.into())),
@@ -726,6 +728,9 @@ fn expected_type_of(
                 .map(|comodel_name| ExpectedType::EXTERNAL_FIELD(Sy!(comodel_name.to_string())))
         }
         SpecialArg::Field(FieldParam::ModelMethod) => Some(ExpectedType::METHOD_NAME),
+        SpecialArg::Field(FieldParam::SelectionDefault) => Some(ExpectedType::SELECTION_DEFAULT(
+            selection::call_values(session, &expr_call.arguments, scope),
+        )),
         SpecialArg::RecordValuesList => model.map(ExpectedType::RECORD_VALUES_LIST),
         SpecialArg::RecordValues => model.map(ExpectedType::RECORD_VALUES),
     }
@@ -887,18 +892,11 @@ fn complete_string_literal(session: &mut SessionInfo, file: SourceFileKey, expr_
             ExpectedType::SELECTION_VALUE(model, path) => {
                 // The values known, even when they aren't all known
                 if let Some(selection) = MergedSelection::from_field_path(session, *model, path, current_module) {
-                    for SelectionValue(key, label) in selection.values {
-                        items.push(CompletionItem {
-                            label: key.to_string(),
-                            kind: Some(lsp_types::CompletionItemKind::ENUM_MEMBER),
-                            label_details: Some(CompletionItemLabelDetails {
-                                detail: None,
-                                description: Some(label.to_string()),
-                            }),
-                            ..Default::default()
-                        });
-                    }
+                    items.extend(selection.values.iter().map(selection_value_item));
                 }
+            }
+            ExpectedType::SELECTION_DEFAULT(values) => {
+                items.extend(values.iter().map(selection_value_item));
             }
         }
     }
@@ -1123,6 +1121,19 @@ fn domain_value_type(
             ))
         }
         _ => None,
+    }
+}
+
+/// Returns the completion item of a Selection value: its key, with its label.
+fn selection_value_item(SelectionValue(key, label): &SelectionValue) -> CompletionItem {
+    CompletionItem {
+        label: key.to_string(),
+        kind: Some(lsp_types::CompletionItemKind::ENUM_MEMBER),
+        label_details: Some(CompletionItemLabelDetails {
+            detail: None,
+            description: Some(label.to_string()),
+        }),
+        ..Default::default()
     }
 }
 

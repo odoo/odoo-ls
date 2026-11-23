@@ -1301,13 +1301,7 @@ impl PythonArchEvalHooks {
                 SymbolTable::is_specific_field_class(session, class, &["Selection"])
             });
         if is_selection {
-            let selection = parameters.args.first().or_else(|| {
-                PythonArchEvalHooks::find_special_arguments(parameters, "selection")
-                    .map(|(expr, _)| expr)
-            });
-            let selection_add =
-                PythonArchEvalHooks::find_special_arguments(parameters, "selection_add")
-                    .map(|(expr, _)| expr);
+            let [selection, selection_add] = selection::call_arguments(parameters);
             for (key, argument) in [
                 (ContextKey::SelectionValues, selection),
                 (ContextKey::SelectionAdd, selection_add),
@@ -1321,6 +1315,22 @@ impl PythonArchEvalHooks {
                     );
                     context.insert(key, ContextValue::SELECTION(values));
                 }
+            }
+            if let Some(default) = parameters.find_keyword("default")
+                && let Some(value) = Evaluation::expr_to_str(
+                    session,
+                    &default.value,
+                    parent,
+                    &parameters.range.start(),
+                    false,
+                    &mut vec![],
+                )
+            {
+                context.insert(ContextKey::SelectionDefault, ContextValue::STRING(value));
+                context.insert(
+                    ContextKey::SelectionDefaultArgRange,
+                    ContextValue::RANGE(default.value.range()),
+                );
             }
         }
     }

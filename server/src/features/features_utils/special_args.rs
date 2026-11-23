@@ -6,7 +6,7 @@ use crate::odoo_version::OdooVersion;
 use crate::threads::SessionInfo;
 
 use super::field_params::FieldParam;
-use FieldParam::{Comodel, Depends, InverseField, ModelMethod, Related};
+use FieldParam::{Comodel, Depends, InverseField, ModelMethod, Related, SelectionDefault};
 use SpecialArg::{Domain, Field, Order, RecordValues, RecordValuesList};
 
 /// A call argument with a special meaning in odoo context, e.g. a domain or a field parameter.
@@ -150,6 +150,7 @@ const SPECIAL_PARAMS: &[SpecialParam] = &[
     field_classes(RELATIONAL_FIELDS, "comodel_name", Field(Comodel)),
     field_classes(&["One2many"], "inverse_name", Field(InverseField)),
     field_classes(&["Selection", "Reference"], "selection", Field(ModelMethod)),
+    field_classes(&["Selection"], "default", Field(SelectionDefault)),
     any_field_class("related", Field(Related)),
     any_field_class("depends", Field(Depends)),
     any_field_class("compute", Field(ModelMethod)),

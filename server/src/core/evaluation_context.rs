@@ -60,6 +60,8 @@ pub enum ContextKey {
     Selection,
     SelectionAdd,
     SelectionArgRange,
+    SelectionDefault,
+    SelectionDefaultArgRange,
     SelectionValues,
     // placeholder after removal (tombstone) - should not be used as key
     EMPTY,
@@ -108,6 +110,8 @@ impl ContextKey {
             | ContextKey::SearchArgRange
             | ContextKey::SelectionArgRange
             | ContextKey::SelectionAdd
+            | ContextKey::SelectionDefault
+            | ContextKey::SelectionDefaultArgRange
             | ContextKey::SelectionValues
             | ContextKey::EMPTY => false,
         }

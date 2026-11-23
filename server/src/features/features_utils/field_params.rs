@@ -21,6 +21,8 @@ pub enum FieldParam {
     InverseField,
     /// A method of the model, e.g. `compute='_compute_name'`
     ModelMethod,
+    /// The default of a Selection field, one of its values, e.g. `default='draft'`
+    SelectionDefault,
 }
 
 impl FieldParam {
@@ -116,6 +118,7 @@ pub(super) fn resolve_field_param(
                 .map(|symbol| (symbol, string.range))
                 .collect()
         }
+        FieldParam::SelectionDefault => return None,
     };
     StringResolution::from_members(member_results)
 }

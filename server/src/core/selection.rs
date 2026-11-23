@@ -16,7 +16,7 @@ use crate::{
     utils::HashSet,
 };
 
-use ruff_python_ast::Expr;
+use ruff_python_ast::{Arguments, Expr};
 use ruff_text_size::TextSize;
 
 /// Domain operators testing whether a field equals one of the values, e.g. `('state', 'in', ['draft'])`.
@@ -76,6 +76,31 @@ impl DeclaredSelection {
         }
         Self::Known(values)
     }
+}
+
+/// Returns the `selection` and `selection_add` arguments of a `fields.Selection(...)` call.
+pub fn call_arguments(arguments: &Arguments) -> [Option<&Expr>; 2] {
+    [
+        arguments.find_argument_value("selection", 0),
+        arguments
+            .find_keyword("selection_add")
+            .map(|keyword| &keyword.value),
+    ]
+}
+
+/// Returns the values a `fields.Selection(...)` call declares.
+pub fn call_values(
+    session: &mut SessionInfo,
+    arguments: &Arguments,
+    parent: SymbolKey,
+) -> Vec<SelectionValue> {
+    let mut merge = SelectionMerge::default();
+    for argument in call_arguments(arguments).into_iter().flatten() {
+        let declared =
+            DeclaredSelection::from_argument(session, argument, parent, &arguments.range.start());
+        merge.add(&declared);
+    }
+    merge.values
 }
 
 /// The values of a Selection field, merged from all its declarations.
