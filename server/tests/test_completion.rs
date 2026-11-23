@@ -261,7 +261,7 @@ fn test_selection_value_completion(session: &mut SessionInfo) {
 
     let mut failures = vec![];
     // (text right before the cursor, labels that must be offered, labels that must not)
-    let cases: [(&str, &[&str], &[&str]); 8] = [
+    let cases: [(&str, &[&str], &[&str]); 11] = [
         // The values of the declaration, and of `selection_add` in an extension
         (r#"self.write({"literal": ""#, &["a", "b", "c"], &[]),
         (r#"self.write({"keyword": ""#, &["a"], &["b", "c"]),
@@ -275,6 +275,10 @@ fn test_selection_value_completion(session: &mut SessionInfo) {
         (r#"self.search([("parent_id.literal", "!=", ""#, &["a", "b", "c"], &[]),
         // Only the operators comparing values
         (r#"self.search([("literal", "ilike", ""#, &[], &["a", "b"]),
+        // The default, from the values of the same call
+        (r#"literal_default = fields.Selection([("a", "A"), ("b", "B")], default=""#, &["a", "b"], &[]),
+        (r#"constant_default = fields.Selection(STATES, default=""#, &["draft", "done"], &[]),
+        (r#"selection_add=[("c", "C"), ("a",)], default=""#, &["c"], &["b"]),
     ];
     for (before_cursor, offered, not_offered) in cases {
         let (line, text) = content.lines().enumerate().find(|(_, text)| text.contains(before_cursor)).unwrap();

@@ -18,6 +18,8 @@ class SelectionModel(models.Model):
     non_string_key = fields.Selection([(1, "One")])
     reference = fields.Reference(selection=[("res.partner", "Partner")])
     parent_id = fields.Many2one("pygls.tests.selection_model")
+    literal_default = fields.Selection([("a", "A"), ("b", "B")], default="a")
+    constant_default = fields.Selection(STATES, default="draft")
 
     def _get_values(self):
         return [("a", "A")]
@@ -40,4 +42,4 @@ class SelectionModel(models.Model):
 class SelectionModelExtension(models.Model):
     _inherit = "pygls.tests.selection_model"
 
-    literal = fields.Selection(selection_add=[("c", "C"), ("a",)])
+    literal = fields.Selection(selection_add=[("c", "C"), ("a",)], default="c")

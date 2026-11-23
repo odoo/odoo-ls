@@ -1,4 +1,5 @@
-# Values of the Selection fields given to `create`, `write` and `update`, or compared in domains, asserted by
+# Values of the Selection fields given to `create`, `write` and `update`, compared in domains, or given as
+# `default`, asserted by
 # tests/diagnostics/ols03030_selection_values.rs: one case per call, found by its line, which must stay unique
 # and ASCII-only.
 from odoo import fields, models
@@ -17,6 +18,9 @@ class SelectionValuesRecord(models.Model):
     method_state = fields.Selection('_get_states')
     related_state = fields.Selection(related='parent_id.state')
     added_state = fields.Selection([('draft', 'Draft')])
+    default_state = fields.Selection([('draft', 'Draft')], default='draft')
+    wrong_default_state = fields.Selection([('draft', 'Draft')], default='unknown_default')
+    method_default_state = fields.Selection('_get_states', default='unknown_method_default')
 
     def _get_states(self):
         return [('draft', 'Draft')]
@@ -57,4 +61,4 @@ class SelectionValuesRecord(models.Model):
 class SelectionValuesExtension(models.Model):
     _inherit = 'selection_values.record'
 
-    added_state = fields.Selection(selection_add=[('extra', 'Extra'), ('draft',)])
+    added_state = fields.Selection(selection_add=[('extra', 'Extra'), ('draft',)], default='extra')

@@ -1,6 +1,7 @@
 use super::case_failures;
 
-/// Test OLS03030 on the values of Selection fields given to `create`, `write` and `update`, or compared in domains.
+/// Test OLS03030 on the values of Selection fields given to `create`, `write` and `update`, compared in
+/// domains, or given as `default`.
 /// Each case is a call of `selection_values.py`, found by its line.
 #[test]
 fn test_ols03030_selection_values() {
@@ -31,6 +32,12 @@ fn test_ols03030_selection_values() {
         ("self.search([('state.name', '=', 'unknown_after_selection')])", Some(("OLS03013", "'state.name'"))),
         ("self.search([('state', 'ilike', 'unknown_ilike')])", None),
         ("self.search([('method_state', '=', 'unknown_method_domain')])", None),
+        // Defaults
+        ("default_state = fields.Selection([('draft', 'Draft')], default='draft')", None),
+        ("wrong_default_state = fields.Selection([('draft', 'Draft')], default='unknown_default')", Some(("OLS03030", "'unknown_default'"))),
+        ("method_default_state = fields.Selection('_get_states', default='unknown_method_default')", None),
+        // An extension's default can be a value it adds
+        ("added_state = fields.Selection(selection_add=[('extra', 'Extra'), ('draft',)], default='extra')", None),
     ];
     let failures = case_failures("selection_values.py", cases);
     assert!(
