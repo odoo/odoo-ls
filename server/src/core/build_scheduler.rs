@@ -5,7 +5,7 @@ use tracing::{error, info, trace};
 
 use crate::{S, constants::{BuildStatus, BuildSteps, DEBUG_REBUILD_NOW, DEBUG_STEPS, DEBUG_THREADS, MAX_WATCHED_FILES_UPDATES_BEFORE_RESTART}, core::{csv_validation::CsvValidator, entry_point::EntryPointKey, import_resolver::ImportCache, js_validator::JsValidator, odoo::{InitState, OdooNotification}, python_arch_builder::PythonArchBuilder, python_arch_eval::PythonArchEval, python_validator::PythonValidator, symbols::{SymbolTable, symbol_keys::{BuildableSymbolKey, SymbolKey}, symbol_table_impl::CreateError}, xml_validation::XmlValidator}, fifo_ptr_weak_hash_set::FifoWeakHashSet, progress_reporter::ProgressReporterRemaining, threads::SessionInfo, tree::Tree, utils::HashSet};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BuildScheduler {
     rebuild_arch: FifoWeakHashSet<BuildableSymbolKey>,
     rebuild_arch_eval: FifoWeakHashSet<BuildableSymbolKey>,

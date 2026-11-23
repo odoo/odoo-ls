@@ -2,7 +2,7 @@ use std::{collections::{HashSet, VecDeque}, hash::Hash};
 
 use crate::core::symbols::symbol_keys::KeyValidator;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FifoWeakHashSet<T: Copy + Eq + Hash> {
     set: HashSet<T>,
     queue: VecDeque<T>,

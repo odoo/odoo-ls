@@ -1,6 +1,6 @@
 use crate::{constants::{BuildStatus, BuildSteps, MissingDataSource, OYarn}, core::{file_mgr::NoqaInfo, symbols::storage::{JsFileParent, dependency_mgr::{DependenciesTable, DependentsTable}}}, oyarn, utils::HashMap};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct JsFileSymbol {
     pub name: OYarn,
     pub path: String,

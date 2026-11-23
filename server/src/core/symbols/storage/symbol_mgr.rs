@@ -7,7 +7,7 @@ use crate::{constants::OYarn, core::symbols::symbol_keys::SymbolKey};
 
 use super::{class_symbol::ClassSymbol, file_symbol::FileSymbol, function_symbol::FunctionSymbol, module_symbol::ModuleSymbol, package_symbol::PythonPackageSymbol};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ContentSymbols {
     pub symbols: Vec<SymbolKey>,
     pub always_defined: bool

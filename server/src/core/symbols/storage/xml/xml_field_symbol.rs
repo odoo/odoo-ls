@@ -4,7 +4,7 @@ use crate::{constants::OYarn, core::symbols::storage::XmlFieldParent, oyarn};
 use std::fmt::Display;
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct XmlFieldSymbol {
     pub field_name: OYarn,
     pub range: TextRange,

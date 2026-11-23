@@ -10,7 +10,7 @@ use crate::{constants::OYarn, core::symbols::symbol_keys::SymbolKey, oyarn, util
 /*
 DiskDir symbol represent a directory on disk we didn't parse yet. So it can either be a namespace or a package later.
 */
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DiskDirSymbol {
     pub name: OYarn,
     pub path: String,

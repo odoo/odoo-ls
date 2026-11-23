@@ -29,7 +29,7 @@ pub struct ImportResult {
 
 //class used to cache import results in a build execution to speed up subsequent imports.
 //It means of course than a modification during the build will not be taken into account, but it should be ok because reloaded after the build
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ImportCache {
     pub modules: HashMap<OYarn, Option<Vec<SymbolKey>>>,
     pub main_modules: HashMap<OYarn, Option<Vec<SymbolKey>>>,

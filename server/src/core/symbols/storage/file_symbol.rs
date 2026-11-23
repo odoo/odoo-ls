@@ -3,7 +3,7 @@ use crate::utils::HashMap;
 
 use super::symbol_mgr::{SectionRange, SymbolMgr};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FileSymbol {
     pub name: OYarn,
     pub path: String,

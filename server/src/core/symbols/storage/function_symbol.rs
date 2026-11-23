@@ -29,7 +29,7 @@ pub struct Argument {
     pub annotation: Option<Box<Expr>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FunctionSymbol {
     pub name: OYarn,
     pub is_external: bool,

@@ -4,7 +4,7 @@ use crate::utils::HashMap;
 use crate::{constants::OYarn, oyarn};
 use crate::core::symbols::symbol_keys::SymbolKey;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CompiledSymbol {
     pub name: OYarn,
     pub is_external: bool,

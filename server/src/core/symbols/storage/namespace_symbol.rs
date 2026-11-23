@@ -4,7 +4,7 @@ use crate::core::symbols::symbol_keys::SymbolKey;
 use crate::utils::HashMap;
 use crate::{constants::OYarn, oyarn};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct NamespaceDirectory {
     pub path: String,
     pub(super) module_symbols: HashMap<OYarn, SymbolKey>,
@@ -16,7 +16,7 @@ impl NamespaceDirectory {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct NamespaceSymbol {
     pub name: OYarn,
     pub is_external: bool,

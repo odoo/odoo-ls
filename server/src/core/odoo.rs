@@ -65,14 +65,14 @@ static VERSION_REGEX: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
 });
 
 #[allow(non_camel_case_types)]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum InitState {
     NOT_READY,
     PYTHON_READY,
     ODOO_READY,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TypeshedWeakReferences {
     dict: Wk<SymbolKey>,
     tuple: Wk<SymbolKey>,
@@ -208,6 +208,58 @@ pub struct SyncOdoo {
 }
 
 unsafe impl Send for SyncOdoo {}
+
+/// Deep copy for tests.
+impl Clone for SyncOdoo {
+    fn clone(&self) -> Self {
+        assert!(self.tsserver_bridge.is_none(), "cannot clone a SyncOdoo with a running tsserver bridge");
+        Self {
+            version: self.version,
+            python_version: self.python_version.clone(),
+            python_ext_suffixes: self.python_ext_suffixes.clone(),
+            config: self.config.clone(),
+            config_file: self.config_file.clone(),
+            config_path: self.config_path.clone(),
+            selected_config: self.selected_config.clone(),
+            entry_point_mgr: self.entry_point_mgr.clone(),
+            has_odoo_main_entry: self.has_odoo_main_entry,
+            has_valid_python: self.has_valid_python,
+            main_entry_tree: self.main_entry_tree.clone(),
+            stubs_dirs: self.stubs_dirs.clone(),
+            stdlib_dir: self.stdlib_dir.clone(),
+            progress_token: self.progress_token,
+            file_mgr: self.file_mgr.clone(),
+            modules: self.modules.clone(),
+            model_mgr: self.model_mgr.clone(),
+            interrupt_rebuild: Arc::new(AtomicBool::new(self.interrupt_rebuild.load(Ordering::SeqCst))),
+            terminate_rebuild: Arc::new(AtomicBool::new(self.terminate_rebuild.load(Ordering::SeqCst))),
+            current_request_id: self.current_request_id.clone(),
+            running_request_ids: Arc::new(Mutex::new(self.running_request_ids.lock().unwrap().clone())),
+            watched_file_updates: self.watched_file_updates,
+            build_scheduler: self.build_scheduler.clone(),
+            state_init: self.state_init.clone(),
+            must_reload_paths: self.must_reload_paths.clone(),
+            load_odoo_addons: self.load_odoo_addons,
+            need_rebuild: self.need_rebuild,
+            import_cache: self.import_cache.clone(),
+            capabilities: self.capabilities.clone(),
+            encoding: self.encoding,
+            opened_files: self.opened_files.clone(),
+            symbol_table: self.symbol_table.clone(),
+            evaluation_search: self.evaluation_search.clone(),
+            evaluation_locations: self.evaluation_locations.clone(),
+            typeshed_weak_cache: self.typeshed_weak_cache.clone(),
+            deferred_subfunc_invalidation: self.deferred_subfunc_invalidation.clone(),
+            languages_by_source: self.languages_by_source.clone(),
+            language_dependents: self.language_dependents.clone(),
+            pre_parse_cache: None,
+            test_mode: self.test_mode,
+            tsserver_bridge: None,
+            js_templates: self.js_templates.clone(),
+            component_mgr: self.component_mgr.clone(),
+        }
+    }
+}
 
 impl Default for SyncOdoo {
     fn default() -> Self {

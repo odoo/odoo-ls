@@ -2,7 +2,7 @@ use ruff_text_size::TextRange;
 
 use crate::{constants::OYarn, core::symbols::storage::XmlDataParent};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct XmlDeleteSymbol {
     pub xml_id: Option<OYarn>,
     pub is_external: bool,

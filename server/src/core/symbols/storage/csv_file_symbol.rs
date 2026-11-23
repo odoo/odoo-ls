@@ -4,7 +4,7 @@ use crate::core::symbols::symbol_keys::{ModuleKey, XmlDataKey};
 use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::{file_mgr::NoqaInfo}, oyarn};
 use crate::utils::{HashMap, HashSet};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CsvFileSymbol {
     pub name: OYarn,
     pub path: String,

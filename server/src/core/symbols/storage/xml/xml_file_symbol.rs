@@ -5,7 +5,7 @@ use crate::{constants::{BuildStatus, BuildSteps, OYarn}, core::file_mgr::NoqaInf
 use crate::utils::HashSet;
 use crate::utils::HashMap;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct XmlFileSymbol {
     pub name: OYarn,
     pub path: String,
