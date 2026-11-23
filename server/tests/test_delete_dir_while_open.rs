@@ -1,6 +1,8 @@
 use std::env;
 use std::path::Path;
 
+use assert_fs::TempDir;
+use assert_fs::prelude::*;
 use lsp_types::{
     CreateFilesParams, DeleteFilesParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
     DidOpenTextDocumentParams, FileCreate, FileDelete, Position, Range, TextDocumentContentChangeEvent,
@@ -14,13 +16,12 @@ use odoo_ls_server::utils::PathSanitizer;
 
 mod setup;
 
-// Restores a fixture file's original content on drop (even on panic), for
-// tests that actually delete/overwrite a tracked fixture on disk.
-struct RestoreFixture { path: String, original: String }
-impl Drop for RestoreFixture {
-    fn drop(&mut self) {
-        let _ = std::fs::write(&self.path, &self.original);
-    }
+const POINT_CONTENT: &str = "class Thing:\n    def method(self):\n        return 1\n";
+
+fn write_point(temp: &TempDir) -> String {
+    let point = temp.child("point.py");
+    point.write_str(POINT_CONTENT).unwrap();
+    point.path().sanitize()
 }
 
 // Regression tests for how a deleted-while-open file's symbol, entry, and
@@ -36,9 +37,8 @@ fn test_delete_open_file_then_edit_it() {
     let (mut odoo, config) = setup::setup::setup_server(false);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
-    let dir = env::current_dir().unwrap().join("tests/data/deleted_dir_race").sanitize();
-    let point_path = Path::new(&dir).join("point.py").sanitize();
-    let point_content = std::fs::read_to_string(&point_path).unwrap();
+    let temp = TempDir::new().unwrap();
+    let point_path = write_point(&temp);
     let point_uri = FileMgr::pathname2uri(&point_path);
 
     // 1. Open point.py directly.
@@ -47,7 +47,7 @@ fn test_delete_open_file_then_edit_it() {
             uri: point_uri.clone(),
             language_id: "python".to_string(),
             version: 1,
-            text: point_content,
+            text: POINT_CONTENT.to_string(),
         },
     });
     BuildScheduler::process_rebuilds(&mut session, false);
@@ -91,11 +91,9 @@ fn test_delete_open_file_then_close_it_clears_everything() {
     let (mut odoo, config) = setup::setup::setup_server(false);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
-    let dir = env::current_dir().unwrap().join("tests/data/deleted_dir_race").sanitize();
-    let point_path = Path::new(&dir).join("point_close.py").sanitize();
-    let point_content = std::fs::read_to_string(&point_path).unwrap();
+    let temp = TempDir::new().unwrap();
+    let point_path = write_point(&temp);
     let point_uri = FileMgr::pathname2uri(&point_path);
-    let _restore_fixture = RestoreFixture { path: point_path.clone(), original: point_content.clone() };
 
     // 1. Open point.py, then actually delete it on disk while it stays open.
     Odoo::handle_did_open(&mut session, DidOpenTextDocumentParams {
@@ -103,7 +101,7 @@ fn test_delete_open_file_then_close_it_clears_everything() {
             uri: point_uri.clone(),
             language_id: "python".to_string(),
             version: 1,
-            text: point_content,
+            text: POINT_CONTENT.to_string(),
         },
     });
     BuildScheduler::process_rebuilds(&mut session, false);
@@ -141,18 +139,16 @@ fn test_feature_request_on_deleted_open_file_does_not_resurrect_a_phantom_entry(
     let (mut odoo, config) = setup::setup::setup_server(false);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
-    let dir = env::current_dir().unwrap().join("tests/data/deleted_dir_race").sanitize();
-    let point_path = Path::new(&dir).join("point_phantom.py").sanitize();
-    let point_content = std::fs::read_to_string(&point_path).unwrap();
+    let temp = TempDir::new().unwrap();
+    let point_path = write_point(&temp);
     let point_uri = FileMgr::pathname2uri(&point_path);
-    let _restore_fixture = RestoreFixture { path: point_path.clone(), original: point_content.clone() };
 
     Odoo::handle_did_open(&mut session, DidOpenTextDocumentParams {
         text_document: TextDocumentItem {
             uri: point_uri.clone(),
             language_id: "python".to_string(),
             version: 1,
-            text: point_content,
+            text: POINT_CONTENT.to_string(),
         },
     });
     BuildScheduler::process_rebuilds(&mut session, false);
@@ -187,11 +183,9 @@ fn test_delete_open_file_then_recreate_it_keeps_it() {
     let (mut odoo, config) = setup::setup::setup_server(false);
     let mut session = setup::setup::create_init_session(&mut odoo, config);
 
-    let dir = env::current_dir().unwrap().join("tests/data/recreated_file_race").sanitize();
-    let point_path = Path::new(&dir).join("point.py").sanitize();
-    let point_content = std::fs::read_to_string(&point_path).unwrap();
+    let temp = TempDir::new().unwrap();
+    let point_path = write_point(&temp);
     let point_uri = FileMgr::pathname2uri(&point_path);
-    let _restore_fixture = RestoreFixture { path: point_path.clone(), original: point_content.clone() };
 
     // 1. Open point.py, then delete it on disk while it stays open.
     Odoo::handle_did_open(&mut session, DidOpenTextDocumentParams {
@@ -199,7 +193,7 @@ fn test_delete_open_file_then_recreate_it_keeps_it() {
             uri: point_uri.clone(),
             language_id: "python".to_string(),
             version: 1,
-            text: point_content.clone(),
+            text: POINT_CONTENT.to_string(),
         },
     });
     BuildScheduler::process_rebuilds(&mut session, false);
