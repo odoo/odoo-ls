@@ -2125,11 +2125,7 @@ impl SymbolTable {
             let matching_fields = fields.filter_map(|f_key| {
                 let field_name =
                     session.st()[f_key].get_field_text(XmlFieldName::Name, session.st())?;
-                if field_name == name {
-                    Some(SymbolKey::from(f_key))
-                } else {
-                    None
-                }
+                (field_name == name).then_some(SymbolKey::from(f_key))
             });
             extend_result(matching_fields.collect(), &mut result, &mut visited_symbols);
             if let Some(base_model) = get_base_model_symbol(session.sync_odoo) {

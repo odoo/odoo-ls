@@ -13,6 +13,7 @@ use crate::threads::SessionInfo;
 use super::api_decorators::{classify_api_decorator, find_decorator_arg_symbols};
 use super::field_params::resolve_field_param;
 use super::field_paths;
+use super::model_members;
 use super::order;
 use super::special_args::SpecialArg;
 use super::string_resolution::{SegmentPick, StringResolution};
@@ -164,6 +165,15 @@ fn resolve_string_argument(
         },
         SpecialArg::Field(field_param) => {
             resolve_field_param(session, scope, from_module, string, call_expr, field_param, pick)
+        },
+        SpecialArg::RecordValuesList | SpecialArg::RecordValues => {
+            let model = model_called_on(session, callable)?;
+            StringResolution::from_members(
+                model_members::find_fields(session, model, from_module, string.value.to_str())
+                    .into_iter()
+                    .map(|symbol| (symbol, string.range))
+                    .collect()
+            )
         },
     }
 }

@@ -2042,6 +2042,9 @@ impl Evaluation {
             Some(SpecialArg::Order) => {
                 python_validator::validate_order_arg(session, model, from_module, arg)
             }
+            Some(special_arg @ (SpecialArg::RecordValuesList | SpecialArg::RecordValues)) => {
+                python_validator::validate_record_values_arg(session, special_arg, model, from_module, arg)
+            }
             // Field class parameters are not validated here
             Some(SpecialArg::Field(_)) | None => vec![],
         }

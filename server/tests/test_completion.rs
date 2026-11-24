@@ -193,7 +193,7 @@ fn test_call_argument_completion(session: &mut SessionInfo) {
 
     let mut failures = vec![];
     // (text right before the cursor, labels that must be offered, labels that must not)
-    let cases: [(&str, &[&str], &[&str]); 14] = [
+    let cases: [(&str, &[&str], &[&str]); 27] = [
         // A model name
         (r#"Many2one("module_1.lambda_def"#, &["module_1.lambda_default_model"], &[]),
         (r#"Many2one(comodel_name="module_1.lambda_def"#, &["module_1.lambda_default_model"], &[]),
@@ -214,6 +214,24 @@ fn test_call_argument_completion(session: &mut SessionInfo) {
         (r#"self.filtered_domain([("na"#, &["name", "name_count"], &[]),
         (r#"self._read_group([("na"#, &["name", "name_count"], &[]),
         (r#"self.name_search("x", [("na"#, &["name", "name_count"], &[]),
+        // A key of the values given to create, write or update, not a value
+        (r#"self.create({"na"#, &["name", "name_count"], &[]),
+        (r#"self.create({"na": "na"#, &[], &["name", "name_count"]),
+        (r#"self.sudo().create([{"na"#, &["name", "name_count"], &[]),
+        (r#"call_arguments_model"].create([{"na"#, &["name", "name_count"], &[]),
+        (r#"self.write({"na"#, &["name", "name_count"], &[]),
+        (r#"self.update({"na"#, &["name", "name_count"], &[]),
+        // The values given by keyword
+        (r#"create(vals_list=[{"na"#, &["name", "name_count"], &[]),
+        (r#"write(vals={"na"#, &["name", "name_count"], &[]),
+        (r#"update(values={"na"#, &["name", "name_count"], &[]),
+        // The fields of the model the method is called on
+        (r#"lambda_default_model"].create({"comp"#, &["company_id"], &[]),
+        // The first key, before its `:`, is in a set
+        (r#"self.sudo().write({"na"#, &["name", "name_count"], &[]),
+        (r#"self.with_context().create([{"na"#, &["name", "name_count"], &[]),
+        // `write` takes no list of values
+        (r#"self.with_context().write([{"na"#, &[], &["name", "name_count"]),
     ];
     for (before_cursor, offered, not_offered) in cases {
         let (line, text) = content.lines().enumerate().find(|(_, text)| text.contains(before_cursor)).unwrap();

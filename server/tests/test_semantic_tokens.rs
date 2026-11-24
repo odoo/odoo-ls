@@ -300,6 +300,23 @@ fn check_call_context_tokens(calls: &TokenFile) {
     check(calls, 49, "other_id", Some((PROPERTY, &[])));
     check(calls, 50, "other_id", Some((PROPERTY, &[])));
     check(calls, 50, "other_name", Some((PROPERTY, &[])));
+    // The keys of the values given to create, write or update colour the fields of the model they are
+    // called on over the whole literal, as a field name, not the values
+    check(calls, 58, "'name'", Some((PROPERTY, &[])));
+    check(calls, 58, "'other_id'", None);
+    check(calls, 59, "'other_id'", Some((PROPERTY, &[])));
+    check(calls, 59, "'total'", Some((PROPERTY, &[])));
+    check(calls, 60, "'name'", Some((PROPERTY, &[])));
+    check(calls, 61, "'other_id'", Some((PROPERTY, &[])));
+    check(calls, 62, "'total'", Some((PROPERTY, &[])));
+    check(calls, 63, "'other_name'", Some((PROPERTY, &[])));
+    // `write` takes no list of values, and the update of a dict names nothing
+    check(calls, 65, "'name'", None);
+    check(calls, 66, "'name'", None);
+    // The values given by keyword name fields too
+    check(calls, 70, "'name'", Some((PROPERTY, &[])));
+    check(calls, 71, "'other_id'", Some((PROPERTY, &[])));
+    check(calls, 72, "'total'", Some((PROPERTY, &[])));
 }
 
 /// One decoded semantic token: absolute position, and the legend entries its indices name.
