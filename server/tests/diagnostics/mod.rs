@@ -18,6 +18,7 @@ pub mod ols03009_operators;
 pub mod ols03018_compute_sql;
 pub mod ols03025_to_27;
 pub mod ols03028;
+pub mod ols03029;
 pub mod ols03301;
 pub mod ols03302;
 pub mod ols04000_1_to_20;
