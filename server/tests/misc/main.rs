@@ -1,10 +1,11 @@
-//! Tests that fit no other test crate: regressions.
+//! Tests that fit no other test crate: regressions, tests of the test helpers.
 
 #[path = "../common/mod.rs"]
 mod common;
 
 mod test_addon_entry_lost_symbol;
 mod test_build_cycle;
+mod test_build_once_run_isolated;
 mod test_did_close_cleanup;
 mod test_entry_point_teardown;
 mod test_file_delete;
