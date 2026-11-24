@@ -28,4 +28,5 @@ pub mod ols05073_74;
 pub mod implicit_class_method_no_ols_01007;
 pub mod magic_fields_comodel;
 pub mod panic_super_arg;
+pub mod test_csv_diagnostics;
 pub mod test_duplicate_template;

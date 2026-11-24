@@ -7,7 +7,7 @@ use odoo_ls_server::utils::HashMap;
 use std::env;
 use std::path::Path;
 
-mod common;
+use crate::common;
 
 fn csv_test_paths() -> (String, String, String, String, String) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR"))
