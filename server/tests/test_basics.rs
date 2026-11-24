@@ -5,6 +5,7 @@ use std::env;
 use odoo_ls_server::{core::evaluation::EvaluationValue};
 use odoo_ls_server::utils::PathSanitizer;
 use ruff_python_ast::Expr;
+use ruff_text_size::Ranged;
 
 
 mod setup;
@@ -265,6 +266,26 @@ fn test_assigns() {
     let eval = eval.unwrap();
     assert!(eval == int_type);
 
+    // Lists, tuples and dicts keep their items as long as all their leaves are literals
+    let source = std::fs::read_to_string(path.as_str()).unwrap();
+    let cases: [(&str, &str, &[&str]); 5] = [
+        ("k", "list", &[r#"("draft", "Draft")"#, r#"("done", "Done")"#]),
+        ("l", "tuple", &[r#"(1, [2, (3, "4")])"#, r#"{"a": None}"#]),
+        ("m", "dict", &[r#""a""#, "[1, 2]", "(1, 2)", r#"{"b": (True,)}"#]),
+        ("n", "list", &[]),
+        ("o", "list", &[]),
+    ];
+    for (name, expected_kind, expected_items) in cases {
+        let symbol = session.sync_odoo.get_symbol(path.as_str(), (&[], &[name]), u32::MAX);
+        let value = st.evaluations(symbol[0]).unwrap()[0].value.as_ref().unwrap();
+        let (kind, items): (&str, Vec<&str>) = match value {
+            EvaluationValue::LIST(items) => ("list", items.iter().map(|item| &source[item.range()]).collect()),
+            EvaluationValue::TUPLE(items) => ("tuple", items.iter().map(|item| &source[item.range()]).collect()),
+            EvaluationValue::DICT(items) => ("dict", items.iter().flat_map(|(key, value)| [&source[key.range()], &source[value.range()]]).collect()),
+            _ => ("other", vec![]),
+        };
+        assert_eq!((kind, items.as_slice()), (expected_kind, expected_items), "value of {name}");
+    }
 }
 
 #[test]

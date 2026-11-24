@@ -6,12 +6,13 @@ use lsp_types::{Diagnostic, Position, Range};
 use crate::core::build_scheduler::BuildScheduler;
 use crate::core::diagnostics::{create_diagnostic, DiagnosticCode};
 use crate::core::entry_point::EntryPointKey;
-use crate::core::evaluation_context::{ContextKey, ContextValue};
+use crate::core::evaluation_context::{Context, ContextKey, ContextValue};
+use crate::core::selection::MergedSelection;
 use crate::core::file_mgr::FileInfoKey;
 use crate::core::file_mgr::Ast;
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
-use crate::core::symbols::symbol_keys::{ClassKey, ModelSymbolKey, ModuleKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey};
+use crate::core::symbols::symbol_keys::{ClassKey, ModelSymbolKey, ModuleKey, PythonBuildableSymbolKey, SourceFileKey, SymbolKey, VariableKey};
 use crate::{constants::*, oyarn};
 use crate::core::symbols::{ModuleSymbol};
 use crate::threads::SessionInfo;
@@ -522,6 +523,13 @@ impl PythonValidator {
 
                         }
                     }
+                    self.check_selection_default(
+                        session,
+                        class,
+                        v,
+                        &eval_weak.get_weak().context,
+                        maybe_from_module,
+                    );
                     if let Some(inverse_name) = eval_weak.get_weak().context.get(ContextKey::InverseName).map(ContextValue::as_str) {
                         let Some(comodel_name) = eval_weak.get_weak().context.get(ContextKey::ComodelName).map(ContextValue::as_str) else {
                             continue;
@@ -735,6 +743,39 @@ impl PythonValidator {
                     }
                 }
             }
+        }
+    }
+
+    /// Checks that the `default` of the Selection field `variable` is one of its values, when they're all known.
+    fn check_selection_default(
+        &mut self,
+        session: &mut SessionInfo,
+        class: ClassKey,
+        variable: VariableKey,
+        context: &Context,
+        from_module: Option<ModuleKey>,
+    ) {
+        let (Some(ContextValue::STRING(default)), Some(ContextValue::RANGE(range))) = (
+            context.get(ContextKey::SelectionDefault),
+            context.get(ContextKey::SelectionDefaultArgRange),
+        ) else {
+            return;
+        };
+        let field_name = session.st()[variable].name.clone();
+        if let Some(selection) = MergedSelection::from_field_path(
+            session,
+            ModelSymbolKey::Class(class),
+            &field_name,
+            from_module,
+        ) && selection.complete
+            && !selection.contains(default)
+            && let Some(diagnostic_base) =
+                create_diagnostic(session, DiagnosticCode::OLS03030, &[default, &field_name])
+        {
+            self.diagnostics.push(Diagnostic {
+                range: FileMgr::textRange_to_temporary_Range(range),
+                ..diagnostic_base
+            });
         }
     }
 

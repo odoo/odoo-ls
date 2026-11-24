@@ -4,6 +4,7 @@ use ruff_python_ast::Arguments;
 use ruff_text_size::TextRange;
 use thin_vec::ThinVec;
 
+use crate::core::selection;
 use crate::core::symbols::symbol_keys::{ModuleKey, SymbolKey, Wk};
 
 
@@ -57,7 +58,11 @@ pub enum ContextKey {
     Search,
     SearchArgRange,
     Selection,
+    SelectionAdd,
     SelectionArgRange,
+    SelectionDefault,
+    SelectionDefaultArgRange,
+    SelectionValues,
     // placeholder after removal (tombstone) - should not be used as key
     EMPTY,
 }
@@ -104,6 +109,10 @@ impl ContextKey {
             | ContextKey::InverseNameArgRange
             | ContextKey::SearchArgRange
             | ContextKey::SelectionArgRange
+            | ContextKey::SelectionAdd
+            | ContextKey::SelectionDefault
+            | ContextKey::SelectionDefaultArgRange
+            | ContextKey::SelectionValues
             | ContextKey::EMPTY => false,
         }
     }
@@ -117,6 +126,7 @@ pub enum ContextValue {
     SYMBOL(Wk<SymbolKey>),
     ARGUMENTS(Arguments),
     RANGE(TextRange),
+    SELECTION(selection::DeclaredSelection),
     // empty value after removal - should not be used as value
     EMPTY,
 }
@@ -131,6 +141,7 @@ impl Hash for ContextValue {
             ContextValue::RANGE(r) => r.hash(state),
             // Hash by range, as the type does not implement Hash.
             ContextValue::ARGUMENTS(a) => a.range.hash(state),
+            ContextValue::SELECTION(v) => v.hash(state),
             ContextValue::EMPTY => 0.hash(state),
         }
     }

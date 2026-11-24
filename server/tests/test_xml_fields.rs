@@ -94,6 +94,12 @@ fn test_xml_fields() {
     // Look for OLS03303 diagnostic on py_test_model.py
     let doc_diags = setup::setup::get_diagnostics_test_comments(&mut session, &file_paths[&TestDataFiles::PyTestModel]);
     test_utils::verify_diagnostics_against_doc(&diagnostics[&TestDataFiles::PyTestModel], &doc_diags);
+
+    // More values of a selection field defined in XML can come from other records, so a value isn't checked
+    let py_content = std::fs::read_to_string(&file_paths[&TestDataFiles::PyTestModel]).unwrap();
+    let x_state_line = py_content.lines().position(|text| text.contains(r#"{"x_state": "unknown_state"}"#)).unwrap();
+    let x_state_diags = test_utils::diag_on_line(&diagnostics[&TestDataFiles::PyTestModel], x_state_line as u32);
+    assert!(x_state_diags.is_empty(), "Expected no diagnostic on the value of x_state, but found: {:?}", x_state_diags);
 }
 
 #[test]
@@ -280,6 +286,18 @@ fn test_xml_fields_def_hover_completion() {
     );
 
     // ---------- Completion checks ----------
+    // 0) The values of a selection field defined in XML, given by its `selection` field
+    let py_content = std::fs::read_to_string(py_file_path).unwrap();
+    let before_cursor = r#"write({"x_state": ""#;
+    let (line, text) = py_content.lines().enumerate().find(|(_, text)| text.contains(before_cursor)).unwrap();
+    let character = (text.find(before_cursor).unwrap() + before_cursor.len()) as u32;
+    let selection_labels = completion_labels(CompletionFeature::autocomplete(&mut session, py_file_symbol, py_file_info, None, line as u32, character));
+    assert!(
+        ["draft", "done"].iter().all(|value| selection_labels.iter().any(|label| label == value)),
+        "Completion of the value of x_state should include draft and done; got: {:?}",
+        selection_labels
+    );
+
     // 1) Completion for model names when prefix is x_
     let py_source_model_prefix = py_test_source("x_", "x_other_model.x_name");
     simulate_file_change(&mut session, &py_file_str, &py_source_model_prefix, 2);
