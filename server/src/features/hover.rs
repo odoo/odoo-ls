@@ -3,10 +3,10 @@ use tracing::warn;
 use crate::core::evaluation::Evaluation;
 use crate::core::file_mgr::FileInfoKey;
 use crate::core::symbols::symbol_keys::{SourceFileKey};
+use crate::features::features_utils;
 use crate::features::xml_ast_utils::XmlAstUtils;
 use crate::threads::SessionInfo;
 use crate::features::ast_utils::AstUtils;
-use crate::features::features_utils::FeaturesUtils;
 
 
 pub struct HoverFeature {}
@@ -22,7 +22,7 @@ impl HoverFeature {
             return None;
         };
         let uri = session.file_mgr()[file_info].uri.clone();
-        let value = FeaturesUtils::build_markdown_description(
+        let value = features_utils::build_markdown_description(
             session, Some(file_symbol), Some(&uri), &evals, &call_expr, Some(offset)
         );
         if value.is_empty() {
@@ -56,7 +56,7 @@ impl HoverFeature {
         let evals = symbols.iter()
             .map(|s| Evaluation::eval_from_symbol(session.st(), *s, Some(false))).collect::<Vec<Evaluation>>();
         let uri = session.file_mgr()[file_info].uri.clone();
-        let value = FeaturesUtils::build_markdown_description(session, Some(file_symbol), Some(&uri), &evals, &None, Some(offset));
+        let value = features_utils::build_markdown_description(session, Some(file_symbol), Some(&uri), &evals, &None, Some(offset));
         if value.is_empty() {
             return None;
         }
