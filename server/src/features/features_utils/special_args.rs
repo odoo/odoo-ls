@@ -72,6 +72,31 @@ impl SpecialArg {
 /// The relational field classes, taking a comodel.
 const RELATIONAL_FIELDS: &[&str] = &["Many2one", "One2many", "Many2many"];
 
+/// The methods taking a domain on the model they are called on.
+const DOMAIN_METHODS: &[&str] = &[
+    "search",
+    "search_count",
+    "search_fetch",
+    "search_read",
+    "_search",
+    "_name_search",
+    "name_search",
+    "filtered_domain",
+    "read_group",
+    "_read_group",
+    "_where_calc",
+];
+
+/// The methods the `web` module adds to all the models, taking a domain on the model they are
+/// called on.
+const WEB_DOMAIN_METHODS: &[&str] = &[
+    "web_search_read",
+    "web_name_search",
+    "web_read_group",
+    "formatted_read_group",
+    "read_progress_bar",
+];
+
 /// The search methods taking an order (`_name_search` up to 17.x).
 const SEARCH_METHODS: &[&str] = &[
     "search",
@@ -83,7 +108,11 @@ const SEARCH_METHODS: &[&str] = &[
 
 /// The special parameters, each with its owner, as the same name can mean different things.
 const SPECIAL_PARAMS: &[SpecialParam] = &[
-    model_methods(&["search"], "domain", Domain),
+    model_methods(DOMAIN_METHODS, "domain", Domain),
+    web_base_methods(WEB_DOMAIN_METHODS, "domain", Domain),
+    // `name_search` names its domain `args` up to 18.x, `_name_search` in 16.0
+    model_methods(&["name_search", "_name_search"], "args", Domain),
+    // Not the group methods: their order also takes aggregates, e.g. `amount:sum desc`
     model_methods(SEARCH_METHODS, "order", Order),
     web_base_methods(&["web_search_read"], "order", Order),
     field_classes(RELATIONAL_FIELDS, "comodel_name", Field(Comodel)),
