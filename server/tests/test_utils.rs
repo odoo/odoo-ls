@@ -119,6 +119,7 @@ pub fn diag_on_line(diagnostics: &[lsp_types::Diagnostic], line: u32) -> Vec<&ls
 /**
  * Verify that the given diagnostics match the expected diagnostics from doc_diag, generated from comments in the source code
  */
+#[track_caller]
 pub fn verify_diagnostics_against_doc(
     diagnostics: &[Diagnostic],
     doc_diag: &[(u32, Vec<String>)]
