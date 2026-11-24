@@ -7,13 +7,15 @@ use crate::threads::SessionInfo;
 
 use super::field_params::FieldParam;
 use FieldParam::{Comodel, Depends, InverseField, ModelMethod, Related};
-use SpecialArg::{Domain, Field};
+use SpecialArg::{Domain, Field, Order};
 
 /// A call argument with a special meaning in odoo context, e.g. a domain or a field parameter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SpecialArg {
     /// A domain on the model the method is called on
     Domain,
+    /// An order on the model the method is called on, e.g. `search(order='name desc')`
+    Order,
     /// A parameter of a field class, e.g. `fields.Char(related='partner_id.name')`
     Field(FieldParam),
 }
@@ -47,6 +49,10 @@ impl SpecialArg {
         match self {
             // Any string inside the domain, e.g. the field path of a leaf
             SpecialArg::Domain => true,
+            // The order is the string itself, not an item of it
+            SpecialArg::Order => {
+                matches!(value, Expr::StringLiteral(value_string) if value_string.range == string.range)
+            }
             SpecialArg::Field(field_param) => field_param.is_in_value(value, string),
         }
     }
@@ -66,9 +72,20 @@ impl SpecialArg {
 /// The relational field classes, taking a comodel.
 const RELATIONAL_FIELDS: &[&str] = &["Many2one", "One2many", "Many2many"];
 
+/// The search methods taking an order (`_name_search` up to 17.x).
+const SEARCH_METHODS: &[&str] = &[
+    "search",
+    "search_fetch",
+    "search_read",
+    "_search",
+    "_name_search",
+];
+
 /// The special parameters, each with its owner, as the same name can mean different things.
 const SPECIAL_PARAMS: &[SpecialParam] = &[
     model_methods(&["search"], "domain", Domain),
+    model_methods(SEARCH_METHODS, "order", Order),
+    web_base_methods(&["web_search_read"], "order", Order),
     field_classes(RELATIONAL_FIELDS, "comodel_name", Field(Comodel)),
     field_classes(&["One2many"], "inverse_name", Field(InverseField)),
     field_classes(&["Selection", "Reference"], "selection", Field(ModelMethod)),
@@ -129,6 +146,16 @@ const fn model_methods(
     SpecialParam::new(ParamOwner::ModelMethods(methods), name, kind)
 }
 
+/// Returns the special parameter `name` of the methods in `methods` that the `web` module adds to
+/// all the models.
+const fn web_base_methods(
+    methods: &'static [&'static str],
+    name: &'static str,
+    kind: SpecialArg,
+) -> SpecialParam {
+    SpecialParam::new(ParamOwner::WebBaseMethods(methods), name, kind)
+}
+
 /// Returns the special parameter `name` of the field classes in `classes`.
 const fn field_classes(
     classes: &'static [&'static str],
@@ -148,6 +175,9 @@ const fn any_field_class(name: &'static str, kind: SpecialArg) -> SpecialParam {
 enum ParamOwner {
     /// Methods of Odoo's `BaseModel`, not their overrides, e.g. `search`
     ModelMethods(&'static [&'static str]),
+    /// Methods the `web` module adds to all the models (its `Base`), not their overrides,
+    /// e.g. `web_search_read`
+    WebBaseMethods(&'static [&'static str]),
     /// Some field classes, e.g. `Selection`
     FieldClasses(&'static [&'static str]),
     /// All the field classes, e.g. for the parameters in `**kwargs`
@@ -159,19 +189,16 @@ impl ParamOwner {
     fn matches(self, session: &SessionInfo, owner: SymbolKey) -> bool {
         match self {
             ParamOwner::ModelMethods(methods) => {
-                let SymbolKey::Function(function) = owner else {
-                    return false;
-                };
-                let method = session.st()[function].name.as_str();
                 let models: &[&str] = if session.sync_odoo.version >= (18, 1) {
                     &["odoo", "orm", "models"]
                 } else {
                     &["odoo", "models"]
                 };
-                // The tree excludes the overrides
-                methods.contains(&method)
-                    && session.sync_odoo.get_main_entry_tree(function)
-                        == (models, ["BaseModel", method].as_slice())
+                is_method_of(session, owner, methods, models, "BaseModel")
+            }
+            ParamOwner::WebBaseMethods(methods) => {
+                let web_models: &[&str] = &["odoo", "addons", "web", "models", "models"];
+                is_method_of(session, owner, methods, web_models, "Base")
             }
             ParamOwner::FieldClasses(classes) => owner_class(session, owner).is_some_and(|class| {
                 SymbolTable::is_specific_field_class(session, class.into(), classes)
@@ -180,6 +207,23 @@ impl ParamOwner {
                 .is_some_and(|class| SymbolTable::is_field_class(session, class.into())),
         }
     }
+}
+
+/// Whether `owner` is one of the `methods` of `class` in `module`, not an override.
+fn is_method_of(
+    session: &SessionInfo,
+    owner: SymbolKey,
+    methods: &[&str],
+    module: &[&str],
+    class: &str,
+) -> bool {
+    let SymbolKey::Function(function) = owner else {
+        return false;
+    };
+    let method = session.st()[function].name.as_str();
+    // The tree excludes the overrides
+    methods.contains(&method)
+        && session.sync_odoo.get_main_entry_tree(function) == (module, [class, method].as_slice())
 }
 
 /// Returns `owner` if it is a class, or its class if it is a constructor.

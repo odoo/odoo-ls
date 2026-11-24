@@ -8,6 +8,7 @@ use crate::core::symbols::storage::xml::xml_field_symbol::XmlFieldName;
 use crate::core::symbols::symbol_keys::{FunctionKey, KeyValidator, ModelSymbolKey, ModuleKey, SourceFileKey, SymbolKey, Wk};
 use crate::core::symbols::storage::SymbolTable;
 use crate::core::symbols::FunctionSymbol;
+use crate::core::python_validator;
 use crate::features::features_utils::SpecialArg;
 use crate::features::references::ReferenceTarget;
 use crate::threads::SessionInfo;
@@ -2038,6 +2039,9 @@ impl Evaluation {
         let param = function_arg.symbol.upgrade(session.st());
         match SpecialArg::classify_call_argument(session, function_key.into(), param, None) {
             Some(SpecialArg::Domain) => Evaluation::validate_domain(session, model, from_module, arg),
+            Some(SpecialArg::Order) => {
+                python_validator::validate_order_arg(session, model, from_module, arg)
+            }
             // Field class parameters are not validated here
             Some(SpecialArg::Field(_)) | None => vec![],
         }

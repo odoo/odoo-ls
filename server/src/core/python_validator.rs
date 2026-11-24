@@ -24,6 +24,7 @@ use super::import_resolver::manual_import;
 use super::python_arch_eval::PythonArchEval;
 
 mod order;
+pub(crate) use order::validate_order_arg;
 
 #[derive(Debug)]
 pub struct PythonValidator {

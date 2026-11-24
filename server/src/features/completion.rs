@@ -689,6 +689,7 @@ fn expected_type_of(
 ) -> Option<ExpectedType> {
     match special_arg {
         SpecialArg::Domain => model.map(|model| ExpectedType::DOMAIN(model.into())),
+        SpecialArg::Order => model?.as_class_key().map(ExpectedType::ORDER),
         SpecialArg::Field(FieldParam::Comodel) => Some(ExpectedType::MODEL_NAME),
         // The related path must end on a field of the same type as the field class
         SpecialArg::Field(FieldParam::Related) => Some(ExpectedType::NESTED_FIELD(Some(
