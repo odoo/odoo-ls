@@ -1,16 +1,13 @@
 use std::path::PathBuf;
 
 use lsp_types::DiagnosticSeverity;
-use odoo_ls_server::utils::PathSanitizer;
+use odoo_ls_server::{threads::SessionInfo, utils::PathSanitizer};
 
-use crate::common::*;
+use crate::common::{check_xml_diagnostic, get_diagnostics_for_path};
 
 /// OLS05073: t-call to a template that does not exist (backend XML template)
 /// OLS05074: t-call to a template whose module is not declared as a dependency (backend)
-#[test]
-fn test_ols05073_05074_backend_template() {
-    let (mut odoo, config) = setup_server(true);
-    let mut session = create_init_session(&mut odoo, config);
+pub fn test_ols05073_05074_backend_template(mut session: SessionInfo) {
     let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let xml_path = test_addons_path
         .join("module_templates_b")
@@ -25,10 +22,7 @@ fn test_ols05073_05074_backend_template() {
 }
 
 /// OLS05074: t-call to a frontend template whose module is not declared as a dependency
-#[test]
-fn test_ols05074_frontend_template() {
-    let (mut odoo, config) = setup_server(true);
-    let mut session = create_init_session(&mut odoo, config);
+pub fn test_ols05074_frontend_template(mut session: SessionInfo) {
     let test_addons_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let xml_path = test_addons_path
         .join("module_templates_b")

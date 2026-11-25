@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use lsp_types::NumberOrString;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::odoo_version::OdooVersion;
+use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
 use crate::common::*;
@@ -12,11 +13,7 @@ const ACCESS_INVALID_FIELD_LINE: u32 = 23;
 const ACCESS_INVALID_VALUE_LINE: u32 = 26;
 const ACCESS_INVALID_FIELD_MULTI_CANDIDATE_LINE: u32 = 37;
 
-#[test]
-fn test_ols03025_to_27_access_operator() {
-    let (mut odoo, config) = setup_server(true);
-    let mut session = create_init_session(&mut odoo, config);
-
+pub fn test_ols03025_to_27_access_operator(mut session: SessionInfo) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/data/addons/module_for_diagnostics/models/access_operator.py")
         .sanitize();

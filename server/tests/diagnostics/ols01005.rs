@@ -1,14 +1,11 @@
 use std::env;
 
 use lsp_types::{DiagnosticSeverity, NumberOrString};
-use odoo_ls_server::{S, utils::PathSanitizer};
+use odoo_ls_server::{S, threads::SessionInfo, utils::PathSanitizer};
 
 use crate::common::*;
 
-#[test]
-fn test_ols01005() {
-    let (mut odoo, config) = setup_server(false);
-    let mut session = create_init_session(&mut odoo, config);
+pub fn test_ols01005(mut session: SessionInfo) {
     let path = env::current_dir().unwrap().join("tests/data/python/diagnostics/ols01005.py").sanitize();
     prepare_custom_entry_point(&mut session, &path);
     let diagnostics = get_diagnostics_for_path(&mut session, &path);

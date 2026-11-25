@@ -54,11 +54,7 @@ fn has_code(diag: &Diagnostic, code: &str) -> bool {
     }).unwrap_or(false)
 }
 
-#[test]
-fn test_csv_diagnostics() {
-    let (mut odoo, config) = common::setup_server(true);
-    let mut session = common::create_init_session(&mut odoo, config);
-
+pub fn test_csv_diagnostics(mut session: SessionInfo) {
     let (field_mismatch, invalid_xml_id, duplicate_column, valid_csv, relational_ids) = csv_test_paths();
 
     // Collect all diagnostics in one pass (consuming the message queue once)

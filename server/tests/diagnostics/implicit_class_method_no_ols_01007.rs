@@ -1,13 +1,9 @@
-use odoo_ls_server::utils::PathSanitizer;
+use odoo_ls_server::{threads::SessionInfo, utils::PathSanitizer};
 use std::env;
 
 use crate::common::*;
 
-#[test]
-fn implicit_class_method_no_ols_01007() {
-    // Setup server and session with test addons
-    let (mut odoo, config) = setup_server(false);
-    let mut session = create_init_session(&mut odoo, config);
+pub fn implicit_class_method_no_ols_01007(mut session: SessionInfo) {
     let path = env::current_dir()
         .unwrap()
         .join("tests/data/python/lack_of_diagnostics/implicit_class_method_no_ols_01007.py")
