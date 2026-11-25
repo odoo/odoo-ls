@@ -2,15 +2,12 @@ use std::env;
 use std::path::Path;
 
 use odoo_ls_server::core::odoo::SyncOdoo;
+use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
 use crate::common;
 
-#[test]
-fn test_search_eval_hook() {
-    let (mut odoo, config) = common::setup_server(true);
-    let mut session = common::create_init_session(&mut odoo, config);
-
+pub fn test_search_eval_hook(mut session: SessionInfo) {
     let test_file = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/data/addons/module_1/models/base_test_models.py")
         .sanitize();

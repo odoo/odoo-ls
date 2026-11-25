@@ -16,3 +16,35 @@ mod test_references;
 mod test_semantic_tokens;
 mod test_start_server;
 mod test_xml_fields;
+
+use crate::{
+    common::{build_once_run_isolated, setup_server},
+    test_arch_eval_hooks::{
+        test_base_model_env_hook, test_ids_and_id_field_hooks, test_ir_rule_global_field_hook,
+        test_odoo_init_symbol_hooks, test_registry_hooks, test_relational_field_get_hooks,
+        test_relational_field_hover_shows_comodel, test_scalar_field_get_hooks, test_self_returning_chain_hooks,
+    },
+    test_env_attributes::{test_env_attributes_resolve, test_env_user_through_variable_resolves},
+    test_env_subscript::test_env_subscript_after_getitem_invalidation,
+    test_hooks::test_search_eval_hook,
+};
+
+#[test]
+fn test_arch_eval_hooks() {
+    let (odoo, config) = setup_server(true);
+    build_once_run_isolated(odoo, config, &[
+        &test_self_returning_chain_hooks,
+        &test_registry_hooks,
+        &test_ids_and_id_field_hooks,
+        &test_odoo_init_symbol_hooks,
+        &test_ir_rule_global_field_hook,
+        &test_base_model_env_hook,
+        &test_scalar_field_get_hooks,
+        &test_relational_field_get_hooks,
+        &test_relational_field_hover_shows_comodel,
+        &test_search_eval_hook,
+        &test_env_attributes_resolve,
+        &test_env_user_through_variable_resolves,
+        &test_env_subscript_after_getitem_invalidation,
+    ]);
+}
