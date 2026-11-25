@@ -9,14 +9,10 @@ use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString};
 use odoo_ls_server::core::js_module_scope;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
-use crate::common::{create_init_session, get_diagnostics_for_path, setup_server};
+use crate::common::get_diagnostics_for_path;
 
 /// `test_out_of_scope_import_is_flagged` drains the session channel, so it runs last.
-#[test]
-fn test_js_module_scope() {
-    let (mut odoo, config) = setup_server(true);
-    let mut session = create_init_session(&mut odoo, config);
-
+pub fn test_js_module_scope(mut session: SessionInfo) {
     test_type_files_are_scoped_to_manifest_depends(&session);
     test_importable_files_are_scoped_to_manifest_depends(&session);
     test_only_importable_files_are_roots(&session);

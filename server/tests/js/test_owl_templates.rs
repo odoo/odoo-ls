@@ -20,10 +20,7 @@ fn module_owl_path(rel: &[&str]) -> String {
 }
 
 // shared setup
-#[test]
-fn test_owl_templates() {
-    let (mut odoo, config) = common::setup_server(true);
-    let mut session = common::create_init_session(&mut odoo, config);
+pub fn test_owl_templates(mut session: SessionInfo) {
     test_template_and_component_are_linked(&session);
     test_super_class_resolves_through_its_import(&session);
     test_goto_definition_from_js_template_to_xml(&mut session);
