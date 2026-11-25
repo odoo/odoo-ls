@@ -5,7 +5,18 @@ use odoo_ls_server::core::symbols::symbol_keys::{SourceFileKey};
 use odoo_ls_server::features::completion::CompletionFeature;
 use odoo_ls_server::threads::SessionInfo;
 
-use crate::common::{create_init_session, setup_server};
+use crate::common::{build_once_run_isolated, setup_server};
+
+#[test]
+fn test_completion_trigger_kind() {
+    let (odoo, config) = setup_server(false);
+    build_once_run_isolated(odoo, config, &[
+        &test_comma_trigger_char_returns_nothing,
+        &test_comma_position_invoked_still_completes,
+        &test_missing_context_behaves_like_invoked,
+        &test_dot_trigger_char_still_completes,
+    ]);
+}
 
 /// Open an untitled python buffer and return its file symbol + info.
 /// Untitled buffers don't need an Odoo install, which keeps these tests
@@ -45,10 +56,7 @@ fn labels(response: Option<CompletionResponse>) -> Vec<String> {
 /// Regression test for https://github.com/odoo/odoo-ls/issues/518
 /// A `,` (trigger character) after an argument must NOT dump every name in scope.
 /// This is the exact shape of `fields.Selection([...], )`.
-#[test]
-fn test_comma_trigger_char_returns_nothing() {
-    let (mut odoo, config) = setup_server(false);
-    let mut session = create_init_session(&mut odoo, config);
+fn test_comma_trigger_char_returns_nothing(mut session: SessionInfo) {
     // `foo([('a', 'b')], )` -- cursor just before the closing paren, i.e. in the
     // gap after the trailing comma. char count: foo(=4, list `[('a', 'b')]`=12 -> 16, `,`=17, ` `=18.
     let (fsym, finfo) = open_untitled(&mut session, "untitled:completion-comma", "foo([('a', 'b')], )\n");
@@ -63,10 +71,7 @@ fn test_comma_trigger_char_returns_nothing() {
 
 /// The SAME position, when reached by manual invocation (Ctrl+Space), SHOULD still
 /// list names in scope. Proves the gate only affects trigger-character events.
-#[test]
-fn test_comma_position_invoked_still_completes() {
-    let (mut odoo, config) = setup_server(false);
-    let mut session = create_init_session(&mut odoo, config);
+fn test_comma_position_invoked_still_completes(mut session: SessionInfo) {
     let (fsym, finfo) = open_untitled(&mut session, "untitled:completion-invoked", "spam = 1\nfoo(spam, )\n");
 
     // `foo(spam, )` on line 1: foo(=4, spam=8, `,`=9, ` `=10 -> cursor at 11 (before `)`).
@@ -82,10 +87,7 @@ fn test_comma_position_invoked_still_completes() {
 
 /// A missing context (older clients / internal callers) must behave like manual
 /// invocation, not like a trigger character. Guards against suppressing valid completions.
-#[test]
-fn test_missing_context_behaves_like_invoked() {
-    let (mut odoo, config) = setup_server(false);
-    let mut session = create_init_session(&mut odoo, config);
+fn test_missing_context_behaves_like_invoked(mut session: SessionInfo) {
     let (fsym, finfo) = open_untitled(&mut session, "untitled:completion-noctx", "spam = 1\nfoo(spam, )\n");
 
     let response = CompletionFeature::autocomplete(&mut session, fsym, finfo, None, 1, 11);
@@ -97,10 +99,7 @@ fn test_missing_context_behaves_like_invoked() {
 /// The gate must not touch attribute completion: `.` is a trigger character, but
 /// attribute completion returns Some from the structured path, so it never reaches
 /// the gated fallback.
-#[test]
-fn test_dot_trigger_char_still_completes() {
-    let (mut odoo, config) = setup_server(false);
-    let mut session = create_init_session(&mut odoo, config);
+fn test_dot_trigger_char_still_completes(mut session: SessionInfo) {
     // `spam.` -- cursor after the dot on line 1.
     let (fsym, finfo) = open_untitled(&mut session, "untitled:completion-dot", "spam = 1\nspam.\n");
 

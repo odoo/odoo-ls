@@ -2,6 +2,7 @@ use crate::common;
 
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::core::symbols::symbol_keys::SymbolKey;
+use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 use std::env;
 use std::path::Path;
@@ -9,10 +10,7 @@ use common::get_resolved_symbols_at_position;
 
 /// `cached_property`/`lazy_property`, bare or attribute-accessed, must be handled as properties.
 /// Odoo declares `Environment.user`, `Environment.company`, ... with them.
-#[test]
-fn test_cached_and_lazy_property_are_properties() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
+pub fn test_cached_and_lazy_property_are_properties(mut session: SessionInfo) {
     let path = env::current_dir()
         .unwrap()
         .join("tests/data/python/expressions/cached_property.py")

@@ -2,9 +2,8 @@ use std::fs;
 
 use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::Odoo;
+use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
-
-use crate::common;
 
 fn make_py_open_params(uri: lsp_types::Uri, content: &str) -> lsp_types::DidOpenTextDocumentParams {
     lsp_types::DidOpenTextDocumentParams {
@@ -30,11 +29,7 @@ fn has_custom_entry(session: &odoo_ls_server::threads::SessionInfo, needle: &str
 
 /// Standalone (non-module) Python file: `did_create` must not eagerly build it;
 /// `did_open`/`did_close` remain the source of truth for the custom entry point.
-#[test]
-fn test_standalone_python_create_open_close_lifecycle() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
-
+pub fn test_standalone_python_create_open_close_lifecycle(mut session: SessionInfo) {
     let temp_dir = std::env::temp_dir().join(format!("odoo_ls_standalone_test_{}", std::process::id()));
     fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
 
@@ -85,11 +80,7 @@ fn test_standalone_python_create_open_close_lifecycle() {
 
 /// Renaming a standalone file must not eagerly (re)create its entry point either —
 /// only a subsequent did_open (or a lazy feature-request fallback) should.
-#[test]
-fn test_standalone_python_rename_defers_entry_to_reopen() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
-
+pub fn test_standalone_python_rename_defers_entry_to_reopen(mut session: SessionInfo) {
     let temp_dir = std::env::temp_dir().join(format!("odoo_ls_standalone_rename_test_{}", std::process::id()));
     fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
 
@@ -137,11 +128,7 @@ fn test_standalone_python_rename_defers_entry_to_reopen() {
 
 /// A file created but never opened has no entry point (per the fix above), so any
 /// feature request against it must lazily build it on demand instead of panicking.
-#[test]
-fn test_hover_on_unopened_standalone_file_builds_lazily() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
-
+pub fn test_hover_on_unopened_standalone_file_builds_lazily(mut session: SessionInfo) {
     let temp_dir = std::env::temp_dir().join(format!("odoo_ls_standalone_hover_test_{}", std::process::id()));
     fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
 
@@ -196,11 +183,7 @@ fn test_hover_on_unopened_standalone_file_builds_lazily() {
 
 /// Deleting a standalone file that was created but never opened (so it never got an
 /// entry point) must be a clean no-op, not a panic on missing state.
-#[test]
-fn test_did_delete_on_never_opened_standalone_file_is_a_noop() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
-
+pub fn test_did_delete_on_never_opened_standalone_file_is_a_noop(mut session: SessionInfo) {
     let temp_dir = std::env::temp_dir().join(format!("odoo_ls_standalone_delete_test_{}", std::process::id()));
     fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
 

@@ -8,10 +8,7 @@ use std::env;
 use std::path::Path;
 use common::get_resolved_symbols_at_position;
 
-#[test]
-fn test_follow_ref() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
+pub fn test_follow_ref(mut session: SessionInfo) {
     let path = env::current_dir()
         .unwrap()
         .join("tests/data/python/expressions/follow_ref.py")

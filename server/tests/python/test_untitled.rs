@@ -4,15 +4,10 @@ use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::features::completion::CompletionFeature;
 use odoo_ls_server::features::hover::HoverFeature;
 use odoo_ls_server::features::definition::DefinitionFeature;
+use odoo_ls_server::threads::SessionInfo;
 
-use crate::common::{create_init_session, setup_server};
-
-#[test]
 /// Simple test to verify LSP features on untitled files, open, change, hover, complete.
-fn test_untitled_file_lifecycle() {
-    // Setup server and session
-    let (mut odoo, config) = setup_server(false);
-    let mut session = create_init_session(&mut odoo, config);
+pub fn test_untitled_file_lifecycle(mut session: SessionInfo) {
     let untitled_uri = "untitled:Untitled-1".to_string();
     let initial_text = "def foo():\n    return 42\nfoo()\n";
 
