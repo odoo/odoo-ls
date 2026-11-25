@@ -11,9 +11,6 @@ use odoo_ls_server::features::semantic_tokens::SemanticTokensFeature;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
-use crate::common::{create_init_session, setup_server};
-
-
 const CLASS: SemanticTokenType = SemanticTokenType::CLASS;
 const FUNCTION: SemanticTokenType = SemanticTokenType::FUNCTION;
 const METHOD: SemanticTokenType = SemanticTokenType::METHOD;
@@ -27,10 +24,7 @@ const STATIC: SemanticTokenModifier = SemanticTokenModifier::STATIC;
 /// Semantic tokens of the Python files of `module_semantic_tokens`. Starting a server with Odoo
 /// is expensive, so everything shares one setup: the `check_*` functions below are ordinary
 /// functions, one per family of tokens, and each file is requested exactly once — like a client.
-#[test]
-fn test_semantic_tokens_python() {
-    let (mut odoo, config) = setup_server(true);
-    let mut session = create_init_session(&mut odoo, config);
+pub fn test_semantic_tokens_python(mut session: SessionInfo) {
     let module = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests").join("data").join("addons").join("module_semantic_tokens");
 

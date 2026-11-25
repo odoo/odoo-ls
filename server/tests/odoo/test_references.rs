@@ -3,17 +3,8 @@ use std::path::Path;
 use lsp_types::{Location, PartialResultParams, Position, WorkDoneProgressParams};
 use odoo_ls_server::{core::file_mgr::FileMgr, threads::SessionInfo, utils::PathSanitizer};
 
-use crate::common::{create_init_session, setup_server};
-
-
-
-
-#[test]
 /// Test various calls to GotoReferences
-fn test_references() {
-    // Setup server and session
-    let (mut odoo, config) = setup_server(true);
-    let mut session = create_init_session(&mut odoo, config);
+pub fn test_references(mut session: SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
 
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();

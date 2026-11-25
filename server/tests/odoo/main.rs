@@ -25,6 +25,7 @@ use crate::{
         test_odoo_init_symbol_hooks, test_registry_hooks, test_relational_field_get_hooks,
         test_relational_field_hover_shows_comodel, test_scalar_field_get_hooks, test_self_returning_chain_hooks,
     },
+    test_completion::test_completions,
     test_controller::{test_request_env_definition, test_request_env_subscript, test_request_type_hover},
     test_env_attributes::{test_env_attributes_resolve, test_env_user_through_variable_resolves},
     test_env_subscript::test_env_subscript_after_getitem_invalidation,
@@ -41,6 +42,8 @@ use crate::{
     },
     test_ls::test_structure,
     test_xml_fields::{test_xml_fields_def_hover_completion, test_xml_fields_diagnostics},
+    test_references::test_references,
+    test_semantic_tokens::test_semantic_tokens_python,
 };
 
 #[test]
@@ -100,5 +103,15 @@ fn test_xml() {
         // xml fields
         &test_xml_fields_diagnostics,
         &test_xml_fields_def_hover_completion,
+    ]);
+}
+    
+#[test]
+fn test_features() {
+    let (odoo, config) = setup_server(true);
+    build_once_run_isolated(odoo, config, &[
+        &test_references,
+        &test_semantic_tokens_python,
+        &test_completions,
     ]);
 }
