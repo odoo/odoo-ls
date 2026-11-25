@@ -18,22 +18,9 @@ fn labels(response: Option<CompletionResponse>) -> Vec<String> {
     items.into_iter().map(|i| i.label).collect()
 }
 
-pub fn test_completions(mut session: SessionInfo) {
-    test_depends_kwarg_nested_field_completion(&mut session);
-    // Before `test_lambda_is_not_a_member`, which opens `to_complete.py` with a syntax error
-    test_list_element_completion(&mut session);
-    test_lambda_is_not_a_member(&mut session);
-    test_compute_sql_kwarg_method_completion(&mut session);
-    test_selection_field_method_completion(&mut session);
-    test_domain_operator_completion(&mut session);
-    test_init_storage_kwarg_method_completion(&mut session);
-    test_magic_field_comodel_completion(&mut session);
-    test_import_completion_with_normalized_name(&mut session);
-}
-
 /// `fields.Char(compute="...", depends=["partner_id.disp"])`: the `depends` kwarg should
 /// offer nested-field completion on the last dotted segment, exactly like `related=`.
-fn test_depends_kwarg_nested_field_completion(session: &mut SessionInfo) {
+pub fn test_depends_kwarg_nested_field_completion(session: &mut SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
     assert!(Path::new(&test_file).exists(), "Test file does not exist: {}", test_file);
@@ -55,7 +42,7 @@ fn test_depends_kwarg_nested_field_completion(session: &mut SessionInfo) {
 
 /// The element of a list or a tuple is completed with the cursor at its end, when no type is expected.
 /// e.g. `companies = [self.company_id]`, with the cursor after `company_id`
-fn test_list_element_completion(session: &mut SessionInfo) {
+pub fn test_list_element_completion(session: &mut SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
     let disk_text = std::fs::read_to_string(&test_file).expect("Test file does not exist");
@@ -81,7 +68,7 @@ fn test_list_element_completion(session: &mut SessionInfo) {
 
 /// `default=lambda self: ...` stores a `<lambda>` child on the class, but it is not a member:
 /// `self.` must never offer it.
-fn test_lambda_is_not_a_member(session: &mut SessionInfo) {
+pub fn test_lambda_is_not_a_member(session: &mut SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
     let disk_text = std::fs::read_to_string(&test_file).expect("Test file does not exist");
@@ -123,7 +110,7 @@ fn test_lambda_is_not_a_member(session: &mut SessionInfo) {
 }
 
 /// `fields.Integer(compute_sql="...")`: the kwarg offers method completion, but only from 19.1 on
-fn test_compute_sql_kwarg_method_completion(session: &mut SessionInfo) {
+pub fn test_compute_sql_kwarg_method_completion(session: &mut SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
 
@@ -134,19 +121,16 @@ fn test_compute_sql_kwarg_method_completion(session: &mut SessionInfo) {
     };
 
     // Cursor inside the compute_sql value of `test_int = fields.Integer(..., compute_sql="...")`
-    let initial_version = session.sync_odoo.version;
     session.sync_odoo.version = OdooVersion::new(19, 1, 0);
     let gated_in = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, 8, 80));
     assert!(gated_in.iter().any(|l| l == "_compute_something"), "Expected _compute_something to be suggested for compute_sql, got: {:?}", gated_in);
     session.sync_odoo.version = OdooVersion::new(19, 0, 0);
     let gated_out = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, 8, 80));
     assert!(!gated_out.iter().any(|l| l == "_compute_something"), "Expected no method completion for compute_sql before 19.1, got: {:?}", gated_out);
-    // The session is shared with the other completion tests, leave the version as it was found
-    session.sync_odoo.version = initial_version;
 }
 
 /// `group_expand=`, `selection=` and the first positional argument of a Selection offer methods
-fn test_selection_field_method_completion(session: &mut SessionInfo) {
+pub fn test_selection_field_method_completion(session: &mut SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
 
@@ -167,7 +151,7 @@ fn test_selection_field_method_completion(session: &mut SessionInfo) {
 
 /// The operators offered in a domain leaf depend on the Odoo version.
 /// e.g. `not =like` and `not =ilike` from saas-18.2
-fn test_domain_operator_completion(session: &mut SessionInfo) {
+pub fn test_domain_operator_completion(session: &mut SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
     let content = std::fs::read_to_string(&test_file).expect("Test file does not exist");
@@ -182,8 +166,6 @@ fn test_domain_operator_completion(session: &mut SessionInfo) {
     let (line, text) = content.lines().enumerate().find(|(_, text)| text.contains(before_cursor)).unwrap();
     let character = (text.find(before_cursor).unwrap() + before_cursor.len()) as u32;
 
-    // The version of the session is restored after the test, as the other tests share it
-    let version = session.sync_odoo.version;
     let mut failures = vec![];
     // (version, whether `not =like` and `not =ilike` are offered)
     for (test_version, offered) in [(OdooVersion::new(18, 1, 0), false), (OdooVersion::new(18, 2, 0), true)] {
@@ -197,12 +179,11 @@ fn test_domain_operator_completion(session: &mut SessionInfo) {
             }
         }
     }
-    session.sync_odoo.version = version;
     assert!(failures.is_empty(), "domain operator completion:\n{}", failures.join("\n"));
 }
 
 /// `init_storage="..."` offers method completion, but only from 20.0 on
-fn test_init_storage_kwarg_method_completion(session: &mut SessionInfo) {
+pub fn test_init_storage_kwarg_method_completion(session: &mut SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
 
@@ -212,20 +193,17 @@ fn test_init_storage_kwarg_method_completion(session: &mut SessionInfo) {
         panic!("Failed to get file symbol");
     };
 
-    let initial_version = session.sync_odoo.version;
     session.sync_odoo.version = OdooVersion::new(20, 0, 0);
     let gated_in = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, 86, 76));
     assert!(gated_in.iter().any(|l| l == "_init_column_kind"), "Expected _init_column_kind to be suggested for init_storage, got: {:?}", gated_in);
     session.sync_odoo.version = OdooVersion::new(19, 4, 0);
     let gated_out = labels(CompletionFeature::autocomplete(session, file_symbol, file_info, None, 86, 76));
     assert!(!gated_out.iter().any(|l| l == "_init_column_kind"), "Expected no method completion for init_storage before 20.0, got: {:?}", gated_out);
-    // The session is shared with the other completion tests, leave the version as it was found
-    session.sync_odoo.version = initial_version;
 }
 
 /// `self.create_uid.log`: `create_uid` is added to every model as a many2one to `res.users`, so its
 /// attributes are those of `res.users`.
-fn test_magic_field_comodel_completion(session: &mut SessionInfo) {
+pub fn test_magic_field_comodel_completion(session: &mut SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("to_complete.py").sanitize();
     let content = std::fs::read_to_string(&test_file).expect("Test file does not exist");
@@ -244,7 +222,7 @@ fn test_magic_field_comodel_completion(session: &mut SessionInfo) {
 
 /// `import ｏ|ｓ`: the AST holds the NFKC-normalized name `os`, so the typed prefix must be read up
 /// to the cursor in the source, not by slicing the normalized name with source offsets.
-fn test_import_completion_with_normalized_name(session: &mut SessionInfo) {
+pub fn test_import_completion_with_normalized_name(session: &mut SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_semantic_tokens").join("models").join("sem_tokens_non_ascii.py").sanitize();
     let file_info = session.file_mgr().get_file_info(&test_file).unwrap();

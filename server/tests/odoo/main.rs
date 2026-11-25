@@ -25,7 +25,12 @@ use crate::{
         test_odoo_init_symbol_hooks, test_registry_hooks, test_relational_field_get_hooks,
         test_relational_field_hover_shows_comodel, test_scalar_field_get_hooks, test_self_returning_chain_hooks,
     },
-    test_completion::test_completions,
+    test_completion::{
+        test_compute_sql_kwarg_method_completion, test_depends_kwarg_nested_field_completion,
+        test_domain_operator_completion, test_import_completion_with_normalized_name,
+        test_init_storage_kwarg_method_completion, test_lambda_is_not_a_member, test_list_element_completion,
+        test_magic_field_comodel_completion, test_selection_field_method_completion,
+    },
     test_controller::{test_request_env_definition, test_request_env_subscript, test_request_type_hover},
     test_env_attributes::{test_env_attributes_resolve, test_env_user_through_variable_resolves},
     test_env_subscript::test_env_subscript_after_getitem_invalidation,
@@ -112,6 +117,15 @@ fn test_features() {
     build_once_run_isolated(odoo, config, &[
         &test_references,
         &test_semantic_tokens_python,
-        &test_completions,
+        // completion
+        &|mut s| test_depends_kwarg_nested_field_completion(&mut s),
+        &|mut s| test_list_element_completion(&mut s),
+        &|mut s| test_selection_field_method_completion(&mut s),
+        &|mut s| test_magic_field_comodel_completion(&mut s),
+        &|mut s| test_import_completion_with_normalized_name(&mut s),
+        &|mut s| test_compute_sql_kwarg_method_completion(&mut s),
+        &|mut s| test_domain_operator_completion(&mut s),
+        &|mut s| test_init_storage_kwarg_method_completion(&mut s),
+        &|mut s| test_lambda_is_not_a_member(&mut s),
     ]);
 }
