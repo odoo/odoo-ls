@@ -9,7 +9,7 @@ use std::env;
 
 use odoo_ls_server::utils::PathSanitizer;
 
-use crate::setup::setup::*;
+use crate::common::*;
 
 fn diagnostics_path(name: &str) -> String {
     env::current_dir()

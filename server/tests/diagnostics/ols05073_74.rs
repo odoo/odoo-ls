@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use lsp_types::DiagnosticSeverity;
 use odoo_ls_server::utils::PathSanitizer;
 
-use crate::{setup::setup::*, test_utils::check_xml_diagnostic};
+use crate::common::*;
 
 /// OLS05073: t-call to a template that does not exist (backend XML template)
 /// OLS05074: t-call to a template whose module is not declared as a dependency (backend)

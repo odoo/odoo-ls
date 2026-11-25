@@ -61,6 +61,18 @@ tikv-jemalloc-ctl = "0.6"
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { version = "0.3.9", features = ["winbase", "processthreadsapi", "synchapi", "handleapi"] }
 
+[lib]
+doctest = false
+
+[[bin]]
+name = "odoo_ls_server"
+path = "src/main.rs"
+test = false
+
+[[bin]]
+name = "print_config_schema"
+test = false
+
 [[bench]]
 name = "gungraun_bench"
 harness = false

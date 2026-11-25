@@ -5,8 +5,7 @@ use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::odoo_version::OdooVersion;
 use odoo_ls_server::utils::PathSanitizer;
 
-use crate::setup::setup::*;
-use crate::test_utils::{diag_on_line, revalidate};
+use crate::common::*;
 
 const ACCESS_LINE: u32 = 20;
 const ACCESS_INVALID_FIELD_LINE: u32 = 23;

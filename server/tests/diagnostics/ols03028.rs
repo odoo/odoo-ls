@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use lsp_types::{DiagnosticSeverity, NumberOrString};
 use odoo_ls_server::utils::PathSanitizer;
 
-use crate::{setup::setup::*, test_utils::diag_on_line};
+use crate::common::*;
 
 /// OLS03028: a method is only reachable through a model extension (_inherit) declared in a
 /// module that is not a declared dependency ("indirect inheritance").

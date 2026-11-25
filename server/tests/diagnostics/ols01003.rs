@@ -3,7 +3,7 @@ use std::env;
 use lsp_types::{DiagnosticSeverity, NumberOrString};
 use odoo_ls_server::{S, utils::PathSanitizer};
 
-use crate::setup::setup::*;
+use crate::common::*;
 
 #[test]
 fn test_ols01003() {

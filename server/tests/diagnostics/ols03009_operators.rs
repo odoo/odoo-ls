@@ -5,8 +5,7 @@ use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::odoo_version::OdooVersion;
 use odoo_ls_server::utils::PathSanitizer;
 
-use crate::setup::setup::*;
-use crate::test_utils::{diag_on_line, revalidate};
+use crate::common::*;
 
 /// Test OLS03009 on the operators of a list domain that depend on the Odoo version.
 /// `not =like` and `not =ilike` exist from saas-18.2.
