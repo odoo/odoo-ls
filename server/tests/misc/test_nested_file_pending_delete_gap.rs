@@ -6,9 +6,8 @@ use odoo_ls_server::core::build_scheduler::BuildScheduler;
 use odoo_ls_server::core::entry_point::EntryPointMgr;
 use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::Odoo;
+use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
-
-use crate::common;
 
 // `in_workspace` only checks a file's immediate parent, so a file under a
 // bare, `__init__.py`-less directory (e.g. `pkg/models/point.py`) ends up
@@ -16,11 +15,7 @@ use crate::common;
 // either). Since `handle_did_close` clears only on "gone from disk" or
 // "external", a file like this must just behave like any other ordinary
 // tracked file - kept on close.
-#[test]
-fn test_nested_bare_dir_file_is_kept_on_close_even_though_not_flagged_in_workspace() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
-
+pub fn test_nested_bare_dir_file_is_kept_on_close_even_though_not_flagged_in_workspace(mut session: SessionInfo) {
     let pkg_dir = env::current_dir().unwrap().join("tests/data/nested_dir_race/pkg").sanitize();
     let pkg_init = Path::new(&pkg_dir).join("__init__.py").sanitize();
     let point_path = Path::new(&pkg_dir).join("models").join("point.py").sanitize();
