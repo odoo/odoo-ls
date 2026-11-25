@@ -3,15 +3,11 @@
 use std::path::Path;
 use std::env;
 use odoo_ls_server::core::odoo::SyncOdoo;
+use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
-use crate::common;
-
-#[test]
-fn test_structure() {
-    /* First, let's launch the server. It will setup a SyncOdoo struct, with a SyncChannel, that we can use to get the messages that the client would receive. */
-    let (mut odoo, config) = common::setup_server(true);
-    let _ = common::create_init_session(&mut odoo, config);
+pub fn test_structure(session: SessionInfo) {
+    let odoo = &*session.sync_odoo;
     let st = &odoo.symbol_table;
 
     let odoo_path = env::var("COMMUNITY_PATH").unwrap();
@@ -36,7 +32,7 @@ fn test_structure() {
             st.get_symbol(models[0], (&[], &["base_test_models"]), u32::MAX)[0]);
     let module_1 = odoo.get_symbol(odoo_path, (&["odoo", "addons", "module_1"], &[]), u32::MAX);
     assert!(module_1.len() == 1);
-    test_imports(&odoo);
+    test_imports(odoo);
 }
 
 fn test_imports(odoo: &SyncOdoo) {
