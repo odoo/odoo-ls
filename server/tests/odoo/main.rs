@@ -24,6 +24,7 @@ use crate::{
         test_odoo_init_symbol_hooks, test_registry_hooks, test_relational_field_get_hooks,
         test_relational_field_hover_shows_comodel, test_scalar_field_get_hooks, test_self_returning_chain_hooks,
     },
+    test_controller::{test_request_env_definition, test_request_env_subscript, test_request_type_hover},
     test_env_attributes::{test_env_attributes_resolve, test_env_user_through_variable_resolves},
     test_env_subscript::test_env_subscript_after_getitem_invalidation,
     test_hooks::test_search_eval_hook,
@@ -45,6 +46,9 @@ fn test_arch_eval_hooks() {
         &test_search_eval_hook,
         &test_env_attributes_resolve,
         &test_env_user_through_variable_resolves,
+        &|mut s| test_request_type_hover(&mut s),
+        &|mut s| test_request_env_definition(&mut s),
+        &|mut s| test_request_env_subscript(&mut s),
         &test_env_subscript_after_getitem_invalidation,
     ]);
 }

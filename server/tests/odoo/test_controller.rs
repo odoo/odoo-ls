@@ -9,36 +9,24 @@ use odoo_ls_server::threads::SessionInfo;
 
 use crate::common;
 
-/// Test that odoo.http.request and request.env hooks work correctly.
-/// Tests hover and definition.
-#[test]
-fn test_controller() {
-    let (mut odoo, config) = common::setup_server(true);
-    let mut session = common::create_init_session(&mut odoo, config);
-
+fn controller_file(session: &mut SessionInfo) -> (SourceFileKey, FileInfoKey) {
     let test_file = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/data/addons/module_1/controllers/main.py")
         .sanitize();
 
-    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file)) else {
+    let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&test_file)) else {
         panic!("Failed to get file symbol for {}", test_file);
     };
 
-    let file_mgr = session.file_mgr();
-    let file_info = file_mgr.get_file_info(&test_file).unwrap();
-
-    test_request_type_hover(&mut session, file_symbol, file_info);
-    test_request_env_definition(&mut session, file_symbol, file_info);
-    test_request_env_subscript(&mut session, file_symbol, file_info);
+    let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
+    (file_symbol, file_info)
 }
 
 /// Test that hovering over 'request' shows Request class
 /// and that hovering over 'request.env' shows Environment type
-fn test_request_type_hover(
-    session: &mut SessionInfo,
-    file_symbol: SourceFileKey,
-    file_info: FileInfoKey
-) {
+pub fn test_request_type_hover(session: &mut SessionInfo) {
+    let (file_symbol, file_info) = controller_file(session);
+
     // Test 1: Hover over 'request' variable (line 11: req = request)
     // Should show Request class
     let hover_text = common::get_hover_markdown(session, file_symbol, file_info, 11, 14)
@@ -68,11 +56,9 @@ fn test_request_type_hover(
 }
 
 /// Test that request.env provides correct definitions
-fn test_request_env_definition(
-    session: &mut SessionInfo,
-    file_symbol: SourceFileKey,
-    file_info: FileInfoKey
-) {
+pub fn test_request_env_definition(session: &mut SessionInfo) {
+    let (file_symbol, file_info) = controller_file(session);
+
     // Test 1: Go-to-definition on 'request' import (line 3: from odoo.http import request)
     // Should navigate to request variable in odoo.http
     let definitions = common::get_definition_locs(session, file_symbol, file_info, 2, 22);
@@ -99,11 +85,8 @@ fn test_request_env_definition(
 }
 
 /// Test that request.env["model_name"] resolves to Model instance
-fn test_request_env_subscript(
-    session: &mut SessionInfo,
-    file_symbol: SourceFileKey,
-    file_info: FileInfoKey
-) {
+pub fn test_request_env_subscript(session: &mut SessionInfo) {
+    let (file_symbol, file_info) = controller_file(session);
     let partner_class = common::PARTNER_CLASS_NAME(session.sync_odoo.version);
 
     // Test 1: Hover over 'partner' variable (line 18: partner = request.env['res.partner'])
