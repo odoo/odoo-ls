@@ -13,6 +13,7 @@ use odoo_ls_server::core::config::ConfigKey;
 use odoo_ls_server::threads::SessionInfo;
 
 use crate::common;
+use crate::common::run_no_fail_fast;
 use crate::js_owl_helpers::fixture::*;
 use crate::js_owl_helpers::requests::*;
 use crate::js_owl_helpers::asserts::*;
@@ -48,42 +49,46 @@ fn test_js_owl_features() {
 
     let fixtures = Fixtures::init(&mut session);
 
-    // Hover
-    test_hover_in_js(&mut session, &fixtures);
-    test_hover_in_template(&mut session, &fixtures);
-    test_hover_in_subclass_template(&mut session, &fixtures);
+    run_no_fail_fast(
+        [
+            // Hover
+            test_hover_in_js,
+            test_hover_in_template,
+            test_hover_in_subclass_template,
 
-    // Definition
-    test_definition_in_js(&mut session, &fixtures);
-    test_definition_in_template(&mut session, &fixtures);
-    test_definition_in_subclass_template(&mut session, &fixtures);
-    test_definition_for_template(&mut session, &fixtures);
-    test_definition_for_template_jump_to_component(&mut session, &fixtures);
-    test_definition_in_js_without_component(&mut session, &fixtures);
+            // Definition
+            test_definition_in_js,
+            test_definition_in_template,
+            test_definition_in_subclass_template,
+            test_definition_for_template,
+            test_definition_for_template_jump_to_component,
+            test_definition_in_js_without_component,
 
-    // Completion
-    test_completion_in_js(&mut session, &fixtures);
-    test_completion_in_template(&mut session, &fixtures);
-    test_completion_resolve(&mut session, &fixtures);
-    test_completion_entries_label_details(&mut session, &fixtures);
+            // Completion
+            test_completion_in_js,
+            test_completion_in_template,
+            test_completion_resolve,
+            test_completion_entries_label_details,
 
-    // References
-    test_references_from_declaration(&mut session, &fixtures);
-    test_references_with_unopened_files(&mut session, &fixtures);
-    test_references_from_usage(&mut session, &fixtures);
-    test_references_to_template(&mut session, &fixtures);
-    
-    // Import resolution
-    test_glob_module_paths(&mut session, &fixtures);
-    test_lib_module_paths(&mut session, &fixtures);
-    test_odoo_scoped_module_paths(&mut session, &fixtures);
+            // References
+            test_references_from_declaration,
+            test_references_with_unopened_files,
+            test_references_from_usage,
+            test_references_to_template,
 
-    // Import completions
-    test_import_statement_completion(&mut session, &fixtures);
-    test_auto_import(&mut session, &fixtures);
-    test_auto_import_out_of_scope(&mut session, &fixtures);
-    test_auto_import_unregistered_module(&mut session, &fixtures);
+            // Import resolution
+            test_glob_module_paths,
+            test_lib_module_paths,
+            test_odoo_scoped_module_paths,
 
+            // Import completions
+            test_import_statement_completion,
+            test_auto_import,
+            test_auto_import_out_of_scope,
+            test_auto_import_unregistered_module,
+        ],
+        |test_case| test_case(&mut session, &fixtures)
+    );
 }
 
 /// Hover in the component's own `.js`: a class field, a member assigned in `setup()` (which only
