@@ -1220,15 +1220,28 @@ impl Evaluation {
             ExprOrIdent::Expr(Expr::Subscript(sub)) => {
                 let (eval_left, diags) = Evaluation::eval_from_ast(session, &sub.value, parent, max_infer, false, required_dependencies);
                 diagnostics.extend(diags);
-                // TODO handle multiple eval_left
                 if eval_left.is_empty() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base = &eval_left[0].symbol.get_symbol(session, Some(context), &mut diagnostics, Some(parent));
-                if base.is_expired_if_weak(session.st()) {
-                    return AnalyzeAstResult::from_only_diagnostics(diagnostics);
+                let mut bases: Vec<EvaluationSymbolPtr> = vec![];
+                let mut seen_bases: HashSet<(SymbolKey, Option<bool>)> = HashSet::default();
+                for left in eval_left.iter() {
+                    let base = left.symbol.get_symbol(session, Some(context), &mut diagnostics, Some(parent));
+                    if base.is_expired_if_weak(session.st()) {
+                        continue;
+                    }
+                    for followed in SymbolTable::follow_ref(&base, session, None, false, false, None, None) {
+                        if !followed.has_weak() {
+                            continue;
+                        }
+                        let Some(key) = followed.upgrade_weak(session.st()) else {
+                            continue;
+                        };
+                        if seen_bases.insert((key, followed.get_weak().instance)) {
+                            bases.push(followed);
+                        }
+                    }
                 }
-                let bases = SymbolTable::follow_ref(base, session, None, false, false, None, None);
                 let value = Evaluation::expr_to_str(session, &sub.slice, parent, max_infer, false, &mut diagnostics);
                 diagnostics.extend(value.1);
                 for base in bases.iter() {
