@@ -2,6 +2,8 @@ name: CI
 
 on:
   pull_request:
+  push:
+    branches: [release, alpha, alpha-1.7.0]
 
 permissions: {}
 
@@ -11,7 +13,9 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_DEV_DEBUG: 0
+  # Cargo.toml's [profile.dev.package."*"] keeps line tables in deps, and std ships its own
+  CARGO_PROFILE_DEV_STRIP: debuginfo
 
 jobs:
   tests:
@@ -40,10 +44,24 @@ jobs:
           toolchain: ${{ steps.msrv.outputs.version }}
           components: clippy
 
+      # rust-cache hashes every installed toolchain, and the image's preinstalled stable changes weekly
+      - name: Remove other Rust toolchains
+        env:
+          MSRV: ${{ steps.msrv.outputs.version }}
+        run: rustup toolchain list --quiet | grep -v "^${MSRV}-" | xargs -r -n1 rustup toolchain uninstall
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+          save-if: ${{ github.event_name == 'push' }}
+
+      - name: Fetch dependencies
+        run: cargo fetch --target x86_64-unknown-linux-gnu
+
       - name: Clippy
         run: cargo clippy --no-default-features --all-targets -- -D warnings
 
-      # odoo-ls loads only odoo/; tsserver reads addons/web from disk
       - name: Checkout Odoo
         uses: actions/checkout@v6
         with:
@@ -51,9 +69,13 @@ jobs:
           ref: master
           path: community
           persist-credentials: false
+          sparse-checkout-cone-mode: false
+          # the only addons we need are base and web (tsserver reads web from disk)
           sparse-checkout: |
-            odoo
-            addons/web
+            /odoo/
+            !/odoo/addons/*/
+            /odoo/addons/base/
+            /addons/web/
 
       - name: Install TypeScript
         run: npm install --global typescript@6
