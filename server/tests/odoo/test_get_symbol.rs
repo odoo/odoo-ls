@@ -653,14 +653,7 @@ pub fn test_csv_quoted_commas(session: SessionInfo) {
     );
 }
 
-pub fn test_csv_field_ranges(mut session: SessionInfo) {
-    test_csv_ranges_unquoted_lf(&mut session);
-    test_csv_ranges_quoted_lf(&mut session);
-    test_csv_ranges_unquoted_crlf(&mut session);
-    test_csv_ranges_quoted_crlf(&mut session);
-}
-
-fn test_csv_ranges_unquoted_lf(session: &mut SessionInfo) {
+pub fn test_csv_ranges_unquoted_lf(session: &mut SessionInfo) {
     // Test that field ranges are correctly computed for CSV files with unquoted fields and LF line endings
     // File content:
     // Line 0: id,country_id:id,name,code
@@ -725,7 +718,7 @@ fn test_csv_ranges_unquoted_lf(session: &mut SessionInfo) {
     );
 }
 
-fn test_csv_ranges_quoted_lf(session: &mut SessionInfo) {
+pub fn test_csv_ranges_quoted_lf(session: &mut SessionInfo) {
     // Test that field ranges are correctly computed for CSV files with quoted fields and LF line endings
     // File content:
     // Line 0: "id","country_id:id","name","code"
@@ -791,7 +784,7 @@ fn test_csv_ranges_quoted_lf(session: &mut SessionInfo) {
     );
 }
 
-fn test_csv_ranges_unquoted_crlf(session: &mut SessionInfo) {
+pub fn test_csv_ranges_unquoted_crlf(session: &mut SessionInfo) {
     // Test that field ranges are correctly computed for CSV files with unquoted fields and CRLF line endings
     // File content:
     // Line 0: id,country_id:id,name,code\r\n
@@ -852,7 +845,7 @@ fn test_csv_ranges_unquoted_crlf(session: &mut SessionInfo) {
     );
 }
 
-fn test_csv_ranges_quoted_crlf(session: &mut SessionInfo) {
+pub fn test_csv_ranges_quoted_crlf(session: &mut SessionInfo) {
     // Test that field ranges are correctly computed for CSV files with quoted fields and CRLF line endings
     // This is the most complex case: both quoting and CRLF line endings
     // File content:
