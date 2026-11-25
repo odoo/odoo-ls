@@ -35,7 +35,12 @@ use crate::{
         test_lambda_parameter_scoping, test_model_subscription, test_xml_definition, test_xml_hover,
     },
     test_hooks::test_search_eval_hook,
+    test_language::{
+        test_config_additional_languages_updates_diagnostics, test_language_validation,
+        test_no_false_positives_from_res_lang_csv,
+    },
     test_ls::test_structure,
+    test_xml_fields::{test_xml_fields_def_hover_completion, test_xml_fields_diagnostics},
 };
 
 #[test]
@@ -81,5 +86,19 @@ fn test_get_symbol() {
         &test_xml_hover,
         &test_xml_definition,
         &test_definition,
+    ]);
+}
+
+#[test]
+fn test_xml() {
+    let (odoo, config) = setup_server(true);
+    build_once_run_isolated(odoo, config, &[
+        // languages for validation in xml
+        &test_no_false_positives_from_res_lang_csv,
+        &test_config_additional_languages_updates_diagnostics,
+        &test_language_validation,
+        // xml fields
+        &test_xml_fields_diagnostics,
+        &test_xml_fields_def_hover_completion,
     ]);
 }

@@ -76,10 +76,7 @@ fn py_test_source(model_expr: &str, domain_expr: &str) -> String {
     )
 }
 
-#[test]
-fn test_xml_fields() {
-    let (mut odoo, config) = common::setup_server(true);
-    let mut session = common::create_init_session(&mut odoo, config);
+pub fn test_xml_fields_diagnostics(mut session: SessionInfo) {
     let file_paths = get_test_data_file_paths();
 
     let diagnostics = collect_diagnostics(&mut session, &file_paths);
@@ -95,10 +92,7 @@ fn test_xml_fields() {
     common::verify_diagnostics_against_doc(&diagnostics[&TestDataFiles::PyTestModel], &doc_diags);
 }
 
-#[test]
-fn test_xml_fields_def_hover_completion() {
-    let (mut odoo, config) = common::setup_server(true);
-    let mut session = common::create_init_session(&mut odoo, config);
+pub fn test_xml_fields_def_hover_completion(mut session: SessionInfo) {
     let file_paths = get_test_data_file_paths();
 
     let x_test_model_xml_path = Path::new(&file_paths[&TestDataFiles::XTestModelXml]);
