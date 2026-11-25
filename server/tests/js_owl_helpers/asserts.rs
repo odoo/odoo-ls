@@ -9,6 +9,7 @@ use super::fixture::FixtureFile;
 
 /// Assert the hover at the caret contains `expected`. Only the `name: type` half of tsserver's
 /// output is worth asserting: the `(property)` / `(getter)` prefix moves between TS versions.
+#[track_caller]
 pub fn assert_hover(session: &mut SessionInfo, file: &FixtureFile, snippet: &str, expected: &str) {
     let hover = hover(session, file, snippet);
     assert!(
@@ -18,6 +19,7 @@ pub fn assert_hover(session: &mut SessionInfo, file: &FixtureFile, snippet: &str
 }
 
 /// Assert the definition at the caret lands in `target`, on the line holding `target_snippet`.
+#[track_caller]
 pub fn assert_definition(session: &mut SessionInfo, file: &FixtureFile, snippet: &str, target: &FixtureFile, target_snippet: &str) {
     let expected = (target.path.clone(), target.caret(target_snippet).line);
     let found = definitions(session, file, snippet);
@@ -28,6 +30,7 @@ pub fn assert_definition(session: &mut SessionInfo, file: &FixtureFile, snippet:
 }
 
 /// Assert the definition at the caret lands in a file whose path ends with `path_suffix`.
+#[track_caller]
 pub fn assert_definition_in(session: &mut SessionInfo, file: &FixtureFile, snippet: &str, path_suffix: &str) {
     let found = definitions(session, file, snippet);
     assert!(
@@ -37,11 +40,13 @@ pub fn assert_definition_in(session: &mut SessionInfo, file: &FixtureFile, snipp
 }
 
 /// Assert the module `specifier` imported by `file` resolves to `target` (a fixture). 
+#[track_caller]
 pub fn assert_import_resolves(session: &mut SessionInfo, file: &FixtureFile, specifier: &str, target: &FixtureFile) {
     assert_import_resolves_in(session, file, specifier, &target.path);
 }
 
 /// Assert the module `specifier` imported by `file` resolves to a `target` whose path ends with `suffix`
+#[track_caller]
 pub fn assert_import_resolves_in(session: &mut SessionInfo, file: &FixtureFile, specifier: &str, path_suffix: &str) {
     let found = definitions(session, file, &format!("\"|{specifier}\""));
     assert!(
@@ -52,6 +57,7 @@ pub fn assert_import_resolves_in(session: &mut SessionInfo, file: &FixtureFile, 
 }
 
 /// Assert the module `specifier` imported by `file` names nothing: no `paths` entry covers it.
+#[track_caller]
 pub fn assert_import_unresolved(session: &mut SessionInfo, file: &FixtureFile, specifier: &str) {
     let found = definitions(session, file, &format!("\"|{specifier}\""));
     assert!(
@@ -64,6 +70,7 @@ pub fn assert_import_unresolved(session: &mut SessionInfo, file: &FixtureFile, s
 /// Assert one completion request at the caret offers every `(label, kind)`. The kind matters as
 /// much as the label: clients render `TEXT` as a plain word suggestion, so a symbol whose kind
 /// went unmapped looks like editor noise.
+#[track_caller]
 pub fn assert_completions(session: &mut SessionInfo, file: &FixtureFile, snippet: &str, expected: &[(&str, CompletionItemKind)]) {
     let items = completions(session, file, snippet);
     for (label, kind) in expected {
@@ -75,6 +82,7 @@ pub fn assert_completions(session: &mut SessionInfo, file: &FixtureFile, snippet
 }
 
 /// Assert one completion request at the caret offers none of `unexpected`.
+#[track_caller]
 pub fn assert_no_completions(session: &mut SessionInfo, file: &FixtureFile, snippet: &str, unexpected: &[&str]) {
     let items = completions(session, file, snippet);
     for label in unexpected {
@@ -87,6 +95,7 @@ pub fn assert_no_completions(session: &mut SessionInfo, file: &FixtureFile, snip
 
 /// Assert accepting the completion `label` at the caret writes `import_statement`.
 /// The edit only exists after a `completionItem/resolve`.
+#[track_caller]
 pub fn assert_auto_import(session: &mut SessionInfo, file: &FixtureFile, snippet: &str, label: &str, import_statement: &str) {
     let item = resolved_completion(session, file, snippet, label);
     let inserted = item.additional_text_edits.iter().flatten()
@@ -101,6 +110,7 @@ pub fn assert_auto_import(session: &mut SessionInfo, file: &FixtureFile, snippet
 
 /// Assert the completion `label` at the caret replaces the unfinished import with
 /// `import_statement`. No need for `completionItem/resolve` round trip.
+#[track_caller]
 pub fn assert_import_completion(session: &mut SessionInfo, file: &FixtureFile, snippet: &str, label: &str, import_statement: &str) {
     let items = completions(session, file, snippet);
     let item = items.iter().find(|item| item.label == label).unwrap_or_else(|| panic!(
@@ -117,6 +127,7 @@ pub fn assert_import_completion(session: &mut SessionInfo, file: &FixtureFile, s
 }
 
 /// Assert one completion request at the caret offers every `(label, label_details)`.
+#[track_caller]
 pub fn assert_completions_label_details(session: &mut SessionInfo, file: &FixtureFile, snippet: &str, expected: &[(&str, &str)]) {
     let items = completions(session, file, snippet);
     for (label, label_details) in expected {
@@ -135,6 +146,7 @@ pub fn assert_completions_label_details(session: &mut SessionInfo, file: &Fixtur
 
 /// Assert the references at the caret are exactly `expected`, each given as a caret snippet in the
 /// fixture holding it.
+#[track_caller]
 pub fn assert_references(session: &mut SessionInfo, file: &FixtureFile, snippet: &str, expected: &[(&FixtureFile, &str)]) {
     let mut expected: Vec<(String, u32, u32)> = expected.iter().map(|(target, target_snippet)| {
         let position = target.caret(target_snippet);
@@ -147,6 +159,7 @@ pub fn assert_references(session: &mut SessionInfo, file: &FixtureFile, snippet:
 }
 
 /// Assert the `detail` field of a completion item contains `expected`.
+#[track_caller]
 pub fn assert_detail(item: &CompletionItem, expected: &str) {
     let detail = item.detail.as_deref().unwrap_or("");
     assert!(

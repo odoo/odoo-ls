@@ -1,27 +1,9 @@
 use std::path::PathBuf;
 
-use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString};
-use odoo_ls_server::{S, utils::PathSanitizer};
+use lsp_types::DiagnosticSeverity;
+use odoo_ls_server::utils::PathSanitizer;
 
-use crate::{setup::setup::*, test_utils::diag_on_line};
-
-fn check_xml_diagnostic(diagnostics: &[Diagnostic], ols_code: &str, line: u32, severity: DiagnosticSeverity) {
-    let line_diagnostics = diag_on_line(diagnostics, line);
-    assert_eq!(
-        line_diagnostics.len(), 1,
-        "Expected exactly 1 diagnostic at line {line}, found {}: {:?}",
-        line_diagnostics.len(),
-        line_diagnostics
-    );
-    let diag = &line_diagnostics[0];
-    let code = match &diag.code {
-        Some(NumberOrString::String(code)) => code,
-        Some(NumberOrString::Number(num)) => panic!("Unexpected numeric code: {num}"),
-        None => panic!("Diagnostic code is None"),
-    };
-    assert_eq!(code, &S!(ols_code), "Expected code {ols_code} at line {line}, got {code}");
-    assert!(diag.severity.is_some_and(|s| s == severity), "Expected severity {severity:?} for {ols_code} at line {line}");
-}
+use crate::{setup::setup::*, test_utils::check_xml_diagnostic};
 
 /// OLS05073: t-call to a template that does not exist (backend XML template)
 /// OLS05074: t-call to a template whose module is not declared as a dependency (backend)

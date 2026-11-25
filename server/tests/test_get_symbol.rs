@@ -1,4 +1,4 @@
-﻿// Test the hover feature by calling get_hover on various symbols in the test addons.
+// Test the hover feature by calling get_hover on various symbols in the test addons.
 
 use odoo_ls_server::core::file_mgr::FileInfoKey;
 use odoo_ls_server::core::file_mgr::FileMgr;
