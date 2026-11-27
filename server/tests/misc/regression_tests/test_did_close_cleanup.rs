@@ -6,6 +6,7 @@ use odoo_ls_server::core::build_scheduler::BuildScheduler;
 use odoo_ls_server::core::entry_point::EntryPointMgr;
 use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::Odoo;
+use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
 use crate::common;
@@ -13,11 +14,7 @@ use crate::common;
 // Closing a file whose symbols are shared with files that are still open must leave them
 // alone. Regression: goto-definition on `str` opens builtins.pyi, and closing that tab
 // unloaded builtins for the session - every later `get_ts_*` panicked on its unwrap.
-#[test]
-fn test_closing_builtins_pyi_keeps_builtins() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
-
+pub fn test_closing_builtins_pyi_keeps_builtins(mut session: SessionInfo) {
     let builtins_path = Path::new(&session.sync_odoo.stdlib_dir).join("builtins.pyi").sanitize();
     assert!(
         !session.sync_odoo.get_symbol("", (&["builtins"], &["str"]), u32::MAX).is_empty(),
@@ -36,11 +33,7 @@ fn test_closing_builtins_pyi_keeps_builtins() {
 
 // A standalone file is still released on close, through its entry point rather than an
 // unload. Its cache stays: the file is on disk, and nothing but its own entry served it.
-#[test]
-fn test_closing_a_standalone_file_still_releases_its_own_entry() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
-
+pub fn test_closing_a_standalone_file_still_releases_its_own_entry(mut session: SessionInfo) {
     let point_path = env::current_dir().unwrap().join("tests/data/nested_dir_race/pkg/models/point.py").sanitize();
     let point_uri = FileMgr::pathname2uri(&point_path);
     Odoo::handle_did_open(&mut session, DidOpenTextDocumentParams {
@@ -74,11 +67,7 @@ fn test_closing_a_standalone_file_still_releases_its_own_entry() {
 
 // The predicate behind that reclamation, including the empty case: a path that resolves
 // to nothing is not external, or closing a standalone file would drop its cache too.
-#[test]
-fn test_is_external_path() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
-
+pub fn test_is_external_path(mut session: SessionInfo) {
     let builtins_path = Path::new(&session.sync_odoo.stdlib_dir).join("builtins.pyi").sanitize();
     assert!(session.sync_odoo.has_only_external_symbols(Path::new(&builtins_path)), "typeshed is external");
 
@@ -92,11 +81,7 @@ fn test_is_external_path() {
 
 // The one thing a close does reclaim: the cache of a file served only by a public entry
 // (site-packages, sys.path). Arch-eval would have dropped it, but skips files that are open.
-#[test]
-fn test_closing_an_external_file_drops_its_cache_but_keeps_its_symbols() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
-
+pub fn test_closing_an_external_file_drops_its_cache_but_keeps_its_symbols(mut session: SessionInfo) {
     let lib_dir = env::current_dir().unwrap().join("tests/data/external_entry").sanitize();
     let lib_path = Path::new(&lib_dir).join("lib_module.py").sanitize();
     let client_path = env::current_dir().unwrap().join("tests/data/external_entry_client.py").sanitize();

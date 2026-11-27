@@ -32,7 +32,7 @@ use slotmap::{SlotMap, SparseSecondaryMap};
 use std::ops::{Index, IndexMut};
 pub use parents::{FileContentParent, FileSystemSymbolParent, JsFileParent, XmlDataParent, XmlFieldParent};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SymbolTable {
     // slotmaps per symbol type
     roots: SlotMap<RootKey, RootSymbol>,

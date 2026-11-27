@@ -16,7 +16,7 @@ type OwnersBySymbolName = HashMap<OYarn, WeakSet<SymbolKey>>;
 
 ///   - `owners_by_target[target][name] → WeakSet<owner keys>`
 ///   - `symbols_by_owner[owner][target][name][section] → Vec<variable keys>`
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ExtSymbolStore {
     /// target → name → owners
     owners_by_target: HashMap<SymbolKey, OwnersBySymbolName>,

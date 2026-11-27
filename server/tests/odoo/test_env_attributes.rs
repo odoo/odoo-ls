@@ -26,9 +26,7 @@ fn resolved_names(
 
 /// `self.env.user` / `company` / `companies` / `lang` must resolve to their real types, and an
 /// attribute chain through them (`self.env.user.has_group(...)`) to the model's member.
-#[test]
-fn test_env_attributes_resolve() {
-    let (mut odoo, config) = common::setup_server(true);
+pub fn test_env_attributes_resolve(mut session: SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path
         .join("module_1")
@@ -36,7 +34,6 @@ fn test_env_attributes_resolve() {
         .join("env_attr_probe.py")
         .sanitize();
     assert!(Path::new(&test_file).exists(), "Test file does not exist: {test_file}");
-    let mut session = common::create_init_session(&mut odoo, config);
     let file_mgr = session.file_mgr();
     let file_info = file_mgr.get_file_info(&test_file).unwrap();
     let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file))
@@ -76,16 +73,13 @@ fn test_env_attributes_resolve() {
 
 /// A property reached through a variable (`user = self.env.user; user.has_group(...)`) must resolve
 /// just like the direct chain, by following the property mid-chain in `follow_ref`.
-#[test]
-fn test_env_user_through_variable_resolves() {
-    let (mut odoo, config) = common::setup_server(true);
+pub fn test_env_user_through_variable_resolves(mut session: SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path
         .join("module_1")
         .join("models")
         .join("env_attr_probe.py")
         .sanitize();
-    let mut session = common::create_init_session(&mut odoo, config);
     let file_mgr = session.file_mgr();
     let file_info = file_mgr.get_file_info(&test_file).unwrap();
     let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&test_file))

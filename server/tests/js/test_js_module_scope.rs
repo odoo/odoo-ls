@@ -9,20 +9,7 @@ use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString};
 use odoo_ls_server::core::js_module_scope;
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
-use crate::common::{create_init_session, get_diagnostics_for_path, setup_server};
-
-/// `test_out_of_scope_import_is_flagged` drains the session channel, so it runs last.
-#[test]
-fn test_js_module_scope() {
-    let (mut odoo, config) = setup_server(true);
-    let mut session = create_init_session(&mut odoo, config);
-
-    test_type_files_are_scoped_to_manifest_depends(&session);
-    test_importable_files_are_scoped_to_manifest_depends(&session);
-    test_only_importable_files_are_roots(&session);
-    test_importable_prefixes_cover_the_same_closure(&session);
-    test_out_of_scope_import_is_flagged(&mut session);
-}
+use crate::common::get_diagnostics_for_path;
 
 // Shared helpers
 
@@ -50,7 +37,7 @@ fn probe(module: &str) -> String {
 /// `js_module_scope::type_files_for` decides which of Odoo's ambient `@types` declarations tsserver
 /// is handed as project roots for an opened JS file. The scope is the file's module plus its
 /// manifest dependencies.
-fn test_type_files_are_scoped_to_manifest_depends(session: &SessionInfo) {
+pub fn test_type_files_are_scoped_to_manifest_depends(session: &SessionInfo) {
     // helper
     fn type_files_for(session: &SessionInfo, module: &str) -> Vec<String> {
         js_module_scope::type_files_for(session, &probe(module))
@@ -91,7 +78,7 @@ fn test_type_files_are_scoped_to_manifest_depends(session: &SessionInfo) {
     );
 }
 
-fn test_importable_files_are_scoped_to_manifest_depends(session: &SessionInfo) {
+pub fn test_importable_files_are_scoped_to_manifest_depends(session: &SessionInfo) {
     // helper
     fn importable_files_for(session: &SessionInfo, module: &str) -> Vec<String> {
         js_module_scope::importable_files_for(session, &probe(module))
@@ -124,7 +111,7 @@ fn test_importable_files_are_scoped_to_manifest_depends(session: &SessionInfo) {
 /// could name something in it, and `has_exports` answers that: Odoo registers a
 /// `static/lib` file only when it carries a header, and `parse_js_inner` skips
 /// parsing the ones it does not, so their `has_exports` stays false.
-fn test_only_importable_files_are_roots(session: &SessionInfo) {
+pub fn test_only_importable_files_are_roots(session: &SessionInfo) {
     let importable = js_module_scope::importable_files_for(session, &probe("module_1"));
 
     let headed = abs_path("module_1", &["lib", "headed", "headed.js"]);
@@ -154,7 +141,7 @@ fn test_only_importable_files_are_roots(session: &SessionInfo) {
     );
 }
 
-fn test_importable_prefixes_cover_the_same_closure(session: &SessionInfo) {
+pub fn test_importable_prefixes_cover_the_same_closure(session: &SessionInfo) {
     let module_1_dir = format!("{}/", addons_path().join("module_1").sanitize());
     let module_2_dir = format!("{}/", addons_path().join("module_2").sanitize());
 
@@ -178,7 +165,7 @@ fn test_importable_prefixes_cover_the_same_closure(session: &SessionInfo) {
 /// The same closure, enforced on what the user already wrote: OLS06001 flags an `@module/...`
 /// import naming a module outside the file's own. A module's assets are validated during the
 /// build, so nothing has to be opened.
-fn test_out_of_scope_import_is_flagged(session: &mut SessionInfo) {
+pub fn test_out_of_scope_import_is_flagged(session: &mut SessionInfo) {
     let path = abs_path("module_1", &["src", "scoped", "out_of_scope.js"]);
     let diagnostics = get_diagnostics_for_path(session, &path);
     let out_of_scope = diagnostics.iter().filter(|diagnostic| {

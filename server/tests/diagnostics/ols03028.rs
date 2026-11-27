@@ -1,16 +1,13 @@
 use std::path::PathBuf;
 
 use lsp_types::{DiagnosticSeverity, NumberOrString};
-use odoo_ls_server::utils::PathSanitizer;
+use odoo_ls_server::{threads::SessionInfo, utils::PathSanitizer};
 
-use crate::common::*;
+use crate::common::{diag_on_line, get_diagnostics_for_path};
 
 /// OLS03028: a method is only reachable through a model extension (_inherit) declared in a
 /// module that is not a declared dependency ("indirect inheritance").
-#[test]
-fn test_ols03028_indirect_method_inheritance() {
-    let (mut odoo, config) = setup_server(true);
-    let mut session = create_init_session(&mut odoo, config);
+pub fn test_ols03028_indirect_method_inheritance(mut session: SessionInfo) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("data")

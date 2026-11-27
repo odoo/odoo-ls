@@ -21,10 +21,7 @@ fn returned_models(session: &mut SessionInfo, function: FunctionKey) -> Vec<Stri
 }
 
 /// A function re-evaluated before `Environment.__getitem__` is rebuilt still resolves `env[model]`.
-#[test]
-fn test_env_subscript_after_getitem_invalidation() {
-    let (mut odoo, config) = common::setup_server(true);
-    let mut session = common::create_init_session(&mut odoo, config);
+pub fn test_env_subscript_after_getitem_invalidation(mut session: SessionInfo) {
     let odoo_path = Path::new(&env::var("COMMUNITY_PATH").unwrap()).sanitize();
 
     let env_tree: &[&str] = if session.sync_odoo.version >= (18, 1) {

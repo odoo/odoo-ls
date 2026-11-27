@@ -14,7 +14,7 @@ use crate::{
     threads::SessionInfo,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VariableSymbol {
     pub name: OYarn,
     pub is_external: bool,

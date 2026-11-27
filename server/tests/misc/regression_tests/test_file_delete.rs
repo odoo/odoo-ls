@@ -2,6 +2,7 @@ use crate::common;
 
 use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::SyncOdoo;
+use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 use std::env;
 
@@ -9,11 +10,7 @@ use std::env;
 /// used to panic. `FileMgr::delete_entry` called `SymbolTable::drop_file_info` (freeing the
 /// `FileInfoKey` slot) *before* using that same key to clear and publish diagnostics,
 /// so the subsequent `session.st_mut()[to_del]` indexed an already-removed slotmap entry.
-#[test]
-fn test_delete_file_path_does_not_panic() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
-
+pub fn test_delete_file_path_does_not_panic(mut session: SessionInfo) {
     let path = env::current_dir()
         .unwrap()
         .join("tests/data/python/expressions/follow_ref.py")

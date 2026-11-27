@@ -11,7 +11,7 @@ use ruff_text_size::TextRange;
 use crate::utils::{HashMap, HashSet};
 use std::path::Path;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModuleSymbol {
     pub name: OYarn,
     pub path: String,

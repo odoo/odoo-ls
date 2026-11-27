@@ -7,10 +7,9 @@ use odoo_ls_server::core::entry_point::EntryPointMgr;
 use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::{Odoo, SyncOdoo};
 use odoo_ls_server::core::symbols::symbol_keys::SymbolKey;
+use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 use odoo_ls_server::Sy;
-
-use crate::common;
 
 // Regression test for the panic at odoo.rs:2414 (`Option::unwrap()` on `None`) in
 // `search_symbols_to_rebuild`'s `addons_entry_points` loop: deleting an addon's
@@ -18,10 +17,7 @@ use crate::common;
 // entry, so the next create/change event under it hit an empty `get_symbol()`.
 // Fixed by making `remove_entries_with_path` actually drop it, and by re-registering the entry
 // (`restore_addon_entry`) if its path is created again.
-#[test]
-fn test_addon_entry_losing_its_symbol_does_not_panic() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
+pub fn test_addon_entry_losing_its_symbol_does_not_panic(mut session: SessionInfo) {
     let _ = session.test_drain_restart_notifications(); // discard whatever init itself sent
 
     let fixture_root = env::current_dir().unwrap().join("tests/data/addon_entry_lost_symbol").sanitize();

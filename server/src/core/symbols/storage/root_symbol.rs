@@ -1,7 +1,7 @@
 use crate::{constants::OYarn, core::{entry_point::EntryPointKey, symbols::symbol_keys::SymbolKey}, oyarn};
 use crate::utils::HashMap;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RootSymbol {
     pub name: OYarn,
     entry_point: EntryPointKey,

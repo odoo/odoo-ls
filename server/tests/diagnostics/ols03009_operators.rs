@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use lsp_types::NumberOrString;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::odoo_version::OdooVersion;
+use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
 use crate::common::*;
@@ -10,11 +11,7 @@ use crate::common::*;
 /// Test OLS03009 on the operators of a list domain that depend on the Odoo version.
 /// `not =like` and `not =ilike` exist from saas-18.2.
 /// `any!` and `not any!` are only accepted in `Domain(...)` conditions, never in a list.
-#[test]
-fn test_ols03009_version_operators() {
-    let (mut odoo, config) = setup_server(true);
-    let mut session = create_init_session(&mut odoo, config);
-
+pub fn test_ols03009_version_operators(mut session: SessionInfo) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/data/addons/module_for_diagnostics/models/domain_operators.py")
         .sanitize();

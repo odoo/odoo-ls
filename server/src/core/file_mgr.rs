@@ -303,14 +303,14 @@ pub enum AstKind {
 }
 
 /// Holds the text document of a [`FileInfo`] and its AST
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FileInfoAst {
     pub text_hash: u64,
     pub text_document: Option<TextDocument>,
     pub ast: Ast,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FileInfo {
     pub version: Option<i32>,
     pub uri: String,
@@ -933,7 +933,7 @@ new_key_type! {
     pub struct FileInfoKey;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FileMgr {
     files: HashMap<String, FileInfoKey>,
     untitled_files: HashMap<String, FileInfoKey>, // key: untitled URI or unique name

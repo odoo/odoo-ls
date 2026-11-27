@@ -3,9 +3,7 @@ use std::path::Path;
 
 use odoo_ls_server::constants::{BuildStatus, BuildSteps};
 use odoo_ls_server::core::build_scheduler::BuildScheduler;
-use odoo_ls_server::core::config::ConfigEntry;
 use odoo_ls_server::core::entry_point::EntryPointMgr;
-use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::core::symbols::SymbolTable;
 use odoo_ls_server::core::symbols::symbol_keys::SymbolKey;
 use odoo_ls_server::threads::SessionInfo;
@@ -14,19 +12,17 @@ use odoo_ls_server::utils::PathSanitizer;
 use crate::common;
 
 //build a module with a single file
-fn build_module(odoo: &mut SyncOdoo, config: ConfigEntry) -> (SessionInfo<'_>, String) {
-    let mut session = common::create_init_session(odoo, config);
-
+fn build_module(session: &mut SessionInfo) -> String {
     let module_dir = env::current_dir()
         .unwrap()
         .join("tests/data/addons/module_buildsteps")
         .sanitize();
     let init_path = Path::new(&module_dir).join("__init__.py").sanitize();
 
-    EntryPointMgr::create_new_custom_entry_for_path(&mut session, &module_dir, &init_path);
-    BuildScheduler::process_rebuilds(&mut session, false);
+    EntryPointMgr::create_new_custom_entry_for_path(session, &module_dir, &init_path);
+    BuildScheduler::process_rebuilds(session, false);
 
-    (session, module_dir)
+    module_dir
 }
 
 fn get_file(session: &SessionInfo, module_dir: &str, name: &str) -> SymbolKey {
@@ -37,10 +33,8 @@ fn get_file(session: &SessionInfo, module_dir: &str, name: &str) -> SymbolKey {
     syms[0]
 }
 
-#[test]
-fn test_build_now_on_previous_step_is_noop() {
-    let (mut odoo, config) = common::setup_server(false);
-    let (mut session, module_dir) = build_module(&mut odoo, config);
+pub fn test_build_now_on_previous_step_is_noop(mut session: SessionInfo) {
+    let module_dir = build_module(&mut session);
 
     let file_a = get_file(&session, &module_dir, "file_a").unwrap_buildable_key();
 
@@ -61,10 +55,8 @@ fn test_build_now_on_previous_step_is_noop() {
     assert_eq!(session.st().build_status(file_a, BuildSteps::ARCH), BuildStatus::DONE);
 }
 
-#[test]
-fn test_set_build_status_on_previous_step_to_done_is_noop() {
-    let (mut odoo, config) = common::setup_server(false);
-    let (mut session, module_dir) = build_module(&mut odoo, config);
+pub fn test_set_build_status_on_previous_step_to_done_is_noop(mut session: SessionInfo) {
+    let module_dir = build_module(&mut session);
 
     let file_a = get_file(&session, &module_dir, "file_a").unwrap_buildable_key();
     assert_eq!(session.st().get_current_build_step(file_a), BuildSteps::VALIDATION);
@@ -82,7 +74,8 @@ fn test_set_build_status_on_previous_step_to_done_is_noop() {
 #[should_panic(expected = "A previous build step should not be changed to a non-DONE status")]
 fn test_set_build_status_on_previous_step_to_pending_panics() {
     let (mut odoo, config) = common::setup_server(false);
-    let (mut session, module_dir) = build_module(&mut odoo, config);
+    let mut session = common::create_init_session(&mut odoo, config);
+    let module_dir = build_module(&mut session);
 
     let file_a = get_file(&session, &module_dir, "file_a").unwrap_buildable_key();
 
@@ -92,10 +85,8 @@ fn test_set_build_status_on_previous_step_to_pending_panics() {
     session.st_mut().set_build_status(file_a, BuildSteps::ARCH, BuildStatus::PENDING);
 }
 
-#[test]
-fn test_queue_is_noop_once_step_is_done() {
-    let (mut odoo, config) = common::setup_server(false);
-    let (mut session, module_dir) = build_module(&mut odoo, config);
+pub fn test_queue_is_noop_once_step_is_done(mut session: SessionInfo) {
+    let module_dir = build_module(&mut session);
 
     let file_a = get_file(&session, &module_dir, "file_a").unwrap_buildable_key();
     assert_eq!(session.st().build_status(file_a, BuildSteps::VALIDATION), BuildStatus::DONE);
@@ -108,10 +99,8 @@ fn test_queue_is_noop_once_step_is_done() {
     assert_eq!(BuildScheduler::get_rebuild_queue_size(&mut session), 0);
 }
 
-#[test]
-fn test_buildsteps_steps() {
-    let (mut odoo, config) = common::setup_server(false);
-    let (mut session, module_dir) = build_module(&mut odoo, config);
+pub fn test_buildsteps_steps(mut session: SessionInfo) {
+    let module_dir = build_module(&mut session);
 
     let file_a = get_file(&session, &module_dir, "file_a").unwrap_buildable_key();
 

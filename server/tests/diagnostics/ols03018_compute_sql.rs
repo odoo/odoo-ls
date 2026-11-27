@@ -22,10 +22,7 @@ fn reload(session: &mut SessionInfo, path: &str, text: String, version: i32) {
 }
 
 /// OLS03018: compute_sql and init_storage name a missing method, only checked from 19.1 and 20.0 on
-#[test]
-fn test_ols03018_compute_sql_method() {
-    let (mut odoo, config) = setup_server(true);
-    let mut session = create_init_session(&mut odoo, config);
+pub fn test_ols03018_compute_sql_method(mut session: SessionInfo) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/addons/module_for_diagnostics/models/compute_sql.py").sanitize();
     let source = fs::read_to_string(&path).expect("unable to read compute_sql.py");
     let _ = get_diagnostics_for_path(&mut session, &path);

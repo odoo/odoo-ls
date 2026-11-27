@@ -14,15 +14,11 @@ use std::path::Path;
 
 use crate::common;
 
-#[test]
-fn test_hover_on_model_field_and_method() {
-    // Setup server and session with test addons
-    let (mut odoo, config) = common::setup_server(true);
+pub fn test_hover_on_model_field_and_method(mut session: SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
     // Ensure the test file exists
     assert!(Path::new(&test_file).exists(), "Test file does not exist: {}", test_file);
-    let mut session = common::create_init_session(&mut odoo, config);
 
     // Use Lazy value for partner and country class names
     let partner_class_name = common::PARTNER_CLASS_NAME(session.sync_odoo.version);
@@ -180,15 +176,11 @@ fn test_hover_on_model_field_and_method() {
 
 }
 
-#[test]
-fn test_hover_inverse_name_o2m(){
-    // Setup server and session with test addons
-    let (mut odoo, config) = common::setup_server(true);
+pub fn test_hover_inverse_name_o2m(mut session: SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("diagnostics.py").sanitize();
     // Ensure the test file exists
     assert!(Path::new(&test_file).exists(), "Test file does not exist: {}", test_file);
-    let mut session = common::create_init_session(&mut odoo, config);
     // Get file symbol and file info
     let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     // Use get_file_info().symbol instead of get_file_symbol
@@ -206,15 +198,11 @@ fn test_hover_inverse_name_o2m(){
 
 }
 
-#[test]
-fn test_hover_on_namespace_and_module() {
-    // Setup server and session with test addons
-    let (mut odoo, config) = common::setup_server(true);
+pub fn test_hover_on_namespace_and_module(mut session: SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
     // Ensure the test file exists
     assert!(Path::new(&test_file).exists(), "Test file does not exist: {}", test_file);
-    let mut session = common::create_init_session(&mut odoo, config);
     // Get file symbol and file info
     let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(
@@ -269,14 +257,11 @@ fn test_hover_on_namespace_and_module() {
     );
 }
 
-#[test]
-fn test_definition() {
-    // Setup server and session with test addons
+pub fn test_definition(mut session: SessionInfo) {
     let odoo_path = env::var("COMMUNITY_PATH").unwrap();
     let odoo_path = Path::new(&odoo_path).sanitize();
     let odoo_path = odoo_path.as_str();
 
-    let (mut odoo, config) = common::setup_server(true);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let module1_test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
     let module2_test_file = test_addons_path.join("module_2").join("models").join("base_test_models.py").sanitize();
@@ -284,7 +269,6 @@ fn test_definition() {
     // Ensure the test file exists
     assert!(Path::new(&module1_test_file).exists(), "Test file does not exist: {}", module1_test_file);
     assert!(Path::new(&module2_test_file).exists(), "Test file does not exist: {}", module1_test_file);
-    let mut session = common::create_init_session(&mut odoo, config);
 
     // Use Lazy value for partner and Country class names
     let partner_class_name = common::PARTNER_CLASS_NAME(session.sync_odoo.version);
@@ -472,20 +456,16 @@ fn test_definition() {
     assert!(init_storage_locs.is_empty(), "Expected no location for init_storage before 20.0, got {:?}", init_storage_locs.iter().map(|l| &l.target_uri).collect::<Vec<_>>());
 }
 
-#[test]
-fn test_definition_csv() {
-    // Setup server and session with test addons
+pub fn test_definition_csv(mut session: SessionInfo) {
     let odoo_path = env::var("COMMUNITY_PATH").unwrap();
     let odoo_path = Path::new(&odoo_path).sanitize();
     let odoo_path = odoo_path.as_str();
 
-    let (mut odoo, config) = common::setup_server(true);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let module_csv_test_file = test_addons_path.join("module_csv").join("data").join("res.country.state.csv").sanitize();
 
     // Ensure the test file exists
     assert!(Path::new(&module_csv_test_file).exists(), "Test file does not exist: {}", module_csv_test_file);
-    let mut session = common::create_init_session(&mut odoo, config);
 
     // Get file symbol and file info
     let mcsv_tf_file_info = session.file_mgr().get_file_info(&module_csv_test_file).unwrap();
@@ -583,11 +563,8 @@ fn test_definition_csv() {
     }
 }
 
-#[test]
-fn test_model_subscription() {
+pub fn test_model_subscription(mut session: SessionInfo) {
     // Setup: Get the symbol for BaseTestModel and verify its existence
-    let (mut odoo, config) = common::setup_server(true);
-    let mut session = common::create_init_session(&mut odoo, config);
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(
@@ -607,17 +584,14 @@ fn test_model_subscription() {
     )
 }
 
-#[test]
 /// Test that lambda parameters properly shadow outer-scope names.
 /// `lambda_scope = lambda basic_var: basic_var` – `basic_var` in the lambda body
 /// should resolve to the lambda parameter (untyped), NOT to the outer `basic_var = 42`
 /// which has type `int`. This directly validates the lambda scoping added in the last commit.
-fn test_lambda_parameter_scoping() {
-    let (mut odoo, config) = common::setup_server(true);
+pub fn test_lambda_parameter_scoping(mut session: SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
     assert!(Path::new(&test_file).exists(), "Test file does not exist: {}", test_file);
-    let mut session = common::create_init_session(&mut odoo, config);
 
     let file_info = session.file_mgr().get_file_info(&test_file).unwrap();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(
@@ -664,11 +638,7 @@ fn test_lambda_parameter_scoping() {
     );
 }
 
-#[test]
-fn test_csv_quoted_commas() {
-    let (mut odoo, config) = common::setup_server(true);
-    let session = common::create_init_session(&mut odoo, config);
-
+pub fn test_csv_quoted_commas(session: SessionInfo) {
     let module = session.sync_odoo.modules.get(&Sy!("module_csv"))
         .expect("module_csv not loaded")
         .upgrade(session.st())
@@ -683,18 +653,7 @@ fn test_csv_quoted_commas() {
     );
 }
 
-#[test]
-fn test_csv_field_ranges() {
-    let (mut odoo, config) = common::setup_server(true);
-    let mut session = common::create_init_session(&mut odoo, config);
-
-    test_csv_ranges_unquoted_lf(&mut session);
-    test_csv_ranges_quoted_lf(&mut session);
-    test_csv_ranges_unquoted_crlf(&mut session);
-    test_csv_ranges_quoted_crlf(&mut session);
-}
-
-fn test_csv_ranges_unquoted_lf(session: &mut SessionInfo) {
+pub fn test_csv_ranges_unquoted_lf(session: &mut SessionInfo) {
     // Test that field ranges are correctly computed for CSV files with unquoted fields and LF line endings
     // File content:
     // Line 0: id,country_id:id,name,code
@@ -759,7 +718,7 @@ fn test_csv_ranges_unquoted_lf(session: &mut SessionInfo) {
     );
 }
 
-fn test_csv_ranges_quoted_lf(session: &mut SessionInfo) {
+pub fn test_csv_ranges_quoted_lf(session: &mut SessionInfo) {
     // Test that field ranges are correctly computed for CSV files with quoted fields and LF line endings
     // File content:
     // Line 0: "id","country_id:id","name","code"
@@ -825,7 +784,7 @@ fn test_csv_ranges_quoted_lf(session: &mut SessionInfo) {
     );
 }
 
-fn test_csv_ranges_unquoted_crlf(session: &mut SessionInfo) {
+pub fn test_csv_ranges_unquoted_crlf(session: &mut SessionInfo) {
     // Test that field ranges are correctly computed for CSV files with unquoted fields and CRLF line endings
     // File content:
     // Line 0: id,country_id:id,name,code\r\n
@@ -886,7 +845,7 @@ fn test_csv_ranges_unquoted_crlf(session: &mut SessionInfo) {
     );
 }
 
-fn test_csv_ranges_quoted_crlf(session: &mut SessionInfo) {
+pub fn test_csv_ranges_quoted_crlf(session: &mut SessionInfo) {
     // Test that field ranges are correctly computed for CSV files with quoted fields and CRLF line endings
     // This is the most complex case: both quoting and CRLF line endings
     // File content:
@@ -953,11 +912,7 @@ fn test_csv_ranges_quoted_crlf(session: &mut SessionInfo) {
 /// Test that hover over XML symbols (model name, record id, field name, ref) shows
 /// associated XML record blocks, and that Python hover over model classes and fields
 /// also shows linked XML record blocks when ir.model / ir.model.fields data exist.
-#[test]
-fn test_xml_hover() {
-    let (mut odoo, config) = common::setup_server(true);
-    let mut session = common::create_init_session(&mut odoo, config);
-
+pub fn test_xml_hover(mut session: SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let xml_file_path = test_addons_path.join("module_1").join("records").join("test_records.xml").sanitize();
     let py_file_path = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();
@@ -1098,11 +1053,7 @@ fn test_xml_hover() {
 }
 
 /// Test go-to-definition for XML model name and ref attributes, and from Python model name strings.
-#[test]
-fn test_xml_definition() {
-    let (mut odoo, config) = common::setup_server(true);
-    let mut session = common::create_init_session(&mut odoo, config);
-
+pub fn test_xml_definition(mut session: SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let xml_file_path = test_addons_path.join("module_1").join("records").join("test_records.xml").sanitize();
     let py_file_path  = test_addons_path.join("module_1").join("models").join("base_test_models.py").sanitize();

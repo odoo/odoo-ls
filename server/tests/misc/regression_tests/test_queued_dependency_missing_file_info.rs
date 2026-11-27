@@ -2,9 +2,8 @@ use std::env;
 use std::path::Path;
 use odoo_ls_server::core::build_scheduler::BuildScheduler;
 use odoo_ls_server::core::entry_point::EntryPointMgr;
+use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
-
-use crate::common;
 
 // Regression test: `PythonArchBuilder::load_arch` used to unwrap a `FileMgr` cache
 // entry that could already be evicted, panicking.
@@ -24,11 +23,7 @@ use crate::common;
 // Mirrors an editor batching several `.venv` file creates into one
 // `didChangeWatchedFiles`. Not reproducible via `Odoo::handle_did_create` directly
 // — its per-file loop finishes each file before the next starts.
-#[test]
-fn test_dependency_queued_alongside_its_external_duplicate_does_not_panic() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
-
+pub fn test_dependency_queued_alongside_its_external_duplicate_does_not_panic(mut session: SessionInfo) {
     let root = env::current_dir().unwrap().join("tests/data/queued_import_race").sanitize();
     let pkg_dir = Path::new(&root).join("pkg").sanitize();
     let pkg_init = Path::new(&pkg_dir).join("__init__.py").sanitize();

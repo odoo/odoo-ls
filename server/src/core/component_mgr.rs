@@ -24,7 +24,7 @@ impl ImportResolver for SessionInfo<'_> {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ComponentMgr {
     // storage
     descriptors: SlotMap<ComponentKey, ComponentDescriptor>,

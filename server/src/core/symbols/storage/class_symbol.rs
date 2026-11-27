@@ -13,7 +13,7 @@ use crate::threads::SessionInfo;
 use super::symbol_mgr::{SectionRange, SymbolMgr};
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ClassSymbol {
     pub name: OYarn,
     pub is_external: bool,

@@ -1,17 +1,12 @@
 use lsp_types::{TextDocumentContentChangeEvent, Position};
 use odoo_ls_server::core::file_mgr::FileMgr;
+use odoo_ls_server::threads::SessionInfo;
 
-use crate::common::{create_init_session, setup_server};
 
-
-#[test]
 /// Simple test to verify that we can handle unicode characters in files.
 /// We add 2 emojis, each has 2 UTF-16 unicode code units, and we ensure that
 /// all operations (insert, delete, insert at end) work correctly without panicking.
-fn test_unicode_file_lifecycle() {
-    // Setup server and session
-    let (mut odoo, config) = setup_server(false);
-    let mut session = create_init_session(&mut odoo, config);
+pub fn test_unicode_file_lifecycle(mut session: SessionInfo) {
     let unicode_uri = format!("{}", std::env::current_dir().unwrap().join("data").join("test_unicode.py").display());
     let initial_text =
 "def func() -> int:

@@ -1,6 +1,7 @@
 use crate::common;
 
 use odoo_ls_server::core::symbols::symbol_keys::KeyValidator;
+use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 use std::env;
 
@@ -10,11 +11,7 @@ use std::env;
 /// `SymbolTable::drop_entry_point` was introduced, the root and the entry point were two
 /// independently-owned `Rc`s kept in sync only by convention, so a bug in one of the two
 /// removal call sites could leak one half while dropping the other.
-#[test]
-fn test_custom_entry_point_teardown_frees_entry_and_root() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
-
+pub fn test_custom_entry_point_teardown_frees_entry_and_root(mut session: SessionInfo) {
     let path = env::current_dir()
         .unwrap()
         .join("tests/data/python/expressions/follow_ref.py")

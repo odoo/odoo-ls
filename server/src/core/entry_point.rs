@@ -25,7 +25,7 @@ use slotmap::new_key_type;
 new_key_type! {
     pub struct EntryPointKey;
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EntryPointMgr {
     entry_points: SlotMap<EntryPointKey, EntryPoint>,
     builtins_entry_points: Vec<EntryPointKey>,

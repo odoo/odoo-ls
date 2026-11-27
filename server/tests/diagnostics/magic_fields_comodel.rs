@@ -1,17 +1,14 @@
 use std::path::PathBuf;
 
 use lsp_types::NumberOrString;
-use odoo_ls_server::utils::PathSanitizer;
+use odoo_ls_server::{threads::SessionInfo, utils::PathSanitizer};
 
-use crate::common::*;
+use crate::common::{diag_on_line, get_diagnostics_for_path};
 
 /// `create_uid` and `write_uid` are added to every model as many2one to `res.users`: a domain path
 /// goes through them to the fields of `res.users`. Each case is a call of `magic_fields.py`, found by
 /// its line, with the codes expected on it.
-#[test]
-fn test_magic_fields_comodel() {
-    let (mut odoo, config) = setup_server(true);
-    let mut session = create_init_session(&mut odoo, config);
+pub fn test_magic_fields_comodel(mut session: SessionInfo) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/data/addons/module_for_diagnostics/models/magic_fields.py")
         .sanitize();

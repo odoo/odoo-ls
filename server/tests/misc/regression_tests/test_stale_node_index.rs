@@ -7,9 +7,8 @@ use odoo_ls_server::core::entry_point::EntryPointMgr;
 use odoo_ls_server::core::file_mgr::FileMgr;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::core::symbols::storage::SymbolTable;
+use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
-
-use crate::common;
 
 // `stale_file.py` re-parsed with content holding no function at all, so every node index
 // the old parse handed out now addresses something that is not a `Stmt::FunctionDef`.
@@ -36,11 +35,7 @@ eighth = 8
 // Only methods take that branch: `PythonArchBuilder::visit_func_def` walks a module-level
 // function's body inline during the file's ARCH, and defers only class members to a
 // later function-mode build.
-#[test]
-fn test_stale_node_index_on_method_does_not_panic() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
-
+pub fn test_stale_node_index_on_method_does_not_panic(mut session: SessionInfo) {
     let module_dir = env::current_dir()
         .unwrap()
         .join("tests/data/addons/stale_node_index_module")

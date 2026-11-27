@@ -1,14 +1,12 @@
 use std::env;
 
+use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer as _;
 
 use crate::common;
 
 
-#[test]
-fn test_unpack() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
+pub fn test_unpack(mut session: SessionInfo) {
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/for_loop_unpack.py").sanitize();
     common::prepare_custom_entry_point(&mut session, path.as_str());
     assert!(session.sync_odoo.entry_point_mgr.custom_entry_points().len() == 1);

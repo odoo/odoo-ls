@@ -19,21 +19,11 @@ fn module_owl_path(rel: &[&str]) -> String {
     path.sanitize()
 }
 
-// shared setup
-#[test]
-fn test_owl_templates() {
-    let (mut odoo, config) = common::setup_server(true);
-    let mut session = common::create_init_session(&mut odoo, config);
-    test_template_and_component_are_linked(&session);
-    test_super_class_resolves_through_its_import(&session);
-    test_goto_definition_from_js_template_to_xml(&mut session);
-}
-
 /// After a full build, the JS `static template = "module_owl.Counter"` and the XML
 /// `<t t-name="module_owl.Counter">` should be linked in both directions: the JS side
 /// records which class renders the template, and the XML side registers the template
 /// symbol so JS→XML lookups resolve.
-fn test_template_and_component_are_linked(session: &SessionInfo) {
+pub fn test_template_and_component_are_linked(session: &SessionInfo) {
     let component = session.sync_odoo.component_mgr.component_for_template(session, "module_owl.Counter")
         .expect("JS static template should register module_owl.Counter -> Counter");
     assert_eq!(component.class_name, "Counter");
@@ -57,7 +47,7 @@ fn test_template_and_component_are_linked(session: &SessionInfo) {
 /// A super class is resolved through its import specifier, so both spellings must land on the
 /// file that declares the class. Only the `@{module}/…` one goes through the module lookup —
 /// the form real Odoo code uses to inherit across modules.
-fn test_super_class_resolves_through_its_import(session: &SessionInfo) {
+pub fn test_super_class_resolves_through_its_import(session: &SessionInfo) {
     for (file, class) in [("loud_greeting.js", "LoudGreeting"), ("shouty_greeting.js", "ShoutyGreeting")] {
         let base = super_class_of(session, file, class);
         assert_eq!(base.class_name, "Greeting", "{class}");
@@ -78,7 +68,7 @@ fn super_class_of<'a>(session: &'a SessionInfo, file: &str, class: &str) -> &'a 
 
 /// Goto-definition from the `static template = "module_owl.Counter"` string in the JS
 /// component should jump to the `<t t-name="module_owl.Counter">` node in the XML file.
-fn test_goto_definition_from_js_template_to_xml(session: &mut SessionInfo) {
+pub fn test_goto_definition_from_js_template_to_xml(session: &mut SessionInfo) {
     let js_path = module_owl_path(&["static", "src", "counter", "counter.js"]);
     let file_symbol = SyncOdoo::get_symbol_of_opened_file(session, Path::new(&js_path))
         .expect("JS asset file should have a symbol after init");

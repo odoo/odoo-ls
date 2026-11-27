@@ -2,7 +2,7 @@ use ruff_text_size::TextRange;
 
 use crate::{constants::OYarn, core::symbols::storage::XmlDataParent};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct XmlTemplateSymbol {
     pub xml_id: Option<OYarn>,
     /// (template_name, value_range) of `t-name`, if any (quotes excluded).

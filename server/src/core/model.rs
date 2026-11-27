@@ -23,7 +23,7 @@ new_key_type! {
     pub struct ModelKey;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModelMgr {
     models_index: HashMap<OYarn, ModelKey>,
     models_arena: SlotMap<ModelKey, Model>,
@@ -91,7 +91,7 @@ impl std::ops::IndexMut<ModelKey> for ModelMgr {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModelData {
     pub name: OYarn,
     pub inherit: Vec<OYarn>,
@@ -150,7 +150,7 @@ impl ModelData {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Model {
     name: OYarn,
     symbols: WeakSet<ModelSymbolKey>,

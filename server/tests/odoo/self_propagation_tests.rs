@@ -1,14 +1,10 @@
 use std::path::Path;
 
-use odoo_ls_server::{core::{odoo::SyncOdoo, symbols::{symbol_keys::SymbolKey, storage::SymbolTable}}, utils::PathSanitizer};
+use odoo_ls_server::{core::{odoo::SyncOdoo, symbols::{symbol_keys::SymbolKey, storage::SymbolTable}}, threads::SessionInfo, utils::PathSanitizer};
 
 use crate::common;
 
-#[test]
-fn test_model_subscription() {
-    // Setup: Get the symbol for BaseTestModel and verify its existence
-    let (mut odoo, config) = common::setup_server(true);
-    let mut session = common::create_init_session(&mut odoo, config);
+pub fn test_self_propagation(mut session: SessionInfo) {
     let test_addons_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("data").join("addons");
     let test_file = test_addons_path.join("self_propagation_module").join("models").join("all_models.py").sanitize();
     let Some(file_symbol) = SyncOdoo::get_symbol_of_opened_file(

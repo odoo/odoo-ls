@@ -3,37 +3,29 @@
 use odoo_ls_server::utils::HashSet;
 use std::env;
 use odoo_ls_server::{core::evaluation::EvaluationValue};
+use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 use ruff_python_ast::Expr;
 
 
 use crate::common;
 
-#[test]
-fn test_no_main_entry() {
-    /* First, let's launch the server. It will setup a SyncOdoo struct, with a SyncChannel, that we can use to get the messages that the client would receive. */
-    let (mut odoo, config) = common::setup_server(false);
-    let _ = common::create_init_session(&mut odoo, config);
+pub fn test_no_main_entry(session: SessionInfo) {
+    let odoo = &session.sync_odoo;
     assert!(!odoo.has_main_entry());
     assert!(!odoo.has_odoo_main_entry);
     assert!(odoo.entry_point_mgr.main_entry_point().is_none());
     assert!(odoo.has_valid_python);
 }
 
-#[test]
-fn test_custom_entry_point() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
+pub fn test_custom_entry_point(mut session: SessionInfo) {
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/assign.py");
     common::prepare_custom_entry_point(&mut session, path.sanitize().as_str());
-    assert!(odoo.entry_point_mgr.custom_entry_points().len() == 1);
+    assert!(session.sync_odoo.entry_point_mgr.custom_entry_points().len() == 1);
 }
 
 
-#[test]
-fn test_assigns() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
+pub fn test_assigns(mut session: SessionInfo) {
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/assign.py").sanitize();
     common::prepare_custom_entry_point(&mut session, path.as_str());
     assert!(session.sync_odoo.entry_point_mgr.custom_entry_points().len() == 1);
@@ -267,8 +259,7 @@ fn test_assigns() {
 
 }
 
-#[test]
-fn test_ann_assign_invalid_target() {
+pub fn test_ann_assign_invalid_target(mut session: SessionInfo) {
     // Regression test: annotated assignment with a tuple/list target is invalid Python
     // (only a single Name/Attribute/Subscript target can be annotated - and only a
     // single target can be annotated without a value at all), but ruff's error-recovery
@@ -278,8 +269,6 @@ fn test_ann_assign_invalid_target() {
     // guard on the Tuple/List fallback arm), so no variable is created for them - same
     // as if the (invalid) statement weren't there. A single annotated target with no
     // value is still valid and must keep working normally.
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/ann_assign_invalid_target.py").sanitize();
     common::prepare_custom_entry_point(&mut session, path.as_str());
     assert!(session.sync_odoo.entry_point_mgr.custom_entry_points().len() == 1);
@@ -310,10 +299,7 @@ fn test_ann_assign_invalid_target() {
     assert!(eval.unwrap() == int_type);
 }
 
-#[test]
-fn test_sections() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
+pub fn test_sections(mut session: SessionInfo) {
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/sections.py").sanitize();
     common::prepare_custom_entry_point(&mut session, path.as_str());
     assert!(session.sync_odoo.entry_point_mgr.custom_entry_points().len() == 1);
@@ -367,10 +353,7 @@ fn test_sections() {
 
 }
 
-#[test]
-fn test_star_import_on_disk_dir_does_not_panic() {
-    let (mut odoo, config) = common::setup_server(false);
-    let mut session = common::create_init_session(&mut odoo, config);
+pub fn test_star_import_on_disk_dir_does_not_panic(mut session: SessionInfo) {
     let path = env::current_dir().unwrap().join("tests/data/python/disk_dir_import/star_import.py").sanitize();
     common::prepare_custom_entry_point(&mut session, path.as_str());
 }

@@ -5,7 +5,7 @@ use ruff_text_size::TextRange;
 
 use crate::{constants::OYarn, core::symbols::symbol_keys::XmlFieldKey};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct XmlRecordSymbol {
     pub is_external: bool,
     pub model: (OYarn, Range<usize>),

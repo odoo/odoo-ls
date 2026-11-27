@@ -4,7 +4,7 @@ use ruff_text_size::TextRange;
 
 use crate::{constants::OYarn, core::symbols::symbol_keys::XmlFieldKey};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct XmlAssetSymbol {
     pub xml_id: Option<OYarn>,
     pub is_external: bool,
