@@ -7,6 +7,7 @@ use odoo_ls_server::core::build_scheduler::BuildScheduler;
 use odoo_ls_server::core::file_mgr::FileInfoKey;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::core::symbols::SymbolTable;
+use odoo_ls_server::core::symbols::symbol_keys::KeyValidator;
 use odoo_ls_server::features::completion::CompletionFeature;
 use odoo_ls_server::utils::PathSanitizer;
 use std::env;
@@ -57,6 +58,36 @@ fn test_instance_attributes() {
     // `t.extra` at module level is injected by the module-level `t.extra = "b"` (file ARCH_EVAL)
     let hover = test_utils::get_hover_markdown(&mut session, file_symbol, file_info, 24, 3).unwrap_or_default();
     assert!(hover.contains("extra") && hover.contains("str"), "hover on t.extra should show a str, got: {hover:?}");
+}
+
+/// Invalidating a file removes the ext symbols injected by its methods when the invalidation is
+/// applied, at the end of the build phase: not while something is being built, as the build may use them.
+#[test]
+fn test_ext_symbols_removed_after_the_build() {
+    let (mut odoo, config) = setup::setup::setup_server(false);
+    let mut session = setup::setup::create_init_session(&mut odoo, config);
+    let path = env::current_dir()
+        .unwrap()
+        .join("tests/data/python/expressions/instance_attributes.py")
+        .sanitize();
+    setup::setup::prepare_custom_entry_point(&mut session, path.as_str());
+
+    let file_symbol = SyncOdoo::get_symbol_of_opened_file(&mut session, Path::new(&path))
+        .expect("Failed to get file symbol");
+    let test_class = session.st().get_symbol(file_symbol.into(), (&[], &["Test"]), u32::MAX)[0];
+    let count = session.st().get_ext_symbol(test_class, "count");
+    assert_eq!(count.len(), 1, "`self.count` should be injected into Test");
+
+    BuildScheduler::defer_invalidations(&mut session, |session| {
+        SymbolTable::invalidate(session, file_symbol, BuildSteps::VALIDATION);
+        assert_eq!(session.st().get_ext_symbol(test_class, "count"), count, "kept while something is being built");
+    });
+    SymbolTable::apply_pending_invalidations(&mut session);
+    assert!(session.st().get_ext_symbol(test_class, "count").is_empty());
+    assert!(!session.st().is_key_valid(count[0]));
+
+    BuildScheduler::process_rebuilds(&mut session, false);
+    assert_eq!(session.st().get_ext_symbol(test_class, "count").len(), 1, "`self.count` should be injected again");
 }
 
 /// `base.x = ...` also injects `x` into the functions, files and packages `base` evaluates to,
@@ -117,7 +148,6 @@ fn test_instance_attributes_definition() {
     let ir_asset_file = session.st().get_file(asset_paths).unwrap();
     SymbolTable::invalidate(&mut session, ir_asset_file, BuildSteps::VALIDATION);
     assert!(session.st().get_ext_symbol(asset_paths, "memo").is_empty());
-    BuildScheduler::queue(&mut session, ir_asset_file);
     // as done before a goto definition request
     BuildScheduler::process_rebuilds(&mut session, true);
     let ir_asset = std::fs::read_to_string(Path::new(&env::var("COMMUNITY_PATH").unwrap()).join("odoo/addons/base/models/ir_asset.py")).unwrap();

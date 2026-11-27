@@ -616,12 +616,11 @@ impl EntryPoint {
         path.to_tree()
     }
 
-    /// Move symbols whose pending build step is `ARCH`/`ARCH_EVAL`/`VALIDATION` into the
-    /// corresponding rebuild queue (validation additionally invalidates sub functions).
+    /// Invalidate the symbols from the step that needs what is now found: they are queued to
+    /// build it again (see `SymbolTable::invalidate`).
     fn dispatch_rebuild(session: &mut SessionInfo, to_add: HashMap<SourceFileKey, BuildSteps>) {
         for (source, step) in to_add {
             SymbolTable::invalidate(session, source, step);
-            BuildScheduler::queue(session, source);
         }
     }
 

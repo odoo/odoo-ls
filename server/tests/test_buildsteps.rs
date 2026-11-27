@@ -7,7 +7,7 @@ use odoo_ls_server::core::config::ConfigEntry;
 use odoo_ls_server::core::entry_point::EntryPointMgr;
 use odoo_ls_server::core::odoo::SyncOdoo;
 use odoo_ls_server::core::symbols::SymbolTable;
-use odoo_ls_server::core::symbols::symbol_keys::SymbolKey;
+use odoo_ls_server::core::symbols::symbol_keys::{BuildableSymbolKey, SourceFileKey, SymbolKey};
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
@@ -35,6 +35,12 @@ fn get_file(session: &SessionInfo, module_dir: &str, name: &str) -> SymbolKey {
         .get_symbol(module_dir, (&[name], &[]), u32::MAX);
     assert!(!syms.is_empty(), "expected file symbol for {}", name);
     syms[0]
+}
+
+fn get_method_a(session: &SessionInfo, file_a: SourceFileKey) -> BuildableSymbolKey {
+    let methods = session.st().get_symbol(SymbolKey::from(file_a), (&[], &["ClassA", "method_a"]), u32::MAX);
+    assert_eq!(methods.len(), 1, "expected ClassA.method_a");
+    methods[0].unwrap_buildable_key()
 }
 
 #[test]
@@ -168,11 +174,200 @@ fn test_invalidate_resets_methods() {
     for step in [BuildSteps::ARCH_EVAL, BuildSteps::VALIDATION] {
         SymbolTable::invalidate(&mut session, file_a, step);
         assert_method(&session, BuildStatus::PENDING, BuildStatus::PENDING);
-        BuildScheduler::queue(&mut session, file_a);
         // without validation, the methods are still built (requests need them), but not validated
         BuildScheduler::process_rebuilds(&mut session, true);
         assert_method(&session, BuildStatus::DONE, BuildStatus::PENDING);
         BuildScheduler::process_rebuilds(&mut session, false);
         assert_method(&session, BuildStatus::DONE, BuildStatus::DONE);
     }
+}
+
+/// While something is being built, an invalidation is only requested, as the build in progress
+/// may still use what it would remove. It is applied at the end of the build phase, and queues the
+/// symbols to build again.
+#[test]
+fn test_invalidate_is_deferred_while_building() {
+    let (mut odoo, config) = setup::setup::setup_server(false);
+    let (mut session, module_dir) = build_module(&mut odoo, config);
+
+    let file_a = get_file(&session, &module_dir, "file_a").as_source_file_key().unwrap();
+    let method = get_method_a(&session, file_a);
+
+    BuildScheduler::defer_invalidations(&mut session, |session| {
+        SymbolTable::invalidate(session, file_a, BuildSteps::ARCH_EVAL);
+        assert_eq!(session.st().build_status(file_a.into(), BuildSteps::ARCH_EVAL), BuildStatus::DONE);
+        assert_eq!(session.st().build_status(method, BuildSteps::ARCH_EVAL), BuildStatus::DONE);
+    });
+    // the invalidation waits for the end of the build phase
+    assert_eq!(session.st().build_status(file_a.into(), BuildSteps::ARCH_EVAL), BuildStatus::DONE);
+
+    SymbolTable::apply_pending_invalidations(&mut session);
+    assert_eq!(session.st().build_status(file_a.into(), BuildSteps::ARCH_EVAL), BuildStatus::PENDING);
+    assert_eq!(session.st().build_status(method, BuildSteps::ARCH_EVAL), BuildStatus::PENDING);
+
+    BuildScheduler::process_rebuilds(&mut session, false);
+    assert_eq!(session.st().build_status(file_a.into(), BuildSteps::VALIDATION), BuildStatus::DONE);
+    assert_eq!(session.st().build_status(method, BuildSteps::VALIDATION), BuildStatus::DONE);
+}
+
+/// The invalidation of a file being built is overtaken by its build, that sets its step DONE at
+/// its end: only its methods, that are not built with it, are invalidated. As its validation used
+/// them, it is validated again with them.
+#[test]
+fn test_invalidate_file_being_built() {
+    let (mut odoo, config) = setup::setup::setup_server(false);
+    let (mut session, module_dir) = build_module(&mut odoo, config);
+
+    let file_a = get_file(&session, &module_dir, "file_a").as_source_file_key().unwrap();
+    let method = get_method_a(&session, file_a);
+    // file_a waits for its validation, with its methods built
+    SymbolTable::invalidate(&mut session, file_a, BuildSteps::VALIDATION);
+    BuildScheduler::process_rebuilds(&mut session, true);
+    assert_eq!(session.st().build_status(method, BuildSteps::ARCH_EVAL), BuildStatus::DONE);
+
+    BuildScheduler::defer_invalidations(&mut session, |session| {
+        // invalidated during its own validation
+        session.st_mut().set_build_status(file_a.into(), BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
+        SymbolTable::invalidate(session, file_a, BuildSteps::VALIDATION);
+        session.st_mut().set_build_status(file_a.into(), BuildSteps::VALIDATION, BuildStatus::DONE);
+    });
+    SymbolTable::apply_pending_invalidations(&mut session);
+
+    assert_eq!(session.st().build_status(file_a.into(), BuildSteps::VALIDATION), BuildStatus::PENDING);
+    assert_eq!(session.st().build_status(method, BuildSteps::ARCH_EVAL), BuildStatus::PENDING);
+
+    BuildScheduler::process_rebuilds(&mut session, false);
+    assert_eq!(session.st().build_status(file_a.into(), BuildSteps::VALIDATION), BuildStatus::DONE);
+    assert_eq!(session.st().build_status(method, BuildSteps::VALIDATION), BuildStatus::DONE);
+}
+
+/// The dependents of a file invalidated while something is being built are read once the file is reset,
+/// not when the invalidation is requested: until the reset, a dependent can still be built with what the
+/// file built before, and has to be built again too.
+#[test]
+fn test_dependent_built_before_the_reset_is_invalidated() {
+    let (mut odoo, config) = setup::setup::setup_server(false);
+    let (mut session, module_dir) = build_module(&mut odoo, config);
+
+    let file_a = get_file(&session, &module_dir, "file_a").as_source_file_key().unwrap();
+    // file_c inherits ClassA: its ARCH_EVAL depends on the one of file_a
+    let file_c = get_file(&session, &module_dir, "file_c").as_source_file_key().unwrap();
+    assert_eq!(session.st().build_status(file_c.into(), BuildSteps::VALIDATION), BuildStatus::DONE);
+
+    // file_c waits for its ARCH_EVAL, in the same phase as the build invalidating file_a
+    SymbolTable::invalidate(&mut session, file_c, BuildSteps::ARCH_EVAL);
+    BuildScheduler::defer_invalidations(&mut session, |session| {
+        SymbolTable::invalidate(session, file_a, BuildSteps::ARCH_EVAL);
+        // file_c is built before file_a is reset, with what file_a built before
+        session.st_mut().set_build_status(file_c.into(), BuildSteps::ARCH_EVAL, BuildStatus::IN_PROGRESS);
+        session.st_mut().set_build_status(file_c.into(), BuildSteps::ARCH_EVAL, BuildStatus::DONE);
+    });
+    SymbolTable::apply_pending_invalidations(&mut session);
+
+    assert_eq!(session.st().build_status(file_a.into(), BuildSteps::ARCH_EVAL), BuildStatus::PENDING);
+    assert_eq!(session.st().build_status(file_c.into(), BuildSteps::ARCH_EVAL), BuildStatus::PENDING,
+        "file_c was built with the previous ARCH_EVAL of file_a");
+
+    BuildScheduler::process_rebuilds(&mut session, false);
+    assert_eq!(session.st().build_status(file_a.into(), BuildSteps::VALIDATION), BuildStatus::DONE);
+    assert_eq!(session.st().build_status(file_c.into(), BuildSteps::VALIDATION), BuildStatus::DONE);
+}
+
+fn arch_eval_status(session: &SessionInfo, file: SourceFileKey) -> BuildStatus {
+    session.st().build_status(file.into(), BuildSteps::ARCH_EVAL)
+}
+
+/// Build module_buildsteps, and reset the ARCH_EVAL of file_a, and of file_c with it (it inherits ClassA): both
+/// wait in the ARCH_EVAL queue, file_a first. Returns them.
+fn queue_arch_eval_of_a_and_c(session: &mut SessionInfo, module_dir: &str) -> (SourceFileKey, SourceFileKey) {
+    let file_a = get_file(session, module_dir, "file_a").as_source_file_key().unwrap();
+    let file_c = get_file(session, module_dir, "file_c").as_source_file_key().unwrap();
+    SymbolTable::invalidate(session, file_a, BuildSteps::ARCH_EVAL);
+    assert_eq!(arch_eval_status(session, file_a), BuildStatus::PENDING);
+    assert_eq!(arch_eval_status(session, file_c), BuildStatus::PENDING);
+    (file_a, file_c)
+}
+
+/// An invalidation requested during a build phase is applied once the phase is over, not before the next
+/// build of the phase: a file already built in the phase is then built again, once.
+#[test]
+fn test_invalidation_applied_at_the_end_of_the_phase() {
+    let (mut odoo, config) = setup::setup::setup_server(false);
+    let (mut session, module_dir) = build_module(&mut odoo, config);
+    let (file_a, file_c) = queue_arch_eval_of_a_and_c(&mut session, &module_dir);
+    let entry = session.st().get_entry(file_a);
+
+    assert!(BuildScheduler::build_one(&mut session, entry, false));
+    assert_eq!(arch_eval_status(&session, file_a), BuildStatus::DONE);
+    assert_eq!(arch_eval_status(&session, file_c), BuildStatus::PENDING);
+
+    // a build of the phase invalidates file_a, already built
+    BuildScheduler::defer_invalidations(&mut session, |session| {
+        SymbolTable::invalidate(session, file_a, BuildSteps::ARCH_EVAL);
+    });
+
+    // file_c is still in the ARCH_EVAL phase: the invalidation waits
+    assert!(BuildScheduler::build_one(&mut session, entry, false));
+    assert_eq!(arch_eval_status(&session, file_a), BuildStatus::DONE);
+    assert_eq!(arch_eval_status(&session, file_c), BuildStatus::DONE);
+
+    // the phase is over: file_a is reset, and file_c with it as it was built with the previous ARCH_EVAL of
+    // file_a. They are queued again in that order, and file_a is built.
+    assert!(BuildScheduler::build_one(&mut session, entry, false));
+    assert_eq!(arch_eval_status(&session, file_a), BuildStatus::DONE);
+    assert_eq!(arch_eval_status(&session, file_c), BuildStatus::PENDING);
+
+    assert!(BuildScheduler::build_one(&mut session, entry, false));
+    assert_eq!(arch_eval_status(&session, file_c), BuildStatus::DONE);
+    // built once again each: nothing left
+    assert!(!BuildScheduler::build_one(&mut session, entry, false));
+}
+
+/// The invalidation of a file that did not build the step yet is overtaken: it builds it with what
+/// changed, and is not built again at the end of the phase.
+#[test]
+fn test_invalidation_of_a_file_not_built_yet_is_overtaken() {
+    let (mut odoo, config) = setup::setup::setup_server(false);
+    let (mut session, module_dir) = build_module(&mut odoo, config);
+    let (file_a, file_c) = queue_arch_eval_of_a_and_c(&mut session, &module_dir);
+    let entry = session.st().get_entry(file_a);
+
+    assert!(BuildScheduler::build_one(&mut session, entry, false));
+    assert_eq!(arch_eval_status(&session, file_a), BuildStatus::DONE);
+
+    // a build of the phase invalidates file_c, still waiting for its ARCH_EVAL
+    BuildScheduler::defer_invalidations(&mut session, |session| {
+        SymbolTable::invalidate(session, file_c, BuildSteps::ARCH_EVAL);
+    });
+
+    assert!(BuildScheduler::build_one(&mut session, entry, false));
+    assert_eq!(arch_eval_status(&session, file_c), BuildStatus::DONE);
+    // the phase is over, with nothing to build again
+    assert!(!BuildScheduler::build_one(&mut session, entry, false));
+    assert_eq!(arch_eval_status(&session, file_a), BuildStatus::DONE);
+    assert_eq!(arch_eval_status(&session, file_c), BuildStatus::DONE);
+}
+
+/// The invalidation of an earlier step than the one a file is building is not overtaken by its build:
+/// it is applied at the end of the build, and the file builds that step again.
+#[test]
+fn test_invalidate_earlier_step_of_file_being_built() {
+    let (mut odoo, config) = setup::setup::setup_server(false);
+    let (mut session, module_dir) = build_module(&mut odoo, config);
+
+    let file_a = get_file(&session, &module_dir, "file_a").as_source_file_key().unwrap();
+    // file_a waits for its validation
+    SymbolTable::invalidate(&mut session, file_a, BuildSteps::VALIDATION);
+
+    BuildScheduler::defer_invalidations(&mut session, |session| {
+        // its ARCH_EVAL is invalidated during its validation
+        session.st_mut().set_build_status(file_a.into(), BuildSteps::VALIDATION, BuildStatus::IN_PROGRESS);
+        SymbolTable::invalidate(session, file_a, BuildSteps::ARCH_EVAL);
+        session.st_mut().set_build_status(file_a.into(), BuildSteps::VALIDATION, BuildStatus::DONE);
+    });
+    SymbolTable::apply_pending_invalidations(&mut session);
+    assert_eq!(arch_eval_status(&session, file_a), BuildStatus::PENDING);
+
+    BuildScheduler::process_rebuilds(&mut session, false);
+    assert_eq!(session.st().build_status(file_a.into(), BuildSteps::VALIDATION), BuildStatus::DONE);
 }

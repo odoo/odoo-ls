@@ -9,16 +9,7 @@ use crate::{
     Sy, constants::{
         BuildStatus, BuildSteps, LAMBDA_NAME, MissingDataSource, OYarn, PackageType, SymType,
     }, core::{
-        build_scheduler::BuildScheduler,
-        diagnostics::{DiagnosticCode, create_diagnostic},
-        entry_point::EntryPointKey,
-        evaluation::{Evaluation, EvaluationSymbolPtr},
-        evaluation_context::{Context, ContextKey, ContextValue},
-        file_mgr::{FileInfo, FileMgr, NoqaInfo},
-        model::{Model, ModelKey},
-        odoo::SyncOdoo,
-        python_arch_eval_hooks::get_base_model_symbol,
-        symbols::{
+        build_scheduler::BuildScheduler, diagnostics::{DiagnosticCode, create_diagnostic}, entry_point::EntryPointKey, evaluation::{Evaluation, EvaluationSymbolPtr}, evaluation_context::{Context, ContextKey, ContextValue}, file_mgr::{FileInfo, FileMgr, NoqaInfo}, model::{Model, ModelKey}, odoo::SyncOdoo, python_arch_eval_hooks::get_base_model_symbol, symbols::{
             Buildable, Dependencies, ModuleSymbol,
             storage::{
                 FileContentParent, FileSystemSymbolParent, SymbolTable,
@@ -35,6 +26,10 @@ use crate::{
         },
     }, oyarn, threads::SessionInfo, tree::{OYarnExt, Tree}, utils::{HashMap, HashSet, PathSanitizer}, weak_collections::WeakSet,
 };
+
+mod pending_invalidations;
+pub(crate) use pending_invalidations::PendingInvalidations;
+
 #[derive(Debug)]
 pub enum CreateError {
     NothingOnDisk,
@@ -1016,17 +1011,30 @@ impl SymbolTable {
         self.dependents_as_mut(dependency)[level_i][step_i - level_i].insert(target);
     }
 
-    /**
-     * reset the step of the symbol to given step and status to pending.
-     * It will signal the change to all dependents
-     */
+    /// Invalidate `symbol` from `step`: it is reset to `step` and queued to be built again, and so are the
+    /// steps of its dependents that depend on it.
+    ///
+    /// As this function can delete symbols (ext_symbols), it should not be run inside any build. That's why the
+    /// build loops defer the invalidations, and apply them at the end of each build phase (see
+    /// `BuildScheduler::build_one`). Use `BuildScheduler::defer_invalidations` if you have to use this method in
+    /// another build scope, to avoid cache misses.
     pub fn invalidate(session: &mut SessionInfo, symbol: SourceFileKey, step: BuildSteps) {
-        // whatever the step, the functions are evaluated again before the validation of the file
-        SymbolTable::invalidate_sub_functions(session, symbol);
-        if step <= BuildSteps::ARCH_EVAL {
-            session.st_mut().remove_ext_symbols(symbol.into());
+        Self::request_reset(session, symbol, step);
+        let pending = session.sync_odoo.build_scheduler.pending_invalidations();
+        if pending.are_deferred() {
+            // The dependents are read once `symbol` is reset: until then, a symbol can be built with what `symbol`
+            // built before, and register as its dependent. It has to be built again too.
+            pending.request_dependents_invalidation(symbol, step);
+        } else {
+            Self::invalidate_dependents(session, symbol, step);
         }
-        session.st_mut().reset_build_status(symbol.into(), step, BuildStatus::PENDING);
+    }
+
+    /// Invalidate the steps of the dependents of `symbol` (and of the files of `symbol` if it's a module or a
+    /// package) that depend on its steps from `step` (see [`Self::invalidate`]). The dependents are read right
+    /// away. Used alone for an unloaded `symbol`, that does not have to be reset, and whose dependents are
+    /// removed with it.
+    pub fn invalidate_dependents(session: &mut SessionInfo, symbol: SourceFileKey, step: BuildSteps) {
         let mut vec_to_invalidate = VecDeque::from([symbol]);
         while let Some(ref_to_inv) = vec_to_invalidate.pop_front() {
             let in_workspace = session.st().in_workspace(ref_to_inv.into());
@@ -1045,9 +1053,7 @@ impl SymbolTable {
                     }
                 }
                 for (dep_step, sym) in build_queue {
-                    SymbolTable::invalidate_sub_functions(session, sym);
-                    session.st_mut().reset_build_status(sym.into(), dep_step, BuildStatus::PENDING);
-                    BuildScheduler::queue(session, sym);
+                    Self::request_reset(session, sym, dep_step);
                 }
                 if level == BuildSteps::ARCH_EVAL as usize {
                     for (model, from_module) in session.st().iter_all_model_keys(session, ref_to_inv.into()) {
@@ -1062,6 +1068,76 @@ impl SymbolTable {
                 }
             }
         }
+    }
+
+    /// Reset `symbol` to `step`, or request it while something is being built (see [`Self::invalidate`])
+    fn request_reset(session: &mut SessionInfo, symbol: SourceFileKey, step: BuildSteps) {
+        if !session.sync_odoo.build_scheduler.pending_invalidations().are_deferred() {
+            Self::reset(session, symbol, step);
+            return;
+        }
+        let current_step = session.st().get_current_build_step(symbol.into());
+        let status = session.st().build_status(symbol.into(), current_step);
+        // The reset is overtaken if `symbol` did not build `step` yet: it will build it with what changed. Same
+        // if `symbol` is building it, as it is the build that changes it: resetting it would rebuild it again and
+        // again. Only its sub functions, that are not built with it, are invalidated (and its validation done
+        // again if it is done by then, see `apply_pending_invalidations`).
+        let overtaken = step > current_step
+            || (step == current_step && matches!(status, BuildStatus::PENDING | BuildStatus::IN_PROGRESS));
+        let pending = session.sync_odoo.build_scheduler.pending_invalidations();
+        if overtaken {
+            //even if VALIDATION is not done, maybe sub_function already are when this reset is required, so we have to invalidate them
+            pending.request_sub_functions_invalidation(symbol);
+        } else {
+            pending.request_reset(symbol, step);
+        }
+    }
+
+    /// Reset `symbol` to `step` and queue it to be built again. Its sub functions are reset too, to be built
+    /// again before its validation, and the ext symbols it injected if its ARCH_EVAL is reset, as it injects
+    /// them again.
+    fn reset(session: &mut SessionInfo, symbol: SourceFileKey, step: BuildSteps) {
+        Self::invalidate_sub_functions(session, symbol);
+        if step <= BuildSteps::ARCH_EVAL {
+            session.st_mut().remove_ext_symbols(symbol.into());
+        }
+        session.st_mut().reset_build_status(symbol.into(), step, BuildStatus::PENDING);
+        BuildScheduler::queue(session, symbol);
+    }
+
+    /// Apply the invalidations requested while something was being built (see [`Self::invalidate`]).
+    /// Must be called while nothing is being built: at the end of a build phase.
+    /// Returns true if anything was invalidated, as symbols may have been queued again.
+    pub fn apply_pending_invalidations(session: &mut SessionInfo) -> bool {
+        let mut applied = false;
+        for (symbol, step) in session.sync_odoo.build_scheduler.pending_invalidations().take_resets() {
+            if session.st().is_key_valid(symbol) {
+                Self::reset(session, symbol, step);
+                applied = true;
+            }
+        }
+        // after the resets: the dependents request their own resets, applied right away, or at the next call if
+        // the invalidations are still deferred (see `BuildScheduler::next_phase`)
+        for (symbol, step) in session.sync_odoo.build_scheduler.pending_invalidations().take_dependents_invalidations() {
+            if session.st().is_key_valid(symbol) {
+                Self::invalidate_dependents(session, symbol, step);
+                applied = true;
+            }
+        }
+        while let Some(file) = session.sync_odoo.build_scheduler.pending_invalidations()
+            .pop_sub_functions_invalidation(&session.sync_odoo.symbol_table)
+        {
+            if session.st().build_status(file.into(), BuildSteps::VALIDATION) == BuildStatus::DONE {
+                // the validation of `file` used the evaluations of its functions: validate it again with
+                // them (resetting its sub functions, and queuing them with its validation)
+                Self::reset(session, file, BuildSteps::VALIDATION);
+            } else {
+                // its functions are queued with its validation, still to come
+                Self::invalidate_sub_functions(session, file);
+            }
+            applied = true;
+        }
+        applied
     }
 
     /* set a build status, but any value is allowed.
@@ -1081,9 +1157,12 @@ impl SymbolTable {
 
     /// Reset the functions of `target` back to ARCH_EVAL, clearing their evaluations. They are built
     /// again by the function queues of the BuildScheduler once `target` is queued for its validation.
+    /// Applied right away (unless held, see `BuildScheduler::hold_sub_functions_invalidations`): it must
+    /// not be called while something is being built, see [`Self::invalidate`].
     pub fn invalidate_sub_functions(session: &mut SessionInfo, target: SourceFileKey) {
-        if let Some(deferred) = &mut session.sync_odoo.deferred_subfunc_invalidation {
-            deferred.insert(target);
+        let pending = session.sync_odoo.build_scheduler.pending_invalidations();
+        if pending.are_sub_functions_held() {
+            pending.request_sub_functions_invalidation(target);
             return;
         }
         for func_key in session.st().iter_inner_functions(target.into()) {
