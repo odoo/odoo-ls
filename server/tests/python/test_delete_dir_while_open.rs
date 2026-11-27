@@ -15,20 +15,6 @@ use odoo_ls_server::core::odoo::{Odoo, SyncOdoo};
 use odoo_ls_server::threads::SessionInfo;
 use odoo_ls_server::utils::PathSanitizer;
 
-use crate::common;
-
-#[test]
-fn test_delete_dir_while_open() {
-    let (odoo, config) = common::setup_server(false);
-    common::build_once_run_isolated(odoo, config, &[
-        &test_delete_open_file_then_edit_it,
-        &test_delete_open_file_then_close_it_clears_everything,
-        &test_feature_request_on_deleted_open_file_does_not_resurrect_a_phantom_entry,
-        &test_delete_open_file_then_recreate_it_keeps_it,
-        &test_directory_delete_with_nested_open_file_is_not_deferred,
-    ]);
-}
-
 const POINT_CONTENT: &str = "class Thing:\n    def method(self):\n        return 1\n";
 
 fn write_point(temp: &TempDir) -> String {
@@ -45,7 +31,7 @@ fn write_point(temp: &TempDir) -> String {
 // an open file's symbol/entry/cache alone on delete; `handle_did_close`
 // clears them on close, based on disk existence / externality, not a
 // stored flag.
-fn test_delete_open_file_then_edit_it(mut session: SessionInfo) {
+pub fn test_delete_open_file_then_edit_it(mut session: SessionInfo) {
     let temp = TempDir::new().unwrap();
     let point_path = write_point(&temp);
     let point_uri = FileMgr::pathname2uri(&point_path);
@@ -95,7 +81,7 @@ fn test_delete_open_file_then_edit_it(mut session: SessionInfo) {
     assert!(contents.starts_with("xclass Thing"), "edit should have applied against the live symbol, got: {contents:?}");
 }
 
-fn test_delete_open_file_then_close_it_clears_everything(mut session: SessionInfo) {
+pub fn test_delete_open_file_then_close_it_clears_everything(mut session: SessionInfo) {
     let temp = TempDir::new().unwrap();
     let point_path = write_point(&temp);
     let point_uri = FileMgr::pathname2uri(&point_path);
@@ -139,7 +125,7 @@ fn test_delete_open_file_then_close_it_clears_everything(mut session: SessionInf
 // resolving via `get_symbol_of_opened_file`) runs on the deleted-but-still-open
 // buffer before it's ever saved back. Must resolve the real, live symbol -
 // not resurrect a phantom entry.
-fn test_feature_request_on_deleted_open_file_does_not_resurrect_a_phantom_entry(mut session: SessionInfo) {
+pub fn test_feature_request_on_deleted_open_file_does_not_resurrect_a_phantom_entry(mut session: SessionInfo) {
     let temp = TempDir::new().unwrap();
     let point_path = write_point(&temp);
     let point_uri = FileMgr::pathname2uri(&point_path);
@@ -179,7 +165,7 @@ fn test_feature_request_on_deleted_open_file_does_not_resurrect_a_phantom_entry(
     );
 }
 
-fn test_delete_open_file_then_recreate_it_keeps_it(mut session: SessionInfo) {
+pub fn test_delete_open_file_then_recreate_it_keeps_it(mut session: SessionInfo) {
     let temp = TempDir::new().unwrap();
     let point_path = write_point(&temp);
     let point_uri = FileMgr::pathname2uri(&point_path);
@@ -243,7 +229,7 @@ fn test_delete_open_file_then_recreate_it_keeps_it(mut session: SessionInfo) {
 // directory containing an open file is not covered by the per-file rule above
 // (that would need the recursive symbol/entry teardown itself to be
 // open-aware). This asserts today's unchanged behavior: immediate teardown.
-fn test_directory_delete_with_nested_open_file_is_not_deferred(mut session: SessionInfo) {
+pub fn test_directory_delete_with_nested_open_file_is_not_deferred(mut session: SessionInfo) {
     let dir = env::current_dir().unwrap().join("tests/data/nested_dir_race/pkg").sanitize();
     let point_path = Path::new(&dir).join("models").join("point.py").sanitize();
     let point_content = std::fs::read_to_string(&point_path).unwrap();

@@ -10,20 +10,7 @@ use ruff_python_ast::Expr;
 
 use crate::common;
 
-#[test]
-fn test_basics() {
-    let (odoo, config) = common::setup_server(false);
-    common::build_once_run_isolated(odoo, config, &[
-        &test_no_main_entry,
-        &test_custom_entry_point,
-        &test_assigns,
-        &test_ann_assign_invalid_target,
-        &test_sections,
-        &test_star_import_on_disk_dir_does_not_panic,
-    ]);
-}
-
-fn test_no_main_entry(session: SessionInfo) {
+pub fn test_no_main_entry(session: SessionInfo) {
     let odoo = &session.sync_odoo;
     assert!(!odoo.has_main_entry());
     assert!(!odoo.has_odoo_main_entry);
@@ -31,14 +18,14 @@ fn test_no_main_entry(session: SessionInfo) {
     assert!(odoo.has_valid_python);
 }
 
-fn test_custom_entry_point(mut session: SessionInfo) {
+pub fn test_custom_entry_point(mut session: SessionInfo) {
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/assign.py");
     common::prepare_custom_entry_point(&mut session, path.sanitize().as_str());
     assert!(session.sync_odoo.entry_point_mgr.custom_entry_points().len() == 1);
 }
 
 
-fn test_assigns(mut session: SessionInfo) {
+pub fn test_assigns(mut session: SessionInfo) {
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/assign.py").sanitize();
     common::prepare_custom_entry_point(&mut session, path.as_str());
     assert!(session.sync_odoo.entry_point_mgr.custom_entry_points().len() == 1);
@@ -272,7 +259,7 @@ fn test_assigns(mut session: SessionInfo) {
 
 }
 
-fn test_ann_assign_invalid_target(mut session: SessionInfo) {
+pub fn test_ann_assign_invalid_target(mut session: SessionInfo) {
     // Regression test: annotated assignment with a tuple/list target is invalid Python
     // (only a single Name/Attribute/Subscript target can be annotated - and only a
     // single target can be annotated without a value at all), but ruff's error-recovery
@@ -312,7 +299,7 @@ fn test_ann_assign_invalid_target(mut session: SessionInfo) {
     assert!(eval.unwrap() == int_type);
 }
 
-fn test_sections(mut session: SessionInfo) {
+pub fn test_sections(mut session: SessionInfo) {
     let path = env::current_dir().unwrap().join("tests/data/python/expressions/sections.py").sanitize();
     common::prepare_custom_entry_point(&mut session, path.as_str());
     assert!(session.sync_odoo.entry_point_mgr.custom_entry_points().len() == 1);
@@ -366,7 +353,7 @@ fn test_sections(mut session: SessionInfo) {
 
 }
 
-fn test_star_import_on_disk_dir_does_not_panic(mut session: SessionInfo) {
+pub fn test_star_import_on_disk_dir_does_not_panic(mut session: SessionInfo) {
     let path = env::current_dir().unwrap().join("tests/data/python/disk_dir_import/star_import.py").sanitize();
     common::prepare_custom_entry_point(&mut session, path.as_str());
 }

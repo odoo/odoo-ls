@@ -11,17 +11,6 @@ use odoo_ls_server::utils::PathSanitizer;
 
 use crate::common;
 
-#[test]
-fn test_buildsteps() {
-    let (odoo, config) = common::setup_server(false);
-    common::build_once_run_isolated(odoo, config, &[
-        &test_build_now_on_previous_step_is_noop,
-        &test_set_build_status_on_previous_step_to_done_is_noop,
-        &test_queue_is_noop_once_step_is_done,
-        &test_buildsteps_steps,
-    ]);
-}
-
 //build a module with a single file
 fn build_module(session: &mut SessionInfo) -> String {
     let module_dir = env::current_dir()
@@ -44,7 +33,7 @@ fn get_file(session: &SessionInfo, module_dir: &str, name: &str) -> SymbolKey {
     syms[0]
 }
 
-fn test_build_now_on_previous_step_is_noop(mut session: SessionInfo) {
+pub fn test_build_now_on_previous_step_is_noop(mut session: SessionInfo) {
     let module_dir = build_module(&mut session);
 
     let file_a = get_file(&session, &module_dir, "file_a").unwrap_buildable_key();
@@ -66,7 +55,7 @@ fn test_build_now_on_previous_step_is_noop(mut session: SessionInfo) {
     assert_eq!(session.st().build_status(file_a, BuildSteps::ARCH), BuildStatus::DONE);
 }
 
-fn test_set_build_status_on_previous_step_to_done_is_noop(mut session: SessionInfo) {
+pub fn test_set_build_status_on_previous_step_to_done_is_noop(mut session: SessionInfo) {
     let module_dir = build_module(&mut session);
 
     let file_a = get_file(&session, &module_dir, "file_a").unwrap_buildable_key();
@@ -96,7 +85,7 @@ fn test_set_build_status_on_previous_step_to_pending_panics() {
     session.st_mut().set_build_status(file_a, BuildSteps::ARCH, BuildStatus::PENDING);
 }
 
-fn test_queue_is_noop_once_step_is_done(mut session: SessionInfo) {
+pub fn test_queue_is_noop_once_step_is_done(mut session: SessionInfo) {
     let module_dir = build_module(&mut session);
 
     let file_a = get_file(&session, &module_dir, "file_a").unwrap_buildable_key();
@@ -110,7 +99,7 @@ fn test_queue_is_noop_once_step_is_done(mut session: SessionInfo) {
     assert_eq!(BuildScheduler::get_rebuild_queue_size(&mut session), 0);
 }
 
-fn test_buildsteps_steps(mut session: SessionInfo) {
+pub fn test_buildsteps_steps(mut session: SessionInfo) {
     let module_dir = build_module(&mut session);
 
     let file_a = get_file(&session, &module_dir, "file_a").unwrap_buildable_key();
