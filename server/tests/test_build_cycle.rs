@@ -43,10 +43,6 @@ fn test_build_now_arch_eval_cycle_does_not_overflow() {
     SymbolTable::invalidate(&mut session, file_b.as_source_file_key().unwrap(), BuildSteps::ARCH_EVAL);
     SymbolTable::invalidate(&mut session, file_c.as_source_file_key().unwrap(), BuildSteps::ARCH_EVAL);
 
-    BuildScheduler::queue(&mut session, file_a.unwrap_buildable_key());
-    BuildScheduler::queue(&mut session, file_b.unwrap_buildable_key());
-    BuildScheduler::queue(&mut session, file_c.unwrap_buildable_key());
-
     assert_eq!(session.st().build_status(file_a.unwrap_buildable_key(), BuildSteps::ARCH_EVAL), BuildStatus::PENDING);
     assert_eq!(session.st().build_status(file_b.unwrap_buildable_key(), BuildSteps::ARCH_EVAL), BuildStatus::PENDING);
     assert_eq!(session.st().build_status(file_c.unwrap_buildable_key(), BuildSteps::ARCH_EVAL), BuildStatus::PENDING);

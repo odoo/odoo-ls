@@ -16,7 +16,6 @@ use crate::core::tsserver_bridge::{TsServerBridge};
 use crate::core::tsserver_paths::generate_paths_map;
 use crate::features::tsserver_completion::TsCompletionResolveData;
 use crate::features::owl_virtual;
-use crate::fifo_ptr_weak_hash_set::FifoWeakHashSet;
 use crate::lsp_types_custom::{ConfigDiagnosticAction, ConfigDiagnosticMessage, ConfigDiagnosticMessageLevel};
 use crate::odoo_version::OdooVersion;
 use crate::features::document_symbols::DocumentSymbolFeature;
@@ -195,7 +194,7 @@ pub struct SyncOdoo {
     pub evaluation_search: Option<ReferenceTarget>, //If set, any evaluation will be check against this value. If evaluation matches, location is kept in evaluation_locations
     pub evaluation_locations: Vec<Location>,
     pub typeshed_weak_cache: TypeshedWeakReferences, //cache of weak references to important typeshed symbols, to avoid having to look for them in the graph for each evaluation
-    pub deferred_subfunc_invalidation: Option<FifoWeakHashSet<SourceFileKey>>, // None = eager (default)
+    pub functions_in_build: Vec<FunctionKey>, // functions whose ARCH or ARCH_EVAL is being built, innermost last
     languages_by_source: WeakMap<SourceFileKey, HashSet<String>>,
     language_dependents: WeakSet<SymbolKey>,
     pre_parse_cache: Option<Arc<PreParseCache>>, // used by `build_modules`
@@ -257,7 +256,7 @@ impl SyncOdoo {
             typeshed_weak_cache: TypeshedWeakReferences::new(),
             languages_by_source: WeakMap::new(),
             language_dependents: WeakSet::new(),
-            deferred_subfunc_invalidation: None,
+            functions_in_build: vec![],
             pre_parse_cache: None,
 
             test_mode: false,
@@ -703,7 +702,9 @@ impl SyncOdoo {
         let n_modules = sorted_modules.len();
         let main_entry = session.sync_odoo.get_main_entry();
         session.sync_odoo.import_cache = Some(ImportCache::default());
-        session.sync_odoo.deferred_subfunc_invalidation = Some(FifoWeakHashSet::new());
+        // The functions built on demand while the modules are built would be invalidated again and again:
+        // hold the invalidations of the sub functions until all modules are built.
+        BuildScheduler::hold_sub_functions_invalidations(session, true);
 
         // For reporting purposes: progress is split between the two phases of this function: build (arch, arch_eval) and validation.
         const BUILD_PHASE_WEIGHT: u32 = 30; // %
@@ -720,7 +721,7 @@ impl SyncOdoo {
             reporter.report_progress(i as u32 * BUILD_PHASE_WEIGHT / n_modules as u32);
 
             if let Some(mut builder) = PythonArchBuilder::new(session.st(), main_entry, module.into()) {
-                builder.load_arch(session);
+                BuildScheduler::defer_invalidations(session, |session| builder.load_arch(session));
             }
             // Drain build queues, skip validation
             while BuildScheduler::build_one(session, main_entry, false) {
@@ -734,19 +735,16 @@ impl SyncOdoo {
         session.sync_odoo.pre_parse_cache = None;
         drop(pre_parser);
 
-        // Run deferred subfunction invalidations
-        if let Some(mut files) = session.sync_odoo.deferred_subfunc_invalidation.take() {
-            while let Some(file) = files.pop_front_valid(session.st()) {
-                SymbolTable::invalidate_sub_functions(session, file);
-            }
-        }
+        // Run the held invalidations of sub functions
+        BuildScheduler::hold_sub_functions_invalidations(session, false);
+        SymbolTable::apply_pending_invalidations(session);
         // Drain validation queue
         let total_items = BuildScheduler::validation_queue_len(session) as u32;
         while BuildScheduler::build_one(session, main_entry, true) {
             if session.sync_odoo.terminate_rebuild.load(Ordering::Relaxed) { return; }
             let items_left = BuildScheduler::validation_queue_len(session) as u32;
             // report progress (total_items > 0, otherwise loop wouldn't run)
-            reporter.report_progress(BUILD_PHASE_WEIGHT + (total_items - items_left) * (VALIDATION_PHASE_WEIGHT) / total_items);
+            reporter.report_progress(BUILD_PHASE_WEIGHT + total_items.saturating_sub(items_left) * (VALIDATION_PHASE_WEIGHT) / total_items);
         }
         session.sync_odoo.import_cache = None;
         let modules_count = session.sync_odoo.modules.len();
@@ -856,18 +854,9 @@ impl SyncOdoo {
     }
     pub fn unload_path(session: &mut SessionInfo, path: &Path) {
         // Unloading a file can invalidate the same dependents many times (once per model it defines, and once
-        // for the file itself): defer the invalidation of their sub functions to do it only once per file.
-        let defer_subfunc_invalidation = session.sync_odoo.deferred_subfunc_invalidation.is_none();
-        if defer_subfunc_invalidation {
-            session.sync_odoo.deferred_subfunc_invalidation = Some(FifoWeakHashSet::new());
-        }
-        Self::unload_path_impl(session, path);
-        if defer_subfunc_invalidation
-            && let Some(mut files) = session.sync_odoo.deferred_subfunc_invalidation.take() {
-                while let Some(file) = files.pop_front_valid(session.st()) {
-                    SymbolTable::invalidate_sub_functions(session, file);
-                }
-            }
+        // for the file itself): defer the invalidations to reset each dependent only once.
+        BuildScheduler::defer_invalidations(session, |session| Self::unload_path_impl(session, path));
+        SymbolTable::apply_pending_invalidations(session);
     }
 
     fn unload_path_impl(session: &mut SessionInfo, path: &Path) {
@@ -947,7 +936,7 @@ impl SyncOdoo {
                 info!("Unloading symbol {:?} at {:?}", session.st().name(source_file), session.st().path(source_file));
             }
             let buildable_symbol = BuildableSymbolKey::from(source_file);
-            SymbolTable::invalidate(session, source_file, session.st().first_step(buildable_symbol));
+            SymbolTable::invalidate_dependents(session, source_file, session.st().first_step(buildable_symbol));
         }
         match symbol {
             //check if we should not reimport automatically
@@ -1328,7 +1317,6 @@ impl SyncOdoo {
         let to_revalidate = session.sync_odoo.language_dependents.drain_valid(&session.sync_odoo.symbol_table);
         for sym in to_revalidate {
             SymbolTable::invalidate(session, sym.as_source_file_key().unwrap(), BuildSteps::VALIDATION);
-            BuildScheduler::queue(session, sym.unwrap_buildable_key());
         }
     }
 

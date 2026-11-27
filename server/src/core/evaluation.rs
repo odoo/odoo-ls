@@ -684,9 +684,14 @@ impl Evaluation {
         let mut found_one_reference = false;
 
         let parent_file_or_func = session.st().parent_file_or_function(parent).unwrap();
+        // in validation, or in the ARCH/ARCH_EVAL of a function, for what is evaluated in its file (its decorators).
+        // Not its body: it is evaluated again by the function validation, that would report the same diagnostics.
         let is_in_validation = match parent_file_or_func.typ() {
             SymType::FILE | SymType::PACKAGE(_) | SymType::FUNCTION => {
                 session.st().build_status(parent_file_or_func.unwrap_buildable_key(), BuildSteps::VALIDATION) == BuildStatus::IN_PROGRESS
+                || session.sync_odoo.functions_in_build.last().is_some_and(|&function| {
+                    session.st().get_file(function.into()).is_some_and(|file| parent_file_or_func == SymbolKey::from(file))
+                })
             },
             _ => {false}
         };
@@ -1215,15 +1220,28 @@ impl Evaluation {
             ExprOrIdent::Expr(Expr::Subscript(sub)) => {
                 let (eval_left, diags) = Evaluation::eval_from_ast(session, &sub.value, parent, max_infer, false, required_dependencies);
                 diagnostics.extend(diags);
-                // TODO handle multiple eval_left
                 if eval_left.is_empty() {
                     return AnalyzeAstResult::from_only_diagnostics(diagnostics);
                 }
-                let base = &eval_left[0].symbol.get_symbol(session, Some(context), &mut diagnostics, Some(parent));
-                if base.is_expired_if_weak(session.st()) {
-                    return AnalyzeAstResult::from_only_diagnostics(diagnostics);
+                let mut bases: Vec<EvaluationSymbolPtr> = vec![];
+                let mut seen_bases: HashSet<(SymbolKey, Option<bool>)> = HashSet::default();
+                for left in eval_left.iter() {
+                    let base = left.symbol.get_symbol(session, Some(context), &mut diagnostics, Some(parent));
+                    if base.is_expired_if_weak(session.st()) {
+                        continue;
+                    }
+                    for followed in SymbolTable::follow_ref(&base, session, None, false, false, None, None) {
+                        if !followed.has_weak() {
+                            continue;
+                        }
+                        let Some(key) = followed.upgrade_weak(session.st()) else {
+                            continue;
+                        };
+                        if seen_bases.insert((key, followed.get_weak().instance)) {
+                            bases.push(followed);
+                        }
+                    }
                 }
-                let bases = SymbolTable::follow_ref(base, session, None, false, false, None, None);
                 let value = Evaluation::expr_to_str(session, &sub.slice, parent, max_infer, false, &mut diagnostics);
                 diagnostics.extend(value.1);
                 for base in bases.iter() {

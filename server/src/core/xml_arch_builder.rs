@@ -119,7 +119,6 @@ impl XmlArchBuilder {
             for file in others {
                 if session.st().build_status(file.into(), BuildSteps::VALIDATION) == BuildStatus::DONE {
                     SymbolTable::invalidate(session, file, BuildSteps::VALIDATION);
-                    BuildScheduler::queue(session, file);
                 }
             }
             {

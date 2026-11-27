@@ -24,6 +24,10 @@ class LambdaDefaultModel(models.Model):
     def _use_company(self):
         return self
 
+    def _use_company(self):
+        import odoo
+        return odoo.Comm
+
     def _use_creator(self):
         # `create_uid` is a many2one to `res.users`
         return self.create_uid.log

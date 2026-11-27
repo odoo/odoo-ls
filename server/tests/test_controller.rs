@@ -3,7 +3,10 @@ use std::path::Path;
 
 use odoo_ls_server::core::file_mgr::FileInfoKey;
 use odoo_ls_server::core::odoo::SyncOdoo;
-use odoo_ls_server::core::symbols::symbol_keys::{SourceFileKey};
+use odoo_ls_server::constants::{BuildStatus, BuildSteps, SymType};
+use odoo_ls_server::core::evaluation::HookName;
+use odoo_ls_server::core::symbols::storage::SymbolTable;
+use odoo_ls_server::core::symbols::symbol_keys::{SourceFileKey, SymbolKey};
 use odoo_ls_server::utils::PathSanitizer;
 use odoo_ls_server::threads::SessionInfo;
 
@@ -111,6 +114,56 @@ fn test_request_env_subscript(
     // Should show Partner/ResPartner class
     let hover_text = test_utils::get_hover_markdown(session, file_symbol, file_info, 17, 8)
         .expect("Should get hover text for 'partner' variable");
+
+    assert!(
+        session.sync_odoo.model_mgr.get_model("res.partner").is_some(),
+        "ResPartner should exists in models"
+    );
+    // check that test_request_type is built
+    let methods = session.st().get_symbol(SymbolKey::from(file_symbol), (&[], &["TestController", "test_request_type"]), u32::MAX);
+    assert_eq!(methods.len(), 1, "expected TestController.test_request_type");
+    let method = methods[0].unwrap_buildable_key();
+    assert_eq!(
+        session.st().build_status(method, BuildSteps::VALIDATION),
+        BuildStatus::DONE,
+        "TestController.test_request_type should be validated"
+    );
+
+
+    // request.env must resolve to Odoo's Environment class (odoo.api < 18.1, odoo.orm.environments >= 18.1),
+    // whose __getitem__ carries the EvalEnvGetItem hook that resolves env["model.name"] subscripts.
+    let syms = test_utils::get_resolved_symbols_at_position(session, file_symbol, file_info, 14, 22);
+    let env_class = syms.iter().copied().find(|&sym| {
+        sym.typ() == SymType::CLASS && {
+            let tree = SymbolTable::get_local_tree(session, sym);
+            tree == (&["odoo", "api"], &["Environment"])
+                || tree == (&["odoo", "orm", "environments"], &["Environment"])
+        }
+    });
+    let Some(env_class) = env_class else {
+        panic!(
+            "request.env should resolve to odoo's Environment class. Got: {:?}",
+            syms.iter().map(|&s| SymbolTable::get_local_tree(session, s)).collect::<Vec<_>>()
+        );
+    };
+    let get_items = session.st().get_symbol(env_class, (&[] as &[&str], &["__getitem__"]), u32::MAX);
+    assert_eq!(get_items.len(), 1, "Environment should define __getitem__");
+    let has_env_hook = session.st().evaluations(get_items[0]).is_some_and(|evals| {
+        evals.iter().any(|eval| {
+            eval.symbol.get_symbol_hook.as_ref().is_some_and(|hook| hook.name == HookName::EvalEnvGetItem)
+        })
+    });
+    assert!(has_env_hook, "Environment.__getitem__ should carry the EvalEnvGetItem hook");
+
+    // Hover on the closing bracket of request.env['res.partner'] should show the Partner/ResPartner class
+    let bracket_hover = test_utils::get_hover_markdown(session, file_symbol, file_info, 17, 43)
+        .expect("Should get hover text on the bracket of request.env['res.partner']");
+    assert!(
+        bracket_hover.contains(partner_class),
+        "Hover on request.env['res.partner'] should show {} class. Got: {}",
+        partner_class,
+        bracket_hover
+    );
 
     assert!(
         hover_text.contains(partner_class),

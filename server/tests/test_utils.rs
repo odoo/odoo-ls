@@ -259,6 +259,5 @@ pub fn get_resolved_symbols_at_position(
 /// Validate `file_sym` again, e.g. after changing the Odoo version of the session.
 pub fn revalidate(session: &mut SessionInfo, file_sym: SourceFileKey) {
     SymbolTable::invalidate(session, file_sym, BuildSteps::VALIDATION);
-    BuildScheduler::queue(session, file_sym);
     BuildScheduler::process_rebuilds(session, false);
 }
