@@ -3,20 +3,22 @@
 #[path = "../common/mod.rs"]
 mod common;
 
-mod test_addon_entry_lost_symbol;
-mod test_build_cycle;
-mod test_build_once_run_isolated;
-mod test_did_close_cleanup;
-mod test_entry_point_teardown;
-mod test_file_delete;
-mod test_nested_file_pending_delete_gap;
-mod test_queued_dependency_missing_file_info;
-mod test_stale_node_index;
-mod test_untitled_pending_delete_unaffected;
-mod test_workspace_symbol_duplicates;
+mod regression_tests {
+    pub mod test_addon_entry_lost_symbol;
+    pub mod test_build_cycle;
+    pub mod test_did_close_cleanup;
+    pub mod test_entry_point_teardown;
+    pub mod test_file_delete;
+    pub mod test_nested_file_pending_delete_gap;
+    pub mod test_queued_dependency_missing_file_info;
+    pub mod test_stale_node_index;
+    pub mod test_untitled_pending_delete_unaffected;
+    pub mod test_workspace_symbol_duplicates;
+}
+mod test_runner;
 
-use crate::{
-    common::{build_once_run_isolated, setup_server},
+use crate::common::{build_once_run_isolated, setup_server};
+use crate::regression_tests::{
     test_addon_entry_lost_symbol::test_addon_entry_losing_its_symbol_does_not_panic,
     test_did_close_cleanup::{
         test_closing_a_standalone_file_still_releases_its_own_entry, test_closing_an_external_file_drops_its_cache_but_keeps_its_symbols,
