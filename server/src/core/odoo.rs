@@ -11,7 +11,7 @@ use crate::core::symbols::ModuleSymbol;
 use crate::core::symbols::storage::{FileSystemSymbolParent, JsFileParent, SymbolTable};
 use crate::core::symbols::storage::metrics::{log_slotmap_capacities, log_symbol_counts, log_memory_usage};
 use crate::core::symbols::symbol_keys::{BuildableSymbolKey, FileSystemSymbolKey, FunctionKey, ModuleKey, NamespaceKey, SourceFileKey, SymbolKey, Wk, XmlId, XmlTemplateKey};
-use crate::core::symbols::symbol_table_impl::CreateError;
+use crate::core::symbols::symbol_table_impl::{CreateError, MemberCache};
 use crate::core::tsserver_bridge::{TsServerBridge};
 use crate::core::tsserver_paths::generate_paths_map;
 use crate::features::tsserver_completion::TsCompletionResolveData;
@@ -195,6 +195,7 @@ pub struct SyncOdoo {
     pub evaluation_locations: Vec<Location>,
     pub typeshed_weak_cache: TypeshedWeakReferences, //cache of weak references to important typeshed symbols, to avoid having to look for them in the graph for each evaluation
     pub functions_in_build: Vec<FunctionKey>, // functions whose ARCH or ARCH_EVAL is being built, innermost last
+    pub member_cache: Option<MemberCache>, // enabled during read-only work, see `MemberCache`
     languages_by_source: WeakMap<SourceFileKey, HashSet<String>>,
     language_dependents: WeakSet<SymbolKey>,
     pre_parse_cache: Option<Arc<PreParseCache>>, // used by `build_modules`
@@ -257,6 +258,7 @@ impl SyncOdoo {
             languages_by_source: WeakMap::new(),
             language_dependents: WeakSet::new(),
             functions_in_build: vec![],
+            member_cache: None,
             pre_parse_cache: None,
 
             test_mode: false,

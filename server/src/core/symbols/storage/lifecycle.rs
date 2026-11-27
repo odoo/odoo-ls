@@ -9,6 +9,7 @@
 //! `module_symbols` always hold valid keys — they can be trusted without validity
 //! checks, unlike keys stored elsewhere (as Weak).
 
+use crate::core::symbols::symbol_table_impl::MemberCache;
 use crate::{
     constants::{OYarn, PackageType, SymType}, core::{
         entry_point::{EntryPointToken, EntryPointKey, EntryPointMgr}, odoo::SyncOdoo, symbols::{
@@ -337,6 +338,7 @@ impl SymbolTable {
     /// Remove `symbol` and its descendants, and clean up.
     /// WARNING: After this call, `symbol` and its descendants are no longer valid keys.
     pub fn unload(session: &mut SessionInfo, symbol: FileSystemSymbolKey) {
+        MemberCache::clear(session);
         fn unload_recursively(session: &mut SessionInfo, symbol: SymbolKey) {
             for child in session.st().children(symbol) {
                 unload_recursively(session, child);
